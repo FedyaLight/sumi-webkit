@@ -1,6 +1,19 @@
 import AppKit
 import SwiftUI
 
+/// Where a hover report came from.
+///
+/// The tracking view reports hover both from real pointer events and from
+/// lifecycle reconciles that re-read the pointer's current position after a
+/// layout, a tracking-area rebuild, or an enable flip. Row highlighting wants
+/// both — a row that slides under a parked pointer must light up. Anything that
+/// stands in for a `mouseenter`, like the folder preview's show timer, wants
+/// only the former.
+enum SidebarHoverChangeSource: Equatable {
+    case pointer
+    case lifecycle
+}
+
 /// DDG-style hover bridge for sidebar chrome.
 ///
 /// DuckDuckGo macOS keeps ordinary hover on the local AppKit view via
@@ -57,7 +70,9 @@ struct SidebarDDGHoverBridge: NSViewRepresentable {
             guard self.view !== view else { return }
 
             self.view = view
-            view.onHoverChanged = { [weak self] hovering in
+            // Row visuals follow the pointer wherever it currently is, so both
+            // sources publish here.
+            view.onHoverChanged = { [weak self] hovering, _ in
                 self?.publishEventHover(hovering)
             }
         }
@@ -113,7 +128,7 @@ struct SidebarDDGHoverBridge: NSViewRepresentable {
 }
 
 final class SidebarDDGHoverTrackingView: NSView, Hoverable {
-    var onHoverChanged: ((Bool) -> Void)?
+    var onHoverChanged: ((Bool, SidebarHoverChangeSource) -> Void)?
 
     override var isOpaque: Bool {
         false
@@ -193,7 +208,7 @@ final class SidebarDDGHoverTrackingView: NSView, Hoverable {
     func reconcileHoverForLifecycle(mouseLocationInWindow: NSPoint? = nil) {
         let hovering = hoverTrackingEnabled && containsMouseLocation(mouseLocationInWindow)
         setMouseOver(hovering)
-        reportAcceptedEventHoverIfNeeded()
+        reportHoverIfNeeded(source: .lifecycle)
     }
 
     override func updateTrackingAreas() {
@@ -237,7 +252,7 @@ final class SidebarDDGHoverTrackingView: NSView, Hoverable {
         guard acceptHoverEvent(event) else { return }
 
         setMouseOver(true)
-        reportAcceptedEventHoverIfNeeded()
+        reportHoverIfNeeded(source: .pointer)
     }
 
     override func mouseMoved(with event: NSEvent) {
@@ -247,7 +262,7 @@ final class SidebarDDGHoverTrackingView: NSView, Hoverable {
         if !isMouseOver {
             setMouseOver(true)
         }
-        reportAcceptedEventHoverIfNeeded()
+        reportHoverIfNeeded(source: .pointer)
     }
 
     override func mouseExited(with event: NSEvent) {
@@ -255,7 +270,7 @@ final class SidebarDDGHoverTrackingView: NSView, Hoverable {
         guard acceptHoverEvent(event) else { return }
 
         setMouseOver(false)
-        reportAcceptedEventHoverIfNeeded()
+        reportHoverIfNeeded(source: .pointer)
     }
 
     private func acceptHoverEvent(_ event: NSEvent) -> Bool {
@@ -283,12 +298,12 @@ final class SidebarDDGHoverTrackingView: NSView, Hoverable {
         lastReportedHover = false
     }
 
-    private func reportAcceptedEventHoverIfNeeded() {
+    private func reportHoverIfNeeded(source: SidebarHoverChangeSource) {
         let effectiveHover = currentEffectiveHover
         guard effectiveHover != lastReportedHover else { return }
 
         lastReportedHover = effectiveHover
-        onHoverChanged?(effectiveHover)
+        onHoverChanged?(effectiveHover, source)
     }
 
     private func removeSidebarHoverTrackingAreas() {

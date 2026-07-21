@@ -28,15 +28,8 @@ extension BrowserManager {
         )
     }
 
-    func composeSidebarFolderSearchPresentation() -> SidebarFolderSearchPresentationService {
-        let presenter = FolderSearchPopoverPresenter(
-            sidebarRecoveryCoordinator: sidebarHostRecoveryCoordinator
-        )
-        presenter.windowRegistry = windowRegistry
-        return SidebarFolderSearchPresentationService(
-            settings: settingsAttachment,
-            presenter: presenter
-        )
+    func composeSidebarFolderPreviewPresentation() -> SidebarFolderPreviewPresentationService {
+        SidebarFolderPreviewPresentationService(settings: settingsAttachment)
     }
 
     func composeSidebarShortcutEditorPresentation() -> SidebarShortcutEditorPresentationService {

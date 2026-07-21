@@ -826,11 +826,8 @@ extension BrowserCompositionRoot {
             runtimeConnection: runtimeConnection
         )
         let folderPlacementCommit = TabFolderPlacementCommitTransaction(
-            hierarchy: folderHierarchyMutations,
-            spacePinnedStructure: spacePinnedStructureOwner,
             spacePinnedVisualOrder: spacePinnedVisualOrder,
-            folderOpenState: folderOpenState,
-            structuralMutations: structuralCollectionMutationOwner
+            folderOpenState: folderOpenState
         )
         let folderPlacement = TabFolderPlacementTransaction(
             structuralLookup: structuralLookupCoordinator,

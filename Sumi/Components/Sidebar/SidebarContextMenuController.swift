@@ -17,8 +17,8 @@ final class SidebarInteractionState {
         activeKinds.contains(where: \.freezesSidebarHoverState)
     }
 
-    var allowsFolderSearchHoverTracking: Bool {
-        activeKinds.allSatisfy { $0 == .folderSearchPopover }
+    var allowsFolderPreviewHoverTracking: Bool {
+        activeKinds.allSatisfy { $0 == .folderPreview }
     }
 
     var allowsSidebarSwipeCapture: Bool {

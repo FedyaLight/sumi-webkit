@@ -25,39 +25,23 @@ extension ShortcutSidebarRowChrome {
         .opacity(runtimeAffordance.shouldDesaturateIcon ? 0.8 : 1.0)
     }
 
-    var displayFavicon: Image {
-        if let launcherFavicon = currentCachedStoredFavicon {
-            return launcherFavicon
-        }
-        if let liveTab, !liveTab.faviconIsTemplateGlobePlaceholder {
-            return liveTab.favicon
-        }
-        return pin.storedFaviconImage(
+    var iconPresentation: SidebarShortcutIconPresentation {
+        SidebarShortcutIconResolver.resolve(
+            pin: pin,
+            liveTab: liveTab,
+            loadedStoredFavicon: currentLoadedStoredFavicon,
             partition: faviconPartition,
             imageReader: faviconImageReader
         )
     }
 
+    var displayFavicon: Image {
+        iconPresentation.image
+            ?? Image(systemName: SumiPersistentGlyph.launcherSystemImageFallback)
+    }
+
     var chromeTemplateSystemImageName: String? {
-        if let liveTab {
-            if SumiSurface.isSettingsSurfaceURL(liveTab.url) {
-                return SumiSurface.settingsTabFaviconSystemImageName
-            }
-            if currentCachedStoredFavicon != nil {
-                return nil
-            }
-            if liveTab.faviconIsTemplateGlobePlaceholder {
-                return SumiPersistentGlyph.launcherSystemImageFallback
-            }
-            return nil
-        }
-        if currentLoadedStoredFavicon != nil {
-            return nil
-        }
-        return pin.storedChromeTemplateSystemImageName(
-            for: faviconPartition,
-            imageReader: faviconImageReader
-        )
+        iconPresentation.systemImageName
     }
 
     @ViewBuilder

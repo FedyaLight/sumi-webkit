@@ -1,7 +1,8 @@
 import Foundation
+import SumiDomain
 
-/// Places one top-level Pinned visual item. Shortcut-backed split groups
-/// occupy one visual row even though their hidden member pins remain stored.
+/// Atomically places visual rows in top-level Pinned and folder containers.
+/// A shortcut-backed split group always occupies one position.
 @MainActor
 final class SpacePinnedVisualOrderTransaction {
     private let ordering: SplitGroupSidebarOrderingService
@@ -44,6 +45,51 @@ final class SpacePinnedVisualOrderTransaction {
         return apply(reorderedItems, in: spaceID)
     }
 
+    func moveFolder(
+        _ folderID: UUID,
+        in spaceID: UUID,
+        from sourceFolderID: UUID?,
+        to targetFolderID: UUID?,
+        at presentedBoundary: Int
+    ) -> Bool {
+        var sourceItems = items(in: spaceID, folderID: sourceFolderID)
+        guard let sourceIndex = sourceItems.firstIndex(of: .folder(folderID)) else {
+            return false
+        }
+
+        if sourceFolderID == targetFolderID {
+            let targetIndex = SpacePinnedShortcutOrderOwner
+                .adjustedSameContainerInsertionIndex(
+                    currentIndex: sourceIndex,
+                    proposedIndex: presentedBoundary
+                )
+            guard targetIndex != sourceIndex else { return false }
+            let moving = sourceItems.remove(at: sourceIndex)
+            sourceItems.insert(
+                moving,
+                at: max(0, min(targetIndex, sourceItems.count))
+            )
+            return apply(
+                [.init(folderID: sourceFolderID, items: sourceItems)],
+                in: spaceID
+            )
+        }
+
+        let moving = sourceItems.remove(at: sourceIndex)
+        var targetItems = items(in: spaceID, folderID: targetFolderID)
+        targetItems.insert(
+            moving,
+            at: max(0, min(presentedBoundary, targetItems.count))
+        )
+        return apply(
+            [
+                .init(folderID: sourceFolderID, items: sourceItems),
+                .init(folderID: targetFolderID, items: targetItems),
+            ],
+            in: spaceID
+        )
+    }
+
     /// Finalizes the requested visual position inside the enclosing catalog
     /// mutation; ordering and the caller's side effect commit atomically.
     func placeExisting(
@@ -82,6 +128,28 @@ final class SpacePinnedVisualOrderTransaction {
     }
 
     private func apply(
+        _ orders: [SpacePinnedOrderTransaction.VisualContainerOrder],
+        in spaceID: UUID
+    ) -> Bool {
+        let currentGroups = ordering.groupsSnapshot
+        guard let planned = orderTransaction.planVisualOrders(
+            orders,
+            in: spaceID,
+            groups: currentGroups
+        ) else { return false }
+        return commit(planned, expectedGroups: currentGroups)
+    }
+
+    private func items(
+        in spaceID: UUID,
+        folderID: UUID?
+    ) -> [SplitGroupVisualListItem] {
+        let resolver = ordering.resolver(for: spaceID)
+        return folderID.map(resolver.folderItems(for:))
+            ?? resolver.topLevelItems()
+    }
+
+    private func apply(
         _ reorderedItems: [SplitGroupVisualListItem],
         in spaceID: UUID,
         applying sideEffect: @escaping @MainActor () -> Bool
@@ -93,6 +161,18 @@ final class SpacePinnedVisualOrderTransaction {
             groups: currentGroups
         ) else { return false }
 
+        return commit(
+            planned,
+            expectedGroups: currentGroups,
+            applying: sideEffect
+        )
+    }
+
+    private func commit(
+        _ planned: (plan: SpacePinnedOrderTransaction.Plan, groups: [SplitGroup]),
+        expectedGroups currentGroups: [SplitGroup],
+        applying sideEffect: @escaping @MainActor () -> Bool = { true }
+    ) -> Bool {
         if planned.groups == currentGroups {
             guard orderTransaction.apply(planned.plan), sideEffect() else {
                 return false

@@ -7,6 +7,9 @@ enum NativeChromeMaterialRole {
     case windowChrome
     case nativeGlassChrome
     case popover
+    /// Popover material for chrome hosted inside the browser window rather than
+    /// in an `NSPopover`'s own window, so it samples the views beneath it.
+    case inWindowPopover
 
     var material: NSVisualEffectView.Material {
         switch self {
@@ -18,14 +21,14 @@ enum NativeChromeMaterialRole {
             return .underWindowBackground
         case .nativeGlassChrome:
             return .hudWindow
-        case .popover:
+        case .popover, .inWindowPopover:
             return .popover
         }
     }
 
     var blendingMode: NSVisualEffectView.BlendingMode {
         switch self {
-        case .sidebar, .collapsedSidebar:
+        case .sidebar, .collapsedSidebar, .inWindowPopover:
             return .withinWindow
         case .windowChrome, .nativeGlassChrome, .popover:
             return .behindWindow
@@ -57,7 +60,7 @@ struct NativeChromeMaterialBackground: View {
     private var opaqueFallbackColor: Color {
         let tokens = scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
         switch role {
-        case .popover:
+        case .popover, .inWindowPopover:
             return tokens.floatingBarBackground
         case .sidebar, .collapsedSidebar, .windowChrome, .nativeGlassChrome:
             return tokens.windowBackground

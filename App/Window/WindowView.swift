@@ -14,6 +14,8 @@ private enum WindowTransientChromeZIndex {
     static let glanceFindInPage: Double = 8_500
     /// Collapsed sidebar must sit above Glance so tab/space switching never dismisses or blocks it.
     static let collapsedSidebar: Double = 8_750
+    /// Folder hover preview hangs off a sidebar row, so it must clear the collapsed sidebar overlay.
+    static let folderPreview: Double = 8_800
     /// Floating bar must stay above Glance so URL editing keeps targeting the preview page.
     static let floatingBar: Double = 9_000
     /// Drag ghost only.
@@ -120,6 +122,16 @@ struct WindowView: View {
                             .environment(windowState)
                             .zIndex(WindowTransientChromeZIndex.collapsedSidebar)
                     }
+                }
+
+                // Collapsed-folder hover preview. In-window chrome rather than a popover so
+                // pressing the folder header underneath still starts a drag.
+                chromeThemeScope {
+                    SidebarFolderPreviewOverlay(sidebarDragState: sidebarDragState)
+                        .environment(windowState)
+                        .environment(\.sumiSettings, sumiSettings)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .zIndex(WindowTransientChromeZIndex.folderPreview)
                 }
 
                 // Floating bar is full-window chrome so its floating position is stable in both

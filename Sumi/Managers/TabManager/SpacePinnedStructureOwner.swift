@@ -138,6 +138,11 @@ final class SpacePinnedStructureOwner {
 
 @MainActor
 final class SpacePinnedOrderTransaction {
+    struct VisualContainerOrder {
+        let folderID: UUID?
+        let items: [SplitGroupVisualListItem]
+    }
+
     struct Plan {
         let spaceID: UUID
         let expectedFolders: [TabFolder]
@@ -200,6 +205,22 @@ final class SpacePinnedOrderTransaction {
         in spaceID: UUID,
         groups: [SplitGroup]
     ) -> (plan: Plan, groups: [SplitGroup])? {
+        planVisualOrders(
+            [VisualContainerOrder(folderID: nil, items: items)],
+            in: spaceID,
+            groups: groups
+        )
+    }
+
+    func planVisualOrders(
+        _ orders: [VisualContainerOrder],
+        in spaceID: UUID,
+        groups: [SplitGroup]
+    ) -> (plan: Plan, groups: [SplitGroup])? {
+        let containerIDs = orders.map(\.folderID)
+        guard Set(containerIDs).count == containerIDs.count else {
+            return nil
+        }
         let currentFolders = folders.folders(for: spaceID)
         let currentPins = pins.spacePinnedPins(for: spaceID)
         let folderMap = Dictionary(
@@ -209,84 +230,64 @@ final class SpacePinnedOrderTransaction {
             uniqueKeysWithValues: currentPins.map { ($0.id, $0) }
         )
         let groupMap = Dictionary(uniqueKeysWithValues: groups.map { ($0.id, $0) })
-        var placements: [SpacePinnedShortcutOrderOwner.FolderPlacement] = []
-        var orderedPins: [ShortcutPin] = []
-        var visiblePinIDs = Set<UUID>()
-        var hiddenPinIDs = Set<UUID>()
+        var placements: [UUID: SpacePinnedShortcutOrderOwner.FolderPlacement] = [:]
+        var pinReplacements: [UUID: ShortcutPin] = [:]
         var replacements: [UUID: SplitGroup] = [:]
 
-        for (index, item) in items.enumerated() {
-            switch item {
-            case .folder(let folderID):
-                guard let folder = folderMap[folderID] else { continue }
-                placements.append(.init(
-                    folder: folder,
-                    spaceId: spaceID,
-                    parentFolderId: nil,
-                    index: index
-                ))
-            case .shortcut(let pinID):
-                guard let pin = pinMap[pinID] else { continue }
-                visiblePinIDs.insert(pinID)
-                orderedPins.append(
-                    pin.refreshed(index: index).moved(toFolderId: nil)
-                )
-            case .splitGroup(let groupID):
-                guard let group = groupMap[groupID],
-                      case .shortcutSidebar(
-                        let groupSpaceID,
-                        let profileID,
-                        _,
-                        _
-                      ) = group.container,
-                      groupSpaceID == spaceID,
-                      let replacement = group.changingContainer(
-                        to: .shortcutSidebar(
-                            spaceId: spaceID,
-                            profileId: profileID,
-                            folderId: nil,
-                            index: index
-                        )
-                      ) else { return nil }
-                hiddenPinIDs.formUnion(group.memberIDs.compactMap {
-                    guard case .shortcutPin(let pinID) = $0 else { return nil }
-                    return pinID
-                })
-                replacements[groupID] = replacement
+        for order in orders {
+            for (index, item) in order.items.enumerated() {
+                switch item {
+                case .folder(let folderID):
+                    guard let folder = folderMap[folderID] else { continue }
+                    placements[folderID] = .init(
+                        folder: folder,
+                        spaceId: spaceID,
+                        parentFolderId: order.folderID,
+                        index: index
+                    )
+                case .shortcut(let pinID):
+                    guard let pin = pinMap[pinID] else { continue }
+                    pinReplacements[pinID] = pin
+                        .refreshed(index: index)
+                        .moved(toFolderId: order.folderID)
+                case .splitGroup(let groupID):
+                    guard let group = groupMap[groupID],
+                          case .shortcutSidebar(
+                            let groupSpaceID,
+                            let profileID,
+                            _,
+                            _
+                          ) = group.container,
+                          groupSpaceID == spaceID,
+                          let replacement = group.changingContainer(
+                            to: .shortcutSidebar(
+                                spaceId: spaceID,
+                                profileId: profileID,
+                                folderId: order.folderID,
+                                index: index
+                            )
+                          ) else { return nil }
+                    replacements[groupID] = replacement
+                    for memberID in group.memberIDs {
+                        guard case .shortcutPin(let pinID) = memberID,
+                              let pin = pinMap[pinID] else { continue }
+                        pinReplacements[pinID] = pin
+                            .refreshed(index: .max)
+                            .moved(toFolderId: order.folderID)
+                    }
+                }
             }
         }
 
-        let orderedFolderIDs = Set(placements.map { $0.folder.id })
-        let folderIndexes = Dictionary(
-            uniqueKeysWithValues: placements.map {
-                ($0.folder.id, $0.index)
-            }
-        )
-        let finalFolders = (placements.map(\.folder) + currentFolders.filter {
-            !orderedFolderIDs.contains($0.id)
-        }).sorted { lhs, rhs in
-            let lhsIndex = folderIndexes[lhs.id] ?? lhs.index
-            let rhsIndex = folderIndexes[rhs.id] ?? rhs.index
-            if lhsIndex != rhsIndex { return lhsIndex < rhsIndex }
-            return lhs.id.uuidString < rhs.id.uuidString
-        }
-        let folderPins = currentPins.filter { $0.folderId != nil }
-        let unorderedPins = currentPins.filter {
-            $0.folderId == nil
-                && !visiblePinIDs.contains($0.id)
-                && !hiddenPinIDs.contains($0.id)
-        }
-        let hiddenPins = currentPins.filter {
-            $0.folderId == nil && hiddenPinIDs.contains($0.id)
-        }.map { $0.refreshed(index: .max) }
+        let finalPins = currentPins.map { pinReplacements[$0.id] ?? $0 }
         return (
             Plan(
                 spaceID: spaceID,
                 expectedFolders: currentFolders,
                 expectedPins: currentPins,
-                folderPlacements: placements,
-                finalFolders: finalFolders,
-                finalPins: folderPins + unorderedPins + orderedPins + hiddenPins
+                folderPlacements: Array(placements.values),
+                finalFolders: currentFolders,
+                finalPins: finalPins
             ),
             groups.map { replacements[$0.id] ?? $0 }
         )

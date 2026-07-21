@@ -100,7 +100,7 @@ final class SidebarDDGHoverTests: XCTestCase {
     func testDirectMouseOverMutationDoesNotReportSwiftUIHover() {
         let view = SidebarDDGHoverTrackingView(frame: NSRect(x: 0, y: 0, width: 120, height: 36))
         var reported: [Bool] = []
-        view.onHoverChanged = { reported.append($0) }
+        view.onHoverChanged = { hovering, _ in reported.append(hovering) }
 
         view.isMouseOver = true
         view.isMouseOver = false
@@ -111,12 +111,26 @@ final class SidebarDDGHoverTests: XCTestCase {
     func testTrackingViewReportsEventHoverImmediately() {
         let view = SidebarDDGHoverTrackingView(frame: NSRect(x: 0, y: 0, width: 120, height: 36))
         var reported: [Bool] = []
-        view.onHoverChanged = { reported.append($0) }
+        view.onHoverChanged = { hovering, _ in reported.append(hovering) }
 
         view.mouseEntered(with: Self.enterExitEvent(.mouseEntered, timestamp: 1))
         view.mouseExited(with: Self.enterExitEvent(.mouseExited, timestamp: 2))
 
         XCTAssertEqual(reported, [true, false])
+    }
+
+    /// Consumers that stand in for a `mouseenter` — the folder preview's show
+    /// timer — need to tell a real pointer event apart from a hover the view
+    /// inferred from the parked pointer.
+    func testPointerEventsAreReportedAsPointerHover() {
+        let view = SidebarDDGHoverTrackingView(frame: NSRect(x: 0, y: 0, width: 120, height: 36))
+        var sources: [SidebarHoverChangeSource] = []
+        view.onHoverChanged = { _, source in sources.append(source) }
+
+        view.mouseEntered(with: Self.enterExitEvent(.mouseEntered, timestamp: 1))
+        view.mouseExited(with: Self.enterExitEvent(.mouseExited, timestamp: 2))
+
+        XCTAssertEqual(sources, [.pointer, .pointer])
     }
 
     func testTrackingViewReconcilesHoverWhenMouseIsAlreadyInsideAfterReenable() {
@@ -130,22 +144,25 @@ final class SidebarDDGHoverTests: XCTestCase {
         window.contentView?.addSubview(view)
         view.setHoverTrackingEnabled(false)
 
-        var reported: [Bool] = []
-        view.onHoverChanged = { reported.append($0) }
+        var reported: [(hovering: Bool, source: SidebarHoverChangeSource)] = []
+        view.onHoverChanged = { hovering, source in reported.append((hovering, source)) }
 
         view.setHoverTrackingEnabled(true)
         view.reconcileHoverForLifecycle(mouseLocationInWindow: NSPoint(x: 220, y: 100))
         reported.removeAll()
         view.reconcileHoverForLifecycle(mouseLocationInWindow: NSPoint(x: 24, y: 18))
 
-        XCTAssertEqual(reported, [true])
+        XCTAssertEqual(reported.map(\.hovering), [true])
+        // Row highlighting still follows the parked pointer; the report just
+        // says the pointer never moved, so nothing may treat it as a hover-in.
+        XCTAssertEqual(reported.map(\.source), [.lifecycle])
         XCTAssertTrue(view.currentEffectiveHover)
     }
 
     func testTrackingViewDoesNotPublishWhenDisabledThroughLifecycle() {
         let view = SidebarDDGHoverTrackingView(frame: NSRect(x: 0, y: 0, width: 120, height: 36))
         var reported: [Bool] = []
-        view.onHoverChanged = { reported.append($0) }
+        view.onHoverChanged = { hovering, _ in reported.append(hovering) }
 
         view.mouseEntered(with: Self.enterExitEvent(.mouseEntered, timestamp: 1))
         reported.removeAll()
@@ -160,7 +177,7 @@ final class SidebarDDGHoverTests: XCTestCase {
     func testStaleMouseEnteredAfterNewerExitDoesNotPublishHover() {
         let view = SidebarDDGHoverTrackingView(frame: NSRect(x: 0, y: 0, width: 120, height: 36))
         var reported: [Bool] = []
-        view.onHoverChanged = { reported.append($0) }
+        view.onHoverChanged = { hovering, _ in reported.append(hovering) }
 
         view.mouseExited(with: Self.enterExitEvent(.mouseExited, timestamp: 10))
         view.mouseEntered(with: Self.enterExitEvent(.mouseEntered, timestamp: 9))
@@ -172,7 +189,7 @@ final class SidebarDDGHoverTests: XCTestCase {
     func testStaleMouseExitedAfterNewerEnterDoesNotClearReportedHover() {
         let view = SidebarDDGHoverTrackingView(frame: NSRect(x: 0, y: 0, width: 120, height: 36))
         var reported: [Bool] = []
-        view.onHoverChanged = { reported.append($0) }
+        view.onHoverChanged = { hovering, _ in reported.append(hovering) }
 
         view.mouseEntered(with: Self.enterExitEvent(.mouseEntered, timestamp: 10))
         reported.removeAll()

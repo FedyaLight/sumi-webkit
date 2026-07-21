@@ -34,7 +34,7 @@ extension BrowserManager {
                 dataServices.faviconCapabilities.essentialBackdrops,
             spaceEditorPresentation: composeSidebarSpaceEditorPresentation(),
             folderEditorPresentation: composeSidebarFolderEditorPresentation(),
-            folderSearchPresentation: composeSidebarFolderSearchPresentation(),
+            folderPreviewPresentation: composeSidebarFolderPreviewPresentation(),
             shortcutEditorPresentation: composeSidebarShortcutEditorPresentation(),
             workspaceThemeEditor: themeEditor,
             spaceDeletionPresentation: SidebarSpaceDeletionPresentationOwner(

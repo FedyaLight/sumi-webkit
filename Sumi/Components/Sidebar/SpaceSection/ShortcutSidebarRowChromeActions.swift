@@ -148,14 +148,6 @@ extension ShortcutSidebarRowChrome {
         )
     }
 
-    var currentCachedStoredFavicon: Image? {
-        currentLoadedStoredFavicon ?? ShortcutPin.cachedLaunchFavicon(
-            for: pin.launchURL,
-            partition: faviconPartition,
-            imageReader: faviconImageReader
-        )
-    }
-
     var storedFaviconLoadKey: String {
         storedFaviconLoader.loadKey(
             launchURL: pin.launchURL,

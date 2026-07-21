@@ -211,6 +211,9 @@ class BrowserWindowState {
     /// Window-local Zen-style collapsed state for each Space pinned section.
     let sidebarSpacePinnedCollapse = SidebarSpacePinnedCollapseState()
 
+    /// Window-local owner for the collapsed-folder hover preview panel.
+    let sidebarFolderPreview = SidebarFolderPreviewSessionOwner()
+
     /// Window-local owner for the Zen-style in-sidebar space creation flow.
     let spaceCreationSession = WindowSpaceCreationSessionOwner()
 

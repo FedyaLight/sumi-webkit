@@ -179,6 +179,7 @@ struct TabFolderContentView: View {
                 browserContext: browserContext,
                 inventory: inventory,
                 selection: selection,
+                pinProjection: pinProjection,
                 parentFolderId: parentFolderId,
                 topLevelIndex: containerIndex,
                 contentProjection: contentProjection,

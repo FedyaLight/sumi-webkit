@@ -13,6 +13,7 @@ struct TabFolderHeaderView: View {
     let browserContext: SidebarBrowserContext
     let inventory: SidebarSpaceInventorySnapshot
     let selection: SidebarWindowSelectionQuery
+    let pinProjection: SidebarPinFolderProjection
     let parentFolderId: UUID?
     let topLevelIndex: Int
     let contentProjection: SidebarFolderContentProjection
@@ -54,12 +55,23 @@ struct TabFolderHeaderView: View {
         "folder-header-\(folder.id.uuidString)"
     }
 
-    private var folderSearchHoverIsEnabled: Bool {
+    /// The preview belongs to a folder that *looks* shut, so it keys off the very
+    /// shell state the glyph renders rather than re-deriving one from the model.
+    /// Two derivations of "is this folder closed" is what let the panel and the
+    /// glyph disagree.
+    private var folderShellIsClosed: Bool {
+        folderGlyphPresentation.shellState == .closed
+    }
+
+    /// Body-level arming only. The press and text-entry gates are re-checked at
+    /// open time instead: reading them here would re-render every folder header
+    /// on each sidebar press.
+    private var folderPreviewHoverIsEnabled: Bool {
         isInteractive
             && sidebarPresentationContext.allowsInteractiveWork
             && nativeSurfaceHoverUpdatesEnabled
-            && windowState.sidebarInteractionState.allowsFolderSearchHoverTracking
-            && !folder.isOpen
+            && windowState.sidebarInteractionState.allowsFolderPreviewHoverTracking
+            && folderShellIsClosed
             && !isDragging
     }
 
@@ -101,7 +113,18 @@ struct TabFolderHeaderView: View {
             entries: contextMenuEntries
         )
         .overlay {
-            folderSearchHoverAnchor
+            folderPreviewHoverAnchor
+        }
+        // A folder whose shell opens puts its rows in the sidebar, so the panel
+        // has nothing left to preview. The hover gate only refuses to open; an
+        // already-open panel has to be taken down outright, without the hover
+        // grace, or it lingers over the rows that just appeared.
+        .onChange(of: folderShellIsClosed) { _, isClosed in
+            guard !isClosed else { return }
+            browserContext.folderPreviewPresentation.dismiss(
+                folderID: folder.id,
+                in: windowState
+            )
         }
         .accessibilityIdentifier("folder-header-\(folder.id.uuidString)")
         .accessibilityLabel(folder.name)
@@ -119,14 +142,14 @@ struct TabFolderHeaderView: View {
     }
 
     @ViewBuilder
-    private var folderSearchHoverAnchor: some View {
-        FolderSearchHoverAnchorBridge(
-            isEnabled: folderSearchHoverIsEnabled,
-            onOpen: { anchorView in
-                openFolderSearchPopover(anchorView: anchorView)
+    private var folderPreviewHoverAnchor: some View {
+        SidebarFolderPreviewAnchorBridge(
+            isEnabled: folderPreviewHoverIsEnabled,
+            onOpen: { anchorView, anchorRect in
+                openFolderPreview(anchorView: anchorView, anchorRect: anchorRect)
             },
             onHoverChanged: { hovering in
-                browserContext.folderSearchPresentation.setAnchorHovered(
+                browserContext.folderPreviewPresentation.setAnchorHovered(
                     folderID: folder.id,
                     in: windowState,
                     hovering: hovering
@@ -137,30 +160,43 @@ struct TabFolderHeaderView: View {
         .accessibilityHidden(true)
     }
 
-    private func openFolderSearchPopover(anchorView: NSView) {
-        guard folderSearchHoverIsEnabled,
-              let request = folderSearchPopoverRequest
+    private func openFolderPreview(anchorView: NSView, anchorRect: CGRect) {
+        guard folderPreviewHoverIsEnabled,
+              SidebarFolderPreviewHoverPolicy.allowsOpen(
+                  isSidebarDragging: isDragging,
+                  isHeaderPressed: windowState.sidebarInteractionState.activePressedSourceID
+                      == folderHeaderSourceID,
+                  isTextEntryActive: SidebarFolderPreviewAnchorBridge.isTextEntryActive(
+                      in: anchorView.window
+                  )
+              ),
+              let candidates = folderPreviewCandidates
         else { return }
 
         let source = windowState.sidebarTransientSessionCoordinator.preparedPresentationSource(
             window: anchorView.window ?? windowState.shellWindow(in: windowRegistry),
             ownerView: anchorView
         )
-        browserContext.folderSearchPresentation.show(
-            request: request,
+        browserContext.folderPreviewPresentation.show(
+            request: SidebarFolderPreviewRequest(
+                folderID: folder.id,
+                folderName: folder.name,
+                candidates: candidates,
+                anchorRect: anchorRect
+            ),
             in: windowState,
-            themeContext: themeContext,
             source: source
         )
     }
 
-    private var folderSearchPopoverRequest: FolderSearchPopoverRequest? {
+    private var folderPreviewCandidates: [FolderSearchCandidate]? {
         let builder = FolderSearchCandidateBuilder(
             inventory: inventory,
             selection: selection,
             windowState: windowState,
             liveFolderProvider: browserContext.liveFolderManager,
             faviconImageReader: browserContext.faviconImageReader,
+            pinProjection: pinProjection,
             actions: FolderSearchActivationActions(
                 activateShortcut: { pin in
                     onActivateShortcutPin(pin)
@@ -182,12 +218,6 @@ struct TabFolderHeaderView: View {
             in: space,
             excludingVisibleCollapsedProjectionIDs: Set(contentProjection.visibleCollapsedProjectionIDs)
         )
-        guard !candidates.isEmpty else { return nil }
-
-        return FolderSearchPopoverRequest(
-            folderID: folder.id,
-            folderName: folder.name,
-            candidates: candidates
-        )
+        return candidates.isEmpty ? nil : candidates
     }
 }

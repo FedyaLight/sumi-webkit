@@ -88,7 +88,7 @@ enum SidebarTransientUIKind: String, CaseIterable {
     case dialog
     case spaceCreation
     case folderEditorPopover
-    case folderSearchPopover
+    case folderPreview
     case spaceEditorPopover
     case shortcutEditorPopover
     case themePicker
@@ -101,23 +101,42 @@ enum SidebarTransientUIKind: String, CaseIterable {
 
     var blocksSidebarDragSources: Bool {
         switch self {
-        case .contextMenu, .dialog, .spaceCreation, .folderEditorPopover, .folderSearchPopover, .spaceEditorPopover, .shortcutEditorPopover, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt:
+        case .contextMenu, .dialog, .spaceCreation, .folderEditorPopover, .spaceEditorPopover, .shortcutEditorPopover, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt:
             return true
-        case .drag:
+        // Zen parity: the hover preview is passive chrome. It opens over the very
+        // row the user presses to drag a collapsed folder, so blocking drag
+        // sources here makes folder drag-and-drop unreachable.
+        case .folderPreview, .drag:
             return false
         }
     }
 
     var pinsCollapsedSidebar: Bool {
         switch self {
-        case .contextMenu, .dialog, .spaceCreation, .folderEditorPopover, .folderSearchPopover, .spaceEditorPopover, .shortcutEditorPopover, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt, .drag:
+        case .contextMenu, .dialog, .spaceCreation, .folderEditorPopover, .folderPreview, .spaceEditorPopover, .shortcutEditorPopover, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt, .drag:
             return true
         }
     }
 
     var freezesSidebarHoverState: Bool {
         switch self {
-        case .folderSearchPopover:
+        case .folderPreview:
+            return false
+        case .contextMenu, .dialog, .spaceCreation, .folderEditorPopover, .spaceEditorPopover, .shortcutEditorPopover, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt, .drag:
+            return true
+        }
+    }
+
+    /// Whether ending this UI needs the sidebar's AppKit input-repair pass.
+    ///
+    /// That pass cancels primary mouse tracking on every row in the window, so
+    /// it drops any click that is mid-gesture when it runs. Only chrome that
+    /// nests an event loop or lives in its own window (menus, popovers, dialogs)
+    /// leaves the input graph needing repair; in-window SwiftUI never does, and
+    /// the hover preview opens and closes constantly under the pointer.
+    var requiresInputRecoveryOnEnd: Bool {
+        switch self {
+        case .folderPreview:
             return false
         case .contextMenu, .dialog, .spaceCreation, .folderEditorPopover, .spaceEditorPopover, .shortcutEditorPopover, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt, .drag:
             return true
@@ -377,16 +396,26 @@ final class SidebarTransientSessionCoordinator {
 
         record.handles.forEach { $0.disarm() }
         reconcileInteractionState()
-        queueFinalRecovery(
-            for: record.source,
-            reason: "\(reason):\(token.kind.rawValue)",
-            tier: recoveryTierForSessionEnd(kind: token.kind)
-        )
+        if token.kind.requiresInputRecoveryOnEnd {
+            queueFinalRecovery(
+                for: record.source,
+                reason: "\(reason):\(token.kind.rawValue)",
+                tier: recoveryTierForSessionEnd(kind: token.kind)
+            )
+        }
         schedulePendingPresentationSourceCleanup()
     }
 
     private var activePinnedSessionRecords: [SessionRecord] {
         sessionOrder.compactMap { sessions[$0] }.filter { $0.token.kind.pinsCollapsedSidebar }
+    }
+
+    /// Sessions that must finish before a queued repair may run. Passive chrome
+    /// pins the collapsed sidebar without owning input, so letting it defer
+    /// other sessions' repairs only piles them up to flush together later —
+    /// straight onto whatever click is in flight by then.
+    private var recoveryBlockingSessionRecords: [SessionRecord] {
+        activePinnedSessionRecords.filter { $0.token.kind.requiresInputRecoveryOnEnd }
     }
 
     private func register(
@@ -416,10 +445,10 @@ final class SidebarTransientSessionCoordinator {
     }
 
     private func dismissConflictingSessions(beforeBeginning kind: SidebarTransientUIKind) {
-        guard kind != .folderSearchPopover else { return }
+        guard kind != .folderPreview else { return }
 
         let dismissals = sessions.values.compactMap { record -> (() -> Void)? in
-            guard record.token.kind == .folderSearchPopover else { return nil }
+            guard record.token.kind == .folderPreview else { return nil }
             return record.conflictDismiss
         }
         dismissals.forEach { $0() }
@@ -518,7 +547,7 @@ final class SidebarTransientSessionCoordinator {
     }
 
     private var canRunFinalRecovery: Bool {
-        activePinnedSessionRecords.isEmpty && pendingMenuActionCount == 0
+        recoveryBlockingSessionRecords.isEmpty && pendingMenuActionCount == 0
     }
 
     private func performFinalRecovery(_ recovery: PendingRecovery) {
@@ -559,7 +588,7 @@ final class SidebarTransientSessionCoordinator {
         switch kind {
         case .contextMenu:
             return pendingMenuActionRecoveryTier
-        case .dialog, .spaceCreation, .folderEditorPopover, .folderSearchPopover, .spaceEditorPopover, .shortcutEditorPopover, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt, .drag:
+        case .dialog, .spaceCreation, .folderEditorPopover, .folderPreview, .spaceEditorPopover, .shortcutEditorPopover, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt, .drag:
             return .soft
         }
     }

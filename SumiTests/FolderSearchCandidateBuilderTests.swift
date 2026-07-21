@@ -164,10 +164,12 @@ final class FolderSearchCandidateBuilderTests: XCTestCase {
         )
     }
 
-    func testFolderSearchPopoverTransientKindPinsSidebarAndBlocksDrag() {
-        XCTAssertTrue(SidebarTransientUIKind.folderSearchPopover.pinsCollapsedSidebar)
-        XCTAssertTrue(SidebarTransientUIKind.folderSearchPopover.blocksSidebarDragSources)
-        XCTAssertFalse(SidebarTransientUIKind.folderSearchPopover.freezesSidebarHoverState)
+    /// The preview opens over the very row a folder drag starts from, so it must
+    /// pin the collapsed sidebar without ever disarming sidebar drag sources.
+    func testFolderPreviewTransientKindPinsSidebarWithoutBlockingDrag() {
+        XCTAssertTrue(SidebarTransientUIKind.folderPreview.pinsCollapsedSidebar)
+        XCTAssertFalse(SidebarTransientUIKind.folderPreview.blocksSidebarDragSources)
+        XCTAssertFalse(SidebarTransientUIKind.folderPreview.freezesSidebarHoverState)
     }
 
     private func makeBuilder(
@@ -209,6 +211,12 @@ final class FolderSearchCandidateBuilderTests: XCTestCase {
             windowState: windowState,
             liveFolderProvider: liveProvider,
             faviconImageReader: TabDependencyIsolationDefaults.faviconCapabilities.images,
+            pinProjection: SidebarPinFolderProjection(
+                runtimeIsAlive: { true },
+                windows: windows,
+                essentials: browser.essentialsShortcutPlacementOwner,
+                resolution: browser.shortcutPinRuntimeResolutionOwner
+            ),
             actions: FolderSearchActivationActions(
                 activateShortcut: { _ in },
                 activateLiveItem: { _ in },
@@ -244,7 +252,7 @@ final class FolderSearchCandidateBuilderTests: XCTestCase {
             kind: .shortcut(UUID()),
             title: title,
             secondaryText: "",
-            icon: Image(systemName: "link"),
+            icon: .systemImage("link"),
             searchText: FolderSearchMatcher.searchText(components: components),
             activate: {}
         )

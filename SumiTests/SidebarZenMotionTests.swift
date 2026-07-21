@@ -70,6 +70,34 @@ final class SidebarZenMotionTests: XCTestCase {
         XCTAssertNil(state.activePressedSourceID)
     }
 
+    /// Opening or closing the folder preview writes the transient interaction
+    /// state, which re-renders every folder header mid-click. That re-render
+    /// reaches the bridge with an unchanged signature, and must leave the row's
+    /// in-flight gesture alone — otherwise the click never reaches its action.
+    func testBridgeUpdateDuringPressKeepsPrimaryActionAlive() {
+        let state = SidebarInteractionState()
+        var activationCount = 0
+        let action = { activationCount += 1 }
+        let view = makeInteractiveItemView(
+            sourceID: "folder-header-test",
+            state: state,
+            action: action
+        )
+
+        view.mouseDown(with: mouseEvent(.leftMouseDown))
+        view.update(
+            configuration: SidebarAppKitItemConfiguration(
+                interactionState: state,
+                primaryAction: action,
+                sourceID: "folder-header-test"
+            )
+        )
+        view.mouseUp(with: mouseEvent(.leftMouseUp))
+
+        XCTAssertEqual(activationCount, 1)
+        XCTAssertNil(state.activePressedSourceID)
+    }
+
     func testUnrelatedBridgeUpdateWithoutSourceDoesNotClearPressedSource() {
         let state = SidebarInteractionState()
         let pressedView = makeInteractiveItemView(
@@ -91,27 +119,28 @@ final class SidebarZenMotionTests: XCTestCase {
         XCTAssertEqual(state.activePressedSourceID, "tab-row-test")
     }
 
-    func testFolderSearchPopoverKeepsFolderSearchHoverTrackingAllowed() {
+    func testFolderPreviewKeepsFolderPreviewHoverTrackingAllowed() {
         let state = SidebarInteractionState()
         let tokenID = UUID()
 
-        state.beginSession(kind: .folderSearchPopover, tokenID: tokenID)
+        state.beginSession(kind: .folderPreview, tokenID: tokenID)
 
         XCTAssertFalse(state.freezesSidebarHoverState)
-        XCTAssertTrue(state.allowsFolderSearchHoverTracking)
+        XCTAssertTrue(state.allowsFolderPreviewHoverTracking)
+        XCTAssertTrue(state.allowsSidebarDragSourceHitTesting)
     }
 
-    func testOtherTransientUIBlocksFolderSearchHoverTracking() {
+    func testOtherTransientUIBlocksFolderPreviewHoverTracking() {
         let state = SidebarInteractionState()
 
-        state.beginSession(kind: .folderSearchPopover, tokenID: UUID())
+        state.beginSession(kind: .folderPreview, tokenID: UUID())
         state.beginSession(kind: .folderEditorPopover, tokenID: UUID())
 
         XCTAssertTrue(state.freezesSidebarHoverState)
-        XCTAssertFalse(state.allowsFolderSearchHoverTracking)
+        XCTAssertFalse(state.allowsFolderPreviewHoverTracking)
     }
 
-    func testStartingOtherTransientDismissesFolderSearchPopover() {
+    func testStartingOtherTransientDismissesFolderPreview() {
         let state = SidebarInteractionState()
         let coordinator = SidebarTransientSessionCoordinator(
             windowID: UUID(),
@@ -123,14 +152,14 @@ final class SidebarZenMotionTests: XCTestCase {
             originOwnerView: nil,
             coordinator: coordinator
         )
-        var didDismissFolderSearch = false
+        var didDismissFolderPreview = false
 
         _ = coordinator.beginSession(
-            kind: .folderSearchPopover,
+            kind: .folderPreview,
             source: source,
-            path: "test.folderSearch",
+            path: "test.folderPreview",
             conflictDismiss: {
-                didDismissFolderSearch = true
+                didDismissFolderPreview = true
             }
         )
         _ = coordinator.beginSession(
@@ -139,7 +168,95 @@ final class SidebarZenMotionTests: XCTestCase {
             path: "test.dialog"
         )
 
-        XCTAssertTrue(didDismissFolderSearch)
+        XCTAssertTrue(didDismissFolderPreview)
+    }
+
+    /// The repair pass cancels primary mouse tracking on every sidebar row, so
+    /// it drops any click that is mid-gesture. Only chrome that nests an event
+    /// loop or owns a window may ask for it.
+    func testOnlyEventLoopOwningChromeRequiresInputRecovery() {
+        XCTAssertFalse(SidebarTransientUIKind.folderPreview.requiresInputRecoveryOnEnd)
+
+        for kind in SidebarTransientUIKind.allCases where kind != .folderPreview {
+            XCTAssertTrue(
+                kind.requiresInputRecoveryOnEnd,
+                "\(kind.rawValue) should still repair sidebar input on end"
+            )
+        }
+    }
+
+    func testEndingFolderPreviewDoesNotRecoverInteractiveOwners() {
+        let coordinator = makeRecoveryObservingCoordinator()
+        var recoveryCount = 0
+        coordinator.recoverSidebarInteractiveOwners = { _, _ in
+            recoveryCount += 1
+            return .none
+        }
+        let source = SidebarTransientPresentationSource(
+            windowID: coordinator.windowID,
+            window: nil,
+            originOwnerView: nil,
+            coordinator: coordinator
+        )
+
+        let token = coordinator.beginSession(
+            kind: .folderPreview,
+            source: source,
+            path: "test.folderPreview"
+        )
+        coordinator.endSession(token)
+        drainMainQueue()
+
+        XCTAssertEqual(recoveryCount, 0)
+    }
+
+    /// An open preview pins the collapsed sidebar, but it must not defer another
+    /// session's repair — deferred repairs flush together later, onto whatever
+    /// click is in flight by then.
+    func testOpenFolderPreviewDoesNotDeferAnotherSessionsRecovery() {
+        let coordinator = makeRecoveryObservingCoordinator()
+        var recoveryCount = 0
+        coordinator.recoverSidebarInteractiveOwners = { _, _ in
+            recoveryCount += 1
+            return .none
+        }
+        let source = SidebarTransientPresentationSource(
+            windowID: coordinator.windowID,
+            window: nil,
+            originOwnerView: nil,
+            coordinator: coordinator
+        )
+
+        _ = coordinator.beginSession(
+            kind: .folderPreview,
+            source: source,
+            path: "test.folderPreview"
+        )
+        let menuToken = coordinator.beginSession(
+            kind: .contextMenu,
+            source: source,
+            path: "test.contextMenu"
+        )
+        coordinator.endSession(menuToken)
+        drainMainQueue()
+
+        XCTAssertEqual(recoveryCount, 1)
+    }
+
+    private func makeRecoveryObservingCoordinator() -> SidebarTransientSessionCoordinator {
+        SidebarTransientSessionCoordinator(
+            windowID: UUID(),
+            interactionState: SidebarInteractionState()
+        )
+    }
+
+    /// Recovery is scheduled across nested main-queue hops.
+    private func drainMainQueue(turns: Int = 4) {
+        for _ in 0..<turns {
+            let expectation = expectation(description: "main queue turn")
+            DispatchQueue.main.async { expectation.fulfill() }
+            wait(for: [expectation], timeout: 1)
+        }
     }
 
     func testSidebarInteractiveItemUsesInjectedDragStateForArmedGeometry() {

@@ -21,7 +21,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
                 section: .spaceRegular,
                 frame: frame
             ),
-            generation: injectedState.geometry.activeGeometryGeneration,
+            generation: injectedState.geometry.activeGeometryGeneration
         )
         injectedState.geometry.flushDeferredGeometryForDragStart()
 
@@ -848,6 +848,87 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertTrue(didMove)
         XCTAssertEqual(topLevelPinnedItemIDs(tabManager, in: space.id), [second.id, first.id])
         XCTAssertEqual(tabManager.folderCollectionStateOwner.folders(for: space.id).map(\.index), [0, 1])
+    }
+
+    func testFolderDropCommitsThePresentedBoundaryBesideSplitGroup() throws {
+        let tabManager = BrowserManager()
+        let profileID = UUID()
+        let space = try makeSpace(
+            tabManager,
+            name: "Work",
+            profileId: profileID
+        )
+        let target = try makeFolder(
+            tabManager,
+            in: space.id,
+            name: "Target"
+        )
+        let moving = try makeFolder(
+            tabManager,
+            in: space.id,
+            name: "Moving"
+        )
+        let sibling = try makeFolder(
+            tabManager,
+            in: space.id,
+            parentFolderId: target.id,
+            name: "Sibling"
+        )
+        let members = try (0..<2).map { index in
+            try makeFolderPin(
+                tabManager,
+                in: space,
+                folderId: target.id,
+                url: "https://split-folder-\(index).example",
+                index: index
+            )
+        }
+        let group = try XCTUnwrap(SplitGroup.make(
+            members: members.map { .shortcutPin($0.id) },
+            layoutKind: .vertical,
+            container: .shortcutSidebar(
+                spaceId: space.id,
+                profileId: profileID,
+                folderId: target.id,
+                index: 0
+            )
+        ))
+        XCTAssertTrue(tabManager.splitGroupMutations.insert(
+            group,
+            persist: false
+        ))
+        XCTAssertEqual(
+            tabManager.splitGroupSidebarOrdering.resolver(for: space.id)
+                .folderItems(for: target.id),
+            [.splitGroup(group.id), .folder(sibling.id)]
+        )
+
+        let scope = try makeScope(
+            spaceId: space.id,
+            profileId: profileID,
+            sourceZone: .spacePinned(space.id),
+            item: dragItem(moving)
+        )
+        let didMove = tabManager.sidebarDragRouter.performSidebarDragCommit(
+            SidebarDragCommitIntent(
+                payload: .folder(moving),
+                scope: scope,
+                fromContainer: .spacePinned(space.id),
+                toContainer: .folder(target.id),
+                presentedVisualIndex: 1
+            )
+        )
+
+        XCTAssertTrue(didMove)
+        XCTAssertEqual(
+            tabManager.splitGroupSidebarOrdering.resolver(for: space.id)
+                .folderItems(for: target.id),
+            [
+                .splitGroup(group.id),
+                .folder(moving.id),
+                .folder(sibling.id),
+            ]
+        )
     }
 
     func testFolderPlacementRejectsNoncanonicalInstanceWithMatchingID() throws {

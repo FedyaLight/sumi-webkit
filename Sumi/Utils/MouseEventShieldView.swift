@@ -14,6 +14,7 @@ final class MouseEventShieldNSView: NSView, SidebarTransientInteractionDisarmabl
     private var cursorPolicy: MouseEventShieldCursorPolicy = .arrow
     private var suppressesUnderlyingWebContentHover = false
     private var isSuppressingUnderlyingWebContentHover = false
+    private var blocksScrollWheel = true
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -114,7 +115,15 @@ final class MouseEventShieldNSView: NSView, SidebarTransientInteractionDisarmabl
         setUnderlyingWebContentHoverSuppressed(false)
     }
 
-    override func scrollWheel(with event: NSEvent) {}
+    override func scrollWheel(with event: NSEvent) {
+        // The shield hit-tests its whole area, so a chrome surface that scrolls
+        // its own content has to let the event continue up to the SwiftUI host.
+        guard blocksScrollWheel else {
+            super.scrollWheel(with: event)
+            return
+        }
+    }
+
     override func mouseDragged(with event: NSEvent) {}
     override func rightMouseDragged(with event: NSEvent) {}
     override func otherMouseDragged(with event: NSEvent) {}
@@ -123,10 +132,12 @@ final class MouseEventShieldNSView: NSView, SidebarTransientInteractionDisarmabl
         onClick: (() -> Void)?,
         isInteractive: Bool,
         suppressesUnderlyingWebContentHover: Bool,
-        cursorPolicy: MouseEventShieldCursorPolicy
+        cursorPolicy: MouseEventShieldCursorPolicy,
+        blocksScrollWheel: Bool
     ) {
         self.onClick = onClick
         self.suppressesUnderlyingWebContentHover = suppressesUnderlyingWebContentHover
+        self.blocksScrollWheel = blocksScrollWheel
         updateCursorPolicy(cursorPolicy)
         setTransientInteractionEnabled(isInteractive)
         updateUnderlyingWebContentHoverSuppression(refreshIfAlreadySuppressed: true)
@@ -209,6 +220,8 @@ struct MouseEventShieldView: NSViewRepresentable {
     var isInteractive: Bool = true
     var suppressesUnderlyingWebContentHover: Bool = false
     var cursorPolicy: MouseEventShieldCursorPolicy = .arrow
+    /// Set false when the shielded surface scrolls its own content.
+    var blocksScrollWheel: Bool = true
     var handle: SidebarTransientInteractionHandle?
 
     func makeNSView(context: Context) -> NSView {
@@ -217,7 +230,8 @@ struct MouseEventShieldView: NSViewRepresentable {
             onClick: onClick,
             isInteractive: isInteractive,
             suppressesUnderlyingWebContentHover: suppressesUnderlyingWebContentHover,
-            cursorPolicy: cursorPolicy
+            cursorPolicy: cursorPolicy,
+            blocksScrollWheel: blocksScrollWheel
         )
         handle?.attach(view)
         return view
@@ -229,7 +243,8 @@ struct MouseEventShieldView: NSViewRepresentable {
             onClick: onClick,
             isInteractive: isInteractive,
             suppressesUnderlyingWebContentHover: suppressesUnderlyingWebContentHover,
-            cursorPolicy: cursorPolicy
+            cursorPolicy: cursorPolicy,
+            blocksScrollWheel: blocksScrollWheel
         )
         handle?.attach(shield)
     }

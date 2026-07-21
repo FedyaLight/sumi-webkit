@@ -1,15 +1,28 @@
 import SumiDomain
 import SwiftUI
 
-enum FolderSearchPopoverPolicy {
-    static let showDelayNanoseconds: UInt64 = 500_000_000
-    static let closeGraceNanoseconds: UInt64 = 200_000_000
-}
-
 enum FolderSearchCandidateKind: Equatable {
     case shortcut(UUID)
     case liveItem(folderId: UUID, itemId: String)
     case splitGroupItem(groupId: UUID, itemId: UUID)
+}
+
+/// How a preview row resolves its icon.
+///
+/// A shortcut stays unresolved on purpose: the row hands these inputs to
+/// `SidebarShortcutIconResolver` — the same call the sidebar row makes — after
+/// loading the stored favicon, because a folder that was never expanded this
+/// session has nothing in the in-memory cache yet.
+@MainActor
+enum FolderSearchCandidateIcon {
+    case shortcut(
+        pin: ShortcutPin,
+        liveTab: Tab?,
+        partition: SumiFaviconPartition,
+        imageReader: any BrowserFaviconImageReading
+    )
+    case systemImage(String)
+    case resolved(Image)
 }
 
 @MainActor
@@ -18,7 +31,7 @@ struct FolderSearchCandidate: Identifiable {
     let kind: FolderSearchCandidateKind
     let title: String
     let secondaryText: String
-    let icon: Image
+    let icon: FolderSearchCandidateIcon
     let searchText: String
     let activate: @MainActor () -> Void
 }
@@ -45,6 +58,9 @@ struct FolderSearchCandidateBuilder {
     let windowState: BrowserWindowState
     let liveFolderProvider: FolderSearchLiveFolderProviding
     let faviconImageReader: any BrowserFaviconImageReading
+    /// Same projection the folder's own rows use, so a preview row lands on the
+    /// identical favicon partition instead of guessing one.
+    let pinProjection: SidebarPinFolderProjection
     let actions: FolderSearchActivationActions
 
     init(
@@ -53,6 +69,7 @@ struct FolderSearchCandidateBuilder {
         windowState: BrowserWindowState,
         liveFolderProvider: FolderSearchLiveFolderProviding,
         faviconImageReader: any BrowserFaviconImageReading,
+        pinProjection: SidebarPinFolderProjection,
         actions: FolderSearchActivationActions
     ) {
         self.inventory = inventory
@@ -60,6 +77,7 @@ struct FolderSearchCandidateBuilder {
         self.windowState = windowState
         self.liveFolderProvider = liveFolderProvider
         self.faviconImageReader = faviconImageReader
+        self.pinProjection = pinProjection
         self.actions = actions
     }
 
@@ -152,14 +170,25 @@ struct FolderSearchCandidateBuilder {
             kind: .shortcut(pin.id),
             title: title,
             secondaryText: secondaryText,
-            icon: pin.storedFaviconImage(
-                partition: .regular(pin.executionProfileId ?? pin.profileId),
-                imageReader: faviconImageReader
-            ),
+            icon: shortcutIcon(pin),
             searchText: FolderSearchMatcher.searchText(
                 components: [title, host, urlString] + folderPath
             ),
             activate: { actions.activateShortcut(pin) }
+        )
+    }
+
+    /// Same inputs the folder's own row feeds the shared icon resolver: the
+    /// projection's partition and the pin's live tab, if it has one.
+    private func shortcutIcon(_ pin: ShortcutPin) -> FolderSearchCandidateIcon {
+        .shortcut(
+            pin: pin,
+            liveTab: selection.liveTab(for: pin.id, in: windowState),
+            partition: pinProjection.faviconPartition(
+                for: pin,
+                currentSpaceID: windowState.currentSpaceId
+            ),
+            imageReader: faviconImageReader
         )
     }
 
@@ -179,7 +208,7 @@ struct FolderSearchCandidateBuilder {
             kind: .liveItem(folderId: folderID, itemId: item.id),
             title: item.title,
             secondaryText: secondaryText,
-            icon: Image(systemName: item.iconSystemName ?? "link"),
+            icon: .systemImage(item.iconSystemName ?? "link"),
             searchText: FolderSearchMatcher.searchText(
                 components: [item.title, item.subtitle ?? "", host, item.urlString] + folderPath
             ),
@@ -210,7 +239,7 @@ struct FolderSearchCandidateBuilder {
             ),
             title: title,
             secondaryText: secondaryText(host: host, folderPath: folderPath),
-            icon: icon,
+            icon: .resolved(icon),
             searchText: FolderSearchMatcher.searchText(
                 components: [title, host, urlString] + folderPath
             ),
