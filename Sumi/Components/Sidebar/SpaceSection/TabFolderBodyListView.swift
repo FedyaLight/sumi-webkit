@@ -105,6 +105,7 @@ struct TabFolderBodyListView: View {
                                 item: item,
                                 folderID: folder.id,
                                 isSelected: projection.currentTabURLString == item.urlString,
+                                isInteractive: isInteractive,
                                 actionOwner: contextMenuActionOwner
                             )
                         }
@@ -134,6 +135,7 @@ struct TabFolderBodyListView: View {
                         selectionSnapshot: selectionSnapshot
                     )
                 )
+                .sidebarScrollTarget(scrollTargetID(for: entry.item))
             }
         }
         .padding(.leading, Self.folderContentLeadingPadding)
@@ -142,6 +144,21 @@ struct TabFolderBodyListView: View {
             folderNestingGuide(isVisible: !contentProjection.bodyItems.isEmpty)
         }
         .animation(folderLayoutAnimation, value: contentProjection.bodyItems)
+    }
+
+    private func scrollTargetID(
+        for item: FolderListItem
+    ) -> SidebarScrollTargetID {
+        switch item {
+        case .folder(let folderID):
+            return .folder(folderID)
+        case .shortcut(let pinID):
+            return .launcher(pinID)
+        case .liveItem(let itemID):
+            return .liveFolderItem(folderID: folder.id, itemID: itemID)
+        case .splitGroup(let groupID):
+            return .splitGroup(groupID)
+        }
     }
 
     @ViewBuilder

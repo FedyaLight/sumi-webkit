@@ -136,6 +136,11 @@ struct SpaceTab: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityIdentifier("tab-row-\(tab.id.uuidString)")
         .accessibilityValue(isCurrentTab ? "selected" : "not selected")
+        .sidebarSelectedItemVisibility(
+            .regularTab(tab.id),
+            isSelected: isCurrentTab,
+            isEnabled: isAppKitInteractionEnabled
+        )
         .sidebarHover($isRowHovered, isEnabled: isAppKitInteractionEnabled)
         .onChange(of: isRowHovered) { _, hovering in
             if !hovering {

@@ -6,6 +6,20 @@ import XCTest
 
 @MainActor
 final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
+    func testRecordedViewportIsAvailableToCommittedScrollSurface() {
+        let coordinator = SpaceSidebarTransitionCoordinator()
+        let spaceID = UUID()
+        let viewport = SpaceSidebarSnapshotViewport(
+            contentOffsetY: 260,
+            contentHeight: 500,
+            viewportHeight: 100
+        )
+
+        coordinator.recordScrollViewport(viewport, for: spaceID)
+
+        XCTAssertEqual(coordinator.scrollViewport(for: spaceID), viewport)
+    }
+
     func testScheduledClickCompletionResolvesDestinationFromCurrentSpaces() async throws {
         let windowState = BrowserWindowState()
         let sourceProfileId = UUID()
@@ -110,6 +124,65 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         // frame is committed (simulated here since there is no live view).
         coordinator.startPendingClickAnimation(context: context)
         XCTAssertGreaterThan(coordinator.transitionState.progress, 0)
+    }
+
+    func testDiscreteSwipeUsesClickTransitionWithoutInteractiveHold() async throws {
+        let windowState = BrowserWindowState()
+        let sourceProfileId = UUID()
+        let destinationProfileId = UUID()
+        let source = Space(name: "Source", profileId: sourceProfileId)
+        let destination = Space(name: "Destination", profileId: destinationProfileId)
+        let browserHarness = try TestSidebarBrowserContextHarness(spaces: [source, destination])
+        browserHarness.register(windowState)
+        let settingsHarness = TestDefaultsHarness()
+        let settings = SumiSettingsService(userDefaults: settingsHarness.defaults)
+        let dragState = SidebarDragState()
+        let delayedActions = ManualMainActorDelayedActionScheduler()
+        let coordinator = SpaceSidebarTransitionCoordinator(delayedActions: delayedActions.scheduler)
+
+        defer {
+            coordinator.cancelPendingSpaceTransition()
+            settingsHarness.reset()
+        }
+
+        windowState.currentProfileId = sourceProfileId
+        windowState.currentSpaceId = source.id
+        browserHarness.commitWorkspaceTheme(source.workspaceTheme, for: windowState)
+
+        let context = SpaceSidebarTransitionCoordinator.Context(
+            spaces: [source, destination],
+            currentSpaces: { browserHarness.browserManager.spaceStateOwner.spaces },
+            windowState: windowState,
+            browserContext: browserHarness.context,
+            spaceCatalog: browserHarness.sidebar.spaceCatalog,
+            inventory: browserHarness.sidebar.inventory,
+            selection: browserHarness.sidebar.selection,
+            pinProjection: browserHarness.sidebar.pinProjection,
+            dragState: dragState,
+            settings: settings,
+            allowsInteractiveWork: true,
+            reduceMotion: true
+        )
+
+        coordinator.handleSwipeEvent(
+            .init(phase: .discrete, direction: 1, progress: 0.4),
+            context: context
+        )
+
+        XCTAssertEqual(coordinator.transitionState.trigger, .click)
+        XCTAssertEqual(coordinator.transitionState.phase, .clickAnimating)
+        XCTAssertEqual(coordinator.transitionState.progress, 0)
+        XCTAssertEqual(coordinator.transitionState.destinationSpaceId, destination.id)
+        XCTAssertEqual(delayedActions.scheduledDelays, [SpaceSidebarRenderPolicy.completionDelay])
+
+        coordinator.startPendingClickAnimation(context: context)
+        XCTAssertEqual(coordinator.transitionState.progress, 1)
+
+        delayedActions.runNext()
+
+        XCTAssertEqual(windowState.currentSpaceId, destination.id)
+        XCTAssertEqual(coordinator.transitionState.phase, .idle)
+        XCTAssertFalse(coordinator.transitionState.hasDestination)
     }
 
     func testScheduledClickCompletionStartsPendingGeometryEpochBeforePromotion() async throws {

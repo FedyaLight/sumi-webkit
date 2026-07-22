@@ -103,6 +103,11 @@ struct ShortcutSidebarRowChrome: View {
             isVisible: drawsRowSurface,
             drawsSelectionShadow: runtimeAffordance.isSelected
         )
+        .sidebarSelectedItemVisibility(
+            .launcher(pin.id),
+            isSelected: runtimeAffordance.isSelected,
+            isEnabled: dragIsEnabled
+        )
         .sidebarHover($isRowHovered, isEnabled: dragIsEnabled)
         .onChange(of: isRowHovered) { _, hovering in
             if !hovering {

@@ -79,6 +79,7 @@ struct SpaceRegularTabsListView: View {
                         }
                     }
                 }
+                .sidebarScrollTarget(scrollTargetID(for: row.identity))
             }
         }
         .animation(contentMutationAnimation, value: interactionSession.listAnimation.gapHeights)
@@ -104,6 +105,17 @@ struct SpaceRegularTabsListView: View {
             )
             interactionSession.listAnimation.cacheTabs(tabs)
             animateRenderedTabsChange(from: oldValue, to: newValue)
+        }
+    }
+
+    private func scrollTargetID(
+        for identity: SidebarVisualSceneProjection.RegularRow.Identity
+    ) -> SidebarScrollTargetID {
+        switch identity {
+        case .tab(let tabID):
+            return .regularTab(tabID)
+        case .splitGroup(let groupID):
+            return .splitGroup(groupID)
         }
     }
 

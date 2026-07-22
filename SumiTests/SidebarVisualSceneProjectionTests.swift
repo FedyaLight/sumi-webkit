@@ -5,6 +5,72 @@ import XCTest
 
 @MainActor
 final class SidebarVisualSceneProjectionTests: XCTestCase {
+    func testSelectedRegularTabProjectsToItsOwnVisualRow() {
+        let tab = makeTab()
+        let browser = BrowserManager()
+        let window = BrowserWindowState()
+        let projection = SidebarVisualSceneProjection(
+            inventory: .ephemeral(spaceID: UUID(), regularTabs: [tab]),
+            selection: makeSelection(browser: browser),
+            selectionSnapshot: SidebarWindowSelectionSnapshot(
+                shortcut: ShortcutSelectionSnapshot(currentTabID: tab.id)
+            ),
+            windowState: window
+        )
+
+        XCTAssertEqual(
+            projection.selectedItemRevealPath,
+            SidebarSelectedItemRevealPath([.regularTab(tab.id)])
+        )
+    }
+
+    func testSelectedRegularSplitMemberProjectsToWholeGroupRow() throws {
+        let members = [makeTab(), makeTab()]
+        let group = try XCTUnwrap(SplitGroup.make(
+            members: members.map { .regularTab($0.id) },
+            layoutKind: .horizontal,
+            container: .regularTabs(spaceId: nil)
+        ))
+        let browser = BrowserManager()
+        let projection = SidebarVisualSceneProjection(
+            inventory: makeInventory(
+                spaceID: UUID(),
+                regularTabs: members,
+                splitGroups: [group]
+            ),
+            selection: makeSelection(browser: browser),
+            selectionSnapshot: SidebarWindowSelectionSnapshot(
+                shortcut: ShortcutSelectionSnapshot(currentTabID: members[1].id)
+            ),
+            windowState: BrowserWindowState()
+        )
+
+        XCTAssertEqual(
+            projection.selectedItemRevealPath,
+            SidebarSelectedItemRevealPath([.splitGroup(group.id)])
+        )
+    }
+
+    func testSelectedShortcutSplitMemberProjectsToWholeGroupRow() throws {
+        let fixture = try PublicationFixture(pinCount: 2)
+        let spaceID = try XCTUnwrap(fixture.window.currentSpaceId)
+        let projection = SidebarVisualSceneProjection(
+            inventory: makeInventory(browser: fixture.browser, spaceID: spaceID),
+            selection: makeSelection(browser: fixture.browser),
+            selectionSnapshot: SidebarWindowSelectionSnapshot(
+                shortcut: ShortcutSelectionSnapshot(
+                    currentShortcutPinID: fixture.pins[1].id
+                )
+            ),
+            windowState: fixture.window
+        )
+
+        XCTAssertEqual(
+            projection.selectedItemRevealPath,
+            SidebarSelectedItemRevealPath([.splitGroup(fixture.group.id)])
+        )
+    }
+
     func testRegularRunAlwaysProjectsWholeSplitAsOneRow() throws {
         for memberCount in 2...4 {
             let leading = makeTab()
@@ -198,6 +264,31 @@ final class SidebarVisualSceneProjectionTests: XCTestCase {
             splitGroups: browser.splitGroupStore,
             splitOrdering: browser.splitGroupSidebarOrdering
         ).snapshot(for: spaceID, regularTabs: [])
+    }
+
+    private func makeInventory(
+        spaceID: UUID,
+        regularTabs: [Tab],
+        splitGroups: [SplitGroup]
+    ) -> SidebarSpaceInventorySnapshot {
+        SidebarSpaceInventorySnapshot(
+            spaceID: spaceID,
+            regularTabs: regularTabs,
+            topLevelItems: [],
+            topLevelFolders: [],
+            topLevelPins: [],
+            childFoldersByParentID: [:],
+            folderPinsByFolderID: [:],
+            folderItemsByFolderID: [:],
+            foldersByID: [:],
+            pinsByID: [:],
+            tabsByID: Dictionary(
+                uniqueKeysWithValues: regularTabs.map { ($0.id, $0) }
+            ),
+            splitGroupsByID: Dictionary(
+                uniqueKeysWithValues: splitGroups.map { ($0.id, $0) }
+            )
+        )
     }
 
     private func makeSelection(

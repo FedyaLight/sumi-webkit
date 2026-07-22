@@ -5,8 +5,11 @@ enum SidebarSwipeScrollForwardingPolicy {
     static func shouldPreferTabListScroll(
         hasPreciseScrollingDeltas: Bool,
         scrollingDeltaX: CGFloat,
-        scrollingDeltaY: CGFloat
+        scrollingDeltaY: CGFloat,
+        isSpaceSwipeTracking: Bool = false
     ) -> Bool {
+        // The swipe tracker must observe its own terminal or cancellation sample.
+        guard !isSpaceSwipeTracking else { return false }
         guard hasPreciseScrollingDeltas else { return true }
         return abs(scrollingDeltaY) >= abs(scrollingDeltaX)
     }
@@ -50,13 +53,15 @@ extension SidebarSwipeCaptureSurface {
             _ event: NSEvent,
             in view: CaptureView
         ) -> Bool {
+            let sample = SpaceSwipeGestureSample(event: event)
+
             if view.forwardScrollWheelToRegisteredTabListIfNeeded(event) {
                 tracker.reset()
                 return true
             }
 
             let result = tracker.process(
-                .init(event: event),
+                sample,
                 width: view.bounds.width,
                 isEnabled: parent.isEnabled
             )
@@ -104,7 +109,8 @@ extension SidebarSwipeCaptureSurface {
             guard SidebarSwipeScrollForwardingPolicy.shouldPreferTabListScroll(
                 hasPreciseScrollingDeltas: event.hasPreciseScrollingDeltas,
                 scrollingDeltaX: event.scrollingDeltaX,
-                scrollingDeltaY: event.scrollingDeltaY
+                scrollingDeltaY: event.scrollingDeltaY,
+                isSpaceSwipeTracking: coordinator?.tracker.ownsScrollSequence == true
             ),
             let dragAutoscrollRegistry,
             let target = dragAutoscrollRegistry.registeredScrollView(

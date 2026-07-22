@@ -73,6 +73,86 @@ struct SidebarVisualSceneProjection {
     let selectionSnapshot: SidebarWindowSelectionSnapshot
     let windowState: BrowserWindowState
 
+    var selectedItemRevealPath: SidebarSelectedItemRevealPath? {
+        if let splitSelection = selectionSnapshot.splitSelection,
+           contains(splitSelection.activeMemberID),
+           let group = inventory.splitGroup(containing: splitSelection.activeMemberID),
+           group.id == splitSelection.groupID {
+            return revealPath(
+                to: .splitGroup(group.id),
+                parentFolderID: group.container.shortcutSidebarFolderId
+            )
+        }
+
+        if let pin = selectedPin {
+            if let group = inventory.splitGroup(containing: .shortcutPin(pin.id)) {
+                return revealPath(
+                    to: .splitGroup(group.id),
+                    parentFolderID: group.container.shortcutSidebarFolderId
+                )
+            }
+            return revealPath(to: .launcher(pin.id), parentFolderID: pin.folderId)
+        }
+
+        guard let tabID = selectionSnapshot.currentTabID,
+              inventory.tab(id: tabID) != nil else { return nil }
+        if let group = inventory.splitGroup(containing: .regularTab(tabID)) {
+            return SidebarSelectedItemRevealPath([.splitGroup(group.id)])
+        }
+        return SidebarSelectedItemRevealPath([.regularTab(tabID)])
+    }
+
+    private func revealPath(
+        to targetID: SidebarScrollTargetID,
+        parentFolderID: UUID?
+    ) -> SidebarSelectedItemRevealPath {
+        guard !windowState.sidebarSpacePinnedCollapse.isCollapsed(inventory.spaceID),
+              let parentFolderID else {
+            return SidebarSelectedItemRevealPath([targetID])
+        }
+
+        var folders: [TabFolder] = []
+        var visited = Set<UUID>()
+        var currentID: UUID? = parentFolderID
+        while let folderID = currentID,
+              visited.insert(folderID).inserted,
+              let folder = inventory.folder(id: folderID) {
+            folders.append(folder)
+            currentID = folder.parentFolderId
+        }
+
+        var targets: [SidebarScrollTargetID] = []
+        for folder in folders.reversed() {
+            targets.append(.folder(folder.id))
+            if !folder.isOpen { break }
+        }
+        targets.append(targetID)
+        return SidebarSelectedItemRevealPath(targets)
+    }
+
+    private var selectedPin: ShortcutPin? {
+        if let pinID = selectionSnapshot.currentShortcutPinID,
+           let pin = inventory.pin(id: pinID) {
+            return pin
+        }
+        return inventory.pinsByID.values.first {
+            selection.isShortcutSelected(
+                $0,
+                in: windowState,
+                selection: selectionSnapshot
+            )
+        }
+    }
+
+    private func contains(_ memberID: SplitMemberID) -> Bool {
+        switch memberID {
+        case .regularTab(let tabID):
+            inventory.tab(id: tabID) != nil
+        case .shortcutPin(let pinID):
+            inventory.pin(id: pinID) != nil
+        }
+    }
+
     static func regularRun(
         tabIDs: [UUID],
         groups: [SplitGroup]

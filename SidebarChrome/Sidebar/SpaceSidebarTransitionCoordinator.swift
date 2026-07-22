@@ -51,6 +51,10 @@ final class SpaceSidebarTransitionCoordinator {
         scrollViewportsBySpaceId[spaceId] = viewport
     }
 
+    func scrollViewport(for spaceId: UUID) -> SpaceSidebarSnapshotViewport? {
+        scrollViewportsBySpaceId[spaceId]
+    }
+
     func committedSpaceId(in context: Context) -> UUID? {
         committedSpaceId(spaces: context.spaces, windowState: context.windowState)
     }
@@ -153,6 +157,10 @@ final class SpaceSidebarTransitionCoordinator {
         switch event.phase {
         case .began:
             return
+
+        case .discrete:
+            guard let direction = event.direction else { return }
+            switchRelativeSpace(offset: direction, context: context)
 
         case .changed:
             guard SpaceSidebarRenderPolicy.shouldBeginSwipeTransition(for: event) else {

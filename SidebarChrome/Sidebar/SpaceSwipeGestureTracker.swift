@@ -4,6 +4,7 @@ struct SpaceSwipeGestureEvent: Equatable {
     enum Phase: Equatable {
         case began
         case changed
+        case discrete
         case ended
         case cancelled
     }
@@ -68,19 +69,33 @@ struct SpaceSwipeGestureTracker {
     private(set) var cumulativeDeltaY: CGFloat = 0
     private(set) var lastProgress: Double = 0
     private(set) var lastDirection: Int?
+    private var isDrainingPhaseLessTail = false
+
+    var ownsScrollSequence: Bool {
+        didSendBeginEvent || axisLock == .horizontal || isDrainingPhaseLessTail
+    }
 
     mutating func process(
         _ sample: SpaceSwipeGestureSample,
         width: CGFloat,
         isEnabled: Bool
     ) -> SpaceSwipeGestureTrackingResult {
-        guard isEnabled else {
+        // Disabling capture blocks new gestures, not an already-owned sequence.
+        guard isEnabled || ownsScrollSequence else {
             reset()
             return .init(handling: .forwardToUnderlying, emittedEvents: [])
         }
 
         guard sample.hasPreciseScrollingDeltas else {
             return .init(handling: .forwardToUnderlying, emittedEvents: [])
+        }
+
+        if isDrainingPhaseLessTail {
+            return drainPhaseLessTail(sample, width: width, isEnabled: isEnabled)
+        }
+
+        if sample.phase.isEmpty && sample.momentumPhase.isEmpty {
+            return handlePhaseLessSample(sample, width: width)
         }
 
         if !sample.momentumPhase.isEmpty {
@@ -119,6 +134,90 @@ struct SpaceSwipeGestureTracker {
                 : .forwardToUnderlying,
             emittedEvents: emittedEvents
         )
+    }
+
+    /// Phase-less drivers cannot report finger-up separately from their long
+    /// inertial tail. Normalize them into one thresholded discrete command;
+    /// phased devices keep the fully interactive path below.
+    private mutating func handlePhaseLessSample(
+        _ sample: SpaceSwipeGestureSample,
+        width: CGFloat
+    ) -> SpaceSwipeGestureTrackingResult {
+        if sample.scrollingDeltaX == 0, sample.scrollingDeltaY == 0 {
+            let handling: SpaceSwipeGestureHandling = axisLock == .horizontal
+                ? .consume
+                : .forwardToUnderlying
+            reset()
+            return .init(handling: handling, emittedEvents: [])
+        }
+
+        cumulativeDeltaX += sample.scrollingDeltaX
+        cumulativeDeltaY += sample.scrollingDeltaY
+
+        if axisLock == .unresolved {
+            var ignoredEvents: [SpaceSwipeGestureEvent] = []
+            guard resolveAxisLock(into: &ignoredEvents, emitsCancellation: false) else {
+                return .init(
+                    handling: axisLock == .vertical ? .forwardToUnderlying : .consume,
+                    emittedEvents: []
+                )
+            }
+        }
+
+        guard axisLock == .horizontal else {
+            reset()
+            return .init(handling: .forwardToUnderlying, emittedEvents: [])
+        }
+
+        let direction = SpaceSidebarSwipePhysics.latchedDirection(
+            current: lastDirection,
+            rawDeltaX: cumulativeDeltaX
+        )
+        let progress = SpaceSidebarSwipePhysics.normalizedProgress(
+            distance: abs(cumulativeDeltaX),
+            width: max(width, 1)
+        )
+        lastDirection = direction
+        lastProgress = progress
+
+        guard let direction,
+              progress >= SpaceSidebarTransitionConfig.swipeCommitThreshold else {
+            return .init(handling: .consume, emittedEvents: [])
+        }
+
+        beginDrainingPhaseLessTail()
+        return .init(
+            handling: .consume,
+            emittedEvents: [
+                .init(phase: .discrete, direction: direction, progress: progress)
+            ]
+        )
+    }
+
+    private mutating func drainPhaseLessTail(
+        _ sample: SpaceSwipeGestureSample,
+        width: CGFloat,
+        isEnabled: Bool
+    ) -> SpaceSwipeGestureTrackingResult {
+        guard sample.phase.isEmpty, sample.momentumPhase.isEmpty else {
+            reset()
+            return process(sample, width: width, isEnabled: isEnabled)
+        }
+
+        if sample.scrollingDeltaX == 0, sample.scrollingDeltaY == 0 {
+            reset()
+            return .init(handling: .consume, emittedEvents: [])
+        }
+
+        let absoluteX = abs(sample.scrollingDeltaX)
+        let absoluteY = abs(sample.scrollingDeltaY)
+        if absoluteY >= SpaceSidebarTransitionConfig.axisLockDistance,
+           absoluteY > (absoluteX * SpaceSidebarTransitionConfig.axisLockDominanceMultiplier) {
+            reset()
+            return .init(handling: .forwardToUnderlying, emittedEvents: [])
+        }
+
+        return .init(handling: .consume, emittedEvents: [])
     }
 
     private mutating func handleEndedPhase(
@@ -163,7 +262,10 @@ struct SpaceSwipeGestureTracker {
         return .init(handling: .consume, emittedEvents: events)
     }
 
-    private mutating func resolveAxisLock(into emittedEvents: inout [SpaceSwipeGestureEvent]) -> Bool {
+    private mutating func resolveAxisLock(
+        into emittedEvents: inout [SpaceSwipeGestureEvent],
+        emitsCancellation: Bool = true
+    ) -> Bool {
         let absoluteX = abs(cumulativeDeltaX)
         let absoluteY = abs(cumulativeDeltaY)
 
@@ -176,7 +278,9 @@ struct SpaceSwipeGestureTracker {
         if absoluteY >= SpaceSidebarTransitionConfig.axisLockDistance,
            absoluteY > (absoluteX * SpaceSidebarTransitionConfig.axisLockDominanceMultiplier) {
             axisLock = .vertical
-            emittedEvents.append(.init(phase: .cancelled, direction: nil, progress: 0))
+            if emitsCancellation {
+                emittedEvents.append(.init(phase: .cancelled, direction: nil, progress: 0))
+            }
         }
         return false
     }
@@ -216,6 +320,16 @@ struct SpaceSwipeGestureTracker {
     }
 
     mutating func reset() {
+        resetTrackingState()
+        isDrainingPhaseLessTail = false
+    }
+
+    private mutating func beginDrainingPhaseLessTail() {
+        resetTrackingState()
+        isDrainingPhaseLessTail = true
+    }
+
+    private mutating func resetTrackingState() {
         axisLock = .unresolved
         didSendBeginEvent = false
         cumulativeDeltaX = 0

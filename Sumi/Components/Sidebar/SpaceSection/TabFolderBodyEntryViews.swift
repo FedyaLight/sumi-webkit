@@ -86,6 +86,7 @@ struct TabFolderLiveItemEntryView: View {
     let item: SumiLiveFolderItem
     let folderID: UUID
     let isSelected: Bool
+    let isInteractive: Bool
     let actionOwner: TabFolderContextMenuActionOwner
 
     var body: some View {
@@ -98,6 +99,11 @@ struct TabFolderLiveItemEntryView: View {
             },
             action: { actionOwner.openLiveFolderItem(item) },
             onDismiss: { actionOwner.dismissLiveFolderItem(item) }
+        )
+        .sidebarSelectedItemVisibility(
+            .liveFolderItem(folderID: folderID, itemID: item.id),
+            isSelected: isSelected,
+            isEnabled: isInteractive
         )
     }
 }

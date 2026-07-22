@@ -49,6 +49,11 @@ struct SplitGroupSidebarRow: View {
             isVisible: drawsRowSurface,
             drawsSelectionShadow: isFocusedGroup
         )
+        .sidebarSelectedItemVisibility(
+            .splitGroup(group.id),
+            isSelected: isFocusedGroup,
+            isEnabled: isAppKitInteractionEnabled
+        )
         .overlay(alignment: .trailing) {
             trailingActionButton
                 .padding(.trailing, SidebarRowLayout.trailingInset)

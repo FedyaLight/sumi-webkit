@@ -215,6 +215,7 @@ struct SpacePinnedListView: View {
                         elevatedFolderIDs: elevatedFolderIDs
                     )
                 )
+                .sidebarScrollTarget(scrollTargetID(for: entry.item))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -229,6 +230,23 @@ struct SpacePinnedListView: View {
         .animation(contentMutationAnimation, value: pinnedItems)
         .animation(contentMutationAnimation, value: contentDisplayEntries.map(\.id))
         .animation(contentMutationAnimation, value: isCollapsed)
+    }
+
+    private func scrollTargetID(
+        for item: SpacePinnedContentRenderedItem
+    ) -> SidebarScrollTargetID {
+        switch item {
+        case .pinned(.folder(let folderID)):
+            return .folder(folderID)
+        case .pinned(.shortcut(let pinID)):
+            return .launcher(pinID)
+        case .pinned(.splitGroup(let groupID)):
+            return .splitGroup(groupID)
+        case .nestedSticky(let itemID):
+            return inventory.pin(id: itemID) != nil
+                ? .launcher(itemID)
+                : .splitGroup(itemID)
+        }
     }
 
     private func shortcutEntry(

@@ -31,6 +31,10 @@ struct SpaceSectionsView<Pinned: View, Regular: View>: View {
 struct SpaceScrollChromeSurface<Content: View>: View {
     let isInteractive: Bool
     let spaceId: UUID
+    let selectedItemRevealPath: SidebarSelectedItemRevealPath?
+    let selection: SidebarWindowSelectionSnapshot
+    let selectedItemRevealMode: SidebarMotionPolicy.Mode
+    let restoredViewport: SpaceSidebarSnapshotViewport?
     @ObservedObject var scrollHoverCoordinator: NativeSurfaceScrollHoverCoordinator
     let outerWidth: CGFloat
     let onViewportChange: (SpaceSidebarSnapshotViewport) -> Void
@@ -55,20 +59,29 @@ struct SpaceScrollChromeSurface<Content: View>: View {
         let contentWidth = SpaceViewLayout.contentWidth(for: outerWidth)
         let scrollIndicatorTrailingProjection = SpaceViewLayout.scrollIndicatorTrailingProjection
 
-        ScrollView(.vertical, showsIndicators: false) {
-            // The parent SpaceView owns the sidebar's horizontal inset; keep scroll content aligned with SpaceTitle.
-            content()
-                .frame(width: contentWidth, alignment: .leading)
-                .background {
-                    SpaceScrollDragRegistration(
-                        isEnabled: isInteractive,
-                        indicatorColor: scrollIndicatorColor,
-                        contentViewportWidth: contentWidth,
-                        trailingProjection: scrollIndicatorTrailingProjection
-                    )
-                    .frame(width: 0, height: 0)
-                    .allowsHitTesting(false)
-                }
+        SidebarSelectedItemVisibilityScope(
+            revealPath: selectedItemRevealPath,
+            selection: selection,
+            isEnabled: isInteractive,
+            motionMode: selectedItemRevealMode,
+            restoredViewport: isInteractive ? restoredViewport : nil,
+            onCommittedViewportChange: onViewportChange
+        ) {
+            ScrollView(.vertical, showsIndicators: false) {
+                // The parent SpaceView owns the sidebar's horizontal inset; keep scroll content aligned with SpaceTitle.
+                content()
+                    .frame(width: contentWidth, alignment: .leading)
+                    .background {
+                        SpaceScrollDragRegistration(
+                            isEnabled: isInteractive,
+                            indicatorColor: scrollIndicatorColor,
+                            contentViewportWidth: contentWidth,
+                            trailingProjection: scrollIndicatorTrailingProjection
+                        )
+                        .frame(width: 0, height: 0)
+                        .allowsHitTesting(false)
+                    }
+            }
         }
         .frame(width: contentWidth, alignment: .leading)
         .environment(\.nativeSurfaceHoverUpdatesEnabled, scrollHoverCoordinator.hoverUpdatesEnabled)
@@ -84,7 +97,6 @@ struct SpaceScrollChromeSurface<Content: View>: View {
         } action: { _, state in
             hasContentAbove = state.hasContentAbove
             hasContentBelow = state.hasContentBelow
-            onViewportChange(state.scrollViewport)
         }
         .contentShape(Rectangle())
         .clipped() // Hardware-accelerated viewport-bound clipping

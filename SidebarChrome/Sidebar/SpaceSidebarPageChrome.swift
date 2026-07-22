@@ -102,6 +102,7 @@ extension SpacesSideBarView {
             regularTabPlacementCommands: regularTabPlacementCommands,
             renderMode: renderMode,
             allowsInteraction: allowsInteraction,
+            restoredScrollViewport: transitionCoordinator.scrollViewport(for: space.id),
             scrollHoverCoordinator: scrollHoverCoordinator,
             persistWindowSession: persistWindowSession,
             isSidebarHovered: $isSidebarHovered,

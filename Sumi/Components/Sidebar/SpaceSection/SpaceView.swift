@@ -47,6 +47,7 @@ struct SpaceView: View {
     let regularTabPlacementCommands: SidebarRegularTabPlacementCommands
     let renderMode: SpaceViewRenderMode
     let allowsInteraction: Bool
+    let restoredScrollViewport: SpaceSidebarSnapshotViewport?
     let scrollHoverCoordinator: NativeSurfaceScrollHoverCoordinator
     let persistWindowSession: (BrowserWindowState) -> Void
     @Binding var isSidebarHovered: Bool
@@ -149,6 +150,15 @@ struct SpaceView: View {
         )
     }
 
+    private var selectedItemRevealPath: SidebarSelectedItemRevealPath? {
+        SidebarVisualSceneProjection(
+            inventory: inventory,
+            selection: selection,
+            selectionSnapshot: sidebarSelection,
+            windowState: windowState
+        ).selectedItemRevealPath
+    }
+
     // Drop commits are no longer suppressed at the surface level: the list
     // sections settle rows into place (SidebarMotionPolicy.dropSettleAnimation)
     // while the essentials grid keeps its own commit suppression in PinnedGrid.
@@ -168,6 +178,12 @@ struct SpaceView: View {
             SpaceScrollChromeSurface(
                 isInteractive: isInteractive,
                 spaceId: space.id,
+                selectedItemRevealPath: selectedItemRevealPath,
+                selection: sidebarSelection,
+                selectedItemRevealMode: SidebarMotionPolicy.currentMode(
+                    reduceMotion: reduceMotion || sumiSettings.shouldReduceChromeMotion
+                ),
+                restoredViewport: restoredScrollViewport,
                 scrollHoverCoordinator: scrollHoverCoordinator,
                 outerWidth: outerWidth,
                 onViewportChange: { viewport in
@@ -205,4 +221,3 @@ struct SpaceView: View {
         persistWindowSession(windowState)
     }
 }
-
