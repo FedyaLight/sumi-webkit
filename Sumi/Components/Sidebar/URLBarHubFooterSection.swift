@@ -70,7 +70,7 @@ struct SumiFooterSiteSettingsButton: View {
             Divider()
             Button("Reset Permissions to Default", action: resetPermissionsAction)
         }
-        .onHover { hovering in
+        .sidebarHover { hovering in
             withAnimation(.easeInOut(duration: 0.12)) {
                 isHovered = hovering
             }
@@ -122,7 +122,7 @@ struct SumiFooterBoostButton: View {
                 }
             }
         }
-        .onHover { hovering in
+        .sidebarHover { hovering in
             withAnimation(.easeInOut(duration: 0.12)) {
                 isHovered = hovering
             }

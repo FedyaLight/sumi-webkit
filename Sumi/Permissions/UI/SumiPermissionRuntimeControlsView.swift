@@ -113,7 +113,7 @@ private struct SumiPermissionRuntimeControlRow: View {
                 .fill(isHovered ? tokens.fieldBackgroundHover : tokens.fieldBackground)
         )
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .onHover { hovering in
+        .sidebarHover { hovering in
             withAnimation(.easeInOut(duration: 0.12)) {
                 isHovered = hovering
             }
@@ -163,9 +163,7 @@ private struct SumiPermissionRuntimeActionButtonStyle: ButtonStyle {
             )
             .opacity(isEnabled ? 1 : tokens.popoverActionDisabledAlpha)
             .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-            .onHover { hovering in
-                isHovered = hovering
-            }
+            .sidebarHover($isHovered)
     }
 
     private var foregroundColor: Color {

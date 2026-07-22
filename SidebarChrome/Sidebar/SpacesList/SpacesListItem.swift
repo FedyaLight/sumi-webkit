@@ -83,7 +83,7 @@ struct SpacesListItem: View {
         .accessibilityAction {
             onSelect()
         }
-        .sidebarDDGHover($isHovered)
+        .sidebarHover($isHovered)
         .onChange(of: displayIsHovering) { _, hovering in
             onHoverChange?(hovering)
         }
@@ -125,10 +125,7 @@ struct SpacesListItem: View {
     }
 
     private var displayIsHovering: Bool {
-        SidebarHoverChrome.displayHover(
-            isHovered,
-            freezesHoverState: windowState.sidebarInteractionState.freezesSidebarHoverState
-        )
+        isHovered
     }
 
     // MARK: - Context Menu

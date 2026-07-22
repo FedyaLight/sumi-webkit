@@ -205,10 +205,7 @@ private struct SpaceRegularNewTabRow: View {
     }
 
     private var displaysHover: Bool {
-        SidebarHoverChrome.displayHover(
-            isHovered,
-            freezesHoverState: windowState.sidebarInteractionState.freezesSidebarHoverState
-        )
+        isHovered
     }
 
     var body: some View {
@@ -234,7 +231,7 @@ private struct SpaceRegularNewTabRow: View {
             drawsSelectionShadow: false
         )
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .sidebarDDGHover($isHovered, isEnabled: isInteractive)
+        .sidebarHover($isHovered, isEnabled: isInteractive)
         .sidebarZenPressEffect(sourceID: sourceID, isEnabled: isInteractive)
         .accessibilityIdentifier(sourceID)
         .sidebarAppKitPrimaryAction(

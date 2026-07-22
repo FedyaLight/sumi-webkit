@@ -34,6 +34,7 @@ final class SidebarDragState: ObservableObject {
             guard storedIsDragging != newValue else { return }
             storedIsDragging = newValue
             activityState.isDragging = newValue
+            interactionState?.setDragActive(newValue, source: .visualItem)
             syncGeometryCollectionContext()
         }
     }
@@ -103,6 +104,7 @@ final class SidebarDragState: ObservableObject {
         }
     }
     private let delayedActions: MainActorDelayedActionScheduler
+    private let interactionState: SidebarInteractionState?
     private var dropCompletionGeneration = 0
     private var cancelPendingDropCompletionAction: MainActorDelayedActionScheduler.Cancellation?
     private(set) var isInternalDragGeometryArmed: Bool = false
@@ -113,12 +115,17 @@ final class SidebarDragState: ObservableObject {
 
     @Published var essentialsPreviewStateBySpace: [UUID: SidebarEssentialsPreviewState] = [:]
 
-    init(delayedActions: MainActorDelayedActionScheduler = .live) {
+    init(
+        delayedActions: MainActorDelayedActionScheduler = .live,
+        interactionState: SidebarInteractionState? = nil
+    ) {
         self.delayedActions = delayedActions
+        self.interactionState = interactionState
     }
 
     isolated deinit {
         cancelPendingDropCompletionAction?()
+        interactionState?.setDragActive(false, source: .visualItem)
     }
 
     var shouldAnimateDropLayout: Bool {

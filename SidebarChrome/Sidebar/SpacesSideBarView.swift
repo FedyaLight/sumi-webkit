@@ -139,7 +139,7 @@ struct SpacesSideBarView: View {
             .onAppear {
                 syncSpaceSwitchConsumer(isEnabled: allowsSidebarInteractiveWork)
             }
-            .onHover { state in
+            .sidebarHover { state in
                 isSidebarHovered = allowsSidebarInteractiveWork ? state : false
             }
             .onChange(of: allowsSidebarInteractiveWork) { _, allowsInteractiveWork in
@@ -224,11 +224,6 @@ struct SpacesSideBarView: View {
             entries: { sidebarContextMenuEntries() },
             onMenuVisibilityChanged: handleSidebarContextMenuVisibility
         )
-        .onChange(of: dragState.isDragging) { _, isDragging in
-            Task { @MainActor in
-                sidebarInteractionState.syncSidebarItemDrag(isDragging)
-            }
-        }
     }
 
     @ViewBuilder

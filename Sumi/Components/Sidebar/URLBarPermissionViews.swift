@@ -356,9 +356,7 @@ private struct SumiPermissionIndicatorFooterButtonStyle: ButtonStyle {
                     .fill(backgroundColor(isPressed: configuration.isPressed))
             )
             .opacity(isEnabled ? 1 : tokens.popoverActionDisabledAlpha)
-            .onHover { hovering in
-                isHovered = hovering
-            }
+            .sidebarHover($isHovered)
     }
 
     private func backgroundColor(isPressed: Bool) -> Color {
@@ -498,9 +496,7 @@ private struct URLBarPermissionIndicatorButtonStyle: ButtonStyle {
         .scaleEffect(configuration.isPressed && isEnabled ? 0.95 : 1.0)
         .animation(.easeInOut(duration: 0.12), value: configuration.isPressed)
         .animation(.easeInOut(duration: 0.15), value: isHovering)
-        .onHover { hovering in
-            isHovering = hovering
-        }
+        .sidebarHover($isHovering)
     }
 
     private func backgroundColor(isPressed: Bool) -> Color {

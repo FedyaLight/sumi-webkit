@@ -17,7 +17,6 @@ struct SidebarBrowserContext {
     let essentialBackdropReader: any BrowserEssentialBackdropReading
     let spaceEditorPresentation: SidebarSpaceEditorPresentationService
     let folderEditorPresentation: SidebarFolderEditorPresentationService
-    let folderPreviewPresentation: SidebarFolderPreviewPresentationService
     let shortcutEditorPresentation: SidebarShortcutEditorPresentationService
     let workspaceThemeEditor: BrowserWorkspaceThemeEditorOwner
     let spaceDeletionPresentation: SidebarSpaceDeletionPresentationOwner

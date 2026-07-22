@@ -39,9 +39,7 @@ struct URLBarCompactButtonStyle: ButtonStyle {
             )
             .opacity(isEnabled ? 1 : 0.35)
             .contentShape(RoundedRectangle(cornerRadius: 6))
-            .onHover { hovering in
-                isHovering = hovering
-            }
+            .sidebarHover($isHovering)
     }
 
     private func backgroundColor(isPressed: Bool) -> Color {

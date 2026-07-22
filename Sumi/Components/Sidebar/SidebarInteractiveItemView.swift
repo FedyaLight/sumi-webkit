@@ -7,7 +7,7 @@ import AppKit
 import SwiftUI
 
 @MainActor
-final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransientInteractionDisarmable {
+final class SidebarInteractiveItemView: NSView, NSDraggingSource {
     private let dragThreshold: CGFloat = 3
 
     var sidebarDragState: SidebarDragState?
@@ -22,7 +22,6 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
 
     private(set) var isInteractive = true
     private var isConfigurationInteractionEnabled = true
-    private var isTransientInteractionEnabled = true
     private var itemConfiguration = SidebarAppKitItemConfiguration()
     private var mouseDownEvent: NSEvent?
     private var mouseDownPoint: CGPoint?
@@ -31,7 +30,6 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
     private var didArmDragGeometry = false
     private var isTrackingDragGesture = false
     private var middleMouseDownPoint: CGPoint?
-    private var trackedPressedSourceID: String?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -40,9 +38,6 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
-    }
-
-    deinit {
     }
 
     override var acceptsFirstResponder: Bool {
@@ -85,7 +80,6 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
         guard didReplaceInteraction else { return }
 
         isConfigurationInteractionEnabled = configuration.isInteractionEnabled
-        isTransientInteractionEnabled = true
         identifier = configuration.sourceID.map { NSUserInterfaceItemIdentifier($0) }
         applyEffectiveInteractionEnabled()
     }
@@ -121,14 +115,16 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
             mouseDownCanStartDrag = capturesDrag
             didStartDrag = false
             isTrackingDragGesture = true
-            beginPressTracking()
+            pointerInteractionState?.beginPointerSession(
+                owner: self,
+                sourceID: itemConfiguration.sourceID
+            )
             if capturesDrag {
                 sidebarDragState?.armInternalDragGeometry(
                     scope: itemConfiguration.dragScope
                 )
                 didArmDragGeometry = true
             }
-            contextMenuController?.beginPrimaryMouseTracking(self)
             return
         }
 
@@ -240,24 +236,16 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
         )
     }
 
-    func setTransientInteractionEnabled(_ isEnabled: Bool) {
-        guard isTransientInteractionEnabled != isEnabled else { return }
-        isTransientInteractionEnabled = isEnabled
-        applyEffectiveInteractionEnabled()
-    }
-
     private func applyEffectiveInteractionEnabled() {
-        let effectiveInteractionEnabled = isConfigurationInteractionEnabled
-            && isTransientInteractionEnabled
-        guard isInteractive != effectiveInteractionEnabled else { return }
+        guard isInteractive != isConfigurationInteractionEnabled else { return }
 
-        if !effectiveInteractionEnabled,
+        if !isConfigurationInteractionEnabled,
            didStartDrag,
            !shouldPreserveDragStateOnTeardown {
             sidebarDragState?.resetInteractionState()
         }
 
-        isInteractive = effectiveInteractionEnabled
+        isInteractive = isConfigurationInteractionEnabled
         resetMouseState()
     }
 
@@ -266,7 +254,8 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
     }
 
     func prepareForDismantle() {
-        setTransientInteractionEnabled(false)
+        isConfigurationInteractionEnabled = false
+        applyEffectiveInteractionEnabled()
         itemConfiguration = SidebarAppKitItemConfiguration()
         contextMenuController = nil
         resetMouseState()
@@ -427,7 +416,7 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
         ) else { return }
 
         didStartDrag = true
-        endPressTracking()
+        pointerInteractionState?.transitionPointerSessionToDrag(owner: self)
         let dragLocation = SidebarDragLocationMapper.swiftUIGlobalPoint(
             fromLocalPoint: point,
             in: self
@@ -445,7 +434,6 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
             previewModel: previewSession.previewModel,
             scope: dragScope
         )
-        itemConfiguration.interactionState?.syncSidebarItemDrag(true)
         sidebarDragState.geometry.flushDeferredGeometryForDragStart()
         updateInternalDragState(
             at: dragLocation,
@@ -494,10 +482,15 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
     }
 
     private var allowsTransientDragSourceHitTesting: Bool {
-        contextMenuController?.interactionState.allowsSidebarDragSourceHitTesting ?? true
+        pointerInteractionState?.allowsSidebarDragSourceHitTesting ?? true
+    }
+
+    private var pointerInteractionState: SidebarInteractionState? {
+        itemConfiguration.interactionState ?? contextMenuController?.interactionState
     }
 
     private func resetMouseState() {
+        let pointerInteractionState = pointerInteractionState
         let shouldCancelArmedGeometry = didArmDragGeometry && !didStartDrag
         mouseDownEvent = nil
         mouseDownPoint = nil
@@ -506,27 +499,14 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
         didStartDrag = false
         didArmDragGeometry = false
         isTrackingDragGesture = false
-        endPressTracking()
+        pointerInteractionState?.endPointerSession(self)
         if shouldCancelArmedGeometry {
             sidebarDragState?.cancelArmedDragGeometry()
         }
-        contextMenuController?.endPrimaryMouseTracking(self)
     }
 
     private var hasInFlightClickGesture: Bool {
         (isTrackingDragGesture && !didStartDrag) || middleMouseDownPoint != nil
-    }
-
-    private func beginPressTracking() {
-        guard let sourceID = itemConfiguration.sourceID else { return }
-        trackedPressedSourceID = sourceID
-        itemConfiguration.interactionState?.beginPressedSource(sourceID)
-    }
-
-    private func endPressTracking() {
-        guard let sourceID = trackedPressedSourceID else { return }
-        trackedPressedSourceID = nil
-        itemConfiguration.interactionState?.endPressedSource(sourceID)
     }
 
     private func performPrimaryAction(_ primaryAction: (() -> Void)?) {

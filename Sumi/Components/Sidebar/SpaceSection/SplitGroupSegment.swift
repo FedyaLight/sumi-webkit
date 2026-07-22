@@ -61,7 +61,7 @@ struct SplitGroupSegment: View {
     @ViewBuilder
     private var hoverTrackedContent: some View {
         if memberAction != nil {
-            segmentContent.sidebarDDGHover(
+            segmentContent.sidebarHover(
                 $isSegmentHovered,
                 isEnabled: isAppKitInteractionEnabled
             )
@@ -124,7 +124,7 @@ struct SplitGroupSegment: View {
         .sidebarZenActionOpacity(showsMemberAction)
         .allowsHitTesting(showsMemberAction && !freezesHoverState)
         .accessibilityHidden(!showsMemberAction)
-        .sidebarDDGHover(
+        .sidebarHover(
             $isActionHovered,
             isEnabled: showsMemberAction && isAppKitInteractionEnabled
         )
@@ -140,10 +140,7 @@ struct SplitGroupSegment: View {
     }
 
     private var showsMemberAction: Bool {
-        memberAction != nil && SidebarHoverChrome.displayHover(
-            isSegmentHovered,
-            freezesHoverState: freezesHoverState
-        )
+        memberAction != nil && isSegmentHovered
     }
 
     private var freezesHoverState: Bool {
@@ -151,10 +148,7 @@ struct SplitGroupSegment: View {
     }
 
     private var displayIsActionHovering: Bool {
-        SidebarHoverChrome.displayHover(
-            isActionHovered,
-            freezesHoverState: freezesHoverState
-        )
+        isActionHovered
     }
 
     private func performMemberAction() {

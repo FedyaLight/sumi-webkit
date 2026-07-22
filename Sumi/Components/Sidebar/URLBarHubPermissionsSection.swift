@@ -66,11 +66,7 @@ struct URLHubPermissionInlineRow: View {
                 Button("Open System Settings", action: onOpenSystemSettings)
             }
         }
-        .onHover { hovering in
-            guard canCycle else {
-                isHovered = false
-                return
-            }
+        .sidebarHover(isEnabled: canCycle) { hovering in
             withAnimation(.easeInOut(duration: 0.12)) {
                 isHovered = hovering
             }
@@ -270,11 +266,7 @@ struct HubSettingRow: View {
                 Button("Use Default", action: resetAction)
             }
         }
-        .onHover { hovering in
-            guard model.isInteractive && !model.isDisabled else {
-                isHovered = false
-                return
-            }
+        .sidebarHover(isEnabled: model.isInteractive && !model.isDisabled) { hovering in
             withAnimation(.easeInOut(duration: 0.12)) {
                 isHovered = hovering
             }

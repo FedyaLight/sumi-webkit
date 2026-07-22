@@ -97,7 +97,6 @@ enum SidebarTransientUIKind: String, CaseIterable {
     case sharingPicker
     case downloadsPopover
     case permissionPrompt
-    case drag
 
     var blocksSidebarDragSources: Bool {
         switch self {
@@ -106,39 +105,36 @@ enum SidebarTransientUIKind: String, CaseIterable {
         // Zen parity: the hover preview is passive chrome. It opens over the very
         // row the user presses to drag a collapsed folder, so blocking drag
         // sources here makes folder drag-and-drop unreachable.
-        case .folderPreview, .drag:
+        case .folderPreview:
             return false
         }
     }
 
     var pinsCollapsedSidebar: Bool {
-        switch self {
-        case .contextMenu, .dialog, .spaceCreation, .folderEditorPopover, .folderPreview, .spaceEditorPopover, .shortcutEditorPopover, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt, .drag:
-            return true
-        }
+        true
     }
 
     var freezesSidebarHoverState: Bool {
         switch self {
         case .folderPreview:
             return false
-        case .contextMenu, .dialog, .spaceCreation, .folderEditorPopover, .spaceEditorPopover, .shortcutEditorPopover, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt, .drag:
+        case .contextMenu, .dialog, .spaceCreation, .folderEditorPopover, .spaceEditorPopover, .shortcutEditorPopover, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt:
             return true
         }
     }
 
     /// Whether ending this UI needs the sidebar's AppKit input-repair pass.
     ///
-    /// That pass cancels primary mouse tracking on every row in the window, so
-    /// it drops any click that is mid-gesture when it runs. Only chrome that
-    /// nests an event loop or lives in its own window (menus, popovers, dialogs)
-    /// leaves the input graph needing repair; in-window SwiftUI never does, and
-    /// the hover preview opens and closes constantly under the pointer.
+    /// Recovery targets only the row that presented the transient UI. Chrome
+    /// that nests an event loop or lives in its own window (menus, popovers,
+    /// dialogs) can leave that row's native gesture armed; in-window SwiftUI
+    /// never does, and the hover preview opens and closes constantly under the
+    /// pointer.
     var requiresInputRecoveryOnEnd: Bool {
         switch self {
         case .folderPreview:
             return false
-        case .contextMenu, .dialog, .spaceCreation, .folderEditorPopover, .spaceEditorPopover, .shortcutEditorPopover, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt, .drag:
+        case .contextMenu, .dialog, .spaceCreation, .folderEditorPopover, .spaceEditorPopover, .shortcutEditorPopover, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt:
             return true
         }
     }
@@ -228,7 +224,6 @@ final class SidebarTransientSessionCoordinator {
     private struct SessionRecord {
         let token: SidebarTransientSessionToken
         let source: SidebarTransientPresentationSource
-        var handles: [SidebarTransientInteractionHandle]
         var conflictDismiss: (() -> Void)?
     }
 
@@ -322,7 +317,6 @@ final class SidebarTransientSessionCoordinator {
         kind: SidebarTransientUIKind,
         source: SidebarTransientPresentationSource,
         path: String,
-        handles: [SidebarTransientInteractionHandle] = [],
         conflictDismiss: (() -> Void)? = nil,
         preservePendingSource: Bool = false
     ) -> SidebarTransientSessionToken {
@@ -332,7 +326,6 @@ final class SidebarTransientSessionCoordinator {
             token: token,
             source: source,
             path: path,
-            handles: handles,
             conflictDismiss: conflictDismiss,
             preservePendingSource: preservePendingSource
         )
@@ -394,7 +387,6 @@ final class SidebarTransientSessionCoordinator {
         sessionOrder.removeAll { $0 == token.id }
         interactionState.endSession(kind: token.kind, tokenID: token.id)
 
-        record.handles.forEach { $0.disarm() }
         reconcileInteractionState()
         if token.kind.requiresInputRecoveryOnEnd {
             queueFinalRecovery(
@@ -422,7 +414,6 @@ final class SidebarTransientSessionCoordinator {
         token: SidebarTransientSessionToken,
         source: SidebarTransientPresentationSource,
         path _: String,
-        handles: [SidebarTransientInteractionHandle],
         conflictDismiss: (() -> Void)?,
         preservePendingSource: Bool
     ) {
@@ -431,7 +422,6 @@ final class SidebarTransientSessionCoordinator {
         sessions[token.id] = SessionRecord(
             token: token,
             source: source,
-            handles: handles,
             conflictDismiss: conflictDismiss
         )
         sessionOrder.removeAll { $0 == token.id }
@@ -556,7 +546,6 @@ final class SidebarTransientSessionCoordinator {
 
         let window = source.window
         sidebarRecoveryCoordinator.recover(in: window)
-        sidebarRecoveryCoordinator.recover(anchor: source.originOwnerView)
         var effectiveTier = recovery.tier
         var hardRehydrateReason = recovery.hardRehydrateReason
         let recoveryResult = recoverSidebarInteractiveOwners?(window, source) ?? .none
@@ -576,10 +565,6 @@ final class SidebarTransientSessionCoordinator {
 
         DispatchQueue.main.async { [weak self, weak window, source] in
             guard let self, let window else { return }
-
-            self.sidebarRecoveryCoordinator.recover(in: window)
-            self.sidebarRecoveryCoordinator.recover(anchor: source.originOwnerView)
-            _ = self.recoverSidebarInteractiveOwners?(window, source)
             self.restoreResponder(for: source, in: window)
         }
     }
@@ -588,7 +573,7 @@ final class SidebarTransientSessionCoordinator {
         switch kind {
         case .contextMenu:
             return pendingMenuActionRecoveryTier
-        case .dialog, .spaceCreation, .folderEditorPopover, .folderPreview, .spaceEditorPopover, .shortcutEditorPopover, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt, .drag:
+        case .dialog, .spaceCreation, .folderEditorPopover, .folderPreview, .spaceEditorPopover, .shortcutEditorPopover, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt:
             return .soft
         }
     }

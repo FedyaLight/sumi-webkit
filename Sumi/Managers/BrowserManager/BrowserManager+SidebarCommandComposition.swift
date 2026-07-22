@@ -28,10 +28,6 @@ extension BrowserManager {
         )
     }
 
-    func composeSidebarFolderPreviewPresentation() -> SidebarFolderPreviewPresentationService {
-        SidebarFolderPreviewPresentationService(settings: settingsAttachment)
-    }
-
     func composeSidebarShortcutEditorPresentation() -> SidebarShortcutEditorPresentationService {
         let presenter = ShortcutEditorPopoverPresenter(
             sidebarRecoveryCoordinator: sidebarHostRecoveryCoordinator

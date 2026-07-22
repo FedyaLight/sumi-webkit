@@ -62,7 +62,7 @@ struct SidebarBottomBar: View {
                     newSpaceButtonLabel
                     }
                 )
-                .buttonStyle(NavButtonStyle())
+                .buttonStyle(NavButtonStyle(hoverTracking: .sidebarSession))
                 .sidebarAppKitContextMenu(
                     surfaceKind: .button,
                     triggers: [.leftClick, .rightClick],
@@ -93,7 +93,7 @@ struct SidebarBottomBar: View {
                     newSpaceButtonLabel
                 }
                 .menuStyle(.button)
-                .buttonStyle(NavButtonStyle())
+                .buttonStyle(NavButtonStyle(hoverTracking: .sidebarSession))
             }
         }
     }

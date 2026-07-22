@@ -516,7 +516,7 @@
         "SumiTests/SidebarAudioHitExclusionTests",
         "SumiTests/SidebarConsumerBoundariesTests",
         "SumiTests/SidebarContextMenuLifecycleTests",
-        "SumiTests/SidebarDDGHoverTests",
+        "SumiTests/SidebarHoverTests",
         "SumiTests/SidebarDragMultiwindowSplitConversionTests",
         "SumiTests/SidebarDragPasteboardPayloadTests",
         "SumiTests/SidebarDragSourceInventoryTests",

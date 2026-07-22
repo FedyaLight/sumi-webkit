@@ -567,9 +567,7 @@ struct ExtensionActionButton: View {
         .help(actionTitle)
         .disabled(actionState.isEnabled == false)
         .opacity(actionState.isEnabled == false ? 0.55 : 1)
-        .onHover { state in
-            isHovering = state
-        }
+        .sidebarHover($isHovering)
         .simultaneousGesture(
             DragGesture(minimumDistance: 0)
                 .onChanged { _ in

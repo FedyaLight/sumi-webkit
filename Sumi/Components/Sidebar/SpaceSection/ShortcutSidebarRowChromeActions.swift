@@ -3,8 +3,8 @@
 //  Sumi
 //
 
-import SwiftUI
 import SumiDomain
+import SwiftUI
 
 extension ShortcutSidebarRowChrome {
     @ViewBuilder
@@ -41,7 +41,7 @@ extension ShortcutSidebarRowChrome {
             .opacity(showsActionButton ? 1 : 0)
             .allowsHitTesting(showsActionButton && !freezesHoverState)
             .accessibilityHidden(!showsActionButton)
-            .sidebarDDGHover($isActionHovered, isEnabled: showsActionButton && dragIsEnabled)
+            .sidebarHover($isActionHovered, isEnabled: showsActionButton && dragIsEnabled)
             .accessibilityIdentifier(trailingActionAccessibilityID ?? "shortcut-sidebar-action")
             .sidebarAppKitPrimaryAction(
                 isEnabled: showsActionButton && !freezesHoverState,
@@ -130,15 +130,15 @@ extension ShortcutSidebarRowChrome {
     }
 
     var displayIsHovering: Bool {
-        SidebarHoverChrome.displayHover(isRowHovered, freezesHoverState: freezesHoverState)
+        isRowHovered
     }
 
     var displayIsActionHovering: Bool {
-        SidebarHoverChrome.displayHover(isActionHovered, freezesHoverState: freezesHoverState)
+        isActionHovered
     }
 
     var displayIsResetHovering: Bool {
-        SidebarHoverChrome.displayHover(isResetHovered, freezesHoverState: freezesHoverState)
+        isResetHovered
     }
 
     var currentLoadedStoredFavicon: Image? {
@@ -256,6 +256,4 @@ extension ShortcutSidebarRowChrome {
         }
         return "\(accessibilityID)-\(suffix)"
     }
-
-
 }

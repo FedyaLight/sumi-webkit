@@ -286,9 +286,7 @@ struct URLBarSiteDataConfirmationButtonStyle: ButtonStyle {
             .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             .opacity(isEnabled ? 1 : 0.5)
             .scaleEffect(configuration.isPressed && isEnabled ? 0.98 : 1)
-            .onHover { hovering in
-                isHovering = hovering
-            }
+            .sidebarHover($isHovering)
     }
 
     private var foregroundColor: Color {
@@ -351,7 +349,7 @@ struct URLBarSiteDataEntryRow: View {
                 .foregroundStyle(URLBarHubNativeStyle.secondaryText)
                 .disabled(isDeleting)
                 .help("Delete data for \(entry.domain)")
-                .onHover { hovering in
+                .sidebarHover { hovering in
                     withAnimation(.easeInOut(duration: 0.12)) {
                         isDeleteHovered = hovering
                     }
@@ -408,7 +406,7 @@ struct URLBarSiteDataEntryRow: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(isTitleHovered ? URLBarHubNativeStyle.hoveredControlBackground : URLBarHubOverlayStyle.transparent)
         )
-        .onHover { hovering in
+        .sidebarHover { hovering in
             withAnimation(.easeInOut(duration: 0.12)) {
                 isTitleHovered = hovering
             }
@@ -442,7 +440,7 @@ struct URLBarSiteDataActionButton: View {
             .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         }
         .buttonStyle(.plain)
-        .onHover { hovering in
+        .sidebarHover { hovering in
             withAnimation(.easeInOut(duration: 0.12)) {
                 isHovered = hovering
             }
@@ -507,7 +505,7 @@ struct URLBarSiteDataIconButton: View {
         }
         .buttonStyle(.plain)
         .help(help)
-        .onHover { hovering in
+        .sidebarHover { hovering in
             withAnimation(.easeInOut(duration: 0.12)) {
                 isHovered = hovering
             }

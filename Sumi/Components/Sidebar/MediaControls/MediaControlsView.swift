@@ -183,7 +183,7 @@ private struct SumiBackgroundMediaCardView: View {
             routingPriorityBoost: Self.cardSurfaceRoutingPriorityBoost,
             action: onFocus
         )
-        .onHover { hovering in
+        .sidebarHover { hovering in
             withAnimation(Self.hoverExpandAnimation) {
                 isHovered = hovering
             }

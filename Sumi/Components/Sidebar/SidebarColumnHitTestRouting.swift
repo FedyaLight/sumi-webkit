@@ -13,7 +13,9 @@ enum SidebarColumnHitTestRouting {
         capturesOverlayBackgroundPointerEvents: Bool = false
     ) -> NSView? {
         if eventType == .leftMouseDragged || eventType == .leftMouseUp,
-           let owner = contextMenuController?.primaryMouseTrackingOwner(in: containerView.window) {
+           let owner = contextMenuController?.interactionState.activePointerSessionOwner(
+            in: containerView.window
+           ) {
             return owner
         }
 
@@ -35,7 +37,7 @@ enum SidebarColumnHitTestRouting {
         let originalOwner = originalHit?.nearestAncestor(of: SidebarInteractiveItemView.self)
         var originalOwnerPriority: Int?
         if let originalOwner,
-           contextMenuController?.prefersOriginalHitOwner(
+           contextMenuController?.interactionState.prefersOriginalHitOwner(
                originalOwner,
                at: windowPoint,
                in: containerView.window,
@@ -51,7 +53,7 @@ enum SidebarColumnHitTestRouting {
             )
         }
 
-        if let owner = contextMenuController?.interactiveOwner(
+        if let owner = contextMenuController?.interactionState.interactiveOwner(
             at: windowPoint,
             in: containerView.window,
             eventType: eventType,

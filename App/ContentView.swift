@@ -21,7 +21,7 @@ struct ContentView: View {
     private let providedWindowState: BrowserWindowState?
 
     @State private var defaultWindowState: BrowserWindowState
-    @StateObject private var sidebarDragState = SidebarDragState()
+    @StateObject private var sidebarDragState: SidebarDragState
 
     init(
         windowLifecycleHandler: any BrowserWindowLifecycleHandling,
@@ -44,11 +44,15 @@ struct ContentView: View {
         self.splitContext = splitContext
         self.themeChromeContext = themeChromeContext
         self.providedWindowState = windowState
-        _defaultWindowState = State(
-            initialValue: BrowserWindowState(
-                initialWorkspaceTheme: initialWorkspaceTheme,
-                awaitsInitialSessionResolution: true,
-                sidebarRecoveryCoordinator: sidebarContext.hostRecoveryCoordinator
+        let defaultWindowState = BrowserWindowState(
+            initialWorkspaceTheme: initialWorkspaceTheme,
+            awaitsInitialSessionResolution: true,
+            sidebarRecoveryCoordinator: sidebarContext.hostRecoveryCoordinator
+        )
+        _defaultWindowState = State(initialValue: defaultWindowState)
+        _sidebarDragState = StateObject(
+            wrappedValue: SidebarDragState(
+                interactionState: (windowState ?? defaultWindowState).sidebarInteractionState
             )
         )
     }

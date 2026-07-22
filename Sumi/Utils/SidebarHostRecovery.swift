@@ -1,23 +1,5 @@
 import AppKit
 
-@MainActor
-protocol SidebarTransientInteractionDisarmable: AnyObject {
-    func setTransientInteractionEnabled(_ isEnabled: Bool)
-}
-
-@MainActor
-final class SidebarTransientInteractionHandle {
-    weak var view: NSView?
-
-    func attach(_ view: NSView) {
-        self.view = view
-    }
-
-    func disarm() {
-        (view as? SidebarTransientInteractionDisarmable)?.setTransientInteractionEnabled(false)
-    }
-}
-
 // MARK: - Hit-testing recovery after transient AppKit UI (NSMenu, NSPopover)
 
 @MainActor

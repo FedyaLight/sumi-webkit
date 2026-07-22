@@ -32,7 +32,7 @@ struct PinnedTabView: View {
     var accentSourceURL: URL?
     var accentSourcePartition: SumiFaviconPartition?
     var faviconImageReader: (any BrowserFaviconImageReading)?
-    var essentialBackdropReader: (any BrowserEssentialBackdropReading)? = nil
+    var essentialBackdropReader: (any BrowserEssentialBackdropReading)?
 
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) var sumiSettings
@@ -82,7 +82,7 @@ struct PinnedTabView: View {
                         .allowsHitTesting(shouldShowActionButton && !freezesHoverState)
                         .accessibilityHidden(!shouldShowActionButton)
                         .accessibilityIdentifier(actionAccessibilityID ?? "pinned-tile-action")
-                        .sidebarDDGHover(
+                        .sidebarHover(
                             $isActionHovered,
                             isEnabled: shouldShowActionButton && isAppKitInteractionEnabled
                         )
@@ -122,7 +122,7 @@ struct PinnedTabView: View {
         .onTapGesture(perform: action)
         .accessibilityIdentifier(accessibilityID ?? "pinned-tile")
         .accessibilityValue(presentationState.isSelected ? "selected" : "not selected")
-        .sidebarDDGHover($isTileHovered, isEnabled: isAppKitInteractionEnabled)
+        .sidebarHover($isTileHovered, isEnabled: isAppKitInteractionEnabled)
         .sidebarZenPressEffect(sourceID: tileSourceID, isEnabled: isAppKitInteractionEnabled)
         .sidebarAppKitContextMenu(
             isInteractionEnabled: isAppKitInteractionEnabled,
@@ -199,11 +199,11 @@ struct PinnedTabView: View {
     }
 
     private var displayIsHovered: Bool {
-        SidebarHoverChrome.displayHover(isTileHovered, freezesHoverState: freezesHoverState)
+        isTileHovered
     }
 
     private var displayIsActionHovering: Bool {
-        SidebarHoverChrome.displayHover(isActionHovered, freezesHoverState: freezesHoverState)
+        isActionHovered
     }
 
     private var actionAccessibilityID: String? {
@@ -412,7 +412,7 @@ private struct PinnedTileAudioButton: View {
                             && !windowState.sidebarInteractionState.freezesSidebarHoverState
                     )
                 )
-                .sidebarDDGHover($isHovering, isEnabled: isAppKitInteractionEnabled)
+                .sidebarHover($isHovering, isEnabled: isAppKitInteractionEnabled)
                 .accessibilityIdentifier(accessibilityID ?? "pinned-tile-audio")
                 .sidebarAppKitPrimaryAction(
                     isEnabled: !windowState.sidebarInteractionState.freezesSidebarHoverState,
@@ -426,9 +426,6 @@ private struct PinnedTileAudioButton: View {
     }
 
     private var displayIsHovering: Bool {
-        SidebarHoverChrome.displayHover(
-            isHovering,
-            freezesHoverState: windowState.sidebarInteractionState.freezesSidebarHoverState
-        )
+        isHovering
     }
 }

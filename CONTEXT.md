@@ -36,6 +36,14 @@ _Avoid_: Pinned backdrop, global launcher gradient
 One ordered sidebar identity presented and moved as a whole. A regular tab, launcher, folder, or Split Group each occupies one visual position regardless of the number of durable records behind it.
 _Avoid_: Render row record, split member slot
 
+**Sidebar Pointer Session**:
+The single exclusive pointer interaction for one Sidebar Visual Item in a window, from press through activation or drag until completion, cancellation, replacement, or disappearance. Starting a session cancels the previous one. During drag, ordinary hover is absent; when the session ends, hover is resolved once from the pointer's current position.
+_Avoid_: Row click state, sticky hover, parallel drag flag
+
+**Sidebar Hover Session**:
+The window-local authority that derives hover for every registered sidebar region from current geometry. Native enter/exit events request reconciliation but never own truth; drag and transient sessions suspend hover once at this authority. Nested regions may both be hovered when geometry contains the pointer.
+_Avoid_: Paired enter/exit truth, row-owned hover lifecycle, continuous mouse-move polling
+
 **Presented Drop Intent**:
 The exact sidebar destination currently communicated by the visible drop gap. A completed drop commits that same destination even if rendering the gap changes surrounding geometry.
 _Avoid_: Recomputed drop target, approximate hover slot

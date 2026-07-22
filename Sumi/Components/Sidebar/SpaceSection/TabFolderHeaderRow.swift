@@ -14,7 +14,7 @@ struct TabFolderHeaderRow: View {
     var dropHighlightHorizontalBleed: CGFloat = 8
     /// Zen parity: collapsed folders with sticky rows offer an unload/reset
     /// affordance on hover. Nil hides the affordance entirely.
-    var onResetProjection: (() -> Void)? = nil
+    var onResetProjection: (() -> Void)?
 
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
@@ -28,10 +28,7 @@ struct TabFolderHeaderRow: View {
     }
 
     private var displayIsHovering: Bool {
-        SidebarHoverChrome.displayHover(
-            isHovered,
-            freezesHoverState: windowState.sidebarInteractionState.freezesSidebarHoverState
-        )
+        isHovered
     }
 
     var body: some View {
@@ -64,7 +61,7 @@ struct TabFolderHeaderRow: View {
             drawsSelectionShadow: false
         )
         .contentShape(RoundedRectangle(cornerRadius: sumiSettings.resolvedCornerRadius(12), style: .continuous))
-        .sidebarDDGHover($isHovered, isEnabled: isInteractive)
+        .sidebarHover($isHovered, isEnabled: isInteractive)
     }
 
     private func resetProjectionButton(action: @escaping () -> Void) -> some View {
@@ -86,7 +83,7 @@ struct TabFolderHeaderRow: View {
         .accessibilityHidden(!showsButton)
         .accessibilityLabel("Unload folder tabs")
         .help("Unload tabs and collapse")
-        .sidebarDDGHover($isResetHovered, isEnabled: showsButton)
+        .sidebarHover($isResetHovered, isEnabled: showsButton)
         .sidebarAppKitPrimaryAction(
             isEnabled: showsButton,
             isInteractionEnabled: isInteractive,

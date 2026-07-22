@@ -102,9 +102,7 @@ struct URLBarHubControlsView: View {
             .environment(windowState)
         }
         .contentShape(Rectangle())
-        .onHover { hovering in
-            isHoveringExtensions = hovering
-        }
+        .sidebarHover($isHoveringExtensions)
     }
 
     private var topActionRow: some View {
@@ -392,7 +390,7 @@ private struct HubSectionHeader: View {
                     .animation(.easeInOut(duration: 0.15), value: isSectionHovered)
             }
         }
-        .onHover { isHovering = $0 }
+        .sidebarHover($isHovering)
     }
 }
 
@@ -429,7 +427,7 @@ private struct SumiHubHeaderButton: View {
         .disabled(!isEnabled)
         .opacity(isEnabled ? 1 : URLBarHubNativeStyle.popoverActionDisabledAlpha)
         .help(help)
-        .onHover { hovering in
+        .sidebarHover { hovering in
             withAnimation(.easeInOut(duration: 0.12)) {
                 isHovered = hovering
             }

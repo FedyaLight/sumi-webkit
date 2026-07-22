@@ -190,7 +190,7 @@ struct SpaceTitle: View {
                     onTogglePinnedContent()
                 }
         }
-        .sidebarDDGHover($isRowHovered, isEnabled: isAppKitInteractionEnabled)
+        .sidebarHover($isRowHovered, isEnabled: isAppKitInteractionEnabled)
         .onAppear {
             emojiManager.sidebarRecoveryCoordinator =
                 windowState.sidebarContextMenuController.sidebarRecoveryCoordinator
@@ -283,7 +283,7 @@ struct SpaceTitle: View {
                 .font(.body.weight(.semibold))
                 .labelStyle(.iconOnly)
         }
-        .buttonStyle(NavButtonStyle(size: .small))
+        .buttonStyle(NavButtonStyle(size: .small, hoverTracking: .sidebarSession))
         .opacity(displayIsHovering ? 1.0 : 0.0)
         .accessibilityIdentifier("space-title-menu-button-\(space.id.uuidString)")
         .sidebarAppKitContextMenu(
@@ -319,12 +319,8 @@ struct SpaceTitle: View {
         sumiSettings.resolvedCornerRadius(SpaceTitleRowLayout.defaultCornerRadius)
     }
 
-    private var freezesHoverState: Bool {
-        windowState.sidebarInteractionState.freezesSidebarHoverState
-    }
-
     private var displayIsHovering: Bool {
-        SidebarHoverChrome.displayHover(isRowHovered, freezesHoverState: freezesHoverState)
+        isRowHovered
     }
 
     private var leadingPresentation: SpaceTitleLeadingPresentation {

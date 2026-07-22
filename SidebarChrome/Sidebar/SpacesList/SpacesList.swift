@@ -78,7 +78,10 @@ struct SpacesList: View {
         }
         .onChange(of: visibleSpaces.map(\.id)) { _, _ in
             if reorderState.isDragging {
-                windowState.sidebarInteractionState.syncSidebarItemDrag(false)
+                windowState.sidebarInteractionState.setDragActive(
+                    false,
+                    source: .spaceReorder
+                )
             }
             reorderState.reset()
             hoverLabel.suppress()
@@ -86,7 +89,10 @@ struct SpacesList: View {
         }
         .onDisappear {
             if reorderState.isDragging {
-                windowState.sidebarInteractionState.syncSidebarItemDrag(false)
+                windowState.sidebarInteractionState.setDragActive(
+                    false,
+                    source: .spaceReorder
+                )
             }
             reorderState.reset()
             hoverLabel.suppress()
@@ -145,7 +151,7 @@ struct SpacesList: View {
             }
         }
         .coordinateSpace(name: SpaceReorderCoordinateSpace.name)
-        .onHover { hovering in
+        .sidebarHover { hovering in
             guard !hovering else { return }
             hoverLabel.suppress()
         }
@@ -218,10 +224,16 @@ struct SpacesList: View {
             state: $reorderState,
             onBeginDrag: {
                 hoverLabel.suppress()
-                windowState.sidebarInteractionState.syncSidebarItemDrag(true)
+                windowState.sidebarInteractionState.setDragActive(
+                    true,
+                    source: .spaceReorder
+                )
             },
             onEndDrag: {
-                windowState.sidebarInteractionState.syncSidebarItemDrag(false)
+                windowState.sidebarInteractionState.setDragActive(
+                    false,
+                    source: .spaceReorder
+                )
             },
             onCommit: { move in
                 _ = spaceLifecycle.reorderSpace(move.id, to: move.targetIndex)
@@ -255,5 +267,4 @@ struct SpacesList: View {
             .zIndex(2)
         }
     }
-
 }

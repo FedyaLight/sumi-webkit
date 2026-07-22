@@ -3,8 +3,8 @@
 //  Sumi
 //
 
-import SwiftUI
 import SumiDomain
+import SwiftUI
 
 struct ShortcutSidebarRowChrome: View {
     let pin: ShortcutPin
@@ -46,7 +46,7 @@ struct ShortcutSidebarRowChrome: View {
                         isEnabled: dragIsEnabled && !freezesHoverState
                     )
                 )
-                .sidebarDDGHover($isResetHovered, isEnabled: dragIsEnabled)
+                .sidebarHover($isResetHovered, isEnabled: dragIsEnabled)
                 .accessibilityIdentifier(resetActionAccessibilityID ?? "shortcut-sidebar-reset")
                 .accessibilityLabel("Back to pinned URL")
                 .help("Back to pinned URL")
@@ -103,7 +103,7 @@ struct ShortcutSidebarRowChrome: View {
             isVisible: drawsRowSurface,
             drawsSelectionShadow: runtimeAffordance.isSelected
         )
-        .sidebarDDGHover($isRowHovered, isEnabled: dragIsEnabled)
+        .sidebarHover($isRowHovered, isEnabled: dragIsEnabled)
         .onChange(of: isRowHovered) { _, hovering in
             if !hovering {
                 suppressRegularActionUntilHoverExit = false
@@ -143,5 +143,4 @@ struct ShortcutSidebarRowChrome: View {
         .accessibilityValue(runtimeAffordance.isSelected ? "selected" : "not selected")
         .accessibilityAddTraits(runtimeAffordance.isSelected ? .isSelected : [])
     }
-
 }

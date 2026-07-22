@@ -108,150 +108,43 @@ extension EnvironmentValues {
 }
 
 private struct NativeSurfaceHoverBridge: NSViewRepresentable {
+    typealias Coordinator = SidebarHoverBindingCoordinator
+
     @Binding var isHovered: Bool
+    let session: SidebarHoverSession
     let isEnabled: Bool
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
     }
 
-    func makeNSView(context: Context) -> NativeSurfaceHoverTrackingView {
-        let view = NativeSurfaceHoverTrackingView(frame: .zero)
+    func makeNSView(context: Context) -> SidebarHoverTrackingView {
+        let view = SidebarHoverTrackingView(frame: .zero)
         update(view, coordinator: context.coordinator)
         return view
     }
 
-    func updateNSView(_ nsView: NativeSurfaceHoverTrackingView, context: Context) {
+    func updateNSView(_ nsView: SidebarHoverTrackingView, context: Context) {
         update(nsView, coordinator: context.coordinator)
     }
 
-    static func dismantleNSView(_ nsView: NativeSurfaceHoverTrackingView, coordinator: Coordinator) {
-        coordinator.detach(from: nsView)
-        nsView.onHoverChanged = nil
-        nsView.setHoverTrackingEnabled(false)
+    static func dismantleNSView(
+        _ nsView: SidebarHoverTrackingView,
+        coordinator: Coordinator
+    ) {
+        coordinator.detach()
     }
 
-    private func update(_ view: NativeSurfaceHoverTrackingView, coordinator: Coordinator) {
-        coordinator.updateBinding($isHovered)
-        coordinator.attach(view)
-        view.setHoverTrackingEnabled(isEnabled)
-    }
-
-    @MainActor
-    final class Coordinator {
-        private var isHovered: Binding<Bool>?
-        private weak var view: NativeSurfaceHoverTrackingView?
-
-        func updateBinding(_ isHovered: Binding<Bool>) {
-            self.isHovered = isHovered
-        }
-
-        func attach(_ view: NativeSurfaceHoverTrackingView) {
-            guard self.view !== view else { return }
-
-            self.view = view
-            view.onHoverChanged = { [weak self] hovering in
-                self?.setBindingIfNeeded(hovering)
-            }
-        }
-
-        func detach(from view: NativeSurfaceHoverTrackingView) {
-            guard self.view === view else { return }
-            self.view = nil
-            isHovered = nil
-        }
-
-        private func setBindingIfNeeded(_ hovering: Bool) {
-            guard let isHovered, isHovered.wrappedValue != hovering else { return }
-            isHovered.wrappedValue = hovering
-        }
-    }
-}
-
-@MainActor
-private final class NativeSurfaceHoverTrackingView: NSView {
-    var onHoverChanged: ((Bool) -> Void)?
-
-    private var trackingArea: NSTrackingArea?
-    private var hoverTrackingEnabled = true
-    private var reportedHover = false
-
-    override var isOpaque: Bool {
-        false
-    }
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        nil
-    }
-
-    override func viewWillMove(toWindow newWindow: NSWindow?) {
-        if newWindow == nil {
-            setReportedHover(false, publish: false)
-        }
-        super.viewWillMove(toWindow: newWindow)
-    }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        removeHoverTrackingArea()
-
-        guard hoverTrackingEnabled else { return }
-
-        let trackingArea = NSTrackingArea(
-            rect: .zero,
-            options: [
-                .mouseEnteredAndExited,
-                .mouseMoved,
-                .activeInActiveApp,
-                .inVisibleRect,
-            ],
-            owner: self,
-            userInfo: nil
+    private func update(
+        _ view: SidebarHoverTrackingView,
+        coordinator: Coordinator
+    ) {
+        coordinator.update(
+            view: view,
+            session: session,
+            isHovered: $isHovered,
+            isEnabled: isEnabled
         )
-        self.trackingArea = trackingArea
-        addTrackingArea(trackingArea)
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        guard hoverTrackingEnabled else { return }
-        setReportedHover(true)
-    }
-
-    override func mouseMoved(with event: NSEvent) {
-        guard hoverTrackingEnabled else { return }
-        setReportedHover(true)
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        setReportedHover(false)
-    }
-
-    func setHoverTrackingEnabled(_ enabled: Bool) {
-        guard hoverTrackingEnabled != enabled else { return }
-
-        hoverTrackingEnabled = enabled
-        if enabled {
-            updateTrackingAreas()
-        } else {
-            removeHoverTrackingArea()
-            setReportedHover(false, publish: false)
-        }
-    }
-
-    private func setReportedHover(_ hovering: Bool, publish: Bool = true) {
-        guard reportedHover != hovering else { return }
-
-        reportedHover = hovering
-        if publish {
-            onHoverChanged?(hovering)
-        }
-    }
-
-    private func removeHoverTrackingArea() {
-        if let trackingArea {
-            removeTrackingArea(trackingArea)
-            self.trackingArea = nil
-        }
     }
 }
 
@@ -259,6 +152,7 @@ private struct NativeSurfaceHoverModifier: ViewModifier {
     @Binding var isHovered: Bool
     let isEnabled: Bool
 
+    @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.nativeSurfaceHoverUpdatesEnabled) private var hoverUpdatesEnabled
 
     private var effectiveIsEnabled: Bool {
@@ -266,23 +160,15 @@ private struct NativeSurfaceHoverModifier: ViewModifier {
     }
 
     func body(content: Content) -> some View {
-        content
-            .overlay {
-                NativeSurfaceHoverBridge(
-                    isHovered: $isHovered,
-                    isEnabled: effectiveIsEnabled
-                )
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-            }
-            .onChange(of: effectiveIsEnabled) { _, enabled in
-                if !enabled {
-                    isHovered = false
-                }
-            }
-            .onDisappear {
-                isHovered = false
-            }
+        content.overlay {
+            NativeSurfaceHoverBridge(
+                isHovered: $isHovered,
+                session: windowState.sidebarInteractionState.hoverSession,
+                isEnabled: effectiveIsEnabled
+            )
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
     }
 }
 

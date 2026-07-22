@@ -426,7 +426,7 @@ private struct FolderGlyphGridCell: View {
             .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
         }
         .buttonStyle(.plain)
-        .onHover { hovering = $0 }
+        .sidebarHover($hovering)
         .help(entry.displayName)
         .accessibilityLabel(entry.displayName)
     }
@@ -465,7 +465,7 @@ private struct FolderGlyphResetGridCell: View {
                 .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
         }
         .buttonStyle(.plain)
-        .onHover { hovering = $0 }
+        .sidebarHover($hovering)
         .help("Default Folder Icon")
         .accessibilityLabel("Default Folder Icon")
     }

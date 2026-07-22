@@ -126,6 +126,38 @@ final class SidebarZenMotionTests: XCTestCase {
         XCTAssertEqual(secondActivationCount, 0)
     }
 
+    func testNewPointerSessionCancelsPreviousFoldersInFlightAction() {
+        let state = SidebarInteractionState()
+        let coordinator = SidebarTransientSessionCoordinator(
+            windowID: UUID(),
+            interactionState: state
+        )
+        let controller = SidebarContextMenuController(
+            interactionState: state,
+            transientSessionCoordinator: coordinator
+        )
+        var folderToggleCount = 0
+        let folderView = makeInteractiveItemView(
+            sourceID: "folder-header-test",
+            state: state
+        ) {
+            folderToggleCount += 1
+        }
+        let childView = makeInteractiveItemView(
+            sourceID: "folder-child-test",
+            state: state
+        )
+        folderView.contextMenuController = controller
+        childView.contextMenuController = controller
+
+        folderView.mouseDown(with: mouseEvent(.leftMouseDown))
+        childView.mouseDown(with: mouseEvent(.leftMouseDown))
+        folderView.mouseUp(with: mouseEvent(.leftMouseUp))
+
+        XCTAssertEqual(folderToggleCount, 0)
+        XCTAssertEqual(state.activePressedSourceID, "folder-child-test")
+    }
+
     func testBridgeUpdateWithoutLocalGestureDoesNotCancelAnotherRowsArmedDrag() {
         let dragState = SidebarDragState()
         dragState.armInternalDragGeometry(scope: nil)
@@ -185,6 +217,90 @@ final class SidebarZenMotionTests: XCTestCase {
 
         XCTAssertTrue(state.freezesSidebarHoverState)
         XCTAssertFalse(state.allowsFolderPreviewHoverTracking)
+    }
+
+    func testVisualItemDragSynchronizesHoverSuppressionWithoutDeferredWork() {
+        let state = SidebarInteractionState()
+        let dragState = SidebarDragState(interactionState: state)
+
+        dragState.beginExternalDragSession(itemId: UUID())
+
+        XCTAssertTrue(state.freezesSidebarHoverState)
+        XCTAssertFalse(state.allowsFolderPreviewHoverTracking)
+
+        dragState.resetInteractionState()
+
+        XCTAssertFalse(state.freezesSidebarHoverState)
+        XCTAssertTrue(state.allowsFolderPreviewHoverTracking)
+    }
+
+    func testIndependentDragSourcesCannotClearEachOthersHoverSuppression() {
+        let state = SidebarInteractionState()
+        let dragState = SidebarDragState(interactionState: state)
+
+        state.setDragActive(true, source: .spaceReorder)
+        dragState.beginExternalDragSession(itemId: UUID())
+        dragState.resetInteractionState()
+
+        XCTAssertTrue(state.freezesSidebarHoverState)
+
+        state.setDragActive(false, source: .spaceReorder)
+
+        XCTAssertFalse(state.freezesSidebarHoverState)
+    }
+
+    func testRecoveryForOldSourceDoesNotCancelNewPointerSession() {
+        let state = SidebarInteractionState()
+        let coordinator = SidebarTransientSessionCoordinator(
+            windowID: UUID(),
+            interactionState: state
+        )
+        let controller = SidebarContextMenuController(
+            interactionState: state,
+            transientSessionCoordinator: coordinator
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 240, height: 160),
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        let container = NSView(frame: window.contentView?.bounds ?? .zero)
+        let oldSource = makeInteractiveItemView(
+            sourceID: "folder-header-old",
+            state: state
+        )
+        let newSource = makeInteractiveItemView(
+            sourceID: "folder-child-current",
+            state: state
+        )
+        window.contentView = container
+        container.addSubview(oldSource)
+        container.addSubview(newSource)
+        oldSource.contextMenuController = controller
+        newSource.contextMenuController = controller
+        let source = SidebarTransientPresentationSource(
+            windowID: coordinator.windowID,
+            window: window,
+            originOwnerView: oldSource,
+            coordinator: coordinator
+        )
+        defer {
+            oldSource.prepareForDismantle()
+            newSource.prepareForDismantle()
+            window.contentView = nil
+            window.close()
+        }
+
+        newSource.mouseDown(with: mouseEvent(.leftMouseDown))
+        let result = controller.recoverInteractiveOwners(
+            in: window,
+            source: source
+        )
+
+        XCTAssertTrue(result.sourceOwnerResolved)
+        XCTAssertEqual(state.activePressedSourceID, "folder-child-current")
     }
 
     func testStartingOtherTransientDismissesFolderPreview() {

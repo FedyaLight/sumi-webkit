@@ -3,8 +3,8 @@
 //  Sumi
 //
 
-import SwiftUI
 import SumiDomain
+import SwiftUI
 
 struct LauncherAudioButton: View {
     @ObservedObject var tab: Tab
@@ -49,7 +49,7 @@ struct LauncherAudioButton: View {
                 )
                 .frame(width: 22, height: 22)
                 .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .sidebarDDGHover($isHovering, isEnabled: isAppKitInteractionEnabled)
+                .sidebarHover($isHovering, isEnabled: isAppKitInteractionEnabled)
                 .accessibilityIdentifier(accessibilityID ?? "shortcut-sidebar-audio")
                 .sidebarAppKitPrimaryAction(
                     isEnabled: !windowState.sidebarInteractionState.freezesSidebarHoverState,
@@ -63,9 +63,6 @@ struct LauncherAudioButton: View {
     }
 
     private var displayIsHovering: Bool {
-        SidebarHoverChrome.displayHover(
-            isHovering,
-            freezesHoverState: windowState.sidebarInteractionState.freezesSidebarHoverState
-        )
+        isHovering
     }
 }

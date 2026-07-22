@@ -38,9 +38,7 @@ struct SpaceSeparator: View {
                         .combined(with: .opacity)
                         .animation(.smooth(duration: 0.08))
                 )
-                .onHover { state in
-                    isClearHovered = state
-                }
+                .sidebarHover($isClearHovered)
             }
         }
         .frame(height: 2)

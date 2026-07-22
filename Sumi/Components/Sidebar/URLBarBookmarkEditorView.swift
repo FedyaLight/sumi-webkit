@@ -310,7 +310,7 @@ private struct URLBarBookmarkFooterButtonStyle: ButtonStyle {
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             .opacity(isEnabled ? 1 : URLBarHubNativeStyle.popoverActionDisabledAlpha)
             .scaleEffect(configuration.isPressed && isEnabled ? 0.98 : 1)
-            .onHover { isHovering = $0 }
+            .sidebarHover($isHovering)
     }
 
     private var foregroundColor: Color {

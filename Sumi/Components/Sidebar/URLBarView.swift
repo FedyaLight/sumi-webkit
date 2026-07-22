@@ -123,7 +123,7 @@ struct URLBarView: View {
                     ? "sidebar-urlbar"
                     : "topbar-urlbar"
             )
-            .onHover { hovering in
+            .sidebarHover { hovering in
                 withAnimation(.easeInOut(duration: 0.1)) {
                     isHovering = hovering
                 }

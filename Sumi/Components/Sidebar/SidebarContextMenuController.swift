@@ -6,236 +6,6 @@
 import AppKit
 import SwiftUI
 
-@MainActor
-@Observable
-final class SidebarInteractionState {
-    private var activeSessionTokenIDsByKind: [SidebarTransientUIKind: Set<UUID>] = [:]
-    private var dragTokenID: UUID?
-    private(set) var activePressedSourceID: String?
-
-    var freezesSidebarHoverState: Bool {
-        activeKinds.contains(where: \.freezesSidebarHoverState)
-    }
-
-    var allowsFolderPreviewHoverTracking: Bool {
-        activeKinds.allSatisfy { $0 == .folderPreview }
-    }
-
-    var allowsSidebarSwipeCapture: Bool {
-        activeKinds.isEmpty
-    }
-
-    var allowsSidebarDragSourceHitTesting: Bool {
-        activeKinds.contains(where: \.blocksSidebarDragSources) == false
-    }
-
-    func beginPressedSource(_ sourceID: String?) {
-        guard let sourceID else { return }
-        activePressedSourceID = sourceID
-    }
-
-    func endPressedSource(_ sourceID: String?) {
-        guard activePressedSourceID != nil else { return }
-        if let sourceID, activePressedSourceID != sourceID {
-            return
-        }
-        activePressedSourceID = nil
-    }
-
-    func beginSession(kind: SidebarTransientUIKind, tokenID: UUID) {
-        var tokens = activeSessionTokenIDsByKind[kind] ?? []
-        tokens.insert(tokenID)
-        activeSessionTokenIDsByKind[kind] = tokens
-    }
-
-    func endSession(kind: SidebarTransientUIKind, tokenID: UUID) {
-        guard var tokens = activeSessionTokenIDsByKind[kind] else { return }
-        tokens.remove(tokenID)
-        if tokens.isEmpty {
-            activeSessionTokenIDsByKind.removeValue(forKey: kind)
-        } else {
-            activeSessionTokenIDsByKind[kind] = tokens
-        }
-    }
-
-    func syncSidebarItemDrag(_ isDragging: Bool) {
-        if isDragging {
-            guard dragTokenID == nil else { return }
-            activePressedSourceID = nil
-            let tokenID = UUID()
-            dragTokenID = tokenID
-            beginSession(kind: .drag, tokenID: tokenID)
-            return
-        }
-
-        guard let dragTokenID else { return }
-        endSession(kind: .drag, tokenID: dragTokenID)
-        self.dragTokenID = nil
-    }
-
-    func reconcileSessions(_ activeTokenIDsByKind: [SidebarTransientUIKind: Set<UUID>]) {
-        activeSessionTokenIDsByKind = activeTokenIDsByKind.filter { !$0.value.isEmpty }
-        if let dragTokenID,
-           activeSessionTokenIDsByKind[.drag]?.contains(dragTokenID) != true {
-            self.dragTokenID = nil
-        }
-        if freezesSidebarHoverState {
-            activePressedSourceID = nil
-        }
-    }
-
-    private var activeKinds: Set<SidebarTransientUIKind> {
-        Set(activeSessionTokenIDsByKind.keys)
-    }
-}
-
-@MainActor
-final class SidebarInteractiveOwnerRegistry {
-    private struct WeakOwner {
-        weak var view: SidebarInteractiveItemView?
-    }
-
-    private var ownersByID: [ObjectIdentifier: WeakOwner] = [:]
-    private var ownerOrder: [ObjectIdentifier] = []
-
-    func register(_ owner: SidebarInteractiveItemView) {
-        let id = ObjectIdentifier(owner)
-        ownersByID[id] = WeakOwner(view: owner)
-        ownerOrder.removeAll { $0 == id }
-        ownerOrder.append(id)
-        pruneStaleOwners()
-    }
-
-    func unregister(_ owner: SidebarInteractiveItemView) {
-        let id = ObjectIdentifier(owner)
-        ownersByID[id] = nil
-        ownerOrder.removeAll { $0 == id }
-    }
-
-    func owner(
-        at windowPoint: NSPoint,
-        in window: NSWindow?,
-        eventType: NSEvent.EventType?,
-        eventButtonNumber: Int? = nil,
-        hostedSidebarView: NSView? = nil
-    ) -> SidebarInteractiveItemView? {
-        pruneStaleOwners()
-
-        var bestCandidate: (
-            owner: SidebarInteractiveItemView,
-            priority: Int,
-            depth: Int,
-            orderIndex: Int
-        )?
-
-        for (orderIndex, id) in ownerOrder.enumerated() {
-            guard let owner = ownersByID[id]?.view,
-                  isLive(owner, in: window, hostedSidebarView: hostedSidebarView)
-            else { continue }
-
-            let localPoint = owner.convert(windowPoint, from: nil)
-            guard owner.bounds.contains(localPoint),
-                  owner.shouldCaptureInteraction(
-                    at: localPoint,
-                    eventType: eventType,
-                    eventButtonNumber: eventButtonNumber
-                  )
-            else { continue }
-
-            let priority = owner.routingPriority(
-                at: localPoint,
-                eventType: eventType,
-                eventButtonNumber: eventButtonNumber
-            )
-            let depth = owner.sidebarOwnerHierarchyDepth
-            if let current = bestCandidate {
-                if priority > current.priority
-                    || (priority == current.priority && depth > current.depth)
-                    || (priority == current.priority && depth == current.depth && orderIndex > current.orderIndex) {
-                    bestCandidate = (owner, priority, depth, orderIndex)
-                }
-            } else {
-                bestCandidate = (owner, priority, depth, orderIndex)
-            }
-        }
-
-        return bestCandidate?.owner
-    }
-
-    @discardableResult
-    func recoverOwners(
-        in window: NSWindow?,
-        sourceMetadata: SidebarInteractiveOwnerRecoveryMetadata? = nil
-    ) -> SidebarInteractiveOwnerRecoveryResult {
-        pruneStaleOwners()
-
-        var sourceOwnerResolved = false
-        for id in ownerOrder {
-            guard let owner = ownersByID[id]?.view,
-                  isLive(owner, in: window)
-            else { continue }
-
-            owner.cancelPrimaryMouseTracking()
-            owner.setTransientInteractionEnabled(true)
-            SidebarTransientUIHitTestingRecovery.invalidateLayoutChain(from: owner)
-
-            if !sourceOwnerResolved,
-               let sourceMetadata,
-               owner.recoveryResolutionReason(matching: sourceMetadata) != nil {
-                sourceOwnerResolved = true
-            }
-        }
-
-        return SidebarInteractiveOwnerRecoveryResult(
-            sourceOwnerResolved: sourceOwnerResolved
-        )
-    }
-
-    private func pruneStaleOwners() {
-        ownerOrder.removeAll { id in
-            guard let owner = ownersByID[id]?.view,
-                  owner.window != nil,
-                  owner.superview != nil
-            else {
-                ownersByID[id] = nil
-                return true
-            }
-            return false
-        }
-    }
-
-    private func isLive(
-        _ owner: SidebarInteractiveItemView,
-        in window: NSWindow?,
-        hostedSidebarView: NSView? = nil
-    ) -> Bool {
-        guard owner.window != nil,
-              owner.window === window,
-              owner.superview != nil,
-              !owner.isHiddenOrHasHiddenAncestor
-        else {
-            return false
-        }
-        if let hostedSidebarView,
-           owner.isDescendant(of: hostedSidebarView) != true {
-            return false
-        }
-        return true
-    }
-}
-
-private extension NSView {
-    var sidebarOwnerHierarchyDepth: Int {
-        var depth = 0
-        var current = superview
-        while let view = current {
-            depth += 1
-            current = view.superview
-        }
-        return depth
-    }
-}
-
 enum SidebarContextMenuPopupReturnPolicy {
     static func finalizationReason(
         didBecomeVisible: Bool,
@@ -261,9 +31,7 @@ final class SidebarContextMenuController {
     weak var windowState: BrowserWindowState?
     weak var settings: SumiSettingsService?
 
-    private let interactiveOwnerRegistry = SidebarInteractiveOwnerRegistry()
     private weak var activeOwnerView: NSView?
-    private weak var activePrimaryMouseTrackingOwner: SidebarInteractiveItemView?
     private weak var observedWindow: NSWindow?
     private var windowObservers: [NSObjectProtocol] = []
     private var activeRootMenu: NSMenu?
@@ -305,96 +73,23 @@ final class SidebarContextMenuController {
     }
 
     func registerInteractiveOwner(_ ownerView: SidebarInteractiveItemView) {
-        interactiveOwnerRegistry.register(ownerView)
+        interactionState.registerInteractiveOwner(ownerView)
     }
 
     func unregisterInteractiveOwner(_ ownerView: SidebarInteractiveItemView) {
-        endPrimaryMouseTracking(ownerView)
-        interactiveOwnerRegistry.unregister(ownerView)
-    }
-
-    func interactiveOwner(
-        at windowPoint: NSPoint,
-        in window: NSWindow?,
-        eventType: NSEvent.EventType?,
-        eventButtonNumber: Int? = nil,
-        hostedSidebarView: NSView? = nil
-    ) -> SidebarInteractiveItemView? {
-        interactiveOwnerRegistry.owner(
-            at: windowPoint,
-            in: window,
-            eventType: eventType,
-            eventButtonNumber: eventButtonNumber,
-            hostedSidebarView: hostedSidebarView
-        )
-    }
-
-    func prefersOriginalHitOwner(
-        _ ownerView: SidebarInteractiveItemView,
-        at windowPoint: NSPoint,
-        in window: NSWindow?,
-        eventType: NSEvent.EventType?,
-        eventButtonNumber: Int? = nil,
-        hostedSidebarView: NSView? = nil
-    ) -> Bool {
-        guard ownerView.window === window,
-              ownerView.superview != nil,
-              !ownerView.isHiddenOrHasHiddenAncestor
-        else {
-            return false
-        }
-        if let hostedSidebarView,
-           ownerView.isDescendant(of: hostedSidebarView) != true {
-            return false
-        }
-
-        let localPoint = ownerView.convert(windowPoint, from: nil)
-        guard ownerView.bounds.contains(localPoint),
-              ownerView.shouldCaptureInteraction(
-                at: localPoint,
-                eventType: eventType,
-                eventButtonNumber: eventButtonNumber
-              )
-        else {
-            return false
-        }
-        return true
+        interactionState.unregisterInteractiveOwner(ownerView)
     }
 
     func recoverInteractiveOwners(
         in window: NSWindow?,
         source: SidebarTransientPresentationSource?
     ) -> SidebarInteractiveOwnerRecoveryResult {
-        if let owner = primaryMouseTrackingOwner(in: window) {
-            owner.cancelPrimaryMouseTracking()
-        }
         let sourceMetadata = source?.interactiveOwnerRecoveryMetadata
-        let result = interactiveOwnerRegistry.recoverOwners(
+        let result = interactionState.recoverInteractiveOwners(
             in: window,
             sourceMetadata: sourceMetadata
         )
         return result
-    }
-
-    func beginPrimaryMouseTracking(_ ownerView: SidebarInteractiveItemView) {
-        activePrimaryMouseTrackingOwner = ownerView
-    }
-
-    func endPrimaryMouseTracking(_ ownerView: SidebarInteractiveItemView) {
-        guard activePrimaryMouseTrackingOwner === ownerView else { return }
-        activePrimaryMouseTrackingOwner = nil
-    }
-
-    func primaryMouseTrackingOwner(in window: NSWindow?) -> SidebarInteractiveItemView? {
-        guard let owner = activePrimaryMouseTrackingOwner,
-              owner.window != nil,
-              owner.window === window,
-              owner.superview != nil,
-              !owner.isHiddenOrHasHiddenAncestor
-        else {
-            return nil
-        }
-        return owner
     }
 
     func ownerViewDidAttach(_ ownerView: NSView) {

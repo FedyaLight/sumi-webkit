@@ -19,8 +19,8 @@ struct SidebarFolderPreviewPresentation: Identifiable {
     let anchorRect: CGRect
     let sidebarPosition: SidebarPosition
     /// Whoever held the keyboard when the panel opened. The panel focuses its
-    /// search field, so it hands focus back here rather than leaning on the
-    /// coordinator's global repair pass, which resets every row's mouse tracking.
+    /// search field, so it hands focus back here directly instead of relying on
+    /// transient input recovery.
     let previousFirstResponder: PreviousFirstResponder
 }
 

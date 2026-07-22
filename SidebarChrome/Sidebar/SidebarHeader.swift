@@ -78,7 +78,10 @@ struct SidebarWindowControlsView: View {
                 )
                 .labelStyle(.iconOnly)
                 .font(.system(size: SidebarChromeMetrics.navigationIconSize, weight: .medium))
-                .buttonStyle(NavButtonStyle(diameter: SidebarChromeMetrics.navigationButtonSize))
+                .buttonStyle(NavButtonStyle(
+                    diameter: SidebarChromeMetrics.navigationButtonSize,
+                    hoverTracking: .sidebarSession
+                ))
                 .sidebarAppKitPrimaryAction(action: toggleSidebar)
             }
         }

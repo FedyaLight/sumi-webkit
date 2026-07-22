@@ -120,10 +120,7 @@ struct TabFolderHeaderView: View {
         // grace, or it lingers over the rows that just appeared.
         .onChange(of: folderShellIsClosed) { _, isClosed in
             guard !isClosed else { return }
-            browserContext.folderPreviewPresentation.dismiss(
-                folderID: folder.id,
-                in: windowState
-            )
+            windowState.sidebarFolderPreview.close(folderID: folder.id)
         }
         .accessibilityIdentifier("folder-header-\(folder.id.uuidString)")
         .accessibilityLabel(folder.name)
@@ -143,14 +140,14 @@ struct TabFolderHeaderView: View {
     @ViewBuilder
     private var folderPreviewHoverAnchor: some View {
         SidebarFolderPreviewAnchorBridge(
+            hoverSession: windowState.sidebarInteractionState.hoverSession,
             isEnabled: folderPreviewHoverIsEnabled,
             onOpen: { anchorView, anchorRect in
                 openFolderPreview(anchorView: anchorView, anchorRect: anchorRect)
             },
             onHoverChanged: { hovering in
-                browserContext.folderPreviewPresentation.setAnchorHovered(
+                windowState.sidebarFolderPreview.setAnchorHovered(
                     folderID: folder.id,
-                    in: windowState,
                     hovering: hovering
                 )
             }
@@ -176,14 +173,14 @@ struct TabFolderHeaderView: View {
             window: anchorView.window ?? windowState.shellWindow(in: windowRegistry),
             ownerView: anchorView
         )
-        browserContext.folderPreviewPresentation.show(
+        windowState.sidebarFolderPreview.open(
             request: SidebarFolderPreviewRequest(
                 folderID: folder.id,
                 folderName: folder.name,
                 candidates: candidates,
                 anchorRect: anchorRect
             ),
-            in: windowState,
+            sidebarPosition: sumiSettings.sidebarPosition,
             source: source
         )
     }

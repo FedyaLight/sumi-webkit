@@ -72,7 +72,7 @@ struct SidebarFolderPreviewPanel: View {
                 .strokeBorder(tokens.separator, lineWidth: 1, antialiased: false)
         }
         .shadow(color: .black.opacity(0.22), radius: 14, y: 4)
-        .onHover(perform: onHoverChanged)
+        .sidebarHover(onChange: onHoverChanged)
         .onAppear {
             selectedCandidateID = filteredCandidates.first?.id
         }
@@ -266,7 +266,7 @@ private struct SidebarFolderPreviewRow: View {
             .fill(isSelected ? tokens.primaryText.opacity(0.1) : Color.clear)
         }
         .padding(.vertical, SidebarFolderPreviewMetrics.rowVerticalGutter)
-        .onHover { hovering in
+        .sidebarHover { hovering in
             if hovering {
                 onHover()
             }

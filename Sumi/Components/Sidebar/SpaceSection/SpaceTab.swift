@@ -69,7 +69,7 @@ struct SpaceTab: View {
                     )
                     .frame(width: 22, height: 22)
                     .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .sidebarDDGHover($isSpeakerHovered, isEnabled: isAppKitInteractionEnabled)
+                    .sidebarHover($isSpeakerHovered, isEnabled: isAppKitInteractionEnabled)
                     .accessibilityIdentifier("space-regular-tab-audio-\(tab.id.uuidString)")
                     .sidebarAppKitPrimaryAction(
                         isEnabled: !freezesHoverState,
@@ -136,7 +136,7 @@ struct SpaceTab: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityIdentifier("tab-row-\(tab.id.uuidString)")
         .accessibilityValue(isCurrentTab ? "selected" : "not selected")
-        .sidebarDDGHover($isRowHovered, isEnabled: isAppKitInteractionEnabled)
+        .sidebarHover($isRowHovered, isEnabled: isAppKitInteractionEnabled)
         .onChange(of: isRowHovered) { _, hovering in
             if !hovering {
                 suppressRegularCloseUntilHoverExit = false
@@ -233,15 +233,15 @@ struct SpaceTab: View {
     }
 
     private var displayIsHovering: Bool {
-        SidebarHoverChrome.displayHover(isRowHovered, freezesHoverState: freezesHoverState)
+        isRowHovered
     }
 
     private var displayIsCloseHovering: Bool {
-        SidebarHoverChrome.displayHover(isCloseHovered, freezesHoverState: freezesHoverState)
+        isCloseHovered
     }
 
     private var displayIsSpeakerHovering: Bool {
-        SidebarHoverChrome.displayHover(isSpeakerHovered, freezesHoverState: freezesHoverState)
+        isSpeakerHovered
     }
 
     private var showsCloseButton: Bool {
@@ -387,7 +387,7 @@ struct SpaceTab: View {
         .sidebarZenActionOpacity(showsCloseButton)
         .allowsHitTesting(showsCloseButton && !freezesHoverState)
         .accessibilityHidden(!showsCloseButton)
-        .sidebarDDGHover($isCloseHovered, isEnabled: showsCloseButton && isAppKitInteractionEnabled)
+        .sidebarHover($isCloseHovered, isEnabled: showsCloseButton && isAppKitInteractionEnabled)
         .accessibilityIdentifier("space-regular-tab-close-\(tab.id.uuidString)")
         .sidebarAppKitPrimaryAction(
             isEnabled: showsCloseButton && !freezesHoverState,
@@ -449,7 +449,7 @@ struct SidebarGlanceTrailingAccessory: View {
         .sidebarZenActionOpacity(showsCloseButton)
         .allowsHitTesting(showsCloseButton && isEnabled)
         .accessibilityHidden(!showsCloseButton)
-        .sidebarDDGHover($isCloseHovered, isEnabled: showsCloseButton && isInteractionEnabled)
+        .sidebarHover($isCloseHovered, isEnabled: showsCloseButton && isInteractionEnabled)
         .accessibilityIdentifier("\(accessibilityPrefix)-close-\(sourceID)")
         .sidebarAppKitPrimaryAction(
             isEnabled: showsCloseButton && isEnabled,
@@ -460,10 +460,7 @@ struct SidebarGlanceTrailingAccessory: View {
     }
 
     private var displayIsCloseHovering: Bool {
-        SidebarHoverChrome.displayHover(
-            isCloseHovered,
-            freezesHoverState: windowState.sidebarInteractionState.freezesSidebarHoverState
-        )
+        isCloseHovered
     }
 
     private func closeCurrentSession() {

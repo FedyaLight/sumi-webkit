@@ -6,6 +6,7 @@ import SwiftUI
 /// Mirrors Zen's `mouseenter`/`mouseleave` pair on `.tab-group-label-container`:
 /// a delayed open, cancelled the moment the pointer leaves.
 struct SidebarFolderPreviewAnchorBridge: NSViewRepresentable {
+    let hoverSession: SidebarHoverSession
     let isEnabled: Bool
     /// Reports the anchor view plus its frame in the window's SwiftUI-global space.
     let onOpen: (NSView, CGRect) -> Void
@@ -34,35 +35,28 @@ struct SidebarFolderPreviewAnchorBridge: NSViewRepresentable {
         Coordinator()
     }
 
-    func makeNSView(context: Context) -> SidebarDDGHoverTrackingView {
-        let view = SidebarDDGHoverTrackingView(frame: .zero)
+    func makeNSView(context: Context) -> SidebarHoverTrackingView {
+        let view = SidebarHoverTrackingView(frame: .zero)
         update(view, coordinator: context.coordinator)
         return view
     }
 
-    func updateNSView(_ nsView: SidebarDDGHoverTrackingView, context: Context) {
+    func updateNSView(_ nsView: SidebarHoverTrackingView, context: Context) {
         update(nsView, coordinator: context.coordinator)
     }
 
-    static func dismantleNSView(_ nsView: SidebarDDGHoverTrackingView, coordinator: Coordinator) {
-        coordinator.cancelHover()
-        nsView.onHoverChanged = nil
-        nsView.setHoverTrackingEnabled(false)
+    static func dismantleNSView(_ nsView: SidebarHoverTrackingView, coordinator: Coordinator) {
+        coordinator.disconnect()
     }
 
-    private func update(_ view: SidebarDDGHoverTrackingView, coordinator: Coordinator) {
+    private func update(_ view: SidebarHoverTrackingView, coordinator: Coordinator) {
         coordinator.update(
+            view: view,
+            hoverSession: hoverSession,
             isEnabled: isEnabled,
             onOpen: onOpen,
             onHoverChanged: onHoverChanged
         )
-        view.onHoverChanged = { [weak coordinator, weak view] hovering, source in
-            guard let coordinator, let view else { return }
-            coordinator.setHovered(hovering, source: source, anchorView: view)
-        }
-        if view.isHoverTrackingEnabled != isEnabled {
-            view.setHoverTrackingEnabled(isEnabled)
-        }
         // Deliberately no re-arm from the current pointer position here: it would
         // fire the hover timer again the instant a click collapses the folder,
         // and the panel that opens under the pointer swallows the next click.
@@ -73,6 +67,7 @@ struct SidebarFolderPreviewAnchorBridge: NSViewRepresentable {
 
     @MainActor
     final class Coordinator {
+        private let hoverRegistration = SidebarHoverRegistration()
         private var isEnabled = false
         private var isHovered = false
         private var openTask: Task<Void, Never>?
@@ -80,6 +75,8 @@ struct SidebarFolderPreviewAnchorBridge: NSViewRepresentable {
         private var onHoverChanged: (Bool) -> Void = { _ in }
 
         func update(
+            view: SidebarHoverTrackingView,
+            hoverSession: SidebarHoverSession,
             isEnabled: Bool,
             onOpen: @escaping (NSView, CGRect) -> Void,
             onHoverChanged: @escaping (Bool) -> Void
@@ -90,6 +87,19 @@ struct SidebarFolderPreviewAnchorBridge: NSViewRepresentable {
             if !isEnabled {
                 cancelHover()
             }
+            hoverRegistration.update(
+                view: view,
+                session: hoverSession,
+                isEnabled: isEnabled
+            ) { [weak self, weak view] hovering, source in
+                guard let self, let view else { return }
+                self.setHovered(hovering, source: source, anchorView: view)
+            }
+        }
+
+        func disconnect() {
+            hoverRegistration.disconnect()
+            cancelHover()
         }
 
         func setHovered(

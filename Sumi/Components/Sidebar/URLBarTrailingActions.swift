@@ -168,9 +168,7 @@ struct URLBarButtonStyle: ButtonStyle {
         .scaleEffect(configuration.isPressed && isEnabled ? 0.95 : 1.0)
         .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
         .animation(.easeInOut(duration: 0.15), value: isHovering)
-        .onHover { hovering in
-            isHovering = hovering
-        }
+        .sidebarHover($isHovering)
     }
 
     private func backgroundColor(isPressed: Bool) -> Color {

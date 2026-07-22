@@ -7,7 +7,7 @@ enum MouseEventShieldCursorPolicy {
 }
 
 @MainActor
-final class MouseEventShieldNSView: NSView, SidebarTransientInteractionDisarmable {
+final class MouseEventShieldNSView: NSView {
     var onClick: (() -> Void)?
     private var trackingArea: NSTrackingArea?
     private(set) var isInteractive: Bool = true
@@ -139,11 +139,11 @@ final class MouseEventShieldNSView: NSView, SidebarTransientInteractionDisarmabl
         self.suppressesUnderlyingWebContentHover = suppressesUnderlyingWebContentHover
         self.blocksScrollWheel = blocksScrollWheel
         updateCursorPolicy(cursorPolicy)
-        setTransientInteractionEnabled(isInteractive)
+        setInteractive(isInteractive)
         updateUnderlyingWebContentHoverSuppression(refreshIfAlreadySuppressed: true)
     }
 
-    func setTransientInteractionEnabled(_ isEnabled: Bool) {
+    func setInteractive(_ isEnabled: Bool) {
         if !isEnabled {
             onClick = nil
             clearTrackingArea()
@@ -222,8 +222,6 @@ struct MouseEventShieldView: NSViewRepresentable {
     var cursorPolicy: MouseEventShieldCursorPolicy = .arrow
     /// Set false when the shielded surface scrolls its own content.
     var blocksScrollWheel: Bool = true
-    var handle: SidebarTransientInteractionHandle?
-
     func makeNSView(context: Context) -> NSView {
         let view = MouseEventShieldNSView(frame: .zero)
         view.update(
@@ -233,7 +231,6 @@ struct MouseEventShieldView: NSViewRepresentable {
             cursorPolicy: cursorPolicy,
             blocksScrollWheel: blocksScrollWheel
         )
-        handle?.attach(view)
         return view
     }
 
@@ -246,12 +243,11 @@ struct MouseEventShieldView: NSViewRepresentable {
             cursorPolicy: cursorPolicy,
             blocksScrollWheel: blocksScrollWheel
         )
-        handle?.attach(shield)
     }
 
     static func dismantleNSView(_ nsView: NSView, coordinator: ()) {
         guard let shield = nsView as? MouseEventShieldNSView else { return }
-        shield.setTransientInteractionEnabled(false)
+        shield.setInteractive(false)
         WebContentMouseTrackingShield.unregister(shield)
     }
 }

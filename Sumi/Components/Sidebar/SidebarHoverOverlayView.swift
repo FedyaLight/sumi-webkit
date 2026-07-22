@@ -307,7 +307,7 @@ struct SidebarHoverOverlayView: View {
                     Color.clear
                         .frame(width: hoverManager.triggerWidth)
                         .contentShape(Rectangle())
-                        .onHover { isIn in
+                        .sidebarHover { isIn in
                             if isIn && isCollapsedSidebar {
                                 hoverManager.requestPointerOverlayReveal(
                                     animationDuration: SidebarHoverOverlayMetrics.revealAnimationDuration,

@@ -7,6 +7,11 @@
 import SwiftUI
 
 struct NavButtonStyle: ButtonStyle {
+    enum HoverTracking {
+        case native
+        case sidebarSession
+    }
+
     @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.isEnabled) private var isEnabled
@@ -15,10 +20,16 @@ struct NavButtonStyle: ButtonStyle {
 
     let overrideSize: ControlSize?
     let diameter: CGFloat?
+    let hoverTracking: HoverTracking
 
-    init(size: ControlSize? = nil, diameter: CGFloat? = nil) {
+    init(
+        size: ControlSize? = nil,
+        diameter: CGFloat? = nil,
+        hoverTracking: HoverTracking = .native
+    ) {
         self.overrideSize = size
         self.diameter = diameter
+        self.hoverTracking = hoverTracking
     }
 
     private var tokens: ChromeThemeTokens {
@@ -26,22 +37,32 @@ struct NavButtonStyle: ButtonStyle {
     }
 
     func makeBody(configuration: Configuration) -> some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: cornerRadius)
-                .fill(backgroundColor(isPressed: configuration.isPressed))
-                .frame(width: size, height: size)
+        hoverTracked(
+            ZStack {
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .fill(backgroundColor(isPressed: configuration.isPressed))
+                    .frame(width: size, height: size)
 
-            configuration.label
-                .foregroundStyle(tokens.primaryText)
-        }
-        .opacity(isEnabled ? 1.0 : 0.3)
+                configuration.label
+                    .foregroundStyle(tokens.primaryText)
+            }
+            .opacity(isEnabled ? 1.0 : 0.3)
+            .contentTransition(.symbolEffect(.replace.upUp.byLayer, options: .nonRepeating))
+            .scaleEffect(configuration.isPressed && isEnabled ? 0.95 : 1.0)
+            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
+            .animation(.easeInOut(duration: 0.15), value: isHovering)
+        )
+    }
 
-        .contentTransition(.symbolEffect(.replace.upUp.byLayer, options: .nonRepeating))
-        .scaleEffect(configuration.isPressed && isEnabled ? 0.95 : 1.0)
-        .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
-        .animation(.easeInOut(duration: 0.15), value: isHovering)
-        .onHover { hovering in
-            isHovering = hovering
+    @ViewBuilder
+    private func hoverTracked<Content: View>(_ content: Content) -> some View {
+        switch hoverTracking {
+        case .native:
+            content.onHover { hovering in
+                isHovering = hovering
+            }
+        case .sidebarSession:
+            content.sidebarHover($isHovering)
         }
     }
 

@@ -53,7 +53,7 @@ struct SplitGroupSidebarRow: View {
             trailingActionButton
                 .padding(.trailing, SidebarRowLayout.trailingInset)
         }
-        .sidebarDDGHover($isRowHovered, isEnabled: isRowHoverTrackingEnabled)
+        .sidebarHover($isRowHovered, isEnabled: isRowHoverTrackingEnabled)
         .accessibilityIdentifier("space-split-group-\(group.id.uuidString)")
         .onAppear {
             if displayedItems.isEmpty {
@@ -235,10 +235,7 @@ struct SplitGroupSidebarRow: View {
 
     var showsRowHoverBackground: Bool {
         guard !isFocusedGroup else { return false }
-        return SidebarHoverChrome.displayHover(
-            isRowHovered,
-            freezesHoverState: windowState.sidebarInteractionState.freezesSidebarHoverState
-        )
+        return isRowHovered
     }
 
     var isRowHoverTrackingEnabled: Bool {
@@ -252,11 +249,7 @@ struct SplitGroupSidebarRow: View {
     private var showsGroupAction: Bool {
         guard let groupAction else { return false }
         return SidebarHoverChrome.showsTrailingAction(
-            isHovered: SidebarHoverChrome.displayHover(
-                isRowHovered,
-                freezesHoverState:
-                    windowState.sidebarInteractionState.freezesSidebarHoverState
-            ),
+            isHovered: isRowHovered,
             isSelected: false
         )
     }
@@ -331,7 +324,7 @@ struct SplitGroupSidebarRow: View {
             .sidebarZenActionOpacity(showsGroupAction)
             .allowsHitTesting(showsGroupAction && !freezesHoverState)
             .accessibilityHidden(!showsGroupAction)
-            .sidebarDDGHover(
+            .sidebarHover(
                 $isActionHovered,
                 isEnabled: showsGroupAction && isAppKitInteractionEnabled
             )
@@ -352,10 +345,7 @@ struct SplitGroupSidebarRow: View {
     }
 
     private var displayIsActionHovering: Bool {
-        SidebarHoverChrome.displayHover(
-            isActionHovered,
-            freezesHoverState: freezesHoverState
-        )
+        isActionHovered
     }
 
     private var actionBackground: Color {

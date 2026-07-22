@@ -79,7 +79,7 @@ struct SumiUpdateSidebarNoticeView: View {
             x: 0,
             y: 2
         )
-        .onHover { isHovering = $0 }
+        .sidebarHover($isHovering)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(notice.title), \(notice.detail)")
     }
@@ -142,7 +142,7 @@ private struct SumiUpdateSidebarDismissButton: View {
         )
         .help("Dismiss update notice")
         .accessibilityLabel("Dismiss update notice")
-        .onHover { isHovering = $0 }
+        .sidebarHover($isHovering)
     }
 }
 

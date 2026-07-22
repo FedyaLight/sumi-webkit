@@ -42,7 +42,7 @@ struct SumiLiveFolderItemRow: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(accessibilityID)
         .accessibilityValue(isSelected ? "selected" : "not selected")
-        .sidebarDDGHover($isRowHovered, isEnabled: true)
+        .sidebarHover($isRowHovered, isEnabled: true)
         .sidebarZenPressEffect(sourceID: accessibilityID, isEnabled: true)
         .sidebarAppKitContextMenu(
             isInteractionEnabled: true,
@@ -103,7 +103,7 @@ struct SumiLiveFolderItemRow: View {
         .allowsHitTesting(showsDismissButton)
         .accessibilityHidden(!showsDismissButton)
         .accessibilityLabel("Hide Live Folder Item")
-        .sidebarDDGHover($isDismissHovered, isEnabled: showsDismissButton)
+        .sidebarHover($isDismissHovered, isEnabled: showsDismissButton)
         .sidebarAppKitPrimaryAction(
             isEnabled: showsDismissButton,
             isInteractionEnabled: true,
@@ -138,16 +138,10 @@ struct SumiLiveFolderItemRow: View {
     }
 
     private var displayIsHovering: Bool {
-        SidebarHoverChrome.displayHover(
-            isRowHovered,
-            freezesHoverState: windowState.sidebarInteractionState.freezesSidebarHoverState
-        )
+        isRowHovered
     }
 
     private var displayIsDismissHovering: Bool {
-        SidebarHoverChrome.displayHover(
-            isDismissHovered,
-            freezesHoverState: windowState.sidebarInteractionState.freezesSidebarHoverState
-        )
+        isDismissHovered
     }
 }

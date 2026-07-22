@@ -100,7 +100,7 @@ final class BrowserMouseButtonRoutingOwner {
             return false
         }
 
-        return windowState.sidebarContextMenuController.interactiveOwner(
+        return windowState.sidebarInteractionState.interactiveOwner(
             at: event.locationInWindow,
             in: eventWindow,
             eventType: .otherMouseDown,
