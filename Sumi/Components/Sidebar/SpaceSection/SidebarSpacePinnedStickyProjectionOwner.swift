@@ -104,57 +104,21 @@ struct SidebarSpacePinnedStickyProjectionOwner {
 
     private func makeContext() -> SidebarFolderStickyProjectionPolicy.Context {
         let leafItems = inventory.orderedPinnedLeafItems()
-        let orderedIDs = leafItems.map(\.id)
-        var eligible = Set<UUID>()
-        var selectedID: UUID?
-
-        for item in leafItems {
-            switch item {
-            case .shortcut(let pinID):
-                guard let pin = inventory.pin(id: pinID) else { continue }
-                let liveTab = selection.liveTab(for: pin.id, in: windowState)
-                if liveTab != nil {
-                    eligible.insert(pin.id)
-                }
-                if selectedID == nil, isPinSelected(pin, liveTab: liveTab) {
-                    selectedID = pin.id
-                }
-            case .splitGroup(let groupID):
-                guard let group = inventory.splitGroup(id: groupID) else { continue }
-                eligible.insert(group.id)
-                if selectedID == nil,
-                   selection.isSplitGroupSelected(
-                       group,
-                       in: windowState,
-                       selection: selectionSnapshot
-                   ) {
-                    selectedID = group.id
-                }
-            case .folder:
-                preconditionFailure("Folders are omitted by orderedPinnedLeafItems")
-            }
-        }
+        let projectedItems = SidebarVisualSceneProjection(
+            inventory: inventory,
+            selection: selection,
+            selectionSnapshot: selectionSnapshot,
+            windowState: windowState
+        ).launcherItems(leafItems)
 
         return SidebarFolderStickyProjectionPolicy.Context(
             isFolderOpen: !state.isCollapsed(space.id),
-            orderedDescendantItemIDs: orderedIDs,
-            visibleEligibleItemIDs: eligible,
-            selectedDescendantItemID: selectedID
+            orderedDescendantItemIDs: projectedItems.map(\.id),
+            visibleEligibleItemIDs: Set(
+                projectedItems.lazy.filter(\.isLive).map(\.id)
+            ),
+            selectedDescendantItemID: projectedItems.first(where: \.isSelected)?.id
         )
-    }
-
-    private func isPinSelected(_ pin: ShortcutPin, liveTab: Tab?) -> Bool {
-        if selection.isShortcutSelected(
-            pin,
-            in: windowState,
-            selection: selectionSnapshot
-        ) {
-            return true
-        }
-        guard let liveTab, let currentTabID = selectionSnapshot.currentTabID else {
-            return false
-        }
-        return liveTab.id == currentTabID
     }
 
     private func ancestorChains(for itemIDs: [UUID]) -> [UUID: [UUID]] {
@@ -182,14 +146,5 @@ struct SidebarSpacePinnedStickyProjectionOwner {
             return folderID
         }
         return nil
-    }
-}
-
-private extension SidebarPinnedInventoryItem {
-    var id: UUID {
-        switch self {
-        case .folder(let id), .shortcut(let id), .splitGroup(let id):
-            return id
-        }
     }
 }

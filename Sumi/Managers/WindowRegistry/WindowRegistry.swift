@@ -61,6 +61,11 @@ class WindowRegistry {
     @ObservationIgnored
     private var _windows: [UUID: BrowserWindowState] = [:]
 
+    /// Stable publication order. A dictionary is the identity lookup, not an
+    /// ordering source for session snapshots and deterministic traversals.
+    @ObservationIgnored
+    private var windowOrder: [UUID] = []
+
     /// Window models being synchronously restored and validated. They are not
     /// externally discoverable until `commitRegistration` moves the exact
     /// object into `_windows`.
@@ -183,6 +188,7 @@ class WindowRegistry {
 
         provisionalWindows.removeValue(forKey: window.id)
         _windows[window.id] = window
+        windowOrder.append(window.id)
         nextRegistrationGeneration &+= 1
         registrationReceipts[window.id] = WindowRegistrationReceipt(
             registryIdentity: ObjectIdentifier(self),
@@ -200,6 +206,7 @@ class WindowRegistry {
             // half-committed registration.
             if _windows[window.id] === window {
                 _windows.removeValue(forKey: window.id)
+                windowOrder.removeAll { $0 == window.id }
                 registrationReceipts.removeValue(forKey: window.id)
                 unbindAppKitWindow(for: window.id)
                 if activeWindowId == window.id {
@@ -238,6 +245,7 @@ class WindowRegistry {
 
         let wasActive = activeWindowId == id
         _windows.removeValue(forKey: id)
+        windowOrder.removeAll { $0 == id }
         registrationReceipts.removeValue(forKey: id)
         unbindAppKitWindow(for: id)
         if wasActive {
@@ -364,7 +372,7 @@ class WindowRegistry {
 
     /// Get all windows as an array
     var allWindows: [BrowserWindowState] {
-        Array(windows.values)
+        windowOrder.compactMap { windows[$0] }
     }
 
     /// Binds the AppKit window into the shell map (sole SoT for AppKit window handles).

@@ -50,7 +50,10 @@ extension ShortcutSplitLauncherMoveBatchStaging {
             plan: plan
         )
         let folders = ShortcutSplitLauncherFolderPublicationGate(
-            folderIDs: Set(moves.compactMap(\.destination.folderId))
+            folderIDs: Set(moves.compactMap { move in
+                guard move.destination.opensFolder else { return nil }
+                return move.destination.folderId
+            })
         )
         return ShortcutSplitLauncherBindingContribution(
             builder: preflight.bindingBatch.builder,

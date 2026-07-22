@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 @MainActor
 enum SpacePinnedShortcutOrderOwner {
@@ -34,20 +35,41 @@ enum SpacePinnedShortcutOrderOwner {
 
     static func normalizedShortcuts(
         _ items: [ShortcutPin],
-        foldersBySpace: [UUID: [TabFolder]]
+        foldersBySpace: [UUID: [TabFolder]],
+        splitGroups: [SplitGroup]
     ) -> [ShortcutPin] {
         struct ContainerKey: Hashable {
             let spaceId: UUID?
             let folderId: UUID?
         }
 
-        func reservedFolderIndexes(for key: ContainerKey) -> Set<Int> {
-            guard let spaceId = key.spaceId else { return [] }
-            return Set(
-                (foldersBySpace[spaceId] ?? [])
-                    .filter { $0.parentFolderId == key.folderId }
-                    .map(\.index)
-            )
+        var splitMemberPinIDs: Set<UUID> = []
+        var reservedVisualIndexesByContainer: [ContainerKey: Set<Int>] = [:]
+
+        for (spaceID, folders) in foldersBySpace {
+            for folder in folders {
+                let key = ContainerKey(
+                    spaceId: spaceID,
+                    folderId: folder.parentFolderId
+                )
+                reservedVisualIndexesByContainer[key, default: []]
+                    .insert(folder.index)
+            }
+        }
+        for group in splitGroups {
+            for memberID in group.memberIDs {
+                guard case .shortcutPin(let pinID) = memberID else { continue }
+                splitMemberPinIDs.insert(pinID)
+            }
+            guard case .shortcutSidebar(
+                let spaceID,
+                _,
+                let folderID,
+                let storedIndex
+            ) = group.container else { continue }
+            guard let index = storedIndex else { continue }
+            let key = ContainerKey(spaceId: spaceID, folderId: folderID)
+            reservedVisualIndexesByContainer[key, default: []].insert(index)
         }
 
         func normalizedGroup(_ pins: [ShortcutPin], reservedIndexes: Set<Int>) -> [ShortcutPin] {
@@ -60,12 +82,17 @@ enum SpacePinnedShortcutOrderOwner {
                 return nextIndex
             }
 
-            return pins
+            let standalonePins = pins
+                .filter { !splitMemberPinIDs.contains($0.id) }
                 .sorted { lhs, rhs in
                     if lhs.index != rhs.index { return lhs.index < rhs.index }
                     return lhs.id.uuidString < rhs.id.uuidString
                 }
                 .map { pin in pin.refreshed(index: nextAvailableIndex()) }
+            let splitMemberPins = pins
+                .filter { splitMemberPinIDs.contains($0.id) }
+                .map { $0.refreshed(index: .max) }
+            return standalonePins + splitMemberPins
         }
 
         let groupedByContainer = Dictionary(grouping: items) {
@@ -84,7 +111,7 @@ enum SpacePinnedShortcutOrderOwner {
             .flatMap { key in
                 normalizedGroup(
                     groupedByContainer[key] ?? [],
-                    reservedIndexes: reservedFolderIndexes(for: key)
+                    reservedIndexes: reservedVisualIndexesByContainer[key] ?? []
                 )
             }
     }
@@ -173,6 +200,7 @@ enum SpacePinnedShortcutOrderOwner {
         in allPins: [ShortcutPin],
         folderId: UUID?,
         foldersBySpace: [UUID: [TabFolder]],
+        splitGroups: [SplitGroup],
         _ mutate: (inout [ShortcutPin]) -> Void
     ) -> [ShortcutPin] {
         var targetGroup = allPins
@@ -188,7 +216,11 @@ enum SpacePinnedShortcutOrderOwner {
         let normalizedGroup = targetGroup.enumerated().map { index, pin in
             pin.refreshed(index: index)
         }
-        return normalizedShortcuts(otherPins + normalizedGroup, foldersBySpace: foldersBySpace)
+        return normalizedShortcuts(
+            otherPins + normalizedGroup,
+            foldersBySpace: foldersBySpace,
+            splitGroups: splitGroups
+        )
     }
 
     private static func sortedPins(_ pins: [ShortcutPin]) -> [ShortcutPin] {

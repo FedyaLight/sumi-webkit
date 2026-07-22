@@ -89,10 +89,20 @@ struct SidebarFolderChildDropTargetUpdate: Equatable {
 }
 
 struct SidebarRegularListHitMetrics: Equatable {
-    var frame: CGRect
+    let frame: CGRect
+    let rowIdentities: [SidebarVisualSceneProjection.RegularRow.Identity]
+
     /// Number of rendered rows. A split group is one row regardless of its
     /// member count.
-    var rowCount: Int
+    var rowCount: Int { rowIdentities.count }
+
+    init(
+        frame: CGRect,
+        rowIdentities: [SidebarVisualSceneProjection.RegularRow.Identity]
+    ) {
+        self.frame = frame
+        self.rowIdentities = rowIdentities
+    }
 
     /// True visual row pitch (row height + derived inter-row spacing).
     var rowPitch: CGFloat {
@@ -107,6 +117,16 @@ struct SidebarRegularListHitMetrics: Equatable {
         guard rowCount > 0 else { return 0 }
         let rawIndex = Int(((localY / rowPitch) + 0.5).rounded(.down))
         return max(0, min(rawIndex, rowCount))
+    }
+
+    func presentedBoundary(
+        at index: Int
+    ) -> SidebarVisualSceneProjection.RegularBoundary? {
+        let safeIndex = max(0, min(index, rowCount))
+        return SidebarVisualSceneProjection.RegularBoundary(
+            before: safeIndex > 0 ? rowIdentities[safeIndex - 1] : nil,
+            after: safeIndex < rowCount ? rowIdentities[safeIndex] : nil
+        )
     }
 }
 

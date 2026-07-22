@@ -725,11 +725,79 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
             [tabs[0].id, tabs[3].id, tabs[1].id, tabs[2].id]
         )
         XCTAssertEqual(
-            SidebarVisualOrdering.regularBlocks(
-                tabs: browser.regularTabCollectionOwner.tabs(in: space.id),
+            SidebarVisualSceneProjection.regularRun(
+                tabIDs: browser.regularTabCollectionOwner.tabs(in: space.id).map(\.id),
                 groups: browser.splitGroupSidebarOrdering.regularGroups(for: space.id)
-            ).map(\.identity),
+            ).rows.map(\.identity),
             [.tab(tabs[0].id), .tab(tabs[3].id), .splitGroup(group.id)]
+        )
+    }
+
+    func testRegularTabDropsImmediatelyBelowSplitAtThePresentedBoundary() throws {
+        let profile = Profile(name: "Regular Tab Below Split Boundary")
+        let browser = makeSafariExtensionTestBrowserManager(profile: profile)
+        let space = try XCTUnwrap(
+            browser.sidebarSpaceLifecycle.createSpace(
+                name: "Work",
+                icon: SumiPersistentGlyph.spaceDefaultIconValue,
+                profileID: profile.id
+            )
+        )
+        let tabs = (0..<4).map { index in
+            browser.regularTabLifecycleOwner.createNewTab(
+                url: "https://regular-tab-below-split-\(index).example",
+                in: space,
+                activate: false
+            )
+        }
+        let group = try XCTUnwrap(SplitGroup.make(
+            members: [.regularTab(tabs[1].id), .regularTab(tabs[2].id)],
+            layoutKind: .vertical,
+            container: .regularTabs(spaceId: space.id)
+        ))
+        XCTAssertTrue(browser.splitGroupMutations.insert(group, persist: false))
+
+        let windowState = BrowserWindowState()
+        windowState.currentSpaceId = space.id
+        windowState.currentProfileId = profile.id
+        browser.windowRegistry.register(windowState)
+        let context = WindowSidebarContext.make(
+            browserManager: browser,
+            updaterService: SumiUpdaterService(backendFactory: { _ in nil }),
+            nowPlayingController: SumiNativeNowPlayingController()
+        )
+        let pasteboard = makePasteboard(
+            item: SumiDragItem(tabId: tabs[0].id, title: "Leading"),
+            scope: SidebarDragScope(
+                windowId: nil,
+                spaceId: space.id,
+                profileId: profile.id,
+                sourceContainer: .spaceRegular(space.id),
+                sourceItemId: tabs[0].id,
+                sourceItemKind: .tab
+            )
+        )
+        let run = SidebarVisualSceneProjection.regularRun(
+            tabIDs: tabs.map(\.id),
+            groups: [group]
+        )
+
+        XCTAssertTrue(context.dragTransactions.commit(
+            pasteboard: pasteboard,
+            resolution: SidebarDropResolution(
+                slot: .spaceRegular(spaceId: space.id, slot: 2),
+                folderIntent: .none,
+                activeHoveredFolderId: nil,
+                presentedRegularBoundary: run.boundary(at: 2)
+            ),
+            windowState: windowState
+        ))
+        XCTAssertEqual(
+            SidebarVisualSceneProjection.regularRun(
+                tabIDs: browser.regularTabCollectionOwner.tabs(in: space.id).map(\.id),
+                groups: browser.splitGroupSidebarOrdering.regularGroups(for: space.id)
+            ).rows.map(\.identity),
+            [.splitGroup(group.id), .tab(tabs[0].id), .tab(tabs[3].id)]
         )
     }
 
@@ -941,10 +1009,12 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
         let convertedPin = try XCTUnwrap(
             browser.shortcutPinCollectionStateOwner
                 .spacePinnedPins(for: space.id)
-                .first { $0.id != pins[0].id
+                .first {
+                    $0.id != pins[0].id
                     && $0.id != pins[1].id
                     && $0.id != pins[2].id
-                    && $0.id != pins[3].id }
+                    && $0.id != pins[3].id
+                }
         )
         XCTAssertEqual(
             browser.splitGroupSidebarOrdering.topLevelItems(for: space.id),

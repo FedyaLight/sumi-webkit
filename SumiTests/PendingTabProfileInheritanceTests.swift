@@ -392,9 +392,8 @@ final class PendingTabProfileInheritanceTests: XCTestCase {
         currentProfileID: @escaping @MainActor () -> UUID?,
         transition: DeferredSpaceProfileTransition
     ) throws -> BrowserManager {
-        let tabManager = BrowserManager()
-        tabManager.runtimePortConnection.attach(
-            TestRuntimePorts.make(
+        let tabManager = BrowserManager(
+            runtimePorts: TestRuntimePorts.make(
                 currentProfileId: currentProfileID,
                 defaultProfileId: currentProfileID,
                 profile: { profiles[$0] },

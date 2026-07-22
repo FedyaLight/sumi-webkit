@@ -14,6 +14,7 @@ import WebKit
 
 @MainActor
 class BrowserManager: ObservableObject {
+    nonisolated(unsafe) let objectWillChange: ObservableObjectPublisher
     static let lastWindowSessionKey = "sumi.windowSession.last.v3"
     let zoomRevisionState = BrowserZoomRevisionState()
     let bookmarkEditorPresentationState =
@@ -398,6 +399,7 @@ class BrowserManager: ObservableObject {
         )
         let auxiliaryWindowTeardownRegistry = AuxiliaryWindowTeardownRegistry()
         let glanceManager = GlanceManager()
+        self.objectWillChange = graph.objectWillChange
         self.webViewSessions = graph.webViewSessions
         self.windowRegistry = graph.windowRegistry
         self.modelContext = graph.modelContext

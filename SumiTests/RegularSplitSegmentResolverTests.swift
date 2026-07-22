@@ -435,54 +435,51 @@ final class RegularSplitSegmentResolverTests: XCTestCase {
         let last = makeTab(name: "Last")
         let group = try regularGroup([splitA, splitB])
 
-        let blocks = SidebarVisualOrdering.regularBlocks(
-            tabs: [first, splitA, splitB, last],
+        let run = SidebarVisualSceneProjection.regularRun(
+            tabIDs: [first, splitA, splitB, last].map(\.id),
             groups: [group]
         )
 
         XCTAssertEqual(
-            blocks.map(\.identity),
+            run.rows.map(\.identity),
             [.tab(first.id), .splitGroup(group.id), .tab(last.id)]
         )
-        XCTAssertEqual(blocks[1].tabIDs, [splitA.id, splitB.id])
+        XCTAssertEqual(run.rows[1].tabIDs, [splitA.id, splitB.id])
         XCTAssertEqual(
             (0...3).map {
-                SidebarVisualOrdering.regularRawInsertionIndex(
-                    atVisualBoundary: $0,
-                    blocks: blocks
-                )
+                run.rawInsertionIndex(atVisualBoundary: $0)
             },
             [0, 1, 3, 4]
         )
         XCTAssertEqual(
-            SidebarVisualOrdering.regularRawInsertionIndex(
+            SidebarVisualSceneProjection.regularRawInsertionIndex(
                 movingGroupID: group.id,
                 atModelBoundary: 0,
-                blocks: blocks
+                rows: run.rows
             ),
             0
         )
         XCTAssertEqual(
-            SidebarVisualOrdering.regularRawInsertionIndex(
+            SidebarVisualSceneProjection.regularRawInsertionIndex(
                 movingGroupID: group.id,
                 atModelBoundary: 1,
-                blocks: blocks
+                rows: run.rows
             ),
             1
         )
         XCTAssertEqual(
-            SidebarVisualOrdering.regularRawInsertionIndex(
+            SidebarVisualSceneProjection.regularRawInsertionIndex(
                 movingGroupID: group.id,
                 atModelBoundary: 3,
-                blocks: blocks
+                rows: run.rows
             ),
             1
         )
         XCTAssertEqual(
-            SidebarVisualOrdering.regularRawInsertionIndex(
+            SidebarVisualSceneProjection.regularRawInsertionIndex(
                 movingGroupID: group.id,
                 atModelBoundary: 4,
-                blocks: blocks
+                rows: run.rows
             ),
             2
         )

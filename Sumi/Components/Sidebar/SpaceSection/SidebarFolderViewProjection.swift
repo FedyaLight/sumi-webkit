@@ -115,6 +115,7 @@ struct SidebarFolderViewProjection {
     let splitGroupItemsById: [UUID: [SplitGroupSidebarItem]]
     let shortcutPinsById: [UUID: ShortcutPin]
     let liveTabsByPinId: [UUID: Tab]
+    let liveCollapsedProjectionItemIDs: Set<UUID>
     let selectedPinIds: Set<UUID>
     let currentTabURLString: String?
 
@@ -155,6 +156,12 @@ struct SidebarFolderViewProjection {
             result[pin.id] = pin
         }
         let uniqueProjectionPins = Array(projectionPinsById.values)
+        let launcherItems = SidebarVisualSceneProjection(
+            inventory: inventory,
+            selection: selection,
+            selectionSnapshot: selectionSnapshot,
+            windowState: windowState
+        ).launcherItems(descendantItems)
 
         self.liveFolderSource = liveFolderSource
         self.liveFolderItems = liveFolderItems
@@ -187,6 +194,9 @@ struct SidebarFolderViewProjection {
                 }
                 return (pin.id, liveTab)
             }
+        )
+        self.liveCollapsedProjectionItemIDs = Set(
+            launcherItems.lazy.filter(\.isLive).map(\.id)
         )
         self.selectedPinIds = Set(
             uniqueProjectionPins.compactMap { pin in
@@ -226,13 +236,9 @@ struct SidebarFolderViewProjection {
         selectedPinIds.contains(pin.id)
     }
 
-    /// Whether a sticky item can render as a collapsed-projection row right
-    /// now: a launcher pin with a live tab, or an existing split group.
+    /// Whether a sticky launcher or whole Split Group is live in this window.
     func isCollapsedProjectionEligible(_ itemID: UUID) -> Bool {
-        if shortcutPinsById[itemID] != nil {
-            return liveTabsByPinId[itemID] != nil
-        }
-        return splitGroupsById[itemID] != nil
+        liveCollapsedProjectionItemIDs.contains(itemID)
     }
 
     func collapsedProjectionItem(_ itemID: UUID) -> SidebarFolderListItem? {

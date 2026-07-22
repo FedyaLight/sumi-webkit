@@ -414,21 +414,28 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
     }
 
     func testPresentationPlannerUsesWindowLiveIDsInsteadOfCanonicalShortcutIDs() throws {
-        let regularTab = Tab(
-            url: try XCTUnwrap(URL(string: "https://regular.example")),
+        let firstLiveShortcutTab = Tab(
+            url: try XCTUnwrap(URL(string: "https://first-shortcut.example")),
             loadsCachedFaviconOnInit: false
         )
-        let liveShortcutTab = Tab(
+        let secondLiveShortcutTab = Tab(
             url: try XCTUnwrap(URL(string: "https://shortcut.example")),
             loadsCachedFaviconOnInit: false
         )
-        let pinID = UUID()
+        let firstPinID = UUID()
+        let secondPinID = UUID()
         let group = try XCTUnwrap(SumiDomain.SplitGroup.make(
             members: [
-                .regularTab(regularTab.id),
-                .shortcutPin(pinID),
+                .shortcutPin(firstPinID),
+                .shortcutPin(secondPinID),
             ],
-            layoutKind: .vertical
+            layoutKind: .vertical,
+            container: .shortcutSidebar(
+                spaceId: UUID(),
+                profileId: nil,
+                folderId: nil,
+                index: 0
+            )
         ))
         let windowState = BrowserWindowState()
         let presentation = try XCTUnwrap(WindowSplitPresentation(
@@ -436,17 +443,17 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             group: group,
             selection: WindowSplitSelection(
                 groupID: group.id,
-                activeMemberID: .shortcutPin(pinID)
+                activeMemberID: .shortcutPin(secondPinID)
             ),
             liveTabIDByMemberID: [
-                .regularTab(regularTab.id): regularTab.id,
-                .shortcutPin(pinID): liveShortcutTab.id,
+                .shortcutPin(firstPinID): firstLiveShortcutTab.id,
+                .shortcutPin(secondPinID): secondLiveShortcutTab.id,
             ]
         ))
         let browserContext = CompositorBrowserContextStub()
         browserContext.tabsByID = [
-            regularTab.id: regularTab,
-            liveShortcutTab.id: liveShortcutTab,
+            firstLiveShortcutTab.id: firstLiveShortcutTab,
+            secondLiveShortcutTab.id: secondLiveShortcutTab,
         ]
         let browserManager = BrowserManager()
         let graph = makeTestWebViewRuntimeGraph()
@@ -473,7 +480,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         )
         let displayState = WebsiteDisplayState(
             splitPresentation: presentation,
-            currentId: liveShortcutTab.id,
+            currentId: secondLiveShortcutTab.id,
             compositorVersion: 0,
             currentTabUnloaded: false,
             isSplitDropCaptureActive: false
@@ -482,13 +489,18 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         guard case .split(let resolvedPresentation, let tabs) = planner
             .presentationDecision(
                 for: displayState,
-                currentTab: liveShortcutTab
+                currentTab: secondLiveShortcutTab
             ) else {
             return XCTFail("Expected a split presentation")
         }
         XCTAssertEqual(resolvedPresentation, presentation)
-        XCTAssertEqual(tabs.map(\.id), [regularTab.id, liveShortcutTab.id])
-        XCTAssertFalse(tabs.map(\.id).contains(pinID))
+        XCTAssertEqual(
+            tabs.map(\.id),
+            [firstLiveShortcutTab.id, secondLiveShortcutTab.id]
+        )
+        XCTAssertTrue(Set(tabs.map(\.id)).isDisjoint(
+            with: [firstPinID, secondPinID]
+        ))
     }
 
     func testWindowWebContentHoverSessionReconcilesExactWebViewAndRejectsStaleRegistration() async throws {

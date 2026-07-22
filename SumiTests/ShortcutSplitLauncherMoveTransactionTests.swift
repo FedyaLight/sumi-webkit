@@ -179,7 +179,8 @@ final class ShortcutSplitLauncherMoveTransactionTests: XCTestCase {
                 profileId: pin.profileId,
                 spaceId: pin.spaceId,
                 folderId: pin.folderId,
-                index: pin.index
+                index: pin.index,
+                opensFolder: false
             )
         )
     }

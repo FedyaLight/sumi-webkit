@@ -51,7 +51,7 @@ private struct SidebarDragGeometryReporter<Trigger: Equatable>: ViewModifier {
     let isEnabled: Bool
     /// When set, the GeometryReader is only mounted while detailed geometry collection is active
     /// for this space — matching the previous per-reporter `isEnabled && shouldCollect…` gate.
-    var detailedGeometrySpace: (spaceId: UUID, profileId: UUID?)? = nil
+    var detailedGeometrySpace: (spaceId: UUID, profileId: UUID?)?
     let trigger: Trigger
     var reportsOnDragBegin = false
     let report: (SidebarDragGeometryModule, CGRect) -> Void
@@ -306,7 +306,7 @@ extension View {
 
     func sidebarRegularListHitGeometry(
         for spaceId: UUID,
-        rowCount: Int,
+        rowIdentities: [SidebarVisualSceneProjection.RegularRow.Identity],
         generation: Int,
         isEnabled: Bool = true
     ) -> some View {
@@ -315,7 +315,7 @@ extension View {
                 isEnabled: isEnabled,
                 detailedGeometrySpace: (spaceId, nil),
                 trigger: [
-                    AnyHashable(rowCount),
+                    AnyHashable(rowIdentities),
                     AnyHashable(generation),
                 ],
                 report: { geometry, frame in
@@ -324,20 +324,28 @@ extension View {
                             .regularList(
                                 spaceId: spaceId,
                                 frame: frame,
-                                rowCount: rowCount
+                                rowIdentities: rowIdentities
                             ),
                             generation: generation
                         )
                     } else {
                         geometry.report(
-                            .regularList(spaceId: spaceId, frame: nil, rowCount: 0),
+                            .regularList(
+                                spaceId: spaceId,
+                                frame: nil,
+                                rowIdentities: []
+                            ),
                             generation: generation
                         )
                     }
                 },
                 remove: { geometry in
                     geometry.report(
-                        .regularList(spaceId: spaceId, frame: nil, rowCount: 0),
+                        .regularList(
+                            spaceId: spaceId,
+                            frame: nil,
+                            rowIdentities: []
+                        ),
                         generation: generation
                     )
                 }

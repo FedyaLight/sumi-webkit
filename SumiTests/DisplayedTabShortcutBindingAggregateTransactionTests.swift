@@ -118,8 +118,7 @@ final class DisplayedTabShortcutBindingAggregateTransactionTests:
         let window = BrowserWindowState()
         let counters = Counters()
         let profile = Profile(name: "Profile")
-        let tabManager = BrowserManager()
-        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
+        let tabManager = BrowserManager(runtimePorts: TestRuntimePorts.make(
             currentProfileId: { profile.id },
             defaultProfileId: { profile.id },
             profile: { $0 == profile.id ? profile : nil },

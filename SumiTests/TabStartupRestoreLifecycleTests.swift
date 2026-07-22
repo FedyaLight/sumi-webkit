@@ -108,6 +108,17 @@ final class TabStartupRestoreLifecycleTests: XCTestCase {
             harness.selection.replaceCurrentTab(liveTab)
             harness.structuralLookup.requestPublish(scope: .all)
         }
+        let starter = TabRuntimeAttachmentRestoreStarter(
+            connection: connection,
+            policy: TabStartupRestorePolicy(
+                isEnabled: true,
+                automaticallyStarts: false,
+                requestedStructuralRevision:
+                    harness.structuralLookup.mutationRevision
+            ),
+            lifecycle: harness.manager.startupRestoreLifecycle,
+            restore: harness.restore
+        )
         var firstPreparationCount = 0
         var replacementPreparationCount = 0
         let replacement = TestRuntimePorts.make(
@@ -127,12 +138,12 @@ final class TabStartupRestoreLifecycleTests: XCTestCase {
         let installObservation = harness.manager.objectWillChange.sink {
             guard didReplaceAttachment == false else { return }
             didReplaceAttachment = true
-            harness.starter.prepareForDetach()
+            starter.prepareForDetach()
             connection.detach()
             connection.attach(replacement)
         }
 
-        harness.starter.startManually(using: staleLease)
+        starter.startManually(using: staleLease)
         await payloadLoader.started.wait()
         await payloadLoader.release.publish()
         await harness.restore.startupRestoreTask?.value

@@ -100,8 +100,9 @@ final class BrowserWindowVisualCoordinatorTests: XCTestCase {
     func testImmediateVisualHandoffUsesExactCompositorRegistration() {
         let fixture = VisualFixture()
         var handoffCount = 0
+        let container = NSView()
         fixture.browser.webViewRuntime.compositorRuntime.registerContainer(
-            NSView(),
+            container,
             for: fixture.window.id,
             immediateVisualHandoffHandler: {
                 handoffCount += 1
@@ -115,6 +116,7 @@ final class BrowserWindowVisualCoordinatorTests: XCTestCase {
             )
         )
         XCTAssertEqual(handoffCount, 1)
+        withExtendedLifetime(container) {}
     }
 
     func testCancelDropsDeferredWindowMutation() async {

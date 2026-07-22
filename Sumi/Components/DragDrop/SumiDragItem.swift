@@ -253,7 +253,7 @@ struct SumiDragItem: Codable, Equatable {
     }
 
     var stableID: UUID {
-        splitGroupID ?? splitMemberID?.rawUUID ?? tabId
+        splitMemberID?.rawUUID ?? splitGroupID ?? tabId
     }
 }
 

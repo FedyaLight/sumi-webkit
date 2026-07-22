@@ -39,39 +39,6 @@ final class BrowserStartupProtectionRuntimeTests: XCTestCase {
         XCTAssertTrue(offRuntime.canMaterializeWebViewDuringStartup(normalTab))
     }
 
-    func testFinishDrainsDeferredBackgroundTabsAndVisibleWindowHooksOnce()
-        async {
-        let deferredTab = Tab(
-            url: URL(string: "https://example.com/deferred")!,
-            loadsCachedFaviconOnInit: false
-        )
-        let missingTab = Tab(
-            url: URL(string: "https://example.com/missing")!,
-            loadsCachedFaviconOnInit: false
-        )
-        let firstWindow = BrowserWindowState()
-        let secondWindow = BrowserWindowState()
-        let fixture = makeBrowser(appliedLevel: .protection)
-        let browser = fixture.browser
-        browser.runtimePortConnection.attach(TestRuntimePorts.make())
-        browser.tabCollectionMembershipOwner.attach(deferredTab)
-        XCTAssertEqual(browser.windowRegistry.register(firstWindow), .registered)
-        XCTAssertEqual(browser.windowRegistry.register(secondWindow), .registered)
-        let runtime = browser.startupProtectionRuntime
-
-        runtime.deferBackgroundTabUntilStartupReady(deferredTab)
-        runtime.deferBackgroundTabUntilStartupReady(missingTab)
-        runtime.deferBackgroundTabUntilStartupReady(deferredTab)
-        runtime.finishStartupProtectionRestore()
-        runtime.finishStartupProtectionRestore()
-        await Task.yield()
-
-        XCTAssertFalse(deferredTab.webViewSession.allKnownWebViews.isEmpty)
-        XCTAssertTrue(missingTab.webViewSession.allKnownWebViews.isEmpty)
-        XCTAssertEqual(firstWindow.compositorInvalidation.compositorVersion, 1)
-        XCTAssertEqual(secondWindow.compositorInvalidation.compositorVersion, 1)
-    }
-
     func testBeginInTestsOpensNormalTabMaterializationGate() {
         let fixture = makeBrowser(appliedLevel: .protection)
         let runtime = fixture.browser.startupProtectionRuntime

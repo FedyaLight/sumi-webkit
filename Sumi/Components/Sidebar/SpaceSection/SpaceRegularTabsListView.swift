@@ -34,30 +34,21 @@ struct SpaceRegularTabsListView: View {
         let splitGroupsByID = Dictionary(
             uniqueKeysWithValues: splitGroups.map { ($0.id, $0) }
         )
-        let regularBlocks = SidebarVisualOrdering.regularBlocks(
-            tabs: tabs,
+        let regularRun = SidebarVisualSceneProjection.regularRun(
+            tabIDs: tabs.map(\.id),
             groups: splitGroups
         )
-        let groupedTabIDs = Set<UUID>(regularBlocks.flatMap { block -> [UUID] in
-            guard case .splitGroup = block.identity else { return [] }
-            return block.tabIDs
-        })
-        let splitGroupByFirstTabID: [UUID: SplitGroup] = Dictionary(
-            uniqueKeysWithValues: regularBlocks.compactMap {
-                block -> (UUID, SplitGroup)? in
-                guard case .splitGroup(let groupID) = block.identity,
-                      let firstTabID = block.firstTabID,
-                      let group = splitGroupsByID[groupID] else { return nil }
-                return (firstTabID, group)
-            }
+        let renderedRun = SidebarVisualSceneProjection.regularRun(
+            tabIDs: interactionSession.listAnimation.renderedItems.map(\.tabID),
+            groups: splitGroups
         )
 
         LazyVStack(alignment: .leading, spacing: 2) {
-            ForEach(interactionSession.listAnimation.renderedItems) { item in
+            ForEach(renderedRun.rows) { row in
                 VStack(spacing: 0) {
-                    switch item {
-                    case .tab(let tabID):
-                        if let group = splitGroupByFirstTabID[tabID] {
+                    switch row.identity {
+                    case .splitGroup(let groupID):
+                        if let group = splitGroupsByID[groupID] {
                             SpaceRegularSplitGroupEntryView(
                                 group: group,
                                 space: space,
@@ -74,9 +65,9 @@ struct SpaceRegularTabsListView: View {
                                     ? SidebarDragSourceDim.opacity
                                     : 1
                             )
-                        } else if groupedTabIDs.contains(tabID) {
-                            EmptyView()
-                        } else if let tab = tabByID[tabID]
+                        }
+                    case .tab(let tabID):
+                        if let tab = tabByID[tabID]
                             ?? interactionSession.listAnimation.resolvedTab(
                                 for: tabID,
                                 liveTab: { regularTabCatalog.tab(for: $0) }
@@ -96,7 +87,7 @@ struct SpaceRegularTabsListView: View {
         .frame(minWidth: 0, maxWidth: innerWidth, alignment: .leading)
         .sidebarRegularListHitGeometry(
             for: space.id,
-            rowCount: regularBlocks.count,
+            rowIdentities: regularRun.rows.map(\.identity),
             generation: dragSnapshot.geometryGeneration,
             isEnabled: isInteractive
         )

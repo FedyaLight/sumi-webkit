@@ -170,13 +170,13 @@ final class ShortcutPinCatalogMutationTransaction {
             return sideEffect()
         }
         guard pin.role == .spacePinned,
-              pin.folderId == nil,
               let spaceID = pin.spaceId else {
             return sideEffect()
         }
         return spacePinnedVisualOrder.placeExisting(
             .shortcut(pin.id),
             in: spaceID,
+            folderID: pin.folderId,
             at: targetIndex,
             applying: sideEffect
         )

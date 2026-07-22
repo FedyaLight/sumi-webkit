@@ -6,7 +6,7 @@ import XCTest
 
 @MainActor
 final class SplitLayoutWeightMutationServiceTests: XCTestCase {
-    func testWeightUpdateUsesLayoutOnlyStoreAndPresentationChannels() throws {
+    func testWeightUpdateUsesLayoutOnlyStoreAndPresentationChannels() async throws {
         let tabManager = BrowserManager()
         let original = try makeGroup()
         tabManager.splitGroupStore.replaceAll(with: [original])
@@ -44,6 +44,8 @@ final class SplitLayoutWeightMutationServiceTests: XCTestCase {
             weights: [0.25, 0.75],
             in: firstWindow.id
         )
+        await Task.yield()
+        await Task.yield()
 
         let expectedTree = SplitLayoutSizing.updatingChildWeights(
             in: original.layoutTree,

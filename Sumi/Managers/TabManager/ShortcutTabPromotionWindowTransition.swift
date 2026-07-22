@@ -55,7 +55,7 @@ final class ShortcutTabPromotionWindowTransition {
                   let memberID = memberByPinID[pinID]
             else { return }
             var target = source
-            select(plan.tab, in: &target)
+            selectPromoted(plan, in: &target)
             target.splitSelection = WindowSplitSelection(
                 groupID: groupID,
                 activeMemberID: memberID
@@ -75,11 +75,11 @@ final class ShortcutTabPromotionWindowTransition {
         switch split {
         case .none:
             if windowID == plan.chosenEntry?.windowId {
-                select(plan.tab, in: &state)
+                selectPromoted(plan, in: &state)
             }
         case .replaced(let groupID, let memberID):
             guard state.splitSelection?.groupID == groupID else { return }
-            select(plan.tab, in: &state)
+            selectPromoted(plan, in: &state)
             state.splitSelection = WindowSplitSelection(
                 groupID: groupID,
                 activeMemberID: memberID
@@ -96,10 +96,22 @@ final class ShortcutTabPromotionWindowTransition {
             } else {
                 state.splitSelection = nil
                 if windowID == plan.chosenEntry?.windowId {
-                    select(plan.tab, in: &state)
+                    selectPromoted(plan, in: &state)
                 }
             }
         }
+    }
+
+    private func selectPromoted(
+        _ plan: ShortcutTabPromotionPlan,
+        in state: inout BrowserWindowShortcutMutationState
+    ) {
+        _ = WindowTabSelectionStateApplicator.applyPromotedRegularTab(
+            id: plan.tab.id,
+            spaceID: plan.targetSpaceID,
+            to: &state,
+            rememberSelection: true
+        )
     }
 
     private func select(

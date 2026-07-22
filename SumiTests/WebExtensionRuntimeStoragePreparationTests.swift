@@ -58,7 +58,7 @@ final class WebExtensionRuntimeStoragePreparationTests: XCTestCase {
         )
     }
 
-    func testPrepareAdoptsLegacyDataIntoExactRuntimeIdentifier() throws {
+    func testPrepareLeavesLegacyDataAndCreatesExactRuntimeDirectory() throws {
         let libraryDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(
@@ -98,8 +98,8 @@ final class WebExtensionRuntimeStoragePreparationTests: XCTestCase {
 
         let snapshot = preparation.snapshot()
         XCTAssertTrue(snapshot.directoryExists)
-        XCTAssertTrue(snapshot.hasLocalStorageStore)
-        XCTAssertFalse(
+        XCTAssertFalse(snapshot.hasLocalStorageStore)
+        XCTAssertTrue(
             FileManager.default.fileExists(atPath: legacyDirectory.path)
         )
     }

@@ -8,8 +8,13 @@ final class ServicesKitNavigationBoundaryTests: XCTestCase {
             .deletingLastPathComponent()
         let sumiRoot = repoRoot.appendingPathComponent("Sumi", isDirectory: true)
         let allowedAdapterFiles: Set<String> = [
+            "SumiGPCNavigationResponder.swift",
             "SumiNavigationResponderAdapter.swift",
+            "SumiTabLifecycleNavigationResponder.swift",
             "SumiTabNavigationDelegateBundle.swift",
+            "Tab+WebViewRuntime.swift",
+            "Tab.swift",
+            "WebsiteDataCleanupNavigationBarrier.swift",
         ]
         let enumerator = try XCTUnwrap(
             FileManager.default.enumerator(

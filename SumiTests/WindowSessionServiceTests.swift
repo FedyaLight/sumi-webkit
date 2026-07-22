@@ -7,15 +7,21 @@ import XCTest
 
 @MainActor
 final class WindowSessionServiceTests: XCTestCase {
-    func testOverrideSnapshotWithUnavailableAdmissionClearsProfileWithoutApplyingSession() throws {
+    func testOverrideSnapshotWithBlockedAdmissionLeavesWindowUnseeded() throws {
         let tabManager = BrowserManager()
-        let retiredProfileID = UUID()
-        let fallback = Profile(name: "Fallback")
+        let retiredProfile = try XCTUnwrap(tabManager.currentProfile)
+        let fallback = try tabManager.profileManager.createProfile(
+            name: "Fallback"
+        )
+        _ = try tabManager.profileReferenceAdmission.reserve(
+            profile: retiredProfile,
+            fallbackID: fallback.id
+        )
         var overrideSnapshot = makeSessionRecoveryWindowSession(
             currentTabId: UUID(),
             isShowingEmptyState: false
         )
-        overrideSnapshot.currentProfileId = retiredProfileID
+        overrideSnapshot.currentProfileId = retiredProfile.id
         let overrideURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("sumi-window-override-\(UUID()).json")
         let overrideData = try WindowSessionSnapshotCodec().encode(

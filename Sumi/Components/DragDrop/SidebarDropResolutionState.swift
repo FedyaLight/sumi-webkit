@@ -40,6 +40,7 @@ struct SidebarDropResolution: Equatable {
     let slot: DropZoneSlot
     let folderIntent: FolderDropIntent
     let activeHoveredFolderId: UUID?
+    let presentedRegularBoundary: SidebarVisualSceneProjection.RegularBoundary?
     /// Scroll-normalized SwiftUI-global line chosen by the same geometry
     /// decision as `slot`. The presenter never reconstructs it from the slot.
     let indicatorLineRect: CGRect?
@@ -48,11 +49,13 @@ struct SidebarDropResolution: Equatable {
         slot: DropZoneSlot,
         folderIntent: FolderDropIntent,
         activeHoveredFolderId: UUID?,
+        presentedRegularBoundary: SidebarVisualSceneProjection.RegularBoundary? = nil,
         indicatorLineRect: CGRect? = nil
     ) {
         self.slot = slot
         self.folderIntent = folderIntent
         self.activeHoveredFolderId = activeHoveredFolderId
+        self.presentedRegularBoundary = presentedRegularBoundary
         self.indicatorLineRect = indicatorLineRect
     }
 
@@ -61,6 +64,7 @@ struct SidebarDropResolution: Equatable {
             slot: slot,
             folderIntent: folderIntent,
             activeHoveredFolderId: activeHoveredFolderId,
+            presentedRegularBoundary: presentedRegularBoundary,
             indicatorLineRect: SidebarDropIndicatorGeometry.lineRect(
                 slot: slot,
                 folderIntent: folderIntent,
@@ -537,7 +541,9 @@ enum SidebarDropResolver {
             return SidebarDropResolution(
                 slot: foundSlot,
                 folderIntent: .none,
-                activeHoveredFolderId: nil
+                activeHoveredFolderId: nil,
+                presentedRegularBoundary: state.regularListHitTargets[spaceId]?
+                    .presentedBoundary(at: foundSlot.visualIndex)
             )
         }
 
@@ -548,7 +554,11 @@ enum SidebarDropResolver {
             return SidebarDropResolution(
                 slot: .spaceRegular(spaceId: spaceId, slot: 9999),
                 folderIntent: .none,
-                activeHoveredFolderId: nil
+                activeHoveredFolderId: nil,
+                presentedRegularBoundary: state.regularListHitTargets[spaceId]?
+                    .presentedBoundary(
+                        at: state.regularListHitTargets[spaceId]?.rowCount ?? 0
+                    )
             )
         }
 

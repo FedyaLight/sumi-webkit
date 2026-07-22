@@ -163,7 +163,7 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
         )
     }
 
-    func testPreparedSelectionPublishesEffectsWithoutRewritingTopologyOrPersistence() throws {
+    func testPreparedSelectionPublishesEffectsWithoutRewritingTopologyOrPersistence() async throws {
         let harness = try makeHarness()
         let previousTab = makeTab(in: harness.space, manager: harness.manager)
         let selectedTab = makeTab(in: harness.space, manager: harness.manager)
@@ -185,6 +185,7 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
         XCTAssertEqual(outcome, .committed)
         XCTAssertEqual(harness.window.splitSelection, preparedSplitSelection)
         XCTAssertNil(harness.snapshotStore.loadSnapshot())
+        await drainScheduledActivationWork()
         XCTAssertGreaterThan(
             harness.window.compositorInvalidation.compositorVersion,
             0

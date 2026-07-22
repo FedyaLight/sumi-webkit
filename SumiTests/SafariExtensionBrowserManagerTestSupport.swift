@@ -165,7 +165,7 @@ extension XCTestCase {
         extensionsModule: SumiExtensionsModule? = nil,
         profile: Profile? = nil,
         windowRegistry: WindowRegistry? = nil,
-        automaticallyStartPersistedStateLoad: Bool = true,
+        automaticallyStartPersistedStateLoad: Bool = false,
         retainUntilTestTeardown: Bool = true
     ) -> BrowserManager {
         let startupPersistence: BrowserManagerStartupPersistence

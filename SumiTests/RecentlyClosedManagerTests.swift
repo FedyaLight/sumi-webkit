@@ -95,6 +95,13 @@ final class RecentlyClosedManagerTests: XCTestCase {
         )
         let deleted = Profile(name: "Deleted")
         let fallback = Profile(name: "Fallback")
+        container.mainContext.insert(
+            ProfileEntity(id: deleted.id, name: deleted.name, index: 0)
+        )
+        container.mainContext.insert(
+            ProfileEntity(id: fallback.id, name: fallback.name, index: 1)
+        )
+        try container.mainContext.save()
         let tab = Tab(
             url: URL(string: "https://private-tab.example")!,
             name: "Private Tab",
@@ -135,7 +142,7 @@ final class RecentlyClosedManagerTests: XCTestCase {
             title: "Private Window",
             session: session
         )
-        XCTAssertEqual(manager.items.count, 4)
+        XCTAssertEqual(manager.items.count, 3)
 
         let token = try admission.reserve(
             profile: deleted,
@@ -148,7 +155,7 @@ final class RecentlyClosedManagerTests: XCTestCase {
             canGoBack: false,
             canGoForward: false
         )
-        XCTAssertEqual(manager.items.count, 4)
+        XCTAssertEqual(manager.items.count, 3)
         XCTAssertTrue(try admission.beginReferenceMigration(token))
         let lease = try admission.beginRetirementReferenceMigration(
             to: [fallback.id]

@@ -468,7 +468,7 @@ final class ExtensionRequestedTabServicesTests:
         )
     }
 
-    func testDidOpenReentrancyFailureDiscardsTabAdapterAndEligibilityWithoutSelection() async throws {
+    func testOrdinaryTabSurvivesDidOpenInvalidationForDeferredPublication() async throws {
         let harness = try await makeRequestedPublicationHarness()
         let originalGeneration = harness.inspection.runtimeAuthorities.tabPublicationRevisions.issue()
         var rejectedTab: Tab?
@@ -505,28 +505,30 @@ final class ExtensionRequestedTabServicesTests:
             harness.manager.testHooks.didActivateTab = nil
         }
 
-        XCTAssertThrowsError(
-            try harness.attachedRuntime.requestedTabs.opening.open(
-                url: URL(string: "https://requested.example/rejected")!,
-                shouldBeActive: true,
-                shouldBePinned: true,
-                requestedWindow: nil,
-                controller: harness.controller,
-                extensionContext: harness.extensionContext,
-                reason: #function
-            )
+        let openedTab = try harness.attachedRuntime.requestedTabs.opening.open(
+            url: URL(string: "https://requested.example/rejected")!,
+            shouldBeActive: true,
+            shouldBePinned: true,
+            requestedWindow: nil,
+            controller: harness.controller,
+            extensionContext: harness.extensionContext,
+            reason: #function
         )
 
         let tab = try XCTUnwrap(rejectedTab)
         let adapter = try XCTUnwrap(rejectedAdapter)
+        XCTAssertIdentical(openedTab, tab)
         XCTAssertEqual(lifecycleEvents, ["didOpen", "didClose"])
         XCTAssertTrue(activatedTabIDs.isEmpty)
-        XCTAssertEqual(harness.window.currentTabId, harness.sourceTab.id)
-        XCTAssertNil(
+        XCTAssertEqual(harness.window.currentTabId, tab.id)
+        XCTAssertIdentical(
             harness.browserManager.tabCollectionMembershipOwner
-                .tab(for: tab.id)
+                .tab(for: tab.id),
+            tab
         )
-        XCTAssertNil(harness.inspection.normalTabs.adapters.tabAdapters[tab.id])
+        XCTAssertNotNil(
+            harness.inspection.normalTabs.adapters.tabAdapters[tab.id]
+        )
         XCTAssertNil(tab.extensionPageRuntimeOwner.currentEligibleGeneration())
         XCTAssertFalse(tab.extensionPageRuntimeOwner.hasAnyDidOpenTabNotification())
         XCTAssertFalse(tab.isPinned)

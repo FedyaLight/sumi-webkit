@@ -85,6 +85,7 @@ private extension ShortcutLiveTabClosePersistenceTests {
         let pin: ShortcutPin
         let liveTab: Tab
         let fallback: Tab?
+        let compositorContainer: NSView
         let transaction: ShortcutLiveTabStandaloneCloseTransaction
         let probe: PersistenceProbe
 
@@ -118,8 +119,7 @@ private extension ShortcutLiveTabClosePersistenceTests {
         let windowState = BrowserWindowState()
         let probe = PersistenceProbe()
         let profile = Profile(name: "Shortcut close persistence")
-        let tabManager = BrowserManager()
-        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
+        let tabManager = BrowserManager(runtimePorts: TestRuntimePorts.make(
             currentProfileId: { profile.id },
             defaultProfileId: { profile.id },
             profile: { $0 == profile.id ? profile : nil },
@@ -169,10 +169,12 @@ private extension ShortcutLiveTabClosePersistenceTests {
             windowState.currentTabId = fallback?.id
         }
 
+        let compositorContainer = NSView()
         let transaction = makeTransaction(
             tabManager: tabManager,
             windowState: windowState,
             pin: pin,
+            compositorContainer: compositorContainer,
             probe: probe
         )
         return Fixture(
@@ -181,6 +183,7 @@ private extension ShortcutLiveTabClosePersistenceTests {
             pin: pin,
             liveTab: liveTab,
             fallback: fallback,
+            compositorContainer: compositorContainer,
             transaction: transaction,
             probe: probe
         )
@@ -190,6 +193,7 @@ private extension ShortcutLiveTabClosePersistenceTests {
         tabManager: BrowserManager,
         windowState: BrowserWindowState,
         pin: ShortcutPin,
+        compositorContainer: NSView,
         probe: PersistenceProbe
     ) -> ShortcutLiveTabStandaloneCloseTransaction {
         tabManager.windowRegistry.register(windowState)
@@ -200,7 +204,7 @@ private extension ShortcutLiveTabClosePersistenceTests {
             tabStore: tabManager.runtimeStore
         )
         tabManager.webViewRuntime.compositorRuntime.registerContainer(
-            NSView(),
+            compositorContainer,
             for: windowState.id,
             immediateVisualHandoffHandler: {
                 probe.didPerformVisualHandoff = true

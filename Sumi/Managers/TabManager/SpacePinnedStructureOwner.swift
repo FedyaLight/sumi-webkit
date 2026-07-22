@@ -38,7 +38,8 @@ final class SpacePinnedStructureOwner {
     func normalizedSpacePinnedShortcuts(_ items: [ShortcutPin]) -> [ShortcutPin] {
         SpacePinnedShortcutOrderOwner.normalizedShortcuts(
             items,
-            foldersBySpace: folders.foldersBySpaceSnapshot()
+            foldersBySpace: folders.foldersBySpaceSnapshot(),
+            splitGroups: splitGroups.groups
         )
     }
 
@@ -89,7 +90,11 @@ final class SpacePinnedStructureOwner {
         _ items: [SpacePinnedTopLevelItem],
         for spaceId: UUID
     ) {
-        let plan = orderTransaction.planTopLevelOrder(items, in: spaceId)
+        let plan = orderTransaction.planTopLevelOrder(
+            items,
+            in: spaceId,
+            splitGroups: splitGroups.groups
+        )
         precondition(
             orderTransaction.apply(plan),
             "Space-pinned order changed while applying its synchronous plan"
@@ -130,6 +135,7 @@ final class SpacePinnedStructureOwner {
             in: allPins,
             folderId: folderId,
             foldersBySpace: folders.foldersBySpaceSnapshot(),
+            splitGroups: splitGroups.groups,
             mutate
         )
         orderTransaction.setPins(rebuilt, in: spaceId)
@@ -150,6 +156,7 @@ final class SpacePinnedOrderTransaction {
         let folderPlacements: [SpacePinnedShortcutOrderOwner.FolderPlacement]
         let finalFolders: [TabFolder]
         let finalPins: [ShortcutPin]
+        let splitGroups: [SplitGroup]
     }
 
     private let folders: TabFolderCollectionStateOwner
@@ -168,7 +175,8 @@ final class SpacePinnedOrderTransaction {
 
     func planTopLevelOrder(
         _ items: [SpacePinnedShortcutOrderOwner.TopLevelItem],
-        in spaceID: UUID
+        in spaceID: UUID,
+        splitGroups: [SplitGroup]
     ) -> Plan {
         let foldersBySpace = folders.foldersBySpaceSnapshot()
         let pinsBySpace = pins.spacePinnedShortcutsSnapshot()
@@ -196,7 +204,8 @@ final class SpacePinnedOrderTransaction {
             expectedPins: pins.spacePinnedPins(for: spaceID),
             folderPlacements: order.folderPlacements,
             finalFolders: finalFolders,
-            finalPins: order.folderPins + order.orderedTopLevelPins
+            finalPins: order.folderPins + order.orderedTopLevelPins,
+            splitGroups: splitGroups
         )
     }
 
@@ -280,6 +289,7 @@ final class SpacePinnedOrderTransaction {
         }
 
         let finalPins = currentPins.map { pinReplacements[$0.id] ?? $0 }
+        let finalGroups = groups.map { replacements[$0.id] ?? $0 }
         return (
             Plan(
                 spaceID: spaceID,
@@ -287,9 +297,10 @@ final class SpacePinnedOrderTransaction {
                 expectedPins: currentPins,
                 folderPlacements: Array(placements.values),
                 finalFolders: currentFolders,
-                finalPins: finalPins
+                finalPins: finalPins,
+                splitGroups: finalGroups
             ),
-            groups.map { replacements[$0.id] ?? $0 }
+            finalGroups
         )
     }
 
@@ -313,7 +324,8 @@ final class SpacePinnedOrderTransaction {
         mutations.setFolders(plan.finalFolders, for: plan.spaceID)
         let normalizedPins = SpacePinnedShortcutOrderOwner.normalizedShortcuts(
             plan.finalPins,
-            foldersBySpace: folders.foldersBySpaceSnapshot()
+            foldersBySpace: folders.foldersBySpaceSnapshot(),
+            splitGroups: plan.splitGroups
         )
         mutations.setSpacePinnedShortcuts(normalizedPins, for: plan.spaceID)
         return true

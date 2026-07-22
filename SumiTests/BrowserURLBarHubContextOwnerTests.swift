@@ -81,7 +81,7 @@ final class BrowserURLBarHubContextOwnerTests: XCTestCase {
         boostsModule.setEnabled(true)
 
         XCTAssertEqual(boostRefreshCount, 1)
-        XCTAssertEqual(probe.storeCount, 0)
+        XCTAssertEqual(probe.storeCount, 1)
     }
 }
 

@@ -24,7 +24,8 @@ struct ShortcutSplitLauncherDestinationResolver {
                 profileId: targetProfileID,
                 spaceId: nil,
                 folderId: nil,
-                index: pin.index
+                index: pin.index,
+                opensFolder: false
             )
         case .spacePinned:
             guard let spaceID = pin.spaceId else { return nil }
@@ -36,7 +37,8 @@ struct ShortcutSplitLauncherDestinationResolver {
                 profileId: nil,
                 spaceId: spaceID,
                 folderId: validFolderID,
-                index: pin.index
+                index: pin.index,
+                opensFolder: false
             )
         }
     }

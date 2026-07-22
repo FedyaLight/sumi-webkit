@@ -6,6 +6,7 @@ import SwiftData
 
 @MainActor
 class TabManager: ObservableObject {
+    nonisolated(unsafe) let objectWillChange: ObservableObjectPublisher
     let runtimePortConnection: TabRuntimePortConnection
     let context: ModelContext
     let profileReferenceAdmission: ProfileReferenceAdmissionLedger
@@ -33,10 +34,12 @@ class TabManager: ObservableObject {
         loadPersistedState: Bool = true,
         automaticallyStartPersistedStateLoad: Bool = true,
         tabStructureEventBus: TabStructureEventBus? = nil,
+        objectWillChange: ObservableObjectPublisher = .init(),
         faviconService: any BrowserFaviconServicing = TabDependencyIsolationDefaults.faviconService,
         faviconCapabilities: BrowserFaviconCapabilities = TabDependencyIsolationDefaults.faviconCapabilities,
         visitedLinkStore: any BrowserVisitedLinkStoreManaging = TabDependencyIsolationDefaults.visitedLinkStore
     ) {
+        self.objectWillChange = objectWillChange
         self.runtimePortConnection = TabRuntimePortConnection(initialRuntimePorts)
         self.context = context
         self.profileReferenceAdmission = profileReferenceAdmission

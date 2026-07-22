@@ -23,9 +23,8 @@ final class TabClosureCandidateRetirementTests: XCTestCase {
     func testMixedLiveCandidatesUseTheirConcreteLifecycleAuthorities() throws {
         let window = BrowserWindowState()
         var auxiliaryCloseIDs: [UUID] = []
-        let tabManager = BrowserManager()
-        tabManager.runtimePortConnection.attach(
-            TestRuntimePorts.make(
+        let tabManager = BrowserManager(
+            runtimePorts: TestRuntimePorts.make(
                 windowState: { $0 == window.id ? window : nil },
                 windows: { [(window.id, window)] },
                 windowStates: { [window] },

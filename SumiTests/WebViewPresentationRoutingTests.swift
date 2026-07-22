@@ -740,8 +740,8 @@ final class WebViewPresentationRoutingTests: XCTestCase {
             .structuralPersistence.flushRuntimeStatePersistenceAwaitingResult()
         XCTAssertEqual(
             flushedRuntimeStateCount,
-            1,
-            "A stale rollback must not cancel the original tab's queued state."
+            0,
+            "Private ephemeral tabs never enter durable regular-tab persistence."
         )
     }
 

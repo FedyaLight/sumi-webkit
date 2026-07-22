@@ -81,7 +81,8 @@ final class SplitGroupContainerConversion {
                     profileId: profileID,
                     spaceId: nil,
                     folderId: nil,
-                    index: operation.toIndex + offset
+                    index: operation.toIndex + offset,
+                    opensFolder: false
                 )
             }
 
@@ -121,17 +122,23 @@ final class SplitGroupContainerConversion {
                     profileId: nil,
                     spaceId: spaceID,
                     folderId: nil,
-                    index: operation.toIndex + offset
+                    index: operation.toIndex + offset,
+                    opensFolder: false
                 )
             }
 
         case .folder(let folderID):
             guard let spaceID = folders.spaceId(for: folderID) else { return false }
-            let index = adjustedIndex(
-                for: group,
-                targetFolderID: folderID,
-                proposedIndex: operation.toIndex
-            )
+            if group.container.shortcutSidebarFolderId == folderID,
+               group.container.spaceId == spaceID {
+                return spacePinnedVisualOrder.reorder(
+                    .splitGroup(group.id),
+                    in: spaceID,
+                    folderID: folderID,
+                    to: operation.toIndex
+                )
+            }
+            let index = operation.toIndex
             let container = SplitGroupContainer.shortcutSidebar(
                 spaceId: spaceID,
                 profileId: operation.scope.profileId,
@@ -153,20 +160,14 @@ final class SplitGroupContainerConversion {
                     preferredWindowID: operation.scope.windowId
                 )
             }
-            if group.container.shortcutSidebarFolderId == folderID,
-               group.container.spaceId == spaceID {
-                guard let replacement = group.changingContainer(to: container) else {
-                    return false
-                }
-                return mutations.replace(group, with: replacement)
-            }
             return moveLauncherGroup(group, to: container) { _, offset in
                 ShortcutSplitLauncherDestination(
                     role: .spacePinned,
                     profileId: nil,
                     spaceId: spaceID,
                     folderId: folderID,
-                    index: index + offset
+                    index: index + offset,
+                    opensFolder: false
                 )
             }
 
@@ -242,37 +243,18 @@ final class SplitGroupContainerConversion {
         )
     }
 
-    private func adjustedIndex(
-        for group: SplitGroup,
-        targetFolderID: UUID,
-        proposedIndex: Int
-    ) -> Int {
-        guard group.container.shortcutSidebarFolderId == targetFolderID,
-              let spaceID = group.container.spaceId else {
-            return proposedIndex
-        }
-        let currentItems = ordering.resolver(for: spaceID).folderItems(for: targetFolderID)
-        guard let currentIndex = currentItems.firstIndex(where: {
-            $0 == .splitGroup(group.id)
-        }) else { return proposedIndex }
-        return SpacePinnedShortcutOrderOwner.adjustedSameContainerInsertionIndex(
-            currentIndex: currentIndex,
-            proposedIndex: proposedIndex
-        )
-    }
-
     private func regularGroupRawInsertionIndex(
         for group: SplitGroup,
         in spaceID: UUID,
         proposedModelIndex: Int
     ) -> Int? {
-        SidebarVisualOrdering.regularRawInsertionIndex(
+        SidebarVisualSceneProjection.regularRawInsertionIndex(
             movingGroupID: group.id,
             atModelBoundary: proposedModelIndex,
-            blocks: SidebarVisualOrdering.regularBlocks(
-                tabs: regularTabs.tabs(in: spaceID),
+            rows: SidebarVisualSceneProjection.regularRun(
+                tabIDs: regularTabs.tabs(in: spaceID).map(\.id),
                 groups: ordering.regularGroups(for: spaceID)
-            )
+            ).rows
         )
     }
 
@@ -302,5 +284,4 @@ final class SplitGroupContainerConversion {
             return false
         }
     }
-
 }

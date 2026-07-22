@@ -128,19 +128,28 @@ final class BrowserWindowTabContextTests: XCTestCase {
         let shortcut = makeTab("https://shortcut.example")
         let trackedBackground = makeTab("https://tracked.example")
         let split = makeTab("https://split.example")
+        let splitCompanion = makeTab("https://split-companion.example")
         let windowState = BrowserWindowState()
         windowState.currentTabId = current.id
         let harness = BrowserWindowTabContextHarness(
             allTabs: [current, sharedSpaceOnly],
             windows: [windowState],
             liveShortcutTabsByWindowId: [windowState.id: [shortcut]],
-            visibleSplitTabIdsByWindowId: [windowState.id: [split.id]],
+            visibleSplitTabIdsByWindowId: [
+                windowState.id: [split.id, splitCompanion.id],
+            ],
             trackedTabIdsByWindowId: [windowState.id: [trackedBackground.id]]
         )
 
         XCTAssertEqual(
             harness.makeOwner().windowLocalTabResidenceIDs(in: windowState),
-            [current.id, shortcut.id, trackedBackground.id, split.id]
+            [
+                current.id,
+                shortcut.id,
+                trackedBackground.id,
+                split.id,
+                splitCompanion.id,
+            ]
         )
     }
 

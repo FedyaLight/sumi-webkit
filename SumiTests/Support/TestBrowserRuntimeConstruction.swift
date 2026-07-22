@@ -48,7 +48,7 @@ extension BrowserManager {
         permissionBridgeOverrides: BrowserPermissionBridgeRegistry.Overrides = .init(),
         sidebarHostRecoveryCoordinator: SidebarHostRecoveryHandling = SidebarHostRecoveryCoordinator(),
         runtimePorts: RuntimePortRegistry? = nil,
-        automaticallyStartPersistedStateLoad: Bool = true
+        automaticallyStartPersistedStateLoad: Bool = false
     ) {
         let startupPersistence = startupPersistence
             ?? Self.makeIsolatedTestStartupPersistence()
@@ -134,7 +134,7 @@ extension TabManager {
         context: ModelContext,
         webViewSessions: WebViewSessionRepository,
         loadPersistedState: Bool = true,
-        automaticallyStartPersistedStateLoad: Bool = true,
+        automaticallyStartPersistedStateLoad: Bool = false,
         tabStructureEventBus: TabStructureEventBus? = nil,
         faviconService: any BrowserFaviconServicing = TabDependencyIsolationDefaults.faviconService,
         faviconCapabilities: BrowserFaviconCapabilities = TabDependencyIsolationDefaults.faviconCapabilities,
@@ -144,6 +144,7 @@ extension TabManager {
             context: context,
             webViewSessions: webViewSessions,
             profileReferenceAdmission: .testingAllowingReferences(),
+            initialRuntimePorts: runtimePorts,
             loadPersistedState: loadPersistedState,
             automaticallyStartPersistedStateLoad: automaticallyStartPersistedStateLoad,
             tabStructureEventBus: tabStructureEventBus,
@@ -151,16 +152,13 @@ extension TabManager {
             faviconCapabilities: faviconCapabilities,
             visitedLinkStore: visitedLinkStore
         )
-        if let runtimePorts {
-            runtimePortConnection.attach(runtimePorts)
-        }
     }
 
     convenience init(
         runtimePorts: RuntimePortRegistry? = nil,
         context: ModelContext,
         loadPersistedState: Bool = true,
-        automaticallyStartPersistedStateLoad: Bool = true,
+        automaticallyStartPersistedStateLoad: Bool = false,
         tabStructureEventBus: TabStructureEventBus? = nil,
         faviconService: any BrowserFaviconServicing = TabDependencyIsolationDefaults.faviconService,
         faviconCapabilities: BrowserFaviconCapabilities = TabDependencyIsolationDefaults.faviconCapabilities,

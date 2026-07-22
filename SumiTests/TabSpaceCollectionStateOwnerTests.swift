@@ -76,9 +76,13 @@ final class TabSpaceCollectionStateOwnerTests: XCTestCase {
 @MainActor
 final class TabSpaceServiceIntegrationTests: XCTestCase {
     func testTabCreationUsesCurrentProfileSpaceBeforeSelectedSpace() throws {
-        let tabManager = BrowserManager()
         let defaultProfileId = UUID()
         let currentProfileId = UUID()
+        let runtime = TestRuntimePorts.make(
+            currentProfileId: { currentProfileId },
+            defaultProfileId: { defaultProfileId }
+        )
+        let tabManager = BrowserManager(runtimePorts: runtime)
         let defaultProfileSpace = try createSpace(
             in: tabManager,
             name: "Default",
@@ -90,10 +94,6 @@ final class TabSpaceServiceIntegrationTests: XCTestCase {
             profileID: currentProfileId
         )
         tabManager.spaceStateOwner.replaceCurrentSpace(defaultProfileSpace)
-        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
-            currentProfileId: { currentProfileId },
-            defaultProfileId: { defaultProfileId }
-        ))
 
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(
             in: nil,
@@ -105,20 +105,20 @@ final class TabSpaceServiceIntegrationTests: XCTestCase {
     }
 
     func testTabCreationBackfillsUnassignedSpace() throws {
-        let tabManager = BrowserManager()
         let currentProfileId = UUID()
         let currentProfile = Profile(
             id: currentProfileId,
             name: "Current"
         )
-        let unassigned = Space(name: "Unassigned")
-        tabManager.spaceStateOwner.replaceSpaces([unassigned])
-        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
+        let runtime = TestRuntimePorts.make(
             currentProfileId: { currentProfileId },
             profile: { profileId in
                 profileId == currentProfileId ? currentProfile : nil
             }
-        ))
+        )
+        let tabManager = BrowserManager(runtimePorts: runtime)
+        let unassigned = Space(name: "Unassigned")
+        tabManager.spaceStateOwner.replaceSpaces([unassigned])
 
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(
             in: nil,
@@ -132,14 +132,12 @@ final class TabSpaceServiceIntegrationTests: XCTestCase {
     }
 
     func testTabCreationCreatesDefaultSpaceWhenNoSpaceExists() throws {
-        let tabManager = BrowserManager()
-        tabManager.tabRuntimeLifecycle.shutdown()
-        defer { tabManager.runtimePortConnection.detach() }
         let currentProfileId = UUID()
-        tabManager.spaceStateOwner.removeAll()
-        tabManager.runtimePortConnection.attach(
-            TestRuntimePorts.make(currentProfileId: { currentProfileId })
+        let runtime = TestRuntimePorts.make(
+            currentProfileId: { currentProfileId }
         )
+        let tabManager = BrowserManager(runtimePorts: runtime)
+        tabManager.spaceStateOwner.removeAll()
 
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(
             in: nil,
@@ -160,12 +158,12 @@ final class TabSpaceServiceIntegrationTests: XCTestCase {
     }
 
     func testRenameSpacePresentsNotificationOnlyWhenNameChanges() throws {
-        let tabManager = BrowserManager()
-        let space = try createSpace(in: tabManager, name: "Work")
         let spy = NotificationPresentingSpy()
-        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
+        let runtime = TestRuntimePorts.make(
             notifications: { spy }
-        ))
+        )
+        let tabManager = BrowserManager(runtimePorts: runtime)
+        let space = try createSpace(in: tabManager, name: "Work")
 
         try tabManager.sidebarSpaceLifecycle.renameSpace(space.id, to: "Work")
         XCTAssertTrue(spy.presentSpaceRenamedNotificationCalls.isEmpty)

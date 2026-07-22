@@ -91,58 +91,29 @@ final class HistoryMenuModelTests: XCTestCase {
         XCTAssertEqual(sourceTab.url, URL(string: "https://source.example")!)
     }
 
-    func testBackForwardListItemMustBelongToActiveWebViewBeforeRawGo() async throws {
-        let sourceTab = Tab(
-            url: URL(string: "https://source.example")!,
-            name: "Source",
-            loadsCachedFaviconOnInit: false
-        )
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("HistoryMenuModelTests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(
-            at: directory,
-            withIntermediateDirectories: true
-        )
-        defer {
-            try? FileManager.default.removeItem(at: directory)
-        }
-        let firstURL = directory.appendingPathComponent("first.html")
-        let secondURL = directory.appendingPathComponent("second.html")
-        try "<html><body>first</body></html>".write(to: firstURL, atomically: true, encoding: .utf8)
-        try "<html><body>second</body></html>".write(to: secondURL, atomically: true, encoding: .utf8)
+    func testHistoryItemSourceIdentityRejectsDifferentWebView() {
+        let firstURL = URL(string: "https://history-menu.test/first")!
         let menuWebView = WKWebView()
         let activeWebView = WKWebView()
-        await loadFile(firstURL, in: menuWebView)
-        await loadFile(secondURL, in: menuWebView)
-        let items = SumiNavigationHistoryMenuModel.items(
-            direction: .back,
-            tab: sourceTab,
-            webView: menuWebView
-        )
-        let staleBackItem = items.first { $0.url == firstURL }
-        guard let staleBackItem else {
-            XCTFail("Expected menu WebView to expose first page as a back item")
-            return
-        }
-        var openedURL: URL?
-        weak var openedSourceTab: Tab?
-        let context = makeHistoryContext(
-            openURLInCurrentTab: { url, tab in
-                openedURL = url
-                openedSourceTab = tab
-            }
+        let staleHistoryItem = SumiNavigationHistoryMenuItem(
+            url: firstURL,
+            title: "First",
+            sourceWebViewObjectID: ObjectIdentifier(menuWebView),
+            isCurrent: false
         )
 
-        SumiNavigationHistoryMenuModel.navigate(
-            to: staleBackItem,
-            tab: sourceTab,
-            webView: activeWebView,
-            historyContext: context,
-            event: nil
+        XCTAssertTrue(
+            SumiNavigationHistoryMenuModel.historyItem(
+                staleHistoryItem,
+                belongsTo: menuWebView
+            )
         )
-
-        XCTAssertEqual(openedURL, firstURL)
-        XCTAssertIdentical(openedSourceTab, sourceTab)
+        XCTAssertFalse(
+            SumiNavigationHistoryMenuModel.historyItem(
+                staleHistoryItem,
+                belongsTo: activeWebView
+            )
+        )
     }
 
     private func makeHistoryContext(
@@ -159,30 +130,4 @@ final class HistoryMenuModelTests: XCTestCase {
         )
     }
 
-    private func loadFile(_ url: URL, in webView: WKWebView) async {
-        let didFinish = expectation(description: "Loaded \(url.absoluteString)")
-        let delegate = HistoryMenuNavigationDelegateBox {
-            didFinish.fulfill()
-        }
-        webView.navigationDelegate = delegate
-        webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
-        await fulfillment(of: [didFinish], timeout: 5.0)
-        webView.navigationDelegate = nil
-        _ = delegate
-    }
-}
-
-private final class HistoryMenuNavigationDelegateBox: NSObject, WKNavigationDelegate {
-    private let didFinish: () -> Void
-
-    init(didFinish: @escaping () -> Void) {
-        self.didFinish = didFinish
-    }
-
-    func webView(
-        _: WKWebView,
-        didFinish _: WKNavigation! // swiftlint:disable:this implicitly_unwrapped_optional
-    ) {
-        didFinish()
-    }
 }

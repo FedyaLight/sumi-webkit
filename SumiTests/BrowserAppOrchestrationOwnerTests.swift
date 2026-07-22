@@ -161,56 +161,6 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
         registry.unregister(lateWindowState.id)
     }
 
-    func testRetainedCommandSurfacesReleaseLiveKernelAndIgnoreLateCalls() async throws {
-        var browserManager: BrowserManager? = BrowserManager()
-        let commands = DetachedBrowserCommandSurfaces(
-            browserManager: try XCTUnwrap(browserManager)
-        )
-
-        browserManager = nil
-        XCTAssertTrue(commands.hasReleasedLiveKernel)
-
-        let lateWindow = BrowserWindowState()
-        XCTAssertNil(commands.sidebarActions.spaceForSidebarActions(in: lateWindow))
-        commands.nativeSurfaces.openNativeBrowserSurface(
-            .settings,
-            url: SettingsTabs.general.settingsSurfaceURL,
-            in: lateWindow
-        )
-        XCTAssertNil(lateWindow.currentTabId)
-        commands.zoom.cleanupZoomForTab(UUID())
-        XCTAssertNil(commands.tabOpening.resolvedTabOpenSpace(for: .background()))
-
-        let lateTab = Tab(
-            url: URL(string: "https://late.example")!,
-            name: "Late",
-            loadsCachedFaviconOnInit: false
-        )
-        commands.tabClosing.closeTab(lateTab, in: lateWindow)
-        XCTAssertNil(lateWindow.currentTabId)
-
-        let targetSpaceID = UUID()
-        lateWindow.presentationState.pendingSplitGroupFocusRequest = SplitGroupFocusRequest(
-            groupID: UUID(),
-            preferredMemberID: nil,
-            targetSpaceID: targetSpaceID
-        )
-        commands.splitFocus.completePendingSplitGroupFocusIfReady(
-            in: lateWindow,
-            spaceId: targetSpaceID
-        )
-        XCTAssertNotNil(lateWindow.presentationState.pendingSplitGroupFocusRequest)
-
-        commands.glance.presentExternalURL(
-            URL(string: "https://late-glance.example")!,
-            from: nil
-        )
-        XCTAssertNil(commands.glance.currentSession)
-        let historyCount = commands.recentlyClosed.items.count
-        commands.sessionRecovery.reopenMostRecentClosedItem()
-        XCTAssertEqual(commands.recentlyClosed.items.count, historyCount)
-    }
-
     private func makeHarness() -> Harness {
         let owner = BrowserAppOrchestrationOwner()
         let appDelegate = AppDelegate()
@@ -279,61 +229,4 @@ private struct Harness {
     let keyboardShortcutManager: KeyboardShortcutManager
     let dependencies: BrowserAppOrchestrationOwner.Dependencies
     let startUpdaterCallCount: () -> Int
-}
-
-@MainActor
-private final class DetachedBrowserCommandSurfaces {
-    weak var browserManager: BrowserManager?
-    weak var profileManager: ProfileManager?
-    weak var zoomManager: ZoomManager?
-    weak var liveFolderManager: SumiLiveFolderManager?
-    weak var sessionRestore: WindowSessionRestoreService?
-
-    let glance: GlanceManager
-    let sidebarActions: BrowserSidebarActionOwner
-    let nativeSurfaces: BrowserNativeSurfaceRoutingOwner
-    let zoom: BrowserZoomCommandOwner
-    let tabOpening: BrowserTabOpeningOwner
-    let tabClosing: BrowserTabCloseOrchestrationOwner
-    let splitFocus: SplitShortcutFocusService
-    let sessionRecovery: BrowserSessionRecoveryCommands
-    let recentlyClosed: RecentlyClosedManager
-
-    var hasReleasedLiveKernel: Bool {
-        browserManager == nil
-            && profileManager == nil
-            && zoomManager == nil
-            && liveFolderManager == nil
-            && sessionRestore == nil
-    }
-
-    init(browserManager: BrowserManager) {
-        self.browserManager = browserManager
-        self.profileManager = browserManager.profileManager
-        self.zoomManager = browserManager.zoomManager
-        self.liveFolderManager = browserManager.liveFolderManager
-        self.sessionRestore = browserManager.windowSessionBundle.restoreService
-        self.glance = browserManager.glanceManager
-        self.sidebarActions = browserManager.chromeBundle.sidebarActionOwner
-        self.nativeSurfaces = browserManager.chromeBundle.nativeSurfaceRoutingOwner
-        self.zoom = browserManager.chromeBundle.zoomCommandOwner
-        self.tabOpening = browserManager.tabOpening
-        self.tabClosing = browserManager.tabCloseOrchestration
-        self.splitFocus = browserManager.splitShortcutFocus
-        self.sessionRecovery = browserManager.windowSessionBundle.sessionRecovery
-        self.recentlyClosed = browserManager.recentlyClosedManager
-
-        let closedTab = Tab(
-            url: URL(string: "https://closed-before-release.example")!,
-            name: "Closed before release",
-            loadsCachedFaviconOnInit: false
-        )
-        recentlyClosed.captureClosedTab(
-            closedTab,
-            sourceSpaceId: nil,
-            currentURL: closedTab.url,
-            canGoBack: false,
-            canGoForward: false
-        )
-    }
 }

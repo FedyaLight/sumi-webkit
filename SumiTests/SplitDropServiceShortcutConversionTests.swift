@@ -8,7 +8,7 @@ final class SplitDropServiceShortcutConversionTests: XCTestCase {
     func testDurablePinnedMemberCreatesPinnedSplitWithoutDragProxyIdentity()
         throws {
         let fixture = try makeFixture(sourceMemberCount: 2)
-        defer { fixture.manager.runtimePortConnection.detach() }
+        defer { fixture.manager.tabRuntimeLifecycle.shutdown() }
         fixture.probe.reconcilesPresentations = false
         let sourcePin = ShortcutPin(
             id: UUID(),
@@ -69,7 +69,7 @@ final class SplitDropServiceShortcutConversionTests: XCTestCase {
 
     func testPinnedLauncherMovesIntoEssentialSplitAsThirdMember() throws {
         let fixture = try makeFixture(sourceMemberCount: 2)
-        defer { fixture.manager.runtimePortConnection.detach() }
+        defer { fixture.manager.tabRuntimeLifecycle.shutdown() }
         fixture.probe.reconcilesPresentations = false
         let profileID = try XCTUnwrap(fixture.space.profileId)
         let essentialPins = (0..<2).map { index in
@@ -141,7 +141,7 @@ final class SplitDropServiceShortcutConversionTests: XCTestCase {
     func testPinnedLauncherSplitsWithStandaloneEssentialByMovingIntoEssentials()
         throws {
         let fixture = try makeFixture(sourceMemberCount: 2)
-        defer { fixture.manager.runtimePortConnection.detach() }
+        defer { fixture.manager.tabRuntimeLifecycle.shutdown() }
         fixture.probe.reconcilesPresentations = false
         let profileID = try XCTUnwrap(fixture.space.profileId)
         let source = ShortcutPin(
@@ -216,7 +216,7 @@ final class SplitDropServiceShortcutConversionTests: XCTestCase {
     func testEssentialLauncherSplitsWithStandalonePinnedByMovingIntoPinned()
         throws {
         let fixture = try makeFixture(sourceMemberCount: 2)
-        defer { fixture.manager.runtimePortConnection.detach() }
+        defer { fixture.manager.tabRuntimeLifecycle.shutdown() }
         fixture.probe.reconcilesPresentations = false
         let profileID = try XCTUnwrap(fixture.space.profileId)
         let source = ShortcutPin(
@@ -292,7 +292,7 @@ final class SplitDropServiceShortcutConversionTests: XCTestCase {
 
     func testPinnedMemberSplitsWithRegularTabByCreatingRegularCopy() throws {
         let fixture = try makeFixture(sourceMemberCount: 2)
-        defer { fixture.manager.runtimePortConnection.detach() }
+        defer { fixture.manager.tabRuntimeLifecycle.shutdown() }
         fixture.probe.reconcilesPresentations = false
         let pin = ShortcutPin(
             id: UUID(),
@@ -350,7 +350,7 @@ final class SplitDropServiceShortcutConversionTests: XCTestCase {
 
     func testEdgeDropCollapsesTwoMemberSourceAndActivatesExactPin() throws {
         let fixture = try makeFixture(sourceMemberCount: 2)
-        defer { fixture.manager.runtimePortConnection.detach() }
+        defer { fixture.manager.tabRuntimeLifecycle.shutdown() }
         let target = SplitDropTarget(
             targetMemberID: .shortcutPin(fixture.targetPins[0].id),
             side: .right,
@@ -398,7 +398,7 @@ final class SplitDropServiceShortcutConversionTests: XCTestCase {
 
     func testCenterDropKeepsReducedThreeMemberSourceAndReportsReleasedTarget() throws {
         let fixture = try makeFixture(sourceMemberCount: 3)
-        defer { fixture.manager.runtimePortConnection.detach() }
+        defer { fixture.manager.tabRuntimeLifecycle.shutdown() }
         let displacedPinID = fixture.targetPins[0].id
         let target = SplitDropTarget(
             targetMemberID: .shortcutPin(displacedPinID),
@@ -448,7 +448,7 @@ final class SplitDropServiceShortcutConversionTests: XCTestCase {
             sourceMemberCount: 2,
             targetMemberCount: SumiDomain.SplitGroup.maximumMembers
         )
-        defer { fixture.manager.runtimePortConnection.detach() }
+        defer { fixture.manager.tabRuntimeLifecycle.shutdown() }
         let expectedGroups = fixture.manager.splitGroupStore.groups
         let expectedPins = fixture.manager.shortcutPinCollectionStateOwner
             .spacePinnedPins(for: fixture.space.id).map(\.id)
@@ -546,9 +546,7 @@ private extension SplitDropServiceShortcutConversionTests {
         let window = BrowserWindowState()
         let sourceProfile = Profile(name: "Source")
         let probe = Probe()
-        let manager = BrowserManager()
-        manager.tabRuntimeLifecycle.shutdown()
-        manager.runtimePortConnection.attach(TestRuntimePorts.make(
+        let runtime = TestRuntimePorts.make(
             currentProfileId: { sourceProfile.id },
             defaultProfileId: { sourceProfile.id },
             profile: { $0 == sourceProfile.id ? sourceProfile : nil },
@@ -563,7 +561,8 @@ private extension SplitDropServiceShortcutConversionTests {
                         : .stale
                 }
             )
-        ))
+        )
+        let manager = BrowserManager(runtimePorts: runtime)
         manager.windowRegistry.register(window)
         let space = try XCTUnwrap(manager.sidebarSpaceLifecycle.createSpace(
             name: "Space",

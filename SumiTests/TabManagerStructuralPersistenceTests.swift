@@ -928,7 +928,6 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
             webViewLifecycle: retirement.makeLifecycle()
         )
         let space = try makeSpace(in: tabManager, name: "Split")
-        let regular = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/regular", in: space, activate: true)
         let pin = ShortcutPin(
             id: UUID(),
             role: .spacePinned,
@@ -937,18 +936,31 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
             launchURL: try XCTUnwrap(URL(string: "https://example.com/pinned")),
             title: "Pinned"
         )
+        let companion = ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            spaceId: space.id,
+            index: 1,
+            launchURL: try XCTUnwrap(URL(string: "https://example.com/companion")),
+            title: "Companion"
+        )
         tabManager.structuralCollectionMutationOwner
-            .setSpacePinnedShortcuts([pin], for: space.id)
+            .setSpacePinnedShortcuts([pin, companion], for: space.id)
         let windowId = UUID()
         let livePinnedTab = tabManager.shortcutTabMaterializer.materialize(pin, in: windowId, currentSpaceId: space.id)!
         let group = try XCTUnwrap(
             SplitGroup.make(
                 members: [
-                    .regularTab(regular.id),
                     .shortcutPin(pin.id),
+                    .shortcutPin(companion.id),
                 ],
                 layoutKind: .vertical,
-                container: .regularTabs(spaceId: space.id)
+                container: .shortcutSidebar(
+                    spaceId: space.id,
+                    profileId: nil,
+                    folderId: nil,
+                    index: 0
+                )
             )
         )
         XCTAssertTrue(tabManager.splitGroupMutations.insert(group))
@@ -976,7 +988,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
             )
         )
         XCTAssertEqual(restoredGroup.id, group.id)
-        XCTAssertTrue(restoredGroup.contains(.regularTab(regular.id)))
+        XCTAssertTrue(restoredGroup.contains(.shortcutPin(companion.id)))
         XCTAssertTrue(restoredGroup.contains(.shortcutPin(pin.id)))
         XCTAssertFalse(restoredGroup.contains(.regularTab(livePinnedTab.id)))
     }

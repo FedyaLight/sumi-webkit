@@ -14,6 +14,7 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         let staleDestination = Space(name: "Deleted", profileId: destinationProfileId)
         let replacement = Space(name: "Replacement", profileId: destinationProfileId)
         let browserHarness = try TestSidebarBrowserContextHarness(spaces: [source, staleDestination])
+        browserHarness.register(windowState)
         let settingsHarness = TestDefaultsHarness()
         let settings = SumiSettingsService(userDefaults: settingsHarness.defaults)
         let dragState = SidebarDragState()
@@ -64,6 +65,7 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         let source = Space(name: "Source", profileId: sourceProfileId)
         let destination = Space(name: "Destination", profileId: destinationProfileId)
         let browserHarness = try TestSidebarBrowserContextHarness(spaces: [source, destination])
+        browserHarness.register(windowState)
         let settingsHarness = TestDefaultsHarness()
         let settings = SumiSettingsService(userDefaults: settingsHarness.defaults)
         let dragState = SidebarDragState()
@@ -117,6 +119,7 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         let source = Space(name: "Source", profileId: sourceProfileId)
         let destination = Space(name: "Destination", profileId: destinationProfileId)
         let browserHarness = try TestSidebarBrowserContextHarness(spaces: [source, destination])
+        browserHarness.register(windowState)
         let settingsHarness = TestDefaultsHarness()
         let settings = SumiSettingsService(userDefaults: settingsHarness.defaults)
         let dragState = SidebarDragState()
@@ -212,6 +215,7 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         let source = Space(name: "Source", profileId: sourceProfileId)
         let destination = Space(name: "Destination", profileId: destinationProfileId)
         let browserHarness = try TestSidebarBrowserContextHarness(spaces: [source, destination])
+        browserHarness.register(windowState)
         let settingsHarness = TestDefaultsHarness()
         let settings = SumiSettingsService(userDefaults: settingsHarness.defaults)
         let dragState = SidebarDragState()
@@ -309,6 +313,7 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         let browserHarness = try TestSidebarBrowserContextHarness(
             spaces: [source, scheduledDestination, directDestination]
         )
+        browserHarness.register(windowState)
         let settingsHarness = TestDefaultsHarness()
         let settings = SumiSettingsService(userDefaults: settingsHarness.defaults)
         let dragState = SidebarDragState()
@@ -396,6 +401,7 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         let browserHarness = try TestSidebarBrowserContextHarness(
             spaces: [source, scheduledDestination, directDestination]
         )
+        browserHarness.register(windowState)
         let settingsHarness = TestDefaultsHarness()
         let settings = SumiSettingsService(userDefaults: settingsHarness.defaults)
         let dragState = SidebarDragState()
@@ -483,6 +489,7 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         let fallbackSpace = Space(name: "Fallback")
         let secondSpace = Space(name: "Second")
         let browserHarness = try TestSidebarBrowserContextHarness(spaces: [fallbackSpace, secondSpace])
+        browserHarness.register(windowState)
         let settingsHarness = TestDefaultsHarness()
         let settings = SumiSettingsService(userDefaults: settingsHarness.defaults)
         let coordinator = SpaceSidebarTransitionCoordinator()
@@ -593,6 +600,7 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
     ) throws -> RuntimeRelativeSwitchFixture {
         let windowState = BrowserWindowState()
         let browserHarness = try TestSidebarBrowserContextHarness(spaces: spaces)
+        browserHarness.register(windowState)
         let settingsHarness = TestDefaultsHarness()
         let settings = SumiSettingsService(userDefaults: settingsHarness.defaults)
         let dragState = SidebarDragState()
@@ -757,7 +765,14 @@ private func applyRegularListGeometry(
         .regularList(
             spaceId: spaceId,
             frame: CGRect(x: 0, y: 320, width: 300, height: 260),
-            rowCount: 6
+            rowIdentities: [
+                .tab(UUID(uuidString: "00000000-0000-0000-0000-000000000001")!),
+                .tab(UUID(uuidString: "00000000-0000-0000-0000-000000000002")!),
+                .tab(UUID(uuidString: "00000000-0000-0000-0000-000000000003")!),
+                .tab(UUID(uuidString: "00000000-0000-0000-0000-000000000004")!),
+                .tab(UUID(uuidString: "00000000-0000-0000-0000-000000000005")!),
+                .tab(UUID(uuidString: "00000000-0000-0000-0000-000000000006")!),
+            ]
         ),
         generation: generation
     )
@@ -825,10 +840,22 @@ private final class TestSidebarBrowserContextHarness {
             )
         )
         self.browserManager = browserManager
+        let profileIDs = Set(spaces.compactMap(\.profileId))
+        if profileIDs.isEmpty {
+            browserManager.profileManager.ensureDefaultProfile()
+        } else {
+            browserManager.profileManager.profiles = profileIDs.map {
+                Profile(id: $0, name: "Transition")
+            }
+        }
+        browserManager.currentProfile = spaces.first.flatMap { space in
+            browserManager.profileManager.profiles.first {
+                $0.id == space.profileId
+            }
+        } ?? browserManager.profileManager.profiles.first
         browserManager.spaceStateOwner.replaceSpaces(spaces)
         browserManager.spaceStateOwner.replaceCurrentSpace(spaces.first)
         browserManager.startupRestoreLifecycle.markLoadFinished()
-        browserManager.profileManager.ensureDefaultProfile()
         let sidebar = TransitionSidebarFixture(browser: browserManager)
         self.sidebar = sidebar
 
@@ -840,5 +867,17 @@ private final class TestSidebarBrowserContextHarness {
     func commitWorkspaceTheme(_ theme: WorkspaceTheme, for windowState: BrowserWindowState) {
         browserManager.chromeBundle.workspaceThemeTransitionOwner
             .commitWorkspaceTheme(theme, for: windowState)
+    }
+
+    func register(_ windowState: BrowserWindowState) {
+        browserManager.tabResidenceAuthority.establishResidenceSession(
+            on: windowState
+        )
+        windowState.currentProfileId = browserManager.currentProfile?.id
+        XCTAssertEqual(
+            browserManager.windowRegistry.register(windowState),
+            .registered
+        )
+        browserManager.windowRegistry.setActive(windowState)
     }
 }

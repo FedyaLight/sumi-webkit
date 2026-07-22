@@ -148,8 +148,7 @@ final class DisplayedShortcutResidenceContributionTests: XCTestCase {
         let secondary = BrowserWindowState()
         let profile = Profile(name: "Runtime")
         let windows = [primary.id: primary, secondary.id: secondary]
-        let tabManager = BrowserManager()
-        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
+        let tabManager = BrowserManager(runtimePorts: TestRuntimePorts.make(
             currentProfileId: { profile.id },
             defaultProfileId: { profile.id },
             profile: { $0 == profile.id ? profile : nil },

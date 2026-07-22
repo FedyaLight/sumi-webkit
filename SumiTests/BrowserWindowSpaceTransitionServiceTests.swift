@@ -63,17 +63,16 @@ final class BrowserWindowSpaceTransitionServiceTests: XCTestCase {
     }
 
     func testDeferredRetryRejectsSameIDWindowReplacement() throws {
-        let browser = BrowserManager()
-        browser.tabRuntimeLifecycle.shutdown()
         let profile = Profile(name: "Deferred")
         let transition = DeferredSpaceProfileTransition()
-        browser.runtimePortConnection.attach(TestRuntimePorts.make(
+        let runtime = TestRuntimePorts.make(
             currentProfileId: { profile.id },
             defaultProfileId: { profile.id },
             profileExists: { $0 == profile.id },
             profile: { $0 == profile.id ? profile : nil },
             webViewLifecycle: transition.makeLifecycle()
-        ))
+        )
+        let browser = BrowserManager(runtimePorts: runtime)
         browser.profileManager.profiles = [profile]
         browser.currentProfile = profile
         let source = Space(name: "Source", profileId: profile.id)

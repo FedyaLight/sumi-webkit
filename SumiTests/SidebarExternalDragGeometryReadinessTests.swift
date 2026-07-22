@@ -74,7 +74,7 @@ final class ExternalDragGeometryReadinessTests: XCTestCase {
             .regularList(
                 spaceId: spaceId,
                 frame: CGRect(x: 0, y: 120, width: 240, height: 240),
-                rowCount: 4
+                rowIdentities: (0..<4).map { _ in .tab(UUID()) }
             ),
             generation: generation
         )

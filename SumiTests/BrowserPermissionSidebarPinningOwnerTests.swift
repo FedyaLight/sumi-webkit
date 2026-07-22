@@ -34,12 +34,7 @@ final class PermissionSidebarPinningOwnerTests: XCTestCase {
                 activeQueriesByPageId: [query.pageId: query]
             )
         )
-        let owner = BrowserPermissionSidebarPinningOwner(
-            permissionRuntime: browserManager.permissionRuntime,
-            windows: browserManager.windowRegistry,
-            windowTabs: browserManager.shellRuntime.windowTabs,
-            pinningController: SumiPermissionSidebarPinningController()
-        )
+        let owner = browserManager.privacyBundle.permissionSidebarPinningOwner
 
         await owner.reconcile(reason: "test")
 

@@ -443,8 +443,7 @@ final class ShortcutTabMaterializerTests: XCTestCase {
         let ownerProfileId = UUID()
         let executionProfile = Profile(name: "Execution")
         let executionProfileId = executionProfile.id
-        let tabManager = BrowserManager()
-        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
+        let tabManager = BrowserManager(runtimePorts: TestRuntimePorts.make(
             profile: { $0 == executionProfileId ? executionProfile : nil }
         ))
         let presentationSpace = Space(
@@ -511,8 +510,7 @@ final class ShortcutTabMaterializerTests: XCTestCase {
     func testSpacePinnedMaterializationInheritsMetadataAndRebindsOnce() throws {
         let spaceProfile = Profile(name: "Space")
         let spaceProfileId = spaceProfile.id
-        let tabManager = BrowserManager()
-        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
+        let tabManager = BrowserManager(runtimePorts: TestRuntimePorts.make(
             profile: { $0 == spaceProfileId ? spaceProfile : nil }
         ))
         let space = Space(

@@ -132,4 +132,21 @@ struct SidebarDragCommitIntent {
     let fromContainer: TabDragManager.DragContainer
     let toContainer: TabDragManager.DragContainer
     let presentedVisualIndex: Int
+    let presentedRegularBoundary: SidebarVisualSceneProjection.RegularBoundary?
+
+    init(
+        payload: DragOperation.Payload,
+        scope: SidebarDragScope,
+        fromContainer: TabDragManager.DragContainer,
+        toContainer: TabDragManager.DragContainer,
+        presentedVisualIndex: Int,
+        presentedRegularBoundary: SidebarVisualSceneProjection.RegularBoundary? = nil
+    ) {
+        self.payload = payload
+        self.scope = scope
+        self.fromContainer = fromContainer
+        self.toContainer = toContainer
+        self.presentedVisualIndex = presentedVisualIndex
+        self.presentedRegularBoundary = presentedRegularBoundary
+    }
 }

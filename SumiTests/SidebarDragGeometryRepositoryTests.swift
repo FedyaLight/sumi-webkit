@@ -184,7 +184,7 @@ final class SidebarDragGeometryRepositoryTests: XCTestCase {
         repository.applyRegularListHitTarget(
             spaceId: spaceId,
             frame: CGRect(x: 0, y: 320, width: 300, height: 260),
-            rowCount: 6,
+            rowIdentities: (0..<6).map { _ in .tab(UUID()) },
             generation: pendingGeneration
         )
         repository.flushDeferredGeometryForDragStart()
@@ -225,7 +225,7 @@ final class SidebarDragGeometryRepositoryTests: XCTestCase {
         repository.applyRegularListHitTarget(
             spaceId: spaceId,
             frame: CGRect(x: 0, y: 120, width: 220, height: 200),
-            rowCount: 3,
+            rowIdentities: (0..<3).map { _ in .tab(UUID()) },
             generation: generation
         )
         repository.flushDeferredGeometryForDragStart()

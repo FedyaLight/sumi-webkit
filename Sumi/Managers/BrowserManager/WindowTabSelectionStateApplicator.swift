@@ -117,14 +117,54 @@ enum WindowTabSelectionStateApplicator {
         updateSpaceFromTab: Bool,
         rememberSelection: Bool
     ) -> WindowTabSelectionApplicationResult {
+        apply(
+            tabID: tab.id,
+            tabSpaceID: tab.spaceId,
+            isShortcutLiveInstance: tab.isShortcutLiveInstance,
+            shortcutPinID: tab.shortcutPinId,
+            shortcutPinRole: tab.shortcutPinRole,
+            to: &state,
+            updateSpaceFromTab: updateSpaceFromTab,
+            rememberSelection: rememberSelection
+        )
+    }
+
+    static func applyPromotedRegularTab(
+        id tabID: UUID,
+        spaceID: UUID,
+        to state: inout BrowserWindowShortcutMutationState,
+        rememberSelection: Bool
+    ) -> WindowTabSelectionApplicationResult {
+        apply(
+            tabID: tabID,
+            tabSpaceID: spaceID,
+            isShortcutLiveInstance: false,
+            shortcutPinID: nil,
+            shortcutPinRole: nil,
+            to: &state,
+            updateSpaceFromTab: true,
+            rememberSelection: rememberSelection
+        )
+    }
+
+    private static func apply(
+        tabID: UUID,
+        tabSpaceID: UUID?,
+        isShortcutLiveInstance: Bool,
+        shortcutPinID: UUID?,
+        shortcutPinRole: ShortcutPinRole?,
+        to state: inout BrowserWindowShortcutMutationState,
+        updateSpaceFromTab: Bool,
+        rememberSelection: Bool
+    ) -> WindowTabSelectionApplicationResult {
         let previousTabId = state.currentTabId
         let previousSpaceId = state.currentSpaceId
         let targetState = WindowTabSelectionPolicy.targetState(
-            tabId: tab.id,
-            tabSpaceId: tab.spaceId,
-            isShortcutLiveInstance: tab.isShortcutLiveInstance,
-            shortcutPinId: tab.shortcutPinId,
-            shortcutPinRole: tab.shortcutPinRole,
+            tabId: tabID,
+            tabSpaceId: tabSpaceID,
+            isShortcutLiveInstance: isShortcutLiveInstance,
+            shortcutPinId: shortcutPinID,
+            shortcutPinRole: shortcutPinRole,
             currentSpaceId: state.currentSpaceId,
             updateSpaceFromTab: updateSpaceFromTab,
             rememberSelection: rememberSelection
@@ -132,7 +172,7 @@ enum WindowTabSelectionStateApplicator {
 
         var stateDidChange = false
         if state.webKitChildWindowIdentity != nil,
-           state.webKitChildWindowIdentity?.initialTabID != tab.id {
+           state.webKitChildWindowIdentity?.initialTabID != tabID {
             state.webKitChildWindowIdentity = nil
             stateDidChange = true
         }
@@ -170,7 +210,9 @@ enum WindowTabSelectionStateApplicator {
             to: &state
         ) || stateDidChange
         stateDidChange = recordSelectionHistoryIfNeeded(
-            tab,
+            tabID: tabID,
+            isShortcutLiveInstance: isShortcutLiveInstance,
+            shortcutPinID: shortcutPinID,
             targetState: targetState,
             rememberSelection: rememberSelection,
             in: &state
@@ -277,7 +319,9 @@ enum WindowTabSelectionStateApplicator {
 
     @discardableResult
     private static func recordSelectionHistoryIfNeeded(
-        _ tab: Tab,
+        tabID: UUID,
+        isShortcutLiveInstance: Bool,
+        shortcutPinID: UUID?,
         targetState: WindowTabSelectionTargetState,
         rememberSelection: Bool,
         in state: inout BrowserWindowShortcutMutationState
@@ -289,11 +333,11 @@ enum WindowTabSelectionStateApplicator {
         }
 
         let item: BrowserWindowSelectionHistoryItem
-        if tab.isShortcutLiveInstance {
-            guard let pinId = tab.shortcutPinId else { return false }
+        if isShortcutLiveInstance {
+            guard let pinId = shortcutPinID else { return false }
             item = .shortcutPin(pinId)
         } else {
-            item = .regularTab(tab.id)
+            item = .regularTab(tabID)
         }
 
         return state.selectionHistory.recordSelection(item, in: spaceId)

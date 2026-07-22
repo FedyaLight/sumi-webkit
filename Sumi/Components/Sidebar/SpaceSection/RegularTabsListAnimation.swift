@@ -9,6 +9,12 @@ enum RegularTabRenderedItem: Identifiable, Hashable {
     case tab(UUID)
 
     var id: Self { self }
+
+    var tabID: UUID {
+        switch self {
+        case .tab(let id): return id
+        }
+    }
 }
 
 enum RegularTabRemovalMode: Equatable {

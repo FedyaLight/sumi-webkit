@@ -189,7 +189,7 @@ final class SidebarDropIndicatorGeometryTests: XCTestCase {
     func testRegularHitMetricsMapPointerAndSlotsThroughSplitGroupBoundaries() {
         let metrics = SidebarRegularListHitMetrics(
             frame: CGRect(x: 0, y: 0, width: 240, height: 112),
-            rowCount: 3
+            rowIdentities: (0..<3).map { _ in .tab(UUID()) }
         )
 
         XCTAssertEqual(metrics.rowCount, 3)
@@ -198,6 +198,31 @@ final class SidebarDropIndicatorGeometryTests: XCTestCase {
         XCTAssertEqual(metrics.rowBoundaryIndex(forLocalY: 40), 1)
         XCTAssertEqual(metrics.rowBoundaryIndex(forLocalY: 70), 2)
         XCTAssertEqual(metrics.rowBoundaryIndex(forLocalY: 500), 3)
+    }
+
+    func testRegularHitMetricsDoNotAccumulateSplitMemberOffsetNearListBottom() {
+        let leadingIDs = (0..<7).map { _ in UUID() }
+        let splitID = UUID()
+        let trailingIDs = (0..<2).map { _ in UUID() }
+        let identities: [SidebarVisualSceneProjection.RegularRow.Identity] =
+            leadingIDs.map { .tab($0) }
+            + [.splitGroup(splitID)]
+            + trailingIDs.map { .tab($0) }
+        let metrics = SidebarRegularListHitMetrics(
+            frame: CGRect(x: 0, y: 0, width: 240, height: 378),
+            rowIdentities: identities
+        )
+
+        let boundaryIndex = metrics.rowBoundaryIndex(forLocalY: 8 * 38)
+
+        XCTAssertEqual(boundaryIndex, 8)
+        XCTAssertEqual(
+            metrics.presentedBoundary(at: boundaryIndex),
+            SidebarVisualSceneProjection.RegularBoundary(
+                before: .splitGroup(splitID),
+                after: .tab(trailingIDs[0])
+            )
+        )
     }
 
     func testMissingRegularMetricsHideLine() {
@@ -325,7 +350,7 @@ final class SidebarDropIndicatorGeometryTests: XCTestCase {
         geometry.regularListHitTargets = [
             spaceId: SidebarRegularListHitMetrics(
                 frame: frame,
-                rowCount: rowCount
+                rowIdentities: (0..<rowCount).map { _ in .tab(UUID()) }
             ),
         ]
         return geometry

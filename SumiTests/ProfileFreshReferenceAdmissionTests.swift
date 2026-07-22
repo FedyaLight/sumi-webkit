@@ -152,7 +152,11 @@ final class ProfileFreshReferenceAdmissionTests: XCTestCase {
             activate: false
         )
         let previewURL = URL(string: "https://glance-preview.example")!
-        let preview = Tab(url: previewURL, name: "Preview", spaceId: nil)
+        let preview = fixture.tabManager.tabFactory.makeTab(
+            url: previewURL,
+            name: "Preview",
+            spaceId: nil
+        )
         preview.profileId = fixture.fallbackProfile.id
         let token = try fixture.ledger.reserve(
             profile: fixture.retiringProfile,
@@ -476,8 +480,7 @@ final class ProfileFreshReferenceAdmissionTests: XCTestCase {
                 defaultProfileId: { fixture.retiringProfile.id }
             )
         )
-        let changes = ObservableObjectPublisher()
-        let observation = changes.sink {
+        let observation = fixture.tabManager.objectWillChange.sink {
             do {
                 _ = try fixture.ledger.reserve(
                     profile: fixture.retiringProfile,
@@ -489,8 +492,7 @@ final class ProfileFreshReferenceAdmissionTests: XCTestCase {
         }
         let commands = makeSpaceCatalog(
             in: fixture.tabManager,
-            runtimeConnection: runtimeConnection,
-            changes: changes
+            runtimeConnection: runtimeConnection
         )
 
         let created = try XCTUnwrap(
@@ -1028,8 +1030,7 @@ final class ProfileFreshReferenceAdmissionTests: XCTestCase {
             profileReferenceAdmission: browser.profileReferenceAdmission,
             committer: SpaceCreationCommitter(
                 structuralMutations: browser.structuralCollectionMutationOwner,
-                persistence: browser.structuralPersistence,
-                changes: changes
+                persistence: browser.structuralPersistence
             )
         )
         return SpaceCatalogCommands(

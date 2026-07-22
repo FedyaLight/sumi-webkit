@@ -7,6 +7,23 @@ import SumiDomain
 
 private let webKitPermissionBridgeFixedDate = Date(timeIntervalSince1970: 1_800_000_000)
 
+private final class PermissionBridgeDocumentNavigationDelegate:
+    NSObject,
+    WKNavigationDelegate {
+    private let onFinish: () -> Void
+
+    init(onFinish: @escaping () -> Void) {
+        self.onFinish = onFinish
+    }
+
+    func webView(
+        _: WKWebView,
+        didFinish _: WKNavigation!
+    ) {
+        onFinish()
+    }
+}
+
 @available(macOS 13.0, *)
 @MainActor
 final class SumiWebKitPermissionBridgeTests: XCTestCase {
@@ -574,12 +591,54 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
                 webKitPermissionBridge: bridge
             )
         )
-        let tab = browserManager.tabFactory.makeTab(
-            url: URL(string: "https://top.example/path")!,
-            loadsCachedFaviconOnInit: false
+        let profile = Profile(name: "Permission bridge")
+        browserManager.profileManager.profiles = [profile]
+        browserManager.currentProfile = profile
+        let space = installTestSpace(
+            in: browserManager.spaceStateOwner,
+            name: "Permission bridge",
+            profileID: profile.id
         )
-        tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
-        let webView = WKWebView()
+        browserManager.spaceStateOwner.replaceCurrentSpace(space)
+        let tab = browserManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://top.example/path",
+            in: space,
+            activate: false
+        )
+        let windowState = BrowserWindowState()
+        browserManager.tabResidenceAuthority.establishResidenceSession(
+            on: windowState
+        )
+        windowState.currentProfileId = profile.id
+        windowState.currentSpaceId = space.id
+        windowState.currentTabId = tab.id
+        browserManager.windowRegistry.register(windowState)
+        browserManager.windowRegistry.setActive(windowState)
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = profile.dataStore
+        let webView = FocusableWKWebView(
+            frame: .zero,
+            configuration: configuration
+        )
+        webView.owningTab = tab
+        XCTAssertTrue(
+            browserManager.webViewRuntime.trackedWebViewAdmission
+                .attemptAssignment(
+                    webView,
+                    to: tab,
+                    in: windowState.id,
+                    replaySemanticOperation: {
+                        XCTFail("Unexpected WebView placement deferral")
+                    }
+                ).isAccepted
+        )
+        await loadPermissionBridgeDocument(on: webView, at: tab.url)
+        let committedURL = try XCTUnwrap(webView.committedURL)
+        let navigation = bindPermissionBridgeDocument(
+            on: webView,
+            tab: tab,
+            committedURL: committedURL
+        )
         let expectation = XCTestExpectation(description: "legacy media delegate decision")
         var decisions: [Bool] = []
 
@@ -594,7 +653,7 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
         }
 
         await fulfillment(of: [expectation], timeout: 2)
-        withExtendedLifetime(webView) { /* no-op */ }
+        withExtendedLifetime((webView, navigation, windowState)) {}
 
         XCTAssertEqual(decisions, [true])
         XCTAssertEqual(runtime.currentRuntimeStateCallCount, 1)
@@ -604,6 +663,68 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
         XCTAssertEqual(contexts.first?.requestingOrigin.identity, "https://camera.example")
         XCTAssertEqual(contexts.first?.topOrigin.identity, "https://top.example")
         XCTAssertEqual(contexts.first?.surface, .normalTab)
+    }
+
+    private func loadPermissionBridgeDocument(
+        on webView: WKWebView,
+        at url: URL
+    ) async {
+        let didFinish = expectation(
+            description: "permission bridge source document loaded"
+        )
+        let delegate = PermissionBridgeDocumentNavigationDelegate {
+            didFinish.fulfill()
+        }
+        webView.navigationDelegate = delegate
+        webView.loadHTMLString(
+            "<html><body>permission source</body></html>",
+            baseURL: url
+        )
+        await fulfillment(of: [didFinish], timeout: 5)
+        webView.navigationDelegate = nil
+    }
+
+    @discardableResult
+    private func bindPermissionBridgeDocument(
+        on webView: WKWebView,
+        tab: Tab,
+        committedURL: URL
+    ) -> NSObject {
+        let intent = tab.beginMainFrameNavigationIntent(to: committedURL)
+        XCTAssertTrue(
+            tab.mainFrameLoads.markDeferredLoad(on: webView, intent: intent)
+        )
+        XCTAssertEqual(
+            tab.mainFrameLoads.claimDeferredSubmission(
+                on: webView,
+                revision: intent.revision,
+                targetURL: committedURL
+            ),
+            .claimed
+        )
+        let navigation = NSObject()
+        XCTAssertTrue(
+            tab.mainFrameSubmission.bindSubmittedLoad(
+                on: webView,
+                navigationID: ObjectIdentifier(navigation),
+                navigationLifetime: navigation,
+                matching: nil
+            )
+        )
+        tab.makeMainFrameLifecycleResponder().navigationDidCommit(
+            SumiNavigationContext(
+                navigationID: ObjectIdentifier(navigation),
+                navigationLifetime: navigation,
+                action: nil,
+                url: committedURL,
+                isCurrent: nil,
+                isCommitted: true,
+                isMainFrame: true,
+                webView: webView
+            )
+        )
+        XCTAssertNotNil(tab.committedDocumentRuntime.lease(for: webView))
+        return navigation
     }
 
     private func makeBridge(

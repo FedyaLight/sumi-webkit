@@ -210,6 +210,14 @@ final class BrowserZoomCommandOwnerTests: XCTestCase {
         profileID: UUID?,
         makeActive: Bool
     ) -> ZoomPageFixture {
+        if let profileID,
+           fixture.browser.profileManager.profiles.contains(where: {
+               $0.id == profileID
+           }) == false {
+            let profile = Profile(id: profileID, name: "Zoom")
+            fixture.browser.profileManager.profiles.append(profile)
+            fixture.browser.currentProfile = profile
+        }
         let space = installTestSpace(
             in: fixture.browser.spaceStateOwner,
             name: "Zoom",

@@ -716,8 +716,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
     private func makeBrowser(
         runtimePorts: RuntimePortRegistry
     ) -> BrowserManager {
-        let browser = BrowserManager()
-        browser.runtimePortConnection.attach(runtimePorts)
+        let browser = BrowserManager(runtimePorts: runtimePorts)
         return browser
     }
 

@@ -36,7 +36,11 @@ final class RecentlyClosedItemReopenService {
         let didRestore: Bool
         switch item {
         case .tab(let tabState):
-            didRestore = tabRestore.restore(tabState, in: windowState)
+            if let windowState {
+                didRestore = tabRestore.restore(tabState, in: windowState)
+            } else {
+                didRestore = tabRestore.restore(tabState)
+            }
         case .shortcutLiveInstance(let shortcutState):
             didRestore = shortcutRestore.restoreLiveInstance(shortcutState, in: windowState)
         case .shortcutLauncher(let launcherState):

@@ -53,7 +53,8 @@ final class SplitGroupShortcutMemberRelocation {
                 profileId: profileID,
                 spaceId: nil,
                 folderId: nil,
-                index: index ?? 0
+                index: index ?? 0,
+                opensFolder: false
             )
         case .shortcutSidebar(let spaceID, _, let folderID, let index):
             return ShortcutSplitLauncherDestination(
@@ -61,7 +62,8 @@ final class SplitGroupShortcutMemberRelocation {
                 profileId: nil,
                 spaceId: spaceID,
                 folderId: folderID,
-                index: index ?? 0
+                index: index ?? 0,
+                opensFolder: false
             )
         }
     }

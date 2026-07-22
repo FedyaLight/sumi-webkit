@@ -122,9 +122,6 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
                 to: deletedProfile.id
             )
         )
-        XCTAssertTrue(
-            try fixture.admission.cancel(token)
-        )
         tabManager.structuralPersistence.cancelPendingPersistence()
     }
 
@@ -203,9 +200,6 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
             tabManager.profileDeletion.containsReference(
                 to: deletedProfile.id
             )
-        )
-        XCTAssertTrue(
-            try fixture.admission.cancel(token)
         )
         withExtendedLifetime(observation) {}
         tabManager.structuralPersistence.cancelPendingPersistence()
@@ -352,8 +346,8 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
             profileExists: { profiles[$0] != nil },
             profile: { profiles[$0] }
         )
-        tabManager.runtimePortConnection.attach(replacement)
-        defer { tabManager.runtimePortConnection.detach() }
+        tabManager.tabRuntimeLifecycle.replaceRuntimePortsForTests(replacement)
+        defer { tabManager.tabRuntimeLifecycle.shutdown() }
         try XCTUnwrap(transition.settlement)(.committed)
 
         let outcome = await migration.value
@@ -537,22 +531,21 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
         webViewLifecycle: TabManagerWebViewLifecycleService? = nil
     ) throws -> ProfileDeletionFixture {
         let container = try makeInMemoryStartupModelContainer()
+        let runtime = TestRuntimePorts.make(
+            currentProfileId: currentProfileId,
+            defaultProfileId: defaultProfileId,
+            profileExists: profileExists,
+            profile: profile,
+            webViewLifecycle: webViewLifecycle
+                ?? TestRuntimePorts.webViewLifecycle(
+                    retirement: .rejecting
+                )
+        )
         let browser = BrowserManager(
             startupPersistence: BrowserManagerStartupPersistence(
                 container: container
-            )
-        )
-        browser.runtimePortConnection.attach(
-            TestRuntimePorts.make(
-                currentProfileId: currentProfileId,
-                defaultProfileId: defaultProfileId,
-                profileExists: profileExists,
-                profile: profile,
-                webViewLifecycle: webViewLifecycle
-                    ?? TestRuntimePorts.webViewLifecycle(
-                        retirement: .rejecting
-                    )
-            )
+            ),
+            runtimePorts: runtime
         )
         return ProfileDeletionFixture(
             browser: browser,

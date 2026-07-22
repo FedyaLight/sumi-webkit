@@ -7,8 +7,7 @@ final class ProfileSelectionCoordinatorTests: XCTestCase {
     func testVisibleSelectionOnlyRefreshesVisibility() throws {
         var visibilityUpdates = 0
         let profileID = UUID()
-        let tabManager = BrowserManager()
-        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
+        let tabManager = BrowserManager(runtimePorts: TestRuntimePorts.make(
             currentProfileId: { profileID },
             updateTabVisibility: { visibilityUpdates += 1 }
         ))
@@ -32,8 +31,7 @@ final class ProfileSelectionCoordinatorTests: XCTestCase {
     func testInvisibleSelectionChoosesFirstVisibleTabAndPersists() async throws {
         var visibilityUpdates = 0
         let profileID = UUID()
-        let tabManager = BrowserManager()
-        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
+        let tabManager = BrowserManager(runtimePorts: TestRuntimePorts.make(
             currentProfileId: { profileID },
             updateTabVisibility: { visibilityUpdates += 1 }
         ))
@@ -59,8 +57,7 @@ final class ProfileSelectionCoordinatorTests: XCTestCase {
     }
 
     func testSpaceReconciliationWithoutDefaultProfileIsInert() throws {
-        let tabManager = BrowserManager()
-        tabManager.runtimePortConnection.attach(TestRuntimePorts.make())
+        let tabManager = BrowserManager(runtimePorts: TestRuntimePorts.make())
         let space = Space(name: "Work", profileId: nil)
         tabManager.spaceStateOwner.replaceSpaces([space])
         tabManager.structuralPersistence.resetDirtySet()
@@ -84,8 +81,7 @@ final class ProfileSelectionCoordinatorTests: XCTestCase {
     func testSpaceReconciliationAssignsNilProfileAndSchedulesPersistence() throws {
         let profileID = UUID()
         let profile = Profile(id: profileID, name: "Default")
-        let tabManager = BrowserManager()
-        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
+        let tabManager = BrowserManager(runtimePorts: TestRuntimePorts.make(
             defaultProfileId: { profileID },
             profile: { $0 == profileID ? profile : nil }
         ))

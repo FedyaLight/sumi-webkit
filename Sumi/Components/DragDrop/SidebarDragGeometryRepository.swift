@@ -179,7 +179,7 @@ final class SidebarDragGeometryRepository {
     func scheduleRegularListHitTarget(
         spaceId: UUID,
         frame: CGRect?,
-        rowCount: Int,
+        rowIdentities: [SidebarVisualSceneProjection.RegularRow.Identity],
         generation: Int
     ) {
         enqueueDeferredGeometryMutation(
@@ -188,7 +188,7 @@ final class SidebarDragGeometryRepository {
             repository.applyRegularListHitTarget(
                 spaceId: spaceId,
                 frame: frame,
-                rowCount: rowCount,
+                rowIdentities: rowIdentities,
                 generation: generation
             )
         }
@@ -395,7 +395,7 @@ final class SidebarDragGeometryRepository {
     func applyRegularListHitTarget(
         spaceId: UUID,
         frame: CGRect?,
-        rowCount: Int,
+        rowIdentities: [SidebarVisualSceneProjection.RegularRow.Identity],
         generation: Int
     ) {
         let frame = frame.map { normalizedFrame($0, for: generation) }
@@ -403,7 +403,7 @@ final class SidebarDragGeometryRepository {
             if let frame {
                 let target = SidebarRegularListHitMetrics(
                     frame: frame,
-                    rowCount: rowCount
+                    rowIdentities: rowIdentities
                 )
                 guard store.regularListHitTargets[spaceId] != target else { return false }
                 store.regularListHitTargets[spaceId] = target

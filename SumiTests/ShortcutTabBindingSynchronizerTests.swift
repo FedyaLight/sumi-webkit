@@ -15,19 +15,16 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
         persistWindowSession: @escaping (BrowserWindowState) -> Void = { _ in }
     ) -> BrowserManager {
         let profile = Profile(name: "Shortcut Binding Test")
-        let browser = BrowserManager()
-        installTestRuntime(
-            TestRuntimePorts.make(
+        return BrowserManager(
+            runtimePorts: TestRuntimePorts.make(
                 currentProfileId: { profile.id },
                 defaultProfileId: { profile.id },
                 profile: { $0 == profile.id ? profile : nil },
                 windowState: windowState,
                 windows: windows,
                 persistWindowSession: persistWindowSession
-            ),
-            in: browser
+            )
         )
-        return browser
     }
 
     func testRefreshMovesRuntimeBindingWithoutSwitchingBackgroundWindowSpace() throws {
@@ -197,16 +194,14 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
     func testProfilelessSpaceRefreshUsesCapturedDefaultProfile() throws {
         let window = BrowserWindowState()
         let fallbackProfile = Profile(name: "Fallback")
-        let tabManager = BrowserManager()
-        installTestRuntime(
-            TestRuntimePorts.make(
+        let tabManager = BrowserManager(
+            runtimePorts: TestRuntimePorts.make(
                 currentProfileId: { nil },
                 defaultProfileId: { fallbackProfile.id },
                 profile: { $0 == fallbackProfile.id ? fallbackProfile : nil },
                 windowState: { $0 == window.id ? window : nil },
                 windows: { [(window.id, window)] }
-            ),
-            in: tabManager
+            )
         )
         let sourceSpace = installSpace("Source", in: tabManager)
         let targetSpace = installSpace("Target", in: tabManager)
@@ -237,16 +232,14 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
     func testProfilelessSpaceRefreshUsesCapturedCurrentProfile() throws {
         let window = BrowserWindowState()
         let fallbackProfile = Profile(name: "Fallback")
-        let tabManager = BrowserManager()
-        installTestRuntime(
-            TestRuntimePorts.make(
+        let tabManager = BrowserManager(
+            runtimePorts: TestRuntimePorts.make(
                 currentProfileId: { fallbackProfile.id },
                 defaultProfileId: { nil },
                 profile: { $0 == fallbackProfile.id ? fallbackProfile : nil },
                 windowState: { $0 == window.id ? window : nil },
                 windows: { [(window.id, window)] }
-            ),
-            in: tabManager
+            )
         )
         let sourceSpace = installSpace("Source", in: tabManager)
         let targetSpace = installSpace("Target", in: tabManager)
@@ -280,17 +273,15 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
         var currentProfileID: UUID?
         var defaultProfileID: UUID?
         var persistedWindowIDs: [UUID] = []
-        let tabManager = BrowserManager()
-        installTestRuntime(
-            TestRuntimePorts.make(
+        let tabManager = BrowserManager(
+            runtimePorts: TestRuntimePorts.make(
                 currentProfileId: { currentProfileID },
                 defaultProfileId: { defaultProfileID },
                 profile: { $0 == fallbackProfile.id ? fallbackProfile : nil },
                 windowState: { $0 == window.id ? window : nil },
                 windows: { [(window.id, window)] },
                 persistWindowSession: { persistedWindowIDs.append($0.id) }
-            ),
-            in: tabManager
+            )
         )
         let sourceSpace = installSpace("Source", in: tabManager)
         let targetSpace = installSpace("Target", in: tabManager)
@@ -415,17 +406,15 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
                 return .rejectedUnstaged(.stale)
             }
         )
-        let tabManager = BrowserManager()
-        installTestRuntime(
-            TestRuntimePorts.make(
+        let tabManager = BrowserManager(
+            runtimePorts: TestRuntimePorts.make(
                 currentProfileId: { currentProfileID },
                 defaultProfileId: { nil },
                 profile: { profiles[$0] },
                 windowState: { $0 == window.id ? window : nil },
                 windows: { [(window.id, window)] },
                 webViewLifecycle: lifecycle
-            ),
-            in: tabManager
+            )
         )
         let sourceSpace = installSpace("Source", in: tabManager)
         let targetSpace = installSpace("Target", in: tabManager)
@@ -496,9 +485,8 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
                 return .pipelineOwned
             }
         )
-        let tabManager = BrowserManager()
-        installTestRuntime(
-            TestRuntimePorts.make(
+        let tabManager = BrowserManager(
+            runtimePorts: TestRuntimePorts.make(
                 currentProfileId: { sourceProfile.id },
                 defaultProfileId: { sourceProfile.id },
                 profile: { profiles[$0] },
@@ -506,8 +494,7 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
                 windows: { [(window.id, window)] },
                 webViewLifecycle: lifecycle,
                 persistWindowSession: { persistedWindowIDs.append($0.id) }
-            ),
-            in: tabManager
+            )
         )
         let sourceSpace = installSpace(
             "Source",
@@ -582,16 +569,14 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
         let window = BrowserWindowState()
         let profileID = UUID()
         let profile = Profile(id: profileID, name: "Space")
-        let tabManager = BrowserManager()
-        installTestRuntime(
-            TestRuntimePorts.make(
+        let tabManager = BrowserManager(
+            runtimePorts: TestRuntimePorts.make(
                 currentProfileId: { profileID },
                 defaultProfileId: { profileID },
                 profile: { $0 == profileID ? profile : nil },
                 windowState: { $0 == window.id ? window : nil },
                 windows: { [(window.id, window)] }
-            ),
-            in: tabManager
+            )
         )
         let space = installSpace("Space", profileID: profileID, in: tabManager)
         let source = makePin(spaceId: space.id)
@@ -734,7 +719,8 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
                         profileId: nil,
                         spaceId: targetSpace.id,
                         folderId: nil,
-                        index: 0
+                        index: 0,
+                        opensFolder: false
                     )
                 ),
             ])
@@ -774,17 +760,15 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
         var persistedWindowIDs: [UUID] = []
         let profileID = UUID()
         let profile = Profile(id: profileID, name: "Source")
-        let tabManager = BrowserManager()
-        installTestRuntime(
-            TestRuntimePorts.make(
+        let tabManager = BrowserManager(
+            runtimePorts: TestRuntimePorts.make(
                 currentProfileId: { profileID },
                 defaultProfileId: { profileID },
                 profile: { $0 == profileID ? profile : nil },
                 windowState: { $0 == window.id ? window : nil },
                 windows: { [(window.id, window)] },
                 persistWindowSession: { persistedWindowIDs.append($0.id) }
-            ),
-            in: tabManager
+            )
         )
         let space = installSpace("Source", profileID: profileID, in: tabManager)
         let firstID = UUID()
@@ -825,7 +809,7 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
         let sourceWindow = window.unpublishedShortcutMutationState
         let sourceFirstRevision = firstTab.profileAssignment.changeRevision
         let sourceSecondRevision = secondTab.profileAssignment.changeRevision
-        let essentials = (0..<(EssentialsShortcutPlacementOwner.CapacityPolicy.maxItems - 1))
+        let essentials = (0..<(EssentialsShortcutPlacementOwner.CapacityPolicy.maxStoredMembers - 1))
             .map { index in
                 ShortcutPin(
                     id: UUID(),
@@ -860,7 +844,8 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
             profileId: profileID,
             spaceId: nil,
             folderId: nil,
-            index: essentials.count
+            index: essentials.count,
+            opensFolder: false
         )
         var structuralEvents = 0
         let cancellable = tabManager.tabStructureEventBus
@@ -946,9 +931,8 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
                 return outcome.batchExecution
             }
         )
-        let tabManager = BrowserManager()
-        installTestRuntime(
-            TestRuntimePorts.make(
+        let tabManager = BrowserManager(
+            runtimePorts: TestRuntimePorts.make(
                 currentProfileId: { sourceProfile.id },
                 defaultProfileId: { sourceProfile.id },
                 profile: { profiles[$0] },
@@ -958,8 +942,7 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
                 persistWindowSession: { _ in
                     profileCountsAtPersistence.append(profileExecutions)
                 }
-            ),
-            in: tabManager
+            )
         )
         let sourceSpaces = (0..<2).map { index in
             installSpace(
@@ -1021,7 +1004,8 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
                     profileId: nil,
                     spaceId: targetSpace.id,
                     folderId: nil,
-                    index: index
+                    index: index,
+                    opensFolder: false
                 )
             )
         }
@@ -1115,17 +1099,6 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
             launchURL: URL(string: "https://binding.example")!,
             title: "Binding"
         )
-    }
-
-    private func installTestRuntime(
-        _ runtime: RuntimePortRegistry,
-        in browser: BrowserManager
-    ) {
-        browser.tabRuntimeLifecycle.shutdown()
-        browser.runtimePortConnection.attach(runtime)
-        addTeardownBlock { @MainActor [browser] in
-            browser.runtimePortConnection.detach()
-        }
     }
 
     private func installSpace(

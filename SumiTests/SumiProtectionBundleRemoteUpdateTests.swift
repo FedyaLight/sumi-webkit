@@ -392,7 +392,11 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
         let fileManager = FileManager.default
         let root = fileManager.temporaryDirectory
             .appendingPathComponent("SumiProtectionBundleCleanupTests-\(UUID().uuidString)", isDirectory: true)
-        defer { try? fileManager.removeItem(at: root) }
+        defer {
+            if fileManager.fileExists(atPath: root.path) {
+                try? fileManager.removeItem(at: root)
+            }
+        }
         let generationArchive = AdblockGenerationArchive(rootDirectory: root)
         let activeManifest = Self.makeCompiledManifest(
             bundleId: "active-bundle",
@@ -550,7 +554,8 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
         profileId: String
     ) -> AdblockCompiledGenerationManifest {
         AdblockCompiledGenerationManifest(
-            schemaVersion: 1,
+            schemaVersion: AdblockCompiledGenerationManifest
+                .currentSchemaVersion,
             activeGenerationId: generationId,
             createdDate: Date(timeIntervalSince1970: 0),
             selectedFilterLists: [],

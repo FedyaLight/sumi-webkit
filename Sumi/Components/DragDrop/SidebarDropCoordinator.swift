@@ -82,7 +82,8 @@ enum SidebarDropCoordinator {
                 scope: scope,
                 fromContainer: scope.sourceContainer,
                 toContainer: resolution.slot.asDragContainer,
-                presentedVisualIndex: resolution.slot.visualIndex
+                presentedVisualIndex: resolution.slot.visualIndex,
+                presentedRegularBoundary: resolution.presentedRegularBoundary
             )
 
             return dragOperations.performSidebarDragCommit(intent)

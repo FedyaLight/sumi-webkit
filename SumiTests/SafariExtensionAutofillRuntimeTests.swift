@@ -31,10 +31,14 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         let module = SumiExtensionsModule(
             moduleRegistry: registry,
             context: container.mainContext,
-            initialProfileProvider: { profile }
+            initialProfileProvider: { profile },
+            profileReferenceAdmission: try ProfileReferenceAdmissionLedger(
+                context: container.mainContext
+            )
         )
         let browserManager = makeSafariExtensionTestBrowserManager(
             moduleRegistry: registry,
+            extensionsModule: module,
             profile: profile
         )
         module.attach(

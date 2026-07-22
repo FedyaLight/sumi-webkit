@@ -19,6 +19,8 @@ final class AuxiliaryWindowFailureTests: XCTestCase {
             in: space,
             activate: true
         )
+        browser.shutdownCleanupService
+            .cleanupAfterBrowserRuntimeDeallocation()
 
         XCTAssertNil(
             browser.auxiliaryWindows.popups.presentWebPopup(

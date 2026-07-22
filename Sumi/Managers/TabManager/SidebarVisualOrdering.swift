@@ -1,93 +1,9 @@
 import Foundation
 import SumiDomain
 
-/// Canonical ordering of Sidebar Visual Items. Render projections and commit
-/// index conversion consume this same ordering.
+/// Canonical ordering for launcher containers outside the regular-tab scene.
 @MainActor
 enum SidebarVisualOrdering {
-    struct RegularBlock: Equatable {
-        enum Identity: Equatable {
-            case tab(UUID)
-            case splitGroup(UUID)
-        }
-
-        let identity: Identity
-        let tabIDs: [UUID]
-
-        var firstTabID: UUID? { tabIDs.first }
-    }
-
-    static func regularBlocks(
-        tabs: [Tab],
-        groups: [SplitGroup]
-    ) -> [RegularBlock] {
-        let groupByMemberID = groups.reduce(into: [UUID: SplitGroup]()) {
-            result, group in
-            guard case .regularTabs = group.container else { return }
-            for memberID in group.memberIDs {
-                guard case .regularTab(let tabID) = memberID else { continue }
-                result[tabID] = group
-            }
-        }
-        var emittedGroupIDs = Set<UUID>()
-
-        return tabs.compactMap { tab in
-            guard let group = groupByMemberID[tab.id] else {
-                return RegularBlock(
-                    identity: .tab(tab.id),
-                    tabIDs: [tab.id]
-                )
-            }
-            guard emittedGroupIDs.insert(group.id).inserted else { return nil }
-            let memberIDs = Set(group.memberIDs.compactMap { memberID -> UUID? in
-                guard case .regularTab(let tabID) = memberID else { return nil }
-                return tabID
-            })
-            return RegularBlock(
-                identity: .splitGroup(group.id),
-                tabIDs: tabs.filter { memberIDs.contains($0.id) }.map(\.id)
-            )
-        }
-    }
-
-    /// Converts one visual row boundary to the Regular tab store's insertion
-    /// index. A split row contributes all of its member records here, behind
-    /// the visual-order seam.
-    static func regularRawInsertionIndex(
-        atVisualBoundary proposedIndex: Int,
-        blocks: [RegularBlock]
-    ) -> Int {
-        let safeIndex = max(0, min(proposedIndex, blocks.count))
-        return blocks.prefix(safeIndex).reduce(0) {
-            $0 + $1.tabIDs.count
-        }
-    }
-
-    static func regularRawInsertionIndex(
-        movingGroupID: UUID,
-        atModelBoundary proposedIndex: Int,
-        blocks: [RegularBlock]
-    ) -> Int? {
-        guard let currentBlockIndex = blocks.firstIndex(where: {
-            $0.identity == .splitGroup(movingGroupID)
-        }) else { return nil }
-        let groupStartIndex = blocks.prefix(currentBlockIndex).reduce(0) {
-            $0 + $1.tabIDs.count
-        }
-        let groupItemCount = blocks[currentBlockIndex].tabIDs.count
-        let groupEndIndex = groupStartIndex + groupItemCount
-        let modelItemCount = blocks.reduce(0) { $0 + $1.tabIDs.count }
-        let safeProposedIndex = max(0, min(proposedIndex, modelItemCount))
-
-        if safeProposedIndex <= groupStartIndex {
-            return safeProposedIndex
-        }
-        if safeProposedIndex >= groupEndIndex {
-            return safeProposedIndex - groupItemCount
-        }
-        return groupStartIndex
-    }
-
     static func essentialItems(
         pins: [ShortcutPin],
         groups: [SplitGroup],

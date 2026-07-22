@@ -15,20 +15,34 @@ final class PublicationFixture {
     init(
         pinCount: Int,
         foldered: Bool = false,
-        hostedSplit: Bool = false
+        hostedSplit: Bool = true
     ) throws {
+        let profile = Profile(name: "Publication")
         let window = BrowserWindowState()
         self.window = window
-        let browser = BrowserManager()
+        let runtime = TestRuntimePorts.make(
+            currentProfileId: { profile.id },
+            defaultProfileId: { profile.id },
+            profile: { $0 == profile.id ? profile : nil },
+            windowState: { $0 == window.id ? window : nil },
+            windows: { [(window.id, window)] },
+            windowStates: { [window] },
+            webViewLifecycle: TestRuntimePorts.webViewLifecycle(
+                retirement: .accepting
+            )
+        )
+        let browser = BrowserManager(runtimePorts: runtime)
         self.browser = browser
         let registry = browser.windowRegistry
+        browser.tabResidenceAuthority.establishResidenceSession(on: window)
         registry.register(window)
         let space = try XCTUnwrap(browser.sidebarSpaceLifecycle.createSpace(
             name: "Space",
             icon: SumiPersistentGlyph.spaceDefaultIconValue,
-            profileID: nil
+            profileID: profile.id
         ))
         window.currentSpaceId = space.id
+        window.currentProfileId = profile.id
         let createdFolder = foldered
             ? browser.sidebarFolderCommands.createFolder(
                 in: space.id,
@@ -46,7 +60,6 @@ final class PublicationFixture {
                 at: index
             ))
         }
-        pins = createdPins
         let createdLiveTabs = try createdPins.map { pin in
             try XCTUnwrap(browser.shortcutTabMaterializer.materialize(
                 pin, in: window.id, currentSpaceId: space.id
@@ -71,6 +84,11 @@ final class PublicationFixture {
         XCTAssertTrue(browser.splitGroupMutations.insert(
             createdGroup, persist: false
         ))
+        pins = try createdPins.map { pin in
+            try XCTUnwrap(
+                browser.shortcutPinCollectionStateOwner.shortcutPin(by: pin.id)
+            )
+        }
         window.currentTabId = createdLiveTabs[0].id
         window.currentShortcutPinId = createdPins[0].id
         window.currentShortcutPinRole = createdPins[0].role

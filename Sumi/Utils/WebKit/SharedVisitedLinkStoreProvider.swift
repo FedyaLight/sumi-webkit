@@ -94,6 +94,7 @@ final class SharedVisitedLinkStoreProvider {
 #if DEBUG
     func seedStoreForTesting(_ store: NSObject, profileId: UUID) {
         storesByProfileId[profileId] = store
+        replayPendingVisitedLinks(for: profileId, on: store)
     }
 #endif
 

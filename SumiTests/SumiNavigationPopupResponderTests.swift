@@ -481,7 +481,7 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         XCTAssertNil(childTab?.webViewConfigurationOverride)
     }
 
-    func testPopupChildKeepsCopiedNormalConfigurationButIsAuxiliarySurface()
+    func testPopupChildReclassifiesCopiedNormalConfigurationAsAuxiliarySurface()
         async throws {
         let harness = try await makePopupFocusHarness()
         let normalConfiguration = harness.browserManager
@@ -513,9 +513,9 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
             )
         )
 
-        XCTAssertTrue(
+        XCTAssertFalse(
             childConfiguration.sumiIsNormalTabWebViewConfiguration,
-            "The WebKit-supplied configuration remains an exact normal-source copy"
+            "The WebKit child configuration belongs to the auxiliary generation after materialization"
         )
         XCTAssertFalse(
             childWebView.configuration.sumiIsNormalTabWebViewConfiguration,
@@ -864,7 +864,8 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
             moduleRegistry: moduleRegistry,
             startupPersistence: BrowserManagerStartupPersistence(
                 container: try Self.makeInMemoryStartupContainer()
-            )
+            ),
+            automaticallyStartPersistedStateLoad: false
         )
     }
 
@@ -953,23 +954,28 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         let sourceTab = browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://source.example/page",
             in: space,
-            activate: true
+            activate: false
         )
-        browserManager.selectTab(sourceTab, in: windowState)
+        _ = WindowTabSelectionStateApplicator.apply(
+            sourceTab,
+            to: windowState,
+            updateSpaceFromTab: true,
+            rememberSelection: true
+        )
 
-        let sourceConfiguration = WKWebViewConfiguration()
-        sourceConfiguration.websiteDataStore = profile.dataStore
-        let sourceWebView = FocusableWKWebView(
-            frame: .zero,
-            configuration: sourceConfiguration
+        let sourceWebView = try XCTUnwrap(
+            sourceTab.makeNormalTabWebView(
+                reason: "SumiNavigationPopupResponderTests.makePopupFocusHarness"
+            ) as? FocusableWKWebView
         )
-        sourceWebView.owningTab = sourceTab
-        browserManager.testWebViewRuntime().trackedWebViewAdmission.attemptAssignment(
+        let assignment = browserManager.testWebViewRuntime()
+            .trackedWebViewAdmission.attemptAssignment(
             sourceWebView,
             to: sourceTab,
             in: windowState.id,
             replaySemanticOperation: { XCTFail("Unexpected WebView deferral") }
         )
+        XCTAssertTrue(assignment.isAccepted)
         await loadPopupDocument(on: sourceWebView, at: sourceTab.url)
         let committedURL = try XCTUnwrap(sourceWebView.committedURL)
         let sourceNavigation = bindCommittedPopupDocument(
@@ -978,6 +984,11 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
             committedURL: committedURL
         )
         browserManager.selectTab(sourceTab, in: windowState)
+        browserManager.startupRestoreLifecycle.markLoadFinished()
+        XCTAssertNotNil(
+            sourceTab.committedDocumentRuntime.lease(for: sourceWebView)
+        )
+        XCTAssertNotNil(sourceTab.popupPermissionTabContext(for: sourceWebView))
 
         return PopupFocusHarness(
             browserManager: browserManager,

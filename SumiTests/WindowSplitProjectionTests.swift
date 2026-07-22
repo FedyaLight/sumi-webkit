@@ -6,77 +6,79 @@ import XCTest
 @MainActor
 final class WindowSplitProjectionTests: XCTestCase {
     func testProjectsOneDurableGroupToExactWindowLocalShortcutTabs() throws {
-        let regularTabID = UUID()
-        let pinID = UUID()
+        let firstPinID = UUID()
+        let secondPinID = UUID()
         let firstWindowID = UUID()
         let secondWindowID = UUID()
-        let firstShortcutTabID = UUID()
-        let secondShortcutTabID = UUID()
+        let firstWindowTabIDs = [UUID(), UUID()]
+        let secondWindowTabIDs = [UUID(), UUID()]
         let group = try XCTUnwrap(makeGroup(
-            regularTabID: regularTabID,
-            pinID: pinID
+            firstPinID: firstPinID,
+            secondPinID: secondPinID
         ))
         let projection = makeProjection(
             group: group,
-            regularTabIDs: [regularTabID],
-            pinIDs: [pinID],
+            regularTabIDs: [],
+            pinIDs: [firstPinID, secondPinID],
             liveTabIDs: [
-                Slot(windowID: firstWindowID, pinID: pinID): firstShortcutTabID,
-                Slot(windowID: secondWindowID, pinID: pinID): secondShortcutTabID,
+                Slot(windowID: firstWindowID, pinID: firstPinID): firstWindowTabIDs[0],
+                Slot(windowID: firstWindowID, pinID: secondPinID): firstWindowTabIDs[1],
+                Slot(windowID: secondWindowID, pinID: firstPinID): secondWindowTabIDs[0],
+                Slot(windowID: secondWindowID, pinID: secondPinID): secondWindowTabIDs[1],
             ]
         )
 
         let first = try readyPresentation(projection.resolve(
             selection: WindowSplitSelection(
                 groupID: group.id,
-                activeMemberID: .regularTab(regularTabID)
+                activeMemberID: .shortcutPin(firstPinID)
             ),
             in: firstWindowID
         ))
         let second = try readyPresentation(projection.resolve(
             selection: WindowSplitSelection(
                 groupID: group.id,
-                activeMemberID: .shortcutPin(pinID)
+                activeMemberID: .shortcutPin(secondPinID)
             ),
             in: secondWindowID
         ))
 
         XCTAssertEqual(first.group, group)
         XCTAssertEqual(second.group, group)
-        XCTAssertEqual(first.visibleTabIDs, [regularTabID, firstShortcutTabID])
-        XCTAssertEqual(second.visibleTabIDs, [regularTabID, secondShortcutTabID])
-        XCTAssertEqual(first.activeTabID, regularTabID)
-        XCTAssertEqual(second.activeTabID, secondShortcutTabID)
+        XCTAssertEqual(first.visibleTabIDs, firstWindowTabIDs)
+        XCTAssertEqual(second.visibleTabIDs, secondWindowTabIDs)
+        XCTAssertEqual(first.activeTabID, firstWindowTabIDs[0])
+        XCTAssertEqual(second.activeTabID, secondWindowTabIDs[1])
         XCTAssertNotEqual(
-            first.tabID(for: .shortcutPin(pinID)),
-            second.tabID(for: .shortcutPin(pinID))
+            first.tabID(for: .shortcutPin(firstPinID)),
+            second.tabID(for: .shortcutPin(firstPinID))
         )
         XCTAssertEqual(group.memberIDs, [
-            .regularTab(regularTabID),
-            .shortcutPin(pinID),
+            .shortcutPin(firstPinID),
+            .shortcutPin(secondPinID),
         ])
     }
 
     func testMissingWindowLiveTabRequestsMaterializationWithoutMutation() throws {
-        let regularTabID = UUID()
-        let pinID = UUID()
+        let firstPinID = UUID()
+        let secondPinID = UUID()
         let group = try XCTUnwrap(makeGroup(
-            regularTabID: regularTabID,
-            pinID: pinID
+            firstPinID: firstPinID,
+            secondPinID: secondPinID
         ))
         var liveLookupCount = 0
         let projection = WindowSplitProjection(
             group: { $0 == group.id ? group : nil },
-            regularTabExists: { $0 == regularTabID },
-            shortcutPinExists: { $0 == pinID },
-            shortcutLiveTabID: { _, _ in
+            regularTabExists: { _ in false },
+            shortcutPinExists: { $0 == firstPinID || $0 == secondPinID },
+            shortcutLiveTabID: { pinID, _ in
                 liveLookupCount += 1
-                return nil
+                return pinID == firstPinID ? UUID() : nil
             }
         )
         let selection = WindowSplitSelection(
             groupID: group.id,
-            activeMemberID: .shortcutPin(pinID)
+            activeMemberID: .shortcutPin(secondPinID)
         )
 
         let resolution = projection.resolve(
@@ -93,33 +95,33 @@ final class WindowSplitProjectionTests: XCTestCase {
         }
         XCTAssertEqual(resolvedGroup, group)
         XCTAssertEqual(resolvedSelection, selection)
-        XCTAssertEqual(shortcutPinIDs, [pinID])
-        XCTAssertEqual(liveLookupCount, 1)
+        XCTAssertEqual(shortcutPinIDs, [secondPinID])
+        XCTAssertEqual(liveLookupCount, 2)
         XCTAssertFalse(resolution.hasReadyPresentation)
         XCTAssertEqual(group.memberIDs, [
-            .regularTab(regularTabID),
-            .shortcutPin(pinID),
+            .shortcutPin(firstPinID),
+            .shortcutPin(secondPinID),
         ])
     }
 
     func testRejectsMissingDurableMemberBeforePresentation() throws {
-        let regularTabID = UUID()
-        let pinID = UUID()
+        let firstPinID = UUID()
+        let secondPinID = UUID()
         let group = try XCTUnwrap(makeGroup(
-            regularTabID: regularTabID,
-            pinID: pinID
+            firstPinID: firstPinID,
+            secondPinID: secondPinID
         ))
         let projection = makeProjection(
             group: group,
             regularTabIDs: [],
-            pinIDs: [pinID],
+            pinIDs: [secondPinID],
             liveTabIDs: [:]
         )
 
         let resolution = projection.resolve(
             selection: WindowSplitSelection(
                 groupID: group.id,
-                activeMemberID: .regularTab(regularTabID)
+                activeMemberID: .shortcutPin(secondPinID)
             ),
             in: UUID()
         )
@@ -128,24 +130,24 @@ final class WindowSplitProjectionTests: XCTestCase {
             resolution,
             .invalid(
                 groupID: group.id,
-                reason: .missingMembers([.regularTab(regularTabID)])
+                reason: .missingMembers([.shortcutPin(firstPinID)])
             )
         )
         XCTAssertFalse(resolution.hasReadyPresentation)
     }
 
     func testRejectsSelectionFromAnotherGroup() throws {
-        let regularTabID = UUID()
-        let pinID = UUID()
-        let staleMemberID = SplitMemberID.regularTab(UUID())
+        let firstPinID = UUID()
+        let secondPinID = UUID()
+        let staleMemberID = SplitMemberID.shortcutPin(UUID())
         let group = try XCTUnwrap(makeGroup(
-            regularTabID: regularTabID,
-            pinID: pinID
+            firstPinID: firstPinID,
+            secondPinID: secondPinID
         ))
         let projection = makeProjection(
             group: group,
-            regularTabIDs: [regularTabID],
-            pinIDs: [pinID],
+            regularTabIDs: [],
+            pinIDs: [firstPinID, secondPinID],
             liveTabIDs: [:]
         )
 
@@ -165,19 +167,21 @@ final class WindowSplitProjectionTests: XCTestCase {
     }
 
     func testRejectsTwoMembersMappedToTheSameLiveTab() throws {
-        let regularTabID = UUID()
-        let pinID = UUID()
+        let firstPinID = UUID()
+        let secondPinID = UUID()
         let windowID = UUID()
+        let sharedLiveTabID = UUID()
         let group = try XCTUnwrap(makeGroup(
-            regularTabID: regularTabID,
-            pinID: pinID
+            firstPinID: firstPinID,
+            secondPinID: secondPinID
         ))
         let projection = makeProjection(
             group: group,
-            regularTabIDs: [regularTabID],
-            pinIDs: [pinID],
+            regularTabIDs: [],
+            pinIDs: [firstPinID, secondPinID],
             liveTabIDs: [
-                Slot(windowID: windowID, pinID: pinID): regularTabID,
+                Slot(windowID: windowID, pinID: firstPinID): sharedLiveTabID,
+                Slot(windowID: windowID, pinID: secondPinID): sharedLiveTabID,
             ]
         )
 
@@ -185,7 +189,7 @@ final class WindowSplitProjectionTests: XCTestCase {
             projection.resolve(
                 selection: WindowSplitSelection(
                     groupID: group.id,
-                    activeMemberID: .shortcutPin(pinID)
+                    activeMemberID: .shortcutPin(firstPinID)
                 ),
                 in: windowID
             ),
@@ -243,15 +247,21 @@ final class WindowSplitProjectionTests: XCTestCase {
     }
 
     private func makeGroup(
-        regularTabID: UUID,
-        pinID: UUID
+        firstPinID: UUID,
+        secondPinID: UUID
     ) -> SumiDomain.SplitGroup? {
         SumiDomain.SplitGroup.make(
             members: [
-                .regularTab(regularTabID),
-                .shortcutPin(pinID),
+                .shortcutPin(firstPinID),
+                .shortcutPin(secondPinID),
             ],
-            layoutKind: .vertical
+            layoutKind: .vertical,
+            container: .shortcutSidebar(
+                spaceId: UUID(),
+                profileId: nil,
+                folderId: nil,
+                index: 0
+            )
         )
     }
 

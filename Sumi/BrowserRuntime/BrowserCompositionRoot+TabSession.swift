@@ -290,8 +290,7 @@ extension BrowserCompositionRoot {
             profileReferenceAdmission: profileReferenceAdmission,
             committer: SpaceCreationCommitter(
                 structuralMutations: structuralCollectionMutationOwner,
-                persistence: structuralPersistence,
-                changes: tabManager.objectWillChange
+                persistence: structuralPersistence
             )
         )
         let spaceCatalog = SpaceCatalogCommands(
@@ -1032,6 +1031,7 @@ extension BrowserCompositionRoot {
         )
 
         return BrowserKernelGraph(
+            objectWillChange: tabManager.objectWillChange,
             webViewSessions: webViewSessions,
             windowRegistry: windowRegistry,
             modelContext: modelContext,

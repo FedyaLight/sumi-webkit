@@ -781,27 +781,25 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         context: FolderSnapshotContext,
         projectionState: SidebarFolderProjectionState
     ) -> [SpacePinnedItemSnapshot] {
-        let descendantIDs = Set(
-            context.inventory.orderedDescendantItemIDs(for: folderId)
+        let liveItemsByID = Dictionary(
+            uniqueKeysWithValues: SidebarVisualSceneProjection(
+                inventory: context.inventory,
+                selection: context.selection,
+                selectionSnapshot: SidebarWindowSelectionSnapshot(
+                    windowState: context.windowState
+                ),
+                windowState: context.windowState
+            ).launcherItems(context.inventory.descendantItems(for: folderId)).map {
+                ($0.id, $0)
+            }
         )
         return projectionState.stickyItemIDs.compactMap { itemID in
-            guard descendantIDs.contains(itemID) else { return nil }
-            if let pin = context.inventory.pin(id: itemID),
-               context.liveTabsByPinId[pin.id] != nil {
-                return pinnedItemSnapshot(
-                    for: .shortcut(itemID),
-                    context: context,
-                    visitedFolderIds: []
-                )
-            }
-            if context.inventory.splitGroup(id: itemID) != nil {
-                return pinnedItemSnapshot(
-                    for: .splitGroup(itemID),
-                    context: context,
-                    visitedFolderIds: []
-                )
-            }
-            return nil
+            guard let item = liveItemsByID[itemID], item.isLive else { return nil }
+            return pinnedItemSnapshot(
+                for: item.source,
+                context: context,
+                visitedFolderIds: []
+            )
         }
     }
 
@@ -870,7 +868,10 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                 in: context.windowState,
                 selection: selectionSnapshot
             ),
-            isLoaded: items.contains { $0.tab != nil }
+            isLoaded: SidebarVisualSceneProjection.isWholeSplitGroupLive(
+                group,
+                items: items
+            )
         )
     }
 

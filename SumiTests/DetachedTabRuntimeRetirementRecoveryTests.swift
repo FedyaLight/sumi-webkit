@@ -18,7 +18,11 @@ final class DetachedTabRuntimeRetirementRecoveryTests: XCTestCase {
         var resetRuntime: (() -> Void)?
         var reenterDrain: (() -> Bool)?
         let lifecycleCount = DetachedRetirementEventCounter()
+        let profile = Profile(name: "Runtime")
         let runtime = TestRuntimePorts.make(
+            currentProfileId: { profile.id },
+            defaultProfileId: { profile.id },
+            profile: { $0 == profile.id ? profile : nil },
             webViewLifecycle: TestRuntimePorts.webViewLifecycle(
                 retirement: .init(
                     canRetire: { _ in true },
@@ -42,14 +46,14 @@ final class DetachedTabRuntimeRetirementRecoveryTests: XCTestCase {
             startupPersistence: BrowserManagerStartupPersistence(
                 container: try makeInMemoryStartupModelContainer()
             ),
-            dataServices: .unavailable()
+            dataServices: .unavailable(),
+            initialTabRuntimePorts: runtime
         )
-        tabManager.runtimePortConnection.attach(runtime)
         let space = try XCTUnwrap(
             tabManager.sidebarSpaceLifecycle.createSpace(
                 name: "Space",
                 icon: "square",
-                profileID: nil
+                profileID: profile.id
             )
         )
         let retiredWebView = WKWebView()
@@ -127,7 +131,7 @@ final class DetachedTabRuntimeRetirementRecoveryTests: XCTestCase {
             )
         )
         resetRuntime = {
-            tabManager.runtimePortConnection.attach(replacementRuntime)
+            tabManager.tabRuntimeLifecycle.replaceRuntimePortsForTests(replacementRuntime)
             replacementAttachment = TabRuntimeAttachmentWitness(
                 connection: tabManager.runtimePortConnection,
                 lease: tabManager.runtimePortConnection.captureLease()
@@ -177,6 +181,7 @@ final class DetachedTabRuntimeRetirementRecoveryTests: XCTestCase {
         var canRetireCount = 0
         var beginCommittedCount = 0
         var committedExactCount = 0
+        let profile = Profile(name: "Runtime")
         let lifecycle = TestRuntimePorts.webViewLifecycle(
             retirement: .init(
                 canRetire: { _ in
@@ -195,22 +200,26 @@ final class DetachedTabRuntimeRetirementRecoveryTests: XCTestCase {
                 destroyAfterTerminalDrain: { _ in drainDestroyCount += 1 }
             )
         )
+        let runtime = TestRuntimePorts.make(
+            currentProfileId: { profile.id },
+            defaultProfileId: { profile.id },
+            profile: { $0 == profile.id ? profile : nil },
+            webViewLifecycle: lifecycle
+        )
         let tabManager = BrowserManager(
             webViewSessions: repository,
             windowRegistry: WindowRegistry(),
             startupPersistence: BrowserManagerStartupPersistence(
                 container: try makeInMemoryStartupModelContainer()
             ),
-            dataServices: .unavailable()
-        )
-        tabManager.runtimePortConnection.attach(
-            TestRuntimePorts.make(webViewLifecycle: lifecycle)
+            dataServices: .unavailable(),
+            initialTabRuntimePorts: runtime
         )
         let space = try XCTUnwrap(
             tabManager.sidebarSpaceLifecycle.createSpace(
                 name: "Space",
                 icon: "square",
-                profileID: nil
+                profileID: profile.id
             )
         )
         let retiredWebView = WKWebView()

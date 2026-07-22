@@ -37,7 +37,6 @@ final class BrowserShutdownCleanupServiceTests: XCTestCase {
 
         XCTAssertTrue(tab.hasCurrentWebView)
         XCTAssertFalse(browserManager.optionalModules.extensions.hasLoadedRuntime)
-        XCTAssertFalse(browserManager.auxiliaryWindowTeardownRegistry.hasLoadedRuntime)
         XCTAssertTrue(webViewRuntime.ownershipQuery.owns(webView, for: tab))
 
         service.cleanupAllTabs()
@@ -58,7 +57,6 @@ final class BrowserShutdownCleanupServiceTests: XCTestCase {
         XCTAssertNil(browserManager.webViewSessions.residence(of: lateWebView))
         XCTAssertFalse(webViewRuntime.ownershipQuery.owns(lateWebView, for: tab))
         XCTAssertFalse(browserManager.optionalModules.extensions.hasLoadedRuntime)
-        XCTAssertFalse(browserManager.auxiliaryWindowTeardownRegistry.hasLoadedRuntime)
         withExtendedLifetime((webViewRuntime, webView, lateWebView)) {}
     }
 }

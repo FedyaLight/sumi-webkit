@@ -186,7 +186,7 @@ final class ExtensionBootstrapChromeAdmissionTests: XCTestCase {
         admission.finish(reinstalled)
     }
 
-    func testContextRetirementClearsCausalBootstrapGate() {
+    func testProfileAttachmentNeverInheritsGlobalBootstrapGate() {
         let admission = ExtensionBootstrapChromeAdmission(
             ledger: ExtensionGlobalInstallLedger(userDefaults: makeDefaults())
         )
@@ -205,7 +205,7 @@ final class ExtensionBootstrapChromeAdmissionTests: XCTestCase {
             cause: .profileAttachment
         )
 
-        XCTAssertFalse(
+        XCTAssertTrue(
             admission.admitsChrome(
                 extensionIdentity: "extension",
                 profileID: secondaryProfile,

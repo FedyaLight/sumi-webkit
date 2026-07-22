@@ -94,11 +94,17 @@ final class SidebarSelectionSnapshotTests: XCTestCase {
         let activePinID = UUID()
         let activeMemberID = SplitMemberID.shortcutPin(activePinID)
         let activeMember = SplitMember.shortcutPin(activePinID)
+        let companionPinID = UUID()
         let group = try XCTUnwrap(
             SplitGroup.make(
-                members: [activeMember, .regularTab(UUID())],
+                members: [activeMember, .shortcutPin(companionPinID)],
                 layoutKind: .horizontal,
-                container: .regularTabs(spaceId: spaceID)
+                container: .shortcutSidebar(
+                    spaceId: spaceID,
+                    profileId: nil,
+                    folderId: nil,
+                    index: 0
+                )
             )
         )
         XCTAssertTrue(browser.splitGroupMutations.insert(group, persist: false))

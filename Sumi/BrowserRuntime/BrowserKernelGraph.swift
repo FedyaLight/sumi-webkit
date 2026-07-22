@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import SumiDomain
 import SumiWebRuntime
@@ -7,6 +8,7 @@ import SwiftData
 /// `BrowserManager` init can assign from a single graph instead of inline construction.
 @MainActor
 struct BrowserKernelGraph {
+    let objectWillChange: ObservableObjectPublisher
     let webViewSessions: WebViewSessionRepository
     let windowRegistry: WindowRegistry
     let modelContext: ModelContext

@@ -412,7 +412,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
             )
         )
         let profileId = UUID()
-        let essentials = try (0..<EssentialsShortcutPlacementOwner.CapacityPolicy.maxItems)
+        let essentials = try (0..<EssentialsShortcutPlacementOwner.CapacityPolicy.maxStoredMembers)
             .map { index in
                 ShortcutPin(
                     id: UUID(),
@@ -510,7 +510,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         XCTAssertNotNil(fixture.pins.shortcutPin(by: pin.id))
     }
 
-    func testPublicConversionCommitsSelectedSplitAndPinAsOneStructuralEvent() throws {
+    func testPublicConversionRejectsMixedSelectedSplitWithoutMutation() throws {
         let fixture = try makeSelectedSplitConversionFixture()
         let input = fixture.input
         let group = input.group
@@ -526,35 +526,24 @@ final class ShortcutPinAtomicityTests: XCTestCase {
             return XCTFail("Expected a displayed selected-split conversion plan")
         }
 
-        let converted = try XCTUnwrap(
-            fixture.conversion.commit(
-                input.tab,
-                preparation: preparation,
-                destination: TabShortcutPinDestination(
-                    role: .spacePinned,
-                    profileId: nil,
-                    spaceId: input.space.id,
-                    folderId: nil,
-                    index: 0,
-                    opensFolder: false
-                )
-            )?.canonicalPin
-        )
+        let converted = fixture.conversion.commit(
+            input.tab,
+            preparation: preparation,
+            destination: TabShortcutPinDestination(
+                role: .spacePinned,
+                profileId: nil,
+                spaceId: input.space.id,
+                folderId: nil,
+                index: 0,
+                opensFolder: false
+            )
+        )?.canonicalPin
 
-        XCTAssertEqual(structuralEvents, 1)
-        XCTAssertFalse(fixture.state().regularTabs.contains(input.tab))
-        XCTAssertIdentical(
-            fixture.state().liveTabs.tab(for: converted.id, in: input.window.id),
-            input.tab
-        )
-        let convertedGroup = try XCTUnwrap(fixture.state().groups.group(id: group.id))
-        XCTAssertEqual(convertedGroup.layoutKind, group.layoutKind)
-        XCTAssertEqual(convertedGroup.container, group.container)
-        XCTAssertFalse(convertedGroup.contains(.regularTab(input.tab.id)))
-        XCTAssertEqual(
-            convertedGroup.member(for: .shortcutPin(converted.id)),
-            SplitMember.shortcutPin(converted.id)
-        )
+        XCTAssertNil(converted)
+        XCTAssertEqual(structuralEvents, 0)
+        XCTAssertTrue(fixture.state().regularTabs.contains(input.tab))
+        XCTAssertNil(fixture.state().liveTabs.entry(tabId: input.tab.id))
+        XCTAssertEqual(fixture.state().groups.group(id: group.id), group)
         _ = cancellable
     }
 
@@ -617,7 +606,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         _ = cancellable
     }
 
-    func testHeadlessConversionReplacesPersistedSplitMemberAtomically() throws {
+    func testHeadlessConversionRejectsMixedSplitWithoutMutation() throws {
         let fixture = try makeHeadlessSplitConversionFixture()
         let converted = fixture.conversion.convert(
             fixture.input.tab,
@@ -631,15 +620,17 @@ final class ShortcutPinAtomicityTests: XCTestCase {
             )
         )
 
-        let pin = try XCTUnwrap(converted)
+        XCTAssertNil(converted)
         XCTAssertTrue(fixture.input.tab.webViewSession.allKnownWebViews.isEmpty)
-        XCTAssertFalse(fixture.state().regularTabs.contains(fixture.input.tab))
-        XCTAssertNotNil(fixture.state().pins.shortcutPin(by: pin.id))
-        let convertedGroup = try XCTUnwrap(
-            fixture.state().groups.group(id: fixture.input.group.id)
+        XCTAssertTrue(fixture.state().regularTabs.contains(fixture.input.tab))
+        XCTAssertTrue(
+            fixture.state().pins.spacePinnedPins(for: fixture.input.space.id)
+                .isEmpty
         )
-        XCTAssertFalse(convertedGroup.contains(.regularTab(fixture.input.tab.id)))
-        XCTAssertTrue(convertedGroup.contains(.shortcutPin(pin.id)))
+        XCTAssertEqual(
+            fixture.state().groups.group(id: fixture.input.group.id),
+            fixture.input.group
+        )
     }
 
     func testPublicConversionRepairsNonDisplayingWindowAfterCommit() throws {

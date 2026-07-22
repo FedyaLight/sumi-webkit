@@ -9,11 +9,11 @@ protocol SidebarDropOrderProjecting {
         in container: TabDragManager.DragContainer
     ) -> Int
 
-    func mutationIndex(for intent: SidebarDragCommitIntent) -> Int
+    func mutationIndex(for intent: SidebarDragCommitIntent) -> Int?
 }
 
 extension SidebarDropOrderProjecting {
-    func mutationIndex(for intent: SidebarDragCommitIntent) -> Int {
+    func mutationIndex(for intent: SidebarDragCommitIntent) -> Int? {
         storageIndex(
             forVisualIndex: intent.presentedVisualIndex,
             in: intent.toContainer
@@ -70,16 +70,25 @@ final class SidebarDropOrderProjection: SidebarDropOrderProjecting {
         guard case .spaceRegular(let spaceID) = container else {
             return max(0, visualIndex)
         }
-        return SidebarVisualOrdering.regularRawInsertionIndex(
-            atVisualBoundary: visualIndex,
-            blocks: SidebarVisualOrdering.regularBlocks(
-                tabs: regularTabs.tabs(in: spaceID),
-                groups: splitOrdering.regularGroups(for: spaceID)
-            )
-        )
+        return SidebarVisualSceneProjection.regularRun(
+            tabIDs: regularTabs.tabs(in: spaceID).map(\.id),
+            groups: splitOrdering.regularGroups(for: spaceID)
+        ).rawInsertionIndex(atVisualBoundary: visualIndex)
     }
 
-    func mutationIndex(for intent: SidebarDragCommitIntent) -> Int {
+    func mutationIndex(for intent: SidebarDragCommitIntent) -> Int? {
+        if case .spaceRegular(let spaceID) = intent.toContainer,
+           let boundary = intent.presentedRegularBoundary {
+            let run = SidebarVisualSceneProjection.regularRun(
+                tabIDs: regularTabs.tabs(in: spaceID).map(\.id),
+                groups: splitOrdering.regularGroups(for: spaceID)
+            )
+            guard let visualIndex = run.visualIndex(for: boundary) else {
+                return nil
+            }
+            return run.rawInsertionIndex(atVisualBoundary: visualIndex)
+        }
+
         guard intent.fromContainer == .essentials,
               intent.toContainer == .essentials else {
             return storageIndex(

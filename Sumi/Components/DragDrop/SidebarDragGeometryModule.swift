@@ -19,7 +19,11 @@ enum SidebarDragGeometryFact {
         rowCount: Int,
         leadingInset: CGFloat
     )
-    case regularList(spaceId: UUID, frame: CGRect?, rowCount: Int)
+    case regularList(
+        spaceId: UUID,
+        frame: CGRect?,
+        rowIdentities: [SidebarVisualSceneProjection.RegularRow.Identity]
+    )
     case essentials(SidebarEssentialsLayoutUpdate)
 }
 
@@ -152,11 +156,11 @@ final class SidebarDragGeometryModule: ObservableObject {
                 leadingInset: leadingInset,
                 generation: generation
             )
-        case .regularList(let spaceId, let frame, let rowCount):
+        case .regularList(let spaceId, let frame, let rowIdentities):
             repository.scheduleRegularListHitTarget(
                 spaceId: spaceId,
                 frame: frame,
-                rowCount: rowCount,
+                rowIdentities: rowIdentities,
                 generation: generation
             )
         case .essentials(let update):

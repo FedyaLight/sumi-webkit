@@ -143,64 +143,21 @@ struct SidebarFolderStickyProjectionOwner {
         for contextFolder: TabFolder
     ) -> SidebarFolderStickyProjectionPolicy.Context {
         let descendantItems = inventory.descendantItems(for: contextFolder.id)
-        let orderedItemIDs = descendantItems.map { item in
-            switch item {
-            case .shortcut(let id), .splitGroup(let id):
-                return id
-            case .folder:
-                preconditionFailure("Folders are flattened by descendantItems")
-            }
-        }
-        var eligible = Set<UUID>()
-        var selected: UUID?
-
-        for item in descendantItems {
-            switch item {
-            case .shortcut(let pinID):
-                guard let pin = inventory.pin(id: pinID) else { continue }
-                let liveTab = selection.liveTab(for: pin.id, in: windowState)
-                if liveTab != nil {
-                    eligible.insert(pin.id)
-                }
-                if selected == nil, isPinSelected(pin, liveTab: liveTab) {
-                    selected = pin.id
-                }
-            case .splitGroup(let groupID):
-                guard let group = inventory.splitGroup(id: groupID) else { continue }
-                eligible.insert(group.id)
-                if selected == nil,
-                   selection.isSplitGroupSelected(
-                       group,
-                       in: windowState,
-                       selection: selectionSnapshot
-                   ) {
-                    selected = group.id
-                }
-            case .folder:
-                continue
-            }
-        }
+        let projectedItems = SidebarVisualSceneProjection(
+            inventory: inventory,
+            selection: selection,
+            selectionSnapshot: selectionSnapshot,
+            windowState: windowState
+        ).launcherItems(descendantItems)
 
         return SidebarFolderStickyProjectionPolicy.Context(
             isFolderOpen: contextFolder.isOpen,
-            orderedDescendantItemIDs: orderedItemIDs,
-            visibleEligibleItemIDs: eligible,
-            selectedDescendantItemID: selected
+            orderedDescendantItemIDs: projectedItems.map(\.id),
+            visibleEligibleItemIDs: Set(
+                projectedItems.lazy.filter(\.isLive).map(\.id)
+            ),
+            selectedDescendantItemID: projectedItems.first(where: \.isSelected)?.id
         )
-    }
-
-    private func isPinSelected(_ pin: ShortcutPin, liveTab: Tab?) -> Bool {
-        if selection.isShortcutSelected(
-            pin,
-            in: windowState,
-            selection: selectionSnapshot
-        ) {
-            return true
-        }
-        guard let liveTab, let currentTabID = selectionSnapshot.currentTabID else {
-            return false
-        }
-        return liveTab.id == currentTabID
     }
 
     private func ancestorChains(for itemIDs: [UUID]) -> [UUID: [UUID]] {

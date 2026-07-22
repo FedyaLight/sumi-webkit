@@ -29,8 +29,6 @@ enum ShortcutPinCommandComposition {
             reorders: ShortcutPinReorderTransaction(
                 structuralLookup: structuralLookup,
                 pins: pins,
-                structuralMutations: structuralMutations,
-                spacePinnedStructure: spacePinnedStructure,
                 spacePinnedVisualOrder: spacePinnedVisualOrder,
                 essentialsVisualOrder: essentialsVisualOrder
             )

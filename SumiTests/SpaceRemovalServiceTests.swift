@@ -78,9 +78,10 @@ final class SpaceRemovalServiceTests: XCTestCase {
         tabManager.tabStateStore.selection.replaceCurrentTab(transientTab)
         var validationCount = 0
         var announcementCount = 0
-        let observation = tabManager.objectWillChange.sink {
-            announcementCount += 1
-        }
+        let observation = tabManager.tabStructureEventBus
+            .structureChangedPublisher.sink {
+                announcementCount += 1
+            }
         let service = makeService(
             tabManager,
             validateWindowStates: { validationCount += 1 }
@@ -412,14 +413,11 @@ final class SpaceRemovalServiceTests: XCTestCase {
         crossSpaceTabs: (Tab, Tab),
         tabManager: BrowserManager
     ) throws -> (SplitGroup, SplitGroup) {
-        let shortcutPinID = try XCTUnwrap(
-            deletedHostTabs.1.shortcutPinId
-        )
         let deletedHostGroup = try XCTUnwrap(
             SplitGroup.make(
                 members: [
                     .regularTab(deletedHostTabs.0.id),
-                    .shortcutPin(shortcutPinID),
+                    .regularTab(UUID()),
                 ],
                 layoutKind: .vertical,
                 container: .regularTabs(spaceId: removedSpaceId)

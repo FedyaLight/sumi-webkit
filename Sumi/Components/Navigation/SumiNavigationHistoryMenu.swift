@@ -135,7 +135,7 @@ enum SumiNavigationHistoryMenuModel {
 
             if let backForwardItem = item.backForwardItem,
                let webView,
-               item.sourceWebViewObjectID == ObjectIdentifier(webView),
+               historyItem(item, belongsTo: webView),
                backForwardItemBelongsToWebView(backForwardItem, webView) {
                 SumiWebViewNavigator.go(to: backForwardItem, on: webView)
             } else {
@@ -146,6 +146,14 @@ enum SumiNavigationHistoryMenuModel {
         case .newWindow:
             historyContext?.openURLsInNewWindow([url])
         }
+    }
+
+    @MainActor
+    static func historyItem(
+        _ item: SumiNavigationHistoryMenuItem,
+        belongsTo webView: WKWebView
+    ) -> Bool {
+        item.sourceWebViewObjectID == ObjectIdentifier(webView)
     }
 
     @MainActor

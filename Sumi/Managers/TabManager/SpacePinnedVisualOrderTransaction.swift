@@ -22,9 +22,10 @@ final class SpacePinnedVisualOrderTransaction {
     func reorder(
         _ movingItem: SplitGroupVisualListItem,
         in spaceID: UUID,
+        folderID: UUID? = nil,
         to proposedIndex: Int
     ) -> Bool {
-        let currentItems = ordering.topLevelItems(for: spaceID)
+        let currentItems = items(in: spaceID, folderID: folderID)
         guard let currentIndex = currentItems.firstIndex(of: movingItem) else {
             return false
         }
@@ -41,8 +42,10 @@ final class SpacePinnedVisualOrderTransaction {
             moving,
             at: max(0, min(targetIndex, reorderedItems.count))
         )
-
-        return apply(reorderedItems, in: spaceID)
+        return apply(
+            [.init(folderID: folderID, items: reorderedItems)],
+            in: spaceID
+        )
     }
 
     func moveFolder(
@@ -95,10 +98,11 @@ final class SpacePinnedVisualOrderTransaction {
     func placeExisting(
         _ movingItem: SplitGroupVisualListItem,
         in spaceID: UUID,
+        folderID: UUID? = nil,
         at targetIndex: Int,
         applying sideEffect: @escaping @MainActor () -> Bool = { true }
     ) -> Bool {
-        let currentItems = ordering.topLevelItems(for: spaceID)
+        let currentItems = items(in: spaceID, folderID: folderID)
         guard let currentIndex = currentItems.firstIndex(of: movingItem) else {
             return false
         }
@@ -117,19 +121,17 @@ final class SpacePinnedVisualOrderTransaction {
                 reorderedItems.count
             ))
         )
-        return apply(reorderedItems, in: spaceID, applying: sideEffect)
-    }
-
-    private func apply(
-        _ reorderedItems: [SplitGroupVisualListItem],
-        in spaceID: UUID
-    ) -> Bool {
-        apply(reorderedItems, in: spaceID, applying: { true })
+        return apply(
+            [.init(folderID: folderID, items: reorderedItems)],
+            in: spaceID,
+            applying: sideEffect
+        )
     }
 
     private func apply(
         _ orders: [SpacePinnedOrderTransaction.VisualContainerOrder],
-        in spaceID: UUID
+        in spaceID: UUID,
+        applying sideEffect: @escaping @MainActor () -> Bool = { true }
     ) -> Bool {
         let currentGroups = ordering.groupsSnapshot
         guard let planned = orderTransaction.planVisualOrders(
@@ -137,7 +139,11 @@ final class SpacePinnedVisualOrderTransaction {
             in: spaceID,
             groups: currentGroups
         ) else { return false }
-        return commit(planned, expectedGroups: currentGroups)
+        return commit(
+            planned,
+            expectedGroups: currentGroups,
+            applying: sideEffect
+        )
     }
 
     private func items(
@@ -147,25 +153,6 @@ final class SpacePinnedVisualOrderTransaction {
         let resolver = ordering.resolver(for: spaceID)
         return folderID.map(resolver.folderItems(for:))
             ?? resolver.topLevelItems()
-    }
-
-    private func apply(
-        _ reorderedItems: [SplitGroupVisualListItem],
-        in spaceID: UUID,
-        applying sideEffect: @escaping @MainActor () -> Bool
-    ) -> Bool {
-        let currentGroups = ordering.groupsSnapshot
-        guard let planned = orderTransaction.planVisualOrder(
-            reorderedItems,
-            in: spaceID,
-            groups: currentGroups
-        ) else { return false }
-
-        return commit(
-            planned,
-            expectedGroups: currentGroups,
-            applying: sideEffect
-        )
     }
 
     private func commit(

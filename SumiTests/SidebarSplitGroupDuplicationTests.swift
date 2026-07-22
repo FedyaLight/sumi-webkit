@@ -7,7 +7,6 @@ import XCTest
 final class SidebarSplitGroupDuplicationTests: XCTestCase {
     func testRegularDuplicateIsAdjacentInactiveAndCopiesMetadata() throws {
         let browser = BrowserManager()
-        browser.tabRuntimeLifecycle.shutdown()
         let space = Space(name: "Work")
         browser.spaceStateOwner.replaceSpaces([space])
         let first = browser.regularTabLifecycleOwner.createNewTab(

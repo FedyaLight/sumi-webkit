@@ -33,6 +33,9 @@ final class TabStructuralPublishOwner {
 
     func requestPublish(scope: TabStructureChangeScope = .all) {
         if structuralUpdateDepth > 0 {
+            if pendingStructuralScope == nil {
+                mutationRevision += 1
+            }
             pendingStructuralScope = pendingStructuralScope?.merging(scope) ?? scope
             return
         }
@@ -99,7 +102,6 @@ final class TabStructuralPublishOwner {
             structuralTransactionSignpostState = nil
         }
         if let scope {
-            mutationRevision += 1
             PerformanceTrace.emitEvent("TabManager.structuralPublish.coalesced")
             emitStructureChanged(scope: scope)
         }

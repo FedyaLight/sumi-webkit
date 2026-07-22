@@ -79,6 +79,15 @@ final class TabRuntimePortsAttachmentOwner {
         settlement.startPersistedStateRestoreIfNeeded(using: lease)
     }
 
+#if DEBUG
+    /// Lets tests invalidate captured leases without leaving lifecycle teardown
+    /// owning a superseded attachment.
+    func replaceForTests(_ ports: RuntimePortRegistry) {
+        connection.attach(ports)
+        state = .attached(connection.captureLease())
+    }
+#endif
+
     private var currentLease: TabRuntimePortLease? {
         switch state {
         case .detached, .attaching:

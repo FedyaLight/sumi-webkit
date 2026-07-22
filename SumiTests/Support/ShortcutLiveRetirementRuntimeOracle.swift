@@ -12,7 +12,6 @@ final class ShortcutLiveRetirementRuntimeOracle {
         case attachmentABAOnCanRetire(Int)
         case terminalDrainOnCanRetire(Int)
         case attachmentABAOnCommittedBegin
-        case actionOnCanRetire(Int, @MainActor () -> Void)
     }
 
     let window = BrowserWindowState()
@@ -38,8 +37,7 @@ final class ShortcutLiveRetirementRuntimeOracle {
     }
 
     private func install() throws {
-        tabManager = BrowserManager()
-        let repository = tabManager.webViewSessions
+        let repository = WebViewSessionRepository()
         let capabilities = TestRuntimePorts.RetirementCapabilities(
             canRetire: { [weak self] _ in
                 guard let self else { return false }
@@ -52,13 +50,9 @@ final class ShortcutLiveRetirementRuntimeOracle {
                     where call == canRetireCount:
                     terminalDrainEntries = repository
                         .takeAllWebViewsForTerminalShutdown().count
-                case .actionOnCanRetire(let call, let action)
-                    where call == canRetireCount:
-                    action()
                 case .none, .attachmentABAOnCanRetire,
                         .terminalDrainOnCanRetire,
-                        .attachmentABAOnCommittedBegin,
-                        .actionOnCanRetire:
+                        .attachmentABAOnCommittedBegin:
                     break
                 }
                 return true
@@ -96,7 +90,12 @@ final class ShortcutLiveRetirementRuntimeOracle {
                 self?.events.append("persist")
             }
         )
-        tabManager.runtimePortConnection.attach(runtime)
+        tabManager = BrowserManager(
+            webViewSessions: repository,
+            windowRegistry: WindowRegistry(),
+            dataServices: .unavailable(),
+            initialTabRuntimePorts: runtime
+        )
         let space = try XCTUnwrap(tabManager.sidebarSpaceLifecycle.createSpace(
             name: "Space",
             icon: SumiPersistentGlyph.spaceDefaultIconValue,
@@ -123,7 +122,6 @@ final class ShortcutLiveRetirementRuntimeOracle {
     }
 
     private func replaceAttachment() {
-        tabManager.runtimePortConnection.detach()
-        tabManager.runtimePortConnection.attach(runtime)
+        tabManager.tabRuntimeLifecycle.replaceRuntimePortsForTests(runtime)
     }
 }

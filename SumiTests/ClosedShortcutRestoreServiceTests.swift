@@ -222,17 +222,15 @@ final class ClosedShortcutRestoreServiceTests: XCTestCase {
     }
 
     func testRestoreSpacePinnedLauncherMovesOutOfFolderThatBecameLive() throws {
-        let harness = makeHarness()
+        var liveFolderID: UUID?
+        let harness = makeHarness(isLiveFolder: { $0 == liveFolderID })
         let folder = try XCTUnwrap(
             harness.browserManager.sidebarFolderCommands.createFolder(
                 in: harness.space.id,
                 name: "Now Live"
             )
         )
-        harness.browserManager.tabRuntimeLifecycle.shutdown()
-        harness.browserManager.runtimePortConnection.attach(
-            TestRuntimePorts.make(isLiveFolder: { $0 == folder.id })
-        )
+        liveFolderID = folder.id
         let pin = ShortcutPin(
             id: UUID(),
             role: .spacePinned,
@@ -288,8 +286,14 @@ final class ClosedShortcutRestoreServiceTests: XCTestCase {
         )
     }
 
-    private func makeHarness() -> Harness {
-        let browserManager = BrowserManager()
+    private func makeHarness(
+        isLiveFolder: ((UUID) -> Bool)? = nil
+    ) -> Harness {
+        let browserManager = isLiveFolder.map {
+            BrowserManager(
+                runtimePorts: TestRuntimePorts.make(isLiveFolder: $0)
+            )
+        } ?? BrowserManager()
         let windowRegistry = browserManager.windowRegistry
         let profile = Profile(name: "Primary")
         let space = Space(name: "Primary", profileId: profile.id)

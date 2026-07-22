@@ -67,12 +67,11 @@ final class ShortcutSplitLauncherMoveAggregateTransactionTests: XCTestCase {
         binding: RestoreAggregateBinding
     ) throws -> RestoreAggregateHarness {
         let window = BrowserWindowState()
-        let tabManager = BrowserManager()
-        tabManager.tabRuntimeLifecycle.shutdown()
-        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
+        let runtime = TestRuntimePorts.make(
             windowState: { $0 == window.id ? window : nil },
             windows: { [(window.id, window)] }
-        ))
+        )
+        let tabManager = BrowserManager(runtimePorts: runtime)
         tabManager.windowRegistry.register(window)
         let presentation = try XCTUnwrap(
             makeTestWindowSplitPresentationSynchronizer(

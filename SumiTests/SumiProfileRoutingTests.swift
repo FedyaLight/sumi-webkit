@@ -36,8 +36,9 @@ final class SumiProfileRoutingTests: XCTestCase {
             )
         )
         let currentProfile = try XCTUnwrap(browserManager.currentProfile)
-        let targetProfile = Profile(name: "Target")
-        browserManager.profileManager.profiles = [currentProfile, targetProfile]
+        let targetProfile = try browserManager.profileManager.createProfile(
+            name: "Target"
+        )
         let currentSpace = Space(name: "Current", profileId: currentProfile.id)
         let targetSpace = Space(name: "Target", profileId: targetProfile.id)
         browserManager.spaceStateOwner.replaceSpaces([currentSpace, targetSpace])
@@ -110,9 +111,8 @@ final class SumiProfileRoutingTests: XCTestCase {
             )
         )
         let currentProfile = try XCTUnwrap(browserManager.currentProfile)
-        let targetProfile = Profile(name: "Target")
-        try browserManager.profileManager.replaceProfiles(
-            with: [currentProfile, targetProfile]
+        let targetProfile = try browserManager.profileManager.createProfile(
+            name: "Target"
         )
         let window = BrowserWindowState()
         window.currentProfileId = currentProfile.id

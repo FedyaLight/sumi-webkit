@@ -45,7 +45,7 @@ final class TabClosureServiceCompositionTests: XCTestCase {
             in: try XCTUnwrap(tabManager),
             name: "Space"
         )
-        let active = try XCTUnwrap(tabManager).regularTabLifecycleOwner.createNewTab(
+        _ = try XCTUnwrap(tabManager).regularTabLifecycleOwner.createNewTab(
             url: "https://active.example",
             in: space,
             activate: true
@@ -65,22 +65,29 @@ final class TabClosureServiceCompositionTests: XCTestCase {
         XCTAssertNil(releasedTabManager)
         service.removeTab(closed.id)
         XCTAssertNil(regularTabs.tab(for: closed.id))
-        XCTAssertEqual(selection.currentTab?.id, active.id)
+        XCTAssertNil(selection.currentTab)
     }
 
     func testConfirmedRegularRemovalCapturesRecentlyClosedAndNotifiesOnce() throws {
         var captured: [(UUID, UUID?)] = []
         let notifications = NotificationPresentingSpy()
-        let tabManager = BrowserManager()
-        tabManager.runtimePortConnection.attach(
-            TestRuntimePorts.make(
+        let profile = Profile(name: "Closure")
+        let tabManager = BrowserManager(
+            runtimePorts: TestRuntimePorts.make(
+                currentProfileId: { profile.id },
+                defaultProfileId: { profile.id },
+                profile: { $0 == profile.id ? profile : nil },
                 captureClosedTab: { tab, spaceId in
                     captured.append((tab.id, spaceId))
                 },
                 notifications: { notifications }
             )
         )
-        let space = makeSpace(in: tabManager, name: "Space")
+        let space = makeSpace(
+            in: tabManager,
+            name: "Space",
+            profileID: profile.id
+        )
         let first = tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://first.example",
             in: space,
@@ -103,9 +110,8 @@ final class TabClosureServiceCompositionTests: XCTestCase {
         var captured: [UUID] = []
         var structuralPublishCount = 0
         let notifications = NotificationPresentingSpy()
-        let tabManager = BrowserManager()
-        tabManager.runtimePortConnection.attach(
-            TestRuntimePorts.make(
+        let tabManager = BrowserManager(
+            runtimePorts: TestRuntimePorts.make(
                 captureClosedTab: { tab, _ in
                     captured.append(tab.id)
                 },
@@ -194,7 +200,11 @@ final class TabClosureServiceCompositionTests: XCTestCase {
     func testConfirmedRemovalUsesOneRuntimeLeaseAcrossSynchronousDetach() throws {
         var tabManager: BrowserManager!
         var events: [String] = []
+        let profile = Profile(name: "Closure")
         let runtime = TestRuntimePorts.make(
+            currentProfileId: { profile.id },
+            defaultProfileId: { profile.id },
+            profile: { $0 == profile.id ? profile : nil },
             webViewLifecycle: TestRuntimePorts.webViewLifecycle(
                 retirement: .rejecting,
                 unloadTab: { _ in events.append("unload") },
@@ -202,7 +212,7 @@ final class TabClosureServiceCompositionTests: XCTestCase {
             ),
             handleTabClosures: { _ in
                 events.append("closures")
-                tabManager.runtimePortConnection.detach()
+                tabManager.tabRuntimeLifecycle.shutdown()
             },
             captureClosedTab: { _, _ in events.append("capture") },
             validateWindowStates: {
@@ -210,9 +220,12 @@ final class TabClosureServiceCompositionTests: XCTestCase {
                 return []
             }
         )
-        tabManager = BrowserManager()
-        tabManager.runtimePortConnection.attach(runtime)
-        let space = makeSpace(in: tabManager, name: "Space")
+        tabManager = BrowserManager(runtimePorts: runtime)
+        let space = makeSpace(
+            in: tabManager,
+            name: "Space",
+            profileID: profile.id
+        )
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(
             url: "https://lease.example",
             in: space,
@@ -224,7 +237,7 @@ final class TabClosureServiceCompositionTests: XCTestCase {
         XCTAssertNil(tabManager.runtimePortConnection.current)
         XCTAssertEqual(
             events,
-            ["closures", "unload", "remove", "capture", "validate"]
+            ["unload", "remove", "closures", "capture", "validate"]
         )
     }
 
@@ -270,9 +283,10 @@ final class TabClosureServiceCompositionTests: XCTestCase {
 
     private func makeSpace(
         in browser: BrowserManager,
-        name: String
+        name: String,
+        profileID: UUID? = nil
     ) -> Space {
-        let space = Space(name: name)
+        let space = Space(name: name, profileId: profileID)
         browser.spaceStateOwner.append(space)
         browser.spaceStateOwner.replaceCurrentSpace(space)
         return space

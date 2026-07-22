@@ -6,12 +6,16 @@ import XCTest
 final class BrowserWindowSpaceSelectionHandoffTests: XCTestCase {
     func testResolvedTabIsSelectedBeforeImmediateVisualHandoff() throws {
         let tabManager = BrowserManager()
-        let space = Space(name: "Target", profileId: UUID())
-        let tab = makeTab(in: space)
+        let profile = Profile(name: "Target")
+        tabManager.profileManager.profiles = [profile]
+        tabManager.currentProfile = profile
+        let space = Space(name: "Target", profileId: profile.id)
         tabManager.spaceStateOwner.replaceSpaces([space])
-        tabManager.tabStateStore.regularTabs.replaceTabsBySpace([
-            space.id: [tab],
-        ])
+        let tab = tabManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://space-selection.example",
+            in: space,
+            activate: false
+        )
         let windowState = BrowserWindowState()
         tabManager.tabResidenceAuthority.establishResidenceSession(
             on: windowState
@@ -52,13 +56,4 @@ final class BrowserWindowSpaceSelectionHandoffTests: XCTestCase {
         XCTAssertNil(windowState.currentTabId)
     }
 
-    private func makeTab(in space: Space) -> Tab {
-        Tab(
-            url: URL(string: "https://space-selection.example")
-                ?? URL(fileURLWithPath: "/"),
-            name: "Selection",
-            spaceId: space.id,
-            loadsCachedFaviconOnInit: false
-        )
-    }
 }

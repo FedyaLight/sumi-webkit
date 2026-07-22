@@ -5,6 +5,13 @@ enum SidebarPinnedInventoryItem: Hashable {
     case folder(UUID)
     case shortcut(UUID)
     case splitGroup(UUID)
+
+    var id: UUID {
+        switch self {
+        case .folder(let id), .shortcut(let id), .splitGroup(let id):
+            return id
+        }
+    }
 }
 
 /// Immutable structural input for one sidebar space page.

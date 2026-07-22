@@ -1492,16 +1492,21 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
 
         XCTAssertNil(completionError)
         let window = try XCTUnwrap(completionWindow as? ExtensionWindowAdapter)
-        XCTAssertIdentical(window, publishedMainWindow)
+        XCTAssertNotIdentical(window, publishedMainWindow)
+        XCTAssertNotEqual(window.windowId, harness.windowState.id)
+        let openedWindowState = try XCTUnwrap(
+            harness.windowRegistry.allWindows.first {
+                $0.id == window.windowId
+            }
+        )
         XCTAssertIdentical(
             harness.attachedRuntime.publications.windowPublications
                 .publishedWindowAdapter(
-                    for: harness.windowState,
+                    for: openedWindowState,
                     profileID: harness.profile.id
                 ),
-            publishedMainWindow
+            window
         )
-        XCTAssertEqual(window.windowId, harness.windowState.id)
         XCTAssertEqual(mainWindow.frame, originalMainFrame)
         let authTab = try XCTUnwrap(
             harness.browserManager.tabCollectionMembershipOwner
@@ -1519,6 +1524,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         XCTAssertFalse(authTab.isPopupHost)
         XCTAssertNil(authTab.webExtensionContextOverride)
         XCTAssertNil(harness.browserManager.auxiliaryWindows.sessions.session(for: authTab))
+        XCTAssertEqual(openedWindowState.currentTabId, authTab.id)
     }
 
     func testMaxNestedDepthBlocksSizedPopupWithoutInPlaceLoad() {
@@ -1714,6 +1720,32 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
             extensionsModule: extensionsModule,
             profile: profile,
             windowRegistry: windowRegistry
+        )
+        browserManager.windowShellContentViewFactory = { _, _ in NSView() }
+        let windowSessions = browserManager.windowSessionBundle
+        BrowserWindowRegistryBinding.install(
+            registration: windowSessions.restoration,
+            closing: BrowserWindowCloseWorkflow(
+                browserRuntime: browserManager,
+                recorder: windowSessions.history.recorder,
+                persistence: browserManager.windowSessionPersistenceCoordinator,
+                extensions: browserManager.optionalModules.extensions,
+                webViews: browserManager.webViewRuntime.lifecycleService,
+                emptySplitPlaceholders: browserManager.splitEmptyPlaceholders,
+                splitPreviews: browserManager.splitWindowContext.previews,
+                backgroundMedia: browserManager
+                    .backgroundMediaOptimizationService,
+                commands: browserManager.windowCommands
+            ),
+            activity: browserManager.windowActivation,
+            allWindowsClosed: BrowserAllWindowsClosedWorkflow(
+                browserRuntime: browserManager,
+                sessionRestore: windowSessions.restoreService,
+                siteDataPolicy: browserManager.dataServices
+                    .siteDataPolicyEnforcementService,
+                profiles: browserManager.profileManager
+            ),
+            on: windowRegistry
         )
         browserManager.startupRestoreLifecycle.markLoadFinished()
         extensionsModule.attach(runtime: BrowserExtensionsModuleRuntimeFactory.runtime(for: browserManager))

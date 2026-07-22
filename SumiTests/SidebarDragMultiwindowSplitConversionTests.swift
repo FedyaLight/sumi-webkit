@@ -9,17 +9,16 @@ final class SidebarDragMultiwindowSplitConversionTests: XCTestCase {
     func testUnloadedPinnedSplitMoveToRegularMaterializesWholeGroup() throws {
         let window = BrowserWindowState()
         let profile = Profile(name: "Profile")
-        let browser = BrowserManager()
-        browser.tabRuntimeLifecycle.shutdown()
-        browser.runtimePortConnection.attach(TestRuntimePorts.make(
+        let runtime = TestRuntimePorts.make(
             currentProfileId: { profile.id },
             defaultProfileId: { profile.id },
             profile: { $0 == profile.id ? profile : nil },
             windowState: { $0 == window.id ? window : nil },
             windows: { [(window.id, window)] },
             windowStates: { [window] }
-        ))
-        defer { browser.runtimePortConnection.detach() }
+        )
+        let browser = BrowserManager(runtimePorts: runtime)
+        defer { browser.tabRuntimeLifecycle.shutdown() }
         browser.windowRegistry.register(window)
         let space = try XCTUnwrap(browser.sidebarSpaceLifecycle.createSpace(
             name: "Work",
@@ -99,17 +98,16 @@ final class SidebarDragMultiwindowSplitConversionTests: XCTestCase {
         throws {
         let window = BrowserWindowState()
         let profile = Profile(name: "Profile")
-        let browser = BrowserManager()
-        browser.tabRuntimeLifecycle.shutdown()
-        browser.runtimePortConnection.attach(TestRuntimePorts.make(
+        let runtime = TestRuntimePorts.make(
             currentProfileId: { profile.id },
             defaultProfileId: { profile.id },
             profile: { $0 == profile.id ? profile : nil },
             windowState: { $0 == window.id ? window : nil },
             windows: { [(window.id, window)] },
             windowStates: { [window] }
-        ))
-        defer { browser.runtimePortConnection.detach() }
+        )
+        let browser = BrowserManager(runtimePorts: runtime)
+        defer { browser.tabRuntimeLifecycle.shutdown() }
         browser.windowRegistry.register(window)
         let space = try XCTUnwrap(browser.sidebarSpaceLifecycle.createSpace(
             name: "Work",
@@ -229,10 +227,8 @@ final class SidebarDragMultiwindowSplitConversionTests: XCTestCase {
         throws {
         let window = BrowserWindowState()
         let profile = Profile(name: "Profile")
-        let browser = BrowserManager()
         var visibleSplitTabIDs: [UUID] = []
-        browser.tabRuntimeLifecycle.shutdown()
-        browser.runtimePortConnection.attach(TestRuntimePorts.make(
+        let runtime = TestRuntimePorts.make(
             currentProfileId: { profile.id },
             defaultProfileId: { profile.id },
             profile: { $0 == profile.id ? profile : nil },
@@ -247,8 +243,9 @@ final class SidebarDragMultiwindowSplitConversionTests: XCTestCase {
                 }
             ),
             visibleSplitTabIds: { _ in visibleSplitTabIDs }
-        ))
-        defer { browser.runtimePortConnection.detach() }
+        )
+        let browser = BrowserManager(runtimePorts: runtime)
+        defer { browser.tabRuntimeLifecycle.shutdown() }
         browser.windowRegistry.register(window)
 
         let space = try XCTUnwrap(browser.sidebarSpaceLifecycle.createSpace(
@@ -442,13 +439,12 @@ final class SidebarDragMultiwindowSplitConversionTests: XCTestCase {
             primaryWindow.id: primaryWindow,
             secondaryWindow.id: secondaryWindow,
         ]
-        let browser = BrowserManager()
-        browser.tabRuntimeLifecycle.shutdown()
-        browser.runtimePortConnection.attach(TestRuntimePorts.make(
+        let runtime = TestRuntimePorts.make(
             windowState: { states[$0] },
             windows: { states.map { ($0.key, $0.value) } }
-        ))
-        defer { browser.runtimePortConnection.detach() }
+        )
+        let browser = BrowserManager(runtimePorts: runtime)
+        defer { browser.tabRuntimeLifecycle.shutdown() }
 
         let profileID = UUID()
         let space = try XCTUnwrap(browser.sidebarSpaceLifecycle.createSpace(

@@ -63,6 +63,7 @@ final class SumiPermissionSourceRegressionTests: XCTestCase {
             permissionRecentActivityStore: recentActivityStore,
             permissionSiteActivityStore: siteActivityStore
         )
+        browserManager.startRuntimeAfterStartupRecovery()
         await Task.yield()
 
         let activityRecorded = expectation(description: "permission activity recorded")

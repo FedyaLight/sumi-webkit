@@ -323,16 +323,13 @@ final class HistoryBoundedQueryTests: XCTestCase {
         let liveStore = FakeVisitedLinkStore()
         provider.preloadVisitedLinks([pendingURL], for: profileID)
         provider.seedStoreForTesting(liveStore, profileId: profileID)
+        XCTAssertEqual(liveStore.addedURLs, [pendingURL])
 
         provider.discardStore(for: profileID)
 
         XCTAssertEqual(liveStore.removeAllCallCount, 1)
         let replacementStore = FakeVisitedLinkStore()
         provider.seedStoreForTesting(replacementStore, profileId: profileID)
-        provider.applyStore(
-            to: WKWebViewConfiguration(),
-            profileId: profileID
-        )
         XCTAssertTrue(replacementStore.addedURLs.isEmpty)
     }
 

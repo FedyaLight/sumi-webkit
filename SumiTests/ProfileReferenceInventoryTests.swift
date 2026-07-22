@@ -15,7 +15,6 @@ final class ProfileReferenceInventoryTests: XCTestCase {
         let pendingProfileID = UUID()
         let pendingExecutionProfileID = UUID()
         let splitContainerProfileID = UUID()
-        let splitReturnProfileID = UUID()
         let currentProfileID = UUID()
         let currentSpaceProfileID = UUID()
         let currentTabProfileID = UUID()
@@ -75,12 +74,10 @@ final class ProfileReferenceInventoryTests: XCTestCase {
             pendingProfileID,
             pendingExecutionProfileID,
             splitContainerProfileID,
-            splitReturnProfileID,
             currentProfileID,
             currentSpaceProfileID,
             currentTabProfileID,
         ])
-        XCTAssertTrue(inventory.contains(splitReturnProfileID))
         XCTAssertFalse(inventory.contains(UUID()))
     }
 
@@ -89,7 +86,6 @@ final class ProfileReferenceInventoryTests: XCTestCase {
         let tabProfileID = UUID()
         let executionProfileID = UUID()
         let splitContainerProfileID = UUID()
-        let splitReturnProfileID = UUID()
         let spaceID = UUID()
         let splitGroup = try XCTUnwrap(SplitGroup.make(
             members: [
@@ -148,7 +144,6 @@ final class ProfileReferenceInventoryTests: XCTestCase {
             tabProfileID,
             executionProfileID,
             splitContainerProfileID,
-            splitReturnProfileID,
         ])
     }
 

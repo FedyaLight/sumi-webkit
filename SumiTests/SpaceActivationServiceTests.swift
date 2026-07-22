@@ -80,8 +80,7 @@ final class SpaceActivationServiceTests: XCTestCase {
 
     func testSelectionFallbackOrderIsRegularThenSpacePinThenEssential() throws {
         let profileID = UUID()
-        let tabManager = BrowserManager()
-        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
+        let tabManager = BrowserManager(runtimePorts: TestRuntimePorts.make(
             currentProfileId: { profileID }
         ))
         let sourceSpace = Space(name: "Source", profileId: UUID())
@@ -154,8 +153,7 @@ final class SpaceActivationServiceTests: XCTestCase {
 
     func testRegularSelectionWinsOverLiveEssentialTab() throws {
         let profileID = UUID()
-        let tabManager = BrowserManager()
-        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
+        let tabManager = BrowserManager(runtimePorts: TestRuntimePorts.make(
             currentProfileId: { profileID }
         ))
         let sourceSpace = Space(name: "Source", profileId: UUID())
@@ -198,8 +196,7 @@ final class SpaceActivationServiceTests: XCTestCase {
 
     func testNilProfileBackfillUsesDefaultProfileWhenAvailable() throws {
         let defaultProfile = Profile(name: "Default")
-        let tabManager = BrowserManager()
-        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
+        let tabManager = BrowserManager(runtimePorts: TestRuntimePorts.make(
             defaultProfileId: { defaultProfile.id },
             profileExists: { $0 == defaultProfile.id },
             profile: { $0 == defaultProfile.id ? defaultProfile : nil }
@@ -216,8 +213,7 @@ final class SpaceActivationServiceTests: XCTestCase {
     func testDeferredProfileBackfillDoesNotActivateUntilCommit() throws {
         let profile = Profile(name: "Deferred")
         let transition = DeferredSpaceProfileTransition()
-        let tabManager = BrowserManager()
-        tabManager.runtimePortConnection.attach(TestRuntimePorts.make(
+        let tabManager = BrowserManager(runtimePorts: TestRuntimePorts.make(
             defaultProfileId: { profile.id },
             profileExists: { $0 == profile.id },
             profile: { $0 == profile.id ? profile : nil },

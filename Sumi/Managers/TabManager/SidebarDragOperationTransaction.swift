@@ -35,14 +35,18 @@ final class SidebarDragOperationTransaction {
                 scope: intent.scope,
                 fromContainer: intent.fromContainer,
                 toContainer: intent.toContainer,
-                presentedVisualIndex: intent.presentedVisualIndex
+                presentedVisualIndex: intent.presentedVisualIndex,
+                presentedRegularBoundary: intent.presentedRegularBoundary
             )
+            guard let mutationIndex = orderProjection.mutationIndex(
+                for: canonicalIntent
+            ) else { return false }
             let operation = DragOperation(
                 payload: canonicalPayload,
                 scope: intent.scope,
                 fromContainer: intent.fromContainer,
                 toContainer: intent.toContainer,
-                toIndex: orderProjection.mutationIndex(for: canonicalIntent)
+                toIndex: mutationIndex
             )
             guard validation.validate(operation) else {
                 return false

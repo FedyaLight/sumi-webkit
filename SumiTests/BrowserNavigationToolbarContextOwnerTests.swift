@@ -8,7 +8,7 @@ import XCTest
 final class NavigationToolbarContextOwnerTests: XCTestCase {
     func testToolbarContextUsesBoundWindowForCurrentTabAndWebView() {
         let harness = NavigationToolbarContextHarness()
-        let webView = WKWebView()
+        let webView = NavigationToolbarHistoryRecordingWebView()
         harness.register(webView, for: harness.tab)
 
         let context = harness.owner.navigationToolbarContext(
@@ -117,7 +117,7 @@ final class NavigationToolbarContextOwnerTests: XCTestCase {
     func testToolbarBackForwardActionsUseBoundWindow() {
         let harness = NavigationToolbarContextHarness()
         let history = NavigationToolbarHistoryRecorder()
-        let webView = WKWebView()
+        let webView = NavigationToolbarHistoryRecordingWebView()
         history.activePagesByWindowID[harness.windowState.id] = ActivePageResolution(
             source: .selectedTab,
             windowState: harness.windowState,
@@ -125,27 +125,35 @@ final class NavigationToolbarContextOwnerTests: XCTestCase {
             url: harness.tab.url,
             canonicalWebView: webView
         )
-        let context = harness.makeOwner(history: history.owner)
-            .navigationToolbarContext(for: harness.windowState)
+        let owner = harness.makeOwner(history: history.owner)
+        let context = owner.navigationToolbarContext(for: harness.windowState)
 
         context.goBack()
         context.goForward()
 
         XCTAssertEqual(history.backwardWebViews, [ObjectIdentifier(webView)])
         XCTAssertEqual(history.forwardWebViews, [ObjectIdentifier(webView)])
+        withExtendedLifetime(owner) {}
     }
 
     func testToolbarReloadActionUsesBoundWindow() {
         let harness = NavigationToolbarContextHarness()
-        let webView = NavigationToolbarReloadRecordingWebView()
-        harness.register(webView, for: harness.tab)
-        let context = harness.owner.navigationToolbarContext(
+        let reloads = NavigationToolbarReloadRecorder(
+            tab: harness.tab,
+            webViewSessions: harness.browserManager.webViewSessions
+        )
+        let owner = harness.makeOwner(
+            history: harness.browserManager.historyBundle.historyNavigationOwner,
+            webViews: reloads.service
+        )
+        let context = owner.navigationToolbarContext(
             for: harness.windowState
         )
 
         context.reload(harness.tab)
 
-        XCTAssertEqual(webView.loadedURLs, [harness.tab.url])
+        XCTAssertEqual(reloads.windowIDs, [harness.windowState.id])
+        XCTAssertEqual(reloads.targetURLs, [harness.tab.url])
     }
 }
 
@@ -157,7 +165,9 @@ private final class NavigationToolbarContextHarness {
     let tab: Tab
 
     init() {
-        browserManager = BrowserManager()
+        browserManager = BrowserManager(
+            automaticallyStartPersistedStateLoad: false
+        )
         let profile = Profile(name: "Toolbar")
         space = Space(name: "Toolbar", profileId: profile.id)
         windowState = BrowserWindowState()
@@ -186,23 +196,29 @@ private final class NavigationToolbarContextHarness {
         browserManager.regularTabCollectionOwner.tabs(in: space)
     }
 
-    var owner: BrowserNavigationToolbarContextOwner {
-        makeOwner(history: browserManager.historyBundle.historyNavigationOwner)
-    }
+    lazy var owner = makeOwner(
+        history: browserManager.historyBundle.historyNavigationOwner
+    )
 
     func makeOwner(
-        history: BrowserHistoryNavigationOwner
+        history: BrowserHistoryNavigationOwner,
+        webViews: BrowserWebViewRoutingService? = nil
     ) -> BrowserNavigationToolbarContextOwner {
-        Self.makeOwner(browserManager: browserManager, history: history)
+        Self.makeOwner(
+            browserManager: browserManager,
+            history: history,
+            webViews: webViews
+        )
     }
 
     static func makeOwner(
         browserManager: BrowserManager,
-        history: BrowserHistoryNavigationOwner
+        history: BrowserHistoryNavigationOwner,
+        webViews: BrowserWebViewRoutingService? = nil
     ) -> BrowserNavigationToolbarContextOwner {
         BrowserNavigationToolbarContextOwner(
             windowTabs: browserManager.shellRuntime.windowTabs,
-            webViews: browserManager.webViewRoutingService,
+            webViews: webViews ?? browserManager.webViewRoutingService,
             dataServices: browserManager.dataServices,
             history: history,
             tabOpening: browserManager.tabOpening
@@ -279,13 +295,45 @@ private final class NavigationToolbarHistoryRecorder {
 }
 
 @MainActor
-private final class NavigationToolbarReloadRecordingWebView: WKWebView {
-    private(set) var loadedURLs: [URL] = []
+private final class NavigationToolbarHistoryRecordingWebView: WKWebView {
+    override var canGoBack: Bool { true }
+    override var canGoForward: Bool { true }
+}
 
-    override func load(_ request: URLRequest) -> WKNavigation? {
-        if let url = request.url {
-            loadedURLs.append(url)
-        }
-        return nil
+@MainActor
+private final class NavigationToolbarReloadRecorder {
+    private let tab: Tab
+    private let webViewSessions: WebViewSessionRepository
+    private let webView = WKWebView()
+    private(set) var windowIDs: [UUID] = []
+    private(set) var targetURLs: [URL] = []
+
+    init(tab: Tab, webViewSessions: WebViewSessionRepository) {
+        self.tab = tab
+        self.webViewSessions = webViewSessions
     }
+
+    lazy var service = BrowserWebViewRoutingService(
+        tabLookup: { [weak self] tabID in
+            guard let self, tabID == self.tab.id else { return nil }
+            return self.tab
+        },
+        webViewSessions: webViewSessions,
+        ownershipQuery: WebViewOwnershipQuery(webViewSessions: webViewSessions),
+        commands: BrowserWebViewRoutingService.Commands(
+            sync: { _, _, _ in },
+            reloadAll: { _, _, _ in },
+            reloadWindow: { [weak self] _, windowID, intent, _ in
+                self?.windowIDs.append(windowID)
+                self?.targetURLs.append(intent.targetURL)
+                return .accepted
+            },
+            retainRecovery: { _, _ in false },
+            recover: { _, _ in .failed },
+            cancelRecovery: { _ in },
+            setMute: { _, _ in },
+            materialize: { [weak self] _, _ in self?.webView },
+            rebuildWindowConfiguration: { _, _, _, _ in .notNeeded }
+        )
+    )
 }

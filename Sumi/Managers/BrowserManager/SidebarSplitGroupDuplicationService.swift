@@ -138,15 +138,14 @@ final class SavedSplitGroupDuplicationService {
             return pins.shortcutPin(by: pinID)
         }
         guard sourcePins.count == group.memberIDs.count else { return false }
-        let firstIndex = (sourcePins.map(\.index).max() ?? -1) + 1
-        let copies = sourcePins.enumerated().map { offset, pin in
+        let copies = sourcePins.map { pin in
             ShortcutPin(
                 id: UUID(),
                 role: pin.role,
                 profileId: pin.profileId,
                 executionProfileId: pin.executionProfileId,
                 spaceId: pin.spaceId,
-                index: firstIndex + offset,
+                index: .max,
                 folderId: pin.folderId,
                 launchURL: pin.launchURL,
                 title: pin.title,
@@ -180,7 +179,8 @@ final class SavedSplitGroupDuplicationService {
                     guard pinStore.insert(
                         copy,
                         at: copy.index,
-                        openTargetFolder: false
+                        openTargetFolder: false,
+                        sidebarVisualMembership: .splitMember
                     ) != nil else { return false }
                 }
                 return true

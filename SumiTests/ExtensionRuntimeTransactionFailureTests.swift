@@ -391,8 +391,13 @@ final class ExtensionRuntimeTransactionFailureTests:
                 for: installed.id
             )
         )
-        entity.isEnabled = true
-        try container.mainContext.save()
+        try inspection.installation.metadata.setEnabled(true, for: entity)
+        inspection.actionSurfaces.installedExtensions.upsert(
+            inspection.installation.metadata.record(
+                installed,
+                withEnabledState: true
+            )
+        )
         _ = inspection.controller.provisioning.ensureExtensionController(
             for: profile.id
         )

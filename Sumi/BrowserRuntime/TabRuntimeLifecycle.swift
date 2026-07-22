@@ -47,6 +47,15 @@ final class TabRuntimeLifecycle {
         runtimePorts.startPersistedStateRestoreIfNeeded()
     }
 
+#if DEBUG
+    /// Replaces the runtime generation for lease-drift tests while preserving
+    /// this lifecycle as the teardown owner.
+    func replaceRuntimePortsForTests(_ ports: RuntimePortRegistry) {
+        runtimePorts.replaceForTests(ports)
+        phase = .running
+    }
+#endif
+
     func shutdown() {
         if case .shutDown = phase { return }
         precondition(

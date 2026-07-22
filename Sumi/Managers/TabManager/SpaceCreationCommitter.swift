@@ -1,20 +1,16 @@
-import Combine
 import Foundation
 
 @MainActor
 final class SpaceCreationCommitter {
     private let structuralMutations: TabStructuralCollectionMutationOwner
     private let persistence: TabStructuralPersistenceService
-    private let changes: ObservableObjectPublisher
 
     init(
         structuralMutations: TabStructuralCollectionMutationOwner,
-        persistence: TabStructuralPersistenceService,
-        changes: ObservableObjectPublisher
+        persistence: TabStructuralPersistenceService
     ) {
         self.structuralMutations = structuralMutations
         self.persistence = persistence
-        self.changes = changes
     }
 
     func commit(
@@ -22,7 +18,6 @@ final class SpaceCreationCommitter {
         to spaces: TabSpaceCollectionStateOwner,
         in transactions: TabStructuralLookupCoordinator
     ) {
-        changes.send()
         spaces.append(space)
         persistence.markAllSpacesStructurallyDirty()
         structuralMutations.setTabs([], for: space.id)

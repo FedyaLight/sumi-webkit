@@ -21,7 +21,7 @@ final class BrowserRuntimeLifecycleTests: XCTestCase {
         )
     }
 
-    func testRepeatedStartKeepsOneWebViewCommandDeliverySubscription() {
+    func testRepeatedStartKeepsOneWebViewCommandDeliverySubscription() async {
         let browser = BrowserManager()
         let window = BrowserWindowState()
         browser.windowRegistry.register(window)
@@ -29,6 +29,7 @@ final class BrowserRuntimeLifecycleTests: XCTestCase {
         browser.startRuntimeAfterStartupRecovery()
         browser.startRuntimeAfterStartupRecovery()
         browser.webViewWindowCommands.refreshCompositor(in: window.id)
+        await Task.yield()
 
         XCTAssertEqual(
             window.compositorInvalidation.compositorVersion,
@@ -36,7 +37,7 @@ final class BrowserRuntimeLifecycleTests: XCTestCase {
         )
     }
 
-    func testShutdownDetachesRuntimeAndCancelsWebViewCommandDelivery() {
+    func testShutdownDetachesRuntimeAndCancelsWebViewCommandDelivery() async {
         let registry = WindowRegistry()
         var browser: BrowserManager? = BrowserManager(windowRegistry: registry)
         let window = BrowserWindowState()
@@ -45,9 +46,11 @@ final class BrowserRuntimeLifecycleTests: XCTestCase {
         let connection = browser?.runtimePortConnection
         let commands = browser?.webViewWindowCommands
         commands?.refreshCompositor(in: window.id)
+        await Task.yield()
 
         browser = nil
         commands?.refreshCompositor(in: window.id)
+        await Task.yield()
 
         XCTAssertNil(connection?.current)
         XCTAssertEqual(

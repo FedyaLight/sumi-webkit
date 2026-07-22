@@ -30,6 +30,14 @@ An unloaded launcher dropped into an active split is materialized immediately an
 - Saved → Regular converts every launcher to a regular `Tab` model without dissolving the group or retaining a saved copy. Loaded groups reuse their WebViews and keep the active participant; unloaded groups create all regular members without eagerly loading WebViews.
 - A whole group occupies one sidebar item and is always dragged as a whole. A participant must first be separated before it can be dragged independently.
 - Regular and Pinned rows expose selection only at group level. The focused member does not receive different typography or per-segment selection chrome.
+- Dropping a whole group into a collapsed folder keeps that folder collapsed, matching an ordinary launcher drop.
+
+## Sidebar ordering invariant
+
+- Every visible row owns exactly one visual position in its immediate container. A split row therefore contributes one position regardless of member count; its hidden member records never participate in drag boundaries or sibling normalization.
+- Geometry reports visual row identities and boundaries only. Conversion to durable records happens once, during the drop transaction.
+- A drop within the same container always uses visual reorder. Catalog movement is reserved for different containers, so an in-place reorder cannot remove and reinsert a row through two competing index systems.
+- Pinned and Folder ordering commits folders, standalone launchers, split containers, and split-member residence as one plan. No timer, observer, polling loop, or per-frame projection work is used for ordering.
 
 ## Essentials
 
