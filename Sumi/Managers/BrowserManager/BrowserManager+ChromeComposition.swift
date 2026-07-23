@@ -80,7 +80,7 @@ extension BrowserManager {
         )
         let nativeDialogs = BrowserNativeDialogPresentationOwner(
             modal: nativeModalTransaction,
-            floatingBar: floatingBarPresentation,
+            commandPalette: commandPalettePresentation,
             themes: workspaceThemeEditorOwner,
             sharing: sharing
         )

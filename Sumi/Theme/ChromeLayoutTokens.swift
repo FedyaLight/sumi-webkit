@@ -2,26 +2,26 @@
 //  ChromeLayoutTokens.swift
 //  Sumi
 //
-//  Non-SwiftUI chrome spacing / metrics shared by Sidebar and FloatingBar.
+//  Non-SwiftUI chrome spacing / metrics shared by Sidebar and CommandPalette.
 //  Foundation + CoreGraphics only — color recipes stay in the app target.
 //
 
 import CoreGraphics
 import Foundation
 
-/// Layout metrics shared by app-owned sidebar and floating-bar chrome.
+/// Layout metrics shared by app-owned sidebar and command-palette chrome.
 enum ChromeLayoutTokens: Sendable {
     // MARK: - Sidebar
 
     /// Horizontal inset for sidebar content (`SidebarChromeMetrics` / `SpaceViewLayout`).
     static let sidebarContentHorizontalPadding: CGFloat = 8
 
-    // MARK: - Floating bar
+    // MARK: - Command palette
 
-    /// Window-edge inset for the floating bar card (`FloatingBarLayoutPolicy`).
-    static let floatingBarHorizontalPadding: CGFloat = 10
-    /// Continuous corner radius for the floating bar shell.
-    static let floatingBarCornerRadius: CGFloat = 26
+    /// Window-edge inset for the command palette card (`CommandPaletteLayoutPolicy`).
+    static let commandPaletteHorizontalPadding: CGFloat = 10
+    /// Continuous corner radius for the command palette shell.
+    static let commandPaletteCornerRadius: CGFloat = 26
 
     // MARK: - Control alphas (CGFloat; resolved colors stay in the app)
 

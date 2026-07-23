@@ -16,14 +16,14 @@ protocol WindowSessionSelectionApplying: AnyObject {
 
     func showEmptyState(
         in windowState: BrowserWindowState,
-        presentNewTabFloatingBar: Bool
+        presentNewTabCommandPalette: Bool
     )
 
     func syncShortcutSelectionState(for windowState: BrowserWindowState)
 }
 
 @MainActor
-protocol WindowSessionFloatingBarSanitizing: AnyObject {
+protocol WindowSessionCommandPaletteSanitizing: AnyObject {
     func sanitize(in windowState: BrowserWindowState)
 }
 
@@ -45,6 +45,6 @@ protocol WindowSessionSplitFocusing: AnyObject {
 }
 
 extension BrowserManager: WindowSessionSelectionApplying {}
-extension FloatingBarPresentationService: WindowSessionFloatingBarSanitizing {}
+extension CommandPalettePresentationService: WindowSessionCommandPaletteSanitizing {}
 extension BrowserWorkspaceThemeTransitionOwner: WindowSessionThemeCommitting {}
 extension SplitShortcutFocusService: WindowSessionSplitFocusing {}

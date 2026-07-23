@@ -16,8 +16,8 @@ private enum WindowTransientChromeZIndex {
     static let collapsedSidebar: Double = 8_750
     /// Folder hover preview hangs off a sidebar row, so it must clear the collapsed sidebar overlay.
     static let folderPreview: Double = 8_800
-    /// Floating bar must stay above Glance so URL editing keeps targeting the preview page.
-    static let floatingBar: Double = 9_000
+    /// Command palette must stay above Glance so URL editing keeps targeting the preview page.
+    static let commandPalette: Double = 9_000
     /// Drag ghost only.
     static let sidebarDragPreview: Double = 20_000
 }
@@ -35,7 +35,7 @@ struct WindowView: View {
     @State private var effectiveAppearanceRevision: UInt = 0
     private let webContentContext: WindowWebContentContext
     private let sidebarContext: WindowSidebarContext
-    private let floatingBarContext: FloatingBarBrowserContext
+    private let commandPaletteContext: CommandPaletteBrowserContext
     private let nativeModalContext: WindowNativeModalContext
     private let findContext: WindowFindContext
     private let splitContext: WindowSplitContext
@@ -45,7 +45,7 @@ struct WindowView: View {
     init(
         webContentContext: WindowWebContentContext,
         sidebarContext: WindowSidebarContext,
-        floatingBarContext: FloatingBarBrowserContext,
+        commandPaletteContext: CommandPaletteBrowserContext,
         nativeModalContext: WindowNativeModalContext,
         findContext: WindowFindContext,
         splitContext: WindowSplitContext,
@@ -54,7 +54,7 @@ struct WindowView: View {
     ) {
         self.webContentContext = webContentContext
         self.sidebarContext = sidebarContext
-        self.floatingBarContext = floatingBarContext
+        self.commandPaletteContext = commandPaletteContext
         self.nativeModalContext = nativeModalContext
         self.findContext = findContext
         self.splitContext = splitContext
@@ -135,19 +135,19 @@ struct WindowView: View {
                         .zIndex(WindowTransientChromeZIndex.folderPreview)
                 }
 
-                // Floating bar is full-window chrome so its floating position is stable in both
+                // Command palette is full-window chrome so its floating position is stable in both
                 // docked and collapsed sidebar layouts.
                 chromeThemeScope {
-                    FloatingBarChromeHost(
-                        browserContext: floatingBarContext,
+                    CommandPaletteChromeHost(
+                        browserContext: commandPaletteContext,
                         windowState: windowState,
                         sumiSettings: sumiSettings,
                         resolvedThemeContext: resolvedThemeContext,
                         colorScheme: nativeSurfaceColorScheme,
-                        isPresented: windowState.presentationState.isFloatingBarVisible && !transientChromeModalSuppressed
+                        isPresented: windowState.presentationState.isCommandPaletteVisible && !transientChromeModalSuppressed
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .zIndex(WindowTransientChromeZIndex.floatingBar)
+                    .zIndex(WindowTransientChromeZIndex.commandPalette)
                 }
 
                 // Glance overlay for external link previews

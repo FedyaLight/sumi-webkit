@@ -311,14 +311,14 @@ final class WindowSessionServiceTests: XCTestCase {
         )
     }
 
-    func testSetupWindowStateRestoresEmptyStateDraftWithoutSynthesizingFloatingBarReason() throws {
+    func testSetupWindowStateRestoresEmptyStateDraftWithoutSynthesizingCommandPaletteReason() throws {
         let tabManager = BrowserManager()
         let spaceId = UUID()
         let sessionKey = try seedWindowSession(
             currentSpaceId: spaceId,
             isShowingEmptyState: true,
-            floatingBarReason: nil,
-            floatingBarDraft: FloatingBarDraftState(text: "restored draft", navigateCurrentTab: true)
+            commandPaletteReason: nil,
+            commandPaletteDraft: CommandPaletteDraftState(text: "restored draft", navigateCurrentTab: true)
         )
         defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
 
@@ -329,20 +329,20 @@ final class WindowSessionServiceTests: XCTestCase {
         service.setupWindowState(windowState, currentProfile: delegate.currentProfile)
 
         XCTAssertTrue(windowState.isShowingEmptyState)
-        XCTAssertEqual(windowState.floatingBarPresentationReason, .none)
-        XCTAssertEqual(windowState.floatingBarDraftText, "restored draft")
-        XCTAssertTrue(windowState.floatingBarDraftNavigatesCurrentTab)
+        XCTAssertEqual(windowState.commandPalettePresentationReason, .none)
+        XCTAssertEqual(windowState.commandPaletteDraftText, "restored draft")
+        XCTAssertTrue(windowState.commandPaletteDraftNavigatesCurrentTab)
     }
 
-    func testSetupWindowStatePreservesExplicitEmptyStateFloatingBarReasons() throws {
-        for reason in [FloatingBarPresentationReason.emptySpace, .keyboard] {
+    func testSetupWindowStatePreservesExplicitEmptyStateCommandPaletteReasons() throws {
+        for reason in [CommandPalettePresentationReason.emptySpace, .keyboard] {
             let tabManager = BrowserManager()
             let spaceId = UUID()
             let sessionKey = try seedWindowSession(
                 currentSpaceId: spaceId,
                 isShowingEmptyState: true,
-                floatingBarReason: reason,
-                floatingBarDraft: FloatingBarDraftState(text: "restored draft", navigateCurrentTab: true)
+                commandPaletteReason: reason,
+                commandPaletteDraft: CommandPaletteDraftState(text: "restored draft", navigateCurrentTab: true)
             )
             defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
 
@@ -353,9 +353,9 @@ final class WindowSessionServiceTests: XCTestCase {
             service.setupWindowState(windowState, currentProfile: delegate.currentProfile)
 
             XCTAssertTrue(windowState.isShowingEmptyState)
-            XCTAssertEqual(windowState.floatingBarPresentationReason, reason)
-            XCTAssertEqual(windowState.floatingBarDraftText, "restored draft")
-            XCTAssertTrue(windowState.floatingBarDraftNavigatesCurrentTab)
+            XCTAssertEqual(windowState.commandPalettePresentationReason, reason)
+            XCTAssertEqual(windowState.commandPaletteDraftText, "restored draft")
+            XCTAssertTrue(windowState.commandPaletteDraftNavigatesCurrentTab)
         }
     }
 
@@ -379,7 +379,7 @@ final class WindowSessionServiceTests: XCTestCase {
             activeShortcutPinId: shortcutPinId,
             activeShortcutPinRole: .spacePinned,
             isShowingEmptyState: false,
-            floatingBarReason: .keyboard,
+            commandPaletteReason: .keyboard,
             activeTabsBySpace: [
                 SpaceTabSelectionSnapshot(spaceId: space.id, tabId: tab.id),
             ],
@@ -390,7 +390,7 @@ final class WindowSessionServiceTests: XCTestCase {
             savedSidebarWidth: 340,
             sidebarContentWidth: 1,
             isSidebarVisible: false,
-            floatingBarDraft: FloatingBarDraftState(text: "persisted draft", navigateCurrentTab: true)
+            commandPaletteDraft: CommandPaletteDraftState(text: "persisted draft", navigateCurrentTab: true)
         )
         let delegate = TestWindowSessionDelegate(runtime: tabManager)
         let service = delegate.makeRestoreService(lastWindowSessionKey: sessionKey)
@@ -405,7 +405,7 @@ final class WindowSessionServiceTests: XCTestCase {
         XCTAssertNil(windowState.currentShortcutPinId)
         XCTAssertNil(windowState.currentShortcutPinRole)
         XCTAssertFalse(windowState.isShowingEmptyState)
-        XCTAssertEqual(windowState.floatingBarPresentationReason, .none)
+        XCTAssertEqual(windowState.commandPalettePresentationReason, .none)
         XCTAssertEqual(windowState.activeTabForSpace[space.id], tab.id)
         XCTAssertNil(windowState.selectedShortcutPinForSpace[space.id])
         XCTAssertEqual(windowState.sidebarWidth, 312)
@@ -413,8 +413,8 @@ final class WindowSessionServiceTests: XCTestCase {
         XCTAssertEqual(windowState.sidebarContentWidth, BrowserWindowState.sidebarContentWidth(for: 312))
         XCTAssertFalse(windowState.isSidebarVisible)
         XCTAssertFalse(windowState.presentationState.isDownloadsPopoverPresented)
-        XCTAssertEqual(windowState.floatingBarDraftText, "persisted draft")
-        XCTAssertTrue(windowState.floatingBarDraftNavigatesCurrentTab)
+        XCTAssertEqual(windowState.commandPaletteDraftText, "persisted draft")
+        XCTAssertTrue(windowState.commandPaletteDraftNavigatesCurrentTab)
     }
 
     func testPreparedArchivedWindowBypassesConflictingGlobalSnapshot() throws {
@@ -616,7 +616,7 @@ final class WindowSessionServiceTests: XCTestCase {
             activeShortcutPinId: nil,
             activeShortcutPinRole: nil,
             isShowingEmptyState: false,
-            floatingBarReason: nil,
+            commandPaletteReason: nil,
             activeTabsBySpace: [],
             activeShortcutsBySpace: [],
             sidebarWidth: Double(BrowserWindowState.sidebarDefaultWidth),
@@ -625,7 +625,7 @@ final class WindowSessionServiceTests: XCTestCase {
                 for: BrowserWindowState.sidebarDefaultWidth
             )),
             isSidebarVisible: true,
-            floatingBarDraft: FloatingBarDraftState(text: "", navigateCurrentTab: false),
+            commandPaletteDraft: CommandPaletteDraftState(text: "", navigateCurrentTab: false),
             splitSelection: WindowSplitSelection(
                 groupID: group.id,
                 activeMemberID: .regularTab(second.id)
@@ -677,7 +677,7 @@ final class WindowSessionServiceTests: XCTestCase {
             activeShortcutPinId: nil,
             activeShortcutPinRole: nil,
             isShowingEmptyState: false,
-            floatingBarReason: nil,
+            commandPaletteReason: nil,
             activeTabsBySpace: [],
             activeShortcutsBySpace: [],
             sidebarWidth: Double(BrowserWindowState.sidebarDefaultWidth),
@@ -686,7 +686,7 @@ final class WindowSessionServiceTests: XCTestCase {
                 for: BrowserWindowState.sidebarDefaultWidth
             )),
             isSidebarVisible: true,
-            floatingBarDraft: FloatingBarDraftState(
+            commandPaletteDraft: CommandPaletteDraftState(
                 text: "",
                 navigateCurrentTab: false
             ),
@@ -952,8 +952,8 @@ final class WindowSessionServiceTests: XCTestCase {
         activeShortcutPinRole: ShortcutPinRole? = nil,
         activeShortcutsBySpace: [SpaceShortcutSelectionSnapshot] = [],
         isShowingEmptyState: Bool = false,
-        floatingBarReason: FloatingBarPresentationReason? = nil,
-        floatingBarDraft: FloatingBarDraftState = FloatingBarDraftState(text: "", navigateCurrentTab: false)
+        commandPaletteReason: CommandPalettePresentationReason? = nil,
+        commandPaletteDraft: CommandPaletteDraftState = CommandPaletteDraftState(text: "", navigateCurrentTab: false)
     ) throws -> String {
         let sessionKey = "SumiTests.windowSession.\(UUID().uuidString)"
         let snapshot = WindowSessionSnapshot(
@@ -963,7 +963,7 @@ final class WindowSessionServiceTests: XCTestCase {
             activeShortcutPinId: activeShortcutPinId,
             activeShortcutPinRole: activeShortcutPinRole,
             isShowingEmptyState: isShowingEmptyState,
-            floatingBarReason: floatingBarReason,
+            commandPaletteReason: commandPaletteReason,
             activeTabsBySpace: [],
             activeShortcutsBySpace: activeShortcutsBySpace,
             sidebarWidth: Double(BrowserWindowState.sidebarDefaultWidth),
@@ -972,7 +972,7 @@ final class WindowSessionServiceTests: XCTestCase {
                 for: BrowserWindowState.sidebarDefaultWidth
             )),
             isSidebarVisible: true,
-            floatingBarDraft: floatingBarDraft
+            commandPaletteDraft: commandPaletteDraft
         )
         UserDefaults.standard.set(try JSONEncoder().encode(snapshot), forKey: sessionKey)
         return sessionKey
@@ -996,7 +996,7 @@ final class WindowSessionServiceTests: XCTestCase {
 @MainActor
 final class TestWindowSessionDelegate:
     WindowSessionSelectionApplying,
-    WindowSessionFloatingBarSanitizing,
+    WindowSessionCommandPaletteSanitizing,
     WindowSessionThemeCommitting,
     WindowSessionSplitFocusing {
     let runtime: BrowserManager
@@ -1078,7 +1078,7 @@ final class TestWindowSessionDelegate:
             ),
             selectionService: shellSelectionService,
             selection: self,
-            floatingBarSanitizer: self
+            commandPaletteSanitizer: self
         )
     }
 
@@ -1102,7 +1102,7 @@ final class TestWindowSessionDelegate:
 
     func showEmptyState(
         in windowState: BrowserWindowState,
-        presentNewTabFloatingBar _: Bool
+        presentNewTabCommandPalette _: Bool
     ) {
         windowState.isShowingEmptyState = true
     }

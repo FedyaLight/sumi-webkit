@@ -6,20 +6,20 @@ final class BrowserTabSelectionChromeEffects {
     private let windowSpaceContext: BrowserWindowSpaceContextSynchronizer
     private let workspaceThemes: BrowserWorkspaceThemeTransitionOwner
     private let settings: BrowserSettingsState
-    private let floatingBar: FloatingBarPresentationService
+    private let commandPalette: CommandPalettePresentationService
 
     init(
         state: BrowserTabSelectionStateApplication,
         windowSpaceContext: BrowserWindowSpaceContextSynchronizer,
         workspaceThemes: BrowserWorkspaceThemeTransitionOwner,
         settings: BrowserSettingsState,
-        floatingBar: FloatingBarPresentationService
+        commandPalette: CommandPalettePresentationService
     ) {
         self.state = state
         self.windowSpaceContext = windowSpaceContext
         self.workspaceThemes = workspaceThemes
         self.settings = settings
-        self.floatingBar = floatingBar
+        self.commandPalette = commandPalette
     }
 
     func publish(
@@ -29,7 +29,7 @@ final class BrowserTabSelectionChromeEffects {
         updateTheme: Bool,
         reconcileSplitSelection: Bool
     ) {
-        floatingBar.dismissAfterSelection(in: windowState)
+        commandPalette.dismissAfterSelection(in: windowState)
         if reconcileSplitSelection {
             state.reconcileSplitSelection(for: tab, in: windowState)
         }

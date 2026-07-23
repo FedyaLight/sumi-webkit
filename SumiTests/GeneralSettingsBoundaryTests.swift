@@ -200,7 +200,7 @@ final class GeneralSettingsBoundaryTests: XCTestCase {
                 glanceEnabled: .constant(true)
             ),
             GeneralNewTabsSettingsSection(
-                mode: .constant(.floatingBar),
+                mode: .constant(.commandPalette),
                 pageURLString: .constant("example.com")
             ),
             GeneralSearchSettingsSection(

@@ -5,7 +5,7 @@ on:
     paths:
       - ".github/workflows/architecture-guardrails.yml"
       - "App/**"
-      - "FloatingBar/**"
+      - "CommandPalette/**"
       - "Packages/**"
       - "SidebarChrome/**"
       - "Settings/**"
@@ -22,7 +22,7 @@ on:
     paths:
       - ".github/workflows/architecture-guardrails.yml"
       - "App/**"
-      - "FloatingBar/**"
+      - "CommandPalette/**"
       - "Packages/**"
       - "SidebarChrome/**"
       - "Settings/**"

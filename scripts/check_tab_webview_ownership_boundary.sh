@@ -16,7 +16,7 @@ guard_initialize "$repo_root"
 # - TabMainFrameRuntimeTransaction coordinates lifecycle/recovery transitions.
 # - TabCommittedDocumentRuntime alone owns durable committed-document state.
 
-production_roots=(App Sumi SidebarChrome FloatingBar Settings UI)
+production_roots=(App Sumi SidebarChrome CommandPalette Settings UI)
 all_swift_roots=("${production_roots[@]}" Packages SumiTests SumiUITests)
 repository_source="Packages/SumiWebRuntime/Sources/SumiWebRuntime/Session/WebViewSessionRepository.swift"
 handle_source="Packages/SumiWebRuntime/Sources/SumiWebRuntime/Session/WebViewSessionHandle.swift"

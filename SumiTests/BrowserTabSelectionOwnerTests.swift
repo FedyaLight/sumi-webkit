@@ -35,8 +35,8 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
         let previousTab = makeTab(in: harness.space, manager: harness.manager)
         let selectedTab = makeTab(in: harness.space, manager: harness.manager)
         installSelection(previousTab, in: harness.window)
-        harness.window.presentationState.isFloatingBarVisible = true
-        harness.window.floatingBarPresentationReason = .keyboard
+        harness.window.presentationState.isCommandPaletteVisible = true
+        harness.window.commandPalettePresentationReason = .keyboard
 
         let outcome = harness.owner.applyTabSelection(
             selectedTab,
@@ -59,7 +59,7 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
             harness.manager.tabStateStore.selection.currentTab,
             selectedTab
         )
-        XCTAssertFalse(harness.window.presentationState.isFloatingBarVisible)
+        XCTAssertFalse(harness.window.presentationState.isCommandPaletteVisible)
         XCTAssertEqual(
             harness.snapshotStore.loadSnapshot()?.snapshot.currentTabId,
             selectedTab.id
@@ -255,7 +255,7 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
         XCTAssertEqual(harness.window.currentShortcutPinRole, .spacePinned)
     }
 
-    func testEmptyStateClearsSelectionAndPersistsWithoutOpeningFloatingBar() throws {
+    func testEmptyStateClearsSelectionAndPersistsWithoutOpeningCommandPalette() throws {
         let harness = try makeHarness()
         harness.window.currentSpaceId = harness.space.id
         harness.window.currentTabId = UUID()
@@ -269,8 +269,8 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
         XCTAssertNil(harness.window.currentShortcutPinId)
         XCTAssertNil(harness.window.currentShortcutPinRole)
         XCTAssertTrue(harness.window.isShowingEmptyState)
-        XCTAssertFalse(harness.window.presentationState.isFloatingBarVisible)
-        XCTAssertEqual(harness.window.floatingBarPresentationReason, .none)
+        XCTAssertFalse(harness.window.presentationState.isCommandPaletteVisible)
+        XCTAssertEqual(harness.window.commandPalettePresentationReason, .none)
         XCTAssertNil(
             harness.snapshotStore.loadSnapshot()?.snapshot.currentTabId
         )

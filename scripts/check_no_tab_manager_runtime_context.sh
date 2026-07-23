@@ -13,7 +13,7 @@ search_roots=(
   Sumi
   SumiTests
   App
-  FloatingBar
+  CommandPalette
   SidebarChrome
   Settings
   UI

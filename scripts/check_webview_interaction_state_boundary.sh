@@ -7,7 +7,7 @@ repo_root="$(cd "$script_dir/.." && pwd)"
 source "$script_dir/lib/architecture_guard.sh"
 guard_initialize "$repo_root"
 
-production_roots=(App Sumi Settings SidebarChrome FloatingBar UI)
+production_roots=(App Sumi Settings SidebarChrome CommandPalette UI)
 all_swift_roots=("${production_roots[@]}" SumiTests SumiUITests)
 focusable_web_view="Sumi/Utils/WebKit/FocusableWKWebView.swift"
 interaction_state="Sumi/Utils/WebKit/WebViewInteractionState.swift"

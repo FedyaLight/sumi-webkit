@@ -22,7 +22,7 @@ extension BrowserWindowCommands {
                     showEmptyState: { [weak browserRuntime] window, presentBar in
                         browserRuntime?.showEmptyState(
                             in: window,
-                            presentNewTabFloatingBar: presentBar
+                            presentNewTabCommandPalette: presentBar
                         )
                     },
                     sidebarHostRecoveryCoordinator: browserRuntime

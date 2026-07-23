@@ -191,7 +191,7 @@ private struct SumiBrowsingDataSheetBackground: View {
     var body: some View {
         themeContext
             .tokens(settings: sumiSettings)
-            .floatingBarBackground
+            .commandPaletteBackground
     }
 }
 

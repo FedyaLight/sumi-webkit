@@ -7,7 +7,7 @@ repo_root="$(cd "$script_dir/.." && pwd)"
 source "$script_dir/lib/architecture_guard.sh"
 guard_initialize "$repo_root"
 
-runtime_paths=(App Sumi Settings SidebarChrome FloatingBar UI)
+runtime_paths=(App Sumi Settings SidebarChrome CommandPalette UI)
 allowed_file="Sumi/Services/SumiStartupPersistence.swift"
 permission_composition_file="Sumi/Managers/BrowserManager/BrowserManagerStartupPersistence.swift"
 

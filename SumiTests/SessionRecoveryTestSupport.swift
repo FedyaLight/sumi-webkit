@@ -66,7 +66,7 @@ func makeSessionRecoveryWindowSession(
         activeShortcutPinId: nil,
         activeShortcutPinRole: nil,
         isShowingEmptyState: isShowingEmptyState,
-        floatingBarReason: FloatingBarPresentationReason.none,
+        commandPaletteReason: CommandPalettePresentationReason.none,
         activeTabsBySpace: [],
         activeShortcutsBySpace: [],
         sidebarWidth: Double(BrowserWindowState.sidebarDefaultWidth),
@@ -77,7 +77,7 @@ func makeSessionRecoveryWindowSession(
             )
         ),
         isSidebarVisible: true,
-        floatingBarDraft: FloatingBarDraftState(text: "", navigateCurrentTab: false)
+        commandPaletteDraft: CommandPaletteDraftState(text: "", navigateCurrentTab: false)
     )
 }
 

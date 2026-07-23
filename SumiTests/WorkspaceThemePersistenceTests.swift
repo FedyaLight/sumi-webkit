@@ -219,7 +219,7 @@ final class WorkspaceThemePersistenceTests: XCTestCase {
             activeShortcutPinId: nil,
             activeShortcutPinRole: nil,
             isShowingEmptyState: false,
-            floatingBarReason: nil,
+            commandPaletteReason: nil,
             activeTabsBySpace: [],
             activeShortcutsBySpace: [],
             sidebarWidth: Double(BrowserWindowState.sidebarDefaultWidth),
@@ -228,7 +228,7 @@ final class WorkspaceThemePersistenceTests: XCTestCase {
                 for: BrowserWindowState.sidebarDefaultWidth
             )),
             isSidebarVisible: true,
-            floatingBarDraft: FloatingBarDraftState(text: "", navigateCurrentTab: false)
+            commandPaletteDraft: CommandPaletteDraftState(text: "", navigateCurrentTab: false)
         )
         harness.defaults.set(try JSONEncoder().encode(snapshot), forKey: sessionKey)
 

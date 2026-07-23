@@ -11,12 +11,12 @@ struct GeneralSearchEngineChoice: Identifiable, Equatable {
 }
 
 struct GeneralSearchSettingsSection: View {
-    @Binding private var emptyStateMode: FloatingBarEmptyStateMode
+    @Binding private var emptyStateMode: CommandPaletteEmptyStateMode
     @Binding private var defaultEngineID: String
     let engineChoices: [GeneralSearchEngineChoice]
 
     init(
-        emptyStateMode: Binding<FloatingBarEmptyStateMode>,
+        emptyStateMode: Binding<CommandPaletteEmptyStateMode>,
         defaultEngineID: Binding<String>,
         engineChoices: [GeneralSearchEngineChoice]
     ) {
@@ -28,14 +28,14 @@ struct GeneralSearchSettingsSection: View {
     var body: some View {
         SettingsSection(
             title: "Search",
-            subtitle: "Choose the default web search and how the floating bar behaves before typing."
+            subtitle: "Choose the default web search and how the command palette behaves before typing."
         ) {
             SettingsRow(
-                title: "Floating bar empty state",
+                title: "Command palette empty state",
                 subtitle: "Choose what appears before you start typing."
             ) {
                 Picker("", selection: $emptyStateMode) {
-                    ForEach(FloatingBarEmptyStateMode.allCases) { mode in
+                    ForEach(CommandPaletteEmptyStateMode.allCases) { mode in
                         Text(mode.title).tag(mode)
                     }
                 }

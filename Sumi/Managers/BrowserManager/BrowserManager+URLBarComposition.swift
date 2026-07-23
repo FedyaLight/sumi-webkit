@@ -91,7 +91,7 @@ extension BrowserManager {
             ),
             pageCommands: BrowserURLBarPageCommandOwner(
                 activePages: shell.activePageResolver,
-                floatingBar: floatingBarPresentation,
+                commandPalette: commandPalettePresentation,
                 pageCommands: chrome.activePageCommands,
                 clipboard: clipboard,
                 sidebar: chrome.sidebarPresentationOwner
@@ -106,7 +106,7 @@ extension BrowserManager {
         return BrowserURLBarBundle(
             settingsNavigation: settingsNavigation,
             contextOwner: contextOwner,
-            floatingBar: floatingBarServices
+            commandPalette: commandPaletteServices
         )
     }
 }

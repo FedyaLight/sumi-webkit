@@ -9,7 +9,7 @@ enum BrowserShortcutActionComposition {
         shell: BrowserShellRuntime,
         tabOpening: BrowserTabOpeningOwner,
         tabSelection: BrowserTabSelectionOwner,
-        newTabCommit: FloatingBarCommitService,
+        newTabCommit: CommandPaletteCommitService,
         splitQuery: WindowSplitQuery,
         splitLayout: SplitLayoutService,
         emptySplitCreation: EmptySplitCreationWorkflow,
@@ -28,7 +28,7 @@ enum BrowserShortcutActionComposition {
         theme: BrowserWorkspaceThemeEditorOwner,
         sidebar: BrowserSidebarPresentationOwner,
         find: FindManager,
-        floatingBar: FloatingBarPresentationService
+        commandPalette: CommandPalettePresentationService
     ) -> BrowserShortcutActionRouter {
         let tabCommands = BrowserKeyboardTabSelectionCommands(
             windowTabs: shell.windowTabs,
@@ -75,7 +75,7 @@ enum BrowserShortcutActionComposition {
             overlays: BrowserShortcutOverlayCommandDispatcher(
                 find: find,
                 dialogs: dialogs,
-                floatingBar: floatingBar
+                commandPalette: commandPalette
             )
         )
     }

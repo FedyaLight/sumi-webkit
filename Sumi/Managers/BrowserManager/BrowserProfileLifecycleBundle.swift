@@ -263,7 +263,7 @@ extension BrowserManager {
                 regularLifecycle: regularTabLifecycleOwner,
                 windowReset: cleanStartupWindowReset,
                 selection: browserTabSelection,
-                floatingBar: urlBarBundle.floatingBar.presentation
+                commandPalette: urlBarBundle.commandPalette.presentation
             )
         )
         let windowRestore = StartupWindowRestoreService(

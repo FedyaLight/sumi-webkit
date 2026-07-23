@@ -15,7 +15,7 @@ This is a draft 60-90 second demo outline for the Alpha.
 8. Show essentials and pinned items in the sidebar.
 9. Demonstrate launcher behavior conceptually: visible identity remains while
    inactive live runtime state can be unloaded.
-10. Use the floating bar for address/search, suggestions, and filling an active
+10. Use the command palette for address/search, suggestions, and filling an active
     split slot.
 11. Show bookmarks, history, and settings search briefly.
 12. Show memory modes and inactive tab unloading settings.

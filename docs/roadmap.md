@@ -31,7 +31,7 @@ Sumi now has first-class Arc/Zen migration and Sumi backup/restore surfaces in S
 - Glance.
 - Split view up to four views.
 - Incognito windows backed by an ephemeral profile and ephemeral tabs.
-- Floating bar.
+- Command palette.
 - Bookmarks and history.
 - Sidebar drag-and-drop organization.
 - Pinned items, essentials, nested folders, and folder ungroup/delete actions.

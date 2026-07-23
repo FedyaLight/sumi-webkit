@@ -20,7 +20,7 @@ browser_retirement_coordinator="Sumi/Managers/BrowserManager/BrowserProfileRefer
 browser_deletion_workflow="Sumi/Managers/BrowserManager/BrowserProfileDeletionWorkflow.swift"
 browser_retirement_recovery="Sumi/Managers/BrowserManager/BrowserProfileRetirementStartupRecovery.swift"
 browser_profile_lifecycle="Sumi/Managers/BrowserManager/BrowserProfileLifecycleBundle.swift"
-production_roots=(App Sumi Settings SidebarChrome FloatingBar UI Packages)
+production_roots=(App Sumi Settings SidebarChrome CommandPalette UI Packages)
 
 for source in \
   "$profile_manager" \

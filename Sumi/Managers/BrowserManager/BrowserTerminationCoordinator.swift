@@ -13,7 +13,7 @@ final class BrowserTerminationCoordinator: BrowserTerminationCoordinating {
 
     func prepareForTermination() {
         guard let browserRuntime else { return }
-        browserRuntime.urlBarBundle.floatingBar.presentation
+        browserRuntime.urlBarBundle.commandPalette.presentation
             .dismissActiveWindow(preserveDraft: true)
         browserRuntime.chromeBundle.workspaceThemeEditorOwner
             .dismissThemePickerCommittingIfNeeded()

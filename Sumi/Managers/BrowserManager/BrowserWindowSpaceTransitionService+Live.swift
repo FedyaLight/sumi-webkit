@@ -14,7 +14,7 @@ extension BrowserManager {
                 membership: tabCollectionMembershipOwner,
                 spaces: spaceStateOwner
             ),
-            floatingBar: urlBarBundle.floatingBar.presentation,
+            commandPalette: urlBarBundle.commandPalette.presentation,
             selection: browserTabSelection,
             workspaceThemes: workspaceThemes
         )

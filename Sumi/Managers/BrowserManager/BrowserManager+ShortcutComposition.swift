@@ -18,7 +18,7 @@ extension BrowserManager {
             shell: shell,
             tabOpening: tabOpening,
             tabSelection: browserTabSelection,
-            newTabCommit: urlBar.floatingBar.commit,
+            newTabCommit: urlBar.commandPalette.commit,
             splitQuery: splitQuery,
             splitLayout: splitLayout,
             emptySplitCreation: splitEmptyCreation,
@@ -37,7 +37,7 @@ extension BrowserManager {
             theme: chrome.workspaceThemeEditorOwner,
             sidebar: chrome.sidebarPresentationOwner,
             find: findManager,
-            floatingBar: urlBar.floatingBar.presentation
+            commandPalette: urlBar.commandPalette.presentation
         )
     }
 }

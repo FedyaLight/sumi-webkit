@@ -105,7 +105,7 @@ struct GradientEditorView: View {
         }
         .padding(panelPadding)
         .frame(width: Self.panelWidth, alignment: .top)
-        .background(tokens.floatingBarBackground)
+        .background(tokens.commandPaletteBackground)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .accessibilityIdentifier("workspace-theme-picker-panel")
         .sumiNativeSurfaceColorScheme(

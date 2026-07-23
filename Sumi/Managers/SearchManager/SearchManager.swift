@@ -84,7 +84,7 @@ class SearchManager {
             case tab(Tab)
             case history(HistoryListItem)
             case bookmark(SumiBookmark)
-            case command(FloatingBarCommand)
+            case command(CommandPaletteCommand)
         }
 
         static func == (lhs: SearchSuggestion, rhs: SearchSuggestion) -> Bool {

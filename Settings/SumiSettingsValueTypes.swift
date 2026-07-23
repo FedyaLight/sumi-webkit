@@ -9,7 +9,7 @@
 import Foundation
 import SumiDomain
 
-enum FloatingBarEmptyStateMode: String, CaseIterable, Identifiable, Codable, Sendable {
+enum CommandPaletteEmptyStateMode: String, CaseIterable, Identifiable, Codable, Sendable {
     case compact
     case topLinks
 
@@ -178,26 +178,26 @@ enum DarkThemeStyle: String, CaseIterable, Identifiable {
 }
 
 enum SumiNewTabMode: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
-    case floatingBar
+    case commandPalette
     case specificPage
 
     var id: String { rawValue }
 
     static func persistedValue(_ rawValue: String?) -> SumiNewTabMode {
         switch rawValue {
-        case Self.floatingBar.rawValue:
-            return .floatingBar
+        case Self.commandPalette.rawValue:
+            return .commandPalette
         case Self.specificPage.rawValue:
             return .specificPage
         default:
-            return .floatingBar
+            return .commandPalette
         }
     }
 
     var title: String {
         switch self {
-        case .floatingBar:
-            return "Floating Bar"
+        case .commandPalette:
+            return "Command Palette"
         case .specificPage:
             return "Specific Page"
         }

@@ -15,14 +15,14 @@ final class GlanceOverlayKeyCommandOwnerTests: XCTestCase {
         XCTAssertFalse(didCloseOverlay)
     }
 
-    func testFloatingBarDismissalConsumesEscapeBeforeFindBarOrOverlayClose() {
+    func testCommandPaletteDismissalConsumesEscapeBeforeFindBarOrOverlayClose() {
         let windowID = UUID()
         var dismissedWindowIDs: [UUID] = []
         var didHideFindBar = false
         var didCloseOverlay = false
         let owner = makeOwner(
             activeWindowID: windowID,
-            dismissFloatingBarIfVisible: { dismissedWindowIDs.append($0); return true },
+            dismissCommandPaletteIfVisible: { dismissedWindowIDs.append($0); return true },
             isFindBarVisible: { true },
             hideFindBar: { didHideFindBar = true },
             closeOverlay: { didCloseOverlay = true }
@@ -38,7 +38,7 @@ final class GlanceOverlayKeyCommandOwnerTests: XCTestCase {
         var didHideFindBar = false
         var didCloseOverlay = false
         let owner = makeOwner(
-            dismissFloatingBarIfVisible: { _ in false },
+            dismissCommandPaletteIfVisible: { _ in false },
             isFindBarVisible: { true },
             hideFindBar: { didHideFindBar = true },
             closeOverlay: { didCloseOverlay = true }
@@ -52,7 +52,7 @@ final class GlanceOverlayKeyCommandOwnerTests: XCTestCase {
     func testEscapeClosesOverlayWhenNoHigherPrioritySurfaceConsumesIt() {
         var didCloseOverlay = false
         let owner = makeOwner(
-            dismissFloatingBarIfVisible: { _ in false },
+            dismissCommandPaletteIfVisible: { _ in false },
             isFindBarVisible: { false },
             closeOverlay: { didCloseOverlay = true }
         )
@@ -63,7 +63,7 @@ final class GlanceOverlayKeyCommandOwnerTests: XCTestCase {
 
     private func makeOwner(
         activeWindowID: UUID? = UUID(),
-        dismissFloatingBarIfVisible: @escaping (UUID) -> Bool = { _ in false },
+        dismissCommandPaletteIfVisible: @escaping (UUID) -> Bool = { _ in false },
         isFindBarVisible: @escaping () -> Bool = { false },
         hideFindBar: @escaping () -> Void = {},
         closeOverlay: @escaping () -> Void = {}
@@ -71,7 +71,7 @@ final class GlanceOverlayKeyCommandOwnerTests: XCTestCase {
         GlanceOverlayKeyCommandOwner(
             rootWindow: { nil },
             activeWindowID: { activeWindowID },
-            dismissFloatingBarIfVisible: dismissFloatingBarIfVisible,
+            dismissCommandPaletteIfVisible: dismissCommandPaletteIfVisible,
             isFindBarVisible: isFindBarVisible,
             hideFindBar: hideFindBar,
             closeOverlay: closeOverlay

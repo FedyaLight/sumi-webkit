@@ -156,9 +156,9 @@ class SumiSettingsService {
         set { chrome.framelessChrome = newValue }
     }
 
-    var floatingBarEmptyStateMode: FloatingBarEmptyStateMode {
-        get { chrome.floatingBarEmptyStateMode }
-        set { chrome.floatingBarEmptyStateMode = newValue }
+    var commandPaletteEmptyStateMode: CommandPaletteEmptyStateMode {
+        get { chrome.commandPaletteEmptyStateMode }
+        set { chrome.commandPaletteEmptyStateMode = newValue }
     }
 
     var newTabMode: SumiNewTabMode {
@@ -339,8 +339,8 @@ class SumiSettingsService {
             "settings.showLinkStatusBar": true,
             "settings.showBrowserToasts": true,
             "settings.framelessChrome": false,
-            "settings.floatingBar.emptyStateMode": FloatingBarEmptyStateMode.compact.rawValue,
-            "settings.newTabMode": SumiNewTabMode.floatingBar.rawValue,
+            "settings.commandPalette.emptyStateMode": CommandPaletteEmptyStateMode.compact.rawValue,
+            "settings.newTabMode": SumiNewTabMode.commandPalette.rawValue,
             "settings.newTab.pageURL": SumiNewTabPageURL.defaultURLString,
             "settings.didFinishOnboarding": true,
             "settings.memoryMode": SumiMemoryMode.balanced.rawValue,
@@ -380,7 +380,7 @@ class SumiSettingsService {
             showLinkStatusBarKey: "settings.showLinkStatusBar",
             showBrowserToastsKey: "settings.showBrowserToasts",
             framelessChromeKey: "settings.framelessChrome",
-            floatingBarEmptyStateModeKey: "settings.floatingBar.emptyStateMode",
+            commandPaletteEmptyStateModeKey: "settings.commandPalette.emptyStateMode",
             newTabModeKey: "settings.newTabMode",
             newTabPageURLStringKey: "settings.newTab.pageURL",
             didFinishOnboardingKey: "settings.didFinishOnboarding",

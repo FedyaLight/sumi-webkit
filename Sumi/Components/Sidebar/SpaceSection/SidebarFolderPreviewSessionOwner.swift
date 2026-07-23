@@ -243,7 +243,7 @@ final class SidebarFolderPreviewSessionOwner {
             // A local monitor sees the mouse-up before the window dispatches it.
             // Closing here would tear the panel down while the row's `mouseUp`
             // is still on its way, so the teardown waits one turn — the same
-            // "defer the mutation, hand the event back" shape the floating bar
+            // "defer the mutation, hand the event back" shape the command palette
             // uses for its outside clicks.
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.presentation?.id == presentationID else { return }

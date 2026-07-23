@@ -78,7 +78,7 @@ An unloaded launcher dropped into an active split is materialized immediately an
 - Duplicate creates an inactive adjacent group. Saved duplicates remain unloaded; regular duplicates do not become selected.
 - Explicit duplicate names use collision suffixes: `Name (2)`, `Name (3)`, and so on. Unnamed groups continue to use `N Tabs` without suffixes. The icon is copied.
 - `Move to` moves the whole group atomically using the same rules as drag-and-drop.
-- `Add Tab…` is available below four members and uses the floating bar. Existing items move into the group; a new URL creates a member in the group's container. Cancellation leaves no placeholder or ghost row.
+- `Add Tab…` is available below four members and uses the command palette. Existing items move into the group; a new URL creates a member in the group's container. Cancellation leaves no placeholder or ghost row.
 - At four members, add commands and WebView split-drop zones are disabled and the existing split-limit notification is used.
 - There is no `Share Split View…` or separate `Change Icon…` command. Icon changes happen through group or launcher `Edit`.
 

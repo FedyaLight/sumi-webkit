@@ -35,10 +35,10 @@ retired_paths=(
   "Sumi/Managers/BrowserManager/BrowserShortcutLiveTabCloseOwner.swift"
   "Sumi/Managers/BrowserManager/BrowserWindowHistorySessionOwner.swift"
   "SumiTests/BrowserWindowHistorySessionOwnerTests.swift"
-  "Sumi/Managers/BrowserManager/BrowserFloatingBarRoutingOwner.swift"
-  "Sumi/Services/FloatingBarNavigationOwner.swift"
-  "SumiTests/FloatingBarNavigationOwnerTests.swift"
-  "SumiTests/BrowserFloatingBarBrowserContextOwnerTests.swift"
+  "Sumi/Managers/BrowserManager/BrowserCommandPaletteRoutingOwner.swift"
+  "Sumi/Services/CommandPaletteNavigationOwner.swift"
+  "SumiTests/CommandPaletteNavigationOwnerTests.swift"
+  "SumiTests/BrowserCommandPaletteBrowserContextOwnerTests.swift"
   "Sumi/Managers/BrowserManager/BrowserActivePageRoutingOwner.swift"
   "SumiTests/BrowserActivePageRoutingOwnerTests.swift"
   "Sumi/Managers/BrowserManager/BrowserURLBarCommands.swift"
@@ -73,12 +73,12 @@ done
 guard_expect_no_matches \
   'retired item-15 role symbols' \
   '\b(ShortcutSplitLauncherCatalogAdapter|ShortcutSplitLauncherStagedMove)\b' \
-  -g '*.swift' App FloatingBar SidebarChrome Settings Sumi UI SumiTests
+  -g '*.swift' App CommandPalette SidebarChrome Settings Sumi UI SumiTests
 
 guard_expect_no_matches \
   'retired session-manager aggregate or manager-fed selection composition' \
   '\bAssembledSessionManagers\b|\bmakeSessionManagers\s*\(|BrowserTabSelectionOwner\.live\s*\(' \
-  -g '*.swift' App FloatingBar SidebarChrome Settings Sumi UI
+  -g '*.swift' App CommandPalette SidebarChrome Settings Sumi UI
 
 guard_expect_no_matches \
   'retired structural collection closure bag' \
@@ -94,9 +94,9 @@ guard_expect_no_matches \
 guard_expect_no_matches \
   'retired sidebar aggregate and forwarding symbols' \
   '\b(BrowserSidebarCommandService|BrowserSidebarChromeCommandOwner|BrowserSidebarFolderCommandOwner|BrowserSidebarTabCommandOwner|BrowserSidebarShortcutPromotionOwner|BrowserSidebarEditorPresentationOwner|SidebarExtensionActionContextOwner|SidebarSplitCommands|SidebarPinFolderCommands|SidebarInventoryProjection|SidebarRegularTabsController|TabTransientWebKitTabLifecycleOwner)\b' \
-  -g '*.swift' App FloatingBar SidebarChrome Settings Sumi UI SumiTests
+  -g '*.swift' App CommandPalette SidebarChrome Settings Sumi UI SumiTests
 
-product_roots=(App FloatingBar SidebarChrome Settings Sumi UI SumiTests)
+product_roots=(App CommandPalette SidebarChrome Settings Sumi UI SumiTests)
 
 guard_expect_no_matches \
   'retired terminal-finish choreography' \
@@ -209,8 +209,8 @@ guard_expect_no_matches \
   -g '*.swift' "${product_roots[@]}"
 
 guard_expect_no_matches \
-  'retired floating-bar forwarding hubs' \
-  'BrowserFloatingBarRoutingOwner|FloatingBarNavigationOwner|BrowserFloatingBarBrowserContextOwner|floatingBarRoutingOwner|floatingBarBrowserContextOwner' \
+  'retired command-palette forwarding hubs' \
+  'BrowserCommandPaletteRoutingOwner|CommandPaletteNavigationOwner|BrowserCommandPaletteBrowserContextOwner|commandPaletteRoutingOwner|commandPaletteBrowserContextOwner' \
   -g '*.swift' "${product_roots[@]}"
 
 guard_expect_no_matches \
@@ -221,6 +221,6 @@ guard_expect_no_matches \
 guard_expect_no_matches \
   'retired closure runtime-context handlers' \
   '\b(visibleWebViewPreparationRuntime|cleanupScopeRuntime|hiddenCloneEvictionRuntime|deferredProtectedCommandRuntime|trackedCleanupExecutionRuntime|webViewShutdownRuntime)\s*\(' \
-  -g '*.swift' App FloatingBar SidebarChrome Settings Sumi UI
+  -g '*.swift' App CommandPalette SidebarChrome Settings Sumi UI
 
 guard_finish 'architecture tombstones'

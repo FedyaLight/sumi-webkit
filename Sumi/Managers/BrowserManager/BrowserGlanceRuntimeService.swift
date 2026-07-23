@@ -58,8 +58,8 @@ enum BrowserGlanceRuntimeService {
             visibleSplitTabCount: { [splitQuery] in
                 splitQuery.visibleTabIDs(in: $0).count
             },
-            dismissFloatingBarIfVisible: { [weak browserManager] in
-                browserManager?.urlBarBundle.floatingBar.presentation
+            dismissCommandPaletteIfVisible: { [weak browserManager] in
+                browserManager?.urlBarBundle.commandPalette.presentation
                     .dismissIfVisible(in: $0, preserveDraft: true) ?? false
             },
             isFindBarVisible: { [weak browserManager] in browserManager?.findManager.isFindBarVisible ?? false },

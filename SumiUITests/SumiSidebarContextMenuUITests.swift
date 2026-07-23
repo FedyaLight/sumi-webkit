@@ -280,7 +280,7 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
                 collapsedSidebar: false,
                 dismissTransient: Self.dismissShortcutLinkEditor
             )
-            assertNewTabButtonOpensFloatingBar(
+            assertNewTabButtonOpensCommandPalette(
                 fixture: fixture,
                 app: app,
                 window: window,
@@ -297,7 +297,7 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
                 collapsedSidebar: false,
                 dismissTransient: Self.dismissFolderIconPicker
             )
-            assertNewTabButtonOpensFloatingBar(
+            assertNewTabButtonOpensCommandPalette(
                 fixture: fixture,
                 app: app,
                 window: window,
@@ -372,7 +372,7 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
                 collapsedSidebar: true,
                 dismissTransient: Self.dismissShortcutLinkEditor
             )
-            assertNewTabButtonOpensFloatingBar(
+            assertNewTabButtonOpensCommandPalette(
                 fixture: fixture,
                 app: app,
                 window: window,
@@ -389,7 +389,7 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
                 collapsedSidebar: true,
                 dismissTransient: Self.dismissFolderIconPicker
             )
-            assertNewTabButtonOpensFloatingBar(
+            assertNewTabButtonOpensCommandPalette(
                 fixture: fixture,
                 app: app,
                 window: window,

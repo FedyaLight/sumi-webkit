@@ -2,14 +2,14 @@ import CoreGraphics
 import Foundation
 import SumiDomain
 
-enum FloatingBarPresentationReason: String, Codable, Equatable, Hashable {
+enum CommandPalettePresentationReason: String, Codable, Equatable, Hashable {
     case none
     case emptySpace
     case keyboard
     case splitTabPicker
 }
 
-struct FloatingBarDraftState: Codable, Equatable, Hashable {
+struct CommandPaletteDraftState: Codable, Equatable, Hashable {
     var text: String
     var navigateCurrentTab: Bool
 }
@@ -59,7 +59,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
     var activeShortcutPinId: UUID?
     var activeShortcutPinRole: ShortcutPinRole?
     var isShowingEmptyState: Bool
-    var floatingBarReason: FloatingBarPresentationReason?
+    var commandPaletteReason: CommandPalettePresentationReason?
     /// Map-shaped selection state stored as a stable array for Codable.
     /// Canonical ordering is part of the session identity contract: restore
     /// deduplication hashes complete snapshots, so dictionary iteration order
@@ -73,7 +73,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
     var savedSidebarWidth: Double
     var sidebarContentWidth: Double
     var isSidebarVisible: Bool
-    var floatingBarDraft: FloatingBarDraftState
+    var commandPaletteDraft: CommandPaletteDraftState
     var splitSelection: WindowSplitSelection? = nil
     var glanceSession: GlanceSessionSnapshot? = nil
 
@@ -84,7 +84,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         case activeShortcutPinId
         case activeShortcutPinRole
         case isShowingEmptyState
-        case floatingBarReason
+        case commandPaletteReason
         case activeTabsBySpace
         case activeShortcutsBySpace
         case collapsedPinnedSpaceIDs
@@ -92,7 +92,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         case savedSidebarWidth
         case sidebarContentWidth
         case isSidebarVisible
-        case floatingBarDraft
+        case commandPaletteDraft
         case splitSelection
         case glanceSession
     }
@@ -104,7 +104,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         activeShortcutPinId: UUID?,
         activeShortcutPinRole: ShortcutPinRole?,
         isShowingEmptyState: Bool,
-        floatingBarReason: FloatingBarPresentationReason?,
+        commandPaletteReason: CommandPalettePresentationReason?,
         activeTabsBySpace: [SpaceTabSelectionSnapshot],
         activeShortcutsBySpace: [SpaceShortcutSelectionSnapshot],
         collapsedPinnedSpaceIDs: [UUID] = [],
@@ -112,7 +112,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         savedSidebarWidth: Double,
         sidebarContentWidth: Double,
         isSidebarVisible: Bool,
-        floatingBarDraft: FloatingBarDraftState,
+        commandPaletteDraft: CommandPaletteDraftState,
         splitSelection: WindowSplitSelection? = nil,
         glanceSession: GlanceSessionSnapshot? = nil
     ) {
@@ -122,7 +122,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         self.activeShortcutPinId = activeShortcutPinId
         self.activeShortcutPinRole = activeShortcutPinRole
         self.isShowingEmptyState = isShowingEmptyState
-        self.floatingBarReason = floatingBarReason
+        self.commandPaletteReason = commandPaletteReason
         self.activeTabsBySpace = Self.canonicalized(activeTabsBySpace)
         self.activeShortcutsBySpace = Self.canonicalized(activeShortcutsBySpace)
         self.collapsedPinnedSpaceIDs = Self.canonicalized(collapsedPinnedSpaceIDs)
@@ -130,7 +130,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         self.savedSidebarWidth = savedSidebarWidth
         self.sidebarContentWidth = sidebarContentWidth
         self.isSidebarVisible = isSidebarVisible
-        self.floatingBarDraft = floatingBarDraft
+        self.commandPaletteDraft = commandPaletteDraft
         self.splitSelection = splitSelection
         self.glanceSession = glanceSession
     }
@@ -143,7 +143,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         activeShortcutPinId = try container.decodeIfPresent(UUID.self, forKey: .activeShortcutPinId)
         activeShortcutPinRole = try container.decodeIfPresent(ShortcutPinRole.self, forKey: .activeShortcutPinRole)
         isShowingEmptyState = try container.decode(Bool.self, forKey: .isShowingEmptyState)
-        floatingBarReason = try container.decodeIfPresent(FloatingBarPresentationReason.self, forKey: .floatingBarReason)
+        commandPaletteReason = try container.decodeIfPresent(CommandPalettePresentationReason.self, forKey: .commandPaletteReason)
         activeTabsBySpace = Self.canonicalized(
             try container.decode(
                 [SpaceTabSelectionSnapshot].self,
@@ -166,7 +166,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         savedSidebarWidth = try container.decode(Double.self, forKey: .savedSidebarWidth)
         sidebarContentWidth = try container.decode(Double.self, forKey: .sidebarContentWidth)
         isSidebarVisible = try container.decode(Bool.self, forKey: .isSidebarVisible)
-        floatingBarDraft = try container.decode(FloatingBarDraftState.self, forKey: .floatingBarDraft)
+        commandPaletteDraft = try container.decode(CommandPaletteDraftState.self, forKey: .commandPaletteDraft)
         splitSelection = try container.decodeIfPresent(
             WindowSplitSelection.self,
             forKey: .splitSelection
@@ -182,7 +182,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         try container.encodeIfPresent(activeShortcutPinId, forKey: .activeShortcutPinId)
         try container.encodeIfPresent(activeShortcutPinRole, forKey: .activeShortcutPinRole)
         try container.encode(isShowingEmptyState, forKey: .isShowingEmptyState)
-        try container.encodeIfPresent(floatingBarReason, forKey: .floatingBarReason)
+        try container.encodeIfPresent(commandPaletteReason, forKey: .commandPaletteReason)
         try container.encode(activeTabsBySpace, forKey: .activeTabsBySpace)
         try container.encode(activeShortcutsBySpace, forKey: .activeShortcutsBySpace)
         try container.encode(collapsedPinnedSpaceIDs, forKey: .collapsedPinnedSpaceIDs)
@@ -190,7 +190,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         try container.encode(savedSidebarWidth, forKey: .savedSidebarWidth)
         try container.encode(sidebarContentWidth, forKey: .sidebarContentWidth)
         try container.encode(isSidebarVisible, forKey: .isSidebarVisible)
-        try container.encode(floatingBarDraft, forKey: .floatingBarDraft)
+        try container.encode(commandPaletteDraft, forKey: .commandPaletteDraft)
         try container.encodeIfPresent(splitSelection, forKey: .splitSelection)
         try container.encodeIfPresent(glanceSession, forKey: .glanceSession)
     }

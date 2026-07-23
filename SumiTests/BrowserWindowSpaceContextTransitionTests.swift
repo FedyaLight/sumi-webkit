@@ -109,7 +109,7 @@ final class BrowserWindowSpaceContextTransitionTests: XCTestCase {
                 membership: tabManager.tabCollectionMembershipOwner,
                 spaces: tabManager.spaceStateOwner
             ),
-            floatingBar: tabManager.floatingBarPresentation,
+            commandPalette: tabManager.commandPalettePresentation,
             selection: tabManager.browserTabSelection,
             workspaceThemes: tabManager.workspaceThemeTransitionOwner
         )

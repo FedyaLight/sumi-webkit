@@ -13,7 +13,7 @@ struct ContentView: View {
     private let windowLifecycleHandler: any BrowserWindowLifecycleHandling
     private let webContentContext: WindowWebContentContext
     private let sidebarContext: WindowSidebarContext
-    private let floatingBarContext: FloatingBarBrowserContext
+    private let commandPaletteContext: CommandPaletteBrowserContext
     private let nativeModalContext: WindowNativeModalContext
     private let findContext: WindowFindContext
     private let splitContext: WindowSplitContext
@@ -27,7 +27,7 @@ struct ContentView: View {
         windowLifecycleHandler: any BrowserWindowLifecycleHandling,
         webContentContext: WindowWebContentContext,
         sidebarContext: WindowSidebarContext,
-        floatingBarContext: FloatingBarBrowserContext,
+        commandPaletteContext: CommandPaletteBrowserContext,
         nativeModalContext: WindowNativeModalContext,
         findContext: WindowFindContext,
         splitContext: WindowSplitContext,
@@ -38,7 +38,7 @@ struct ContentView: View {
         self.windowLifecycleHandler = windowLifecycleHandler
         self.webContentContext = webContentContext
         self.sidebarContext = sidebarContext
-        self.floatingBarContext = floatingBarContext
+        self.commandPaletteContext = commandPaletteContext
         self.nativeModalContext = nativeModalContext
         self.findContext = findContext
         self.splitContext = splitContext
@@ -65,7 +65,7 @@ struct ContentView: View {
         WindowView(
             webContentContext: webContentContext,
             sidebarContext: sidebarContext,
-            floatingBarContext: floatingBarContext,
+            commandPaletteContext: commandPaletteContext,
             nativeModalContext: nativeModalContext,
             findContext: findContext,
             splitContext: splitContext,

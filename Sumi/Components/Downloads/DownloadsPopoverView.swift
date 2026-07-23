@@ -143,7 +143,7 @@ private struct DownloadsFooterButtonStyle: ButtonStyle {
             return tokens.fieldBackground.opacity(0.9)
         }
         if isHovering {
-            return tokens.floatingBarRowHover
+            return tokens.commandPaletteRowHover
         }
         return .clear
     }

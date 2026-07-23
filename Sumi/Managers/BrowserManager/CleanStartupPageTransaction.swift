@@ -5,18 +5,18 @@ final class CleanStartupPageTransaction {
     private let regularLifecycle: TabRegularLifecycleOwner
     private let windowReset: CleanStartupWindowResetTransaction
     private let selection: BrowserTabSelectionOwner
-    private let floatingBar: FloatingBarPresentationService
+    private let commandPalette: CommandPalettePresentationService
 
     init(
         regularLifecycle: TabRegularLifecycleOwner,
         windowReset: CleanStartupWindowResetTransaction,
         selection: BrowserTabSelectionOwner,
-        floatingBar: FloatingBarPresentationService
+        commandPalette: CommandPalettePresentationService
     ) {
         self.regularLifecycle = regularLifecycle
         self.windowReset = windowReset
         self.selection = selection
-        self.floatingBar = floatingBar
+        self.commandPalette = commandPalette
     }
 
     func open(_ startupURL: URL?, in windowState: BrowserWindowState) {
@@ -45,7 +45,7 @@ final class CleanStartupPageTransaction {
     private func showEmptyState(in windowState: BrowserWindowState) {
         selection.showEmptyState(in: windowState)
         if windowState.isShowingEmptyState {
-            floatingBar.showNewTab(in: windowState)
+            commandPalette.showNewTab(in: windowState)
         }
     }
 }

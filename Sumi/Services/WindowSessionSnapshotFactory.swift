@@ -12,7 +12,7 @@ struct WindowSessionSnapshotFactory {
             activeShortcutPinId: windowState.currentShortcutPinId,
             activeShortcutPinRole: windowState.currentShortcutPinRole,
             isShowingEmptyState: windowState.isShowingEmptyState,
-            floatingBarReason: windowState.floatingBarPresentationReason,
+            commandPaletteReason: windowState.commandPalettePresentationReason,
             activeTabsBySpace: windowState.activeTabForSpace.map {
                 SpaceTabSelectionSnapshot(spaceId: $0.key, tabId: $0.value)
             },
@@ -28,10 +28,10 @@ struct WindowSessionSnapshotFactory {
             savedSidebarWidth: Double(windowState.savedSidebarWidth),
             sidebarContentWidth: Double(windowState.sidebarContentWidth),
             isSidebarVisible: windowState.isSidebarVisible,
-            floatingBarDraft: FloatingBarDraftState(
-                text: windowState.floatingBarDraftText,
+            commandPaletteDraft: CommandPaletteDraftState(
+                text: windowState.commandPaletteDraftText,
                 navigateCurrentTab: windowState
-                    .floatingBarDraftNavigatesCurrentTab
+                    .commandPaletteDraftNavigatesCurrentTab
             ),
             splitSelection: windowState.splitSelection,
             glanceSession: glanceManager

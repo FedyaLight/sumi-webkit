@@ -37,8 +37,8 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         XCTAssertNil(harness.windowState.currentShortcutPinId)
         XCTAssertNil(harness.windowState.restorationState.restoredSessionWindowID)
         XCTAssertTrue(harness.windowState.isShowingEmptyState)
-        XCTAssertTrue(harness.windowState.presentationState.isFloatingBarVisible)
-        XCTAssertEqual(harness.windowState.floatingBarPresentationReason, .emptySpace)
+        XCTAssertTrue(harness.windowState.presentationState.isCommandPaletteVisible)
+        XCTAssertEqual(harness.windowState.commandPalettePresentationReason, .emptySpace)
         XCTAssertEqual(
             harness.browserManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: harness.space.id).map(\.id),
             [pin.id]
@@ -151,8 +151,8 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         XCTAssertEqual(tabs.first?.url.absoluteString, "https://configured.example")
         XCTAssertEqual(harness.windowState.currentTabId, tabs.first?.id)
         XCTAssertFalse(harness.windowState.isShowingEmptyState)
-        XCTAssertFalse(harness.windowState.presentationState.isFloatingBarVisible)
-        XCTAssertEqual(harness.windowState.floatingBarPresentationReason, .none)
+        XCTAssertFalse(harness.windowState.presentationState.isCommandPaletteVisible)
+        XCTAssertEqual(harness.windowState.commandPalettePresentationReason, .none)
         XCTAssertEqual(
             harness.browserManager.lastSessionWindowsStore.tabSnapshot?.tabs.map(\.id).contains(previousTab.id),
             true
@@ -178,8 +178,8 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         XCTAssertNil(harness.windowState.currentSpaceId)
         XCTAssertNil(harness.windowState.currentTabId)
         XCTAssertTrue(harness.windowState.isShowingEmptyState)
-        XCTAssertTrue(harness.windowState.presentationState.isFloatingBarVisible)
-        XCTAssertEqual(harness.windowState.floatingBarPresentationReason, .emptySpace)
+        XCTAssertTrue(harness.windowState.presentationState.isCommandPaletteVisible)
+        XCTAssertEqual(harness.windowState.commandPalettePresentationReason, .emptySpace)
     }
 
     func testSpecificPageStartupWithWindowProfileRepairsStaleSpace() throws {
@@ -466,14 +466,14 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
                 activeShortcutPinId: nil,
                 activeShortcutPinRole: nil,
                 isShowingEmptyState: true,
-                floatingBarReason: .emptySpace,
+                commandPaletteReason: .emptySpace,
                 activeTabsBySpace: [],
                 activeShortcutsBySpace: [],
                 sidebarWidth: sidebarWidth,
                 savedSidebarWidth: sidebarWidth,
                 sidebarContentWidth: sidebarWidth - Double(BrowserWindowState.sidebarHorizontalPadding),
                 isSidebarVisible: true,
-                floatingBarDraft: FloatingBarDraftState(text: "", navigateCurrentTab: false)
+                commandPaletteDraft: CommandPaletteDraftState(text: "", navigateCurrentTab: false)
             )
         )
     }

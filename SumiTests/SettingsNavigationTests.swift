@@ -35,7 +35,7 @@ final class SettingsNavigationTests: XCTestCase {
         defer { harness.reset() }
 
         let settings = SumiSettingsService(userDefaults: harness.defaults)
-        XCTAssertEqual(settings.newTabMode, .floatingBar)
+        XCTAssertEqual(settings.newTabMode, .commandPalette)
         XCTAssertEqual(settings.newTabPageURLString, SumiNewTabPageURL.defaultURLString)
 
         settings.newTabMode = .specificPage
@@ -349,7 +349,7 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertFalse(browserManager.regularTabCollectionOwner.tabs(in: space).contains(where: \.representsSumiSettingsSurface))
     }
 
-    func testFloatingBarCurrentSettingsURLCommitAppliesPaneNavigation() {
+    func testCommandPaletteCurrentSettingsURLCommitAppliesPaneNavigation() {
         let (browserManager, _, settings, windowState, space) = makeHarness()
         let existing = browserManager.regularTabLifecycleOwner.createNewTab(
             url: SettingsTabs.general.settingsSurfaceURL.absoluteString,
@@ -358,14 +358,14 @@ final class SettingsNavigationTests: XCTestCase {
         )
         browserManager.selectTab(existing, in: windowState, loadPolicy: .deferred)
         settings.currentSettingsTab = .general
-        browserManager.urlBarBundle.floatingBar.presentation.focus(
+        browserManager.urlBarBundle.commandPalette.presentation.focus(
             in: windowState,
             prefill: existing.url.absoluteString,
             navigateCurrentTab: true,
             reason: .keyboard
         )
 
-        browserManager.urlBarBundle.floatingBar.commit.commitSuggestion(
+        browserManager.urlBarBundle.commandPalette.commit.commitSuggestion(
             SearchManager.SearchSuggestion(
                 text: "sumi://settings?pane=extensions",
                 type: .url

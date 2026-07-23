@@ -40,10 +40,10 @@ final class CleanStartupWindowResetTransaction {
             windowState.splitSelection = nil
             windowState.restorationState.pendingSplitSelection = nil
             windowState.isShowingEmptyState = windowState === selectedWindow
-            windowState.floatingBarPresentationReason = .none
-            windowState.presentationState.isFloatingBarVisible = false
-            windowState.floatingBarDraftText = ""
-            windowState.floatingBarDraftNavigatesCurrentTab = false
+            windowState.commandPalettePresentationReason = .none
+            windowState.presentationState.isCommandPaletteVisible = false
+            windowState.commandPaletteDraftText = ""
+            windowState.commandPaletteDraftNavigatesCurrentTab = false
             windowState.currentSpaceId = fallbackSpaceID
             windowState.currentProfileId = fallbackSpaceID.flatMap {
                 spaces.space(with: $0)?.profileId

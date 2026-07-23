@@ -67,10 +67,10 @@ final class BrowserShortcutCommandRoutingTests: XCTestCase {
 
         XCTAssertTrue(router.execute(.focusAddressBar, in: context))
         XCTAssertTrue(
-            targetWindowState.presentationState.isFloatingBarVisible
+            targetWindowState.presentationState.isCommandPaletteVisible
         )
         XCTAssertFalse(
-            harness.windowState.presentationState.isFloatingBarVisible
+            harness.windowState.presentationState.isCommandPaletteVisible
         )
     }
 

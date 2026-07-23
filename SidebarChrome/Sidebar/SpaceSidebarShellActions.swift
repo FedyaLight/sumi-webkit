@@ -32,7 +32,7 @@ extension SpacesSideBarView {
             isCompactModeEnabled: !windowState.isSidebarVisible,
             actions: .init(
                 newTab: {
-                    browserContext.floatingBarCommit.openNewTabSurface(
+                    browserContext.commandPaletteCommit.openNewTabSurface(
                         in: windowState
                     )
                 },

@@ -32,7 +32,7 @@ final class BrowserShortcutActionRouterTests: XCTestCase {
         else { return XCTFail("Expected browser shortcut context") }
         browserManager.shortcutActionRouter.execute(.newTab, in: context)
 
-        XCTAssertTrue(windowState.presentationState.isFloatingBarVisible)
+        XCTAssertTrue(windowState.presentationState.isCommandPaletteVisible)
         XCTAssertFalse(browserManager.optionalModules.extensions.hasLoadedRuntime)
     }
 

@@ -181,7 +181,7 @@ extension SumiLaunchSmokeUITestCase {
             file: file,
             line: line
         )
-        assertNewTabButtonOpensFloatingBar(
+        assertNewTabButtonOpensCommandPalette(
             fixture: fixture,
             app: app,
             window: window,
@@ -192,7 +192,7 @@ extension SumiLaunchSmokeUITestCase {
     }
 
     @MainActor
-    func assertNewTabButtonOpensFloatingBar(
+    func assertNewTabButtonOpensCommandPalette(
         fixture: PersonalSidebarFixture,
         app: XCUIApplication,
         window: XCUIElement,
@@ -211,13 +211,13 @@ extension SumiLaunchSmokeUITestCase {
 
         newTabButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
         XCTAssertTrue(
-            waitForFloatingBar(in: app, timeout: 2),
-            "New Tab button did not open the floating bar",
+            waitForCommandPalette(in: app, timeout: 2),
+            "New Tab button did not open the command palette",
             file: file,
             line: line
         )
         app.typeKey(.escape, modifierFlags: [])
-        _ = waitForNonExistence(element(withIdentifier: "floating-bar", in: app), timeout: 2)
+        _ = waitForNonExistence(element(withIdentifier: "command-palette", in: app), timeout: 2)
     }
 
     @MainActor
@@ -384,21 +384,21 @@ extension SumiLaunchSmokeUITestCase {
     }
 
     @MainActor
-    func waitForFloatingBar(
+    func waitForCommandPalette(
         in app: XCUIApplication,
         timeout: TimeInterval
     ) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if element(withIdentifier: "floating-bar", in: app).exists
-                || element(withIdentifier: "floating-bar-input", in: app).exists {
+            if element(withIdentifier: "command-palette", in: app).exists
+                || element(withIdentifier: "command-palette-input", in: app).exists {
                 return true
             }
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         }
 
-        return element(withIdentifier: "floating-bar", in: app).exists
-            || element(withIdentifier: "floating-bar-input", in: app).exists
+        return element(withIdentifier: "command-palette", in: app).exists
+            || element(withIdentifier: "command-palette-input", in: app).exists
     }
 
     @MainActor

@@ -9,22 +9,22 @@ final class BrowserAppCommandServicesTests: XCTestCase {
         let browserManager = BrowserManager()
         let windowState = BrowserWindowState()
         let router = BrowserMouseCommandRouter(
-            floatingBar: { [weak browserManager] in
-                browserManager?.urlBarBundle.floatingBar.presentation
+            commandPalette: { [weak browserManager] in
+                browserManager?.urlBarBundle.commandPalette.presentation
             },
             history: { nil }
         )
 
-        router.focusFloatingBar(
+        router.focusCommandPalette(
             in: windowState,
             prefill: "https://mouse.example/path",
             navigateCurrentTab: true
         )
 
-        XCTAssertTrue(windowState.presentationState.isFloatingBarVisible)
-        XCTAssertEqual(windowState.floatingBarPresentationReason, .keyboard)
-        XCTAssertEqual(windowState.floatingBarDraftText, "https://mouse.example/path")
-        XCTAssertTrue(windowState.floatingBarDraftNavigatesCurrentTab)
+        XCTAssertTrue(windowState.presentationState.isCommandPaletteVisible)
+        XCTAssertEqual(windowState.commandPalettePresentationReason, .keyboard)
+        XCTAssertEqual(windowState.commandPaletteDraftText, "https://mouse.example/path")
+        XCTAssertTrue(windowState.commandPaletteDraftNavigatesCurrentTab)
     }
 
     func testMouseRouterForwardsBackAndForwardToHistoryCapability() {
@@ -55,7 +55,7 @@ final class BrowserAppCommandServicesTests: XCTestCase {
             navigateForward: { _ in events.append("forward") }
         )
         let router = BrowserMouseCommandRouter(
-            floatingBar: { nil },
+            commandPalette: { nil },
             history: { history }
         )
         let windowState = BrowserWindowState()

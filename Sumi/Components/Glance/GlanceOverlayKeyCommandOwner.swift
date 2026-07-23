@@ -8,7 +8,7 @@ final class GlanceOverlayKeyCommandOwner {
 
     private let rootWindow: () -> NSWindow?
     private let activeWindowID: () -> UUID?
-    private let dismissFloatingBarIfVisible: (UUID) -> Bool
+    private let dismissCommandPaletteIfVisible: (UUID) -> Bool
     private let isFindBarVisible: () -> Bool
     private let hideFindBar: () -> Void
     private let closeOverlay: () -> Void
@@ -17,14 +17,14 @@ final class GlanceOverlayKeyCommandOwner {
     init(
         rootWindow: @escaping () -> NSWindow?,
         activeWindowID: @escaping () -> UUID?,
-        dismissFloatingBarIfVisible: @escaping (UUID) -> Bool,
+        dismissCommandPaletteIfVisible: @escaping (UUID) -> Bool,
         isFindBarVisible: @escaping () -> Bool,
         hideFindBar: @escaping () -> Void,
         closeOverlay: @escaping () -> Void
     ) {
         self.rootWindow = rootWindow
         self.activeWindowID = activeWindowID
-        self.dismissFloatingBarIfVisible = dismissFloatingBarIfVisible
+        self.dismissCommandPaletteIfVisible = dismissCommandPaletteIfVisible
         self.isFindBarVisible = isFindBarVisible
         self.hideFindBar = hideFindBar
         self.closeOverlay = closeOverlay
@@ -57,7 +57,7 @@ final class GlanceOverlayKeyCommandOwner {
     func handleEscapeKeyForActiveOverlay() -> Bool {
         guard let windowID = activeWindowID() else { return false }
 
-        if dismissFloatingBarIfVisible(windowID) {
+        if dismissCommandPaletteIfVisible(windowID) {
             return true
         }
 

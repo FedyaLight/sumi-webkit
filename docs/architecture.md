@@ -94,13 +94,13 @@ coordination port.
 `BrowserWindowState` owns the mutable session values that can be projected into
 `WindowSessionSnapshot`. The snapshot is the only value that crosses the
 persistence boundary; AppKit objects and restore receipts never enter it. The
-floating-bar presentation reason remains durable because it is restoration
+command-palette presentation reason remains durable because it is restoration
 intent, while the physical visibility of the bar is not.
 
 Attached-shell state is split into exact, independently observable authorities:
 
 - `WindowPresentationState` owns runtime-only chrome and AppKit facts: popover
-  and floating-bar visibility, URL-bar geometry, physical window visibility,
+  and command-palette visibility, URL-bar geometry, physical window visibility,
   and a deferred split-focus request.
 - `WindowRestorationState` owns one restore cycle's archived-window identity,
   initial-resolution gate, typed pending split selection, and decode-only legacy
@@ -114,7 +114,7 @@ invalidating consumers that read only durable selection, and vice versa.
 ## Window View Context Boundaries
 
 `WindowView` receives seven stable feature contexts: web content, sidebar,
-floating bar, native modal, find, split, and theme/window chrome. There is no
+command palette, native modal, find, split, and theme/window chrome. There is no
 all-feature window context and the view layer cannot name `BrowserManager`.
 The app composition root constructs each context once and injects exact
 services such as the window-tab query, split services, native-dialog owner,
@@ -384,7 +384,7 @@ The main browser shell is organized around:
   folders.
 - Glance for opening a page over the current tab without taking layout space.
 - Split view for viewing up to four pages together.
-- Floating bar for search, address entry, suggestions, site search, history,
+- Command palette for search, address entry, suggestions, site search, history,
   bookmarks, and split-aware actions.
 
 Glance can close quickly, expand into a normal tab, or move into split view.

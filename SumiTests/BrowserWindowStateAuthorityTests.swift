@@ -16,7 +16,7 @@ final class BrowserWindowStateAuthorityTests: XCTestCase {
             durableChange.markChanged()
         }
 
-        windowState.presentationState.isFloatingBarVisible = true
+        windowState.presentationState.isCommandPaletteVisible = true
         windowState.presentationState.isDownloadsPopoverPresented = true
         windowState.presentationState.urlBarFrame = CGRect(x: 1, y: 2, width: 3, height: 4)
 
@@ -32,7 +32,7 @@ final class BrowserWindowStateAuthorityTests: XCTestCase {
         let presentationChange = WindowStateObservationFlag()
 
         withObservationTracking {
-            _ = windowState.presentationState.isFloatingBarVisible
+            _ = windowState.presentationState.isCommandPaletteVisible
         } onChange: {
             presentationChange.markChanged()
         }
@@ -43,18 +43,18 @@ final class BrowserWindowStateAuthorityTests: XCTestCase {
 
         XCTAssertFalse(presentationChange.didChange)
 
-        windowState.presentationState.isFloatingBarVisible = true
+        windowState.presentationState.isCommandPaletteVisible = true
 
         XCTAssertTrue(presentationChange.didChange)
     }
 
     func testRuntimeAuthoritiesDoNotChangeDurableWindowSnapshot() {
         let baseline = BrowserWindowState()
-        baseline.floatingBarPresentationReason = .keyboard
+        baseline.commandPalettePresentationReason = .keyboard
 
         let transientlyPresented = BrowserWindowState()
-        transientlyPresented.floatingBarPresentationReason = .keyboard
-        transientlyPresented.presentationState.isFloatingBarVisible = true
+        transientlyPresented.commandPalettePresentationReason = .keyboard
+        transientlyPresented.presentationState.isCommandPaletteVisible = true
         transientlyPresented.presentationState.isDownloadsPopoverPresented = true
         transientlyPresented.presentationState.urlBarFrame = CGRect(
             x: 10,

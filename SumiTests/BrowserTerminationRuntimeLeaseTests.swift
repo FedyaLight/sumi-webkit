@@ -135,13 +135,13 @@ final class BrowserTerminationRuntimeLeaseTests: XCTestCase {
         XCTAssertNil(browserManager.glanceManager.currentSession)
     }
 
-    func testCoordinatorPreparationDismissesFloatingBarAndPreservesDraft() throws {
+    func testCoordinatorPreparationDismissesCommandPaletteAndPreservesDraft() throws {
         let registry = WindowRegistry()
         let browserManager = try makeBrowserManager(windowRegistry: registry)
         let windowState = BrowserWindowState()
         registry.register(windowState)
         registry.setActive(windowState)
-        browserManager.urlBarBundle.floatingBar.presentation.focus(
+        browserManager.urlBarBundle.commandPalette.presentation.focus(
             in: windowState,
             prefill: "https://draft.example/path",
             navigateCurrentTab: true,
@@ -153,9 +153,9 @@ final class BrowserTerminationRuntimeLeaseTests: XCTestCase {
 
         coordinator.prepareForTermination()
 
-        XCTAssertFalse(windowState.presentationState.isFloatingBarVisible)
-        XCTAssertEqual(windowState.floatingBarDraftText, "https://draft.example/path")
-        XCTAssertTrue(windowState.floatingBarDraftNavigatesCurrentTab)
+        XCTAssertFalse(windowState.presentationState.isCommandPaletteVisible)
+        XCTAssertEqual(windowState.commandPaletteDraftText, "https://draft.example/path")
+        XCTAssertTrue(windowState.commandPaletteDraftNavigatesCurrentTab)
     }
 
     func testCoordinatorDoesNotRetainBrowserRuntimeGraph() throws {

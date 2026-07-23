@@ -5,23 +5,23 @@ import Foundation
 /// termination commands.
 @MainActor
 final class BrowserMouseCommandRouter: BrowserMouseButtonCommandRouting {
-    private let floatingBar: @MainActor () -> FloatingBarPresentationService?
+    private let commandPalette: @MainActor () -> CommandPalettePresentationService?
     private let history: @MainActor () -> BrowserHistoryNavigationOwner?
 
     init(
-        floatingBar: @escaping @MainActor () -> FloatingBarPresentationService?,
+        commandPalette: @escaping @MainActor () -> CommandPalettePresentationService?,
         history: @escaping @MainActor () -> BrowserHistoryNavigationOwner?
     ) {
-        self.floatingBar = floatingBar
+        self.commandPalette = commandPalette
         self.history = history
     }
 
-    func focusFloatingBar(
+    func focusCommandPalette(
         in windowState: BrowserWindowState,
         prefill: String,
         navigateCurrentTab: Bool
     ) {
-        floatingBar()?.focus(
+        commandPalette()?.focus(
             in: windowState,
             prefill: prefill,
             navigateCurrentTab: navigateCurrentTab,

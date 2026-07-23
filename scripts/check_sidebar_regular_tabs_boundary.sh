@@ -12,7 +12,7 @@ guard_initialize "$repo_root"
 retired_controller='Sumi/Components/Sidebar/SpaceSection/SidebarRegularTabsController.swift'
 composition='Sumi/Managers/BrowserManager/BrowserManager+SidebarRegularTabsComposition.swift'
 root_composition='Sumi/BrowserRuntime/BrowserCompositionRoot+TabSession.swift'
-production_roots=(App Sumi Settings SidebarChrome FloatingBar UI)
+production_roots=(App Sumi Settings SidebarChrome CommandPalette UI)
 role_budgets=(
   'SidebarRegularTabCatalog|Sumi/Components/Sidebar/SpaceSection/SidebarRegularTabCatalog.swift|3'
   'SidebarRegularTabTargetQuery|Sumi/Components/Sidebar/SpaceSection/SidebarRegularTabTargetQuery.swift|5'

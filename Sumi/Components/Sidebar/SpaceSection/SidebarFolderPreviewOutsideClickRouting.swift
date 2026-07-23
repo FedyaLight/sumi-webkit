@@ -32,8 +32,8 @@ enum SidebarFolderPreviewOutsideClickDecision: Equatable {
 /// Pure routing rules for clicks that land while the folder preview is up.
 ///
 /// The panel is passive chrome, so a click outside it must reach whatever is
-/// underneath — the floating bar solves the same problem in
-/// `FloatingBarOutsideClickRouting` by returning the event untouched and
+/// underneath — the command palette solves the same problem in
+/// `CommandPaletteOutsideClickRouting` by returning the event untouched and
 /// deferring its own state change. The preview needs one step more: tearing the
 /// panel down between a sidebar row's `mouseDown` and `mouseUp` ends that row's
 /// gesture (the transient session's teardown re-renders every folder header), so

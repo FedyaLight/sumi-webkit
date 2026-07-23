@@ -7,7 +7,7 @@ repo_root="$(cd "$script_dir/.." && pwd)"
 source "$script_dir/lib/architecture_guard.sh"
 guard_initialize "$repo_root"
 
-production_roots=(App Sumi Settings SidebarChrome FloatingBar UI)
+production_roots=(App Sumi Settings SidebarChrome CommandPalette UI)
 all_swift_roots=("${production_roots[@]}" SumiTests SumiUITests Packages/SumiWebRuntime)
 graph_file="Sumi/Managers/WebViewRuntime/WebViewRuntimeGraph.swift"
 profile_runtime_composition_file="Sumi/Managers/WebViewRuntime/WebViewProfileRuntimeComposition.swift"
@@ -32,7 +32,7 @@ main_frame_transaction_file="Sumi/Models/Tab/TabMainFrameRuntimeTransaction.swif
 
 window_context_file="App/Window/WindowViewContexts.swift"
 window_context_composition_file="Sumi/Managers/BrowserManager/BrowserWindowViewContextComposition.swift"
-floating_bar_context_file="FloatingBar/FloatingBarBrowserContext.swift"
+command_palette_context_file="CommandPalette/CommandPaletteBrowserContext.swift"
 
 for required_file in \
   "$browser_manager_file" \
@@ -124,14 +124,14 @@ done
 for window_context_path in \
   "$window_context_file" \
   "$window_context_composition_file" \
-  "$floating_bar_context_file"; do
+  "$command_palette_context_file"; do
   guard_require_file "$window_context_path"
 done
 
 require_pattern \
-  "$floating_bar_context_file" \
-  '^final class FloatingBarBrowserContext\b' \
-  'stable floating-bar window context missing'
+  "$command_palette_context_file" \
+  '^final class CommandPaletteBrowserContext\b' \
+  'stable command-palette window context missing'
 
 window_context_roles=(
   WindowWebContentContext

@@ -104,7 +104,7 @@ final class WindowSessionRestoreCycleTests: XCTestCase {
             activeShortcutPinId: nil,
             activeShortcutPinRole: nil,
             isShowingEmptyState: true,
-            floatingBarReason: nil,
+            commandPaletteReason: nil,
             activeTabsBySpace: [],
             activeShortcutsBySpace: [],
             sidebarWidth: Double(BrowserWindowState.sidebarDefaultWidth),
@@ -115,7 +115,7 @@ final class WindowSessionRestoreCycleTests: XCTestCase {
                 )
             ),
             isSidebarVisible: true,
-            floatingBarDraft: FloatingBarDraftState(
+            commandPaletteDraft: CommandPaletteDraftState(
                 text: "",
                 navigateCurrentTab: false
             )

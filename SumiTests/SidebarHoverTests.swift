@@ -5,61 +5,61 @@ import XCTest
 
 @MainActor
 final class SidebarHoverTests: XCTestCase {
-    func testFloatingBarLayoutPolicyCapsWideWindowsAndShrinksNarrowWindows() {
+    func testCommandPaletteLayoutPolicyCapsWideWindowsAndShrinksNarrowWindows() {
         XCTAssertEqual(
-            FloatingBarLayoutPolicy.effectiveWidth(availableWindowWidth: 1_200),
+            CommandPaletteLayoutPolicy.effectiveWidth(availableWindowWidth: 1_200),
             765
         )
         XCTAssertEqual(
-            FloatingBarLayoutPolicy.effectiveWidth(availableWindowWidth: 785),
+            CommandPaletteLayoutPolicy.effectiveWidth(availableWindowWidth: 785),
             765
         )
         XCTAssertEqual(
-            FloatingBarLayoutPolicy.effectiveWidth(availableWindowWidth: 600),
+            CommandPaletteLayoutPolicy.effectiveWidth(availableWindowWidth: 600),
             580
         )
         XCTAssertEqual(
-            FloatingBarLayoutPolicy.effectiveWidth(availableWindowWidth: 120),
+            CommandPaletteLayoutPolicy.effectiveWidth(availableWindowWidth: 120),
             200
         )
     }
 
-    func testFloatingBarSuggestionHeightAdaptsBeforeZenScrollLimit() {
-        XCTAssertEqual(FloatingBarLayoutPolicy.suggestionsVisibleRowLimit, 5)
-        XCTAssertEqual(FloatingBarLayoutPolicy.suggestionsHeight(for: 0), 0)
-        XCTAssertEqual(FloatingBarLayoutPolicy.suggestionsHeight(for: 2), 104)
-        XCTAssertEqual(FloatingBarLayoutPolicy.resultsPanelHeight(for: 0), 0)
-        XCTAssertEqual(FloatingBarLayoutPolicy.resultsPanelHeight(for: 2), 116.5)
-        XCTAssertEqual(FloatingBarLayoutPolicy.layoutCount(forVisibleCount: 0), 0)
-        XCTAssertEqual(FloatingBarLayoutPolicy.layoutCount(forVisibleCount: 2), 2)
-        XCTAssertEqual(FloatingBarLayoutPolicy.layoutCount(forVisibleCount: 6), 5)
+    func testCommandPaletteSuggestionHeightAdaptsBeforeZenScrollLimit() {
+        XCTAssertEqual(CommandPaletteLayoutPolicy.suggestionsVisibleRowLimit, 5)
+        XCTAssertEqual(CommandPaletteLayoutPolicy.suggestionsHeight(for: 0), 0)
+        XCTAssertEqual(CommandPaletteLayoutPolicy.suggestionsHeight(for: 2), 104)
+        XCTAssertEqual(CommandPaletteLayoutPolicy.resultsPanelHeight(for: 0), 0)
+        XCTAssertEqual(CommandPaletteLayoutPolicy.resultsPanelHeight(for: 2), 116.5)
+        XCTAssertEqual(CommandPaletteLayoutPolicy.layoutCount(forVisibleCount: 0), 0)
+        XCTAssertEqual(CommandPaletteLayoutPolicy.layoutCount(forVisibleCount: 2), 2)
+        XCTAssertEqual(CommandPaletteLayoutPolicy.layoutCount(forVisibleCount: 6), 5)
         XCTAssertTrue(
-            FloatingBarLayoutPolicy.shouldWaitForSuggestionLayout(
+            CommandPaletteLayoutPolicy.shouldWaitForSuggestionLayout(
                 isDebouncing: false,
                 isLoading: true,
                 visibleLayoutCount: 4
             )
         )
         XCTAssertFalse(
-            FloatingBarLayoutPolicy.shouldWaitForSuggestionLayout(
+            CommandPaletteLayoutPolicy.shouldWaitForSuggestionLayout(
                 isDebouncing: false,
                 isLoading: true,
                 visibleLayoutCount: 5
             )
         )
         XCTAssertEqual(
-            FloatingBarLayoutPolicy.suggestionsHeight(for: 6),
-            FloatingBarLayoutPolicy.suggestionsMaxHeight
+            CommandPaletteLayoutPolicy.suggestionsHeight(for: 6),
+            CommandPaletteLayoutPolicy.suggestionsMaxHeight
         )
     }
 
-    func testFloatingBarOutsideClickRoutingKeepsInsideCardEvent() throws {
+    func testCommandPaletteOutsideClickRoutingKeepsInsideCardEvent() throws {
         let event = try Self.mouseDownEvent()
         var closeCount = 0
 
-        let result = FloatingBarOutsideClickRouting.monitorResult(
+        let result = CommandPaletteOutsideClickRouting.monitorResult(
             for: event,
-            isFloatingBarVisible: true,
+            isCommandPaletteVisible: true,
             isEventInsideCard: true
         ) {
             closeCount += 1
@@ -69,13 +69,13 @@ final class SidebarHoverTests: XCTestCase {
         XCTAssertEqual(closeCount, 0)
     }
 
-    func testFloatingBarOutsideClickRoutingClosesOutsideCardAndPreservesEvent() throws {
+    func testCommandPaletteOutsideClickRoutingClosesOutsideCardAndPreservesEvent() throws {
         let event = try Self.mouseDownEvent()
         var closeCount = 0
 
-        let result = FloatingBarOutsideClickRouting.monitorResult(
+        let result = CommandPaletteOutsideClickRouting.monitorResult(
             for: event,
-            isFloatingBarVisible: true,
+            isCommandPaletteVisible: true,
             isEventInsideCard: false
         ) {
             closeCount += 1
@@ -85,14 +85,14 @@ final class SidebarHoverTests: XCTestCase {
         XCTAssertEqual(closeCount, 1)
     }
 
-    func testFloatingBarCardHitDetectionSeparatesInsideAndOutsideGeometry() {
-        let cardView = Self.makeFloatingBarCardView()
+    func testCommandPaletteCardHitDetectionSeparatesInsideAndOutsideGeometry() {
+        let cardView = Self.makeCommandPaletteCardView()
 
-        XCTAssertTrue(FloatingBarOutsideClickRouting.isLocationInsideCard(
+        XCTAssertTrue(CommandPaletteOutsideClickRouting.isLocationInsideCard(
             NSPoint(x: 32, y: 32),
             cardView: cardView
         ))
-        XCTAssertFalse(FloatingBarOutsideClickRouting.isLocationInsideCard(
+        XCTAssertFalse(CommandPaletteOutsideClickRouting.isLocationInsideCard(
             NSPoint(x: 180, y: 90),
             cardView: cardView
         ))
@@ -587,7 +587,7 @@ final class SidebarHoverTests: XCTestCase {
         XCTAssertEqual(reservedPadding, SidebarHoverChrome.trailingPadding(showsTrailingAction: true))
     }
 
-    private static func makeFloatingBarCardView() -> NSView {
+    private static func makeCommandPaletteCardView() -> NSView {
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 140))
         let view = NSView(frame: NSRect(x: 20, y: 20, width: 100, height: 60))
         container.addSubview(view)

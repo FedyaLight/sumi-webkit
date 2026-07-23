@@ -15,7 +15,7 @@ struct GeneralSearchEnginesSettingsSection: View {
     var body: some View {
         SettingsSection(
             title: "Search Engines",
-            subtitle: "The list order controls Tab-search priority in the floating bar."
+            subtitle: "The list order controls Tab-search priority in the command palette."
         ) {
             let displayedSearchEngines = filteredSearchEngines
 

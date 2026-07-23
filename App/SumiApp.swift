@@ -365,8 +365,8 @@ struct SumiApp: App {
                 updaterService: dependencies.updaterService,
                 nowPlayingController: dependencies.nowPlayingController
             ),
-            floatingBarContext: dependencies.browserManager.urlBarBundle
-                .floatingBar.browserContext.context,
+            commandPaletteContext: dependencies.browserManager.urlBarBundle
+                .commandPalette.browserContext.context,
             nativeModalContext: .make(browserManager: dependencies.browserManager),
             findContext: .make(browserManager: dependencies.browserManager),
             splitContext: .make(browserManager: dependencies.browserManager),

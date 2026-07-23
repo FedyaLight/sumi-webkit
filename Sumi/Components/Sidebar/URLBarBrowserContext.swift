@@ -92,7 +92,7 @@ struct URLBarBrowserContext {
     let profiles: () -> [Profile]
     let currentProfile: () -> Profile?
     let siteControlsSnapshot: (URL?, Profile?, Bool, Bool) -> SiteControlsSnapshot
-    let focusFloatingBar: (BrowserWindowState, String, Bool) -> Void
+    let focusCommandPalette: (BrowserWindowState, String, Bool) -> Void
     let reloadPage: (ActivePageResolution, String) -> Bool
     let closeURLBarHubPopover: (BrowserWindowState) -> Void
     let presentURLBarHubPopover: (BrowserWindowState) -> Void

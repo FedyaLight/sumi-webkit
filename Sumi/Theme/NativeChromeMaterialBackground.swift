@@ -61,7 +61,7 @@ struct NativeChromeMaterialBackground: View {
         let tokens = scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
         switch role {
         case .popover, .inWindowPopover:
-            return tokens.floatingBarBackground
+            return tokens.commandPaletteBackground
         case .sidebar, .collapsedSidebar, .windowChrome, .nativeGlassChrome:
             return tokens.windowBackground
         }

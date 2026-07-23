@@ -150,7 +150,7 @@ private final class NativeDialogOwnerHarness {
             windows: windowRegistry,
             recovery: recovery
         ),
-        floatingBar: browser.floatingBarPresentation,
+        commandPalette: browser.commandPalettePresentation,
         themes: browser.workspaceThemeEditorOwner,
         sharing: BrowserSharingPickerPresentationOwner(windows: windowRegistry)
     )

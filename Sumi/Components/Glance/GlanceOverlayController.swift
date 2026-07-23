@@ -29,8 +29,8 @@ final class GlanceOverlayController: NSObject {
     private lazy var keyCommands = GlanceOverlayKeyCommandOwner(
         rootWindow: { [weak self] in self?.rootView?.window },
         activeWindowID: { [weak self] in self?.session?.windowId },
-        dismissFloatingBarIfVisible: { [weak self] windowID in
-            self?.manager?.dismissFloatingBarIfVisible(in: windowID) == true
+        dismissCommandPaletteIfVisible: { [weak self] windowID in
+            self?.manager?.dismissCommandPaletteIfVisible(in: windowID) == true
         },
         isFindBarVisible: { [weak self] in
             self?.manager?.isFindBarVisible == true

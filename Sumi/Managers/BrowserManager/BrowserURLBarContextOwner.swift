@@ -58,8 +58,8 @@ final class BrowserURLBarContextOwner {
                     contentBlockerReloadRequired: blockerReload
                 )
             },
-            focusFloatingBar: { [pageCommands] windowState, prefill, navigateCurrentTab in
-                pageCommands.focusFloatingBar(
+            focusCommandPalette: { [pageCommands] windowState, prefill, navigateCurrentTab in
+                pageCommands.focusCommandPalette(
                     in: windowState,
                     prefill: prefill,
                     navigateCurrentTab: navigateCurrentTab

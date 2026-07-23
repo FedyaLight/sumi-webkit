@@ -61,21 +61,21 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         XCTAssertEqual(window.orderFrontCallCount, 0)
     }
 
-    func testCreateIncognitoWindowShowsFloatingBarEmptyStateWithoutCreatingEmptyTab() throws {
+    func testCreateIncognitoWindowShowsCommandPaletteEmptyStateWithoutCreatingEmptyTab() throws {
         let harness = try makeHarness()
         let service = BrowserWindowShellService()
-        var emptyStateRequests: [(windowId: UUID, presentNewTabFloatingBar: Bool)] = []
+        var emptyStateRequests: [(windowId: UUID, presentNewTabCommandPalette: Bool)] = []
 
-        let context = makeContext(harness: harness) { windowState, presentNewTabFloatingBar in
-            emptyStateRequests.append((windowState.id, presentNewTabFloatingBar))
+        let context = makeContext(harness: harness) { windowState, presentNewTabCommandPalette in
+            emptyStateRequests.append((windowState.id, presentNewTabCommandPalette))
             windowState.currentTabId = nil
             windowState.removeAllEphemeralTabs()
             windowState.isShowingEmptyState = true
-            if presentNewTabFloatingBar {
-                windowState.floatingBarDraftText = ""
-                windowState.floatingBarDraftNavigatesCurrentTab = false
-                windowState.floatingBarPresentationReason = .emptySpace
-                windowState.presentationState.isFloatingBarVisible = true
+            if presentNewTabCommandPalette {
+                windowState.commandPaletteDraftText = ""
+                windowState.commandPaletteDraftNavigatesCurrentTab = false
+                windowState.commandPalettePresentationReason = .emptySpace
+                windowState.presentationState.isCommandPaletteVisible = true
             }
         }
 
@@ -92,14 +92,14 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         XCTAssertTrue(windowState.isIncognito)
         XCTAssertEqual(emptyStateRequests.count, 1)
         XCTAssertEqual(emptyStateRequests.first?.windowId, windowState.id)
-        XCTAssertEqual(emptyStateRequests.first?.presentNewTabFloatingBar, true)
+        XCTAssertEqual(emptyStateRequests.first?.presentNewTabCommandPalette, true)
         XCTAssertTrue(windowState.ephemeralTabs.isEmpty)
         XCTAssertNil(windowState.currentTabId)
         XCTAssertTrue(windowState.isShowingEmptyState)
-        XCTAssertTrue(windowState.presentationState.isFloatingBarVisible)
-        XCTAssertEqual(windowState.floatingBarPresentationReason, .emptySpace)
-        XCTAssertEqual(windowState.floatingBarDraftText, "")
-        XCTAssertFalse(windowState.floatingBarDraftNavigatesCurrentTab)
+        XCTAssertTrue(windowState.presentationState.isCommandPaletteVisible)
+        XCTAssertEqual(windowState.commandPalettePresentationReason, .emptySpace)
+        XCTAssertEqual(windowState.commandPaletteDraftText, "")
+        XCTAssertFalse(windowState.commandPaletteDraftNavigatesCurrentTab)
 
         let ephemeralProfile = try XCTUnwrap(windowState.ephemeralProfile)
         XCTAssertTrue(ephemeralProfile.isEphemeral)
@@ -413,12 +413,12 @@ final class BrowserWindowShellServiceTests: XCTestCase {
     func testEphemeralTabsUseMonotonicIndexesAndIncognitoCleanupIsIdempotent() async throws {
         let harness = try makeHarness()
         let service = BrowserWindowShellService()
-        let context = makeContext(harness: harness) { windowState, presentNewTabFloatingBar in
+        let context = makeContext(harness: harness) { windowState, presentNewTabCommandPalette in
             windowState.currentTabId = nil
             windowState.isShowingEmptyState = true
-            if presentNewTabFloatingBar {
-                windowState.floatingBarPresentationReason = .emptySpace
-                windowState.presentationState.isFloatingBarVisible = true
+            if presentNewTabCommandPalette {
+                windowState.commandPalettePresentationReason = .emptySpace
+                windowState.presentationState.isCommandPaletteVisible = true
             }
         }
 

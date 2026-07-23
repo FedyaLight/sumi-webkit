@@ -204,8 +204,8 @@ final class GlanceManager: ObservableObject {
         return runtime.visibleSplitTabCount(windowId) < SplitGroup.maximumMembers
     }
 
-    func dismissFloatingBarIfVisible(in windowId: UUID) -> Bool {
-        runtime?.dismissFloatingBarIfVisible(windowId) ?? false
+    func dismissCommandPaletteIfVisible(in windowId: UUID) -> Bool {
+        runtime?.dismissCommandPaletteIfVisible(windowId) ?? false
     }
 
     var isFindBarVisible: Bool {

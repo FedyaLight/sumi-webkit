@@ -80,7 +80,7 @@ final class WindowSplitSessionCodingTests: XCTestCase {
             activeShortcutPinId: nil,
             activeShortcutPinRole: nil,
             isShowingEmptyState: false,
-            floatingBarReason: nil,
+            commandPaletteReason: nil,
             activeTabsBySpace: [],
             activeShortcutsBySpace: [],
             sidebarWidth: Double(BrowserWindowState.sidebarDefaultWidth),
@@ -93,7 +93,7 @@ final class WindowSplitSessionCodingTests: XCTestCase {
                 )
             ),
             isSidebarVisible: true,
-            floatingBarDraft: FloatingBarDraftState(
+            commandPaletteDraft: CommandPaletteDraftState(
                 text: "",
                 navigateCurrentTab: false
             ),

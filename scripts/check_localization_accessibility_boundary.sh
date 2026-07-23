@@ -7,7 +7,7 @@ repo_root="$(cd "$script_dir/.." && pwd)"
 source "$script_dir/lib/architecture_guard.sh"
 guard_initialize "$repo_root"
 
-app_roots=(App FloatingBar Settings Sumi SidebarChrome UI)
+app_roots=(App CommandPalette Settings Sumi SidebarChrome UI)
 catalog="Sumi/Resources/Localizable.xcstrings"
 
 for root in "${app_roots[@]}"; do

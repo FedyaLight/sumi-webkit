@@ -4,18 +4,18 @@ import Foundation
 @MainActor
 final class BrowserNativeDialogPresentationOwner {
     private let modal: BrowserNativeModalTransaction
-    private let floatingBar: FloatingBarPresentationService
+    private let commandPalette: CommandPalettePresentationService
     private let themes: BrowserWorkspaceThemeEditorOwner
     private let sharing: BrowserSharingPickerPresentationOwner
 
     init(
         modal: BrowserNativeModalTransaction,
-        floatingBar: FloatingBarPresentationService,
+        commandPalette: CommandPalettePresentationService,
         themes: BrowserWorkspaceThemeEditorOwner,
         sharing: BrowserSharingPickerPresentationOwner
     ) {
         self.modal = modal
-        self.floatingBar = floatingBar
+        self.commandPalette = commandPalette
         self.themes = themes
         self.sharing = sharing
     }
@@ -33,7 +33,7 @@ final class BrowserNativeDialogPresentationOwner {
 
     func showQuitDialog() {
         requestCollapsedSidebarOverlayDismissal()
-        floatingBar.dismissActiveWindow(preserveDraft: true)
+        commandPalette.dismissActiveWindow(preserveDraft: true)
         themes.dismissThemePickerCommittingIfNeeded()
         NSApplication.shared.terminate(nil)
     }

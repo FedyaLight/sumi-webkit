@@ -10,8 +10,8 @@ guard_initialize "$repo_root"
 schema_file="Packages/SumiDomain/Sources/SumiDomain/WorkspaceTheme/WorkspaceTheme.swift"
 rendering_file="Sumi/Theme/WorkspaceThemeRendering.swift"
 coding_file="Sumi/Theme/WorkspaceThemeCoding.swift"
-production_roots=(App FloatingBar Settings Sumi SidebarChrome UI Packages/SumiDomain/Sources)
-app_roots=(App FloatingBar Settings Sumi SidebarChrome UI)
+production_roots=(App CommandPalette Settings Sumi SidebarChrome UI Packages/SumiDomain/Sources)
+app_roots=(App CommandPalette Settings Sumi SidebarChrome UI)
 
 strip_swift_comments() {
   perl -0777 -pe 's{/\*.*?\*/}{}gs; s{//[^\n]*}{}g' "$1"

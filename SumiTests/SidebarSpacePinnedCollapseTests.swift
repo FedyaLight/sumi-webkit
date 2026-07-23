@@ -235,7 +235,7 @@ final class SidebarSpacePinnedCollapseSessionTests: XCTestCase {
             activeShortcutPinId: nil,
             activeShortcutPinRole: nil,
             isShowingEmptyState: false,
-            floatingBarReason: nil,
+            commandPaletteReason: nil,
             activeTabsBySpace: [],
             activeShortcutsBySpace: [],
             collapsedPinnedSpaceIDs: collapsedPinnedSpaceIDs,
@@ -247,7 +247,7 @@ final class SidebarSpacePinnedCollapseSessionTests: XCTestCase {
                 )
             ),
             isSidebarVisible: true,
-            floatingBarDraft: FloatingBarDraftState(
+            commandPaletteDraft: CommandPaletteDraftState(
                 text: "",
                 navigateCurrentTab: false
             )

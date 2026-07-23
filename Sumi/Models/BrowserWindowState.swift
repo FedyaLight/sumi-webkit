@@ -189,9 +189,9 @@ class BrowserWindowState {
         }
     }
 
-    /// Durable restoration intent for the floating bar. Physical visibility
+    /// Durable restoration intent for the command palette. Physical visibility
     /// remains runtime-only in `presentationState`.
-    var floatingBarPresentationReason: FloatingBarPresentationReason = .none
+    var commandPalettePresentationReason: CommandPalettePresentationReason = .none
 
     /// Unified owner for all window-local chrome theme state.
     var windowThemeState: WindowThemeState = .init()
@@ -294,11 +294,11 @@ class BrowserWindowState {
     /// Whether the sidebar is visible in this window
     var isSidebarVisible: Bool = true
 
-    /// Preserved text draft for the floating bar.
-    var floatingBarDraftText: String = ""
+    /// Preserved text draft for the command palette.
+    var commandPaletteDraftText: String = ""
 
     /// Whether the preserved draft targets the current tab on submit
-    var floatingBarDraftNavigatesCurrentTab: Bool = false
+    var commandPaletteDraftNavigatesCurrentTab: Bool = false
 
     /// Window-scoped owner for stacked in-app notifications and their dismiss timers.
     let inAppNotifications = BrowserNotificationCenter()

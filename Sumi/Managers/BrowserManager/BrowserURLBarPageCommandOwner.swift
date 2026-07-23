@@ -3,20 +3,20 @@ import Foundation
 @MainActor
 final class BrowserURLBarPageCommandOwner {
     private let activePages: ActivePageResolver
-    private let floatingBar: FloatingBarPresentationService
+    private let commandPalette: CommandPalettePresentationService
     private let pageCommands: ActivePageCommandService
     private let clipboard: BrowserURLClipboardService
     private let sidebar: BrowserSidebarPresentationOwner
 
     init(
         activePages: ActivePageResolver,
-        floatingBar: FloatingBarPresentationService,
+        commandPalette: CommandPalettePresentationService,
         pageCommands: ActivePageCommandService,
         clipboard: BrowserURLClipboardService,
         sidebar: BrowserSidebarPresentationOwner
     ) {
         self.activePages = activePages
-        self.floatingBar = floatingBar
+        self.commandPalette = commandPalette
         self.pageCommands = pageCommands
         self.clipboard = clipboard
         self.sidebar = sidebar
@@ -26,12 +26,12 @@ final class BrowserURLBarPageCommandOwner {
         activePages.resolve(in: windowState)
     }
 
-    func focusFloatingBar(
+    func focusCommandPalette(
         in windowState: BrowserWindowState,
         prefill: String,
         navigateCurrentTab: Bool
     ) {
-        floatingBar.focus(
+        commandPalette.focus(
             in: windowState,
             prefill: prefill,
             navigateCurrentTab: navigateCurrentTab,

@@ -150,7 +150,7 @@ private final class RecordingBrowserCommandRouter: BrowserMouseButtonCommandRout
     var backWindowIDs: [UUID] = []
     var forwardWindowIDs: [UUID] = []
 
-    func focusFloatingBar(
+    func focusCommandPalette(
         in windowState: BrowserWindowState,
         prefill: String,
         navigateCurrentTab: Bool

@@ -61,8 +61,8 @@ final class BrowserAppOrchestrationOwner {
         }
 
         let mouseCommandRouter = BrowserMouseCommandRouter(
-            floatingBar: { [weak browserManager] in
-                browserManager?.urlBarBundle.floatingBar.presentation
+            commandPalette: { [weak browserManager] in
+                browserManager?.urlBarBundle.commandPalette.presentation
             },
             history: { [weak browserManager] in
                 browserManager?.historyBundle.historyNavigationOwner

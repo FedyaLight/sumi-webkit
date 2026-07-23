@@ -241,14 +241,14 @@ final class ProfileReferenceInventoryTests: XCTestCase {
             activeShortcutPinId: nil,
             activeShortcutPinRole: nil,
             isShowingEmptyState: false,
-            floatingBarReason: nil,
+            commandPaletteReason: nil,
             activeTabsBySpace: [],
             activeShortcutsBySpace: [],
             sidebarWidth: 240,
             savedSidebarWidth: 240,
             sidebarContentWidth: 220,
             isSidebarVisible: true,
-            floatingBarDraft: FloatingBarDraftState(
+            commandPaletteDraft: CommandPaletteDraftState(
                 text: "",
                 navigateCurrentTab: false
             )

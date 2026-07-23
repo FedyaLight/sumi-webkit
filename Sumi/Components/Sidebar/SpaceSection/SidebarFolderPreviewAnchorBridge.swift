@@ -16,7 +16,7 @@ struct SidebarFolderPreviewAnchorBridge: NSViewRepresentable {
     ///
     /// Opening the preview focuses its search field, so this is the Sumi
     /// counterpart to Zen's `gURLBar.focused || zen-renaming-tab` bail-out —
-    /// widened to any field editor, since the floating bar is permanently
+    /// widened to any field editor, since the command palette is permanently
     /// visible on the new-tab page and visibility alone says nothing about who
     /// owns keyboard input.
     @MainActor

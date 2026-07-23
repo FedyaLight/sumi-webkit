@@ -34,28 +34,28 @@ struct ChromeThemeTokens {
     let buttonPrimaryText: Color
     let buttonSecondaryBackground: Color
     let windowBackground: Color
-    /// Opaque floating surface (floating bar, URL hub/identity popovers, theme picker, modal glance cards). Flat white / near-black.
-    let floatingBarBackground: Color
+    /// Opaque floating surface (command palette, URL hub/identity popovers, theme picker, modal glance cards). Flat white / near-black.
+    let commandPaletteBackground: Color
     /// Secondary fills inside the palette (e.g. “Tab” chip, favicon wells).
-    let floatingBarChipBackground: Color
-    let floatingBarRowSelected: Color
-    let floatingBarRowHover: Color
+    let commandPaletteChipBackground: Color
+    let commandPaletteRowSelected: Color
+    let commandPaletteRowHover: Color
 }
 
 enum ChromeThemeTypography {
-    static let floatingBarInput = Font.system(size: 13, weight: .semibold)
-    static var floatingBarInputNSFont: NSFont { NSFont.systemFont(ofSize: 13, weight: .semibold) }
-    static let floatingBarLeadingIcon = Font.system(size: 13, weight: .regular)
-    static let floatingBarToken = Font.system(size: 13, weight: .semibold)
-    static let floatingBarMicroLabel = Font.system(size: 11, weight: .semibold)
-    static let floatingBarSuggestionRow = Font.system(size: 13, weight: .semibold)
-    static var floatingBarSuggestionRowNSFont: NSFont { NSFont.systemFont(ofSize: 13, weight: .semibold) }
-    static let floatingBarSuggestionAction = Font.system(size: 12, weight: .medium)
-    static let floatingBarSuggestionChip = Font.system(size: 10, weight: .semibold)
-    static let floatingBarSuggestionControl = Font.system(size: 13, weight: .semibold)
-    static let floatingBarDeleteControlSmall = Font.system(size: 10, weight: .bold)
-    static let floatingBarDeleteControl = Font.system(size: 11, weight: .bold)
-    static let floatingBarDeleteAction = Font.system(size: 11, weight: .semibold)
+    static let commandPaletteInput = Font.system(size: 13, weight: .semibold)
+    static var commandPaletteInputNSFont: NSFont { NSFont.systemFont(ofSize: 13, weight: .semibold) }
+    static let commandPaletteLeadingIcon = Font.system(size: 13, weight: .regular)
+    static let commandPaletteToken = Font.system(size: 13, weight: .semibold)
+    static let commandPaletteMicroLabel = Font.system(size: 11, weight: .semibold)
+    static let commandPaletteSuggestionRow = Font.system(size: 13, weight: .semibold)
+    static var commandPaletteSuggestionRowNSFont: NSFont { NSFont.systemFont(ofSize: 13, weight: .semibold) }
+    static let commandPaletteSuggestionAction = Font.system(size: 12, weight: .medium)
+    static let commandPaletteSuggestionChip = Font.system(size: 10, weight: .semibold)
+    static let commandPaletteSuggestionControl = Font.system(size: 13, weight: .semibold)
+    static let commandPaletteDeleteControlSmall = Font.system(size: 10, weight: .bold)
+    static let commandPaletteDeleteControl = Font.system(size: 11, weight: .bold)
+    static let commandPaletteDeleteAction = Font.system(size: 11, weight: .semibold)
     static let spaceHoverLabelTitle = Font.system(size: 13, weight: .semibold)
     static let spaceHoverLabelShortcutChip = Font.system(size: 12, weight: .semibold)
 }
@@ -104,7 +104,7 @@ enum ThemeChromeRecipeColors {
         static let toolbarHoverFallback = Color.black.opacity(0.08)
     }
 
-    enum FloatingBar {
+    enum CommandPalette {
         static let backgroundLight = Color.white
         static let backgroundDark = Color(hex: "1C1C1E")
         static let backgroundFallback = Color.white
@@ -126,7 +126,7 @@ enum SumiButtonThemeTokens {
     }
 }
 
-enum FloatingBarThemeTokens {
+enum CommandPaletteThemeTokens {
     enum Colors {
         static let deleteConfirmationForeground = Color.white
         static let reducedTransparencyShadow = Color.black.opacity(0.165)

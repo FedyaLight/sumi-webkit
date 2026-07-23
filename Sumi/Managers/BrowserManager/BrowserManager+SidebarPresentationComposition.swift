@@ -49,7 +49,7 @@ extension BrowserManager {
             tabClose: tabCloseOrchestration,
             regularTabs: regularTabCollectionOwner,
             tabOpening: tabOpening,
-            floatingBarCommit: urlBarBundle.floatingBar.commit,
+            commandPaletteCommit: urlBarBundle.commandPalette.commit,
             splitFocusCommands: SidebarSplitFocusCommands(
                 focus: splitShortcutFocus,
                 groups: splitGroupStore,

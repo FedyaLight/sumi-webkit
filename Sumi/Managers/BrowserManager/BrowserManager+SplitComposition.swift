@@ -264,8 +264,8 @@ extension BrowserManager {
     func composeSplitEmptyCreation() -> EmptySplitCreationWorkflow {
         EmptySplitCreationWorkflow(
             placeholders: splitEmptyPlaceholders,
-            focusFloatingBar: { [weak self] window, reason in
-                self?.urlBarBundle.floatingBar.presentation.focus(
+            focusCommandPalette: { [weak self] window, reason in
+                self?.urlBarBundle.commandPalette.presentation.focus(
                     in: window,
                     prefill: "",
                     navigateCurrentTab: true,

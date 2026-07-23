@@ -12,7 +12,7 @@ guard_initialize "$repo_root"
 # WebViews and extension participants are quiesced before the WebKit mutation.
 # WKWebExtensionController owns a separate extension metadata store and remains
 # in the extension residency boundary.
-production_roots=(App Sumi SidebarChrome FloatingBar Settings UI Packages)
+production_roots=(App Sumi SidebarChrome CommandPalette Settings UI Packages)
 canonical_cleanup_source="Sumi/Services/SumiWebsiteDataCleanupService.swift"
 extension_cleanup_source="Sumi/Managers/ExtensionManager/WebExtensionControllerDataCleanupOwner.swift"
 profile_mutation_source="Sumi/Services/SumiProfileWebsiteDataMutationService.swift"

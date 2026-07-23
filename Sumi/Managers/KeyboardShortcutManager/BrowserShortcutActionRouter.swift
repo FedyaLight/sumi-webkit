@@ -103,11 +103,11 @@ final class BrowserShortcutActionRouter {
         overlays.isNativeModalPresented(in: window)
     }
 
-    func dismissFloatingBar(
+    func dismissCommandPalette(
         in windowState: BrowserWindowState,
         preserveDraft: Bool
     ) {
-        overlays.dismissFloatingBar(
+        overlays.dismissCommandPalette(
             in: windowState,
             preserveDraft: preserveDraft
         )

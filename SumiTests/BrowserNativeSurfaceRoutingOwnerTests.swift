@@ -36,8 +36,8 @@ final class BrowserNativeSurfaceRoutingOwnerTests: XCTestCase {
         for testCase in cases {
             let harness = NativeSurfaceRoutingHarness()
             harness.windowState.isShowingEmptyState = true
-            harness.windowState.floatingBarPresentationReason = .emptySpace
-            harness.windowState.presentationState.isFloatingBarVisible = true
+            harness.windowState.commandPalettePresentationReason = .emptySpace
+            harness.windowState.presentationState.isCommandPaletteVisible = true
             var publishedTab: Tab?
             let publication = harness.browser.tabStructureEventBus
                 .scopedStructureChangesPublisher
@@ -69,7 +69,7 @@ final class BrowserNativeSurfaceRoutingOwnerTests: XCTestCase {
             XCTAssertIdentical(harness.selectedTab, tab)
             XCTAssertFalse(harness.windowState.isShowingEmptyState)
             XCTAssertFalse(
-                harness.windowState.presentationState.isFloatingBarVisible
+                harness.windowState.presentationState.isCommandPaletteVisible
             )
             publication.cancel()
         }

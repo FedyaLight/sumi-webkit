@@ -46,7 +46,7 @@ final class WindowSpaceSwitchPresentationState {
 @Observable
 final class WindowPresentationState {
     var isDownloadsPopoverPresented = false
-    var isFloatingBarVisible = false
+    var isCommandPaletteVisible = false
     var urlBarFrame: CGRect = .zero
     var visibility: SumiWindowVisibilityState = .unknown
     var pendingSplitGroupFocusRequest: SplitGroupFocusRequest?

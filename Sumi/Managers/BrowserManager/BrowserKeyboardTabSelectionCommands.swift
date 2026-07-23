@@ -5,13 +5,13 @@ import Foundation
 final class BrowserKeyboardTabSelectionCommands {
     private let windowTabs: BrowserWindowTabContext
     private let opening: BrowserTabOpeningOwner
-    private let newTabCommit: FloatingBarCommitService
+    private let newTabCommit: CommandPaletteCommitService
     private let selection: BrowserTabSelectionOwner
 
     init(
         windowTabs: BrowserWindowTabContext,
         opening: BrowserTabOpeningOwner,
-        newTabCommit: FloatingBarCommitService,
+        newTabCommit: CommandPaletteCommitService,
         selection: BrowserTabSelectionOwner
     ) {
         self.windowTabs = windowTabs

@@ -71,7 +71,7 @@ struct GradientCanvasEditor: View {
                             colorHex: color.hex,
                             size: 38,
                             strokeWidth: 6,
-                            outerStroke: tokens.floatingBarBackground
+                            outerStroke: tokens.commandPaletteBackground
                         )
                         .scaleEffect(primaryScale(isPrimary: true))
                         .position(point)
@@ -83,7 +83,7 @@ struct GradientCanvasEditor: View {
                             colorHex: color.hex,
                             size: 22,
                             strokeWidth: 4,
-                            outerStroke: tokens.floatingBarBackground
+                            outerStroke: tokens.commandPaletteBackground
                         )
                         .position(point)
                         .zIndex(2)

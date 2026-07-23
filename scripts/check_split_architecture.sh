@@ -118,23 +118,23 @@ done
 guard_expect_no_matches \
   'split durable model escaped the SumiDomain package' \
   '\b(struct|class|enum) (SplitGroup|SplitLayoutTree|SplitMemberID|SplitMember)\b' \
-  -g '*.swift' Sumi SidebarChrome UI App Settings FloatingBar
+  -g '*.swift' Sumi SidebarChrome UI App Settings CommandPalette
 
 guard_expect_no_matches \
   'retired split identity or god surface is still referenced' \
   '\b(SplitGroupMember|SplitGroupHost|SplitGroupCollectionStateOwner|SplitGroupIndexStore|TabManagerSplitGroupRepairOwner|TabSplitGroupStructureOwner|SpaceLauncherProjectionOwner|SplitMembershipResolutionOwner|SplitEmptyPlaceholderOwner|SplitPreviewStateOwner)\b' \
   -g '*.swift' \
-  Sumi SumiTests SidebarChrome UI App Settings FloatingBar
+  Sumi SumiTests SidebarChrome UI App Settings CommandPalette
 
 guard_expect_no_matches \
   'split responsibility was hidden behind a new Owner surface' \
   '\b(class|struct|actor) [A-Za-z0-9_]*Split[A-Za-z0-9_]*Owner\b' \
-  -g '*.swift' Sumi SumiTests SidebarChrome UI App Settings FloatingBar
+  -g '*.swift' Sumi SumiTests SidebarChrome UI App Settings CommandPalette
 
 guard_expect_no_matches \
   'retired split composition hub or runtime callback bag is still referenced in production' \
   '\b(SplitViewManager|SplitViewRuntime)\b' \
-  -g '*.swift' Sumi SumiTests SumiUITests SidebarChrome UI App Settings FloatingBar
+  -g '*.swift' Sumi SumiTests SumiUITests SidebarChrome UI App Settings CommandPalette
 
 guard_expect_no_matches \
   'split runtime depends on component-only drop capture behavior' \
@@ -149,12 +149,12 @@ guard_expect_no_matches \
 guard_expect_no_matches \
   'retired composition-only split storage returned' \
   '\bBrowserSplitServices\b' \
-  -g '*.swift' Sumi SumiTests SumiUITests SidebarChrome UI App Settings FloatingBar
+  -g '*.swift' Sumi SumiTests SumiUITests SidebarChrome UI App Settings CommandPalette
 
 guard_expect_no_matches \
   'retired split composition graph returned' \
   '\bsplitComposition\b' \
-  -g '*.swift' Sumi SumiTests SumiUITests SidebarChrome UI App Settings FloatingBar
+  -g '*.swift' Sumi SumiTests SumiUITests SidebarChrome UI App Settings CommandPalette
 
 guard_expect_no_matches \
   'split composition hid exact roles behind a broad local alias' \
@@ -182,18 +182,18 @@ guard_expect_no_matches \
   'retired live-tab split API is still used outside v1 migration' \
   'SplitGroup\.make\([[:space:]]*tabIds:|\b(maximumTabs|replacingMemberTab|swappingTabs|movingTab)\b|\b(removing|inserting)\(tabId:|\b(splitGroupStructureOwner|splitGroupCollectionStateOwner|splitGroupIndexStore|splitGroupRepairOwner)\b|\b(group|groupId)\(containingMemberId:' \
   -U -g '*.swift' \
-  Sumi SumiTests SidebarChrome UI App Settings FloatingBar
+  Sumi SumiTests SidebarChrome UI App Settings CommandPalette
 
 guard_expect_no_matches \
   'retired global split-selection API is still referenced' \
   '\b(updateActiveSplitSide|updateActiveSide|activeSplitGroup|activeSplitGroupID)\b' \
-  -g '*.swift' Sumi SumiTests SidebarChrome UI App Settings FloatingBar
+  -g '*.swift' Sumi SumiTests SidebarChrome UI App Settings CommandPalette
 
 guard_expect_no_matches \
   'decode-only legacy split selection returned' \
   '\bactiveSplitGroupId\b' \
   -g '*.swift' \
-  Sumi SumiTests SidebarChrome UI App Settings FloatingBar
+  Sumi SumiTests SidebarChrome UI App Settings CommandPalette
 
 guard_expect_no_matches \
   'canonical durable split model regained window-local or parallel identity state' \

@@ -58,8 +58,8 @@ final class BrowserWindowSessionBundle {
             themeRestorer: themeRestorer,
             selectionService: browserManager.shellRuntime.windowSelection,
             selection: browserManager,
-            floatingBarSanitizer: browserManager.urlBarBundle
-                .floatingBar.presentation
+            commandPaletteSanitizer: browserManager.urlBarBundle
+                .commandPalette.presentation
         )
         self.restoreService = restoreService
         self.sessionRecovery = BrowserSessionRecoveryCommands.live(

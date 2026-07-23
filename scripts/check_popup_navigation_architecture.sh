@@ -26,7 +26,7 @@ child_tab_settlement="Sumi/Managers/BrowserManager/WebKitChildTabSettlementTrans
 child_window_opening="Sumi/Managers/BrowserManager/WebKitChildWindowOpeningService.swift"
 auxiliary_factory="Sumi/AuxiliaryWindows/AuxiliaryWebViewFactory.swift"
 browser_configuration="Sumi/Models/BrowserConfig/BrowserConfig.swift"
-production_roots=(App Sumi Settings SidebarChrome FloatingBar UI)
+production_roots=(App Sumi Settings SidebarChrome CommandPalette UI)
 status=0
 
 

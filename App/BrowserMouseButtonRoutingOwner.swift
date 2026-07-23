@@ -51,7 +51,7 @@ final class BrowserMouseButtonRoutingOwner {
             guard let windowState = targetWindow(eventWindow: eventWindow, windowRegistry: windowRegistry) else {
                 return false
             }
-            mouseButtonRouter.focusFloatingBar(
+            mouseButtonRouter.focusCommandPalette(
                 in: windowState,
                 prefill: "",
                 navigateCurrentTab: false

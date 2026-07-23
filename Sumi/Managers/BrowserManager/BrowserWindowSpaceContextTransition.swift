@@ -7,24 +7,24 @@ import SumiDomain
 @MainActor
 final class BrowserWindowSpaceContextTransition {
     private let contextReconciler: BrowserWindowSpaceContextReconciler
-    private let floatingBar: FloatingBarPresentationService
+    private let commandPalette: CommandPalettePresentationService
     private let selection: BrowserTabSelectionOwner
     private let workspaceThemes: BrowserWorkspaceThemeTransitionOwner
 
     init(
         contextReconciler: BrowserWindowSpaceContextReconciler,
-        floatingBar: FloatingBarPresentationService,
+        commandPalette: CommandPalettePresentationService,
         selection: BrowserTabSelectionOwner,
         workspaceThemes: BrowserWorkspaceThemeTransitionOwner
     ) {
         self.contextReconciler = contextReconciler
-        self.floatingBar = floatingBar
+        self.commandPalette = commandPalette
         self.selection = selection
         self.workspaceThemes = workspaceThemes
     }
 
     func sanitizePreservedSelection(in windowState: BrowserWindowState) {
-        floatingBar.sanitize(in: windowState)
+        commandPalette.sanitize(in: windowState)
     }
 
     func completePreservedSelectionRefresh(in windowState: BrowserWindowState) {

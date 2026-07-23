@@ -28,7 +28,7 @@ struct SidebarBrowserContext {
     let tabClose: BrowserTabCloseOrchestrationOwner
     let regularTabs: RegularTabCollectionOwner
     let tabOpening: BrowserTabOpeningOwner
-    let floatingBarCommit: FloatingBarCommitService
+    let commandPaletteCommit: CommandPaletteCommitService
     let splitFocusCommands: SidebarSplitFocusCommands
     let splitCloseCommand: SidebarSplitCloseCommand
     let splitGroupLifecycle: SidebarSplitGroupLifecycleCommands

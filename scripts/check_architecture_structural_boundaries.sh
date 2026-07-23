@@ -10,11 +10,11 @@ guard_initialize "$repo_root"
 guard_expect_no_matches \
   'production services reached exact split roles through WindowSplitContext' \
   '\bsplitWindowContext\.(query|layout|drops|dropTargets|previews|updates)\b' \
-  App Sumi Settings SidebarChrome FloatingBar UI -g '*.swift'
+  App Sumi Settings SidebarChrome CommandPalette UI -g '*.swift'
 guard_expect_no_matches \
   'exact window-session services reached through BrowserWindowSessionBundle' \
   '\bwindowSessionBundle\.(persistence|activation)\b' \
-  App Sumi Settings SidebarChrome FloatingBar UI SumiTests -g '*.swift'
+  App Sumi Settings SidebarChrome CommandPalette UI SumiTests -g '*.swift'
 
 shopt -s nullglob
 session_recovery_services=(
@@ -70,7 +70,7 @@ window_history_services=(
   Sumi/Managers/BrowserManager/ClosedWindowHistoryRecorder.swift
   Sumi/Managers/BrowserManager/WindowSessionHistoryServices.swift
 )
-floating_bar_services=(Sumi/Services/FloatingBar*.swift)
+command_palette_services=(Sumi/Services/CommandPalette*.swift)
 active_page_services=(
   Sumi/Managers/BrowserManager/*ActivePage*.swift
   Sumi/Services/ExternalURL*.swift
@@ -151,7 +151,7 @@ guard_require_discovered_sources 'shortcut runtime' "${shortcut_runtime_services
 guard_require_discovered_sources 'split shortcut' "${split_shortcut_services[@]}"
 guard_require_discovered_sources 'sidebar command' "${sidebar_command_services[@]}"
 guard_require_discovered_sources 'window history' "${window_history_services[@]}"
-guard_require_discovered_sources 'floating bar' "${floating_bar_services[@]}"
+guard_require_discovered_sources 'command palette' "${command_palette_services[@]}"
 guard_require_discovered_sources 'active page' "${active_page_services[@]}"
 guard_require_discovered_sources 'Tab selection' "${tab_selection_services[@]}"
 guard_require_discovered_sources 'Tab selection roles' "${tab_selection_role_files[@]}"
@@ -554,7 +554,7 @@ guard_expect_no_matches \
   -g '!TabStructuralMutationTransaction.swift' \
   -g '!TabStoreRecordMutation.swift' \
   -g '!TabLastSessionFolderMaterializer.swift' \
-  App FloatingBar SidebarChrome Settings Sumi UI
+  App CommandPalette SidebarChrome Settings Sumi UI
 structural_install_services=(
   Sumi/Managers/TabManager/TabStructuralInstallOwner.swift
   Sumi/Managers/TabManager/TabStructuralInstallPublication.swift
@@ -823,7 +823,7 @@ guard_expect_no_matches \
   'raw durable API outside coordinator' \
   '\.(persistDurableSnapshot|durableWrite)\s*\(' \
   -g '*.swift' -g '!WindowSessionPersistenceCoordinator.swift' \
-  App FloatingBar SidebarChrome Settings Sumi UI
+  App CommandPalette SidebarChrome Settings Sumi UI
 guard_expect_no_matches \
   'window-history BrowserManager reachback' \
   '\bbrowserManager\b|\bBrowserManager\b' \
@@ -839,17 +839,17 @@ guard_expect_no_matches \
   Sumi/Managers/BrowserManager/BrowserWindowVisualCoordinator.swift
 
 guard_expect_no_matches \
-  'floating-bar Actions/Dependencies bags' \
+  'command-palette Actions/Dependencies bags' \
   'struct (Actions|Dependencies)' \
-  "${floating_bar_services[@]}"
+  "${command_palette_services[@]}"
 guard_expect_no_matches \
-  'floating-bar BrowserManager reachback' \
+  'command-palette BrowserManager reachback' \
   '\bbrowserManager\b|BrowserManager\(' \
-  "${floating_bar_services[@]}"
+  "${command_palette_services[@]}"
 guard_expect_no_matches \
-  'behavior in FloatingBarServices capability group' \
+  'behavior in CommandPaletteServices capability group' \
   '\bfunc ' \
-  Sumi/Services/FloatingBarServices.swift
+  Sumi/Services/CommandPaletteServices.swift
 
 guard_expect_no_matches \
   'active-page Actions/Dependencies bags' \
@@ -866,7 +866,7 @@ guard_expect_no_matches \
 guard_expect_no_matches \
   'URL-bar active-page reach-through' \
   'urlBarBundle\.activePage|activePageRoutingOwner' \
-  -g '*.swift' App FloatingBar SidebarChrome Settings Sumi UI SumiTests
+  -g '*.swift' App CommandPalette SidebarChrome Settings Sumi UI SumiTests
 guard_expect_no_matches \
   'sidebar drop URL-bar reach-through' \
   'urlBarBundle' \

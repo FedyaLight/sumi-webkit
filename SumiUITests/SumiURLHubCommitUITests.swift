@@ -1,7 +1,7 @@
 import Foundation
 import XCTest
 
-/// End-to-end oracle for the URL Hub (floating bar) commit contract: opening
+/// End-to-end oracle for the URL Hub (command palette) commit contract: opening
 /// the hub with the standard keyboard command, typing a destination, and
 /// confirming with Return must navigate the active tab to exactly that
 /// destination. The destination is a local `file://` fixture page, so the
@@ -21,11 +21,11 @@ final class SumiURLHubCommitUITests: SumiLaunchSmokeUITestCase {
 
         app.typeKey("t", modifierFlags: [.command])
         XCTAssertTrue(
-            waitForFloatingBar(in: app, timeout: 10),
-            "URL Hub (floating bar) did not appear after Cmd+T"
+            waitForCommandPalette(in: app, timeout: 10),
+            "URL Hub (command palette) did not appear after Cmd+T"
         )
 
-        let input = element(withIdentifier: "floating-bar-input", in: app)
+        let input = element(withIdentifier: "command-palette-input", in: app)
         XCTAssertTrue(input.exists, "URL Hub input is missing from the hub surface")
         XCTAssertTrue(input.isHittable, "URL Hub input is not hittable")
 
@@ -47,7 +47,7 @@ final class SumiURLHubCommitUITests: SumiLaunchSmokeUITestCase {
         // The hub must dismiss after a successful commit.
         wait(
             for: NSPredicate(format: "exists == false"),
-            on: element(withIdentifier: "floating-bar-input", in: app),
+            on: element(withIdentifier: "command-palette-input", in: app),
             timeout: 20,
             message: "URL Hub did not dismiss after committing with Return"
         )

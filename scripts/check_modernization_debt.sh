@@ -9,7 +9,7 @@ guard_initialize "$repo_root"
 
 production_roots=(
   "App"
-  "FloatingBar"
+  "CommandPalette"
   "SidebarChrome"
   "Settings"
   "Sumi"

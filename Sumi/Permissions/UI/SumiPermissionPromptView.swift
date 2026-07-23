@@ -32,7 +32,7 @@ struct SumiPermissionPromptView: View {
         }
         .padding(16)
         .frame(width: 344)
-        .background(tokens.floatingBarBackground)
+        .background(tokens.commandPaletteBackground)
         .onExitCommand {
             viewModel.perform(.dismiss)
         }

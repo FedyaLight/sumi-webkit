@@ -3,7 +3,7 @@ import SwiftData
 
 @MainActor
 protocol BrowserMouseButtonCommandRouting: AnyObject {
-    func focusFloatingBar(
+    func focusCommandPalette(
         in windowState: BrowserWindowState,
         prefill: String,
         navigateCurrentTab: Bool

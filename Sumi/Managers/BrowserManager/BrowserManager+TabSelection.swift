@@ -110,15 +110,15 @@ extension BrowserManager {
 
     func showEmptyState(
         in windowState: BrowserWindowState,
-        presentNewTabFloatingBar: Bool = false
+        presentNewTabCommandPalette: Bool = false
     ) {
         browserTabSelection.showEmptyState(
             in: windowState,
             persistSelection: true
         )
 
-        if presentNewTabFloatingBar && windowState.isShowingEmptyState {
-            urlBarBundle.floatingBar.presentation.showNewTab(in: windowState)
+        if presentNewTabCommandPalette && windowState.isShowingEmptyState {
+            urlBarBundle.commandPalette.presentation.showNewTab(in: windowState)
         }
     }
 

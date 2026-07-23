@@ -63,10 +63,10 @@ final class SumiFirstNavigationRenderUITests: SumiLaunchSmokeUITestCase {
 
         app.typeKey("t", modifierFlags: [.command])
         XCTAssertTrue(
-            waitForFloatingBar(in: app, timeout: 10),
+            waitForCommandPalette(in: app, timeout: 10),
             "URL Hub did not appear for the first navigation"
         )
-        let input = element(withIdentifier: "floating-bar-input", in: app)
+        let input = element(withIdentifier: "command-palette-input", in: app)
         XCTAssertTrue(input.isHittable, "URL Hub input is not hittable")
         try paste(server.pageURL.absoluteString, into: input, in: app)
         wait(
@@ -78,7 +78,7 @@ final class SumiFirstNavigationRenderUITests: SumiLaunchSmokeUITestCase {
         app.typeKey(.return, modifierFlags: [])
         wait(
             for: NSPredicate(format: "exists == false"),
-            on: element(withIdentifier: "floating-bar-input", in: app),
+            on: element(withIdentifier: "command-palette-input", in: app),
             timeout: 20,
             message: "URL Hub did not dismiss after the first navigation"
         )

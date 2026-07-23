@@ -31,7 +31,7 @@ final class WindowSessionRestoreService {
     private let themeRestorer: WindowSessionThemeRestorer
     private let snapshotApplier: WindowSessionSnapshotApplier
     private let selectionService: ShellSelectionService
-    private let floatingBarSanitizer: any WindowSessionFloatingBarSanitizing
+    private let commandPaletteSanitizer: any WindowSessionCommandPaletteSanitizing
     private weak var selection: (any WindowSessionSelectionApplying)?
     private var preparedRegistrationsByWindowID: [UUID: PreparedRegistration] = [:]
 
@@ -49,7 +49,7 @@ final class WindowSessionRestoreService {
         themeRestorer: WindowSessionThemeRestorer,
         selectionService: ShellSelectionService,
         selection: any WindowSessionSelectionApplying,
-        floatingBarSanitizer: any WindowSessionFloatingBarSanitizing,
+        commandPaletteSanitizer: any WindowSessionCommandPaletteSanitizing,
         cycle: WindowSessionRestoreCycle = WindowSessionRestoreCycle()
     ) {
         self.snapshotStore = snapshotStore
@@ -68,7 +68,7 @@ final class WindowSessionRestoreService {
             glanceManager: glanceManager
         )
         self.selectionService = selectionService
-        self.floatingBarSanitizer = floatingBarSanitizer
+        self.commandPaletteSanitizer = commandPaletteSanitizer
         self.selection = selection
     }
 
@@ -166,7 +166,7 @@ final class WindowSessionRestoreService {
 
         if restored && startupRestore.hasLoadedInitialData == false {
             windowState.restorationState.isAwaitingInitialResolution = true
-            floatingBarSanitizer.sanitize(in: windowState)
+            commandPaletteSanitizer.sanitize(in: windowState)
             themeRestorer.restore(
                 for: windowState,
                 source: "setupWindowState.preInitialTabManagerLoad"
@@ -394,7 +394,7 @@ final class WindowSessionRestoreService {
         makeSelectionReconciler(selection: selection)
             .reconcileFinalSelection(windowState)
 
-        floatingBarSanitizer.sanitize(in: windowState)
+        commandPaletteSanitizer.sanitize(in: windowState)
         selection.syncShortcutSelectionState(for: windowState)
         themeRestorer.restore(for: windowState, source: source)
 
@@ -426,7 +426,7 @@ final class WindowSessionRestoreService {
             return false
         }
         windowState.isShowingEmptyState = false
-        floatingBarSanitizer.sanitize(in: windowState)
+        commandPaletteSanitizer.sanitize(in: windowState)
         requiredSelection().syncShortcutSelectionState(for: windowState)
         themeRestorer.restore(
             for: windowState,

@@ -43,7 +43,7 @@ extension URLBarView {
         let _ = browserContext.zoom.stateRevision
         return URLBarZoomButtonVisibility.shouldShow(
             hasURL: isZoomIndicatorURLAvailable(for: tab),
-            isEditing: windowState.presentationState.isFloatingBarVisible,
+            isEditing: windowState.presentationState.isCommandPaletteVisible,
             isDefaultZoom: browserContext.zoom.manager.isDefaultZoom(for: tab.id)
         )
     }

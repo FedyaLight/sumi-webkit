@@ -20,7 +20,7 @@ final class ChromeLayoutSettingsStore {
     private let showLinkStatusBarKey: String
     private let showBrowserToastsKey: String
     private let framelessChromeKey: String
-    private let floatingBarEmptyStateModeKey: String
+    private let commandPaletteEmptyStateModeKey: String
     private let newTabModeKey: String
     private let newTabPageURLStringKey: String
     private let didFinishOnboardingKey: String
@@ -106,11 +106,11 @@ final class ChromeLayoutSettingsStore {
         }
     }
 
-    var floatingBarEmptyStateMode: FloatingBarEmptyStateMode {
+    var commandPaletteEmptyStateMode: CommandPaletteEmptyStateMode {
         didSet {
             Persisted.rawRepresentable(
-                floatingBarEmptyStateMode,
-                key: floatingBarEmptyStateModeKey,
+                commandPaletteEmptyStateMode,
+                key: commandPaletteEmptyStateModeKey,
                 defaults: userDefaults
             )
         }
@@ -150,7 +150,7 @@ final class ChromeLayoutSettingsStore {
         showLinkStatusBarKey: String,
         showBrowserToastsKey: String,
         framelessChromeKey: String,
-        floatingBarEmptyStateModeKey: String,
+        commandPaletteEmptyStateModeKey: String,
         newTabModeKey: String,
         newTabPageURLStringKey: String,
         didFinishOnboardingKey: String,
@@ -167,7 +167,7 @@ final class ChromeLayoutSettingsStore {
         self.showLinkStatusBarKey = showLinkStatusBarKey
         self.showBrowserToastsKey = showBrowserToastsKey
         self.framelessChromeKey = framelessChromeKey
-        self.floatingBarEmptyStateModeKey = floatingBarEmptyStateModeKey
+        self.commandPaletteEmptyStateModeKey = commandPaletteEmptyStateModeKey
         self.newTabModeKey = newTabModeKey
         self.newTabPageURLStringKey = newTabPageURLStringKey
         self.didFinishOnboardingKey = didFinishOnboardingKey
@@ -204,9 +204,9 @@ final class ChromeLayoutSettingsStore {
         self.showLinkStatusBar = userDefaults.bool(forKey: showLinkStatusBarKey)
         self.showInAppNotifications = userDefaults.bool(forKey: showBrowserToastsKey)
         self.framelessChrome = userDefaults.bool(forKey: framelessChromeKey)
-        self.floatingBarEmptyStateMode = FloatingBarEmptyStateMode(
-            rawValue: userDefaults.string(forKey: floatingBarEmptyStateModeKey)
-                ?? FloatingBarEmptyStateMode.compact.rawValue
+        self.commandPaletteEmptyStateMode = CommandPaletteEmptyStateMode(
+            rawValue: userDefaults.string(forKey: commandPaletteEmptyStateModeKey)
+                ?? CommandPaletteEmptyStateMode.compact.rawValue
         ) ?? .compact
         let storedNewTabMode = userDefaults.string(forKey: newTabModeKey)
         let resolvedNewTabMode = SumiNewTabMode.persistedValue(storedNewTabMode)

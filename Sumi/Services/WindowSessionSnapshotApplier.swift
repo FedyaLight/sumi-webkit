@@ -32,8 +32,8 @@ struct WindowSessionSnapshotApplier {
         windowState.currentShortcutPinId = snapshot.activeShortcutPinId
         windowState.currentShortcutPinRole = snapshot.activeShortcutPinRole
         windowState.isShowingEmptyState = snapshot.isShowingEmptyState
-        windowState.floatingBarPresentationReason = snapshot.isShowingEmptyState
-            ? (snapshot.floatingBarReason ?? .none)
+        windowState.commandPalettePresentationReason = snapshot.isShowingEmptyState
+            ? (snapshot.commandPaletteReason ?? .none)
             : .none
         windowState.activeTabForSpace = Dictionary(
             uniqueKeysWithValues: snapshot.activeTabsBySpace.map {
@@ -60,9 +60,9 @@ struct WindowSessionSnapshotApplier {
             .sidebarContentWidth(for: sidebarWidth)
         windowState.isSidebarVisible = snapshot.isSidebarVisible
         windowState.presentationState.isDownloadsPopoverPresented = false
-        windowState.floatingBarDraftText = snapshot.floatingBarDraft.text
-        windowState.floatingBarDraftNavigatesCurrentTab = snapshot
-            .floatingBarDraft.navigateCurrentTab
+        windowState.commandPaletteDraftText = snapshot.commandPaletteDraft.text
+        windowState.commandPaletteDraftNavigatesCurrentTab = snapshot
+            .commandPaletteDraft.navigateCurrentTab
 
         windowState.splitSelection = nil
         windowState.restorationState.pendingSplitSelection = snapshot

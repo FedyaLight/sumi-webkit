@@ -152,12 +152,12 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
         registry.register(lateWindowState)
         registry.setActive(lateWindowState)
         registry.notifyWindowVisibilityChanged(lateWindowState)
-        appDelegate.mouseButtonRouter?.focusFloatingBar(
+        appDelegate.mouseButtonRouter?.focusCommandPalette(
             in: lateWindowState,
             prefill: "late",
             navigateCurrentTab: true
         )
-        XCTAssertFalse(lateWindowState.presentationState.isFloatingBarVisible)
+        XCTAssertFalse(lateWindowState.presentationState.isCommandPaletteVisible)
         registry.unregister(lateWindowState.id)
     }
 

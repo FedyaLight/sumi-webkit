@@ -260,7 +260,7 @@ class KeyboardShortcutManager {
             return event
         }
 
-        if let routingResult = routeFloatingBarShortcutIfNeeded(
+        if let routingResult = routeCommandPaletteShortcutIfNeeded(
             event,
             context: context
         ) {
@@ -300,7 +300,7 @@ class KeyboardShortcutManager {
     private func shouldBypassShortcutRouting(
         context: BrowserShortcutContext
     ) -> Bool {
-        if context.windowState.presentationState.isFloatingBarVisible {
+        if context.windowState.presentationState.isCommandPaletteVisible {
             return true
         }
         if shortcutActionRouter?.isNativeModalPresented(
@@ -311,12 +311,12 @@ class KeyboardShortcutManager {
         return false
     }
 
-    private func routeFloatingBarShortcutIfNeeded(
+    private func routeCommandPaletteShortcutIfNeeded(
         _ event: NSEvent,
         context: BrowserShortcutContext
     ) -> LocalKeyRoutingResult? {
         let windowState = context.windowState
-        guard windowState.presentationState.isFloatingBarVisible else {
+        guard windowState.presentationState.isCommandPaletteVisible else {
             return nil
         }
 
@@ -325,7 +325,7 @@ class KeyboardShortcutManager {
         }
 
         if keyCombination == KeyCombination(key: "escape") {
-            shortcutActionRouter?.dismissFloatingBar(
+            shortcutActionRouter?.dismissCommandPalette(
                 in: windowState,
                 preserveDraft: true
             )
@@ -333,7 +333,7 @@ class KeyboardShortcutManager {
         }
 
         if systemOwnedShortcuts.contains(keyCombination) {
-            shortcutActionRouter?.dismissFloatingBar(
+            shortcutActionRouter?.dismissCommandPalette(
                 in: windowState,
                 preserveDraft: true
             )
@@ -348,7 +348,7 @@ class KeyboardShortcutManager {
         case .focusAddressBar, .newTab:
             break
         default:
-            shortcutActionRouter?.dismissFloatingBar(
+            shortcutActionRouter?.dismissCommandPalette(
                 in: windowState,
                 preserveDraft: true
             )

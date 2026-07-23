@@ -20,7 +20,7 @@ struct GeneralNewTabsSettingsSection: View {
         ) {
             SettingsRow(
                 title: "Open new tabs with",
-                subtitle: "Choose between the floating bar or a specific page."
+                subtitle: "Choose between the command palette or a specific page."
             ) {
                 Picker("", selection: $mode) {
                     ForEach(SumiNewTabMode.allCases) { mode in

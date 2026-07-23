@@ -206,7 +206,7 @@ extension SumiLaunchSmokeUITestCase {
             "savedSidebarWidth": 250.0,
             "sidebarContentWidth": 234.0,
             "isSidebarVisible": true,
-            "floatingBarDraft": [
+            "commandPaletteDraft": [
                 "text": "",
                 "navigateCurrentTab": false,
             ],
@@ -300,7 +300,7 @@ extension SumiLaunchSmokeUITestCase {
             "savedSidebarWidth": 250.0,
             "sidebarContentWidth": 234.0,
             "isSidebarVisible": isSidebarVisible,
-            "floatingBarDraft": [
+            "commandPaletteDraft": [
                 "text": "",
                 "navigateCurrentTab": false,
             ],

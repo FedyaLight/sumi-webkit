@@ -25,7 +25,7 @@ SOURCE_ROOTS = [
     "Sumi",
     "Settings",
     "SidebarChrome",
-    "FloatingBar",
+    "CommandPalette",
     "UI",
     "Packages/SumiDomain/Sources",
     "Packages/SumiWebRuntime/Sources",

@@ -92,8 +92,8 @@ struct URLBarView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
-                .onTapGesture(perform: focusFloatingBarFromURLBar)
-                .sidebarAppKitPrimaryAction(action: focusFloatingBarFromURLBar)
+                .onTapGesture(perform: focusCommandPaletteFromURLBar)
+                .sidebarAppKitPrimaryAction(action: focusCommandPaletteFromURLBar)
 
                 if let currentTab = currentTab {
                     trailingActions(for: currentTab)
@@ -186,11 +186,11 @@ struct URLBarView: View {
         activePage?.url
     }
 
-    func focusFloatingBarFromURLBar() {
+    func focusCommandPaletteFromURLBar() {
         let currentURL = ExtensionURLIdentity.isOwned(activePageURL)
             ? ""
             : activePageURL?.absoluteString ?? ""
-        browserContext.focusFloatingBar(windowState, currentURL, true)
+        browserContext.focusCommandPalette(windowState, currentURL, true)
     }
 
     var effectiveProfileId: UUID? {

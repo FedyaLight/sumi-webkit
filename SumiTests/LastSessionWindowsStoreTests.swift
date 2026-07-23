@@ -278,7 +278,7 @@ final class LastSessionWindowsStoreTests: XCTestCase {
             activeShortcutPinId: nil,
             activeShortcutPinRole: nil,
             isShowingEmptyState: false,
-            floatingBarReason: nil,
+            commandPaletteReason: nil,
             activeTabsBySpace: activeTabsBySpace,
             activeShortcutsBySpace: activeShortcutsBySpace,
             sidebarWidth: Double(BrowserWindowState.sidebarDefaultWidth),
@@ -287,7 +287,7 @@ final class LastSessionWindowsStoreTests: XCTestCase {
                 for: BrowserWindowState.sidebarDefaultWidth
             )),
             isSidebarVisible: true,
-            floatingBarDraft: FloatingBarDraftState(
+            commandPaletteDraft: CommandPaletteDraftState(
                 text: "",
                 navigateCurrentTab: false
             )

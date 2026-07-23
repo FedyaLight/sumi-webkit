@@ -66,7 +66,7 @@ guard_expect_no_matches \
 guard_expect_no_matches \
   'retired broad closure factory stays absent' \
   'TabClosureService\.(compose|live)\(' \
-  App FloatingBar SidebarChrome Settings Sumi UI
+  App CommandPalette SidebarChrome Settings Sumi UI
 
 declare -a type_limits=(
   'RegularTabClosureCommitTransaction|5'

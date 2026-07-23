@@ -99,11 +99,11 @@ role_budgets=(
   "Window-session history capabilities|Sumi/Managers/BrowserManager/WindowSessionHistoryServices.swift|20|-"
   "Window-history live composition|Sumi/Managers/BrowserManager/WindowSessionHistoryServices+Live.swift|65|-"
 
-  "Floating-bar presentation|Sumi/Services/FloatingBarPresentationService.swift|170|5"
-  "Floating-bar commit|Sumi/Services/FloatingBarCommitService.swift|235|6"
-  "Floating-bar page navigation|Sumi/Services/FloatingBarPageNavigationService.swift|75|2"
-  "Floating-bar context factory|Sumi/Managers/BrowserManager/FloatingBarBrowserContextFactory.swift|70|6"
-  "Floating-bar live composition|Sumi/Managers/BrowserManager/BrowserManager+FloatingBarComposition.swift|120|-"
+  "Command-palette presentation|Sumi/Services/CommandPalettePresentationService.swift|170|5"
+  "Command-palette commit|Sumi/Services/CommandPaletteCommitService.swift|235|6"
+  "Command-palette page navigation|Sumi/Services/CommandPalettePageNavigationService.swift|75|2"
+  "Command-palette context factory|Sumi/Managers/BrowserManager/CommandPaletteBrowserContextFactory.swift|70|6"
+  "Command-palette live composition|Sumi/Managers/BrowserManager/BrowserManager+CommandPaletteComposition.swift|120|-"
   "Active-page resolver|Sumi/Managers/BrowserManager/ActivePageResolver.swift|120|4"
   "Active-page commands|Sumi/Managers/BrowserManager/ActivePageCommandService.swift|130|5"
   "Active-page live composition|Sumi/Managers/BrowserManager/BrowserShellRuntime+ActivePage.swift|40|-"
@@ -173,7 +173,7 @@ stored_state_budgets=(
   "Window Space transition live composition|Sumi/Managers/BrowserManager/BrowserWindowSpaceTransitionService+Live.swift|0"
   "Session recovery live composition|Sumi/Managers/BrowserManager/BrowserSessionRecoveryCommands+Live.swift|0"
   "Window-history live composition|Sumi/Managers/BrowserManager/WindowSessionHistoryServices+Live.swift|0"
-  "Floating-bar live composition|Sumi/Managers/BrowserManager/BrowserManager+FloatingBarComposition.swift|0"
+  "Command-palette live composition|Sumi/Managers/BrowserManager/BrowserManager+CommandPaletteComposition.swift|0"
   "Regular shortcut conversion live composition|Sumi/Managers/TabManager/RegularTabShortcutConversionService+Live.swift|0"
 )
 

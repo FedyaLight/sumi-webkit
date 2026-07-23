@@ -114,7 +114,7 @@ guard_expect_no_matches \
 guard_expect_no_matches \
   'retired shortcut command facades stay absent' \
   '\b(ShortcutPinCommandOwner|ShortcutPinConversionCommandService)\b' \
-  App Sumi Settings SidebarChrome FloatingBar UI -g '*.swift'
+  App Sumi Settings SidebarChrome CommandPalette UI -g '*.swift'
 
 sidebar_execution_commands=Sumi/Components/Sidebar/SidebarPinExecutionCommands.swift
 sidebar_placement_commands=Sumi/Components/Sidebar/SidebarPinPlacementCommands.swift

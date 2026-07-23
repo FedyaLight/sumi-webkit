@@ -215,7 +215,7 @@ class BrowserManager: ObservableObject {
             windowSpaceContext: windowSpaceContextSynchronizer,
             workspaceThemes: workspaceThemeTransitionOwner,
             settings: settingsState,
-            floatingBar: floatingBarPresentation
+            commandPalette: commandPalettePresentation
         )
         let mediaEffects = BrowserTabSelectionMediaEffects(
             nowPlaying: nativeNowPlayingController,
@@ -279,9 +279,9 @@ class BrowserManager: ObservableObject {
             recovery: sidebarHostRecoveryCoordinator
         )
     lazy var workspaceThemeEditorOwner = composeWorkspaceThemeEditor()
-    lazy var floatingBarPresentation = composeFloatingBarPresentation()
-    lazy var floatingBarServices = composeFloatingBarServices(
-        presentation: floatingBarPresentation
+    lazy var commandPalettePresentation = composeCommandPalettePresentation()
+    lazy var commandPaletteServices = composeCommandPaletteServices(
+        presentation: commandPalettePresentation
     )
     lazy var chromeBundle = composeChromeBundle()
     lazy var urlBarBundle = composeURLBarBundle()

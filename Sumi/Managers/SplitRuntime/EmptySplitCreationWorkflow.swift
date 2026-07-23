@@ -1,38 +1,38 @@
 import Foundation
 import SumiDomain
 
-/// Integration edge between placeholder creation and floating-bar focus. The
+/// Integration edge between placeholder creation and command-palette focus. The
 /// placeholder service itself has no URL-bar dependency, so commit/cancel can
 /// depend on it without forming a service cycle.
 @MainActor
 final class EmptySplitCreationWorkflow {
     private let placeholders: EmptySplitService
-    private let focusFloatingBar: (
+    private let focusCommandPalette: (
         BrowserWindowState,
-        FloatingBarPresentationReason
+        CommandPalettePresentationReason
     ) -> Void
 
     init(
         placeholders: EmptySplitService,
-        focusFloatingBar: @escaping (
+        focusCommandPalette: @escaping (
             BrowserWindowState,
-            FloatingBarPresentationReason
+            CommandPalettePresentationReason
         ) -> Void
     ) {
         self.placeholders = placeholders
-        self.focusFloatingBar = focusFloatingBar
+        self.focusCommandPalette = focusCommandPalette
     }
 
     @discardableResult
     func create(
         side: SplitDropSide = .right,
         in windowState: BrowserWindowState,
-        reason: FloatingBarPresentationReason = .keyboard
+        reason: CommandPalettePresentationReason = .keyboard
     ) -> Bool {
         guard placeholders.create(side: side, in: windowState) else {
             return false
         }
-        focusFloatingBar(windowState, reason)
+        focusCommandPalette(windowState, reason)
         return true
     }
 }

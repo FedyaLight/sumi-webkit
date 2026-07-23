@@ -52,7 +52,7 @@ extension_composition='Sumi/Managers/BrowserManager/BrowserExtensionTabMutationC
 extension_root='Sumi/BrowserRuntime/BrowserCompositionRoot+TabSession.swift'
 empty_split_session='Sumi/Managers/SplitRuntime/EmptySplitSession.swift'
 empty_split_replacement='Sumi/Managers/SplitRuntime/EmptySplitReplacementService.swift'
-floating_bar_presentation='Sumi/Services/FloatingBarPresentationService.swift'
+command_palette_presentation='Sumi/Services/CommandPalettePresentationService.swift'
 transient_role_files=(
   Sumi/Managers/TabManager/TransientExtensionTabResidenceQuery.swift
   Sumi/Managers/TabManager/TransientExtensionTabURLResolver.swift
@@ -74,16 +74,16 @@ guard_require_file "$extension_composition"
 guard_require_file "$extension_root"
 guard_require_file "$empty_split_session"
 guard_require_file "$empty_split_replacement"
-guard_require_file "$floating_bar_presentation"
+guard_require_file "$command_palette_presentation"
 
 guard_expect_no_matches \
   'EmptySplit session regained replacement/drop coupling' \
   '\b(SplitPlaceholderReplacementPreparing|SplitDropService)\b' \
   "$empty_split_session"
 guard_expect_no_matches \
-  'Floating Bar regained a placeholder forwarding protocol/provider' \
-  '\b(EmptySplitPlaceholderCancelling|FloatingBarSplitPlaceholderHandling)\b|splitPlaceholders: @escaping' \
-  "$empty_split_session" "$floating_bar_presentation"
+  'Command Palette regained a placeholder forwarding protocol/provider' \
+  '\b(EmptySplitPlaceholderCancelling|CommandPaletteSplitPlaceholderHandling)\b|splitPlaceholders: @escaping' \
+  "$empty_split_session" "$command_palette_presentation"
 guard_expect_absent_path \
   'retired transient-extension transaction aggregate' \
   Sumi/Managers/TabManager/TransientExtensionTabTransactions.swift
@@ -155,7 +155,7 @@ done
 guard_expect_no_matches \
   'transient extension umbrella lifecycle stays deleted' \
   '\bTransientExtensionTabLifecycleTransaction\b' \
-  App FloatingBar SidebarChrome Settings Sumi UI SumiTests
+  App CommandPalette SidebarChrome Settings Sumi UI SumiTests
 guard_expect_no_matches \
   'extension discard stores no runtime provider callback' \
   'runtimePorts:|->[[:space:]]*RuntimePortRegistry' \

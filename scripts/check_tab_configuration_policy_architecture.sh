@@ -93,7 +93,7 @@ done
 
 retired_ownership_hits="$(
   guard_capture_matches '\bWebViewOwnershipService\b|\bownershipService\b' \
-    App Sumi SidebarChrome FloatingBar Settings UI SumiTests \
+    App Sumi SidebarChrome CommandPalette Settings UI SumiTests \
     -g '*.swift'
 )"
 if [[ -n "$retired_ownership_hits" ]]; then

@@ -243,6 +243,6 @@ private struct SpaceRegularNewTabRow: View {
 
     private func openNewTab() {
         guard isInteractive else { return }
-        browserContext.floatingBarCommit.openNewTabSurface(in: windowState)
+        browserContext.commandPaletteCommit.openNewTabSurface(in: windowState)
     }
 }

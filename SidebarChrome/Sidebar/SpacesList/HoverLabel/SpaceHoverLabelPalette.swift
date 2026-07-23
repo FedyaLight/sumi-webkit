@@ -34,7 +34,7 @@ struct SpaceHoverLabelPalette: Equatable {
 
     @MainActor
     static func make(tokens: ChromeThemeTokens) -> Self {
-        make(base: tokens.floatingBarBackground, accent: tokens.accent)
+        make(base: tokens.commandPaletteBackground, accent: tokens.accent)
     }
 
     @MainActor

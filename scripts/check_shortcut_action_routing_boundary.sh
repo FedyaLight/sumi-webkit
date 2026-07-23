@@ -41,7 +41,7 @@ selection_roles=(
 )
 browser_root='Sumi/Managers/BrowserManager/BrowserManager.swift'
 browser_shortcut_composition='Sumi/Managers/BrowserManager/BrowserManager+ShortcutComposition.swift'
-production_roots=(App Sumi Settings SidebarChrome FloatingBar UI)
+production_roots=(App Sumi Settings SidebarChrome CommandPalette UI)
 shortcut_sources=(
   "$router"
   "${dispatcher_files[@]}"

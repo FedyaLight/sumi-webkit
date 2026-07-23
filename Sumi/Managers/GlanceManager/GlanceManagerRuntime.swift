@@ -13,7 +13,7 @@ extension GlanceManager {
         let currentTab: @MainActor (BrowserWindowState) -> Tab?
         let restoreSourceSelection: @MainActor (Tab, BrowserWindowState) -> Void
         let visibleSplitTabCount: @MainActor (UUID) -> Int
-        let dismissFloatingBarIfVisible: @MainActor (UUID) -> Bool
+        let dismissCommandPaletteIfVisible: @MainActor (UUID) -> Bool
         let isFindBarVisible: @MainActor () -> Bool
         let findCurrentTabId: @MainActor () -> UUID?
         let hideFindBar: @MainActor () -> Void

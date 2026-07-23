@@ -7,7 +7,7 @@ repo_root="$(cd "$script_dir/.." && pwd)"
 source "$script_dir/lib/architecture_guard.sh"
 guard_initialize "$repo_root"
 
-ui_paths=(App Sumi SidebarChrome FloatingBar Settings UI)
+ui_paths=(App Sumi SidebarChrome CommandPalette Settings UI)
 
 guard_expect_no_matches \
   'direct BrowserManager SwiftUI environment coupling' \

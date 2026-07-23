@@ -27,7 +27,7 @@ struct WindowSessionSelectionReconciler {
             } else {
                 selection.showEmptyState(
                     in: windowState,
-                    presentNewTabFloatingBar: false
+                    presentNewTabCommandPalette: false
                 )
             }
         }

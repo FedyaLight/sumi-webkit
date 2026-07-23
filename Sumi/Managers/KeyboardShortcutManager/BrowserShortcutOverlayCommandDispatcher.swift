@@ -5,16 +5,16 @@ import SumiDomain
 final class BrowserShortcutOverlayCommandDispatcher {
     private let find: FindManager
     private let dialogs: BrowserNativeDialogPresentationOwner
-    private let floatingBar: FloatingBarPresentationService
+    private let commandPalette: CommandPalettePresentationService
 
     init(
         find: FindManager,
         dialogs: BrowserNativeDialogPresentationOwner,
-        floatingBar: FloatingBarPresentationService
+        commandPalette: CommandPalettePresentationService
     ) {
         self.find = find
         self.dialogs = dialogs
-        self.floatingBar = floatingBar
+        self.commandPalette = commandPalette
     }
 
     func dispatch(
@@ -29,7 +29,7 @@ final class BrowserShortcutOverlayCommandDispatcher {
             )
         case .focusAddressBar:
             let prefill = context.page?.url.absoluteString ?? ""
-            floatingBar.focus(
+            commandPalette.focus(
                 in: context.windowState,
                 prefill: prefill,
                 navigateCurrentTab: true,
@@ -51,11 +51,11 @@ final class BrowserShortcutOverlayCommandDispatcher {
         dialogs.isNativeModalPresented(in: window)
     }
 
-    func dismissFloatingBar(
+    func dismissCommandPalette(
         in windowState: BrowserWindowState,
         preserveDraft: Bool
     ) {
-        floatingBar.dismiss(
+        commandPalette.dismiss(
             in: windowState,
             preserveDraft: preserveDraft,
             cancelEmptySplitPlaceholder: true

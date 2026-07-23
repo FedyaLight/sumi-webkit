@@ -13,7 +13,7 @@ guard_expect_absent_path 'removed userscript product path' "$removed_path"
 production_roots=(
   App
   Settings
-  FloatingBar
+  CommandPalette
   SidebarChrome
   UI
   Sumi

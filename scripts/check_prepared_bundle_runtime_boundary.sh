@@ -7,7 +7,7 @@ repo_root="$(cd "$script_dir/.." && pwd)"
 source "$script_dir/lib/architecture_guard.sh"
 guard_initialize "$repo_root"
 
-runtime_paths=(App Sumi Settings SidebarChrome UI FloatingBar)
+runtime_paths=(App Sumi Settings SidebarChrome UI CommandPalette)
 content_blocking_paths=(Sumi/ContentBlocking)
 
 check_absent() {

@@ -584,9 +584,9 @@ final class GlanceManagerTests: XCTestCase {
         XCTAssertTrue(placeholderTab.representsSumiEmptySurface)
         XCTAssertEqual(windowRegistry.activeWindow?.id, sourceWindow.id)
         XCTAssertEqual(sourceWindow.currentTabId, placeholderId)
-        XCTAssertTrue(sourceWindow.presentationState.isFloatingBarVisible)
-        XCTAssertEqual(sourceWindow.floatingBarPresentationReason, .splitTabPicker)
-        XCTAssertTrue(sourceWindow.floatingBarDraftNavigatesCurrentTab)
+        XCTAssertTrue(sourceWindow.presentationState.isCommandPaletteVisible)
+        XCTAssertEqual(sourceWindow.commandPalettePresentationReason, .splitTabPicker)
+        XCTAssertTrue(sourceWindow.commandPaletteDraftNavigatesCurrentTab)
         XCTAssertIdentical(previewTab.resolvedCurrentWebView(), webView)
 
         let searchManager = SearchManager()
@@ -604,7 +604,7 @@ final class GlanceManagerTests: XCTestCase {
         XCTAssertFalse(suggestedTabs.contains { $0.id == previewTab.id })
         XCTAssertFalse(suggestedTabs.contains { $0.id == placeholderId })
 
-        browserManager.urlBarBundle.floatingBar.commit.commitSuggestion(
+        browserManager.urlBarBundle.commandPalette.commit.commitSuggestion(
             SearchManager.SearchSuggestion(text: sourceTab.name, type: .tab(sourceTab)),
             in: sourceWindow
         )
@@ -627,8 +627,8 @@ final class GlanceManagerTests: XCTestCase {
         )
         XCTAssertEqual(sourceWindow.currentTabId, sourceTab.id)
         XCTAssertNil(browserManager.tabCollectionMembershipOwner.tab(for: placeholderId))
-        XCTAssertFalse(sourceWindow.presentationState.isFloatingBarVisible)
-        XCTAssertEqual(sourceWindow.floatingBarPresentationReason, .none)
+        XCTAssertFalse(sourceWindow.presentationState.isCommandPaletteVisible)
+        XCTAssertEqual(sourceWindow.commandPalettePresentationReason, .none)
     }
 
     func testGlancePresentationStaysPinnedToSourceTabSelection() {
@@ -999,7 +999,7 @@ final class GlanceManagerTests: XCTestCase {
             currentTab: currentTab,
             restoreSourceSelection: restoreSourceSelection,
             visibleSplitTabCount: { _ in 0 },
-            dismissFloatingBarIfVisible: { _ in false },
+            dismissCommandPaletteIfVisible: { _ in false },
             isFindBarVisible: { false },
             findCurrentTabId: { nil },
             hideFindBar: { /* No-op. */ },
