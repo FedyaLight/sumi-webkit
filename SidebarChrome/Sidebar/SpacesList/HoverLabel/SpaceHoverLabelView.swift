@@ -14,15 +14,12 @@ private enum SpaceHoverLabelLayout {
     static let plateVerticalPadding: CGFloat = 7
     static let contentSpacing: CGFloat = 8
     static let chipSpacing: CGFloat = 4
-    static let chipCornerRadius: CGFloat = 6
-    /// Hairline around the key's face.
-    static let chipEdgeWidth: CGFloat = 1
-    /// The key's "beard": the face sits this far off the bottom, so the darker
-    /// body shows through as a lip and the chip reads as a physical keycap.
-    static let chipBeardHeight: CGFloat = 3
-    static let chipMinWidth: CGFloat = 20
+    static let chipCornerRadius: CGFloat = 8
+    /// Keys are square until a multi-glyph label (`Esc`) widens them.
+    static let chipMinSize: CGFloat = 20
     static let chipHorizontalPadding: CGFloat = 5
-    static let chipVerticalPadding: CGFloat = 1
+    /// The key's bottom edge: a darker lip of the body shows below the face.
+    static let chipLipHeight: CGFloat = 2
     static let titleFont = ChromeThemeTypography.spaceHoverLabelTitle
     static let chipFont = ChromeThemeTypography.spaceHoverLabelShortcutChip
 }
@@ -186,42 +183,30 @@ struct SpaceHoverLabelChip: View {
             .font(SpaceHoverLabelLayout.chipFont)
             .foregroundStyle(palette.chipText)
             .padding(.horizontal, SpaceHoverLabelLayout.chipHorizontalPadding)
-            .padding(.top, SpaceHoverLabelLayout.chipVerticalPadding)
-            // The extra bottom padding is the beard, so the glyph stays centred
-            // on the face rather than on the whole keycap.
-            .padding(
-                .bottom,
-                SpaceHoverLabelLayout.chipVerticalPadding
-                    + SpaceHoverLabelLayout.chipBeardHeight
-                    - SpaceHoverLabelLayout.chipEdgeWidth
+            // Reserve the lip so the glyph stays centred on the face above it.
+            .padding(.bottom, SpaceHoverLabelLayout.chipLipHeight)
+            .frame(
+                minWidth: SpaceHoverLabelLayout.chipMinSize,
+                minHeight: SpaceHoverLabelLayout.chipMinSize
             )
-            .frame(minWidth: SpaceHoverLabelLayout.chipMinWidth)
             .background(keycap)
     }
 
-    /// A darker body with the lighter face inset into it — deeper at the bottom,
-    /// which is what gives the key its lip.
+    /// A darker body with the face inset up from the bottom, so a lip of the body
+    /// shows through as the key's bottom edge — the whole depth cue in one layer.
     private var keycap: some View {
-        RoundedRectangle(
+        // Circular corners, like the reference's CSS border-radius: at the same
+        // radius a continuous corner would read noticeably rounder.
+        let shape = RoundedRectangle(
             cornerRadius: SpaceHoverLabelLayout.chipCornerRadius,
-            style: .continuous
+            style: .circular
         )
-        .fill(palette.chipBorder)
-        .overlay {
-            RoundedRectangle(
-                cornerRadius: SpaceHoverLabelLayout.chipCornerRadius
-                    - SpaceHoverLabelLayout.chipEdgeWidth,
-                style: .continuous
-            )
-            .fill(palette.chipFill)
-            .padding(
-                EdgeInsets(
-                    top: SpaceHoverLabelLayout.chipEdgeWidth,
-                    leading: SpaceHoverLabelLayout.chipEdgeWidth,
-                    bottom: SpaceHoverLabelLayout.chipBeardHeight,
-                    trailing: SpaceHoverLabelLayout.chipEdgeWidth
-                )
-            )
-        }
+        return shape
+            .fill(palette.chipBorder)
+            .overlay {
+                shape
+                    .fill(palette.chipFill)
+                    .padding(.bottom, SpaceHoverLabelLayout.chipLipHeight)
+            }
     }
 }

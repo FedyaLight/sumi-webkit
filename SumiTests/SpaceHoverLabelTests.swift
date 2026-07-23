@@ -255,7 +255,7 @@ final class SpaceHoverLabelTests: XCTestCase {
             accent: Color(red: 0.85, green: 0.35, blue: 0.42)
         )
 
-        // Darker than the key it outlines, lighter than the glyph on it.
+        // Darker than the face it edges, lighter than the glyph on it.
         XCTAssertLessThan(palette.chipBorder.relativeLuminance, palette.chipFill.relativeLuminance)
         XCTAssertGreaterThan(palette.chipBorder.relativeLuminance, palette.chipText.relativeLuminance)
     }

@@ -23,13 +23,13 @@ struct SpaceHoverLabelPalette: Equatable {
     /// How much accent the shortcut chips take. Chips read as raised because
     /// they carry more accent than the plate they sit on.
     static let chipAccentBlend: CGFloat = 0.40
-    /// The reference keeps the key face light but makes its hue substantially
-    /// clearer than the plate. Saturation is boosted after blending so light
-    /// and dark chrome retain the same relative depth.
+    /// Keeps the chip's fill light but pushes its hue clearly past the plate, so
+    /// the key reads as its own surface. Saturation is boosted after blending so
+    /// light and dark chrome keep the same relative separation.
     static let chipSaturationMultiplier: CGFloat = 2
     /// WCAG AA for the label's small text.
     static let textContrastRatio: CGFloat = 4.5
-    /// How far the chip's outline is pulled toward its glyph colour.
+    /// How far the key's bottom edge is pulled from its fill toward the glyph.
     static let chipBorderBlend: CGFloat = 0.22
 
     @MainActor
@@ -52,8 +52,8 @@ struct SpaceHoverLabelPalette: Equatable {
                 amount: surfaceBorderBlend
             ),
             chipFill: chipFill,
-            // Edged toward its own glyph colour, so the keycap outline darkens
-            // in light chrome and lightens in dark chrome without a second rule.
+            // A darker shade of the fill toward the glyph, shown only as the key's
+            // bottom edge so the chip reads as a physical key without a full frame.
             chipBorder: chipFill.mixed(with: chipText, amount: chipBorderBlend),
             // The name reads as body text; the chips are the accent's own voice,
             // which is what makes them look like keys rather than more label.
