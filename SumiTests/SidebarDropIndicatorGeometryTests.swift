@@ -272,9 +272,11 @@ final class SidebarDropIndicatorGeometryTests: XCTestCase {
             ),
         ]
 
+        // Frame height 134 with leadingInset 18 encodes 3 rows + two 4px gaps
+        // (116 = 3·36 + 2·4). Interior boundaries center in the 4px gap.
         XCTAssertEqual(pinnedLine(slot: 0, geometry: geometry)?.midY, 98)
-        XCTAssertEqual(pinnedLine(slot: 1, geometry: geometry)?.midY, 134)
-        XCTAssertEqual(pinnedLine(slot: 3, geometry: geometry)?.midY, 206)
+        XCTAssertEqual(pinnedLine(slot: 1, geometry: geometry)?.midY, 136)
+        XCTAssertEqual(pinnedLine(slot: 3, geometry: geometry)?.midY, 214)
     }
 
     // MARK: - Folder children

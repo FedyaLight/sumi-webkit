@@ -52,7 +52,7 @@ struct SpaceRegularTabsView: View {
     let browserContext: SidebarBrowserContext
     let isInteractive: Bool
     let innerWidth: CGFloat
-    let showsPinnedBoundary: Bool
+    let hasPinnedContent: Bool
     @Binding var isSidebarHovered: Bool
 
     @State private var interactionSession = SpaceRegularTabsInteractionSession()
@@ -77,7 +77,7 @@ struct SpaceRegularTabsView: View {
                 innerWidth: innerWidth,
                 tabs: tabs,
                 dragSnapshot: dragSnapshot,
-                showsPinnedBoundary: showsPinnedBoundary,
+                hasPinnedContent: hasPinnedContent,
                 isSidebarHovered: $isSidebarHovered,
                 interactionSession: $interactionSession
             )
@@ -98,13 +98,27 @@ private struct SpaceRegularTabsContentView: View {
     let innerWidth: CGFloat
     let tabs: [Tab]
     let dragSnapshot: SpaceRegularDragSnapshot
-    /// Zen parity (`hide-separator`): the pinned/regular separator and its
-    /// breathing room exist only while the pinned section has content.
-    let showsPinnedBoundary: Bool
+    let hasPinnedContent: Bool
     @Binding var isSidebarHovered: Bool
     @Binding var interactionSession: SpaceRegularTabsInteractionSession
 
     @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Zen parity (`hide-separator`): the pinned/regular separator shows only
+    /// while the space has at least one regular tab, independent of pinned
+    /// content.
+    private var showsSeparator: Bool {
+        SpaceTabSeparatorVisibility.shouldShow(regularTabCount: tabs.count)
+    }
+
+    private var separatorCollapseAnimation: Animation? {
+        SidebarMotionPolicy.pinnedSeparatorCollapseAnimation(
+            for: SidebarMotionPolicy.currentMode(
+                reduceMotion: reduceMotion || sumiSettings.shouldReduceChromeMotion
+            )
+        )
+    }
 
     private var showsNewTabButtonInList: Bool {
         sumiSettings.showNewTabButtonInTabList
@@ -124,7 +138,17 @@ private struct SpaceRegularTabsContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if showsPinnedBoundary {
+            // Boundary region — the single owner of the pinned↔regular gap. Its
+            // animation scope is isolated from the tab list so it never sweeps the
+            // list's own row insert/remove animations.
+            VStack(spacing: 0) {
+                Color.clear.frame(
+                    height: SpaceTabSeparatorLayout.topPad(
+                        hasPinnedContent: hasPinnedContent,
+                        showsSeparator: showsSeparator
+                    )
+                )
+
                 SpaceSeparator(
                     hasTabs: regularTabCatalog.hasPersistedTabs(in: space),
                     isHovering: $isSidebarHovered
@@ -132,43 +156,16 @@ private struct SpaceRegularTabsContentView: View {
                     regularTabLifecycleCommands.clearRegularTabs(for: space.id)
                 }
                 .padding(.horizontal, 8)
-            }
+                .frame(height: SpaceTabSeparatorLayout.lineHeight(showsSeparator: showsSeparator))
+                .opacity(showsSeparator ? 1 : 0)
 
-            VStack(spacing: 2) {
-                if showsNewTabButtonInList && showsNewTabButtonAtTop {
-                    SpaceRegularNewTabRow(
-                        space: space,
-                        browserContext: browserContext,
-                        isInteractive: isInteractive
-                    )
-                    .padding(.top, 4)
-                }
-
-                SpaceRegularTabsListView(
-                    space: space,
-                    selection: selection,
-                    regularTabCatalog: regularTabCatalog,
-                    regularTabTargets: regularTabTargets,
-                    regularTabLifecycleCommands: regularTabLifecycleCommands,
-                    regularTabShortcutCommands: regularTabShortcutCommands,
-                    regularTabPlacementCommands: regularTabPlacementCommands,
-                    browserContext: browserContext,
-                    isInteractive: isInteractive,
-                    innerWidth: innerWidth,
-                    tabs: tabs,
-                    dragSnapshot: dragSnapshot,
-                    interactionSession: $interactionSession
+                Color.clear.frame(
+                    height: SpaceTabSeparatorLayout.bottomPad(showsSeparator: showsSeparator)
                 )
-
-                if showsBottomNewTabButton {
-                    SpaceRegularNewTabRow(
-                        space: space,
-                        browserContext: browserContext,
-                        isInteractive: isInteractive
-                    )
-                }
             }
-            .padding(.top, showsPinnedBoundary ? 8 : 4)
+            .animation(separatorCollapseAnimation, value: showsSeparator)
+
+            contentColumn
 
             Color.clear.frame(
                 height: renderedRowCount == 0 && !interactionSession.listAnimation.hasRemovalInFlight
@@ -181,6 +178,53 @@ private struct SpaceRegularTabsContentView: View {
             spaceId: space.id,
             generation: dragSnapshot.geometryGeneration,
             isEnabled: isInteractive
+        )
+    }
+
+    /// Rows + New-Tab button at the uniform `SidebarRowLayout.rowGap` rhythm. Uses
+    /// `spacing: 0` with explicit gaps inserted only when regular rows exist, so an
+    /// empty list leaves no phantom gap and the New-Tab button sits at the row
+    /// rhythm below the boundary.
+    @ViewBuilder
+    private var contentColumn: some View {
+        VStack(spacing: 0) {
+            if showsNewTabButtonInList && showsNewTabButtonAtTop {
+                newTabRow
+                if !tabs.isEmpty {
+                    Color.clear.frame(height: SidebarRowLayout.rowGap)
+                }
+            }
+
+            SpaceRegularTabsListView(
+                space: space,
+                selection: selection,
+                regularTabCatalog: regularTabCatalog,
+                regularTabTargets: regularTabTargets,
+                regularTabLifecycleCommands: regularTabLifecycleCommands,
+                regularTabShortcutCommands: regularTabShortcutCommands,
+                regularTabPlacementCommands: regularTabPlacementCommands,
+                browserContext: browserContext,
+                isInteractive: isInteractive,
+                innerWidth: innerWidth,
+                tabs: tabs,
+                dragSnapshot: dragSnapshot,
+                interactionSession: $interactionSession
+            )
+
+            if showsBottomNewTabButton {
+                if !tabs.isEmpty {
+                    Color.clear.frame(height: SidebarRowLayout.rowGap)
+                }
+                newTabRow
+            }
+        }
+    }
+
+    private var newTabRow: SpaceRegularNewTabRow {
+        SpaceRegularNewTabRow(
+            space: space,
+            browserContext: browserContext,
+            isInteractive: isInteractive
         )
     }
 }
@@ -210,18 +254,12 @@ private struct SpaceRegularNewTabRow: View {
 
     var body: some View {
         Button(action: openNewTab) {
-            HStack(spacing: 8) {
-                Image(systemName: "plus")
-                Text("New Tab")
-                Spacer()
-            }
-            .foregroundStyle(tokens.primaryText)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
+            SidebarNewTabRowLabel(tokens: tokens)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .padding(.horizontal, 10)
-        .frame(height: 36)
+        .frame(height: SidebarRowLayout.rowHeight)
         .frame(minWidth: 0, maxWidth: .infinity)
         .sidebarRowSurface(
             background: displaysHover ? tokens.sidebarRowHover : Color.clear,

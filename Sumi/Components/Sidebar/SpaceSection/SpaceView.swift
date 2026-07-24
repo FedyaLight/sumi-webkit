@@ -145,7 +145,7 @@ struct SpaceView: View {
             browserContext: browserContext,
             isInteractive: isInteractive,
             innerWidth: innerWidth,
-            showsPinnedBoundary: hasPinnedContent,
+            hasPinnedContent: hasPinnedContent,
             isSidebarHovered: $isSidebarHovered
         )
     }
@@ -193,7 +193,7 @@ struct SpaceView: View {
                 SpaceSectionsView(
                     pinnedSection: pinnedSection,
                     regularTabsSection: regularTabsSection,
-                    sectionSpacing: hasPinnedContent ? 8 : 0
+                    sectionSpacing: 0
                 )
             }
         }

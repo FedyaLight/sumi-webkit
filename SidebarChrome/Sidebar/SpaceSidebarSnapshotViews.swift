@@ -165,7 +165,7 @@ private struct SpaceSnapshotContentView: View {
     }
 
     private var contentStack: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 0) {
             SpaceSnapshotPinnedSectionView(
                 items: snapshot.pinnedItems,
                 rowCornerRadius: snapshot.rowCornerRadius,
@@ -377,14 +377,13 @@ private struct SpaceSnapshotPinnedSectionView: View {
     var body: some View {
         Group {
             if items.isEmpty {
+                // Match live's idle `emptyRevealStrip` (0px) so the New-Tab button
+                // does not sit lower in the snapshot than in the live view.
                 Color.clear
-                    .frame(height: 6)
+                    .frame(height: 0)
                     .frame(maxWidth: .infinity)
             } else {
-                VStack(spacing: 0) {
-                    Color.clear
-                        .frame(height: SidebarInsertionGuide.visualCenterY)
-
+                VStack(spacing: SidebarRowLayout.rowGap) {
                     ForEach(items) { item in
                         SpaceSnapshotPinnedItemView(
                             item: item,
@@ -394,7 +393,7 @@ private struct SpaceSnapshotPinnedSectionView: View {
                         )
                     }
                 }
-                .padding(.bottom, 8)
+                .padding(.top, SidebarInsertionGuide.visualCenterY)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -623,55 +622,76 @@ private struct SpaceSnapshotRegularTabsSectionView: View {
         snapshot.showsNewTabButtonInList && !snapshot.showsTopNewTabButton
     }
 
+    private var showsTopNewTabButton: Bool {
+        snapshot.showsNewTabButtonInList && snapshot.showsTopNewTabButton
+    }
+
     var body: some View {
         VStack(spacing: 0) {
+            // Bake the exact live boundary heights (SpaceTabSeparatorLayout) so the
+            // separator + gaps match across a transition. Static — no animation.
+            Color.clear.frame(
+                height: SpaceTabSeparatorLayout.topPad(
+                    hasPinnedContent: snapshot.hasPinnedContent,
+                    showsSeparator: snapshot.showsPinnedSeparator
+                )
+            )
+
             RoundedRectangle(cornerRadius: 100)
                 .fill(tokens.separator.opacity(0.82))
-                .frame(height: 1)
+                .frame(height: SpaceTabSeparatorLayout.line)
                 .padding(.horizontal, 8)
-                .frame(height: 2)
+                .frame(height: SpaceTabSeparatorLayout.lineHeight(showsSeparator: snapshot.showsPinnedSeparator))
+                .opacity(snapshot.showsPinnedSeparator ? 1 : 0)
 
-            VStack(spacing: 2) {
-                if snapshot.showsNewTabButtonInList && snapshot.showsTopNewTabButton {
-                    newTabRow
-                        .padding(.top, 4)
-                }
+            Color.clear.frame(
+                height: SpaceTabSeparatorLayout.bottomPad(showsSeparator: snapshot.showsPinnedSeparator)
+            )
 
-                VStack(spacing: 2) {
-                    ForEach(snapshot.regularTabs) { tab in
-                        SpaceSnapshotRegularTabRowView(
-                            tab: tab,
-                            rowCornerRadius: snapshot.rowCornerRadius,
-                            tokens: tokens
-                        )
-                    }
-                }
-                .frame(minWidth: 0, maxWidth: innerWidth, alignment: .leading)
-
-                if showsBottomNewTabButton {
-                    newTabRow
-                }
-            }
-            .padding(.top, 8)
+            contentColumn
 
             Color.clear
                 .frame(height: snapshot.regularTabs.isEmpty ? 48 : 24)
         }
     }
 
-    private var newTabRow: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "plus")
-                .accessibilityHidden(true)
-            Text("New Tab")
-            Spacer(minLength: 0)
+    /// Mirrors the live `contentColumn`: rows + New-Tab at the uniform 2px rhythm,
+    /// with the gap present only when regular rows exist (empty list stays flush).
+    @ViewBuilder
+    private var contentColumn: some View {
+        VStack(spacing: 0) {
+            if showsTopNewTabButton {
+                newTabRow
+                if !snapshot.regularTabs.isEmpty {
+                    Color.clear.frame(height: SidebarRowLayout.rowGap)
+                }
+            }
+
+            VStack(spacing: SidebarRowLayout.rowGap) {
+                ForEach(snapshot.regularTabs) { tab in
+                    SpaceSnapshotRegularTabRowView(
+                        tab: tab,
+                        rowCornerRadius: snapshot.rowCornerRadius,
+                        tokens: tokens
+                    )
+                }
+            }
+            .frame(minWidth: 0, maxWidth: innerWidth, alignment: .leading)
+
+            if showsBottomNewTabButton {
+                if !snapshot.regularTabs.isEmpty {
+                    Color.clear.frame(height: SidebarRowLayout.rowGap)
+                }
+                newTabRow
+            }
         }
-        .font(SidebarThemeTokens.Typography.newTabRow)
-        .foregroundStyle(tokens.primaryText)
-        .padding(.horizontal, 10)
-        .frame(height: SidebarRowLayout.rowHeight)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
+    }
+
+    private var newTabRow: some View {
+        SidebarNewTabRowLabel(tokens: tokens)
+            .frame(height: SidebarRowLayout.rowHeight)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
     }
 }
 

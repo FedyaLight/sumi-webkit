@@ -99,10 +99,6 @@ struct SpacePinnedListView: View {
             : 6
     }
 
-    private var bottomPadding: CGFloat {
-        showsCollapsedEmptyTarget ? 0 : 8
-    }
-
     /// Shortcut and split rows are a gapless fixed-height stack. Folders and
     /// collapsed sticky projections keep the exact per-item measured path.
     private var usesUniformDropGeometry: Bool {
@@ -131,11 +127,7 @@ struct SpacePinnedListView: View {
         let foldersByID = Dictionary(uniqueKeysWithValues: topLevelFolders.map { ($0.id, $0) })
         let pinsByID = Dictionary(uniqueKeysWithValues: topLevelPins.map { ($0.id, $0) })
 
-        LazyVStack(spacing: 0) {
-            Color.clear
-                .frame(height: leadingSpacerHeight)
-                .allowsHitTesting(false)
-
+        LazyVStack(spacing: SidebarRowLayout.rowGap) {
             ForEach(contentDisplayEntries) { entry in
                 VStack(spacing: 0) {
                     switch entry.item {
@@ -218,8 +210,8 @@ struct SpacePinnedListView: View {
                 .sidebarScrollTarget(scrollTargetID(for: entry.item))
             }
         }
+        .padding(.top, leadingSpacerHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.bottom, bottomPadding)
         .sidebarPinnedListHitGeometry(
             for: space.id,
             rowCount: contentDisplayEntries.count,

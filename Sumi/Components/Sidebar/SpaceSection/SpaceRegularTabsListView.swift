@@ -43,7 +43,7 @@ struct SpaceRegularTabsListView: View {
             groups: splitGroups
         )
 
-        LazyVStack(alignment: .leading, spacing: 2) {
+        LazyVStack(alignment: .leading, spacing: SidebarRowLayout.rowGap) {
             ForEach(renderedRun.rows) { row in
                 VStack(spacing: 0) {
                     switch row.identity {

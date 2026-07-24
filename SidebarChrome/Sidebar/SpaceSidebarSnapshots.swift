@@ -222,6 +222,14 @@ struct SpaceSidebarPageSnapshot {
     let showsTopNewTabButton: Bool
     let rowCornerRadius: CGFloat
     let scrollViewport: SpaceSidebarSnapshotViewport
+
+    /// Zen parity (`hide-separator`): the pinned/regular separator shows only
+    /// while the space has at least one regular tab, independent of pinned
+    /// content. Shares its rule with the live view via
+    /// `SpaceTabSeparatorVisibility` so the two never drift across a transition.
+    var showsPinnedSeparator: Bool {
+        SpaceTabSeparatorVisibility.shouldShow(regularTabCount: regularTabs.count)
+    }
 }
 
 struct SpaceSidebarTransitionSnapshot {

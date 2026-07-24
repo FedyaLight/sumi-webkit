@@ -25,7 +25,10 @@ enum SidebarThemeTokens {
         }
         static let rowAccessory = Font.system(size: 12, weight: .medium)
         static let trailingAction = Font.system(size: 12, weight: .heavy)
-        static let newTabRow = Font.system(size: 13, weight: .regular)
+        /// Zen parity: the in-list New-Tab row carries the same type as folder
+        /// titles (in Zen every sidebar row inherits one font-size and the
+        /// new-tab button is weighted up, not down, relative to tab rows).
+        static let newTabRow = folderTitle
         static let pinnedTileAction = Font.system(size: 11, weight: .bold)
 
         static func chromeTemplateIcon(size: CGFloat) -> Font {

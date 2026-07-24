@@ -137,25 +137,39 @@ struct SidebarPinnedListHitMetrics: Equatable {
     var rowCount: Int
     var leadingInset: CGFloat
 
+    /// Exact visual row pitch. Uniform pinned rows are all `rowHeight` with a
+    /// known `rowGap`, so the pitch is the compile-time constant
+    /// `SidebarRowLayout.rowPitch` — NOT reverse-engineered from the measured
+    /// frame. A frame-derived pitch drifts from the rendered layout whenever the
+    /// reported `frame.height`/`rowCount` is momentarily off (mid-relayout, lazy
+    /// measurement), which desyncs the indicator line from the actual drop.
+    var rowPitch: CGFloat { SidebarRowLayout.rowPitch }
+
     var rowsFrame: CGRect {
         CGRect(
             x: frame.minX,
             y: frame.minY + leadingInset,
             width: frame.width,
             height: CGFloat(max(rowCount, 0)) * SidebarRowLayout.rowHeight
+                + CGFloat(max(rowCount - 1, 0)) * SidebarRowLayout.rowGap
         )
     }
 
     func rowBoundaryIndex(forGlobalY globalY: CGFloat) -> Int {
         guard rowCount > 0 else { return 0 }
         let localY = globalY - rowsFrame.minY
-        let rawIndex = Int(((localY / SidebarRowLayout.rowHeight) + 0.5).rounded(.down))
+        let rawIndex = Int(((localY / rowPitch) + 0.5).rounded(.down))
         return max(0, min(rawIndex, rowCount))
     }
 
     func boundaryY(for slot: Int) -> CGFloat {
         let safeSlot = max(0, min(slot, rowCount))
-        return rowsFrame.minY + CGFloat(safeSlot) * SidebarRowLayout.rowHeight
+        if safeSlot == 0 { return rowsFrame.minY }
+        if safeSlot == rowCount { return rowsFrame.maxY }
+        // Interior boundary: center of the spacing gap above the row, matching
+        // `SidebarDropIndicatorGeometry.regularLineRect`.
+        let rowSpacing = rowPitch - SidebarRowLayout.rowHeight
+        return rowsFrame.minY + CGFloat(safeSlot) * rowPitch - rowSpacing / 2
     }
 }
 

@@ -20,6 +20,14 @@ enum SidebarRowLayout {
     static let leadingInset: CGFloat = 12
     static let iconTrailingSpacing: CGFloat = 8
     static let trailingInset: CGFloat = 10
+    /// Uniform vertical gap between adjacent rows (pinned, regular, New-Tab) —
+    /// matches Zen's 4px row rhythm.
+    static let rowGap: CGFloat = 4
+    /// Exact visual pitch between two stacked uniform rows (row height + gap).
+    /// Drop geometry uses this constant directly rather than reverse-engineering
+    /// it from a measured frame, so the indicator/resolver can never drift from
+    /// the rendered layout.
+    static let rowPitch: CGFloat = rowHeight + rowGap
     static let trailingActionSize: CGFloat = 24
     static let trailingActionGap: CGFloat = 4
     static let trailingActionPadding: CGFloat = trailingActionSize + trailingActionGap

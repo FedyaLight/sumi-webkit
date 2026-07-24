@@ -79,6 +79,13 @@ enum SidebarMotionPolicy {
         return .easeOut(duration: 0.10)
     }
 
+    /// Zen parity: the pinned/regular separator fades + collapses (~0.08s) as
+    /// the first regular tab arrives or the last one leaves.
+    static func pinnedSeparatorCollapseAnimation(for mode: Mode) -> Animation? {
+        guard mode != .reducedMotion else { return nil }
+        return .easeInOut(duration: 0.08)
+    }
+
     /// Shared duration for list/folder content reflow. Also gates when model
     /// mutations commit after a gap-collapse (see `SidebarDropMotion`).
     static let contentLayoutDuration: TimeInterval = 0.16
