@@ -14,7 +14,7 @@ import SumiDomain
 /// No dependencies beyond MainActor-isolated model types (`Tab`).
 @MainActor
 enum SuggestionDeduplicationPolicy {
-    static func topLinkDeduplicationKey(for url: URL) -> String {
+    static func canonicalNavigationKey(for url: URL) -> String {
         guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
             return url.absoluteString
         }
@@ -36,23 +36,32 @@ enum SuggestionDeduplicationPolicy {
             guard let url = URL(string: normalizeURL(suggestion.text, queryTemplate: SearchProvider.duckDuckGo.queryTemplate)) else {
                 return "url:\(suggestion.text.lowercased())"
             }
-            return "url:\(topLinkDeduplicationKey(for: url).lowercased())"
+            return "url:\(canonicalNavigationKey(for: url).lowercased())"
         case .history(let entry):
-            return "url:\(topLinkDeduplicationKey(for: entry.url).lowercased())"
+            return "url:\(canonicalNavigationKey(for: entry.url).lowercased())"
         case .bookmark(let bookmark):
-            return "url:\(topLinkDeduplicationKey(for: bookmark.url).lowercased())"
+            return "url:\(canonicalNavigationKey(for: bookmark.url).lowercased())"
         case .tab(let tab):
-            return "url:\(topLinkDeduplicationKey(for: tab.url).lowercased())"
+            return "url:\(canonicalNavigationKey(for: tab.url).lowercased())"
+        case .navigationTarget(let target):
+            guard let url = target.primaryURL else {
+                return "navigation:\(target.identity)"
+            }
+            return "url:\(canonicalNavigationKey(for: url).lowercased())"
         case .command(let command):
             return "command:\(command.rawValue)"
+        case .space(let space):
+            return "space:\(space.id.uuidString)"
+        case .extensionAction(let action):
+            return "extension:\(action.id)"
         }
     }
 
     static func isLocalNavigationSuggestion(_ suggestion: SearchManager.SearchSuggestion) -> Bool {
         switch suggestion.type {
-        case .history, .bookmark, .tab:
+        case .history, .bookmark, .tab, .navigationTarget:
             return true
-        case .search, .url, .command:
+        case .search, .url, .command, .space, .extensionAction:
             return false
         }
     }

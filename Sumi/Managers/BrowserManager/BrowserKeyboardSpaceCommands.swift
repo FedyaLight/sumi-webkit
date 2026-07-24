@@ -61,6 +61,21 @@ final class BrowserKeyboardSpaceCommands {
         persistence.persist(windowState)
     }
 
+    func canSelectRelativeSpace(in windowState: BrowserWindowState) -> Bool {
+        guard let currentSpaceID = windowState.currentSpaceId else {
+            return false
+        }
+        return spaces.spaces.count > 1
+            && spaces.contains(spaceId: currentSpaceID)
+    }
+
+    func canSelectSpace(
+        atIndex index: Int,
+        in windowState: BrowserWindowState
+    ) -> Bool {
+        !windowState.isIncognito && spaces.spaces.indices.contains(index)
+    }
+
     private func activate(
         _ space: Space,
         in windowState: BrowserWindowState

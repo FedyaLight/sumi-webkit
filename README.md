@@ -137,7 +137,7 @@ Current Alpha builds include:
 - Glance, which opens over the current tab or from pinned, essential, and launcher-style items, closes quickly, can expand into a normal tab, and can move into split view.
 - Split view with up to four views.
 - Incognito windows backed by an ephemeral profile and ephemeral tabs.
-- Command palette search/address field with suggestions, site search, history suggestions, bookmark suggestions, compact/top links behavior, and split-aware actions.
+- Command palette search/address field with contextual local results, site search, history and bookmark suggestions, and split-aware actions.
 - Bookmarks, history, and search inside bookmarks, history, and settings.
 - Custom themes.
 - Data & Recovery settings for Arc and Zen import with nested folder hierarchy, browser2zen-compatible `.sumiexport` transfer files, bookmarks import from Chrome/Safari/Firefox, and logical Sumi `.sumibackup` backup/restore.

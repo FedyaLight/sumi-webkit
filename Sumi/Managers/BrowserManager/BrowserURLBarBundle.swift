@@ -2,15 +2,21 @@
 final class BrowserURLBarBundle {
     let settingsNavigation: BrowserSettingsNavigationService
     let contextOwner: BrowserURLBarContextOwner
-    let commandPalette: CommandPaletteServices
+    let commandPalettePresentation: CommandPalettePresentationService
+    let commandPaletteCommit: CommandPaletteCommitService
+    let commandPaletteBrowserContext: CommandPaletteBrowserContextFactory
 
     init(
         settingsNavigation: BrowserSettingsNavigationService,
         contextOwner: BrowserURLBarContextOwner,
-        commandPalette: CommandPaletteServices
+        commandPalettePresentation: CommandPalettePresentationService,
+        commandPaletteCommit: CommandPaletteCommitService,
+        commandPaletteBrowserContext: CommandPaletteBrowserContextFactory
     ) {
         self.settingsNavigation = settingsNavigation
         self.contextOwner = contextOwner
-        self.commandPalette = commandPalette
+        self.commandPalettePresentation = commandPalettePresentation
+        self.commandPaletteCommit = commandPaletteCommit
+        self.commandPaletteBrowserContext = commandPaletteBrowserContext
     }
 }

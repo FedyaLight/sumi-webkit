@@ -280,9 +280,14 @@ class BrowserManager: ObservableObject {
         )
     lazy var workspaceThemeEditorOwner = composeWorkspaceThemeEditor()
     lazy var commandPalettePresentation = composeCommandPalettePresentation()
-    lazy var commandPaletteServices = composeCommandPaletteServices(
+    lazy var commandPaletteCommit = composeCommandPaletteCommit(
         presentation: commandPalettePresentation
     )
+    lazy var commandPaletteBrowserContext =
+        composeCommandPaletteBrowserContext(
+            presentation: commandPalettePresentation,
+            commit: commandPaletteCommit
+        )
     lazy var chromeBundle = composeChromeBundle()
     lazy var urlBarBundle = composeURLBarBundle()
     lazy var windowExtensionPublication = WindowExtensionPublicationTransaction.live(

@@ -61,6 +61,29 @@ final class ActivePageCommandService {
         page.tab.toggleMute()
     }
 
+    func canUseWebPage(_ page: ActivePageResolution?) -> Bool {
+        guard let page else { return false }
+        return page.tab.representsSumiNativeSurface == false
+    }
+
+    func canCopyURL(_ page: ActivePageResolution?) -> Bool {
+        guard canUseWebPage(page),
+              let scheme = page?.url.scheme?.lowercased() else {
+            return false
+        }
+        return scheme == "http" || scheme == "https"
+    }
+
+    func canInspect(_ page: ActivePageResolution?) -> Bool {
+        canUseWebPage(page)
+            && page?.presentationWebView != nil
+            && inspector.canInspect
+    }
+
+    func canPrint(_ page: ActivePageResolution?) -> Bool {
+        canUseWebPage(page) && page?.presentationWebView != nil
+    }
+
     @discardableResult
     func copyActivePageURL() -> Bool {
         copyURL(resolver.resolveActiveWindow())
@@ -68,11 +91,7 @@ final class ActivePageCommandService {
 
     @discardableResult
     func copyURL(_ page: ActivePageResolution?) -> Bool {
-        guard let page,
-              !page.tab.representsSumiNativeSurface,
-              let scheme = page.url.scheme?.lowercased(),
-              scheme == "http" || scheme == "https"
-        else { return false }
+        guard canCopyURL(page), let page else { return false }
 
         let didCopy = clipboard.copy(
             page.url.absoluteString,
@@ -94,10 +113,31 @@ final class ActivePageCommandService {
 
     @discardableResult
     func inspect(_ page: ActivePageResolution?) -> Bool {
-        guard let page,
-              !page.tab.representsSumiNativeSurface,
-              let webView = page.presentationWebView
-        else { return false }
+        guard canInspect(page),
+              let webView = page?.presentationWebView else { return false }
         return inspector.inspect(webView)
+    }
+
+    @discardableResult
+    func printPage(_ page: ActivePageResolution?) -> Bool {
+        guard canPrint(page),
+              let page,
+              let webView = page.presentationWebView else { return false }
+        let printInfo =
+            NSPrintInfo.shared.copy() as? NSPrintInfo ?? NSPrintInfo()
+        let operation = webView.printOperation(with: printInfo)
+        DispatchQueue.main.async { [weak webView] in
+            if let window = webView?.window {
+                operation.runModal(
+                    for: window,
+                    delegate: nil,
+                    didRun: nil,
+                    contextInfo: nil
+                )
+            } else {
+                operation.run()
+            }
+        }
+        return true
     }
 }

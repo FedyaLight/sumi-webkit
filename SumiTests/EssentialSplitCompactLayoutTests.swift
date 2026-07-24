@@ -7,7 +7,7 @@ import XCTest
 @MainActor
 final class EssentialSplitCompactLayoutTests: XCTestCase {
     func testThreeMembersUseTwoLeftCellsAndOneFullHeightRightCell() {
-        let rects = EssentialSplitTileGeometry.resolve(
+        let rects = SplitTileGeometry.resolve(
             in: CGSize(width: 100, height: 80),
             count: 3,
             thickness: 2
@@ -20,7 +20,7 @@ final class EssentialSplitCompactLayoutTests: XCTestCase {
     }
 
     func testFourMembersUseStableRowMajorGrid() {
-        let rects = EssentialSplitTileGeometry.resolve(
+        let rects = SplitTileGeometry.resolve(
             in: CGSize(width: 100, height: 80),
             count: 4,
             thickness: 2
@@ -35,7 +35,7 @@ final class EssentialSplitCompactLayoutTests: XCTestCase {
     }
 
     func testThreeMemberTileUsesOneSharedOuterShapeAndInternalDividers() {
-        let geometry = EssentialSplitTileGeometry.resolve(
+        let geometry = SplitTileGeometry.resolve(
             in: CGSize(width: 100, height: 80),
             count: 3,
             thickness: 2

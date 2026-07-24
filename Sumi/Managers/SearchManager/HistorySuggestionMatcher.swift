@@ -26,7 +26,8 @@ enum HistorySuggestionMatcher {
         var seen = Set<String>()
 
         func append(_ item: HistoryListItem) {
-            let key = SuggestionDeduplicationPolicy.topLinkDeduplicationKey(for: item.url)
+            let key = SuggestionDeduplicationPolicy
+                .canonicalNavigationKey(for: item.url)
             guard seen.insert(key).inserted else { return }
             merged.append(item)
         }

@@ -27,7 +27,6 @@ struct SettingsGeneralTab: View {
             )
 
             GeneralSearchSettingsSection(
-                emptyStateMode: $chrome.commandPaletteEmptyStateMode,
                 defaultEngineID: $search.searchEngineId,
                 engineChoices: search.searchEngines.map(GeneralSearchEngineChoice.init)
             )

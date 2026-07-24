@@ -47,8 +47,9 @@ enum ChromeThemeTypography {
     static var commandPaletteInputNSFont: NSFont { NSFont.systemFont(ofSize: 13, weight: .semibold) }
     static let commandPaletteLeadingIcon = Font.system(size: 13, weight: .regular)
     static let commandPaletteToken = Font.system(size: 13, weight: .semibold)
+    static let commandPaletteModeToken = Font.system(size: 14, weight: .semibold)
     static let commandPaletteMicroLabel = Font.system(size: 11, weight: .semibold)
-    static let commandPaletteSuggestionRow = Font.system(size: 13, weight: .semibold)
+    static let commandPaletteSuggestionRow = Font.system(size: 14, weight: .medium)
     static let commandPaletteSuggestionAction = Font.system(size: 12, weight: .medium)
     static let commandPaletteSuggestionChip = Font.system(size: 10, weight: .semibold)
     static let commandPaletteSuggestionControl = Font.system(size: 13, weight: .semibold)
@@ -132,6 +133,25 @@ enum CommandPaletteThemeTokens {
         static let localVignetteLightShadow = Color.black.opacity(0.16)
         static let localVignetteDarkShadow = Color.black.opacity(0.30)
         static let localVignetteFallbackShadow = Color.black.opacity(0.14)
+
+        static func actionsModeBackground(
+            accent: Color,
+            colorScheme: ColorScheme
+        ) -> Color {
+            let accentColor = NSColor(accent).usingColorSpace(.sRGB)
+                ?? .controlAccentColor
+            let neutral = (
+                colorScheme == .dark
+                    ? NSColor.white.withAlphaComponent(0.2)
+                    : NSColor.black.withAlphaComponent(0.5)
+            )
+            return Color(
+                nsColor: accentColor.blended(
+                    withFraction: 0.5,
+                    of: neutral
+                ) ?? accentColor
+            )
+        }
     }
 }
 

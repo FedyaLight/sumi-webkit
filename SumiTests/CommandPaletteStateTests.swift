@@ -13,7 +13,7 @@ final class CommandPaletteStateTests: XCTestCase {
         let browserManager = BrowserManager(windowRegistry: WindowRegistry())
         let windowState = BrowserWindowState()
 
-        browserManager.urlBarBundle.commandPalette.presentation.focus(
+        browserManager.urlBarBundle.commandPalettePresentation.focus(
             in: windowState,
             prefill: "https://example.com",
             navigateCurrentTab: true,
@@ -25,18 +25,18 @@ final class CommandPaletteStateTests: XCTestCase {
         XCTAssertEqual(windowState.commandPaletteDraftText, "https://example.com")
         XCTAssertTrue(windowState.commandPaletteDraftNavigatesCurrentTab)
 
-        browserManager.urlBarBundle.commandPalette.presentation
+        browserManager.urlBarBundle.commandPalettePresentation
             .updateDraft(in: windowState, text: "swift")
         XCTAssertEqual(windowState.commandPaletteDraftText, "swift")
         XCTAssertTrue(windowState.commandPaletteDraftNavigatesCurrentTab)
 
-        browserManager.urlBarBundle.commandPalette.presentation.showNewTab(in: windowState)
+        browserManager.urlBarBundle.commandPalettePresentation.showNewTab(in: windowState)
         XCTAssertTrue(windowState.presentationState.isCommandPaletteVisible)
         XCTAssertEqual(windowState.commandPalettePresentationReason, .emptySpace)
         XCTAssertEqual(windowState.commandPaletteDraftText, "")
         XCTAssertFalse(windowState.commandPaletteDraftNavigatesCurrentTab)
 
-        browserManager.urlBarBundle.commandPalette.presentation.dismiss(
+        browserManager.urlBarBundle.commandPalettePresentation.dismiss(
             in: windowState,
             preserveDraft: false,
             cancelEmptySplitPlaceholder: true
@@ -59,15 +59,15 @@ final class CommandPaletteStateTests: XCTestCase {
             context: .foreground(windowState: windowState)
         )
 
-        browserManager.urlBarBundle.commandPalette.presentation.focus(
+        browserManager.urlBarBundle.commandPalettePresentation.focus(
             in: windowState,
             prefill: currentTab.url.absoluteString,
             navigateCurrentTab: true,
             reason: .keyboard
         )
 
-        browserManager.urlBarBundle.commandPalette.commit.commitSuggestion(
-            SearchManager.SearchSuggestion(text: "https://example.com/replaced", type: .url),
+        browserManager.urlBarBundle.commandPaletteCommit.commitActivation(
+            .input("https://example.com/replaced"),
             in: windowState
         )
 
@@ -89,9 +89,9 @@ final class CommandPaletteStateTests: XCTestCase {
             context: .foreground(windowState: windowState)
         )
 
-        browserManager.urlBarBundle.commandPalette.presentation.showNewTab(in: windowState)
-        browserManager.urlBarBundle.commandPalette.commit.commitSuggestion(
-            SearchManager.SearchSuggestion(text: "https://example.com/new", type: .url),
+        browserManager.urlBarBundle.commandPalettePresentation.showNewTab(in: windowState)
+        browserManager.urlBarBundle.commandPaletteCommit.commitActivation(
+            .input("https://example.com/new"),
             in: windowState
         )
 
@@ -106,7 +106,7 @@ final class CommandPaletteStateTests: XCTestCase {
         }
 
         let (browserManager, windowRegistry, windowState, _) = makeHarness()
-        browserManager.urlBarBundle.commandPalette.presentation.focus(
+        browserManager.urlBarBundle.commandPalettePresentation.focus(
             in: windowState,
             prefill: "https://example.com",
             navigateCurrentTab: true,
@@ -114,7 +114,7 @@ final class CommandPaletteStateTests: XCTestCase {
         )
 
         withExtendedLifetime(windowRegistry) {
-            browserManager.urlBarBundle.commandPalette.presentation
+            browserManager.urlBarBundle.commandPalettePresentation
                 .dismissActiveWindow(preserveDraft: true)
         }
 

@@ -51,3 +51,21 @@ _Avoid_: Recomputed drop target, approximate hover slot
 **Drag Presentation**:
 The target-adaptive appearance of one Sidebar Visual Item while it is being moved. It preserves item identity while matching the row, folder, or Essentials surface of the current Presented Drop Intent.
 _Avoid_: Drag snapshot copy, generic ghost
+
+## Command Palette Language
+
+**Command Palette Session**:
+One window-bound interaction from presentation until one accepted commit or dismissal. Query generations, modes, rows, selection, preview, and commit all belong to this session and may never fall back to another active window.
+_Avoid_: Global command bar state, active-window palette
+
+**Palette Row**:
+A stable semantic result identity plus the presentation needed to render it. Browser objects and execution closures remain behind the Command Palette Session seam.
+_Avoid_: Suggestion index, view-specific result
+
+**Palette Mode**:
+The exclusive search scope of a Command Palette Session: Everything, Actions, or one site-search engine. Spaces and extensions are result kinds inside Everything and Actions. A mode offer is not a mode until the user accepts it.
+_Avoid_: Parallel mode flags, tab-search state
+
+**Browser Action**:
+A browser behavior with one stable identity, presentation, availability rule, optional shortcut, and execution route shared by keyboard shortcuts and the Command Palette.
+_Avoid_: Palette-only command, duplicate shortcut action

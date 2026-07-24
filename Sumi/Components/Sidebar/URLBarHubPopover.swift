@@ -50,11 +50,14 @@ struct URLBarHubPopover: View {
     @State private var permissionsSession = URLBarHubPermissionsSession()
     @State private var bookmarkErrorMessage: String?
     @State private var readerModeIsActive = false
-    @StateObject private var pageActionOwner = URLBarHubPageActionOwner()
+    @ObservedObject private var pageActionOwner: URLBarHubPageActionOwner
     @StateObject private var extensionDisplayModel: URLBarExtensionDisplayModel
-    @AppStorage("URLBarHubScreenshotQualityScale") private var screenshotQualityScale = URLBarHubScreenshotQuality.twoX.rawValue
-    @AppStorage("URLBarHubScreenshotCaptureTarget") private var screenshotCaptureTarget = URLBarHubScreenshotCaptureTarget.visiblePage.rawValue
-    @AppStorage("URLBarHubScreenshotDestination") private var screenshotDestination = URLBarHubScreenshotDestination.askEveryTime.rawValue
+    @AppStorage(URLBarHubScreenshotPreferences.qualityKey)
+    private var screenshotQualityScale = URLBarHubScreenshotQuality.twoX.rawValue
+    @AppStorage(URLBarHubScreenshotPreferences.captureTargetKey)
+    private var screenshotCaptureTarget = URLBarHubScreenshotCaptureTarget.visiblePage.rawValue
+    @AppStorage(URLBarHubScreenshotPreferences.destinationKey)
+    private var screenshotDestination = URLBarHubScreenshotDestination.askEveryTime.rawValue
     @StateObject private var siteDataDetailsModel: URLBarSiteDataDetailsViewModel
     @StateObject private var currentSitePermissionsModel = SumiCurrentSitePermissionsViewModel()
 
@@ -75,6 +78,9 @@ struct URLBarHubPopover: View {
         self.adblockZapperStore = browserContext.adblockZapperStore
         self.onClose = onClose
         self.onContentSizeChange = onContentSizeChange
+        self._pageActionOwner = ObservedObject(
+            wrappedValue: browserContext.pageActionOwner
+        )
         self._siteDataDetailsModel = StateObject(
             wrappedValue: URLBarSiteDataDetailsViewModel(
                 cleanupService: browserContext.cleanupService,

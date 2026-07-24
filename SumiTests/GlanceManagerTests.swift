@@ -589,23 +589,35 @@ final class GlanceManagerTests: XCTestCase {
         XCTAssertTrue(sourceWindow.commandPaletteDraftNavigatesCurrentTab)
         XCTAssertIdentical(previewTab.resolvedCurrentWebView(), webView)
 
-        let searchManager = SearchManager()
-        searchManager.setTabSources(
-            membership: browserManager.tabCollectionMembershipOwner,
-            shortcutPresentation: browserManager.shortcutPresentationOwner,
-            runtimeConnection: browserManager.runtimePortConnection
+        let activeTabs = ActiveTabSuggestionOwner(
+            allTabsForCurrentProfile: {
+                browserManager.tabCollectionMembershipOwner
+                    .allTabsForCurrentProfile()
+            },
+            liveShortcutTabs: { windowID in
+                browserManager.shortcutPresentationOwner
+                    .liveShortcutTabs(in: windowID)
+            },
+            shortcutLiveTab: { pinID, windowID in
+                browserManager.shortcutPresentationOwner.shortcutLiveTab(
+                    for: pinID,
+                    in: windowID
+                )
+            },
+            visibleSplitTabIds: { windowID in
+                Set(
+                    browserManager.runtimePortConnection.current?
+                        .visibleSplitTabIds(for: windowID) ?? []
+                )
+            }
         )
-        searchManager.showActiveTabSuggestions(for: sourceWindow)
-        let suggestedTabs = searchManager.suggestions.compactMap { suggestion -> Tab? in
-            guard case .tab(let tab) = suggestion.type else { return nil }
-            return tab
-        }
+        let suggestedTabs = activeTabs.tabs(for: sourceWindow)
         XCTAssertEqual(suggestedTabs.prefix(2).map(\.id), [sourceTab.id, olderTab.id])
         XCTAssertFalse(suggestedTabs.contains { $0.id == previewTab.id })
         XCTAssertFalse(suggestedTabs.contains { $0.id == placeholderId })
 
-        browserManager.urlBarBundle.commandPalette.commit.commitSuggestion(
-            SearchManager.SearchSuggestion(text: sourceTab.name, type: .tab(sourceTab)),
+        browserManager.urlBarBundle.commandPaletteCommit.commitActivation(
+            .tab(sourceTab.id),
             in: sourceWindow
         )
 

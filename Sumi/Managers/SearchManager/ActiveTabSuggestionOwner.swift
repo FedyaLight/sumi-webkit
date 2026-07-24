@@ -36,6 +36,12 @@ final class ActiveTabSuggestionOwner {
     }
 
     func suggestions(for windowState: BrowserWindowState) -> [SearchManager.SearchSuggestion] {
+        tabs(for: windowState).map { tab in
+            SearchManager.SearchSuggestion(text: tab.name, type: .tab(tab))
+        }
+    }
+
+    func tabs(for windowState: BrowserWindowState) -> [Tab] {
         let visibleSplitTabIds = visibleSplitTabIds(windowState.id)
         let rankByTabId = rankById(for: windowState)
         let currentSpaceId = windowState.currentSpaceId
@@ -71,9 +77,6 @@ final class ActiveTabSuggestionOwner {
                     return lhs.index < rhs.index
                 }
                 return lhs.id.uuidString < rhs.id.uuidString
-            }
-            .map { tab in
-                SearchManager.SearchSuggestion(text: tab.name, type: .tab(tab))
             }
     }
 

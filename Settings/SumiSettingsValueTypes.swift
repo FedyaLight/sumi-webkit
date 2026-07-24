@@ -9,20 +9,6 @@
 import Foundation
 import SumiDomain
 
-enum CommandPaletteEmptyStateMode: String, CaseIterable, Identifiable, Codable, Sendable {
-    case compact
-    case topLinks
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .compact: return "Compact"
-        case .topLinks: return "Top Links"
-        }
-    }
-}
-
 enum SumiStartupMode: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
     case nothing
     case restorePreviousSession
@@ -203,4 +189,3 @@ enum SumiNewTabMode: String, CaseIterable, Codable, Hashable, Identifiable, Send
         }
     }
 }
-

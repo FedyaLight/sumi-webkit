@@ -6,6 +6,7 @@
 
 import Foundation
 import Observation
+import SumiDomain
 
 @MainActor
 protocol SearchSuggestionDataProviding {
@@ -33,36 +34,46 @@ struct DuckDuckGoSearchSuggestionDataProvider: SearchSuggestionDataProviding {
     }
 }
 
-/// Orchestrates the browser's search/omnibox suggestion pipeline: query
-/// debouncing, task/generation bookkeeping, and merging local (history,
-/// bookmarks, open tabs) results with cached/remote DuckDuckGo results.
+/// Orchestrates asynchronous browser suggestion work: task/generation
+/// bookkeeping and merging local (history, bookmarks, navigation targets)
+/// results with cached/remote DuckDuckGo results. Query debounce and rendered
+/// row continuity belong to `CommandPaletteSearchSessionOwner`.
 ///
 /// The actual policy logic (dedup identity, history matching/ranking,
-/// top-link/active-tab ranking, web-suggestion caching, context mapping) is
+/// contextual/active-tab ranking, web-suggestion caching, context mapping) is
 /// delegated to standalone role-named types in this directory — see
 /// `SuggestionDeduplicationPolicy`, `HistorySuggestionMatcher`,
-/// `TopLinkSuggestionOwner`, `ActiveTabSuggestionOwner`, `WebSuggestionCache`,
+/// `ContextualEmptyStateSuggestionOwner`, `ActiveTabSuggestionOwner`,
+/// `WebSuggestionCache`,
 /// and `SuggestionContextBuilder`. This class keeps only the parts that are
-/// genuinely about orchestration: task cancellation/generation tracking,
-/// the debounced request lifecycle, and composing those collaborators.
+/// genuinely about asynchronous search: task cancellation/generation tracking
+/// and composing those collaborators.
 @Observable
 @MainActor
 class SearchManager {
-    var suggestions: [SearchSuggestion] = []
-    var isLoadingSuggestions = false
+    private(set) var suggestions: [SearchSuggestion] = []
+    private(set) var isLoadingSuggestions = false {
+        didSet {
+            if !isLoadingSuggestions {
+                suggestionPublicationIsSettled = true
+            }
+        }
+    }
+    /// The normalized query that produced `suggestions`; empty means the
+    /// contextual empty state.
+    private(set) var suggestionSourceQuery: String?
+    private(set) var suggestionPublicationIsSettled = true
 
     private let suggestionDataProvider: SearchSuggestionDataProviding
     private var webSuggestionTask: Task<Void, Never>?
     private var historySuggestionTask: Task<Void, Never>?
-    private weak var tabMembership: TabCollectionMembershipOwner?
-    private weak var shortcutPresentation: TabShortcutPresentationOwner?
-    private weak var runtimeConnection: TabRuntimePortConnection?
     private weak var historyManager: HistoryManager?
     private weak var bookmarkManager: SumiBookmarkManager?
-    private var currentProfileId: UUID?
+    private var navigationTargetCatalog: CommandPaletteNavigationTargetCatalog?
     private var webSuggestionRequestGeneration: UInt64 = 0
     private var activeWebSuggestionGeneration: UInt64 = 0
     private var webSuggestionCache = WebSuggestionCache()
+    var onStateChange: (@MainActor () -> Void)?
     // Zen inherits Firefox's browser.urlbar.maxRichResults default.
     private let maxVisibleSuggestions = 10
 
@@ -74,17 +85,54 @@ class SearchManager {
     }
 
     struct SearchSuggestion: Identifiable, Equatable {
-        let id = UUID()
         let text: String
         let type: SuggestionType
+
+        enum ID: Hashable {
+            case search(String)
+            case url(String)
+            case tab(UUID)
+            case navigationTarget(CommandPaletteNavigationTargetPresentation.Identity)
+            case history(String)
+            case bookmark(String)
+            case command(ShortcutAction)
+            case space(UUID)
+            case extensionAction(String)
+        }
 
         enum SuggestionType {
             case search
             case url
             case tab(Tab)
+            case navigationTarget(CommandPaletteNavigationTargetPresentation)
             case history(HistoryListItem)
             case bookmark(SumiBookmark)
-            case command(CommandPaletteCommand)
+            case command(ShortcutAction)
+            case space(CommandPaletteSpacePresentation)
+            case extensionAction(CommandPaletteExtensionPresentation)
+        }
+
+        var id: ID {
+            switch type {
+            case .search:
+                .search(Self.normalizedIdentityText(text))
+            case .url:
+                .url(Self.normalizedIdentityText(text))
+            case .tab(let tab):
+                .tab(tab.id)
+            case .navigationTarget(let target):
+                .navigationTarget(target.identity)
+            case .history(let history):
+                .history(history.id)
+            case .bookmark(let bookmark):
+                .bookmark(bookmark.id)
+            case .command(let action):
+                .command(action)
+            case .space(let space):
+                .space(space.id)
+            case .extensionAction(let action):
+                .extensionAction(action.id)
+            }
         }
 
         static func == (lhs: SearchSuggestion, rhs: SearchSuggestion) -> Bool {
@@ -93,27 +141,34 @@ class SearchManager {
                 return lhs.text == rhs.text
             case (.tab(let lhsTab), .tab(let rhsTab)):
                 return lhs.text == rhs.text && lhsTab.id == rhsTab.id
+            case (
+                .navigationTarget(let lhsTarget),
+                .navigationTarget(let rhsTarget)
+            ):
+                return lhs.text == rhs.text && lhsTarget == rhsTarget
             case (.history(let lhsHistory), .history(let rhsHistory)):
                 return lhs.text == rhs.text && lhsHistory.id == rhsHistory.id
             case (.bookmark(let lhsBookmark), .bookmark(let rhsBookmark)):
                 return lhs.text == rhs.text && lhsBookmark.id == rhsBookmark.id
             case (.command(let lhsCommand), .command(let rhsCommand)):
                 return lhsCommand == rhsCommand
+            case (.space(let lhsSpace), .space(let rhsSpace)):
+                return lhsSpace == rhsSpace
+            case (
+                .extensionAction(let lhsAction),
+                .extensionAction(let rhsAction)
+            ):
+                return lhsAction == rhsAction
             default:
                 return false
             }
         }
-    }
 
-    func setTabSources(
-        membership: TabCollectionMembershipOwner,
-        shortcutPresentation: TabShortcutPresentationOwner,
-        runtimeConnection: TabRuntimePortConnection
-    ) {
-        tabMembership = membership
-        self.shortcutPresentation = shortcutPresentation
-        self.runtimeConnection = runtimeConnection
-        updateProfileContext()
+        private static func normalizedIdentityText(_ text: String) -> String {
+            text
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        }
     }
 
     func setHistoryManager(_ historyManager: HistoryManager?) {
@@ -124,29 +179,48 @@ class SearchManager {
         self.bookmarkManager = bookmarkManager
     }
 
-    func showTopLinkSuggestions(limit: Int = 5) {
+    func setNavigationTargetCatalog(
+        _ catalog: CommandPaletteNavigationTargetCatalog?
+    ) {
+        navigationTargetCatalog = catalog
+    }
+
+    func showContextualSuggestions(
+        limit: Int = 5,
+        windowState: BrowserWindowState? = nil
+    ) {
         historySuggestionTask?.cancel()
         isLoadingSuggestions = true
-        let owner = TopLinkSuggestionOwner(
+        notifyStateChange()
+        let navigationSuggestions = windowState.flatMap {
+            navigationTargetCatalog?.snapshot(for: $0)
+        }
+        let contextualSuggestions =
+            navigationSuggestions?.suggestions() ?? []
+        let owner = ContextualEmptyStateSuggestionOwner(
             topVisitedSites: { [weak historyManager] limit in
                 await historyManager?.topVisitedSites(limit: limit) ?? []
             },
             bookmarks: { [weak bookmarkManager] in
                 bookmarkManager?.allBookmarks() ?? []
             },
-            openTabs: { [weak tabMembership] in
-                tabMembership?.allTabsForCurrentProfile() ?? []
+            navigationSuggestions: {
+                contextualSuggestions
             }
         )
         historySuggestionTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            let topLinks = await owner.suggestions(limit: limit)
+            let contextualRows = await owner.suggestions(limit: limit)
             guard !Task.isCancelled else { return }
-            if topLinks.isEmpty {
+            if contextualRows.isEmpty {
                 self.clearSuggestions()
             } else {
-                self.updateSuggestionsIfNeeded(topLinks)
+                self.updateSuggestionsIfNeeded(
+                    contextualRows,
+                    sourceQuery: ""
+                )
                 self.isLoadingSuggestions = false
+                self.notifyStateChange()
             }
         }
     }
@@ -157,56 +231,32 @@ class SearchManager {
         webSuggestionRequestGeneration &+= 1
         activeWebSuggestionGeneration = webSuggestionRequestGeneration
         isLoadingSuggestions = false
+        notifyStateChange()
 
-        guard let tabMembership,
-              let shortcutPresentation,
-              let runtimeConnection
-        else {
+        guard let snapshot = navigationTargetCatalog?.snapshot(
+            for: windowState
+        ) else {
             clearSuggestions()
             return
         }
 
-        let owner = ActiveTabSuggestionOwner(
-            allTabsForCurrentProfile: { [weak tabMembership] in
-                tabMembership?.allTabsForCurrentProfile() ?? []
-            },
-            liveShortcutTabs: { [weak shortcutPresentation] windowId in
-                shortcutPresentation?.liveShortcutTabs(in: windowId) ?? []
-            },
-            shortcutLiveTab: { [weak shortcutPresentation] pinId, windowId in
-                shortcutPresentation?.shortcutLiveTab(
-                    for: pinId,
-                    in: windowId
-                )
-            },
-            visibleSplitTabIds: { [weak runtimeConnection] windowId in
-                Set(
-                    runtimeConnection?.current?
-                        .visibleSplitTabIds(for: windowId) ?? []
-                )
-            }
-        )
-        let activeTabs = owner.suggestions(for: windowState)
+        let activeTabs = snapshot.suggestions()
         if activeTabs.isEmpty {
             clearSuggestions()
         } else {
-            updateSuggestionsIfNeeded(activeTabs)
+            updateSuggestionsIfNeeded(activeTabs, sourceQuery: "")
         }
     }
 
-    @MainActor func updateProfileContext() {
-        let pid = runtimeConnection?.current?.currentProfileId
-        currentProfileId = pid
-        #if DEBUG
-        if let pid { RuntimeDiagnostics.emit("🔎 [SearchManager] Profile context updated: \(pid.uuidString)") }
-        #endif
-    }
-
-    @MainActor func searchSuggestions(for query: String) {
+    @MainActor func searchSuggestions(
+        for query: String,
+        windowState: BrowserWindowState? = nil
+    ) {
         // Cancel previous request
         webSuggestionTask?.cancel()
         historySuggestionTask?.cancel()
         isLoadingSuggestions = true
+        notifyStateChange()
         webSuggestionRequestGeneration &+= 1
         activeWebSuggestionGeneration = webSuggestionRequestGeneration
         let generation = activeWebSuggestionGeneration
@@ -217,14 +267,33 @@ class SearchManager {
         guard !normalizedQuery.isEmpty else {
             isLoadingSuggestions = false
             clearSuggestionResults()
+            notifyStateChange()
             return
         }
 
         if let directURLSuggestion = SuggestionDeduplicationPolicy.directURLSuggestion(for: normalizedQuery) {
-            updateSuggestionsIfNeeded([directURLSuggestion])
+            updateSuggestionsIfNeeded(
+                [directURLSuggestion],
+                sourceQuery: normalizedQuery,
+                isSettled: false
+            )
+        }
+        let navigationSnapshot = windowState.flatMap {
+            navigationTargetCatalog?.snapshot(for: $0)
+        }
+        let navigationSuggestions =
+            navigationSnapshot?.suggestions(matching: normalizedQuery) ?? []
+        if !navigationSuggestions.isEmpty {
+            updateSuggestionsIfNeeded(
+                navigationSuggestions,
+                sourceQuery: normalizedQuery,
+                isSettled: false
+            )
         }
 
-        let storeContext = currentSuggestionStoreContext()
+        let storeContext = currentSuggestionStoreContext(
+            navigationSnapshot: navigationSnapshot
+        )
 
         historySuggestionTask = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -249,9 +318,18 @@ class SearchManager {
                     intervalName: "Omnibox.combinedScore"
                 ), !Task.isCancelled,
                    generation == self.activeWebSuggestionGeneration else { return }
-                let combinedSuggestions = self.makeSuggestions(from: combinedResult, query: normalizedQuery, context: queryContext)
-                self.updateSuggestionsIfNeeded(combinedSuggestions)
+                let combinedSuggestions = self.makeSuggestions(
+                    from: combinedResult,
+                    query: normalizedQuery,
+                    context: queryContext,
+                    leadingSuggestions: navigationSuggestions
+                )
+                self.updateSuggestionsIfNeeded(
+                    combinedSuggestions,
+                    sourceQuery: normalizedQuery
+                )
                 self.isLoadingSuggestions = false
+                self.notifyStateChange()
                 return
             }
 
@@ -267,16 +345,21 @@ class SearchManager {
             let localSuggestions = self.makeSuggestions(
                 from: localResult,
                 query: normalizedQuery,
-                context: queryContext
+                context: queryContext,
+                leadingSuggestions: navigationSuggestions
             )
 
             if !localSuggestions.isEmpty {
-                self.updateSuggestionsIfNeeded(localSuggestions)
+                self.updateSuggestionsIfNeeded(
+                    localSuggestions,
+                    sourceQuery: normalizedQuery
+                )
             }
 
             self.fetchWebSuggestions(
                 for: normalizedQuery,
                 context: queryContext,
+                leadingSuggestions: navigationSuggestions,
                 generation: generation
             )
         }
@@ -301,6 +384,7 @@ class SearchManager {
     private func fetchWebSuggestions(
         for query: String,
         context: SuggestionQueryContext,
+        leadingSuggestions: [SearchSuggestion],
         generation: UInt64
     ) {
         webSuggestionTask = Task { @MainActor [weak self] in
@@ -334,20 +418,40 @@ class SearchManager {
                     intervalName: "Omnibox.combinedScore"
                 ), !Task.isCancelled,
                    generation == self.activeWebSuggestionGeneration else { return }
-                let combinedSuggestions = self.makeSuggestions(from: result, query: query, context: context)
-                self.updateSuggestionsIfNeeded(combinedSuggestions)
+                let combinedSuggestions = self.makeSuggestions(
+                    from: result,
+                    query: query,
+                    context: context,
+                    leadingSuggestions: leadingSuggestions
+                )
+                self.updateSuggestionsIfNeeded(
+                    combinedSuggestions,
+                    sourceQuery: query
+                )
             }
             self.isLoadingSuggestions = false
+            self.notifyStateChange()
         }
     }
 
     private func makeSuggestions(
         from result: SumiSuggestionEngine.Result,
         query: String,
-        context: SuggestionQueryContext
+        context: SuggestionQueryContext,
+        leadingSuggestions: [SearchSuggestion] = []
     ) -> [SearchSuggestion] {
         var suggestions: [SearchSuggestion] = []
         var seenKeys = Set<String>()
+        for suggestion in leadingSuggestions {
+            let key = SuggestionDeduplicationPolicy.deduplicationKey(
+                for: suggestion
+            )
+            guard seenKeys.insert(key).inserted else { continue }
+            suggestions.append(suggestion)
+            if suggestions.count >= maxVisibleSuggestions {
+                return suggestions
+            }
+        }
         for item in result.all {
             guard let suggestion = SuggestionContextBuilder.suggestion(
                 from: item,
@@ -389,29 +493,53 @@ class SearchManager {
         return suggestions
     }
 
-    private func currentSuggestionStoreContext() -> SuggestionStoreContext {
+    private func currentSuggestionStoreContext(
+        navigationSnapshot:
+            CommandPaletteNavigationTargetCatalog.Snapshot?
+    ) -> SuggestionStoreContext {
         SuggestionContextBuilder.storeContext(
             bookmarks: bookmarkManager?.allBookmarks() ?? [],
-            tabs: tabMembership?.allTabsForCurrentProfile() ?? []
+            tabs: navigationSnapshot?.eligibleRegularTabs ?? []
         )
     }
 
-    private func updateSuggestionsIfNeeded(_ newSuggestions: [SearchSuggestion]) {
-        guard suggestions != newSuggestions else { return }
-        suggestions = newSuggestions
+    private func updateSuggestionsIfNeeded(
+        _ newSuggestions: [SearchSuggestion],
+        sourceQuery: String,
+        isSettled: Bool = true
+    ) {
+        suggestionSourceQuery = sourceQuery
+        suggestionPublicationIsSettled = isSettled
+        if suggestions != newSuggestions {
+            suggestions = newSuggestions
+        }
+        notifyStateChange()
     }
 
     private func clearSuggestionResults() {
-        guard !suggestions.isEmpty else { return }
-        suggestions = []
+        suggestionSourceQuery = nil
+        suggestionPublicationIsSettled = true
+        if !suggestions.isEmpty {
+            suggestions = []
+        }
+        notifyStateChange()
     }
 
-    func clearSuggestions() {
+    func cancelSuggestionRequests() {
         webSuggestionTask?.cancel()
         historySuggestionTask?.cancel()
         isLoadingSuggestions = false
         webSuggestionRequestGeneration &+= 1
         activeWebSuggestionGeneration = webSuggestionRequestGeneration
+        notifyStateChange()
+    }
+
+    func clearSuggestions() {
+        cancelSuggestionRequests()
         clearSuggestionResults()
+    }
+
+    private func notifyStateChange() {
+        onStateChange?()
     }
 }

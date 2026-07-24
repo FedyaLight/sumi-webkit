@@ -5,34 +5,42 @@
 //
 
 import AppKit
+import Carbon
+import SumiDomain
 import SwiftUI
 
 struct CommandPaletteView: View {
     let browserContext: CommandPaletteBrowserContext
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(WindowRegistry.self) private var windowRegistry
-    @State private var searchSession = CommandPaletteSearchSessionOwner()
+    @Environment(KeyboardShortcutManager.self) private var keyboardShortcutManager
+    @State private var searchSession: CommandPaletteSearchSessionOwner
     @Environment(\.sumiSettings) var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.accessibilityReduceTransparency) private var accessibilityReduceTransparency
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+    @Environment(\.colorScheme) private var colorScheme
 
     @FocusState private var isSearchFocused: Bool
     @State private var searchModeConfirmation: CommandPaletteSearchModeConfirmation?
-    @State private var searchModeConfirmationProgress: CGFloat = 1
-    @State private var interactionCommitOwner = CommandPaletteInteractionCommitOwner()
-    @State private var outsideClickMonitor = ChromeLocalEventMonitor()
-    @State private var focusRequestOwner = CommandPaletteFocusRequestOwner()
-    @State private var deferredTextOwner = CommandPaletteDeferredTextOwner()
+    @State private var nativeInteraction =
+        CommandPaletteNativeInteraction()
     @State private var searchFocusRequestID = 0
     @State private var searchFocusSelectAll = false
+
+    init(browserContext: CommandPaletteBrowserContext) {
+        self.browserContext = browserContext
+        _searchSession = State(
+            initialValue: browserContext.makeSearchSession()
+        )
+    }
 
     private var siteSearchMatch: SumiSearchEngine? {
         searchSession.siteSearchMatch(in: sumiSettings.searchEngines)
     }
 
-    private var visibleSuggestions: [SearchManager.SearchSuggestion] {
-        searchSession.visibleSuggestions
+    private var visibleRows: [CommandPaletteRow] {
+        searchSession.visibleRows
     }
 
     private var urlBarPlaceholderString: String {
@@ -49,11 +57,6 @@ struct CommandPaletteView: View {
 
     private var suggestionLayoutCount: Int {
         searchSession.suggestionLayoutCount
-    }
-
-    private var shouldShowEmptyStateSuggestions: Bool {
-        windowState.commandPalettePresentationReason == .splitTabPicker
-            || sumiSettings.commandPaletteEmptyStateMode == .topLinks
     }
 
     private var chromeContentAnimation: Animation? {
@@ -82,23 +85,25 @@ struct CommandPaletteView: View {
 
     @ViewBuilder
     private func commandPaletteBody(effectiveCommandPaletteWidth: CGFloat) -> some View {
+        @Bindable var bindableSearchSession = searchSession
         let isVisible = windowState.presentationState.isCommandPaletteVisible
         let tokens = self.tokens
         let urlBarPlaceholder = urlBarPlaceholderString
         let textFieldFont = ChromeThemeTypography.commandPaletteInput
         let siteSearchMatchID = siteSearchMatch?.id
-        let textBinding = Binding(
-            get: { searchSession.text },
-            set: { searchSession.text = $0 }
-        )
-        let selectedSuggestionBinding = Binding(
-            get: { searchSession.selectedSuggestionIndex },
-            set: { searchSession.selectedSuggestionIndex = $0 }
-        )
-        let hoveredSuggestionBinding = Binding(
-            get: { searchSession.hoveredSuggestionIndex },
-            set: { searchSession.hoveredSuggestionIndex = $0 }
-        )
+        let actionsModeAccent = browserContext.spaces
+            .accentColor(in: windowState)
+            ?? themeContext.sourceWorkspaceTheme.gradientTheme.primaryColor
+                .mixed(
+                    with: themeContext.targetWorkspaceTheme
+                        .gradientTheme.primaryColor,
+                    amount: CGFloat(themeContext.transitionProgress)
+                )
+        let actionsModeBackground =
+            CommandPaletteThemeTokens.Colors.actionsModeBackground(
+                accent: actionsModeAccent,
+                colorScheme: colorScheme
+            )
 
         ZStack {
             VStack {
@@ -109,12 +114,22 @@ struct CommandPaletteView: View {
                         VStack(alignment: .center, spacing: 0) {
                             HStack(spacing: 15) {
                                 Image(
-                                    systemName: searchSession.activeSiteSearch != nil
+                                    systemName: searchSession.mode == .actions
+                                        ? "terminal"
+                                        : searchSession.activeSiteSearch != nil
                                         ? "magnifyingglass"
                                         : isLikelyURL(searchSession.text)
                                             ? "globe" : "magnifyingglass"
                                 )
-                                .id(searchSession.activeSiteSearch != nil ? "magnifyingglass" : isLikelyURL(searchSession.text) ? "globe" : "magnifyingglass")
+                                .id(
+                                    searchSession.mode == .actions
+                                        ? "terminal"
+                                        : searchSession.activeSiteSearch != nil
+                                            ? "magnifyingglass"
+                                            : isLikelyURL(searchSession.text)
+                                                ? "globe"
+                                                : "magnifyingglass"
+                                )
                                 .transition(CommandPaletteMotionPolicy.chromeElementTransition(for: motionMode))
                                 .font(ChromeThemeTypography.commandPaletteLeadingIcon)
                                 .foregroundStyle(tokens.secondaryText)
@@ -133,6 +148,21 @@ struct CommandPaletteView: View {
                                         .transition(
                                             CommandPaletteMotionPolicy.chromeElementTransition(for: motionMode)
                                         )
+                                } else if searchSession.mode == .actions {
+                                    Text("Actions")
+                                        .font(ChromeThemeTypography.commandPaletteModeToken)
+                                        .foregroundStyle(Color.white)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .lineLimit(1)
+                                        .background(actionsModeBackground)
+                                        .clipShape(Capsule())
+                                        .transition(
+                                            CommandPaletteMotionPolicy
+                                                .chromeElementTransition(
+                                                    for: motionMode
+                                                )
+                                        )
                                 }
 
                                 ZStack(alignment: .trailing) {
@@ -143,28 +173,15 @@ struct CommandPaletteView: View {
                                                 .foregroundStyle(tokens.secondaryText)
                                                 .allowsHitTesting(false)
                                         }
-                                        CommandPaletteInlineCompletionTextField(
-                                            text: textBinding,
+                                        CommandPaletteTextField(
+                                            text: $bindableSearchSession.text,
                                             isFocused: $isSearchFocused,
                                             font: ChromeThemeTypography.commandPaletteInputNSFont,
                                             primaryColor: NSColor(tokens.primaryText),
-                                            hidesCaret: searchSession.isSuggestionPreviewActive,
-                                            movesInsertionPointToEnd: searchSession.isSuggestionPreviewActive,
                                             focusRequestID: searchFocusRequestID,
                                             focusSelectAll: searchFocusSelectAll,
-                                            onBeginEditing: {
-                                                searchSession.commitSuggestionPreviewForEditing()
-                                            },
                                             onTab: {
-                                                if searchSession.isSuggestionPreviewActive {
-                                                    searchSession.commitSuggestionPreviewForEditing()
-                                                    return true
-                                                }
-                                                if let match = siteSearchMatch, searchSession.activeSiteSearch == nil {
-                                                    enterSiteSearch(match)
-                                                    return true
-                                                }
-                                                return false
+                                                handleTab()
                                             },
                                             onReturn: {
                                                 handleReturn()
@@ -173,20 +190,13 @@ struct CommandPaletteView: View {
                                                 searchSession.navigateSuggestions(direction: direction)
                                             },
                                             onEscape: {
-                                                if searchSession.activeSiteSearch != nil {
-                                                    searchSession.clearActiveSiteSearch(
-                                                        chromeContentAnimation: chromeContentAnimation
-                                                    )
-                                                } else {
-                                                    browserContext.dismissCommandPalette(in: windowState, preserveDraft: true)
-                                                }
+                                                handleEscape()
                                             },
                                             onDeleteAtEmptySiteSearch: {
-                                                guard searchSession.activeSiteSearch != nil && searchSession.text.isEmpty else { return false }
-                                                searchSession.clearActiveSiteSearch(
-                                                    chromeContentAnimation: chromeContentAnimation
-                                                )
-                                                return true
+                                                guard searchSession.text.isEmpty else {
+                                                    return false
+                                                }
+                                                return leaveScopedMode()
                                             }
                                         )
                                             .tint(tokens.primaryText)
@@ -194,15 +204,13 @@ struct CommandPaletteView: View {
                                             .accessibilityLabel("Search")
                                             .onChange(of: searchSession.text) { _, newValue in
                                                 // Defer command palette / window session writes so `BrowserWindowState` is not mutated during SwiftUI view updates.
-                                                deferredTextOwner.scheduleTextChange(in: windowState, text: newValue) { text in
+                                                nativeInteraction.scheduleTextChange(in: windowState, text: newValue) { text in
                                                     browserContext.updateCommandPaletteDraft(in: windowState, text: text)
                                                     searchSession.handleTextChanged(
                                                         text,
                                                         isCommandPaletteVisible: windowState.presentationState.isCommandPaletteVisible,
                                                         presentationReason: windowState.commandPalettePresentationReason,
-                                                        emptyStateMode: sumiSettings.commandPaletteEmptyStateMode,
-                                                        windowState: windowState,
-                                                        chromeContentAnimation: chromeContentAnimation
+                                                        windowState: windowState
                                                     )
                                                 }
                                             }
@@ -250,16 +258,22 @@ struct CommandPaletteView: View {
                             CommandPaletteResultsPanelView(
                                 browserContext: browserContext,
                                 tokens: tokens,
-                                suggestions: visibleSuggestions,
+                                rows: visibleRows,
                                 layoutSuggestionCount: suggestionLayoutCount,
-                                selectedIndex: selectedSuggestionBinding,
-                                hoveredIndex: hoveredSuggestionBinding,
-                                onSelect: { suggestion in
-                                    selectSuggestion(suggestion)
+                                resultListTopRequestID:
+                                    searchSession.resultListTopRequestID,
+                                selectedID: $bindableSearchSession.selectedRowID,
+                                hoveredID: $bindableSearchSession.hoveredRowID,
+                                onSelect: { rowID in
+                                    selectRow(rowID)
                                 },
-                                onDeleteHistoryEntry: { entry in
-                                    deleteHistoryEntry(entry)
+                                onDeleteHistory: { query in
+                                    deleteHistory(query)
                                 }
+                            )
+                            .animation(
+                                chromeContentAnimation,
+                                value: suggestionLayoutCount
                             )
                         }
                         .padding(10)
@@ -285,19 +299,15 @@ struct CommandPaletteView: View {
                             RoundedRectangle(cornerRadius: ChromeLayoutTokens.commandPaletteCornerRadius, style: .continuous)
                                 .strokeBorder(
                                     tokens.separator,
-                                    lineWidth: 1,
+                                    lineWidth: 0.5,
                                     antialiased: false
                                 )
                         }
-                        .overlay {
-                            if let confirmation = searchModeConfirmation {
-                                CommandPaletteSearchModeConfirmationView(
-                                    confirmation: confirmation,
-                                    progress: searchModeConfirmationProgress
-                                )
-                                    .allowsHitTesting(false)
-                            }
-                        }
+                        .modifier(
+                            CommandPaletteSearchModeConfirmationModifier(
+                                confirmation: searchModeConfirmation
+                            )
+                        )
                         .modifier(
                             CommandPaletteLocalVignetteModifier(
                                 chromeScheme: themeContext.targetChromeColorScheme,
@@ -306,7 +316,7 @@ struct CommandPaletteView: View {
                         )
                         .background(
                             CommandPaletteCardBoundsReader { view in
-                                interactionCommitOwner.updateCardView(view)
+                                nativeInteraction.updateCardView(view)
                             }
                         )
                         .accessibilityElement(children: .contain)
@@ -329,37 +339,27 @@ struct CommandPaletteView: View {
         }
         .allowsHitTesting(isVisible)
         .opacity(isVisible ? 1.0 : 0.0)
-        .onAppear {
-            if windowState.presentationState.isCommandPaletteVisible {
-                handleVisibilityChanged(true)
-            }
-        }
-        .onChange(of: windowState.presentationState.isCommandPaletteVisible) { _, newVisible in
-            handleVisibilityChanged(newVisible)
+        .task(id: windowState.presentationState.isCommandPaletteVisible) {
+            handleVisibilityChanged(
+                windowState.presentationState.isCommandPaletteVisible
+            )
         }
         .onDisappear {
             searchSession.cancelPendingSearch()
-            deferredTextOwner.endSession()
-            removeOutsideClickMonitor()
+            nativeInteraction.endSession()
         }
         .onChange(of: browserContext.currentProfileId) { _, _ in
             searchSession.handleProfileContextChanged(
-                isCommandPaletteVisible: windowState.presentationState.isCommandPaletteVisible
+                isCommandPaletteVisible:
+                    windowState.presentationState.isCommandPaletteVisible,
+                presentationReason:
+                    windowState.commandPalettePresentationReason,
+                windowState: windowState
             )
-        }
-        .onChange(of: searchSession.visibleSuggestions.count) { _, _ in
-            searchSession.handleSuggestionsChanged(chromeContentAnimation: chromeContentAnimation)
-        }
-        .onChange(of: searchSession.searchManager.isLoadingSuggestions) { _, isLoading in
-            searchSession.handleSuggestionLoadingChanged(
-                isLoading: isLoading,
-                chromeContentAnimation: chromeContentAnimation
-            )
+            refreshRuntimeCatalogs()
         }
         .onChange(of: searchSession.activeSiteSearch != nil) { _, _ in
-            searchSession.commitSuggestionLayoutCountIfReady(
-                chromeContentAnimation: chromeContentAnimation
-            )
+            searchSession.commitSuggestionLayoutCountIfReady()
         }
         .onChange(of: windowState.commandPaletteDraftText) { _, newValue in
             if isVisible, newValue != searchSession.text {
@@ -367,13 +367,9 @@ struct CommandPaletteView: View {
                 focusSearchField(selectAll: false)
             }
         }
-        .onChange(of: sumiSettings.commandPaletteEmptyStateMode) { _, _ in
-            refreshEmptyStateSuggestionsIfNeeded()
-        }
         .onChange(of: windowState.commandPalettePresentationReason) { _, _ in
             if windowState.presentationState.isCommandPaletteVisible {
-                searchSession.isCommandSuggestionAllowed =
-                    browserContext.offersCommandSuggestions(in: windowState)
+                refreshAvailableBrowserActions()
             }
             refreshEmptyStateSuggestionsIfNeeded()
         }
@@ -406,32 +402,24 @@ struct CommandPaletteView: View {
     private func handleVisibilityChanged(_ newVisible: Bool) {
         if newVisible {
             let windowID = windowState.id
-            focusRequestOwner.beginSession(windowID: windowID)
-            interactionCommitOwner.beginSession(windowID: windowID)
-            deferredTextOwner.beginSession(windowID: windowID)
-            installOutsideClickMonitorIfNeeded()
-            browserContext.configureSearchManager(searchSession.searchManager)
-            searchSession.isCommandSuggestionAllowed =
-                browserContext.offersCommandSuggestions(in: windowState)
+            nativeInteraction.beginSession(windowID: windowID)
+            installEventMonitorIfNeeded()
+            refreshRuntimeCatalogs()
 
             searchSession.text = windowState.commandPaletteDraftText
             refreshEmptyStateSuggestionsIfNeeded()
 
-            focusRequestOwner.scheduleDeferredFocus(windowID: windowID) {
+            nativeInteraction.scheduleFocus(windowID: windowID) {
                 guard windowState.id == windowID,
                       windowState.presentationState.isCommandPaletteVisible
                 else { return }
                 focusSearchField(selectAll: !searchSession.text.isEmpty)
             }
         } else {
-            focusRequestOwner.endSession()
-            interactionCommitOwner.endSession()
-            deferredTextOwner.endSession()
-            removeOutsideClickMonitor()
+            nativeInteraction.endSession()
             isSearchFocused = false
             searchSession.resetForHiddenBar()
             searchModeConfirmation = nil
-            searchModeConfirmationProgress = 1
         }
     }
 
@@ -439,9 +427,7 @@ struct CommandPaletteView: View {
         searchSession.refreshEmptyStateSuggestionsIfNeeded(
             isCommandPaletteVisible: windowState.presentationState.isCommandPaletteVisible,
             presentationReason: windowState.commandPalettePresentationReason,
-            emptyStateMode: sumiSettings.commandPaletteEmptyStateMode,
-            windowState: windowState,
-            chromeContentAnimation: chromeContentAnimation
+            windowState: windowState
         )
     }
 
@@ -453,92 +439,161 @@ struct CommandPaletteView: View {
     }
 
     private func enterSiteSearch(_ site: SumiSearchEngine) {
-        searchSession.enterSiteSearch(site, chromeContentAnimation: chromeContentAnimation)
+        searchSession.enterSiteSearch(site)
         triggerSearchModeConfirmation(color: site.color)
     }
 
     private func triggerSearchModeConfirmation(color: Color) {
-        guard let animation = CommandPaletteMotionPolicy.searchModeConfirmationAnimation(for: motionMode),
-              let lifetimeNanoseconds = CommandPaletteMotionPolicy.searchModeConfirmationLifetimeNanoseconds(for: motionMode)
-        else { return }
-
-        let confirmation = CommandPaletteSearchModeConfirmation(color: color)
-        searchModeConfirmation = confirmation
-        searchModeConfirmationProgress = 0
-
-        withAnimation(animation) {
-            searchModeConfirmationProgress = 1
-        }
-
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: lifetimeNanoseconds)
-            if searchModeConfirmation?.id == confirmation.id {
-                searchModeConfirmation = nil
-            }
-        }
+        guard motionMode == .standard else { return }
+        searchModeConfirmation = CommandPaletteSearchModeConfirmation(
+            color: color
+        )
     }
 
-    private func deleteHistoryEntry(_ entry: HistoryListItem) {
+    private func deleteHistory(_ query: HistoryQuery) {
         Task { @MainActor in
-            await browserContext.deleteHistoryEntry(entry)
-            let trimmed = searchSession.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.isEmpty {
-                refreshEmptyStateSuggestionsIfNeeded()
-            } else {
-                searchSession.searchManager.searchSuggestions(for: trimmed)
-            }
+            await browserContext.deleteHistory(query)
+            searchSession.reloadAfterHistoryDeletion(
+                isCommandPaletteVisible:
+                    windowState.presentationState.isCommandPaletteVisible,
+                presentationReason:
+                    windowState.commandPalettePresentationReason,
+                windowState: windowState
+            )
         }
     }
 
     private func handleReturn() {
-        if let site = searchSession.activeSiteSearch {
-            commitActiveSiteSearch(site, query: activeSiteSearchReturnQuery())
-            return
-        }
-
-        if searchSession.selectedSuggestionIndex >= 0
-            && searchSession.selectedSuggestionIndex < visibleSuggestions.count {
-            let suggestion = visibleSuggestions[searchSession.selectedSuggestionIndex]
-            selectSuggestion(suggestion)
-        } else {
-            let trimmed = searchSession.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else { return }
-
-            let newSuggestion = SearchManager.SearchSuggestion(
-                text: trimmed,
-                type: isLikelyURL(trimmed) ? .url : .search
-            )
-            selectSuggestion(newSuggestion)
-        }
+        guard let intent = searchSession.commitIntentForReturn() else { return }
+        performCommitIntent(intent)
     }
 
-    private func selectSuggestion(_ suggestion: SearchManager.SearchSuggestion) {
-        if let site = searchSession.activeSiteSearch {
-            commitActiveSiteSearch(site, query: suggestion.text)
+    private func selectRow(_ rowID: CommandPaletteRow.ID) {
+        guard let intent = searchSession.commitIntent(for: rowID) else {
             return
         }
+        performCommitIntent(intent)
+    }
 
-        guard interactionCommitOwner.requestCommit(in: windowState, perform: {
-            browserContext.commitCommandPaletteSuggestion(
-                suggestion,
+    private func performCommitIntent(_ intent: CommandPaletteCommitIntent) {
+        switch intent {
+        case .browserAction(let action):
+            performBrowserAction(action)
+        case .space(let spaceID):
+            guard let action = browserContext.spaces.shortcutAction(
+                for: spaceID,
                 in: windowState
-            )
-        }) else { return }
-        resetCommittedSearchSession()
+            ) else { return }
+            performBrowserAction(action)
+        case .extensionAction(let extensionID):
+            performExtensionAction(extensionID)
+        case .siteSearch(let site, let query):
+            commitActiveSiteSearch(site, query: query)
+        case .browserNavigation(let activation):
+            guard nativeInteraction.requestCommit(
+                in: windowState,
+                perform: {
+                    browserContext.commitCommandPaletteActivation(
+                        activation,
+                        in: windowState
+                    )
+                }
+            ) else { return }
+            resetCommittedSearchSession()
+        }
     }
 
-    private func activeSiteSearchReturnQuery() -> String {
-        if searchSession.selectedSuggestionIndex >= 0
-            && searchSession.selectedSuggestionIndex < visibleSuggestions.count {
-            return visibleSuggestions[searchSession.selectedSuggestionIndex].text
+    private func performBrowserAction(_ action: ShortcutAction) {
+        guard let appKitWindow = windowState.shellWindow(in: windowRegistry)
+        else { return }
+        nativeInteraction.requestBrowserAction(
+            in: windowState,
+            canPerform: {
+                keyboardShortcutManager.canPerform(
+                    action,
+                    keyWindow: appKitWindow
+                )
+            },
+            perform: {
+                keyboardShortcutManager.performFromCommandPalette(
+                    action,
+                    keyWindow: appKitWindow
+                )
+            },
+            dismiss: {
+                browserContext.dismissCommandPalette(
+                    in: windowState,
+                    preserveDraft: false
+                )
+            },
+            onPerformed: {
+                resetCommittedSearchSession()
+            },
+            onRejected: {
+                refreshAvailableBrowserActions()
+            }
+        )
+    }
+
+    private func refreshAvailableBrowserActions() {
+        guard let appKitWindow = windowState.shellWindow(in: windowRegistry)
+        else {
+            searchSession.updateAvailableBrowserActions(
+                [CommandPaletteBrowserActionPresentation]()
+            )
+            return
         }
-        return searchSession.text
+        searchSession.updateAvailableBrowserActions(
+            keyboardShortcutManager.commandPaletteActionPresentations(
+                keyWindow: appKitWindow
+            )
+        )
+    }
+
+    private func refreshRuntimeCatalogs() {
+        guard windowState.presentationState.isCommandPaletteVisible else {
+            return
+        }
+        searchSession.updateAvailableSpaces(
+            browserContext.spaces.presentations(in: windowState)
+        )
+        searchSession.updateAvailableExtensionActions(
+            browserContext.extensions.presentations(in: windowState)
+        )
+        refreshAvailableBrowserActions()
+    }
+
+    private func performExtensionAction(_ extensionID: String) {
+        guard let anchorView = windowState
+            .shellWindow(in: windowRegistry)?
+            .contentView,
+              let invocation = browserContext.extensions.prepareInvocation(
+                extensionID: extensionID,
+                in: windowState,
+                anchorView: anchorView
+              ) else {
+            return
+        }
+
+        guard nativeInteraction.requestCommit(
+            in: windowState,
+            perform: {
+                browserContext.dismissCommandPalette(
+                    in: windowState,
+                    preserveDraft: false
+                )
+                Task { @MainActor in
+                    await browserContext.extensions.perform(invocation)
+                }
+            }
+        ) else { return }
+        resetCommittedSearchSession()
     }
 
     private func commitActiveSiteSearch(_ site: SumiSearchEngine, query: String) {
         guard !query.isEmpty else { return }
         let navigateURL = resolvedSiteSearchURL(site: site, query: query).absoluteString
-        guard interactionCommitOwner.requestCommit(in: windowState, perform: {
+        guard nativeInteraction.requestCommit(in: windowState, perform: {
             browserContext.commitCommandPaletteNavigation(
                 to: navigateURL,
                 in: windowState
@@ -548,9 +603,7 @@ struct CommandPaletteView: View {
     }
 
     private func resetCommittedSearchSession() {
-        searchSession.text = ""
-        searchSession.activeSiteSearch = nil
-        searchSession.selectedSuggestionIndex = -1
+        searchSession.resetAfterCommit()
     }
 
     private func resolvedSiteSearchURL(site: SumiSearchEngine, query: String) -> URL {
@@ -566,17 +619,24 @@ struct CommandPaletteView: View {
         return components.url ?? URL(string: "https://\(site.domain)")!
     }
 
-    private func installOutsideClickMonitorIfNeeded() {
-        guard !outsideClickMonitor.isInstalled else { return }
-        outsideClickMonitor.install(
-            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+    private func installEventMonitorIfNeeded() {
+        nativeInteraction.installEventMonitorIfNeeded(
+            matching: [
+                .keyDown,
+                .leftMouseDown,
+                .rightMouseDown,
+                .otherMouseDown,
+            ]
         ) { event in
-            interactionCommitOwner.monitorResult(
-                for: event,
+            if event.type == .keyDown {
+                return handlePaletteKeyDown(event) ? nil : event
+            }
+            return nativeInteraction.routeMouseEvent(
+                event,
                 isCommandPaletteVisible: windowState.presentationState.isCommandPaletteVisible
             ) {
                 // Defer the state mutation and return the original event so sidebar/browser chrome handles this click.
-                interactionCommitOwner.requestDismiss(in: windowState) {
+                nativeInteraction.requestDismiss(in: windowState) {
                     windowState.shellWindow(in: windowRegistry)?.makeFirstResponder(nil)
                     isSearchFocused = false
                     browserContext.dismissCommandPalette(in: windowState, preserveDraft: true)
@@ -585,7 +645,60 @@ struct CommandPaletteView: View {
         }
     }
 
-    private func removeOutsideClickMonitor() {
-        outsideClickMonitor.remove()
+    private func handlePaletteKeyDown(_ event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection([
+            .command,
+            .control,
+            .option,
+            .shift,
+        ])
+        guard modifiers.isEmpty else { return false }
+
+        if event.keyCode == UInt16(kVK_Tab) {
+            return handleTab()
+        }
+
+        if event.keyCode == UInt16(kVK_Escape) {
+            handleEscape()
+            return true
+        }
+        return false
     }
+
+    private func handleTab() -> Bool {
+        if let match = siteSearchMatch,
+           searchSession.activeSiteSearch == nil {
+            enterSiteSearch(match)
+            return true
+        }
+        guard searchSession.mode == .everything,
+              searchSession.text
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .isEmpty else {
+            return false
+        }
+        searchSession.enterActionsMode()
+        focusSearchField(selectAll: false)
+        return true
+    }
+
+    private func handleEscape() {
+        if !leaveScopedMode() {
+            browserContext.dismissCommandPalette(
+                in: windowState,
+                preserveDraft: true
+            )
+        }
+    }
+
+    @discardableResult
+    private func leaveScopedMode() -> Bool {
+        guard searchSession.leaveScopedMode() else {
+            return false
+        }
+        refreshEmptyStateSuggestionsIfNeeded()
+        focusSearchField(selectAll: false)
+        return true
+    }
+
 }

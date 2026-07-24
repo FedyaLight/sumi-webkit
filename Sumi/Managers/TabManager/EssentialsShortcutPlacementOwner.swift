@@ -95,13 +95,28 @@ final class EssentialsShortcutPlacementOwner {
     }
 
     func canAddURL(_ url: URL, using context: TargetContext? = nil) -> Bool {
+        canAddURLs([url], using: context)
+    }
+
+    func canAddURLs(
+        _ urls: [URL],
+        using context: TargetContext? = nil
+    ) -> Bool {
         guard let profileId = resolvedProfileId(using: context) else { return false }
         let profilePins = pins.essentialPins(for: profileId)
+        guard urls.isEmpty == false,
+              Set(urls).count == urls.count,
+              profilePins.count + urls.count <= CapacityPolicy.maxStoredMembers,
+              urls.allSatisfy({ url in
+                  profilePins.contains { $0.launchURL == url } == false
+              }) else {
+            return false
+        }
         guard visualItemCount(
             profilePins: profilePins,
             profileID: profileId
         ) < CapacityPolicy.maxItems else { return false }
-        return profilePins.contains { $0.launchURL == url } == false
+        return true
     }
 
     func resolveInsertion(using context: InsertionContext) -> InsertionPlan? {

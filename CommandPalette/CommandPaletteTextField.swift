@@ -1,5 +1,5 @@
 //
-//  CommandPaletteInlineCompletionTextField.swift
+//  CommandPaletteTextField.swift
 //  Sumi
 //
 //
@@ -7,16 +7,13 @@
 import AppKit
 import SwiftUI
 
-struct CommandPaletteInlineCompletionTextField: NSViewRepresentable {
+struct CommandPaletteTextField: NSViewRepresentable {
     @Binding var text: String
     var isFocused: FocusState<Bool>.Binding
     let font: NSFont
     let primaryColor: NSColor
-    let hidesCaret: Bool
-    let movesInsertionPointToEnd: Bool
     let focusRequestID: Int
     let focusSelectAll: Bool
-    let onBeginEditing: () -> Void
     let onTab: () -> Bool
     let onReturn: () -> Void
     let onMoveSelection: (Int) -> Void
@@ -27,12 +24,10 @@ struct CommandPaletteInlineCompletionTextField: NSViewRepresentable {
         Coordinator(text: $text)
     }
 
-    func makeNSView(context: Context) -> CommandPaletteInlineCompletionTextFieldView {
-        let view = CommandPaletteInlineCompletionTextFieldView()
+    func makeNSView(context: Context) -> CommandPaletteTextFieldView {
+        let view = CommandPaletteTextFieldView()
         view.textField.delegate = context.coordinator
-        view.textField.onBeginEditing = onBeginEditing
         context.coordinator.configure(
-            onBeginEditing: onBeginEditing,
             onTab: onTab,
             onReturn: onReturn,
             onMoveSelection: onMoveSelection,
@@ -43,11 +38,9 @@ struct CommandPaletteInlineCompletionTextField: NSViewRepresentable {
         return view
     }
 
-    func updateNSView(_ nsView: CommandPaletteInlineCompletionTextFieldView, context: Context) {
+    func updateNSView(_ nsView: CommandPaletteTextFieldView, context: Context) {
         nsView.textField.delegate = context.coordinator
-        nsView.textField.onBeginEditing = onBeginEditing
         context.coordinator.configure(
-            onBeginEditing: onBeginEditing,
             onTab: onTab,
             onReturn: onReturn,
             onMoveSelection: onMoveSelection,
@@ -57,13 +50,11 @@ struct CommandPaletteInlineCompletionTextField: NSViewRepresentable {
         update(nsView, context: context)
     }
 
-    private func update(_ nsView: CommandPaletteInlineCompletionTextFieldView, context _: Context) {
+    private func update(_ nsView: CommandPaletteTextFieldView, context _: Context) {
         nsView.configure(
             text: text,
             font: font,
-            primaryColor: primaryColor,
-            hidesCaret: hidesCaret,
-            movesInsertionPointToEnd: movesInsertionPointToEnd
+            primaryColor: primaryColor
         )
 
         nsView.wantsTextFocus = isFocused.wrappedValue
@@ -72,7 +63,6 @@ struct CommandPaletteInlineCompletionTextField: NSViewRepresentable {
 
     final class Coordinator: NSObject, NSTextFieldDelegate {
         @Binding private var text: String
-        private var onBeginEditing: () -> Void = { /* No-op. */ }
         private var onTab: () -> Bool = { false }
         private var onReturn: () -> Void = { /* No-op. */ }
         private var onMoveSelection: (Int) -> Void = { _ in /* No-op. */ }
@@ -84,14 +74,12 @@ struct CommandPaletteInlineCompletionTextField: NSViewRepresentable {
         }
 
         func configure(
-            onBeginEditing: @escaping () -> Void,
             onTab: @escaping () -> Bool,
             onReturn: @escaping () -> Void,
             onMoveSelection: @escaping (Int) -> Void,
             onEscape: @escaping () -> Void,
             onDeleteAtEmptySiteSearch: @escaping () -> Bool
         ) {
-            self.onBeginEditing = onBeginEditing
             self.onTab = onTab
             self.onReturn = onReturn
             self.onMoveSelection = onMoveSelection
@@ -101,7 +89,6 @@ struct CommandPaletteInlineCompletionTextField: NSViewRepresentable {
 
         func controlTextDidChange(_ notification: Notification) {
             guard let textField = notification.object as? NSTextField else { return }
-            onBeginEditing()
             text = textField.stringValue
         }
 
@@ -118,10 +105,8 @@ struct CommandPaletteInlineCompletionTextField: NSViewRepresentable {
                 onMoveSelection(1)
                 return true
             case #selector(NSResponder.moveRight(_:)):
-                onBeginEditing()
                 return false
             case #selector(NSResponder.moveLeft(_:)):
-                onBeginEditing()
                 return false
             case #selector(NSResponder.insertTab(_:)):
                 return onTab()
@@ -141,8 +126,8 @@ struct CommandPaletteInlineCompletionTextField: NSViewRepresentable {
     }
 }
 
-final class CommandPaletteInlineCompletionTextFieldView: NSView {
-    let textField = CommandPaletteInlineCompletionNSTextField()
+final class CommandPaletteTextFieldView: NSView {
+    let textField = CommandPaletteNSTextField()
     // Focus-maintenance hint only. Explicit focus requests (handleFocusRequest)
     // are authoritative and must not be gated on this: the SwiftUI FocusState
     // backing it has no .focused() anchor, so it can stay false forever.
@@ -153,9 +138,9 @@ final class CommandPaletteInlineCompletionTextFieldView: NSView {
         }
     }
     private var handledFocusRequestID = 0
-    private var focusGeneration: UInt64 = 0
     private var pendingFocusSelectAll: Bool?
     private var isObservingWindowKey = false
+    private var hasScheduledAttachedRetry = false
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -203,16 +188,11 @@ final class CommandPaletteInlineCompletionTextFieldView: NSView {
     func configure(
         text: String,
         font: NSFont,
-        primaryColor: NSColor,
-        hidesCaret: Bool,
-        movesInsertionPointToEnd: Bool
+        primaryColor: NSColor
     ) {
         textField.font = font
         textField.textColor = primaryColor
-        textField.normalTextColor = primaryColor
-        textField.hidesCaret = hidesCaret
-
-        textField.applyText(text, moveInsertionPointToEnd: movesInsertionPointToEnd)
+        textField.applyText(text)
     }
 
     func focusTextFieldIfNeeded() {
@@ -230,6 +210,7 @@ final class CommandPaletteInlineCompletionTextFieldView: NSView {
         // Persist the intent until focus actually lands: at launch the view may
         // not be in a window yet, and the window may not be key yet.
         pendingFocusSelectAll = selectAll
+        hasScheduledAttachedRetry = false
         attemptPendingFocus()
     }
 
@@ -241,18 +222,26 @@ final class CommandPaletteInlineCompletionTextFieldView: NSView {
             return
         }
 
+        guard window.isKeyWindow else {
+            installWindowKeyObserverIfNeeded()
+            return
+        }
+
         if isTextFieldFocused(in: window) {
             pendingFocusSelectAll = nil
             removeWindowKeyObserver()
             return
         }
 
-        focusGeneration &+= 1
-        focusTextField(
-            selectAll: selectAll,
-            remainingRetries: 8,
-            generation: focusGeneration
-        )
+        window.makeFirstResponder(textField)
+        textField.beginEditing(selectAll: selectAll)
+
+        if isTextFieldFocused(in: window) {
+            pendingFocusSelectAll = nil
+            removeWindowKeyObserver()
+        } else {
+            scheduleAttachedFocusRetryIfNeeded()
+        }
     }
 
     private func isTextFieldFocused(in window: NSWindow) -> Bool {
@@ -282,103 +271,39 @@ final class CommandPaletteInlineCompletionTextFieldView: NSView {
     }
 
     @objc private func windowDidBecomeKey(_: Notification) {
+        hasScheduledAttachedRetry = false
         attemptPendingFocus()
     }
 
-    private func focusTextField(
-        selectAll: Bool,
-        remainingRetries: Int,
-        generation: UInt64
-    ) {
-        guard generation == focusGeneration,
-              pendingFocusSelectAll != nil
-        else { return }
-
-        guard remainingRetries >= 0 else {
-            // Out of immediate retries — wait for the window to become key
-            // (app launch, window restore) and try again then.
-            installWindowKeyObserverIfNeeded()
-            return
-        }
-
-        guard let window else {
-            DispatchQueue.main.async { [weak self] in
-                self?.focusTextField(
-                    selectAll: selectAll,
-                    remainingRetries: remainingRetries - 1,
-                    generation: generation
-                )
-            }
-            return
-        }
-
-        window.makeFirstResponder(textField)
-
-        if isTextFieldFocused(in: window) {
-            if selectAll {
-                textField.selectText(nil)
-            }
-            pendingFocusSelectAll = nil
-            removeWindowKeyObserver()
-        } else {
-            DispatchQueue.main.async { [weak self] in
-                self?.focusTextField(
-                    selectAll: selectAll,
-                    remainingRetries: remainingRetries - 1,
-                    generation: generation
-                )
-            }
+    private func scheduleAttachedFocusRetryIfNeeded() {
+        guard !hasScheduledAttachedRetry else { return }
+        hasScheduledAttachedRetry = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.attemptPendingFocus()
         }
     }
 }
 
-final class CommandPaletteInlineCompletionNSTextField: NSTextField {
-    var onBeginEditing: (() -> Void)?
-    var normalTextColor: NSColor = .labelColor
-    private let caretColor: NSColor = .systemBlue
-    var hidesCaret: Bool = false {
-        didSet {
-            updateFieldEditorCaret()
-        }
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        onBeginEditing?()
-        hidesCaret = false
-        textColor = normalTextColor
-        moveInsertionPointToEnd()
-        super.mouseDown(with: event)
-        updateFieldEditorCaret()
-    }
-
-    override func becomeFirstResponder() -> Bool {
-        let result = super.becomeFirstResponder()
-        updateFieldEditorCaret()
-        return result
-    }
-
-    private func updateFieldEditorCaret() {
-        guard let editor = currentEditor() as? NSTextView else { return }
-        editor.insertionPointColor = hidesCaret ? .clear : caretColor
-    }
-
-    func applyText(_ text: String, moveInsertionPointToEnd: Bool) {
+final class CommandPaletteNSTextField: NSTextField {
+    func applyText(_ text: String) {
         if let editor = currentEditor() as? NSTextView {
             if editor.string != text {
                 editor.string = text
             }
             stringValue = text
-            if moveInsertionPointToEnd {
-                let end = (text as NSString).length
-                editor.setSelectedRange(NSRange(location: end, length: 0))
-            }
-            updateFieldEditorCaret()
             return
         }
 
         if stringValue != text {
             stringValue = text
         }
+    }
+
+    func beginEditing(selectAll: Bool) {
+        selectText(nil)
+        guard !selectAll else { return }
+        moveInsertionPointToEnd()
     }
 
     private func moveInsertionPointToEnd() {

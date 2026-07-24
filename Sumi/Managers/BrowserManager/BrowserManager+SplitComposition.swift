@@ -265,7 +265,7 @@ extension BrowserManager {
         EmptySplitCreationWorkflow(
             placeholders: splitEmptyPlaceholders,
             focusCommandPalette: { [weak self] window, reason in
-                self?.urlBarBundle.commandPalette.presentation.focus(
+                self?.urlBarBundle.commandPalettePresentation.focus(
                     in: window,
                     prefill: "",
                     navigateCurrentTab: true,

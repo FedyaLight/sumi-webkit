@@ -21,7 +21,7 @@ enum ChromeLayoutTokens: Sendable {
     /// Window-edge inset for the command palette card (`CommandPaletteLayoutPolicy`).
     static let commandPaletteHorizontalPadding: CGFloat = 10
     /// Continuous corner radius for the command palette shell.
-    static let commandPaletteCornerRadius: CGFloat = 26
+    static let commandPaletteCornerRadius: CGFloat = 12
 
     // MARK: - Control alphas (CGFloat; resolved colors stay in the app)
 

@@ -10,35 +10,35 @@ import XCTest
 
 @MainActor
 final class SuggestionDeduplicationPolicyTests: XCTestCase {
-    // MARK: - topLinkDeduplicationKey
+    // MARK: - canonicalNavigationKey
 
-    func testTopLinkDeduplicationKeyIgnoresSchemeAndTrailingRootSlash() {
+    func testCanonicalNavigationKeyIgnoresSchemeAndTrailingRootSlash() {
         let withSlash = URL(string: "https://example.com/")!
         let withoutSlash = URL(string: "http://example.com")!
 
         XCTAssertEqual(
-            SuggestionDeduplicationPolicy.topLinkDeduplicationKey(for: withSlash),
-            SuggestionDeduplicationPolicy.topLinkDeduplicationKey(for: withoutSlash)
+            SuggestionDeduplicationPolicy.canonicalNavigationKey(for: withSlash),
+            SuggestionDeduplicationPolicy.canonicalNavigationKey(for: withoutSlash)
         )
     }
 
-    func testTopLinkDeduplicationKeyIgnoresFragmentUserAndPassword() {
+    func testCanonicalNavigationKeyIgnoresFragmentUserAndPassword() {
         let bare = URL(string: "https://example.com/path")!
         let decorated = URL(string: "https://user:pass@example.com/path#section")!
 
         XCTAssertEqual(
-            SuggestionDeduplicationPolicy.topLinkDeduplicationKey(for: bare),
-            SuggestionDeduplicationPolicy.topLinkDeduplicationKey(for: decorated)
+            SuggestionDeduplicationPolicy.canonicalNavigationKey(for: bare),
+            SuggestionDeduplicationPolicy.canonicalNavigationKey(for: decorated)
         )
     }
 
-    func testTopLinkDeduplicationKeyDistinguishesDifferentPaths() {
+    func testCanonicalNavigationKeyDistinguishesDifferentPaths() {
         let a = URL(string: "https://example.com/a")!
         let b = URL(string: "https://example.com/b")!
 
         XCTAssertNotEqual(
-            SuggestionDeduplicationPolicy.topLinkDeduplicationKey(for: a),
-            SuggestionDeduplicationPolicy.topLinkDeduplicationKey(for: b)
+            SuggestionDeduplicationPolicy.canonicalNavigationKey(for: a),
+            SuggestionDeduplicationPolicy.canonicalNavigationKey(for: b)
         )
     }
 

@@ -35,4 +35,11 @@ final class EmptySplitCreationWorkflow {
         focusCommandPalette(windowState, reason)
         return true
     }
+
+    func canCreate(
+        side: SplitDropSide = .right,
+        in windowState: BrowserWindowState
+    ) -> Bool {
+        placeholders.canCreate(side: side, in: windowState)
+    }
 }

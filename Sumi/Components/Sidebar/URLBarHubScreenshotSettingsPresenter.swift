@@ -34,6 +34,33 @@ struct URLBarHubScreenshotOptions: Equatable {
     var scale: URLBarHubScreenshotQuality
 }
 
+enum URLBarHubScreenshotPreferences {
+    static let qualityKey = "URLBarHubScreenshotQualityScale"
+    static let captureTargetKey = "URLBarHubScreenshotCaptureTarget"
+    static let destinationKey = "URLBarHubScreenshotDestination"
+
+    static func options(in defaults: UserDefaults = .standard)
+        -> URLBarHubScreenshotOptions {
+        let quality: URLBarHubScreenshotQuality
+        if defaults.object(forKey: qualityKey) == nil {
+            quality = .twoX
+        } else {
+            quality = URLBarHubScreenshotQuality(
+                rawValue: defaults.integer(forKey: qualityKey)
+            ) ?? .twoX
+        }
+        return URLBarHubScreenshotOptions(
+            target: URLBarHubScreenshotCaptureTarget(
+                rawValue: defaults.integer(forKey: captureTargetKey)
+            ) ?? .visiblePage,
+            destination: URLBarHubScreenshotDestination(
+                rawValue: defaults.integer(forKey: destinationKey)
+            ) ?? .askEveryTime,
+            scale: quality
+        )
+    }
+}
+
 @MainActor
 enum URLBarHubScreenshotSettingsPresenter {
     static func present(

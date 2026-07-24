@@ -46,10 +46,37 @@ final class BrowserShortcutWindowSpaceCommandDispatcher {
         return true
     }
 
+    func canDispatch(
+        _ action: ShortcutAction,
+        in context: BrowserShortcutContext
+    ) -> Bool {
+        switch action {
+        case .nextSpace, .previousSpace:
+            return spaces.canSelectRelativeSpace(in: context.windowState)
+        case .goToSpace1, .goToSpace2, .goToSpace3, .goToSpace4,
+             .goToSpace5, .goToSpace6, .goToSpace7, .goToSpace8,
+             .goToSpace9, .goToSpace10:
+            guard let index = SpaceSwitchShortcuts.spaceIndex(for: action)
+            else { return false }
+            return spaces.canSelectSpace(
+                atIndex: index,
+                in: context.windowState
+            )
+        case .expandAllFolders:
+            return context.windowState.currentSpaceId != nil
+        case .undoCloseTab, .closeWindow, .toggleFullScreen:
+            return true
+        default:
+            return false
+        }
+    }
+
     func dispatchApplicationAction(_ action: ShortcutAction) -> Bool {
         switch action {
         case .newWindow:
             windows.createNewWindow()
+        case .newPrivateWindow:
+            windows.createIncognitoWindow()
         case .closeBrowser:
             dialogs.showQuitDialog()
         default:

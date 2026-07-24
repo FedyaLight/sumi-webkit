@@ -11,42 +11,48 @@ struct CommandPaletteFaviconContext {
 final class CommandPaletteBrowserContext {
     let currentProfileId: UUID?
     let favicon: CommandPaletteFaviconContext
+    let spaces: CommandPaletteSpaceCatalog
+    let extensions: CommandPaletteExtensionCatalog
 
-    private let configureSearchManagerHandler: (SearchManager) -> Void
+    private let makeSearchSessionHandler: () -> CommandPaletteSearchSessionOwner
     private let updateDraftHandler: (BrowserWindowState, String) -> Void
     private let dismissHandler: (BrowserWindowState, Bool) -> Void
-    private let deleteHistoryEntryHandler: (HistoryListItem) async -> Void
-    private let commitNavigatesCurrentTabHandler: (BrowserWindowState) -> Bool
+    private let deleteHistoryHandler: (HistoryQuery) async -> Void
     private let commitNavigationHandler: (String, BrowserWindowState) -> Void
-    private let commitSuggestionHandler: (SearchManager.SearchSuggestion, BrowserWindowState) -> Void
-    private let offersCommandSuggestionsHandler: (BrowserWindowState) -> Bool
+    private let commitActivationHandler: (
+        CommandPaletteRow.Activation,
+        BrowserWindowState
+    ) -> Void
 
     init(
         currentProfileId: UUID?,
         favicon: CommandPaletteFaviconContext,
-        configureSearchManager: @escaping (SearchManager) -> Void,
+        spaces: CommandPaletteSpaceCatalog,
+        extensions: CommandPaletteExtensionCatalog,
+        makeSearchSession: @escaping () -> CommandPaletteSearchSessionOwner,
         updateDraft: @escaping (BrowserWindowState, String) -> Void,
         dismiss: @escaping (BrowserWindowState, Bool) -> Void,
-        deleteHistoryEntry: @escaping (HistoryListItem) async -> Void,
-        commitNavigatesCurrentTab: @escaping (BrowserWindowState) -> Bool,
+        deleteHistory: @escaping (HistoryQuery) async -> Void,
         commitNavigation: @escaping (String, BrowserWindowState) -> Void,
-        commitSuggestion: @escaping (SearchManager.SearchSuggestion, BrowserWindowState) -> Void,
-        offersCommandSuggestions: @escaping (BrowserWindowState) -> Bool
+        commitActivation: @escaping (
+            CommandPaletteRow.Activation,
+            BrowserWindowState
+        ) -> Void
     ) {
         self.currentProfileId = currentProfileId
         self.favicon = favicon
-        self.configureSearchManagerHandler = configureSearchManager
+        self.spaces = spaces
+        self.extensions = extensions
+        self.makeSearchSessionHandler = makeSearchSession
         self.updateDraftHandler = updateDraft
         self.dismissHandler = dismiss
-        self.deleteHistoryEntryHandler = deleteHistoryEntry
-        self.commitNavigatesCurrentTabHandler = commitNavigatesCurrentTab
+        self.deleteHistoryHandler = deleteHistory
         self.commitNavigationHandler = commitNavigation
-        self.commitSuggestionHandler = commitSuggestion
-        self.offersCommandSuggestionsHandler = offersCommandSuggestions
+        self.commitActivationHandler = commitActivation
     }
 
-    func configureSearchManager(_ searchManager: SearchManager) {
-        configureSearchManagerHandler(searchManager)
+    func makeSearchSession() -> CommandPaletteSearchSessionOwner {
+        makeSearchSessionHandler()
     }
 
     func updateCommandPaletteDraft(
@@ -63,12 +69,8 @@ final class CommandPaletteBrowserContext {
         dismissHandler(windowState, preserveDraft)
     }
 
-    func deleteHistoryEntry(_ entry: HistoryListItem) async {
-        await deleteHistoryEntryHandler(entry)
-    }
-
-    func commandPaletteCommitNavigatesCurrentTab(in windowState: BrowserWindowState) -> Bool {
-        commitNavigatesCurrentTabHandler(windowState)
+    func deleteHistory(_ query: HistoryQuery) async {
+        await deleteHistoryHandler(query)
     }
 
     func commitCommandPaletteNavigation(
@@ -78,14 +80,10 @@ final class CommandPaletteBrowserContext {
         commitNavigationHandler(urlString, windowState)
     }
 
-    func commitCommandPaletteSuggestion(
-        _ suggestion: SearchManager.SearchSuggestion,
+    func commitCommandPaletteActivation(
+        _ activation: CommandPaletteRow.Activation,
         in windowState: BrowserWindowState
     ) {
-        commitSuggestionHandler(suggestion, windowState)
-    }
-
-    func offersCommandSuggestions(in windowState: BrowserWindowState) -> Bool {
-        offersCommandSuggestionsHandler(windowState)
+        commitActivationHandler(activation, windowState)
     }
 }

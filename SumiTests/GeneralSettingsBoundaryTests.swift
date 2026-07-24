@@ -176,6 +176,17 @@ final class GeneralSettingsBoundaryTests: XCTestCase {
         XCTAssertEqual(settings.search.searchEngineId, second.id)
     }
 
+    func testSettingsInitializationRemovesRetiredPaletteEmptyStatePreference() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let retiredKey = "settings.commandPalette.emptyStateMode"
+        harness.defaults.set("compact", forKey: retiredKey)
+
+        _ = SumiSettingsService(userDefaults: harness.defaults)
+
+        XCTAssertNil(harness.defaults.object(forKey: retiredKey))
+    }
+
     func testSearchStoreRepairsCustomDefaultWhenRestoringDefaults() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -204,7 +215,6 @@ final class GeneralSettingsBoundaryTests: XCTestCase {
                 pageURLString: .constant("example.com")
             ),
             GeneralSearchSettingsSection(
-                emptyStateMode: .constant(.compact),
                 defaultEngineID: .constant(engine.id),
                 engineChoices: [GeneralSearchEngineChoice(engine)]
             ),

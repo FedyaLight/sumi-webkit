@@ -379,7 +379,8 @@ final class BrowserWindowChromeTests: XCTestCase {
                 updaterService: updaterService,
                 nowPlayingController: SumiNativeNowPlayingController()
             ),
-            commandPaletteContext: browserManager.urlBarBundle.commandPalette.browserContext.context,
+            commandPaletteContext:
+                browserManager.urlBarBundle.commandPaletteBrowserContext.context,
             nativeModalContext: .make(browserManager: browserManager),
             findContext: .make(browserManager: browserManager),
             splitContext: .make(browserManager: browserManager),

@@ -141,7 +141,7 @@ final class BrowserTerminationRuntimeLeaseTests: XCTestCase {
         let windowState = BrowserWindowState()
         registry.register(windowState)
         registry.setActive(windowState)
-        browserManager.urlBarBundle.commandPalette.presentation.focus(
+        browserManager.urlBarBundle.commandPalettePresentation.focus(
             in: windowState,
             prefill: "https://draft.example/path",
             navigateCurrentTab: true,

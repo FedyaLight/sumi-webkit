@@ -156,11 +156,6 @@ class SumiSettingsService {
         set { chrome.framelessChrome = newValue }
     }
 
-    var commandPaletteEmptyStateMode: CommandPaletteEmptyStateMode {
-        get { chrome.commandPaletteEmptyStateMode }
-        set { chrome.commandPaletteEmptyStateMode = newValue }
-    }
-
     var newTabMode: SumiNewTabMode {
         get { chrome.newTabMode }
         set { chrome.newTabMode = newValue }
@@ -319,6 +314,9 @@ class SumiSettingsService {
     ) {
         self.availability = availability
         self.nowPlayingController = nowPlayingController
+        userDefaults.removeObject(
+            forKey: "settings.commandPalette.emptyStateMode"
+        )
 
         // Register default values
         userDefaults.register(defaults: [
@@ -339,7 +337,6 @@ class SumiSettingsService {
             "settings.showLinkStatusBar": true,
             "settings.showBrowserToasts": true,
             "settings.framelessChrome": false,
-            "settings.commandPalette.emptyStateMode": CommandPaletteEmptyStateMode.compact.rawValue,
             "settings.newTabMode": SumiNewTabMode.commandPalette.rawValue,
             "settings.newTab.pageURL": SumiNewTabPageURL.defaultURLString,
             "settings.didFinishOnboarding": true,
@@ -380,7 +377,6 @@ class SumiSettingsService {
             showLinkStatusBarKey: "settings.showLinkStatusBar",
             showBrowserToastsKey: "settings.showBrowserToasts",
             framelessChromeKey: "settings.framelessChrome",
-            commandPaletteEmptyStateModeKey: "settings.commandPalette.emptyStateMode",
             newTabModeKey: "settings.newTabMode",
             newTabPageURLStringKey: "settings.newTab.pageURL",
             didFinishOnboardingKey: "settings.didFinishOnboarding",

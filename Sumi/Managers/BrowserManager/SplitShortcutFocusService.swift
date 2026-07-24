@@ -27,23 +27,36 @@ final class SplitShortcutFocusService {
         preferredMemberID: SplitMemberID? = nil,
         in windowState: BrowserWindowState
     ) {
-        guard runtimeConnection.current != nil else { return }
+        _ = activateSplitGroup(
+            group,
+            preferredMemberID: preferredMemberID,
+            in: windowState
+        )
+    }
+
+    @discardableResult
+    func activateSplitGroup(
+        _ group: SumiDomain.SplitGroup,
+        preferredMemberID: SplitMemberID? = nil,
+        in windowState: BrowserWindowState
+    ) -> Bool {
+        guard runtimeConnection.current != nil else { return false }
         guard canFocus(group, in: windowState) else {
-            queueFocus(
+            return queueFocus(
                 group,
                 preferredMemberID: preferredMemberID,
                 in: windowState
             )
-            return
         }
         guard applyFocus(
             group,
             preferredMemberID: preferredMemberID,
             in: windowState
         ) else {
-            return
+            return false
         }
         presentation.persist(windowState)
+        return true
     }
 
     func completePendingSplitGroupFocusIfReady(
@@ -112,17 +125,19 @@ final class SplitShortcutFocusService {
             || group.container.spaceId == windowState.currentSpaceId
     }
 
+    @discardableResult
     private func queueFocus(
         _ group: SumiDomain.SplitGroup,
         preferredMemberID: SplitMemberID?,
         in windowState: BrowserWindowState
-    ) {
-        guard let hostSpaceID = group.container.spaceId else { return }
+    ) -> Bool {
+        guard let hostSpaceID = group.container.spaceId else { return false }
         windowState.presentationState.pendingSplitGroupFocusRequest = SplitGroupFocusRequest(
             groupID: group.id,
             preferredMemberID: preferredMemberID,
             targetSpaceID: hostSpaceID
         )
+        return true
     }
 
     private func resolvedActiveMemberID(

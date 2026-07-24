@@ -43,6 +43,7 @@ struct URLBarPermissionContext {
 
 @MainActor
 struct URLBarHubBrowserContext {
+    let pageActionOwner: URLBarHubPageActionOwner
     let bookmarkManager: SumiBookmarkManager
     let bookmarkPresentationRequest: SumiBookmarkEditorPresentationRequest?
     let extensionActions: URLBarExtensionActionContext

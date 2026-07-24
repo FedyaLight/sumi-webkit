@@ -3,6 +3,7 @@ import SumiDomain
 
 @MainActor
 final class BrowserURLBarHubContextOwner {
+    let pageActionOwner: URLBarHubPageActionOwner
     private let bookmarks: SumiBookmarkManager
     private let permissions: BrowserURLBarPermissionContextOwner
     private let siteData: BrowserURLBarSiteDataContextOwner
@@ -14,8 +15,12 @@ final class BrowserURLBarHubContextOwner {
         permissions: BrowserURLBarPermissionContextOwner,
         siteData: BrowserURLBarSiteDataContextOwner,
         commands: BrowserURLBarHubCommandOwner,
-        pages: BrowserURLBarPageProjectionOwner
+        pages: BrowserURLBarPageProjectionOwner,
+        windows: WindowRegistry
     ) {
+        let pageActionOwner = URLBarHubPageActionOwner()
+        pageActionOwner.windowRegistry = windows
+        self.pageActionOwner = pageActionOwner
         self.bookmarks = bookmarks
         self.permissions = permissions
         self.siteData = siteData
@@ -67,6 +72,7 @@ final class BrowserURLBarHubContextOwner {
         let boosts = commands.boosts
         let extensions = commands.extensions
         return URLBarHubBrowserContext(
+            pageActionOwner: pageActionOwner,
             bookmarkManager: bookmarks,
             bookmarkPresentationRequest: commands.bookmarkPresentationRequest,
             extensionActions: pages.extensionActionContext,

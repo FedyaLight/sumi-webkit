@@ -34,7 +34,21 @@ final class BrowserTabCloseOrchestrationOwner {
         if windowState.presentationState.isCommandPaletteVisible {
             return
         }
+        closeResolvedCurrentTab(in: windowState)
+    }
 
+    /// Command-palette commits are already serialized by the palette's native
+    /// interaction session, so the visible palette is the source of this close
+    /// rather than an overlay that should intercept it.
+    func closeCurrentTabFromCommandPalette(
+        in windowState: BrowserWindowState
+    ) {
+        closeResolvedCurrentTab(in: windowState)
+    }
+
+    private func closeResolvedCurrentTab(
+        in windowState: BrowserWindowState
+    ) {
         if glanceInterception.interceptCurrentClose(in: windowState) {
             return
         }

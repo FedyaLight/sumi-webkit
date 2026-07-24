@@ -1,6 +1,11 @@
 import AppKit
 import SumiDomain
 
+enum CommandPaletteShortcutExecutionOutcome {
+    case dismissPalette
+    case paletteReplaced
+}
+
 private enum BrowserShortcutCommandDomain {
     case application
     case page
@@ -15,15 +20,18 @@ private extension ShortcutAction {
         switch self {
         case .goBack, .goForward, .refresh, .clearCookiesAndRefresh,
              .openDevTools, .viewHistory, .zoomIn, .zoomOut, .actualSize,
-             .copyCurrentURL, .hardReload, .muteUnmuteAudio:
+             .copyCurrentURL, .hardReload, .muteUnmuteAudio, .printPage,
+             .captureScreenshot, .newBoost:
             .page
         case .newTab, .closeTab, .nextTab, .previousTab, .goToTab1,
              .goToTab2, .goToTab3, .goToTab4, .goToTab5, .goToTab6,
              .goToTab7, .goToTab8, .goToLastTab, .duplicateTab,
              .splitGrid, .splitVertical, .splitHorizontal, .unsplit,
-             .newEmptySplit:
+             .newEmptySplit, .addSplitTop, .addSplitLeft, .addSplitRight,
+             .addSplitBottom, .pinTab, .unpinTab, .addToEssentials,
+             .removeFromEssentials:
             .tabs
-        case .newWindow, .closeBrowser:
+        case .newWindow, .newPrivateWindow, .closeBrowser:
             .application
         case .undoCloseTab, .nextSpace, .previousSpace, .closeWindow,
              .toggleFullScreen, .expandAllFolders,
@@ -31,7 +39,10 @@ private extension ShortcutAction {
              .goToSpace6, .goToSpace7, .goToSpace8, .goToSpace9, .goToSpace10:
             .windowsAndSpaces
         case .viewDownloads, .toggleSidebar, .toggleReaderMode,
-             .customizeSpaceGradient:
+             .customizeSpaceGradient, .newFolder, .openSettings,
+             .manageExtensions, .toggleTabsOnRight,
+             .switchToAutomaticAppearance, .switchToLightMode,
+             .switchToDarkMode:
             .chrome
         case .findInPage, .focusAddressBar:
             .overlays
@@ -81,11 +92,44 @@ final class BrowserShortcutActionRouter {
         case .overlays:
             overlays.dispatch(action, in: context)
         }
-        precondition(
-            handled,
-            "Contextual shortcut domain rejected its action: \(action)"
-        )
-        return true
+        return handled
+    }
+
+    func canExecute(
+        _ action: ShortcutAction,
+        in context: BrowserShortcutContext
+    ) -> Bool {
+        return switch action.browserCommandDomain {
+        case .application:
+            false
+        case .tabs:
+            tabs.canDispatch(action, in: context)
+        case .windowsAndSpaces:
+            windowsAndSpaces.canDispatch(action, in: context)
+        case .page:
+            page.canDispatch(action, in: context)
+        case .chrome:
+            chrome.canDispatch(action, in: context)
+        case .overlays:
+            overlays.canDispatch(action, in: context)
+        }
+    }
+
+    func executeFromCommandPalette(
+        _ action: ShortcutAction,
+        in context: BrowserShortcutContext
+    ) -> CommandPaletteShortcutExecutionOutcome? {
+        if case .tabs = action.browserCommandDomain {
+            return tabs.dispatchFromCommandPalette(action, in: context)
+        }
+        guard execute(action, in: context) else { return nil }
+        return .dismissPalette
+    }
+
+    func canExecuteApplicationAction(_ action: ShortcutAction) -> Bool {
+        action == .newWindow
+            || action == .newPrivateWindow
+            || action == .closeBrowser
     }
 
     @discardableResult

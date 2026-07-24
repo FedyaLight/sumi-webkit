@@ -3,22 +3,29 @@ import SumiDomain
 import XCTest
 
 @MainActor
-final class CommandPaletteServicesTests: XCTestCase {
-    func testRetainedServicesDoNotRetainBrowserKernel() {
+final class CommandPaletteCapabilitiesTests: XCTestCase {
+    func testRetainedCapabilitiesDoNotRetainBrowserKernel() {
         var browserManager: BrowserManager? = BrowserManager(
             windowRegistry: WindowRegistry()
         )
         weak var releasedBrowserManager = browserManager
         weak var releasedEmptySplitPlaceholders =
             browserManager?.splitEmptyPlaceholders
-        var retainedServices = browserManager?.urlBarBundle.commandPalette
+        var retainedPresentation =
+            browserManager?.urlBarBundle.commandPalettePresentation
+        var retainedCommit =
+            browserManager?.urlBarBundle.commandPaletteCommit
+        var retainedContext =
+            browserManager?.urlBarBundle.commandPaletteBrowserContext
 
         browserManager = nil
 
         XCTAssertNil(releasedBrowserManager)
         XCTAssertNotNil(releasedEmptySplitPlaceholders)
 
-        retainedServices = nil
+        retainedPresentation = nil
+        retainedCommit = nil
+        retainedContext = nil
 
         XCTAssertNil(releasedEmptySplitPlaceholders)
     }
@@ -157,30 +164,8 @@ final class CommandPaletteServicesTests: XCTestCase {
         XCTAssertTrue(opening.insertedURLs.isEmpty)
     }
 
-    func testCommitTargetRequiresDraftIntentAndActivePage() {
-        let windowState = BrowserWindowState()
-        let pageTab = Tab(
-            url: URL(string: "https://example.com")
-                ?? SumiSurface.emptyTabURL
-        )
-        let presentation = makePresentation()
-        let noPageCommit = makeCommit(
-            presentation: presentation,
-            activePageTab: { _ in nil }
-        )
-        let pageCommit = makeCommit(
-            presentation: presentation,
-            activePageTab: { _ in pageTab }
-        )
-
-        XCTAssertFalse(pageCommit.commitNavigatesCurrentTab(in: windowState))
-        windowState.commandPaletteDraftNavigatesCurrentTab = true
-        XCTAssertFalse(noPageCommit.commitNavigatesCurrentTab(in: windowState))
-        XCTAssertTrue(pageCommit.commitNavigatesCurrentTab(in: windowState))
-    }
-
     func testConfiguredNewTabPageBypassesCommandPalette() throws {
-        let suiteName = "CommandPaletteServicesTests.\(UUID().uuidString)"
+        let suiteName = "CommandPaletteCapabilitiesTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let settings = SumiSettingsService(userDefaults: defaults)
@@ -195,10 +180,21 @@ final class CommandPaletteServicesTests: XCTestCase {
             settings: settings
         )
 
-        commit.openNewTabSurface(in: windowState)
+        let replacedPalette = commit.openNewTabSurface(in: windowState)
 
+        XCTAssertFalse(replacedPalette)
         XCTAssertEqual(opening.createdURLs, ["https://start.example"])
         XCTAssertFalse(windowState.presentationState.isCommandPaletteVisible)
+    }
+
+    func testDefaultNewTabSurfaceReportsPaletteReplacement() {
+        let windowState = BrowserWindowState()
+        let commit = makeCommit(presentation: makePresentation())
+
+        let replacedPalette = commit.openNewTabSurface(in: windowState)
+
+        XCTAssertTrue(replacedPalette)
+        XCTAssertTrue(windowState.presentationState.isCommandPaletteVisible)
     }
 
     func testRejectedExistingTabSelectionKeepsCommandPaletteOpen() {
@@ -209,14 +205,100 @@ final class CommandPaletteServicesTests: XCTestCase {
         let tab = Tab(loadsCachedFaviconOnInit: false)
         let commit = makeCommit(
             presentation: presentation,
+            tabForID: { id in id == tab.id ? tab : nil },
             selectTab: { _, _ in .rejected }
         )
 
-        commit.commitSuggestion(
-            SearchManager.SearchSuggestion(
-                text: tab.name,
-                type: .tab(tab)
-            ),
+        commit.commitActivation(
+            .tab(tab.id),
+            in: windowState
+        )
+
+        XCTAssertTrue(windowState.presentationState.isCommandPaletteVisible)
+        XCTAssertEqual(windowState.commandPaletteDraftText, "keep me")
+    }
+
+    func testExistingTabSelectionTargetsOriginatingWindowBeforeDismiss() {
+        let windowState = BrowserWindowState()
+        windowState.presentationState.isCommandPaletteVisible = true
+        let presentation = makePresentation()
+        let tab = Tab(loadsCachedFaviconOnInit: false)
+        var selectedTabID: UUID?
+        var selectedWindowID: UUID?
+        let commit = makeCommit(
+            presentation: presentation,
+            tabForID: { id in id == tab.id ? tab : nil },
+            selectTab: { selectedTab, selectedWindow in
+                selectedTabID = selectedTab.id
+                selectedWindowID = selectedWindow.id
+                return .committed
+            }
+        )
+
+        commit.commitActivation(
+            .tab(tab.id),
+            in: windowState
+        )
+
+        XCTAssertEqual(selectedTabID, tab.id)
+        XCTAssertEqual(selectedWindowID, windowState.id)
+        XCTAssertFalse(windowState.presentationState.isCommandPaletteVisible)
+    }
+
+    func testUnloadedLauncherTargetsOriginatingWindowAndDismisses() {
+        let windowState = BrowserWindowState()
+        windowState.presentationState.isCommandPaletteVisible = true
+        let target = CommandPaletteNavigationTargetPresentation(
+            identity: .shortcut(UUID()),
+            title: "Pinned",
+            searchText: "Pinned pinned.example",
+            primaryURL: URL(string: "https://pinned.example")!,
+            faviconProfileID: nil,
+            action: .switchToTab,
+            recencyRank: nil
+        )
+        var committedIdentity:
+            CommandPaletteNavigationTargetPresentation.Identity?
+        var committedWindowID: UUID?
+        let commit = makeCommit(
+            presentation: makePresentation(),
+            activateNavigationTarget: { identity, window in
+                committedIdentity = identity
+                committedWindowID = window.id
+                return true
+            }
+        )
+
+        commit.commitActivation(
+            .navigationTarget(target.identity),
+            in: windowState
+        )
+
+        XCTAssertEqual(committedIdentity, target.identity)
+        XCTAssertEqual(committedWindowID, windowState.id)
+        XCTAssertFalse(windowState.presentationState.isCommandPaletteVisible)
+    }
+
+    func testRejectedSplitTargetKeepsPaletteOpen() {
+        let windowState = BrowserWindowState()
+        windowState.presentationState.isCommandPaletteVisible = true
+        windowState.commandPaletteDraftText = "keep me"
+        let target = CommandPaletteNavigationTargetPresentation(
+            identity: .splitGroup(UUID()),
+            title: "Comparison",
+            searchText: "Comparison First Second",
+            primaryURL: nil,
+            faviconProfileID: nil,
+            action: .switchToSplitView,
+            recencyRank: nil
+        )
+        let commit = makeCommit(
+            presentation: makePresentation(),
+            activateNavigationTarget: { _, _ in false }
+        )
+
+        commit.commitActivation(
+            .navigationTarget(target.identity),
             in: windowState
         )
 
@@ -244,12 +326,17 @@ final class CommandPaletteServicesTests: XCTestCase {
         presentation: CommandPalettePresentationService,
         opening: CommandPaletteTabOpeningSpy = .init(),
         split: EmptySplitService? = nil,
+        tabForID: @escaping @MainActor (UUID) -> Tab? = { _ in nil },
         activePageTab: @escaping @MainActor (BrowserWindowState) -> Tab? = { _ in nil },
         settings: SumiSettingsService? = nil,
         selectTab: @escaping @MainActor (
             Tab,
             BrowserWindowState
         ) -> BrowserTabSelectionOutcome = { _, _ in .committed },
+        activateNavigationTarget: @escaping @MainActor (
+            CommandPaletteNavigationTargetPresentation.Identity,
+            BrowserWindowState
+        ) -> Bool = { _, _ in true },
         loadPage: @escaping @MainActor (URL, Tab, BrowserWindowState) -> Void = { _, _, _ in /* no-op */ }
     ) -> CommandPaletteCommitService {
         let split = split ?? BrowserManager().splitEmptyPlaceholders
@@ -260,12 +347,13 @@ final class CommandPaletteServicesTests: XCTestCase {
                 splitPlaceholders: split,
                 selectTab: selectTab
             ),
+            tabForID: tabForID,
             activePageTab: activePageTab,
             pageNavigation: CommandPalettePageNavigationService(
                 settings: { settings },
                 loadPage: loadPage
             ),
-            newSplitView: { _ in /* no-op */ }
+            activateNavigationTarget: activateNavigationTarget
         )
     }
 

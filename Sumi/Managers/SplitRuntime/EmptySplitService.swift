@@ -102,6 +102,14 @@ final class EmptySplitService {
         return true
     }
 
+    func canCreate(
+        side: SplitDropSide,
+        in windowState: BrowserWindowState
+    ) -> Bool {
+        session.placeholder(in: windowState.id) == nil
+            && insertion.admission(side: side, in: windowState) != nil
+    }
+
     func commit(_ placeholder: Tab, in windowID: UUID) {
         session.commit(placeholder, in: windowID)
     }

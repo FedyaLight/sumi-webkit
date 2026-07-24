@@ -50,19 +50,17 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				"CommandPalette Accessories/GenericSuggestionItem.swift",
-				"CommandPalette Accessories/HistorySuggestionItem.swift",
-				"CommandPalette Accessories/TabSuggestionItem.swift",
 				CommandPaletteBrowserContext.swift,
 				CommandPaletteCardBoundsReader.swift,
-				CommandPaletteDeferredTextOwner.swift,
-				CommandPaletteFocusRequestOwner.swift,
-				CommandPaletteInlineCompletionTextField.swift,
-				CommandPaletteInteractionCommitOwner.swift,
+				CommandPaletteExtensionCatalog.swift,
+				CommandPaletteTextField.swift,
 				CommandPaletteLayoutPolicy.swift,
 				CommandPaletteMotionPolicy.swift,
-				CommandPaletteOutsideClickRouting.swift,
+				CommandPaletteNativeInteraction.swift,
 				CommandPaletteResultsPanelView.swift,
+				CommandPaletteRow.swift,
 				CommandPaletteSearchSessionOwner.swift,
+				CommandPaletteSpaceCatalog.swift,
 				CommandPaletteView.swift,
 			);
 			target = 7F8340FB2E37F39400674A5D /* Sumi */;

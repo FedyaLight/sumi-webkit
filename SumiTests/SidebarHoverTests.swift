@@ -53,51 +53,6 @@ final class SidebarHoverTests: XCTestCase {
         )
     }
 
-    func testCommandPaletteOutsideClickRoutingKeepsInsideCardEvent() throws {
-        let event = try Self.mouseDownEvent()
-        var closeCount = 0
-
-        let result = CommandPaletteOutsideClickRouting.monitorResult(
-            for: event,
-            isCommandPaletteVisible: true,
-            isEventInsideCard: true
-        ) {
-            closeCount += 1
-        }
-
-        XCTAssertIdentical(result, event)
-        XCTAssertEqual(closeCount, 0)
-    }
-
-    func testCommandPaletteOutsideClickRoutingClosesOutsideCardAndPreservesEvent() throws {
-        let event = try Self.mouseDownEvent()
-        var closeCount = 0
-
-        let result = CommandPaletteOutsideClickRouting.monitorResult(
-            for: event,
-            isCommandPaletteVisible: true,
-            isEventInsideCard: false
-        ) {
-            closeCount += 1
-        }
-
-        XCTAssertIdentical(result, event)
-        XCTAssertEqual(closeCount, 1)
-    }
-
-    func testCommandPaletteCardHitDetectionSeparatesInsideAndOutsideGeometry() {
-        let cardView = Self.makeCommandPaletteCardView()
-
-        XCTAssertTrue(CommandPaletteOutsideClickRouting.isLocationInsideCard(
-            NSPoint(x: 32, y: 32),
-            cardView: cardView
-        ))
-        XCTAssertFalse(CommandPaletteOutsideClickRouting.isLocationInsideCard(
-            NSPoint(x: 180, y: 90),
-            cardView: cardView
-        ))
-    }
-
     func testTrackingViewReportsEventHoverImmediately() {
         let window = Self.makeHoverWindow()
         let view = Self.addHoverView(
@@ -581,27 +536,6 @@ final class SidebarHoverTests: XCTestCase {
         XCTAssertFalse(SidebarHoverChrome.showsTrailingAction(isHovered: false, isSelected: false))
         XCTAssertTrue(SidebarHoverChrome.showsTrailingAction(isHovered: true, isSelected: false))
         XCTAssertTrue(SidebarHoverChrome.showsTrailingAction(isHovered: false, isSelected: true))
-    }
-
-    private static func makeCommandPaletteCardView() -> NSView {
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 140))
-        let view = NSView(frame: NSRect(x: 20, y: 20, width: 100, height: 60))
-        container.addSubview(view)
-        return view
-    }
-
-    private static func mouseDownEvent() throws -> NSEvent {
-        try XCTUnwrap(NSEvent.mouseEvent(
-            with: .leftMouseDown,
-            location: .zero,
-            modifierFlags: [],
-            timestamp: 0,
-            windowNumber: 0,
-            context: nil,
-            eventNumber: 0,
-            clickCount: 1,
-            pressure: 1
-        ))
     }
 
     private static func makeHoverWindow() -> NSWindow {

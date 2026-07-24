@@ -70,7 +70,8 @@ extension BrowserManager {
                 dataServices: dataServices
             ),
             commands: hubCommands,
-            pages: pageProjection
+            pages: pageProjection,
+            windows: windowRegistry
         )
         let hubPresentation = BrowserURLBarHubPresentationOwner(
             presenter: chrome.commands.urlBarHubPopoverPresenter
@@ -106,7 +107,9 @@ extension BrowserManager {
         return BrowserURLBarBundle(
             settingsNavigation: settingsNavigation,
             contextOwner: contextOwner,
-            commandPalette: commandPaletteServices
+            commandPalettePresentation: commandPalettePresentation,
+            commandPaletteCommit: commandPaletteCommit,
+            commandPaletteBrowserContext: commandPaletteBrowserContext
         )
     }
 }

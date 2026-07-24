@@ -358,18 +358,15 @@ final class SettingsNavigationTests: XCTestCase {
         )
         browserManager.selectTab(existing, in: windowState, loadPolicy: .deferred)
         settings.currentSettingsTab = .general
-        browserManager.urlBarBundle.commandPalette.presentation.focus(
+        browserManager.urlBarBundle.commandPalettePresentation.focus(
             in: windowState,
             prefill: existing.url.absoluteString,
             navigateCurrentTab: true,
             reason: .keyboard
         )
 
-        browserManager.urlBarBundle.commandPalette.commit.commitSuggestion(
-            SearchManager.SearchSuggestion(
-                text: "sumi://settings?pane=extensions",
-                type: .url
-            ),
+        browserManager.urlBarBundle.commandPaletteCommit.commitActivation(
+            .literalURL("sumi://settings?pane=extensions"),
             in: windowState
         )
 

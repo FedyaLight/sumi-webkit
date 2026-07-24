@@ -20,7 +20,6 @@ final class ChromeLayoutSettingsStore {
     private let showLinkStatusBarKey: String
     private let showBrowserToastsKey: String
     private let framelessChromeKey: String
-    private let commandPaletteEmptyStateModeKey: String
     private let newTabModeKey: String
     private let newTabPageURLStringKey: String
     private let didFinishOnboardingKey: String
@@ -106,16 +105,6 @@ final class ChromeLayoutSettingsStore {
         }
     }
 
-    var commandPaletteEmptyStateMode: CommandPaletteEmptyStateMode {
-        didSet {
-            Persisted.rawRepresentable(
-                commandPaletteEmptyStateMode,
-                key: commandPaletteEmptyStateModeKey,
-                defaults: userDefaults
-            )
-        }
-    }
-
     var newTabMode: SumiNewTabMode {
         didSet {
             Persisted.rawRepresentable(newTabMode, key: newTabModeKey, defaults: userDefaults)
@@ -150,7 +139,6 @@ final class ChromeLayoutSettingsStore {
         showLinkStatusBarKey: String,
         showBrowserToastsKey: String,
         framelessChromeKey: String,
-        commandPaletteEmptyStateModeKey: String,
         newTabModeKey: String,
         newTabPageURLStringKey: String,
         didFinishOnboardingKey: String,
@@ -167,7 +155,6 @@ final class ChromeLayoutSettingsStore {
         self.showLinkStatusBarKey = showLinkStatusBarKey
         self.showBrowserToastsKey = showBrowserToastsKey
         self.framelessChromeKey = framelessChromeKey
-        self.commandPaletteEmptyStateModeKey = commandPaletteEmptyStateModeKey
         self.newTabModeKey = newTabModeKey
         self.newTabPageURLStringKey = newTabPageURLStringKey
         self.didFinishOnboardingKey = didFinishOnboardingKey
@@ -204,10 +191,6 @@ final class ChromeLayoutSettingsStore {
         self.showLinkStatusBar = userDefaults.bool(forKey: showLinkStatusBarKey)
         self.showInAppNotifications = userDefaults.bool(forKey: showBrowserToastsKey)
         self.framelessChrome = userDefaults.bool(forKey: framelessChromeKey)
-        self.commandPaletteEmptyStateMode = CommandPaletteEmptyStateMode(
-            rawValue: userDefaults.string(forKey: commandPaletteEmptyStateModeKey)
-                ?? CommandPaletteEmptyStateMode.compact.rawValue
-        ) ?? .compact
         let storedNewTabMode = userDefaults.string(forKey: newTabModeKey)
         let resolvedNewTabMode = SumiNewTabMode.persistedValue(storedNewTabMode)
         self.newTabMode = resolvedNewTabMode

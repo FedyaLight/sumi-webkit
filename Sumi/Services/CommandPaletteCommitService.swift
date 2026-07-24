@@ -27,49 +27,61 @@ final class CommandPaletteCommitService {
     private let presentation: CommandPalettePresentationService
     private let tabOpening: @MainActor () -> (any CommandPaletteTabOpening)?
     private let tabTargets: CommandPaletteTabTargetCommitter
+    private let tabForID: @MainActor (UUID) -> Tab?
     private let activePageTab: @MainActor (BrowserWindowState) -> Tab?
     private let pageNavigation: CommandPalettePageNavigationService
-    private let newSplitView: @MainActor (BrowserWindowState) -> Void
+    private let activateNavigationTarget: @MainActor (
+        CommandPaletteNavigationTargetPresentation.Identity,
+        BrowserWindowState
+    ) -> Bool
 
     init(
         presentation: CommandPalettePresentationService,
         tabOpening: @escaping @MainActor () -> (any CommandPaletteTabOpening)?,
         tabTargets: CommandPaletteTabTargetCommitter,
+        tabForID: @escaping @MainActor (UUID) -> Tab?,
         activePageTab: @escaping @MainActor (BrowserWindowState) -> Tab?,
         pageNavigation: CommandPalettePageNavigationService,
-        newSplitView: @escaping @MainActor (BrowserWindowState) -> Void
+        activateNavigationTarget: @escaping @MainActor (
+            CommandPaletteNavigationTargetPresentation.Identity,
+            BrowserWindowState
+        ) -> Bool
     ) {
         self.presentation = presentation
         self.tabOpening = tabOpening
         self.tabTargets = tabTargets
+        self.tabForID = tabForID
         self.activePageTab = activePageTab
         self.pageNavigation = pageNavigation
-        self.newSplitView = newSplitView
+        self.activateNavigationTarget = activateNavigationTarget
     }
 
-    func openNewTabSurface(in windowState: BrowserWindowState) {
+    @discardableResult
+    func openNewTabSurface(in windowState: BrowserWindowState) -> Bool {
         if let configuredURL = pageNavigation.configuredNewTabPageURL {
             tabOpening()?.createNewTab(in: windowState, url: configuredURL)
+            return false
         } else {
             presentation.showNewTab(in: windowState)
-        }
-    }
-
-    func commitNavigatesCurrentTab(in windowState: BrowserWindowState) -> Bool {
-        if case .currentPage = resolveTarget(in: windowState) {
             return true
         }
-        return false
     }
 
-    func commitSuggestion(
-        _ suggestion: SearchManager.SearchSuggestion,
+    func commitActivation(
+        _ activation: CommandPaletteRow.Activation,
         in windowState: BrowserWindowState
     ) {
         let target = resolveTarget(in: windowState)
-        if case .tab = suggestion.type {
-            guard openSuggestion(
-                suggestion,
+        let requiresSuccessfulActivation: Bool
+        switch activation {
+        case .tab, .navigationTarget:
+            requiresSuccessfulActivation = true
+        default:
+            requiresSuccessfulActivation = false
+        }
+        if requiresSuccessfulActivation {
+            guard openActivation(
+                activation,
                 in: windowState,
                 target: target
             ) else { return }
@@ -85,7 +97,7 @@ final class CommandPaletteCommitService {
             preserveDraft: false,
             cancelEmptySplitPlaceholder: false
         )
-        _ = openSuggestion(suggestion, in: windowState, target: target)
+        _ = openActivation(activation, in: windowState, target: target)
     }
 
     func commitNavigation(to urlString: String, in windowState: BrowserWindowState) {
@@ -113,25 +125,17 @@ final class CommandPaletteCommitService {
         }
     }
 
-    func openSuggestion(
-        _ suggestion: SearchManager.SearchSuggestion,
-        in windowState: BrowserWindowState
-    ) {
-        _ = openSuggestion(
-            suggestion,
-            in: windowState,
-            target: resolveTarget(in: windowState)
-        )
-    }
-
     @discardableResult
-    private func openSuggestion(
-        _ suggestion: SearchManager.SearchSuggestion,
+    private func openActivation(
+        _ activation: CommandPaletteRow.Activation,
         in windowState: BrowserWindowState,
         target: Target
     ) -> Bool {
-        switch suggestion.type {
-        case .tab(let existingTab):
+        switch activation {
+        case .tab(let tabID):
+            guard let existingTab = tabForID(tabID) else {
+                return false
+            }
             guard tabTargets.select(existingTab, in: windowState) else {
                 return false
             }
@@ -139,31 +143,32 @@ final class CommandPaletteCommitService {
                 "Switched to existing tab: \(existingTab.name)",
                 category: "CommandPalette"
             )
-        case .history(let historyEntry):
-            openURL(
-                historyEntry.url.absoluteString,
-                source: "history",
-                target: target,
-                windowState: windowState
-            )
-        case .bookmark(let bookmark):
-            openURL(
-                bookmark.url.absoluteString,
-                source: "bookmark",
-                target: target,
-                windowState: windowState
-            )
-        case .url, .search:
-            openInput(
-                suggestion.text,
-                target: target,
-                windowState: windowState
-            )
-        case .command(let command):
-            switch command {
-            case .newSplitView:
-                newSplitView(windowState)
+        case .navigationTarget(let identity):
+            guard activateNavigationTarget(
+                identity,
+                windowState
+            ) else {
+                return false
             }
+            RuntimeDiagnostics.debug(
+                "Activated navigation target: \(identity)",
+                category: "CommandPalette"
+            )
+        case .literalURL(let urlString):
+            openURL(
+                urlString,
+                source: "literal",
+                target: target,
+                windowState: windowState
+            )
+        case .input(let input):
+            openInput(
+                input,
+                target: target,
+                windowState: windowState
+            )
+        case .browserAction, .space, .extensionAction:
+            return false
         }
         return true
     }

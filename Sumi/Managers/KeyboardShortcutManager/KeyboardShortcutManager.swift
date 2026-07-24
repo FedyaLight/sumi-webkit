@@ -194,6 +194,92 @@ class KeyboardShortcutManager {
         }
     }
 
+    func canPerform(
+        _ action: ShortcutAction,
+        keyWindow: NSWindow?
+    ) -> Bool {
+        guard let shortcutActionRouter else { return false }
+        if shortcutActionRouter.canExecuteApplicationAction(action) {
+            return true
+        }
+        guard case .browser(let context) = shortcutTargetResolver?
+            .resolve(keyWindow: keyWindow) else {
+            return false
+        }
+        return shortcutActionRouter.canExecute(action, in: context)
+    }
+
+    func commandPaletteActionPresentations(
+        keyWindow: NSWindow?
+    ) -> [CommandPaletteBrowserActionPresentation] {
+        guard let shortcutActionRouter else { return [] }
+        let target = shortcutTargetResolver?
+            .resolve(keyWindow: keyWindow) ?? .none
+
+        return ShortcutAction.commandPaletteCatalogOrder.compactMap {
+            action in
+            let isAvailable: Bool
+            switch target {
+            case .browser(let context):
+                isAvailable =
+                    shortcutActionRouter.canExecuteApplicationAction(action)
+                    || shortcutActionRouter.canExecute(action, in: context)
+            case .foreignWindow:
+                isAvailable = action == .closeTab || action == .closeWindow
+            case .none:
+                isAvailable =
+                    shortcutActionRouter.canExecuteApplicationAction(action)
+            }
+            guard isAvailable else { return nil }
+
+            let title: String
+            if case .browser(let context) = target {
+                if action == .closeTab,
+                   context.windowState.currentShortcutPinId != nil {
+                    title = "Unload"
+                } else if action == .toggleSidebar {
+                    title = context.windowState.isSidebarVisible
+                        ? "Hide Sidebar"
+                        : "Show Sidebar"
+                } else {
+                    title = action.commandPaletteTitle
+                }
+            } else {
+                title = action.commandPaletteTitle
+            }
+            return CommandPaletteBrowserActionPresentation(
+                action: action,
+                title: title,
+                shortcutLabel: shortcutDisplayString(for: action)
+            )
+        }
+    }
+
+    func performFromCommandPalette(
+        _ action: ShortcutAction,
+        keyWindow: NSWindow?
+    ) -> CommandPaletteShortcutExecutionOutcome? {
+        guard let shortcutActionRouter else { return nil }
+        if shortcutActionRouter.executeApplicationAction(action) {
+            return .dismissPalette
+        }
+        switch shortcutTargetResolver?.resolve(keyWindow: keyWindow) ?? .none {
+        case .browser(let context):
+            return shortcutActionRouter.executeFromCommandPalette(
+                action,
+                in: context
+            )
+        case .foreignWindow(let window):
+            guard action == .closeTab || action == .closeWindow else {
+                return nil
+            }
+            window.performClose(nil)
+            return .dismissPalette
+        case .none:
+            return nil
+        }
+    }
+
     private func loadShortcuts() {
         shortcutsByAction = DefaultKeyboardShortcuts.shortcutsByAction
 
@@ -325,11 +411,7 @@ class KeyboardShortcutManager {
         }
 
         if keyCombination == KeyCombination(key: "escape") {
-            shortcutActionRouter?.dismissCommandPalette(
-                in: windowState,
-                preserveDraft: true
-            )
-            return .consume
+            return .pass(event)
         }
 
         if systemOwnedShortcuts.contains(keyCombination) {

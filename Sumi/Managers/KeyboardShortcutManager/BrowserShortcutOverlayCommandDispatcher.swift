@@ -41,6 +41,20 @@ final class BrowserShortcutOverlayCommandDispatcher {
         return true
     }
 
+    func canDispatch(
+        _ action: ShortcutAction,
+        in context: BrowserShortcutContext
+    ) -> Bool {
+        return switch action {
+        case .findInPage:
+            context.page != nil
+        case .focusAddressBar:
+            true
+        default:
+            false
+        }
+    }
+
     var isFindBarVisible: Bool { find.isFindBarVisible }
 
     func hideFindBar() {

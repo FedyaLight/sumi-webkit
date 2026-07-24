@@ -29,6 +29,10 @@ final class BrowserZoomCommandOwner {
         apply(.up, in: window)
     }
 
+    func canZoomCurrentTab(in window: BrowserWindowState) -> Bool {
+        targets.activeTarget(in: window) != nil
+    }
+
     func zoomOutCurrentTab() {
         guard let window = windows.activeWindow else { return }
         zoomOutCurrentTab(in: window)

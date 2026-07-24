@@ -25,9 +25,13 @@ final class WebInspectorService {
         self.presentInstructions = presentInstructions
     }
 
+    var canInspect: Bool {
+        isEnabled()
+    }
+
     @discardableResult
     func inspect(_ webView: WKWebView) -> Bool {
-        guard isEnabled() else {
+        guard canInspect else {
             RuntimeDiagnostics.emit("Developer inspection is disabled for this runtime.")
             return false
         }

@@ -59,7 +59,7 @@ enum BrowserGlanceRuntimeService {
                 splitQuery.visibleTabIDs(in: $0).count
             },
             dismissCommandPaletteIfVisible: { [weak browserManager] in
-                browserManager?.urlBarBundle.commandPalette.presentation
+                browserManager?.urlBarBundle.commandPalettePresentation
                     .dismissIfVisible(in: $0, preserveDraft: true) ?? false
             },
             isFindBarVisible: { [weak browserManager] in browserManager?.findManager.isFindBarVisible ?? false },

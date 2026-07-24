@@ -11,16 +11,13 @@ struct GeneralSearchEngineChoice: Identifiable, Equatable {
 }
 
 struct GeneralSearchSettingsSection: View {
-    @Binding private var emptyStateMode: CommandPaletteEmptyStateMode
     @Binding private var defaultEngineID: String
     let engineChoices: [GeneralSearchEngineChoice]
 
     init(
-        emptyStateMode: Binding<CommandPaletteEmptyStateMode>,
         defaultEngineID: Binding<String>,
         engineChoices: [GeneralSearchEngineChoice]
     ) {
-        _emptyStateMode = emptyStateMode
         _defaultEngineID = defaultEngineID
         self.engineChoices = engineChoices
     }
@@ -28,23 +25,8 @@ struct GeneralSearchSettingsSection: View {
     var body: some View {
         SettingsSection(
             title: "Search",
-            subtitle: "Choose the default web search and how the command palette behaves before typing."
+            subtitle: "Choose the default web search engine."
         ) {
-            SettingsRow(
-                title: "Command palette empty state",
-                subtitle: "Choose what appears before you start typing."
-            ) {
-                Picker("", selection: $emptyStateMode) {
-                    ForEach(CommandPaletteEmptyStateMode.allCases) { mode in
-                        Text(mode.title).tag(mode)
-                    }
-                }
-                .labelsHidden()
-                .settingsTrailingControl(width: 160)
-            }
-
-            SettingsDivider()
-
             SettingsRow(
                 title: "Default search engine",
                 subtitle: "Used for plain text typed into the URL bar."

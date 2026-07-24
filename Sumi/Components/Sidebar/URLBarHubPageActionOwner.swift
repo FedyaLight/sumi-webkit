@@ -11,6 +11,35 @@ final class URLBarHubPageActionOwner: ObservableObject {
     let shareButtonAnchor = URLBarHubShareAnchorStore()
     weak var windowRegistry: WindowRegistry?
 
+    func canCapture(_ page: ActivePageResolution?) -> Bool {
+        guard let page,
+              page.tab.representsSumiNativeSurface == false,
+              page.presentationWebView != nil else {
+            return false
+        }
+        return isCapturingScreenshot == false
+    }
+
+    @discardableResult
+    func captureUsingSavedSettings(_ page: ActivePageResolution?) -> Bool {
+        guard canCapture(page), let page else { return false }
+        let options = URLBarHubScreenshotPreferences.options()
+        DispatchQueue.main.async { [weak self, weak windowState = page.windowState] in
+            guard let self, let windowState,
+                  self.canCapture(page),
+                  let webView = page.presentationWebView else {
+                return
+            }
+            self.captureCurrentPage(
+                currentTab: page.tab,
+                webView: webView,
+                options: options,
+                window: windowState.shellWindow(in: self.windowRegistry)
+            )
+        }
+        return true
+    }
+
     func shareCurrentPage(
         currentTab: Tab?,
         windowState: BrowserWindowState,

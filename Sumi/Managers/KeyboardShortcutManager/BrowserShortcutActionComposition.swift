@@ -14,11 +14,21 @@ enum BrowserShortcutActionComposition {
         splitLayout: SplitLayoutService,
         emptySplitCreation: EmptySplitCreationWorkflow,
         spaces: TabSpaceCollectionStateOwner,
+        pins: ShortcutPinCollectionStateOwner,
+        essentials: EssentialsShortcutPlacementOwner,
+        regularTabShortcuts: SidebarRegularTabShortcutCommands,
+        regularTabs: RegularTabCollectionOwner,
+        pinCommands: SidebarPinCommands,
+        splitGroups: SplitGroupStore,
+        splitOrdering: SplitGroupSidebarOrderingService,
+        splitMoves: SidebarDragOperationRouter,
         spaceTransitions: BrowserWindowSpaceTransitionService,
         folderOpenState: TabFolderOpenStateService,
         sessionPersistence: WindowSessionPersistenceCoordinator,
         history: BrowserHistoryNavigationOwner,
         pageCommands: ActivePageCommandService,
+        pageActions: URLBarHubPageActionOwner,
+        boosts: SumiBoostsModule,
         zoom: BrowserZoomCommandOwner,
         privacyAndPopovers: BrowserChromeCommands,
         windowCommands: BrowserWindowCommands,
@@ -27,6 +37,9 @@ enum BrowserShortcutActionComposition {
         tabClose: BrowserTabCloseOrchestrationOwner,
         theme: BrowserWorkspaceThemeEditorOwner,
         sidebar: BrowserSidebarPresentationOwner,
+        folderActions: BrowserSidebarActionOwner,
+        settings: BrowserSettingsNavigationService,
+        settingsAttachment: BrowserSettingsAttachmentCoordinator,
         find: FindManager,
         commandPalette: CommandPalettePresentationService
     ) -> BrowserShortcutActionRouter {
@@ -41,6 +54,17 @@ enum BrowserShortcutActionComposition {
             layout: splitLayout,
             emptyCreation: emptySplitCreation
         )
+        let pinningCommands = BrowserKeyboardPinCommands(
+            spaces: spaces,
+            pins: pins,
+            essentials: essentials,
+            regularTabs: regularTabShortcuts,
+            tabCollection: regularTabs,
+            pinCommands: pinCommands,
+            splitGroups: splitGroups,
+            splitOrdering: splitOrdering,
+            splitMoves: splitMoves
+        )
         let spaceCommands = BrowserKeyboardSpaceCommands(
             spaces: spaces,
             transitions: spaceTransitions,
@@ -52,12 +76,15 @@ enum BrowserShortcutActionComposition {
             page: BrowserShortcutPageCommandDispatcher(
                 history: history,
                 page: pageCommands,
+                pageActions: pageActions,
+                boosts: boosts,
                 zoom: zoom,
                 privacy: privacyAndPopovers
             ),
             tabs: BrowserShortcutTabCommandDispatcher(
                 selection: tabCommands,
                 splits: splitCommands,
+                pins: pinningCommands,
                 close: tabClose
             ),
             windowsAndSpaces: BrowserShortcutWindowSpaceCommandDispatcher(
@@ -70,7 +97,10 @@ enum BrowserShortcutActionComposition {
                 chrome: privacyAndPopovers,
                 theme: theme,
                 sidebar: sidebar,
-                reader: readerCommands
+                reader: readerCommands,
+                folderActions: folderActions,
+                settings: settings,
+                settingsAttachment: settingsAttachment
             ),
             overlays: BrowserShortcutOverlayCommandDispatcher(
                 find: find,

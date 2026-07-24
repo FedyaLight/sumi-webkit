@@ -91,6 +91,10 @@ final class BrowserURLBarContextOwner {
         hub.context
     }
 
+    var pageActionOwner: URLBarHubPageActionOwner {
+        hub.pageActionOwner
+    }
+
     func navigationToolbarContext(
         for windowState: BrowserWindowState
     ) -> NavigationToolbarBrowserContext {

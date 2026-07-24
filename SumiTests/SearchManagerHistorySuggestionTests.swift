@@ -63,7 +63,9 @@ final class SearchManagerHistorySuggestionTests: XCTestCase {
         XCTAssertTrue(suggestions.contains { $0.text == "Beta Result" })
         XCTAssertFalse(suggestions.contains { $0.text == "Alpha Result" })
         XCTAssertLessThanOrEqual(suggestions.count, 5)
+        XCTAssertEqual(harness.searchManager.suggestionSourceQuery, "beta")
         harness.searchManager.clearSuggestions()
+        XCTAssertNil(harness.searchManager.suggestionSourceQuery)
     }
 
     func testRapidTypingKeepsOnlyCurrentBoundedHistoryResults() async throws {
@@ -90,6 +92,7 @@ final class SearchManagerHistorySuggestionTests: XCTestCase {
         XCTAssertTrue(suggestions.allSatisfy { suggestion in
             !suggestion.isHistorySuggestion || suggestion.text.contains("Rapid")
         })
+        XCTAssertEqual(harness.searchManager.suggestionSourceQuery, "rapid")
         harness.searchManager.clearSuggestions()
     }
 
@@ -126,6 +129,7 @@ final class SearchManagerHistorySuggestionTests: XCTestCase {
 
         XCTAssertTrue(suggestions.contains { $0.text == "погода москва" })
         XCTAssertFalse(suggestions.contains { $0.text.contains("&#") })
+        XCTAssertTrue(searchManager.suggestionPublicationIsSettled)
         searchManager.clearSuggestions()
     }
 
@@ -152,11 +156,32 @@ final class SearchManagerHistorySuggestionTests: XCTestCase {
         )
 
         searchManager.searchSuggestions(for: "example.com")
+        XCTAssertFalse(searchManager.suggestionPublicationIsSettled)
         let suggestions = await waitForSuggestions(in: searchManager) {
             $0.contains(where: \.isNormalizedExampleURLSuggestion)
         }
 
         XCTAssertTrue(suggestions.contains(where: \.isNormalizedExampleURLSuggestion))
+        searchManager.clearSuggestions()
+    }
+
+    func testCancellingRequestPreservesTheLastPublishedBatch() {
+        let searchManager = SearchManager(
+            suggestionDataProvider: StaticSearchSuggestionDataProvider(
+                payload: "[]"
+            )
+        )
+        searchManager.searchSuggestions(for: "example.com")
+        let publishedSuggestions = searchManager.suggestions
+        XCTAssertFalse(searchManager.suggestionPublicationIsSettled)
+
+        searchManager.cancelSuggestionRequests()
+
+        XCTAssertFalse(publishedSuggestions.isEmpty)
+        XCTAssertEqual(searchManager.suggestions, publishedSuggestions)
+        XCTAssertEqual(searchManager.suggestionSourceQuery, "example.com")
+        XCTAssertTrue(searchManager.suggestionPublicationIsSettled)
+        XCTAssertFalse(searchManager.isLoadingSuggestions)
         searchManager.clearSuggestions()
     }
 
@@ -236,7 +261,7 @@ final class SearchManagerHistorySuggestionTests: XCTestCase {
         harness.searchManager.clearSuggestions()
     }
 
-    func testTopLinkSuggestionsIncludeBookmarksWithoutQuery() async throws {
+    func testContextualSuggestionsIncludeBookmarksWithoutQuery() async throws {
         let bookmarkManager = makeBookmarkManager()
         let bookmark = try bookmarkManager.createBookmark(
             url: try XCTUnwrap(URL(string: "https://empty-state.example")),
@@ -247,7 +272,7 @@ final class SearchManagerHistorySuggestionTests: XCTestCase {
         )
         searchManager.setBookmarkManager(bookmarkManager)
 
-        searchManager.showTopLinkSuggestions(limit: 5)
+        searchManager.showContextualSuggestions(limit: 5)
         let suggestions = await waitForSuggestions(in: searchManager) {
             $0.contains { $0.text == bookmark.title && $0.isBookmarkSuggestion }
         }
@@ -256,7 +281,7 @@ final class SearchManagerHistorySuggestionTests: XCTestCase {
         searchManager.clearSuggestions()
     }
 
-    func testTopLinkSuggestionsPreferFrequentlyVisitedSites() async throws {
+    func testContextualSuggestionsPreferFrequentlyVisitedSites() async throws {
         let harness = try makeHarness()
         let referenceDate = Date()
 
@@ -275,7 +300,7 @@ final class SearchManagerHistorySuggestionTests: XCTestCase {
             )
         }
 
-        harness.searchManager.showTopLinkSuggestions(limit: 2)
+        harness.searchManager.showContextualSuggestions(limit: 2)
         let suggestions = await waitForSuggestions(in: harness.searchManager) {
             $0.contains { $0.text == "High Frequency" && $0.isHistorySuggestion }
         }

@@ -10,7 +10,7 @@ final class BrowserAppCommandServicesTests: XCTestCase {
         let windowState = BrowserWindowState()
         let router = BrowserMouseCommandRouter(
             commandPalette: { [weak browserManager] in
-                browserManager?.urlBarBundle.commandPalette.presentation
+                browserManager?.urlBarBundle.commandPalettePresentation
             },
             history: { nil }
         )

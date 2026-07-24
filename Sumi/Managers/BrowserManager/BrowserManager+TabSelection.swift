@@ -118,7 +118,7 @@ extension BrowserManager {
         )
 
         if presentNewTabCommandPalette && windowState.isShowingEmptyState {
-            urlBarBundle.commandPalette.presentation.showNewTab(in: windowState)
+            urlBarBundle.commandPalettePresentation.showNewTab(in: windowState)
         }
     }
 

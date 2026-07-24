@@ -12,9 +12,9 @@ enum CommandPaletteLayoutPolicy {
     static let minimumWidth: CGFloat = 200
     static let horizontalVignetteOutset: CGFloat = 56
     static let verticalVignetteOutset: CGFloat = 72
-    static let contentHeight: CGFloat = 328
-    static let inputRowHeight: CGFloat = 22
-    static let inputRowVerticalPadding: CGFloat = 5
+    static let contentHeight: CGFloat = 344
+    static let inputRowHeight: CGFloat = 26
+    static let inputRowVerticalPadding: CGFloat = 7
     static let suggestionsMaxHeight: CGFloat = 260
     static let suggestionsVisibleRowLimit = 5
     static let suggestionRowMinHeight: CGFloat = 32
