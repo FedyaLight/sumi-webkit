@@ -19,7 +19,7 @@ struct TabSuggestionItem: View {
     var body: some View {
         let tokens = themeContext.tokens(settings: sumiSettings)
         let foreground = isSelected ? (selectedForeground ?? tokens.primaryText) : tokens.secondaryText
-        let chipBackground = isSelected ? (selectedChipBackground ?? tokens.commandPaletteChipBackground) : tokens.commandPaletteChipBackground
+        let chipBackground = isSelected ? (selectedChipBackground ?? tokens.floatingSurfaceSecondaryBackground) : tokens.floatingSurfaceSecondaryBackground
         let chipForeground = isSelected ? (selectedChipForeground ?? tokens.primaryText) : tokens.tertiaryText
 
         HStack(alignment: .center, spacing: 0) {

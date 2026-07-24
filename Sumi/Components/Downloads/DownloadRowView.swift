@@ -38,7 +38,7 @@ struct DownloadRowView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .background(isHovering ? tokens.commandPaletteRowHover : .clear)
+        .background(isHovering ? tokens.floatingSurfaceHover : .clear)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }

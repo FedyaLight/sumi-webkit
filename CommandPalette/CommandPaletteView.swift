@@ -223,7 +223,7 @@ struct CommandPaletteView: View {
                                                 .padding(.vertical, 2)
                                                 .background(
                                                     RoundedRectangle(cornerRadius: 4)
-                                                        .fill(tokens.commandPaletteChipBackground)
+                                                        .fill(tokens.floatingSurfaceSecondaryBackground)
                                                 )
                                                 .overlay(
                                                     RoundedRectangle(cornerRadius: 4)
@@ -273,7 +273,7 @@ struct CommandPaletteView: View {
                                 )
                             }
                         }
-                        .background(tokens.commandPaletteBackground)
+                        .background(tokens.floatingSurfaceBackground)
                         .clipShape(
                             RoundedRectangle(
                                 cornerRadius: ChromeLayoutTokens.commandPaletteCornerRadius,

@@ -192,8 +192,7 @@ struct SpaceView: View {
             ) {
                 SpaceSectionsView(
                     pinnedSection: pinnedSection,
-                    regularTabsSection: regularTabsSection,
-                    sectionSpacing: 0
+                    regularTabsSection: regularTabsSection
                 )
             }
         }

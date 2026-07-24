@@ -15,13 +15,9 @@ struct SidebarPassiveScrollIndicatorState: Equatable {
 struct SpaceSectionsView<Pinned: View, Regular: View>: View {
     let pinnedSection: Pinned
     let regularTabsSection: Regular
-    /// The pinned↔regular gap is owned by the regular section itself (see
-    /// `SpaceTabSeparatorLayout`) so it can collapse and animate with the
-    /// separator; callers pass 0.
-    var sectionSpacing: CGFloat = 8
 
     var body: some View {
-        VStack(spacing: sectionSpacing) {
+        VStack(spacing: 0) {
             pinnedSection
             regularTabsSection
         }

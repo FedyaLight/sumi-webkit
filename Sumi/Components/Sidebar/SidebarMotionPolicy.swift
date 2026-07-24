@@ -109,20 +109,6 @@ enum SidebarMotionPolicy {
         return .smooth(duration: selectedItemRevealDuration)
     }
 
-    /// Trails the reveal glide with the short edge-clearing hop, so the row
-    /// settles past the viewport border instead of stopping against it.
-    static func selectedItemRevealSettleAnimation(for mode: Mode) -> Animation? {
-        guard mode != .reducedMotion else { return nil }
-        return .easeOut(duration: 0.12)
-    }
-
-    /// How long the settle pass waits for the reveal to land before reading the
-    /// committed offset back. Reduced motion lands within the turn.
-    static func selectedItemRevealSettleDelay(for mode: Mode) -> Duration? {
-        guard mode != .reducedMotion else { return nil }
-        return .milliseconds(Int((selectedItemRevealDuration + 0.03) * 1_000))
-    }
-
     static func spaceSwitchAnimation(for mode: Mode) -> Animation? {
         guard mode != .reducedMotion else { return nil }
         return .timingCurve(0.16, 1.0, 0.3, 1.0, duration: 0.37)

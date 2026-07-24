@@ -34,12 +34,12 @@ struct ChromeThemeTokens {
     let buttonPrimaryText: Color
     let buttonSecondaryBackground: Color
     let windowBackground: Color
-    /// Opaque floating surface (command palette, URL hub/identity popovers, theme picker, modal glance cards). Flat white / near-black.
-    let commandPaletteBackground: Color
-    /// Secondary fills inside the palette (e.g. “Tab” chip, favicon wells).
-    let commandPaletteChipBackground: Color
-    let commandPaletteRowSelected: Color
-    let commandPaletteRowHover: Color
+    /// Opaque floating surface shared by palettes, popovers, and modal cards.
+    let floatingSurfaceBackground: Color
+    /// Secondary fills within a floating surface, such as chips and icon wells.
+    let floatingSurfaceSecondaryBackground: Color
+    let floatingSurfaceSelection: Color
+    let floatingSurfaceHover: Color
 }
 
 enum ChromeThemeTypography {
@@ -103,19 +103,19 @@ enum ThemeChromeRecipeColors {
         static let toolbarHoverFallback = Color.black.opacity(0.08)
     }
 
-    enum CommandPalette {
+    enum FloatingSurface {
         static let backgroundLight = Color.white
         static let backgroundDark = Color(hex: "1C1C1E")
         static let backgroundFallback = Color.white
-        static let chipLight = Color.black.opacity(0.06)
-        static let chipDark = Color.white.opacity(0.10)
-        static let chipFallback = Color.black.opacity(0.06)
-        static let selectedRowLight = Color.black.opacity(0.08)
-        static let selectedRowDark = Color.white.opacity(0.14)
-        static let selectedRowFallback = Color.black.opacity(0.08)
-        static let hoverRowLight = Color.black.opacity(0.05)
-        static let hoverRowDark = Color.white.opacity(0.08)
-        static let hoverRowFallback = Color.black.opacity(0.05)
+        static let secondaryLight = Color.black.opacity(0.06)
+        static let secondaryDark = Color.white.opacity(0.10)
+        static let secondaryFallback = Color.black.opacity(0.06)
+        static let selectionLight = Color.black.opacity(0.08)
+        static let selectionDark = Color.white.opacity(0.14)
+        static let selectionFallback = Color.black.opacity(0.08)
+        static let hoverLight = Color.black.opacity(0.05)
+        static let hoverDark = Color.white.opacity(0.08)
+        static let hoverFallback = Color.black.opacity(0.05)
     }
 }
 

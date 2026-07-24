@@ -31,8 +31,8 @@ final class ThemeChromeRecipeBuilderTests: XCTestCase {
         XCTAssertEqual(midpoint.alpha, source.alpha + ((target.alpha - source.alpha) * 0.5), accuracy: 0.0001)
     }
 
-    func testCommandPaletteSolidBackgroundLightIsOpaqueWhite() {
-        let color = ThemeChromeRecipeBuilder.commandPaletteSolidBackground(scheme: .light)
+    func testFloatingSurfaceBackgroundLightIsOpaqueWhite() {
+        let color = ThemeChromeRecipeBuilder.floatingSurfaceBackground(scheme: .light)
         let c = color.sRGBComponents
         XCTAssertEqual(c.red, 1, accuracy: 0.02)
         XCTAssertEqual(c.green, 1, accuracy: 0.02)
@@ -40,8 +40,8 @@ final class ThemeChromeRecipeBuilderTests: XCTestCase {
         XCTAssertEqual(c.alpha, 1, accuracy: 0.02)
     }
 
-    func testCommandPaletteSolidBackgroundDarkMatchesCanonicalHex() {
-        let color = ThemeChromeRecipeBuilder.commandPaletteSolidBackground(scheme: .dark)
+    func testFloatingSurfaceBackgroundDarkMatchesCanonicalHex() {
+        let color = ThemeChromeRecipeBuilder.floatingSurfaceBackground(scheme: .dark)
         let expected = Color(hex: "1C1C1E")
         let a = color.sRGBComponents
         let b = expected.sRGBComponents
@@ -83,7 +83,7 @@ final class ThemeChromeRecipeBuilderTests: XCTestCase {
         )
     }
 
-    func testCommandPaletteTokenUsesSolidBackgroundInDarkRecipe() {
+    func testFloatingSurfaceTokenUsesSolidBackgroundInDarkRecipe() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
 
@@ -96,8 +96,8 @@ final class ThemeChromeRecipeBuilderTests: XCTestCase {
         context.transitionProgress = 1.0
 
         let tokens = context.tokens(settings: settings)
-        let token = tokens.commandPaletteBackground.sRGBComponents
-        let expected = ThemeChromeRecipeBuilder.commandPaletteSolidBackground(scheme: .dark).sRGBComponents
+        let token = tokens.floatingSurfaceBackground.sRGBComponents
+        let expected = ThemeChromeRecipeBuilder.floatingSurfaceBackground(scheme: .dark).sRGBComponents
         XCTAssertEqual(token.red, expected.red, accuracy: 0.02)
         XCTAssertEqual(token.green, expected.green, accuracy: 0.02)
         XCTAssertEqual(token.blue, expected.blue, accuracy: 0.02)

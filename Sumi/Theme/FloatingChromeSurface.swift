@@ -9,13 +9,13 @@ enum FloatingChromeSurfaceRole {
     func fill(tokens: ChromeThemeTokens) -> Color {
         switch self {
         case .panel:
-            return tokens.commandPaletteBackground
+            return tokens.floatingSurfaceBackground
         case .elevated:
-            return tokens.commandPaletteChipBackground
+            return tokens.floatingSurfaceSecondaryBackground
         case .rowHover:
-            return tokens.commandPaletteRowHover
+            return tokens.floatingSurfaceHover
         case .rowSelected:
-            return tokens.commandPaletteRowSelected
+            return tokens.floatingSurfaceSelection
         }
     }
 }

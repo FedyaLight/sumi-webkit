@@ -628,25 +628,11 @@ private struct SpaceSnapshotRegularTabsSectionView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Bake the exact live boundary heights (SpaceTabSeparatorLayout) so the
-            // separator + gaps match across a transition. Static — no animation.
-            Color.clear.frame(
-                height: SpaceTabSeparatorLayout.topPad(
-                    hasPinnedContent: snapshot.hasPinnedContent,
-                    showsSeparator: snapshot.showsPinnedSeparator
-                )
-            )
-
-            RoundedRectangle(cornerRadius: 100)
-                .fill(tokens.separator.opacity(0.82))
-                .frame(height: SpaceTabSeparatorLayout.line)
-                .padding(.horizontal, 8)
-                .frame(height: SpaceTabSeparatorLayout.lineHeight(showsSeparator: snapshot.showsPinnedSeparator))
-                .opacity(snapshot.showsPinnedSeparator ? 1 : 0)
-
-            Color.clear.frame(
-                height: SpaceTabSeparatorLayout.bottomPad(showsSeparator: snapshot.showsPinnedSeparator)
-            )
+            SpaceTabSectionBoundary(layout: snapshot.tabSectionBoundaryLayout) {
+                RoundedRectangle(cornerRadius: 100)
+                    .fill(tokens.separator.opacity(0.82))
+                    .padding(.horizontal, 8)
+            }
 
             contentColumn
 
@@ -655,7 +641,7 @@ private struct SpaceSnapshotRegularTabsSectionView: View {
         }
     }
 
-    /// Mirrors the live `contentColumn`: rows + New-Tab at the uniform 2px rhythm,
+    /// Mirrors the live `contentColumn`: rows + New-Tab at the uniform row rhythm,
     /// with the gap present only when regular rows exist (empty list stays flush).
     @ViewBuilder
     private var contentColumn: some View {

@@ -105,11 +105,11 @@ private struct SpaceRegularTabsContentView: View {
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// Zen parity (`hide-separator`): the pinned/regular separator shows only
-    /// while the space has at least one regular tab, independent of pinned
-    /// content.
-    private var showsSeparator: Bool {
-        SpaceTabSeparatorVisibility.shouldShow(regularTabCount: tabs.count)
+    private var boundaryLayout: SpaceTabSectionBoundaryLayout {
+        SpaceTabSectionBoundaryLayout(
+            hasPinnedContent: hasPinnedContent,
+            regularTabCount: tabs.count
+        )
     }
 
     private var separatorCollapseAnimation: Animation? {
@@ -138,17 +138,7 @@ private struct SpaceRegularTabsContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Boundary region — the single owner of the pinned↔regular gap. Its
-            // animation scope is isolated from the tab list so it never sweeps the
-            // list's own row insert/remove animations.
-            VStack(spacing: 0) {
-                Color.clear.frame(
-                    height: SpaceTabSeparatorLayout.topPad(
-                        hasPinnedContent: hasPinnedContent,
-                        showsSeparator: showsSeparator
-                    )
-                )
-
+            SpaceTabSectionBoundary(layout: boundaryLayout) {
                 SpaceSeparator(
                     hasTabs: regularTabCatalog.hasPersistedTabs(in: space),
                     isHovering: $isSidebarHovered
@@ -156,14 +146,11 @@ private struct SpaceRegularTabsContentView: View {
                     regularTabLifecycleCommands.clearRegularTabs(for: space.id)
                 }
                 .padding(.horizontal, 8)
-                .frame(height: SpaceTabSeparatorLayout.lineHeight(showsSeparator: showsSeparator))
-                .opacity(showsSeparator ? 1 : 0)
-
-                Color.clear.frame(
-                    height: SpaceTabSeparatorLayout.bottomPad(showsSeparator: showsSeparator)
-                )
             }
-            .animation(separatorCollapseAnimation, value: showsSeparator)
+            .animation(
+                separatorCollapseAnimation,
+                value: boundaryLayout.showsSeparator
+            )
 
             contentColumn
 

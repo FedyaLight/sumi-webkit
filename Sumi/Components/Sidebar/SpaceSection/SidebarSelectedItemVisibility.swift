@@ -13,14 +13,6 @@ enum SidebarScrollTargetID: Hashable {
     case liveFolderItem(folderID: UUID, itemID: String)
 }
 
-enum SidebarScrollRevealMetrics {
-    /// Identity scrolling stops flush against the viewport border, which reads
-    /// as a clipped row. Reveals carry on this much further so the row keeps
-    /// air between itself and the list boundary. Resting scroll extents are
-    /// untouched — only a reveal that actually moved the surface settles.
-    static let targetEdgeInset: CGFloat = 6
-}
-
 struct SidebarSelectedItemRevealPath: Equatable {
     let targets: [SidebarScrollTargetID]
 
@@ -36,7 +28,13 @@ struct SidebarSelectedItemRevealPath: Equatable {
 @Observable
 final class SidebarSelectedItemRevealOwner {
     struct Request: Equatable {
+        enum Purpose: Equatable {
+            case materializePath
+            case revealSelection
+        }
+
         let targetID: SidebarScrollTargetID
+        let purpose: Purpose
         let generation: Int
     }
 
@@ -87,11 +85,19 @@ final class SidebarSelectedItemRevealOwner {
         }
 
         guard let targetID = pendingTargets.first else { return }
+        let purpose: Request.Purpose
         if pendingTargets.count == 1 {
             pendingTargets.removeAll()
+            purpose = .revealSelection
+        } else {
+            purpose = .materializePath
         }
         nextGeneration &+= 1
-        request = Request(targetID: targetID, generation: nextGeneration)
+        request = Request(
+            targetID: targetID,
+            purpose: purpose,
+            generation: nextGeneration
+        )
     }
 }
 
@@ -127,26 +133,10 @@ private struct SidebarSelectedItemSurfaceGeometry: Equatable {
     }
 }
 
-/// One scheduled settle pass. Carrying the reveal generation keeps repeated
-/// reveals of the same row distinct, so each schedules its own pass and
-/// cancels the one before it.
-private struct SidebarRevealSettleRequest: Equatable {
-    let generation: Int
-    let departureOffset: CGFloat?
-}
-
-/// Non-observable sink for the scroll surface's committed geometry. Reveal
-/// settling needs the landed offset without invalidating the surface on every
-/// scroll frame.
-@MainActor
-private final class SidebarRevealScrollLog {
-    var geometry: SidebarSelectedItemSurfaceGeometry?
-}
-
 private enum SidebarScrollRestorationTarget: Equatable {
     case automatic
     case top
-    case bottom(minimumOffset: CGFloat)
+    case bottom
     case point(CGFloat)
 
     init(viewport: SpaceSidebarSnapshotViewport?) {
@@ -164,7 +154,7 @@ private enum SidebarScrollRestorationTarget: Equatable {
         if offset <= tolerance {
             self = .top
         } else if maximumOffset - offset <= tolerance {
-            self = .bottom(minimumOffset: offset)
+            self = .bottom
         } else {
             self = .point(offset)
         }
@@ -191,19 +181,18 @@ private enum SidebarScrollRestorationTarget: Equatable {
             return true
         case .top:
             return abs(geometry.contentOffsetY) <= tolerance
-        case .bottom(let minimumOffset):
-            return geometry.maximumOffset >= minimumOffset - tolerance
-                && abs(geometry.contentOffsetY - geometry.maximumOffset) <= tolerance
+        case .bottom:
+            return abs(geometry.contentOffsetY - geometry.maximumOffset) <= tolerance
         case .point(let offset):
-            return geometry.maximumOffset >= offset - tolerance
-                && abs(geometry.contentOffsetY - offset) <= tolerance
+            let reachableOffset = min(offset, geometry.maximumOffset)
+            return abs(geometry.contentOffsetY - reachableOffset) <= tolerance
         }
     }
 }
 
 /// Owns programmatic scrolling for one sidebar scroll surface. Saved viewport
-/// intent is restored only after lazy content can represent it; identity
-/// scrolling then materializes off-screen rows with nearest-edge semantics.
+/// intent is applied to the first usable layout and clamped to its reachable
+/// extent; identity scrolling then reveals rows with nearest-edge semantics.
 struct SidebarSelectedItemVisibilityScope<Content: View>: View {
     let revealPath: SidebarSelectedItemRevealPath?
     let selection: SidebarWindowSelectionSnapshot
@@ -213,12 +202,10 @@ struct SidebarSelectedItemVisibilityScope<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
     @State private var revealOwner = SidebarSelectedItemRevealOwner()
-    @State private var scrollLog = SidebarRevealScrollLog()
     @State private var scrollPosition: ScrollPosition
     @State private var restoredSurfaceReceipt: SidebarSelectedItemSurfaceGeometry?
     @State private var didRequestDeferredRestoration = false
     @State private var restorationTarget: SidebarScrollRestorationTarget
-    @State private var settleRequest: SidebarRevealSettleRequest?
 
     init(
         revealPath: SidebarSelectedItemRevealPath?,
@@ -259,27 +246,20 @@ struct SidebarSelectedItemVisibilityScope<Content: View>: View {
                     )
                 } action: { _, geometry in
                     guard isEnabled else { return }
-                    scrollLog.geometry = geometry
                     if revealOwner.isSurfaceReady {
                         onCommittedViewportChange(geometry.scrollViewport)
                         return
                     }
                     if !didRequestDeferredRestoration {
                         switch restorationTarget {
-                        case .bottom(let minimumOffset):
-                            guard geometry.maximumOffset >= minimumOffset - 1 else {
-                                restoredSurfaceReceipt = nil
-                                return
-                            }
+                        case .bottom:
+                            guard geometry.hasUsableLayout else { return }
                             didRequestDeferredRestoration = true
                             scrollPosition.scrollTo(edge: .bottom)
                             restoredSurfaceReceipt = nil
                             return
                         case .point(let offset):
-                            guard geometry.maximumOffset >= offset - 1 else {
-                                restoredSurfaceReceipt = nil
-                                return
-                            }
+                            guard geometry.hasUsableLayout else { return }
                             didRequestDeferredRestoration = true
                             scrollPosition.scrollTo(y: offset)
                             restoredSurfaceReceipt = nil
@@ -316,26 +296,6 @@ struct SidebarSelectedItemVisibilityScope<Content: View>: View {
                     }
                     revealOwner.reveal(revealPath)
                 }
-                .task(id: settleRequest) {
-                    guard isEnabled, let settleRequest else { return }
-
-                    // The landed offset only arrives through scroll geometry,
-                    // so the settle waits out the reveal's own motion instead
-                    // of reading a still-animating frame.
-                    if let delay = SidebarMotionPolicy
-                        .selectedItemRevealSettleDelay(for: motionMode) {
-                        try? await Task.sleep(for: delay)
-                    } else {
-                        await Task.yield()
-                    }
-                    guard !Task.isCancelled else { return }
-
-                    settleRevealedEdge(
-                        departingFrom: settleRequest.departureOffset,
-                        animation: SidebarMotionPolicy
-                            .selectedItemRevealSettleAnimation(for: motionMode)
-                    )
-                }
                 .onChange(of: revealOwner.request) { _, request in
                     guard isEnabled, let request else { return }
                     reveal(request, with: proxy)
@@ -351,56 +311,21 @@ struct SidebarSelectedItemVisibilityScope<Content: View>: View {
         )
     }
 
-    /// Identity scrolling lands the row flush against the viewport border, so
-    /// every reveal schedules a settle pass that carries it one edge inset
-    /// further into view.
+    /// Path materialization is layout work; only the final selected target gets
+    /// the user-visible nearest-edge animation.
     private func reveal(
         _ request: SidebarSelectedItemRevealOwner.Request,
         with proxy: ScrollViewProxy
     ) {
-        settleRequest = SidebarRevealSettleRequest(
-            generation: request.generation,
-            departureOffset: scrollLog.geometry?.contentOffsetY
-        )
-
-        if let animation = SidebarMotionPolicy.selectedItemRevealAnimation(
-            for: motionMode
-        ) {
+        let animation = request.purpose == .revealSelection
+            ? SidebarMotionPolicy.selectedItemRevealAnimation(for: motionMode)
+            : nil
+        if let animation {
             withAnimation(animation) {
                 proxy.scrollTo(request.targetID)
             }
         } else {
             proxy.scrollTo(request.targetID)
-        }
-    }
-
-    private func settleRevealedEdge(
-        departingFrom departureOffset: CGFloat?,
-        animation: Animation?
-    ) {
-        guard isEnabled,
-              let departureOffset,
-              let geometry = scrollLog.geometry,
-              geometry.hasUsableLayout
-        else { return }
-
-        // A reveal that did not move the surface had the row in view already —
-        // it has no border to clear.
-        let travel = geometry.contentOffsetY - departureOffset
-        guard abs(travel) > 0.5 else { return }
-
-        let inset = SidebarScrollRevealMetrics.targetEdgeInset
-        let settledOffset = travel > 0
-            ? min(geometry.contentOffsetY + inset, geometry.maximumOffset)
-            : max(geometry.contentOffsetY - inset, 0)
-        guard abs(settledOffset - geometry.contentOffsetY) > 0.5 else { return }
-
-        if let animation {
-            withAnimation(animation) {
-                scrollPosition.scrollTo(y: settledOffset)
-            }
-        } else {
-            scrollPosition.scrollTo(y: settledOffset)
         }
     }
 }

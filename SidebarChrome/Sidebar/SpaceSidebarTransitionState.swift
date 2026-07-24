@@ -11,6 +11,9 @@ enum SpaceSidebarTransitionConfig {
     static let swipeProgressEpsilon: Double = 0.01
     static let axisLockDistance: CGFloat = 2
     static let axisLockDominanceMultiplier: CGFloat = 1.15
+    /// Phase-less drivers expose no terminal phase. A new event after this
+    /// quiet interval starts a new discrete sequence; no timer or polling runs.
+    static let phaseLessSequenceBreak: TimeInterval = 0.15
 }
 
 enum SpaceSidebarTransitionPhase: Equatable {

@@ -26,19 +26,22 @@ struct SpaceSwipeGestureSample: Equatable {
     var scrollingDeltaX: CGFloat
     var scrollingDeltaY: CGFloat
     var hasPreciseScrollingDeltas: Bool
+    var timestamp: TimeInterval
 
     init(
         phase: NSEvent.Phase = [],
         momentumPhase: NSEvent.Phase = [],
         scrollingDeltaX: CGFloat = 0,
         scrollingDeltaY: CGFloat = 0,
-        hasPreciseScrollingDeltas: Bool = true
+        hasPreciseScrollingDeltas: Bool = true,
+        timestamp: TimeInterval = 0
     ) {
         self.phase = phase
         self.momentumPhase = momentumPhase
         self.scrollingDeltaX = scrollingDeltaX
         self.scrollingDeltaY = scrollingDeltaY
         self.hasPreciseScrollingDeltas = hasPreciseScrollingDeltas
+        self.timestamp = timestamp
     }
 
     init(event: NSEvent) {
@@ -47,7 +50,8 @@ struct SpaceSwipeGestureSample: Equatable {
             momentumPhase: event.momentumPhase,
             scrollingDeltaX: event.scrollingDeltaX,
             scrollingDeltaY: event.scrollingDeltaY,
-            hasPreciseScrollingDeltas: event.hasPreciseScrollingDeltas
+            hasPreciseScrollingDeltas: event.hasPreciseScrollingDeltas,
+            timestamp: event.timestamp
         )
     }
 }
@@ -70,6 +74,7 @@ struct SpaceSwipeGestureTracker {
     private(set) var lastProgress: Double = 0
     private(set) var lastDirection: Int?
     private var isDrainingPhaseLessTail = false
+    private var lastPhaseLessSampleTimestamp: TimeInterval?
 
     var ownsScrollSequence: Bool {
         didSendBeginEvent || axisLock == .horizontal || isDrainingPhaseLessTail
@@ -80,6 +85,15 @@ struct SpaceSwipeGestureTracker {
         width: CGFloat,
         isEnabled: Bool
     ) -> SpaceSwipeGestureTrackingResult {
+        let isPhaseLess = sample.phase.isEmpty && sample.momentumPhase.isEmpty
+        if isDrainingPhaseLessTail,
+           isPhaseLess,
+           let lastPhaseLessSampleTimestamp,
+           sample.timestamp - lastPhaseLessSampleTimestamp
+               >= SpaceSidebarTransitionConfig.phaseLessSequenceBreak {
+            reset()
+        }
+
         // Disabling capture blocks new gestures, not an already-owned sequence.
         guard isEnabled || ownsScrollSequence else {
             reset()
@@ -90,11 +104,15 @@ struct SpaceSwipeGestureTracker {
             return .init(handling: .forwardToUnderlying, emittedEvents: [])
         }
 
+        if isPhaseLess {
+            lastPhaseLessSampleTimestamp = sample.timestamp
+        }
+
         if isDrainingPhaseLessTail {
             return drainPhaseLessTail(sample, width: width, isEnabled: isEnabled)
         }
 
-        if sample.phase.isEmpty && sample.momentumPhase.isEmpty {
+        if isPhaseLess {
             return handlePhaseLessSample(sample, width: width)
         }
 
@@ -322,6 +340,7 @@ struct SpaceSwipeGestureTracker {
     mutating func reset() {
         resetTrackingState()
         isDrainingPhaseLessTail = false
+        lastPhaseLessSampleTimestamp = nil
     }
 
     private mutating func beginDrainingPhaseLessTail() {

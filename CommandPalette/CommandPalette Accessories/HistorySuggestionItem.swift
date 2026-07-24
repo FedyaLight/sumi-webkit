@@ -246,7 +246,7 @@ private struct ColorConfig {
         if isHovered {
             return Color.red.opacity(0.14)
         }
-        return isSelected ? .clear : tokens.commandPaletteChipBackground.opacity(0.72)
+        return isSelected ? .clear : tokens.floatingSurfaceSecondaryBackground.opacity(0.72)
     }
 
     var confirmDeleteBackground: Color {

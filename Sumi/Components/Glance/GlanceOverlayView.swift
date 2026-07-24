@@ -38,7 +38,7 @@ struct GlanceOverlayView: NSViewRepresentable {
             browserContentCornerRadius: browserChromeGeometry.contentRadius,
             browserContentInset: browserChromeGeometry.elementSeparation,
             accentColor: Self.nsColor(tokens.accent),
-            surfaceColor: Self.nsColor(tokens.commandPaletteBackground),
+            surfaceColor: Self.nsColor(tokens.floatingSurfaceBackground),
             reduceMotion: reduceMotion || sumiSettings.shouldReduceChromeMotion
         )
         context.coordinator.controller?.update(

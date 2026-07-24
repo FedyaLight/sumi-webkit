@@ -545,7 +545,7 @@
         "SumiTests/SpaceProfileRuntimeStateServiceTests",
         "SumiTests/SpaceSidebarTransitionStateTests",
         "SumiTests/SpaceStripGeometryTests",
-        "SumiTests/SpaceTabSeparatorVisibilityTests",
+        "SumiTests/SpaceTabSectionBoundaryTests",
         "SumiTests/SpaceTitleLeadingPresentationTests",
         "SumiTests/SpaceViewDecompositionTests",
         "SumiTests/SplitDropServiceShortcutConversionTests",

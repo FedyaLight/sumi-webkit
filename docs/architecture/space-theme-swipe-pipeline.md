@@ -31,7 +31,9 @@ from the first reveal animation. Selection callers never issue scroll commands.
 - After emitting `began`, the swipe tracker owns every sample through `ended` or
   `cancelled`; tab-list scroll routing must not reset an active swipe session.
 - Phase-less scroll input is one thresholded discrete switch, followed by a
-  drained inertial tail; the tail never drives transition progress or another switch.
+  drained inertial tail; the tail never drives transition progress or another
+  switch. Because those drivers publish no terminal phase, a quiet interval
+  between AppKit event timestamps starts the next sequence without a timer.
 - Temporarily disabling new swipe capture must not abandon an already-owned
   input sequence. Ownership ends only at that sequence's terminal sample.
 - Committing the selected space must not create a second theme transition.
@@ -39,10 +41,9 @@ from the first reveal animation. Selection callers never issue scroll commands.
 - Global `System / Light / Dark` appearance remains independent from workspace color styling.
 - A committed space freezes the viewport intent used by its transition snapshot:
   automatic, top, bottom, or a concrete point. Non-top surfaces mount at the top
-  first so nested lazy stacks can publish their real document height; only then
-  does the visibility scope restore the saved bottom/point and accept viewport
-  updates from the new surface. This prevents an incomplete lazy document from
-  overwriting the saved viewport or being left at an impossible nonzero offset.
+  first, then apply their saved destination to the first usable layout. Point
+  restoration clamps to the current reachable extent and bottom restoration uses
+  the current bottom, so content shrinkage cannot stall surface readiness.
 - Once real scroll geometry confirms restoration, the visibility scope releases
   the latest selected-row reveal in a later animation transaction. Space return,
   close/unload fallback, and selected-row hover therefore share one identity-based
@@ -56,12 +57,12 @@ from the first reveal animation. Selection callers never issue scroll commands.
   Nested content must not own that identity: SwiftUI cannot materialize an
   off-screen slot from an ID hidden inside the slot's view hierarchy.
 - Folder selections resolve to a root-to-leaf reveal path. The reveal owner
-  advances only when each direct folder target has appeared, then reveals the
-  selected row. Closed folders skip non-rendered descendants and target their
-  sticky selected projection.
+  materializes direct folder targets without animation, advancing as they appear;
+  only the final selected row receives the user-visible reveal animation. Closed
+  folders skip non-rendered descendants and target their sticky selected projection.
 - Programmatic identity scrolling omits an explicit anchor. SwiftUI moves only
   far enough to expose the row, matching Zen's nearest-edge behavior, and uses
-  the shared smooth reveal animation.
+  one shared smooth reveal animation. There is no delayed offset correction.
 - Regular tabs, launchers, split groups, collapsed-folder sticky projections,
   and live-folder results all expose a stable scroll identity. Split members
   resolve to the one visible split-group row.
@@ -88,3 +89,5 @@ from the first reveal animation. Selection callers never issue scroll commands.
   before a frame is presented, turning a smooth reveal into an instant jump.
 - Delaying reveal by a guessed duration. Readiness must come from actual scroll
   geometry so it remains correct across layout cost, hardware, and nested lists.
+- Scheduling a second offset adjustment after identity scrolling. It races manual
+  scrolling and layout changes; the identity reveal must own the final destination.

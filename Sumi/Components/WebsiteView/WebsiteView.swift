@@ -437,9 +437,9 @@ private struct SplitPreviewOverlay: View {
     private func previewFill(for style: SplitDropPreviewStyle) -> Color {
         switch style {
         case .edge:
-            return tokens.commandPaletteBackground.opacity(0.65)
+            return tokens.floatingSurfaceBackground.opacity(0.65)
         case .center:
-            return tokens.commandPaletteBackground.opacity(0.65)
+            return tokens.floatingSurfaceBackground.opacity(0.65)
         }
     }
 

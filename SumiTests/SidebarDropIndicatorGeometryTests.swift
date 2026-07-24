@@ -55,9 +55,9 @@ final class SidebarDropIndicatorGeometryTests: XCTestCase {
 
     // MARK: - Regular list
 
-    func testRegularBoundariesUseTrueRowPitch() {
-        // 3 rows of 36 with spacing 2 -> frame height 112, pitch 38.
-        let frame = CGRect(x: 12, y: 200, width: 240, height: 112)
+    func testRegularBoundariesUseSharedRowPitch() {
+        // 3 rows of 36 with the shared 4pt gap -> frame height 116, pitch 40.
+        let frame = CGRect(x: 12, y: 200, width: 240, height: 116)
         let geometry = regularGeometry(frame: frame, itemCount: 3)
 
         let top = SidebarDropIndicatorGeometry.lineRect(
@@ -72,8 +72,7 @@ final class SidebarDropIndicatorGeometryTests: XCTestCase {
             folderIntent: .none,
             geometry: geometry
         )
-        // Boundary above row 1: minY + 1*38 - spacing/2 = 200 + 38 - 1 = 237.
-        XCTAssertEqual(interior?.midY, 237)
+        XCTAssertEqual(interior?.midY, 238)
 
         let bottom = SidebarDropIndicatorGeometry.lineRect(
             slot: .spaceRegular(spaceId: spaceId, slot: 3),
@@ -83,8 +82,39 @@ final class SidebarDropIndicatorGeometryTests: XCTestCase {
         XCTAssertEqual(bottom?.midY, frame.maxY)
     }
 
+    func testRegularAndPinnedInsertionLinesUseTheSameRowRhythm() throws {
+        // A transiently stale frame must not change the canonical row pitch.
+        let regularFrame = CGRect(x: 12, y: 200, width: 240, height: 112)
+        let regularGeometry = regularGeometry(
+            frame: regularFrame,
+            itemCount: 3
+        )
+        let regularLine = try XCTUnwrap(
+            SidebarDropIndicatorGeometry.lineRect(
+                slot: .spaceRegular(spaceId: spaceId, slot: 1),
+                folderIntent: .none,
+                geometry: regularGeometry
+            )
+        )
+
+        let pinnedMetrics = SidebarPinnedListHitMetrics(
+            frame: CGRect(x: 12, y: 80, width: 240, height: 134),
+            rowCount: 3,
+            leadingInset: 18
+        )
+        let regularBoundaryOffset = regularLine.midY - regularFrame.minY
+        let pinnedBoundaryOffset = pinnedMetrics.boundaryY(for: 1)
+            - pinnedMetrics.rowsFrame.minY
+
+        XCTAssertEqual(
+            regularBoundaryOffset,
+            pinnedBoundaryOffset,
+            accuracy: 0.001
+        )
+    }
+
     func testRegularSentinelAndOvershootClampToLastBoundary() {
-        let frame = CGRect(x: 12, y: 200, width: 240, height: 112)
+        let frame = CGRect(x: 12, y: 200, width: 240, height: 116)
         let geometry = regularGeometry(frame: frame, itemCount: 3)
 
         let sentinel = SidebarDropIndicatorGeometry.lineRect(
@@ -115,7 +145,7 @@ final class SidebarDropIndicatorGeometryTests: XCTestCase {
     }
 
     func testRegularLineRectAppliesHorizontalInsetAndHeight() {
-        let frame = CGRect(x: 12, y: 200, width: 240, height: 112)
+        let frame = CGRect(x: 12, y: 200, width: 240, height: 116)
         let geometry = regularGeometry(frame: frame, itemCount: 3)
 
         let rect = SidebarDropIndicatorGeometry.lineRect(
@@ -129,14 +159,14 @@ final class SidebarDropIndicatorGeometryTests: XCTestCase {
     }
 
     func testPresentedResolutionKeepsTheAnchorChosenWithItsSlot() {
-        let originalFrame = CGRect(x: 12, y: 200, width: 240, height: 112)
+        let originalFrame = CGRect(x: 12, y: 200, width: 240, height: 116)
         let resolution = SidebarDropResolution(
             slot: .spaceRegular(spaceId: spaceId, slot: 1),
             folderIntent: .none,
             activeHoveredFolderId: nil
         ).anchored(in: regularGeometry(frame: originalFrame, rowCount: 3))
 
-        XCTAssertEqual(resolution.indicatorLineRect?.midY, 237)
+        XCTAssertEqual(resolution.indicatorLineRect?.midY, 238)
 
         let movedGeometry = regularGeometry(
             frame: originalFrame.offsetBy(dx: 0, dy: 100),
@@ -154,8 +184,8 @@ final class SidebarDropIndicatorGeometryTests: XCTestCase {
 
     func testSplitGroupRowKeepsLineOnVisualBoundaries() {
         // 4 tabs render as 3 visual rows: [a], [g1, g2] split row, [b]
-        // -> row boundaries [0, 1, 2, 3]. Rows 36pt, spacing 2 -> pitch 38.
-        let frame = CGRect(x: 12, y: 200, width: 240, height: 112)
+        // -> row boundaries [0, 1, 2, 3]. Rows 36pt, spacing 4 -> pitch 40.
+        let frame = CGRect(x: 12, y: 200, width: 240, height: 116)
         let geometry = regularGeometry(
             frame: frame,
             rowCount: 3
@@ -167,7 +197,7 @@ final class SidebarDropIndicatorGeometryTests: XCTestCase {
             folderIntent: .none,
             geometry: geometry
         )
-        XCTAssertEqual(belowGroup?.midY, 200 + 2 * 38 - 1)
+        XCTAssertEqual(belowGroup?.midY, 200 + 2 * 40 - 2)
 
         // Visual slot 1 is the boundary before the split row.
         let aboveGroup = SidebarDropIndicatorGeometry.lineRect(
@@ -175,7 +205,7 @@ final class SidebarDropIndicatorGeometryTests: XCTestCase {
             folderIntent: .none,
             geometry: geometry
         )
-        XCTAssertEqual(aboveGroup?.midY, 200 + 1 * 38 - 1)
+        XCTAssertEqual(aboveGroup?.midY, 200 + 1 * 40 - 2)
 
         // Visual slot 3 (after every row) is the frame bottom.
         let after = SidebarDropIndicatorGeometry.lineRect(
@@ -188,16 +218,26 @@ final class SidebarDropIndicatorGeometryTests: XCTestCase {
 
     func testRegularHitMetricsMapPointerAndSlotsThroughSplitGroupBoundaries() {
         let metrics = SidebarRegularListHitMetrics(
-            frame: CGRect(x: 0, y: 0, width: 240, height: 112),
+            frame: CGRect(x: 0, y: 0, width: 240, height: 116),
             rowIdentities: (0..<3).map { _ in .tab(UUID()) }
         )
 
         XCTAssertEqual(metrics.rowCount, 3)
-        XCTAssertEqual(metrics.rowPitch, 38)
 
         XCTAssertEqual(metrics.rowBoundaryIndex(forLocalY: 40), 1)
         XCTAssertEqual(metrics.rowBoundaryIndex(forLocalY: 70), 2)
         XCTAssertEqual(metrics.rowBoundaryIndex(forLocalY: 500), 3)
+    }
+
+    func testRegularHitBoundaryChangesAtTheVisualRowMidpoint() {
+        let metrics = SidebarRegularListHitMetrics(
+            frame: CGRect(x: 0, y: 0, width: 240, height: 116),
+            rowIdentities: (0..<3).map { _ in .tab(UUID()) }
+        )
+        let firstRowMidpoint = SidebarRowLayout.rowHeight / 2
+
+        XCTAssertEqual(metrics.rowBoundaryIndex(forLocalY: firstRowMidpoint - 0.25), 0)
+        XCTAssertEqual(metrics.rowBoundaryIndex(forLocalY: firstRowMidpoint + 0.25), 1)
     }
 
     func testRegularHitMetricsDoNotAccumulateSplitMemberOffsetNearListBottom() {
@@ -209,11 +249,11 @@ final class SidebarDropIndicatorGeometryTests: XCTestCase {
             + [.splitGroup(splitID)]
             + trailingIDs.map { .tab($0) }
         let metrics = SidebarRegularListHitMetrics(
-            frame: CGRect(x: 0, y: 0, width: 240, height: 378),
+            frame: CGRect(x: 0, y: 0, width: 240, height: 396),
             rowIdentities: identities
         )
 
-        let boundaryIndex = metrics.rowBoundaryIndex(forLocalY: 8 * 38)
+        let boundaryIndex = metrics.rowBoundaryIndex(forLocalY: 8 * 40)
 
         XCTAssertEqual(boundaryIndex, 8)
         XCTAssertEqual(
@@ -277,6 +317,43 @@ final class SidebarDropIndicatorGeometryTests: XCTestCase {
         XCTAssertEqual(pinnedLine(slot: 0, geometry: geometry)?.midY, 98)
         XCTAssertEqual(pinnedLine(slot: 1, geometry: geometry)?.midY, 136)
         XCTAssertEqual(pinnedLine(slot: 3, geometry: geometry)?.midY, 214)
+    }
+
+    func testPinnedHitMetricsUsesSharedRowRhythm() {
+        let leadingInset = SidebarInsertionGuide.visualCenterY
+        let rowCount = 3
+        let gap = SidebarRowLayout.rowGap
+        let height = leadingInset
+            + CGFloat(rowCount) * SidebarRowLayout.rowHeight
+            + CGFloat(rowCount - 1) * gap
+        let metrics = SidebarPinnedListHitMetrics(
+            frame: CGRect(x: 0, y: 100, width: 240, height: height),
+            rowCount: rowCount,
+            leadingInset: leadingInset
+        )
+
+        XCTAssertEqual(metrics.rowsFrame.height, 116, accuracy: 0.01)
+        XCTAssertEqual(metrics.boundaryY(for: 0), 100 + leadingInset, accuracy: 0.01)
+        XCTAssertEqual(
+            metrics.boundaryY(for: 1),
+            100 + leadingInset + SidebarRowLayout.rowHeight + gap / 2,
+            accuracy: 0.01
+        )
+
+        let midSecondRow = 100 + leadingInset + SidebarRowLayout.rowHeight + gap + 2
+        XCTAssertEqual(metrics.rowBoundaryIndex(forGlobalY: midSecondRow), 1)
+    }
+
+    func testPinnedHitBoundaryChangesAtTheVisualRowMidpoint() {
+        let metrics = SidebarPinnedListHitMetrics(
+            frame: CGRect(x: 0, y: 100, width: 240, height: 116),
+            rowCount: 3,
+            leadingInset: 0
+        )
+        let firstRowMidpoint = metrics.rowsFrame.minY + SidebarRowLayout.rowHeight / 2
+
+        XCTAssertEqual(metrics.rowBoundaryIndex(forGlobalY: firstRowMidpoint - 0.25), 0)
+        XCTAssertEqual(metrics.rowBoundaryIndex(forGlobalY: firstRowMidpoint + 0.25), 1)
     }
 
     // MARK: - Folder children

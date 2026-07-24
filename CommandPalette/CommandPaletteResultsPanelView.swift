@@ -100,7 +100,7 @@ private struct CommandPaletteSuggestionsListView: View {
                             isSelected
                                 ? selectedBackground
                                 : isHovered
-                                ? tokens.commandPaletteRowHover
+                                ? tokens.floatingSurfaceHover
                                 : .clear
                         )
                         .clipShape(RoundedRectangle(cornerRadius: 6))

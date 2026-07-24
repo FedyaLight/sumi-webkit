@@ -32,10 +32,12 @@ final class SidebarSelectedItemVisibilityTests: XCTestCase {
             ])
         )
         XCTAssertEqual(try XCTUnwrap(owner.request).targetID, .folder(folderID))
+        XCTAssertEqual(try XCTUnwrap(owner.request).purpose, .materializePath)
 
         owner.targetDidAppear(.folder(folderID))
 
         XCTAssertEqual(try XCTUnwrap(owner.request).targetID, .launcher(itemID))
+        XCTAssertEqual(try XCTUnwrap(owner.request).purpose, .revealSelection)
     }
 
     func testRevealPathSkipsAnAlreadyMountedAncestor() throws {
@@ -53,6 +55,7 @@ final class SidebarSelectedItemVisibilityTests: XCTestCase {
         )
 
         XCTAssertEqual(try XCTUnwrap(owner.request).targetID, .launcher(itemID))
+        XCTAssertEqual(try XCTUnwrap(owner.request).purpose, .revealSelection)
     }
 
     func testRevealWaitsUntilRestoredSurfaceIsReady() throws {
@@ -248,7 +251,7 @@ final class SidebarSelectedItemVisibilityTests: XCTestCase {
         XCTAssertLessThan(scrollView.documentVisibleRect.minY, 44)
     }
 
-    func testRevealStopsShortOfTheViewportEdge() throws {
+    func testRevealUsesOneNearestEdgeScroll() throws {
         let state = SidebarSelectedItemLazyHarnessState()
         let hostingView = NSHostingView(
             rootView: SidebarSelectedItemLazyHarness(
@@ -270,19 +273,19 @@ final class SidebarSelectedItemVisibilityTests: XCTestCase {
         runMainLoop()
         let scrollView = try XCTUnwrap(findScrollView(in: hostingView))
 
-        // Row 3 spans [120, 160] in a 100pt viewport, so a flush reveal would
-        // land on 60. The bleed has to push it one inset further.
+        // Row 3 spans [120, 160] in a 100pt viewport. One nearest-edge reveal
+        // lands directly on 60 without a delayed correction pass.
         state.selectedItemID = .regularTab(state.itemIDs[3])
         runMainLoop()
 
         XCTAssertEqual(
             scrollView.documentVisibleRect.minY,
-            60 + SidebarScrollRevealMetrics.targetEdgeInset,
+            60,
             accuracy: 1
         )
     }
 
-    func testAnimatedRevealSettlesPastTheViewportEdge() throws {
+    func testAnimatedRevealEndsAtTheNearestViewportEdge() throws {
         let state = SidebarSelectedItemLazyHarnessState()
         let hostingView = NSHostingView(
             rootView: SidebarSelectedItemLazyHarness(
@@ -310,12 +313,12 @@ final class SidebarSelectedItemVisibilityTests: XCTestCase {
 
         XCTAssertEqual(
             scrollView.documentVisibleRect.minY,
-            60 + SidebarScrollRevealMetrics.targetEdgeInset,
+            60,
             accuracy: 1
         )
     }
 
-    func testUpwardRevealSettlesPastTheTopEdge() throws {
+    func testUpwardRevealEndsAtTheNearestViewportEdge() throws {
         let state = SidebarSelectedItemLazyHarnessState()
         let hostingView = NSHostingView(
             rootView: SidebarSelectedItemLazyHarness(
@@ -339,16 +342,47 @@ final class SidebarSelectedItemVisibilityTests: XCTestCase {
         scrollView.contentView.scroll(to: NSPoint(x: 0, y: 1_500))
         scrollView.reflectScrolledClipView(scrollView.contentView)
 
-        // Row 20 spans [800, 840]; reaching it from below stops flush at 800,
-        // so the settle pass has to clear the top border by one inset.
+        // Row 20 spans [800, 840]; one nearest-edge reveal lands on 800.
         state.selectedItemID = .regularTab(state.itemIDs[20])
         runMainLoop()
 
         XCTAssertEqual(
             scrollView.documentVisibleRect.minY,
-            800 - SidebarScrollRevealMetrics.targetEdgeInset,
+            800,
             accuracy: 1
         )
+    }
+
+    func testSelectionRevealDoesNotStallWhenRestoredContentShrank() throws {
+        let state = SidebarSelectedItemLazyHarnessState(
+            itemCount: 5,
+            initiallySelectedItemIndex: 4
+        )
+        let hostingView = NSHostingView(
+            rootView: SidebarSelectedItemLazyHarness(
+                state: state,
+                restoredViewport: SpaceSidebarSnapshotViewport(
+                    contentOffsetY: 600,
+                    contentHeight: 1_600,
+                    viewportHeight: 100
+                )
+            )
+        )
+        hostingView.frame = NSRect(x: 0, y: 0, width: 200, height: 100)
+        let window = NSWindow(
+            contentRect: hostingView.frame,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = hostingView
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+
+        runMainLoop()
+        let scrollView = try XCTUnwrap(findScrollView(in: hostingView))
+
+        XCTAssertEqual(scrollView.documentVisibleRect.minY, 100, accuracy: 1)
     }
 
     func testRevealOfAnAlreadyVisibleRowDoesNotScroll() throws {
@@ -449,10 +483,14 @@ private final class SidebarScrollOffsetRecorder {
 @MainActor
 @Observable
 private final class SidebarSelectedItemLazyHarnessState {
-    let itemIDs = (0..<40).map { _ in UUID() }
+    let itemIDs: [UUID]
     var selectedItemID: SidebarScrollTargetID?
 
-    init(initiallySelectedItemIndex: Int? = nil) {
+    init(
+        itemCount: Int = 40,
+        initiallySelectedItemIndex: Int? = nil
+    ) {
+        itemIDs = (0..<itemCount).map { _ in UUID() }
         selectedItemID = initiallySelectedItemIndex.map {
             .regularTab(itemIDs[$0])
         }

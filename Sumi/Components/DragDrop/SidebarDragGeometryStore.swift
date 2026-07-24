@@ -88,6 +88,40 @@ struct SidebarFolderChildDropTargetUpdate: Equatable {
     }
 }
 
+private enum SidebarUniformRowDropGeometry {
+    static func contentHeight(rowCount: Int) -> CGFloat {
+        CGFloat(max(rowCount, 0)) * SidebarRowLayout.rowHeight
+            + CGFloat(max(rowCount - 1, 0)) * SidebarRowLayout.rowGap
+    }
+
+    static func boundaryIndex(localY: CGFloat, rowCount: Int) -> Int {
+        guard rowCount > 0 else { return 0 }
+        let rowIndex = Int(
+            (localY / SidebarRowLayout.rowPitch).rounded(.down)
+        )
+        let offsetInPitch = localY
+            - CGFloat(rowIndex) * SidebarRowLayout.rowPitch
+        let rawIndex = offsetInPitch < SidebarRowLayout.rowHeight / 2
+            ? rowIndex
+            : rowIndex + 1
+        return max(0, min(rawIndex, rowCount))
+    }
+
+    static func boundaryY(
+        minY: CGFloat,
+        maxY: CGFloat,
+        slot: Int,
+        rowCount: Int
+    ) -> CGFloat {
+        let safeSlot = max(0, min(slot, rowCount))
+        if safeSlot == 0 { return minY }
+        if safeSlot == rowCount { return maxY }
+        return minY
+            + CGFloat(safeSlot) * SidebarRowLayout.rowPitch
+            - SidebarRowLayout.rowGap / 2
+    }
+}
+
 struct SidebarRegularListHitMetrics: Equatable {
     let frame: CGRect
     let rowIdentities: [SidebarVisualSceneProjection.RegularRow.Identity]
@@ -104,19 +138,21 @@ struct SidebarRegularListHitMetrics: Equatable {
         self.rowIdentities = rowIdentities
     }
 
-    /// True visual row pitch (row height + derived inter-row spacing).
-    var rowPitch: CGFloat {
-        guard rowCount > 1 else { return SidebarRowLayout.rowHeight }
-        let spacing = (frame.height - CGFloat(rowCount) * SidebarRowLayout.rowHeight)
-            / CGFloat(rowCount - 1)
-        return SidebarRowLayout.rowHeight + max(0, spacing)
-    }
-
     /// Nearest visual row boundary for a Y offset inside the list frame.
     func rowBoundaryIndex(forLocalY localY: CGFloat) -> Int {
-        guard rowCount > 0 else { return 0 }
-        let rawIndex = Int(((localY / rowPitch) + 0.5).rounded(.down))
-        return max(0, min(rawIndex, rowCount))
+        SidebarUniformRowDropGeometry.boundaryIndex(
+            localY: localY,
+            rowCount: rowCount
+        )
+    }
+
+    func boundaryY(for slot: Int) -> CGFloat {
+        SidebarUniformRowDropGeometry.boundaryY(
+            minY: frame.minY,
+            maxY: frame.maxY,
+            slot: slot,
+            rowCount: rowCount
+        )
     }
 
     func presentedBoundary(
@@ -137,39 +173,31 @@ struct SidebarPinnedListHitMetrics: Equatable {
     var rowCount: Int
     var leadingInset: CGFloat
 
-    /// Exact visual row pitch. Uniform pinned rows are all `rowHeight` with a
-    /// known `rowGap`, so the pitch is the compile-time constant
-    /// `SidebarRowLayout.rowPitch` — NOT reverse-engineered from the measured
-    /// frame. A frame-derived pitch drifts from the rendered layout whenever the
-    /// reported `frame.height`/`rowCount` is momentarily off (mid-relayout, lazy
-    /// measurement), which desyncs the indicator line from the actual drop.
-    var rowPitch: CGFloat { SidebarRowLayout.rowPitch }
-
     var rowsFrame: CGRect {
         CGRect(
             x: frame.minX,
             y: frame.minY + leadingInset,
             width: frame.width,
-            height: CGFloat(max(rowCount, 0)) * SidebarRowLayout.rowHeight
-                + CGFloat(max(rowCount - 1, 0)) * SidebarRowLayout.rowGap
+            height: SidebarUniformRowDropGeometry.contentHeight(
+                rowCount: rowCount
+            )
         )
     }
 
     func rowBoundaryIndex(forGlobalY globalY: CGFloat) -> Int {
-        guard rowCount > 0 else { return 0 }
-        let localY = globalY - rowsFrame.minY
-        let rawIndex = Int(((localY / rowPitch) + 0.5).rounded(.down))
-        return max(0, min(rawIndex, rowCount))
+        SidebarUniformRowDropGeometry.boundaryIndex(
+            localY: globalY - rowsFrame.minY,
+            rowCount: rowCount
+        )
     }
 
     func boundaryY(for slot: Int) -> CGFloat {
-        let safeSlot = max(0, min(slot, rowCount))
-        if safeSlot == 0 { return rowsFrame.minY }
-        if safeSlot == rowCount { return rowsFrame.maxY }
-        // Interior boundary: center of the spacing gap above the row, matching
-        // `SidebarDropIndicatorGeometry.regularLineRect`.
-        let rowSpacing = rowPitch - SidebarRowLayout.rowHeight
-        return rowsFrame.minY + CGFloat(safeSlot) * rowPitch - rowSpacing / 2
+        SidebarUniformRowDropGeometry.boundaryY(
+            minY: rowsFrame.minY,
+            maxY: rowsFrame.maxY,
+            slot: slot,
+            rowCount: rowCount
+        )
     }
 }
 

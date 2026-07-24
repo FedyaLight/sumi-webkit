@@ -70,22 +70,10 @@ enum SidebarDropIndicatorGeometry {
             return lineRect(atBoundaryY: metrics.frame.minY, container: metrics.frame)
         }
 
-        let boundaryIndex = max(0, min(slotIndex, metrics.rowCount))
-        let rowSpacing = metrics.rowPitch - SidebarRowLayout.rowHeight
-
-        let boundaryY: CGFloat
-        switch boundaryIndex {
-        case 0:
-            boundaryY = metrics.frame.minY
-        case metrics.rowCount:
-            boundaryY = metrics.frame.maxY
-        default:
-            // Interior boundary: center of the spacing gap above the row.
-            boundaryY = metrics.frame.minY
-                + CGFloat(boundaryIndex) * metrics.rowPitch
-                - rowSpacing / 2
-        }
-        return lineRect(atBoundaryY: boundaryY, container: metrics.frame)
+        return lineRect(
+            atBoundaryY: metrics.boundaryY(for: slotIndex),
+            container: metrics.frame
+        )
     }
 
     private static func folderLineRect(

@@ -1577,14 +1577,14 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         var tracker = SpaceSwipeGestureTracker()
 
         let belowThreshold = tracker.process(
-            .init(scrollingDeltaX: -4, scrollingDeltaY: 0),
+            .init(scrollingDeltaX: -4, scrollingDeltaY: 0, timestamp: 1),
             width: 200,
             isEnabled: true
         )
         XCTAssertTrue(belowThreshold.emittedEvents.isEmpty)
 
         let triggered = tracker.process(
-            .init(scrollingDeltaX: -70, scrollingDeltaY: 0),
+            .init(scrollingDeltaX: -70, scrollingDeltaY: 0, timestamp: 1.01),
             width: 200,
             isEnabled: true
         )
@@ -1593,33 +1593,51 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         XCTAssertTrue(tracker.ownsScrollSequence)
 
         let inertialTail = tracker.process(
-            .init(scrollingDeltaX: -100, scrollingDeltaY: 0),
+            .init(scrollingDeltaX: -100, scrollingDeltaY: 0, timestamp: 1.02),
             width: 200,
             isEnabled: false
         )
         XCTAssertEqual(inertialTail.handling, .consume)
         XCTAssertTrue(inertialTail.emittedEvents.isEmpty)
 
-        let drained = tracker.process(
-            .init(scrollingDeltaX: 0, scrollingDeltaY: 0),
-            width: 200,
-            isEnabled: false
-        )
-        XCTAssertEqual(drained.handling, .consume)
-        XCTAssertTrue(drained.emittedEvents.isEmpty)
-
         _ = tracker.process(
-            .init(scrollingDeltaX: 4, scrollingDeltaY: 0),
+            .init(scrollingDeltaX: 4, scrollingDeltaY: 0, timestamp: 1.30),
             width: 200,
             isEnabled: true
         )
         let nextGesture = tracker.process(
-            .init(scrollingDeltaX: 70, scrollingDeltaY: 0),
+            .init(scrollingDeltaX: 70, scrollingDeltaY: 0, timestamp: 1.31),
             width: 200,
             isEnabled: true
         )
         XCTAssertEqual(nextGesture.emittedEvents.last?.phase, .discrete)
         XCTAssertEqual(nextGesture.emittedEvents.last?.direction, -1)
+    }
+
+    func testSwipeTrackerDoesNotOwnANewPhaseLessGestureWhenDisabled() {
+        var tracker = SpaceSwipeGestureTracker()
+
+        _ = tracker.process(
+            .init(scrollingDeltaX: -4, timestamp: 1),
+            width: 200,
+            isEnabled: true
+        )
+        _ = tracker.process(
+            .init(scrollingDeltaX: -70, timestamp: 1.01),
+            width: 200,
+            isEnabled: true
+        )
+        XCTAssertTrue(tracker.ownsScrollSequence)
+
+        let newGesture = tracker.process(
+            .init(scrollingDeltaX: 4, timestamp: 1.30),
+            width: 200,
+            isEnabled: false
+        )
+
+        XCTAssertEqual(newGesture.handling, .forwardToUnderlying)
+        XCTAssertTrue(newGesture.emittedEvents.isEmpty)
+        XCTAssertFalse(tracker.ownsScrollSequence)
     }
 
     func testSwipeTrackerVerticalLockCancelsAndForwardsToUnderlying() {
