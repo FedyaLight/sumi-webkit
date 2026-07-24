@@ -92,7 +92,7 @@ struct TabFolderHeaderRow: View {
     }
 
     private var titleView: some View {
-        SidebarFadingRowTitleLabel(
+        SidebarRowTitleLabel(
             title: title,
             font: SidebarThemeTokens.Typography.folderTitle,
             color: tokens.primaryText

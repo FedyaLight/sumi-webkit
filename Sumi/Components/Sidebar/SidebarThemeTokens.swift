@@ -20,9 +20,6 @@ enum SidebarThemeTokens {
         static let extensionActionFallbackIcon = Font.system(size: 16, weight: .medium)
         static let folderTitle = Font.system(size: 14, weight: .semibold)
         static let rowTitle = Font.system(size: 13, weight: .medium)
-        static var rowTitleNSFont: NSFont {
-            NSFont.systemFont(ofSize: 13, weight: .medium)
-        }
         static let rowAccessory = Font.system(size: 12, weight: .medium)
         static let trailingAction = Font.system(size: 12, weight: .heavy)
         /// Zen parity: the in-list New-Tab row carries the same type as folder

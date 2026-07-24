@@ -181,7 +181,7 @@ struct SplitGroupSidebarRow: View {
                 .font(.system(size: 13, weight: .medium))
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.trailing, titleTrailingPadding)
+                .padding(.trailing, reservedTrailingWidth)
         }
         .padding(.leading, SidebarRowLayout.leadingInset)
         .padding(.trailing, SidebarRowLayout.trailingInset)
@@ -259,10 +259,8 @@ struct SplitGroupSidebarRow: View {
         )
     }
 
-    private var titleTrailingPadding: CGFloat {
-        SidebarHoverChrome.trailingPadding(
-            showsTrailingAction: showsGroupAction
-        )
+    private var reservedTrailingWidth: CGFloat {
+        showsGroupAction ? SidebarRowLayout.trailingActionPadding : 0
     }
 
     private func segmentTrailingPadding(

@@ -108,12 +108,12 @@ extension ShortcutSidebarRowChrome {
         activeGlanceSessionForRow != nil && displayIsHovering
     }
 
-    var titleTrailingPadding: CGFloat {
+    var reservedTrailingWidth: CGFloat {
         if activeGlanceSessionForRow != nil {
             return SidebarRowLayout.trailingActionSize
                 + (showsGlanceCloseButton ? SidebarRowLayout.trailingActionSize + SidebarRowLayout.trailingActionGap : 0)
         }
-        return SidebarHoverChrome.trailingPadding(showsTrailingAction: showsActionButton)
+        return showsActionButton ? SidebarRowLayout.trailingActionPadding : 0
     }
 
     var trailingActivationExclusionWidth: CGFloat {

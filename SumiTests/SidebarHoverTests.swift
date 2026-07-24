@@ -577,14 +577,10 @@ final class SidebarHoverTests: XCTestCase {
         )
     }
 
-    func testActionVisibilityDoesNotChangeTrailingPaddingReservation() {
-        let reservedPadding = SidebarHoverChrome.trailingPadding(showsTrailingAction: true)
-
-        XCTAssertEqual(reservedPadding, SidebarRowLayout.trailingActionPadding)
+    func testTrailingActionVisibilityPolicy() {
         XCTAssertFalse(SidebarHoverChrome.showsTrailingAction(isHovered: false, isSelected: false))
         XCTAssertTrue(SidebarHoverChrome.showsTrailingAction(isHovered: true, isSelected: false))
         XCTAssertTrue(SidebarHoverChrome.showsTrailingAction(isHovered: false, isSelected: true))
-        XCTAssertEqual(reservedPadding, SidebarHoverChrome.trailingPadding(showsTrailingAction: true))
     }
 
     private static func makeCommandPaletteCardView() -> NSView {

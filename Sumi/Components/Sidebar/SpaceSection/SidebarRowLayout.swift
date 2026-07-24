@@ -13,9 +13,7 @@ enum SidebarRowLayout {
     static let selectionShadowRadius: CGFloat = 1.5
     static let selectionShadowYOffset: CGFloat = 0.8
     static let selectionShadowBleed: CGFloat = 3
-    static let titleTrailingFadeWidth: CGFloat = 32
-    static let titleLineBoxHeight: CGFloat = 16
-    static let titleHeight: CGFloat = titleLineBoxHeight
+    static let titleHeight: CGFloat = 16
     static let faviconSize: CGFloat = 18
     static let leadingInset: CGFloat = 12
     static let iconTrailingSpacing: CGFloat = 8
@@ -55,7 +53,8 @@ enum SidebarRowLayout {
     }
 }
 
-struct SidebarFadingRowTitleLabel: View {
+/// Single-line sidebar title that absorbs the width left by row accessories.
+struct SidebarRowTitleLabel: View {
     let title: String
     let font: Font
     let color: Color
@@ -66,21 +65,9 @@ struct SidebarFadingRowTitleLabel: View {
             .font(font)
             .foregroundStyle(color)
             .lineLimit(1)
-            .fixedSize(horizontal: true, vertical: false)
+            .truncationMode(.tail)
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
             .frame(height: height, alignment: .leading)
-            .clipped()
-            .mask {
-                HStack(spacing: 0) {
-                    Rectangle()
-                    LinearGradient(
-                        colors: [.black, .clear],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                    .frame(width: SidebarRowLayout.titleTrailingFadeWidth)
-                }
-            }
             .layoutPriority(1)
             .accessibilityLabel(title)
     }

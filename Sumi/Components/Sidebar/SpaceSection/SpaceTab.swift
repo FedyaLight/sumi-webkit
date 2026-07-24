@@ -105,9 +105,9 @@ struct SpaceTab: View {
                 } else {
                     SumiTabTitleLabel(
                         title: tab.name,
-                        font: SidebarThemeTokens.Typography.rowTitleNSFont,
+                        font: SidebarThemeTokens.Typography.rowTitle,
                         textColor: textTab,
-                        trailingPadding: titleTrailingPadding
+                        reservedTrailingWidth: reservedTrailingWidth
                     )
                     .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
                     .textSelection(.disabled) // Make text non-selectable
@@ -269,12 +269,12 @@ struct SpaceTab: View {
         activeGlanceSessionForRow != nil && displayIsHovering
     }
 
-    private var titleTrailingPadding: CGFloat {
+    private var reservedTrailingWidth: CGFloat {
         if activeGlanceSessionForRow != nil {
             return SidebarRowLayout.trailingActionSize
                 + (showsGlanceCloseButton ? SidebarRowLayout.trailingActionSize + SidebarRowLayout.trailingActionGap : 0)
         }
-        return SidebarHoverChrome.trailingPadding(showsTrailingAction: showsCloseButton)
+        return showsCloseButton ? SidebarRowLayout.trailingActionPadding : 0
     }
 
     private var trailingActivationExclusionWidth: CGFloat {

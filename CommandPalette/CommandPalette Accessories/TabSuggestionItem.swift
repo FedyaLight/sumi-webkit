@@ -34,7 +34,7 @@ struct TabSuggestionItem: View {
                 }
                 SumiTabTitleLabel(
                     title: tab.name,
-                    font: ChromeThemeTypography.commandPaletteSuggestionRowNSFont,
+                    font: ChromeThemeTypography.commandPaletteSuggestionRow,
                     textColor: foreground,
                     animated: false
                 )

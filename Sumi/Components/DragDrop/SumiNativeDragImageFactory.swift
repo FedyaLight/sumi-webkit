@@ -218,7 +218,7 @@ private struct SumiNativeDragPreviewRenderable: View {
 
             SumiTabTitleLabel(
                 title: descriptor.item.title,
-                font: .systemFont(ofSize: 13, weight: .medium),
+                font: .system(size: 13, weight: .medium),
                 textColor: .primary,
                 animated: false
             )

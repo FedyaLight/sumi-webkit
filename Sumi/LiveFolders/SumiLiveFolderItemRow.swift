@@ -65,9 +65,9 @@ struct SumiLiveFolderItemRow: View {
         VStack(alignment: .leading, spacing: 0) {
             SumiTabTitleLabel(
                 title: item.title,
-                font: .systemFont(ofSize: 13, weight: .medium),
+                font: SidebarThemeTokens.Typography.rowTitle,
                 textColor: textColor,
-                trailingPadding: SidebarHoverChrome.trailingPadding(showsTrailingAction: showsDismissButton),
+                reservedTrailingWidth: showsDismissButton ? SidebarRowLayout.trailingActionPadding : 0,
                 animated: false
             )
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)

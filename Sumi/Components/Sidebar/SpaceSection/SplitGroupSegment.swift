@@ -306,11 +306,9 @@ struct SplitGroupSegmentLabel<Icon: View>: View {
             icon()
             SumiTabTitleLabel(
                 title: title,
-                font: SidebarThemeTokens.Typography.rowTitleNSFont,
-                textColor: textColor,
-                trailingPadding: trailingPadding > 7 ? 2 : 0
+                font: SidebarThemeTokens.Typography.rowTitle,
+                textColor: textColor
             )
-            .lineLimit(1)
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         }
         .padding(.leading, 7)

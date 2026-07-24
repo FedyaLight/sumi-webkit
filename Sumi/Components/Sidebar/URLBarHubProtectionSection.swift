@@ -104,7 +104,7 @@ struct URLBarHubProtectionSection: View {
                     .font(URLBarHubTypography.detailHeaderTitle)
                     .foregroundStyle(URLBarHubNativeStyle.primaryText)
                     .lineLimit(1)
-                URLBarFadingText(
+                URLBarTitleLabel(
                     displayHost,
                     font: URLBarHubTypography.detailHeaderSubtitle,
                     color: URLBarHubNativeStyle.secondaryText

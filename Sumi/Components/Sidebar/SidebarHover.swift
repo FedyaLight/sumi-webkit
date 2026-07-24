@@ -184,8 +184,4 @@ enum SidebarHoverChrome {
     static func showsTrailingAction(isHovered: Bool, isSelected: Bool) -> Bool {
         isHovered || isSelected
     }
-
-    static func trailingPadding(showsTrailingAction: Bool) -> CGFloat {
-        showsTrailingAction ? SidebarRowLayout.trailingActionPadding : 0
-    }
 }

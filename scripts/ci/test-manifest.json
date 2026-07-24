@@ -586,7 +586,7 @@
         "SumiTests/SumiSiteSettingsRecentActivityTests",
         "SumiTests/SumiSiteSettingsSiteDetailViewModelTests",
         "SumiTests/SumiSiteSettingsViewModelTests",
-        "SumiTests/SumiTabTitleViewTests",
+        "SumiTests/SumiTabTitleLabelTests",
         "SumiTests/SumiURLHubPermissionsSubmenuTests",
         "SumiTests/SumiUpdaterServiceTests",
         "SumiTests/SumiWebViewAudioStateTests",

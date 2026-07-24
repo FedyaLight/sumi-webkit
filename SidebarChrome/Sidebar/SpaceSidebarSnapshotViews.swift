@@ -453,7 +453,7 @@ private struct SpaceSnapshotSplitGroupView: View {
                             size: SidebarRowLayout.faviconSize,
                             foregroundColor: tokens.primaryText
                         )
-                        SidebarFadingRowTitleLabel(
+                        SidebarRowTitleLabel(
                             title: member.title,
                             font: .system(size: 12, weight: member.isSelected ? .semibold : .regular),
                             color: tokens.primaryText,
@@ -520,7 +520,7 @@ private struct SpaceSnapshotFolderView: View {
                 }
                 .frame(width: SidebarRowLayout.folderTitleLeading, alignment: .leading)
 
-            SidebarFadingRowTitleLabel(
+            SidebarRowTitleLabel(
                 title: folder.title,
                 font: SidebarThemeTokens.Typography.folderTitle,
                 color: tokens.primaryText
@@ -592,7 +592,7 @@ private struct SpaceSnapshotShortcutRowView: View {
                     .padding(.trailing, SidebarRowLayout.iconTrailingSpacing)
             }
 
-            SidebarFadingRowTitleLabel(
+            SidebarRowTitleLabel(
                 title: shortcut.title,
                 font: SidebarThemeTokens.Typography.rowTitle,
                 color: tokens.primaryText,
@@ -708,7 +708,7 @@ private struct SpaceSnapshotRegularTabRowView: View {
                 SpaceSnapshotRowAudioGlyph(isMuted: tab.isMuted, tokens: tokens)
             }
 
-            SidebarFadingRowTitleLabel(
+            SidebarRowTitleLabel(
                 title: tab.title,
                 font: SidebarThemeTokens.Typography.rowTitle,
                 color: tokens.primaryText,

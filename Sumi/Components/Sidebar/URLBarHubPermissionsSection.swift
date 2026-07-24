@@ -1,5 +1,5 @@
-import SwiftUI
 import SumiDomain
+import SwiftUI
 
 struct URLHubPermissionInlineRow: View {
     private enum IconState {
@@ -102,13 +102,13 @@ struct URLHubPermissionInlineRow: View {
             .frame(width: 34, height: 34)
 
             VStack(alignment: .leading, spacing: 2) {
-                URLBarFadingText(
+                URLBarTitleLabel(
                     row.title,
                     font: .system(size: 13, weight: .medium),
                     color: URLBarHubNativeStyle.primaryText
                 )
                 if let status = row.statusLines.first {
-                    URLBarFadingText(
+                    URLBarTitleLabel(
                         status,
                         font: .system(size: 11.5),
                         color: URLBarHubNativeStyle.secondaryText
@@ -291,13 +291,13 @@ struct HubSettingRow: View {
             .frame(width: 34, height: 34)
 
             VStack(alignment: .leading, spacing: 2) {
-                URLBarFadingText(
+                URLBarTitleLabel(
                     model.title,
                     font: .system(size: 13, weight: .medium),
                     color: URLBarHubNativeStyle.primaryText
                 )
                 if let subtitle = model.subtitle {
-                    URLBarFadingText(
+                    URLBarTitleLabel(
                         subtitle,
                         font: .system(size: 11.5),
                         color: URLBarHubNativeStyle.secondaryText

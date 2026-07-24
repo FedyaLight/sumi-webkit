@@ -110,9 +110,9 @@ extension ShortcutSidebarRowChrome {
     var titleLabel: some View {
         SumiTabTitleLabel(
             title: resolvedTitle,
-            font: SidebarThemeTokens.Typography.rowTitleNSFont,
+            font: SidebarThemeTokens.Typography.rowTitle,
             textColor: textColor,
-            trailingPadding: titleTrailingPadding,
+            reservedTrailingWidth: reservedTrailingWidth,
             animated: liveTab != nil
         )
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)

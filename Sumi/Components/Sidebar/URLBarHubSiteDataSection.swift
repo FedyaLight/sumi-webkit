@@ -100,7 +100,7 @@ struct URLBarSiteDataDetailsView: View {
                     .font(URLBarHubTypography.detailHeaderTitle)
                     .foregroundStyle(URLBarHubNativeStyle.primaryText)
                     .lineLimit(1)
-                URLBarFadingText(
+                URLBarTitleLabel(
                     displayHost,
                     font: URLBarHubTypography.detailHeaderSubtitle,
                     color: URLBarHubNativeStyle.secondaryText
@@ -385,12 +385,12 @@ struct URLBarSiteDataEntryRow: View {
             )
 
             VStack(alignment: .leading, spacing: 2) {
-                URLBarFadingText(
+                URLBarTitleLabel(
                     entry.domain,
                     font: URLBarHubTypography.entryTitle,
                     color: URLBarHubNativeStyle.primaryText
                 )
-                URLBarFadingText(
+                URLBarTitleLabel(
                     summary,
                     font: URLBarHubTypography.entrySummary,
                     color: URLBarHubNativeStyle.secondaryText

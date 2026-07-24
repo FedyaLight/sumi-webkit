@@ -397,7 +397,7 @@ struct SidebarTabRowPreviewVisual: View {
 
             SumiTabTitleLabel(
                 title: title,
-                font: .systemFont(ofSize: 13, weight: .medium),
+                font: .system(size: 13, weight: .medium),
                 textColor: tokens.primaryText,
                 animated: false
             )

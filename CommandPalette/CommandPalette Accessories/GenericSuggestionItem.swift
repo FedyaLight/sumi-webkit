@@ -11,6 +11,7 @@ enum CommandPaletteSuggestionMetrics {
     static let symbolIconSize: CGFloat = 14
     static let faviconImageSize: CGFloat = 18
     static let iconCornerRadius: CGFloat = 4
+    static let rowLineBoxHeight: CGFloat = 17
 }
 
 struct GenericSuggestionItem: View {
@@ -44,10 +45,14 @@ struct GenericSuggestionItem: View {
                     .accessibilityHidden(true)
             }
 
-            CommandPaletteFadingText(
-                text: text,
-                foreground: foreground
-            )
+            Text(text)
+                .font(ChromeThemeTypography.commandPaletteSuggestionRow)
+                .foregroundStyle(foreground)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                .frame(height: CommandPaletteSuggestionMetrics.rowLineBoxHeight, alignment: .leading)
+                .accessibilityLabel(text)
 
             if let actionLabel {
                 Text(actionLabel.uppercased())
@@ -84,47 +89,5 @@ struct CommandPaletteFaviconContainer<Content: View>: View {
 extension CommandPaletteSuggestionMetrics {
     static var controlShape: RoundedRectangle {
         RoundedRectangle(cornerRadius: iconCornerRadius, style: .continuous)
-    }
-}
-
-struct CommandPaletteFadingText: View {
-    let text: String
-    var foreground: Color
-    var font: Font = ChromeThemeTypography.commandPaletteSuggestionRow
-    var height: CGFloat = 17
-    var fadeWidth: CGFloat = 30
-
-    var body: some View {
-        Text(text)
-            .font(font)
-            .foregroundStyle(foreground)
-            .lineLimit(1)
-            .fixedSize(horizontal: true, vertical: false)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .clipped()
-            .mask(CommandPaletteTrailingFadeMask(fadeWidth: fadeWidth))
-            .frame(height: height)
-            .accessibilityLabel(text)
-    }
-}
-
-struct CommandPaletteTrailingFadeMask: View {
-    let fadeWidth: CGFloat
-
-    var body: some View {
-        GeometryReader { proxy in
-            let width = max(proxy.size.width, 1)
-            let fadeStart = max(0, min(1, (width - fadeWidth) / width))
-
-            LinearGradient(
-                stops: [
-                    .init(color: .black, location: 0),
-                    .init(color: .black, location: fadeStart),
-                    .init(color: .clear, location: 1),
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-        }
     }
 }

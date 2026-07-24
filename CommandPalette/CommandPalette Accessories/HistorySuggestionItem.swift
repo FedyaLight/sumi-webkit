@@ -57,7 +57,6 @@ struct HistorySuggestionItem: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .clipped()
         .task(id: entry.url) {
             await fetchFavicon(for: entry.url)
         }
@@ -152,7 +151,6 @@ struct HistorySuggestionItem: View {
             titleColor: colors.titleColor,
             urlColor: colors.urlColor
         )
-        .accessibilityLabel("\(entry.displayTitle) - \(entry.displayURL)")
     }
 
     private func fetchFavicon(for url: URL) async {
@@ -184,173 +182,28 @@ private struct CommandPaletteHistoryLineText: View {
     let urlColor: Color
 
     var body: some View {
-        CommandPaletteHistoryLineRepresentable(
-            title: title,
-            url: url,
-            titleColor: titleColor,
-            urlColor: urlColor,
-            font: ChromeThemeTypography.commandPaletteSuggestionRowNSFont,
-            fadeWidth: 42
-        )
-        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 17, maxHeight: 17, alignment: .leading)
-        .clipped()
-    }
-}
-
-private struct CommandPaletteHistoryLineRepresentable: NSViewRepresentable {
-    let title: String
-    let url: String
-    let titleColor: Color
-    let urlColor: Color
-    let font: NSFont
-    let fadeWidth: CGFloat
-
-    func makeNSView(context _: Context) -> CommandPaletteHistoryLineNSView {
-        let view = CommandPaletteHistoryLineNSView()
-        view.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        return view
-    }
-
-    func sizeThatFits(
-        _ proposal: ProposedViewSize,
-        nsView _: CommandPaletteHistoryLineNSView,
-        context _: Context
-    ) -> CGSize? {
-        CGSize(width: proposal.width ?? 0, height: 17)
-    }
-
-    func updateNSView(_ nsView: CommandPaletteHistoryLineNSView, context _: Context) {
-        nsView.apply(
-            title: title,
-            url: url,
-            titleColor: NSColor(titleColor),
-            urlColor: NSColor(urlColor),
-            font: font,
-            fadeWidth: fadeWidth
-        )
-    }
-}
-
-private final class CommandPaletteHistoryLineNSView: NSView {
-    private let textField = NSTextField()
-    private var fadeWidth: CGFloat = 30
-
-    override var intrinsicContentSize: NSSize {
-        NSSize(width: NSView.noIntrinsicMetric, height: 17)
-    }
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        setup()
-    }
-
-    @available(*, unavailable)
-    required init?(coder _: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func layout() {
-        super.layout()
-        applyTrailingFadeMask()
-    }
-
-    func apply(
-        title: String,
-        url: String,
-        titleColor: NSColor,
-        urlColor: NSColor,
-        font: NSFont,
-        fadeWidth: CGFloat
-    ) {
-        self.fadeWidth = fadeWidth
-
-        let attributed = NSMutableAttributedString()
-        attributed.append(
-            NSAttributedString(
-                string: title,
-                attributes: [
-                    .font: font,
-                    .foregroundColor: titleColor,
-                ]
+        Text(attributedLine)
+            .font(ChromeThemeTypography.commandPaletteSuggestionRow)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(
+                minWidth: 0,
+                maxWidth: .infinity,
+                minHeight: CommandPaletteSuggestionMetrics.rowLineBoxHeight,
+                maxHeight: CommandPaletteSuggestionMetrics.rowLineBoxHeight,
+                alignment: .leading
             )
-        )
-        attributed.append(
-            NSAttributedString(
-                string: " - ",
-                attributes: [
-                    .font: font,
-                    .foregroundColor: urlColor,
-                ]
-            )
-        )
-        attributed.append(
-            NSAttributedString(
-                string: url,
-                attributes: [
-                    .font: font,
-                    .foregroundColor: urlColor,
-                ]
-            )
-        )
-
-        textField.attributedStringValue = attributed
-        applyTrailingFadeMask()
+            .accessibilityLabel("\(title) - \(url)")
     }
 
-    private func setup() {
-        wantsLayer = true
-        layer?.masksToBounds = true
-        textField.wantsLayer = true
-        textField.isEditable = false
-        textField.isSelectable = false
-        textField.isBordered = false
-        textField.isBezeled = false
-        textField.drawsBackground = false
-        textField.alignment = .left
-        textField.lineBreakMode = .byClipping
-        textField.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        textField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    private var attributedLine: AttributedString {
+        var line = AttributedString(title)
+        line.foregroundColor = titleColor
 
-        if let cell = textField.cell as? NSTextFieldCell {
-            cell.lineBreakMode = .byClipping
-            cell.wraps = false
-            cell.usesSingleLineMode = true
-            cell.truncatesLastVisibleLine = false
-        }
-
-        addSubview(textField)
-        textField.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            textField.leadingAnchor.constraint(equalTo: leadingAnchor),
-            textField.trailingAnchor.constraint(equalTo: trailingAnchor),
-            textField.topAnchor.constraint(equalTo: topAnchor),
-            textField.bottomAnchor.constraint(equalTo: bottomAnchor),
-        ])
-    }
-
-    private func applyTrailingFadeMask() {
-        guard let layer else { return }
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        defer { CATransaction.commit() }
-
-        layer.masksToBounds = true
-        let mask: CAGradientLayer
-        if let existing = layer.mask as? CAGradientLayer {
-            mask = existing
-        } else {
-            mask = CAGradientLayer()
-            layer.mask = mask
-        }
-
-        mask.frame = layer.bounds
-        let width = max(mask.bounds.width, 1)
-        let fadeStart = max(0, min(1, (width - fadeWidth) / width))
-        mask.startPoint = CGPoint(x: fadeStart, y: 0.5)
-        mask.endPoint = CGPoint(x: 1, y: 0.5)
-        mask.colors = [NSColor.white.cgColor, NSColor.clear.cgColor]
-        mask.locations = [0, 1]
+        var suffix = AttributedString(" - \(url)")
+        suffix.foregroundColor = urlColor
+        line.append(suffix)
+        return line
     }
 }
 

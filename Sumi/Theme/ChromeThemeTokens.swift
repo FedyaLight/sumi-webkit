@@ -49,7 +49,6 @@ enum ChromeThemeTypography {
     static let commandPaletteToken = Font.system(size: 13, weight: .semibold)
     static let commandPaletteMicroLabel = Font.system(size: 11, weight: .semibold)
     static let commandPaletteSuggestionRow = Font.system(size: 13, weight: .semibold)
-    static var commandPaletteSuggestionRowNSFont: NSFont { NSFont.systemFont(ofSize: 13, weight: .semibold) }
     static let commandPaletteSuggestionAction = Font.system(size: 12, weight: .medium)
     static let commandPaletteSuggestionChip = Font.system(size: 10, weight: .semibold)
     static let commandPaletteSuggestionControl = Font.system(size: 13, weight: .semibold)

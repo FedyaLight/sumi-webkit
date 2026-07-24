@@ -106,7 +106,7 @@ struct SpaceTitleTextLabel: View {
     let textColor: Color
 
     var body: some View {
-        SidebarFadingRowTitleLabel(
+        SidebarRowTitleLabel(
             title: title,
             font: .system(size: SpaceTitleRowLayout.titleFontSize, weight: SpaceTitleRowLayout.titleFontWeight),
             color: textColor
