@@ -1432,6 +1432,12 @@ private final class FakeBrowserFaviconService:
         partition _: SumiFaviconPartition,
         context _: SumiFaviconDisplayContext
     ) async -> NSImage? { nil }
+    nonisolated func ingestImportedIcon(
+        payload _: Data,
+        iconURL _: URL,
+        documentURL _: URL,
+        partition _: SumiFaviconPartition
+    ) async {}
     nonisolated func scheduleColdFetch(
         for _: URL,
         partition _: SumiFaviconPartition,

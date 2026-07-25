@@ -13,6 +13,7 @@ actor HistoryStore {
 
     private let container: ModelContainer
     private let recorder: HistoryVisitRecorder
+    private let importWriter: HistoryImportedVisitWriter
     private let visitReader: HistoryVisitRecordReader
     private let siteReader: HistorySiteRecordReader
     private let deletionOwner: HistoryVisitDeletionOwner
@@ -22,6 +23,7 @@ actor HistoryStore {
         let planner = HistoryEntityFetchPlanner()
         let visitReader = HistoryVisitRecordReader(planner: planner)
         self.recorder = HistoryVisitRecorder(planner: planner)
+        self.importWriter = HistoryImportedVisitWriter(planner: planner)
         self.visitReader = visitReader
         self.siteReader = HistorySiteRecordReader(planner: planner)
         self.deletionOwner = HistoryVisitDeletionOwner(
@@ -48,6 +50,19 @@ actor HistoryStore {
             profileId: profileId,
             tabId: tabId
         )
+    }
+
+    /// Writes a chunk of visits imported from another browser and reports what
+    /// it changed, so an aborted import can be undone exactly.
+    func installImportedVisits(
+        _ visits: [HistoryImportedVisit],
+        profileId: UUID?
+    ) throws -> HistoryImportedVisitWriter.Receipt {
+        try importWriter.insert(visits, profileId: profileId, in: makeContext())
+    }
+
+    func rollbackImportedVisits(_ receipt: HistoryImportedVisitWriter.Receipt) throws {
+        try importWriter.rollback(receipt, in: makeContext())
     }
 
     func updateTitleIfNeeded(

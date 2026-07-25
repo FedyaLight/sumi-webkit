@@ -121,6 +121,9 @@ protocol SumiWebsiteDataStore {
 protocol SumiHTTPCookieStore {
     func allCookies() async -> [HTTPCookie]
     func deleteCookie(_ cookie: HTTPCookie) async
+    /// Constructive writes belong to `SumiProfileCookieInstallationService`;
+    /// this store stays the sole owner of destructive mutation.
+    func setCookie(_ cookie: HTTPCookie) async
 }
 
 @MainActor
@@ -157,6 +160,10 @@ struct SumiHTTPCookieStoreWrapper: SumiHTTPCookieStore {
 
     func deleteCookie(_ cookie: HTTPCookie) async {
         await wrapped.deleteCookie(cookie)
+    }
+
+    func setCookie(_ cookie: HTTPCookie) async {
+        await wrapped.setCookie(cookie)
     }
 }
 

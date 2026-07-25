@@ -7,6 +7,11 @@ struct SumiArcImportResult {
 }
 
 struct SumiArcImportParser {
+    /// Arc's Chromium-style profile root. Injectable so tests never depend on a
+    /// real Arc install.
+    var userDataURL: URL = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Application Support/Arc/User Data", isDirectory: true)
+
     func parse(sidebarURL: URL) throws -> SumiPortableData {
         var warnings: [String] = []
         return try parse(sidebarURL: sidebarURL, warnings: &warnings)
@@ -27,14 +32,20 @@ struct SumiArcImportParser {
             throw SumiImportExportError.unsupportedFile("Arc StorableSidebar.json is not a JSON object.")
         }
 
-        let spacesInfo = parseSpacesInfo(root)
-        guard spacesInfo.isEmpty == false else {
-            throw SumiImportExportError.importFailed("Arc spaces were not found in StorableSidebar.json.")
-        }
         let local = localSidebar(root)
         let itemLookup = alternatingDictionary(local["items"] as? [Any] ?? [])
         let sidebarSpaces = local["spaces"] as? [Any] ?? []
+        // The local sidebar is the authority: Arc installs that never completed
+        // a Firebase sync carry an empty `spaceModels` array while holding every
+        // space here in full. Sync data only fills gaps.
+        let spacesInfo = parseSpacesInfo(local: sidebarSpaces, syncRoot: root)
+        guard spacesInfo.isEmpty == false else {
+            throw SumiImportExportError.importFailed("Arc spaces were not found in StorableSidebar.json.")
+        }
 
+        // Arc is Chromium underneath, so its user-visible profile names live in
+        // the same `Local State` file as Chrome's.
+        let profileDisplayNames = SumiChromiumProfileCatalogReader.displayNames(userDataURL: userDataURL)
         var profileRecordsByName: [String: SumiPortableProfile] = [:]
         var portableSpaces: [SumiPortableSpace] = []
         var folders: [SumiPortableFolder] = []
@@ -46,26 +57,28 @@ struct SumiArcImportParser {
             guard pairIndex + 1 < sidebarSpaces.count,
                   let spaceId = sidebarSpaces[pairIndex] as? String
             else { continue }
-            let info = spacesInfo[spaceId] ?? ArcSpaceInfo(name: "Space \(spaceId)", icon: nil, profile: "Default", color: nil)
+            let info = spacesInfo[spaceId] ?? ArcSpaceInfo()
             let profileName = SumiImportTextNormalization.nilIfBlank(info.profile) ?? "Default"
             let profileId = "arc-profile-\(profileName)"
             if profileRecordsByName[profileName] == nil {
                 profileRecordsByName[profileName] = SumiPortableProfile(
                     id: profileId,
-                    name: profileName,
-                    index: profileRecordsByName.count
+                    name: profileDisplayNames[profileName] ?? profileName,
+                    index: profileRecordsByName.count,
+                    sourceDirectoryKey: profileName
                 )
             }
             spaceProfileName[spaceId] = profileName
             portableSpaces.append(
                 SumiPortableSpace(
                     id: spaceId,
-                    name: info.name,
-                    icon: info.icon ?? "🌐",
+                    name: Self.spaceName(info: info, spaceId: spaceId, ordinal: portableSpaces.count + 1),
+                    icon: Self.spaceIcon(info.icon),
                     index: portableSpaces.count,
                     profileId: profileId,
                     themeDataBase64: nil,
-                    color: info.color
+                    color: info.colors.first,
+                    colors: info.colors.isEmpty ? nil : info.colors
                 )
             )
 
@@ -84,7 +97,7 @@ struct SumiArcImportParser {
             )
 
             let unpinnedOrder = displayOrder(for: "unpinned", spaceId: spaceId, local: local, itemLookup: itemLookup)
-            for tabId in unpinnedOrder {
+            for tabId in flattenedTabIds(unpinnedOrder, itemLookup: itemLookup) {
                 guard let item = itemLookup[tabId],
                       let tab = (item["data"] as? [String: Any])?["tab"] as? [String: Any],
                       let url = tab["savedURL"] as? String,
@@ -105,6 +118,7 @@ struct SumiArcImportParser {
         }
 
         let essentials = parseEssentials(
+            local: local,
             itemLookup: itemLookup,
             spaceProfileName: spaceProfileName,
             profileRecordsByName: profileRecordsByName
@@ -131,29 +145,90 @@ struct SumiArcImportParser {
         )
     }
 
-    private func parseSpacesInfo(_ root: [String: Any]) -> [String: ArcSpaceInfo] {
-        let spaceModels = (((root["firebaseSyncState"] as? [String: Any])?["syncData"] as? [String: Any])?["spaceModels"] as? [Any]) ?? []
+    /// Merges space metadata from the local sidebar (authoritative) with the
+    /// Firebase sync mirror (fills gaps only). Either source may be empty.
+    private func parseSpacesInfo(local sidebarSpaces: [Any], syncRoot: [String: Any]) -> [String: ArcSpaceInfo] {
         var output: [String: ArcSpaceInfo] = [:]
+        for idx in stride(from: 0, to: sidebarSpaces.count, by: 2) {
+            guard idx + 1 < sidebarSpaces.count,
+                  let id = sidebarSpaces[idx] as? String,
+                  let value = sidebarSpaces[idx + 1] as? [String: Any]
+            else { continue }
+            output[id] = spaceInfo(from: value)
+        }
+
+        let spaceModels = (((syncRoot["firebaseSyncState"] as? [String: Any])?["syncData"] as? [String: Any])?["spaceModels"] as? [Any]) ?? []
         for idx in stride(from: 0, to: spaceModels.count, by: 2) {
             guard idx + 1 < spaceModels.count,
                   let id = spaceModels[idx] as? String,
                   let wrapped = spaceModels[idx + 1] as? [String: Any],
                   let value = wrapped["value"] as? [String: Any]
             else { continue }
-            let customInfo = value["customInfo"] as? [String: Any] ?? [:]
-            let icon = ((customInfo["iconType"] as? [String: Any])?["emoji_v2"] as? String)
-            let profile = (((value["profile"] as? [String: Any])?["custom"] as? [String: Any])?["_0"] as? [String: Any])?["directoryBasename"] as? String
-            let color = (((customInfo["windowTheme"] as? [String: Any])?["primaryColorPalette"] as? [String: Any])?["midTone"] as? [String: Any])
-                .flatMap(rgbColor(fromArcMidTone:))
-            output[id] = ArcSpaceInfo(
-                name: value["title"] as? String ?? "Space \(id)",
-                icon: icon,
-                profile: profile ?? "Default",
-                color: color
-            )
+            let synced = spaceInfo(from: value)
+            guard var existing = output[id] else {
+                output[id] = synced
+                continue
+            }
+            existing.name = existing.name ?? synced.name
+            existing.icon = existing.icon ?? synced.icon
+            existing.profile = existing.profile ?? synced.profile
+            if existing.colors.isEmpty { existing.colors = synced.colors }
+            output[id] = existing
         }
         return output
     }
+
+    private func spaceInfo(from value: [String: Any]) -> ArcSpaceInfo {
+        let customInfo = value["customInfo"] as? [String: Any] ?? [:]
+        let iconType = customInfo["iconType"] as? [String: Any] ?? [:]
+        // Arc has shipped three icon encodings; newest first.
+        let icon = SumiImportTextNormalization.nilIfBlank(iconType["emoji_v2"] as? String)
+            ?? SumiImportTextNormalization.nilIfBlank(iconType["emoji"] as? String)
+            ?? SumiImportTextNormalization.nilIfBlank(iconType["icon"] as? String)
+        let profile = (((value["profile"] as? [String: Any])?["custom"] as? [String: Any])?["_0"] as? [String: Any])?["directoryBasename"] as? String
+        let palette = (customInfo["windowTheme"] as? [String: Any])?["primaryColorPalette"] as? [String: Any] ?? [:]
+        // Arc's palette carries the whole gradient; taking only `midTone` would
+        // flatten every imported space to a single colour.
+        let colors = ["midTone", "shaded", "tintedLight"]
+            .compactMap { palette[$0] as? [String: Any] }
+            .compactMap(rgbColor(fromArcComponents:))
+        return ArcSpaceInfo(
+            name: SumiImportTextNormalization.nilIfBlank(value["title"] as? String),
+            icon: icon,
+            profile: SumiImportTextNormalization.nilIfBlank(profile),
+            colors: dedupedPreservingOrder(colors)
+        )
+    }
+
+    private func dedupedPreservingOrder(_ colors: [SumiPortableRGBColor]) -> [SumiPortableRGBColor] {
+        var seen: Set<String> = []
+        return colors.filter { seen.insert($0.hex).inserted }
+    }
+
+    /// Arc's default spaces have no `title`; their identifiers spell out the
+    /// intent instead. Never surface a raw UUID to the user.
+    static func spaceName(info: ArcSpaceInfo, spaceId: String, ordinal: Int) -> String {
+        if let name = SumiImportTextNormalization.nilIfBlank(info.name) { return name }
+        for (marker, name) in [("PersonalSpace", "Personal"), ("WorkSpace", "Work")]
+        where spaceId.localizedCaseInsensitiveContains(marker) {
+            return name
+        }
+        return "Space \(ordinal)"
+    }
+
+    /// Arc's non-emoji icons name glyphs from Arc's own set, which mostly does
+    /// not overlap SF Symbols. Names confirmed against real installs are
+    /// translated; anything else is tried as an SF Symbol and otherwise falls
+    /// back to Sumi's default dot rather than rendering a missing-symbol box.
+    static func spaceIcon(_ raw: String?) -> String {
+        guard let raw = SumiImportTextNormalization.nilIfBlank(raw) else { return "" }
+        let translated = arcGlyphNameToSystemSymbol[raw] ?? raw
+        return SumiPersistentGlyph.normalizedSpaceIconValue(translated)
+    }
+
+    private static let arcGlyphNameToSystemSymbol: [String: String] = [
+        "planet": "globe.americas",
+    ]
 
     private func processArcPinnedItems(
         _ itemIds: [String],
@@ -166,13 +241,20 @@ struct SumiArcImportParser {
         pinned: inout [SumiPortableLauncher],
         nextIndex: inout Int
     ) {
-        for itemId in itemIds {
+        // Split views are expanded first so the tabs they hold keep their place
+        // in the pinned order instead of disappearing with the container.
+        for itemId in flattenedTabIds(itemIds, itemLookup: itemLookup) {
             guard let item = itemLookup[itemId],
                   let data = item["data"] as? [String: Any]
             else { continue }
             if let tab = data["tab"] as? [String: Any],
                let url = tab["savedURL"] as? String,
                url.isEmpty == false {
+                // A split view's children point at the split view as their
+                // parent, which is not a folder; fall back to the folder the
+                // walk is actually inside.
+                let declaredParent = SumiImportTextNormalization.nilIfBlank(item["parentID"] as? String)
+                let isFolderParent = declaredParent.map { (itemLookup[$0]?["data"] as? [String: Any])?["list"] != nil } ?? false
                 pinned.append(
                     SumiPortableLauncher(
                         id: itemId,
@@ -182,14 +264,15 @@ struct SumiArcImportParser {
                         profileId: nil,
                         executionProfileId: profileId,
                         spaceId: spaceId,
-                        folderId: SumiImportTextNormalization.nilIfBlank(item["parentID"] as? String) ?? parentFolderId,
+                        folderId: isFolderParent ? declaredParent : parentFolderId,
                         iconAsset: nil,
                         sourceSpaceId: spaceId
                     )
                 )
                 nextIndex += 1
             } else if data["list"] != nil {
-                let title = item["title"] as? String ?? "Untitled Folder"
+                let title = SumiImportTextNormalization.nilIfBlank(item["title"] as? String)
+                    ?? "Folder \(folders.count + 1)"
                 let path = folderPath + [title]
                 folders.append(
                     SumiPortableFolder(
@@ -221,6 +304,7 @@ struct SumiArcImportParser {
     }
 
     private func parseEssentials(
+        local: [String: Any],
         itemLookup: [String: [String: Any]],
         spaceProfileName: [String: String],
         profileRecordsByName: [String: SumiPortableProfile]
@@ -230,13 +314,11 @@ struct SumiArcImportParser {
             spaceProfileName.map { ($0.value, $0.key) },
             uniquingKeysWith: { first, _ in first }
         )
-        for (_, item) in itemLookup {
-            guard let containerType = (((item["data"] as? [String: Any])?["itemContainer"] as? [String: Any])?["containerType"] as? [String: Any]),
-                  let topApps = (containerType["topApps"] as? [String: Any])?["_0"] as? [String: Any]
-            else { continue }
-            let profileName = ((((topApps["custom"] as? [String: Any])?["_0"] as? [String: Any])?["directoryBasename"] as? String)
-                ?? ((topApps["default"] as? [String: Any]) == nil ? nil : "Default")
-                ?? "Default")
+        // `topAppsContainerIDs` is the ordered authority. Walking `itemLookup`
+        // instead would emit essentials in dictionary order, so the same Arc
+        // install would import a different pin order on every run.
+        for (profileName, containerId) in essentialContainers(local: local, itemLookup: itemLookup) {
+            guard let item = itemLookup[containerId] else { continue }
             let targetSpaceId = profileToSpace[profileName]
             let profileId = profileRecordsByName[profileName]?.id ?? "arc-profile-\(profileName)"
             let children = item["childrenIds"] as? [String] ?? []
@@ -265,9 +347,42 @@ struct SumiArcImportParser {
         return output
     }
 
+    /// Resolves `[marker, containerId, marker, containerId, …]` into ordered
+    /// `(profileName, containerId)` pairs. Falls back to scanning items for
+    /// `topApps` containers when the marker array is absent.
+    private func essentialContainers(
+        local: [String: Any],
+        itemLookup: [String: [String: Any]]
+    ) -> [(profileName: String, containerId: String)] {
+        let markers = local["topAppsContainerIDs"] as? [Any] ?? []
+        var output: [(profileName: String, containerId: String)] = []
+        for idx in stride(from: 0, to: markers.count, by: 2) {
+            guard idx + 1 < markers.count,
+                  let containerId = markers[idx + 1] as? String
+            else { continue }
+            output.append((profileName(fromArcMarker: markers[idx]), containerId))
+        }
+        guard output.isEmpty else { return output }
+
+        return itemLookup.keys.sorted().compactMap { id in
+            guard let containerType = ((itemLookup[id]?["data"] as? [String: Any])?["itemContainer"] as? [String: Any])?["containerType"] as? [String: Any],
+                  let topApps = (containerType["topApps"] as? [String: Any])?["_0"]
+            else { return nil }
+            return (profileName(fromArcMarker: topApps), id)
+        }
+    }
+
+    private func profileName(fromArcMarker marker: Any) -> String {
+        guard let marker = marker as? [String: Any] else { return "Default" }
+        if let basename = ((marker["custom"] as? [String: Any])?["_0"] as? [String: Any])?["directoryBasename"] as? String,
+           let name = SumiImportTextNormalization.nilIfBlank(basename) {
+            return name
+        }
+        return "Default"
+    }
+
     private func parseArcBookmarks(warnings: inout [String]) -> [SumiPortableBookmarkNode] {
-        let userData = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/Arc/User Data", isDirectory: true)
+        let userData = userDataURL
         guard FileManager.default.fileExists(atPath: userData.path) else {
             return []
         }
@@ -358,22 +473,70 @@ struct SumiArcImportParser {
         itemLookup: [String: [String: Any]]
     ) -> [String] {
         let sidebarSpaces = local["spaces"] as? [Any] ?? []
-        var containerIds: [String] = []
+        var spaceData: [String: Any] = [:]
         for idx in stride(from: 0, to: sidebarSpaces.count, by: 2) {
             guard idx + 1 < sidebarSpaces.count,
                   sidebarSpaces[idx] as? String == spaceId,
-                  let spaceData = sidebarSpaces[idx + 1] as? [String: Any]
+                  let found = sidebarSpaces[idx + 1] as? [String: Any]
             else { continue }
-            containerIds = spaceData["containerIDs"] as? [String] ?? []
+            spaceData = found
             break
         }
+        let containerIds = spaceData["containerIDs"] as? [String] ?? []
         guard let markerIndex = containerIds.firstIndex(of: marker),
               markerIndex + 1 < containerIds.count
         else {
-            return []
+            return newContainerDisplayOrder(for: marker, spaceData: spaceData, itemLookup: itemLookup)
         }
         let containerId = containerIds[markerIndex + 1]
         return itemLookup[containerId]?["childrenIds"] as? [String] ?? []
+    }
+
+    /// Newer Arc builds write `newContainerIDs`, where the section marker is an
+    /// object key (`{"pinned": {}}`) rather than the bare string used by
+    /// `containerIDs`.
+    private func newContainerDisplayOrder(
+        for marker: String,
+        spaceData: [String: Any],
+        itemLookup: [String: [String: Any]]
+    ) -> [String] {
+        let entries = spaceData["newContainerIDs"] as? [Any] ?? []
+        for idx in stride(from: 0, to: entries.count, by: 2) {
+            guard idx + 1 < entries.count,
+                  let markerObject = entries[idx] as? [String: Any],
+                  markerObject[marker] != nil,
+                  let containerId = entries[idx + 1] as? String
+            else { continue }
+            return itemLookup[containerId]?["childrenIds"] as? [String] ?? []
+        }
+        return []
+    }
+
+
+    /// Expands split views in place. A split view is a layout node whose
+    /// children are ordinary tabs; Sumi has no sidebar equivalent, so its tabs
+    /// are surfaced individually rather than dropped along with the container.
+    private func flattenedTabIds(
+        _ itemIds: [String],
+        itemLookup: [String: [String: Any]],
+        visited: Set<String> = []
+    ) -> [String] {
+        var output: [String] = []
+        for itemId in itemIds {
+            guard visited.contains(itemId) == false else { continue }
+            if (itemLookup[itemId]?["data"] as? [String: Any])?["splitView"] != nil {
+                output.append(
+                    contentsOf: flattenedTabIds(
+                        itemLookup[itemId]?["childrenIds"] as? [String] ?? [],
+                        itemLookup: itemLookup,
+                        visited: visited.union([itemId])
+                    )
+                )
+            } else {
+                output.append(itemId)
+            }
+        }
+        return output
     }
 
     private func alternatingDictionary(_ items: [Any]) -> [String: [String: Any]] {
@@ -388,18 +551,20 @@ struct SumiArcImportParser {
         return output
     }
 
-    private func rgbColor(fromArcMidTone midTone: [String: Any]) -> SumiPortableRGBColor? {
-        guard let r = midTone["red"] as? Double,
-              let g = midTone["green"] as? Double,
-              let b = midTone["blue"] as? Double
+    /// Arc stores extendedSRGB components, which can fall outside 0...1 for
+    /// wide-gamut colours; `SumiPortableRGBColor` clamps them into range.
+    private func rgbColor(fromArcComponents components: [String: Any]) -> SumiPortableRGBColor? {
+        guard let r = components["red"] as? Double,
+              let g = components["green"] as? Double,
+              let b = components["blue"] as? Double
         else { return nil }
         return SumiPortableRGBColor(r: r, g: g, b: b)
     }
 }
 
-private struct ArcSpaceInfo {
-    var name: String
+struct ArcSpaceInfo {
+    var name: String?
     var icon: String?
     var profile: String?
-    var color: SumiPortableRGBColor?
+    var colors: [SumiPortableRGBColor] = []
 }

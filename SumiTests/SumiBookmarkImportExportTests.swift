@@ -133,6 +133,36 @@ final class SumiBookmarkImportExportTests: XCTestCase {
         XCTAssertEqual(nodes.first?.children?.first?.name, "Mozilla")
     }
 
+    /// A running Firefox/Zen leaves its most recent bookmarks in the `-wal`
+    /// sidecar. Reading the main database alone does not merely miss them — the
+    /// tables themselves are still uncheckpointed, so the import silently
+    /// succeeds with nothing in it. The reader must snapshot the WAL too.
+    func testFirefoxImportReadsBookmarksStillInTheWriteAheadLog() throws {
+        let fileURL = try temporaryFile(named: "places.sqlite")
+        var database: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(fileURL.path, &database), SQLITE_OK)
+        let writer = try XCTUnwrap(database)
+        try execute("PRAGMA journal_mode=WAL;", database: writer)
+        try createFirefoxSchema(database: writer)
+
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: fileURL.path + "-wal"),
+            "fixture precondition: the commit should still be in the WAL"
+        )
+
+        let nodes = try SumiBookmarkImportSource(
+            id: "firefox",
+            title: "Firefox",
+            fileURL: fileURL,
+            kind: .firefoxSQLite
+        ).readBookmarks()
+        // Held open on purpose: closing would checkpoint the WAL into the main
+        // database and make this test pass against the old reader too.
+        sqlite3_close(writer)
+
+        XCTAssertEqual(nodes.first?.children?.first?.name, "Mozilla")
+    }
+
     @MainActor
     func testHTMLImportExportRoundTripPreservesSummaryAndNestedStructure() throws {
         let sourceURL = try temporaryFile(named: "source-bookmarks.html")
@@ -306,6 +336,10 @@ final class SumiBookmarkImportExportTests: XCTestCase {
         }
         defer { sqlite3_close(database) }
 
+        try createFirefoxSchema(database: database)
+    }
+
+    private func createFirefoxSchema(database: OpaquePointer) throws {
         try execute(
             """
             CREATE TABLE moz_places (id INTEGER PRIMARY KEY, url TEXT, title TEXT);

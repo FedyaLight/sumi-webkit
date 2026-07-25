@@ -5,6 +5,11 @@ struct SumiImportRequest: Sendable {
     let data: SumiPortableData
     let categories: Set<SumiImportCategory>
     let mode: SumiImportApplyMode
+    /// Bulk payloads staged during preview, and which of them the user chose.
+    /// Kept separate from `categories` so the logical backup format's declared
+    /// scope stays exactly what it was.
+    var bulkStaging: SumiImportBulkStagingManifest? = nil
+    var bulkKinds: Set<SumiImportBulkKind> = []
 }
 
 struct SumiImportReport: Sendable {

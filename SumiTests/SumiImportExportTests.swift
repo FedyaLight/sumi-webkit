@@ -306,32 +306,41 @@ final class SumiImportExportTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(multiSpace.themeOpacity), 0.5, accuracy: 0.0001)
     }
 
-    @MainActor
-    func testDetectedZenProfilesUsesInjectedRootAndSkipsNonProfiles() async throws {
-        let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ZenProfiles-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-
-        let beta = root.appendingPathComponent("Beta.default", isDirectory: true)
-        let alpha = root.appendingPathComponent("Alpha.default", isDirectory: true)
-        let missingPlaces = root.appendingPathComponent("MissingPlaces.default", isDirectory: true)
-        try FileManager.default.createDirectory(at: beta, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: alpha, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: missingPlaces, withIntermediateDirectories: true)
-        try Data().write(to: beta.appendingPathComponent("places.sqlite"))
-        try Data().write(to: alpha.appendingPathComponent("places.sqlite"))
-        try Data().write(to: root.appendingPathComponent("NotAProfile.txt"))
-
-        let service = SumiBrowserImportService(
-            zenProfilesRootProvider: { root }
+    func testZenProfileDetectionSkipsDirectoriesWithoutPlacesDatabase() throws {
+        let home = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ZenHome-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let profilesRoot = home.appendingPathComponent(
+            "Library/Application Support/zen/Profiles",
+            isDirectory: true
         )
 
-        let profileNames = await service.detectedZenProfiles().map(\.lastPathComponent)
-        XCTAssertEqual(
-            profileNames,
-            ["Alpha.default", "Beta.default"]
+        for name in ["Beta.default", "Alpha.default", "MissingPlaces.default"] {
+            try FileManager.default.createDirectory(
+                at: profilesRoot.appendingPathComponent(name, isDirectory: true),
+                withIntermediateDirectories: true
+            )
+        }
+        for name in ["Beta.default", "Alpha.default"] {
+            try Data().write(to: profilesRoot.appendingPathComponent("\(name)/places.sqlite"))
+        }
+        try Data().write(to: profilesRoot.appendingPathComponent("NotAProfile.txt"))
+
+        let zen = try XCTUnwrap(
+            SumiBrowserSourceCatalog
+                .detect(homeDirectory: home, applications: NoApplicationsInstalled())
+                .first { $0.family == .zen }
         )
+
+        XCTAssertEqual(zen.profiles.map(\.sourceDirectoryKey), ["Alpha.default", "Beta.default"])
+        XCTAssertNil(zen.accessIssue)
+    }
+
+    /// Detection must still find a browser whose data is on disk even when the
+    /// application itself is not installed.
+    private struct NoApplicationsInstalled: SumiInstalledApplicationLocating {
+        func isInstalled(bundleIdentifier: String) -> Bool { false }
+        func isRunning(bundleIdentifier: String) -> Bool { false }
     }
 
     @MainActor

@@ -86,6 +86,16 @@ protocol BrowserFaviconLocalIconIngesting: AnyObject, Sendable {
         partition: SumiFaviconPartition,
         context: SumiFaviconDisplayContext
     ) async -> NSImage?
+
+    /// Stores an icon recovered from another browser's cache, so an imported
+    /// sidebar shows real icons immediately rather than filling in as the user
+    /// revisits each site.
+    func ingestImportedIcon(
+        payload: Data,
+        iconURL: URL,
+        documentURL: URL,
+        partition: SumiFaviconPartition
+    ) async
 }
 
 protocol BrowserFaviconPrefetchScheduling: AnyObject, Sendable {
@@ -141,7 +151,23 @@ extension SumiFaviconLiveDiscoveryPipeline: BrowserFaviconLiveDiscoveryIngesting
     }
 }
 
-extension SumiFaviconPayloadIngestion: BrowserFaviconLocalIconIngesting {}
+extension SumiFaviconPayloadIngestion: BrowserFaviconLocalIconIngesting {
+    func ingestImportedIcon(
+        payload: Data,
+        iconURL: URL,
+        documentURL: URL,
+        partition: SumiFaviconPartition
+    ) async {
+        // A rejected icon (unsupported format, oversized) is not worth failing
+        // an import over; the site refetches it on first visit.
+        try? storeExternalPayload(
+            payload,
+            faviconURL: iconURL,
+            documentURL: documentURL,
+            partition: partition
+        )
+    }
+}
 
 extension SumiFaviconColdFetchService: BrowserFaviconPrefetchScheduling {
     func scheduleColdFetch(

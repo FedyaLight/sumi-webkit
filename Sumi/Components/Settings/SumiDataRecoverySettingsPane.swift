@@ -26,6 +26,7 @@ struct SumiDataRecoverySettingsPane: View {
     @State private var isWorking = false
     @State private var previewTask: Task<Void, Never>?
     @State private var previewGeneration: UInt64 = 0
+    @State private var isWizardPresented = false
 
     private let importService = SumiBrowserImportService()
 
@@ -37,32 +38,13 @@ struct SumiDataRecoverySettingsPane: View {
             ) {
                 VStack(alignment: .leading, spacing: 12) {
                     SettingsActionRow(
-                        title: "Arc",
-                        subtitle: "Import Arc spaces, profiles, essentials, pinned items, open tabs, folders, themes, and bookmarks.",
-                        systemImage: "square.stack.3d.up",
+                        title: "Import from another browser",
+                        subtitle: "Bring spaces, pinned items, open tabs, folders, themes, and bookmarks "
+                            + "from Arc, Zen, Chrome, Edge, Brave, Firefox, Safari, and other installed browsers.",
+                        systemImage: "arrow.down.circle",
                         buttonTitle: "Import"
                     ) {
-                        loadPreview { try await importService.previewArcImport() }
-                    }
-                    .disabled(isWorking)
-
-                    SettingsActionRow(
-                        title: "Zen",
-                        subtitle: "Import Zen workspaces, essentials, pinned items, open tabs, folders, themes, containers, and bookmarks.",
-                        systemImage: "tray.and.arrow.down",
-                        buttonTitle: "Import"
-                    ) {
-                        importZen()
-                    }
-                    .disabled(isWorking)
-
-                    SettingsActionRow(
-                        title: "Chrome, Safari, Firefox",
-                        subtitle: "Import bookmarks from browsers that do not expose Arc/Zen-style spaces or launchers.",
-                        systemImage: "book",
-                        buttonTitle: "Import"
-                    ) {
-                        actions.importBookmarksFromMenu()
+                        isWizardPresented = true
                     }
                     .disabled(isWorking)
 
@@ -126,6 +108,17 @@ struct SumiDataRecoverySettingsPane: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .sheet(isPresented: $isWizardPresented) {
+            SumiImportWizardSheet(
+                actions: SumiImportWizardActions(
+                    detectSources: { await importService.detectSources() },
+                    preparePreview: { try await importService.preview($0) },
+                    applyImport: actions.applyImport
+                ),
+                onClose: { isWizardPresented = false }
+            )
+            .sumiNativeSurfaceColorScheme()
+        }
         .sheet(isPresented: previewPresented) {
             if let importPreview {
                 SumiImportPreviewSheet(
@@ -188,36 +181,6 @@ struct SumiDataRecoverySettingsPane: View {
             } catch {
                 guard previewGeneration == generation else { return }
                 statusMessage = error.localizedDescription
-            }
-        }
-    }
-
-    private func importZen() {
-        loadPreview {
-            let profiles = await importService.detectedZenProfiles()
-            try Task.checkCancellation()
-            let profileURL: URL
-            if profiles.count == 1, let profile = profiles.first {
-                profileURL = profile
-            } else {
-                let panel = NSOpenPanel()
-                panel.canChooseDirectories = true
-                panel.canChooseFiles = false
-                panel.allowsMultipleSelection = false
-                panel.prompt = "Import Zen"
-                if let root = FileManager.default.urls(
-                    for: .applicationSupportDirectory,
-                    in: .userDomainMask
-                ).first {
-                    panel.directoryURL = root.appendingPathComponent("zen/Profiles", isDirectory: true)
-                }
-                guard panel.runModal() == .OK, let url = panel.url else {
-                    throw CancellationError()
-                }
-                profileURL = url
-            }
-            return try await withSecurityScoped(profileURL) {
-                try await importService.previewZenImport(profileURL: profileURL)
             }
         }
     }

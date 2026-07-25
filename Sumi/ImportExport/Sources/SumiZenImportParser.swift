@@ -1,4 +1,3 @@
-import Compression
 import Foundation
 import SumiDomain
 
@@ -20,11 +19,27 @@ struct SumiZenImportParser {
     }
 
     private func parse(profileURL: URL, warnings: inout [String]) throws -> SumiPortableData {
-        let sessionsURL = profileURL.appendingPathComponent("zen-sessions.jsonlz4")
-        guard FileManager.default.fileExists(atPath: sessionsURL.path) else {
-            throw SumiImportExportError.unsupportedFile("This Zen profile does not contain zen-sessions.jsonlz4.")
+        // `zen-sessions.jsonlz4` is the authority, but a profile that has not
+        // been opened by a Zen build new enough to write it still describes its
+        // tabs in the Firefox session files.
+        let sessionCandidates = [
+            "zen-sessions.jsonlz4",
+            "sessionstore.jsonlz4",
+            "sessionstore-backups/recovery.jsonlz4",
+            "sessionstore-backups/recovery.baklz4",
+        ].map(profileURL.appendingPathComponent)
+        guard let sessionsURL = sessionCandidates.first(where: {
+            FileManager.default.fileExists(atPath: $0.path)
+        }) else {
+            throw SumiImportExportError.unsupportedFile("This Zen profile does not contain a session file.")
         }
-        let jsonData = try SumiMozLZ4.decode(Data(contentsOf: sessionsURL))
+        if sessionsURL.lastPathComponent != "zen-sessions.jsonlz4" {
+            warnings.append(
+                "Zen workspaces were read from \(sessionsURL.lastPathComponent) because zen-sessions.jsonlz4 is missing; "
+                    + "spaces and folders may be incomplete."
+            )
+        }
+        let jsonData = try SumiMozillaLZ4Decoder.decode(Data(contentsOf: sessionsURL))
         guard let root = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
             throw SumiImportExportError.unsupportedFile("Zen sessions file did not decode to JSON.")
         }
@@ -53,10 +68,18 @@ struct SumiZenImportParser {
         var workspaceProfileId: [String: String] = [:]
         for (idx, space) in zenSpaces.enumerated() {
             let workspaceId = (space["uuid"] as? String) ?? UUID().uuidString
-            let firstContainerId = tabsByWorkspace[workspaceId]?
+            // Take the container most of the workspace's tabs actually use. The
+            // first non-zero id in file order is whichever tab happened to be
+            // serialized first, which mis-assigns a workspace whose single
+            // stray container tab precedes the rest.
+            let containerCounts = (tabsByWorkspace[workspaceId] ?? [])
                 .compactMap { $0["userContextId"] as? Int }
-                .first(where: { $0 != 0 }) ?? 0
-            let profile = profilesByContainer[firstContainerId] ?? defaultProfile
+                .filter { $0 != 0 }
+                .reduce(into: [Int: Int]()) { $0[$1, default: 0] += 1 }
+            let dominantContainerId = containerCounts
+                .sorted { ($0.value, $1.key) > ($1.value, $0.key) }
+                .first?.key ?? 0
+            let profile = profilesByContainer[dominantContainerId] ?? defaultProfile
             workspaceProfileId[workspaceId] = profile.id
             let theme = zenTheme(from: space)
             spaces.append(
@@ -79,10 +102,18 @@ struct SumiZenImportParser {
         var pinned: [SumiPortableLauncher] = []
         var pinnedSiblingIndexes: [String: Int] = [:]
         var regularTabs: [SumiPortableRegularTab] = []
+        var workspaceByFolderId: [String: String] = [:]
+        for tab in zenTabs {
+            guard let groupId = SumiImportTextNormalization.nilIfBlank(tab["groupId"] as? String),
+                  folderIds.contains(groupId),
+                  let workspaceId = SumiImportTextNormalization.nilIfBlank(tab["zenWorkspace"] as? String)
+            else { continue }
+            workspaceByFolderId[groupId] = workspaceId
+        }
 
         for (idx, tab) in zenTabs.enumerated() {
             guard (tab["zenIsEmpty"] as? Bool) != true,
-                  let entry = (tab["entries"] as? [[String: Any]])?.last,
+                  let entry = Self.currentEntry(of: tab),
                   let url = entry["url"] as? String,
                   url.isEmpty == false,
                   url != "about:blank"
@@ -94,14 +125,19 @@ struct SumiZenImportParser {
             let isPinned = tab["pinned"] as? Bool ?? false
             let isEssential = tab["zenEssential"] as? Bool ?? false
             if isPinned && isEssential {
+                // Essentials are keyed by profile, so they follow their own
+                // container rather than the container their workspace mostly
+                // uses.
+                let essentialProfileId = (tab["userContextId"] as? Int)
+                    .flatMap { profilesByContainer[$0]?.id } ?? profileId
                 essentials.append(
                     SumiPortableLauncher(
                         id: syncId,
                         title: title,
                         urlString: url,
                         index: idx,
-                        profileId: profileId,
-                        executionProfileId: profileId,
+                        profileId: essentialProfileId,
+                        executionProfileId: essentialProfileId,
                         spaceId: nil,
                         folderId: nil,
                         iconAsset: nil,
@@ -135,7 +171,7 @@ struct SumiZenImportParser {
                         index: idx,
                         spaceId: workspaceId,
                         profileId: profileId,
-                        folderId: nil
+                        folderId: (tab["groupId"] as? String).flatMap { folderIds.contains($0) ? $0 : nil }
                     )
                 )
             }
@@ -160,7 +196,15 @@ struct SumiZenImportParser {
         } else {
             bookmarks = []
         }
-        let folderRecords = flattenZenFolders(zenFolders, pinnedSiblingIndexes: pinnedSiblingIndexes)
+        var folderWarnings: [String] = []
+        let folderRecords = flattenZenFolders(
+            zenFolders,
+            pinnedSiblingIndexes: pinnedSiblingIndexes,
+            workspaceByFolderId: workspaceByFolderId,
+            fallbackSpaceId: spaces.first?.id,
+            warningSink: { folderWarnings.append($0) }
+        )
+        warnings.append(contentsOf: folderWarnings)
 
         return SumiPortableData(
             profiles: Array(profilesByContainer.values).sorted { $0.index < $1.index },
@@ -212,7 +256,10 @@ struct SumiZenImportParser {
 
     func flattenZenFolders(
         _ folders: [[String: Any]],
-        pinnedSiblingIndexes: [String: Int] = [:]
+        pinnedSiblingIndexes: [String: Int] = [:],
+        workspaceByFolderId: [String: String] = [:],
+        fallbackSpaceId: String? = nil,
+        warningSink: ((String) -> Void)? = nil
     ) -> [SumiPortableFolder] {
         var rawById: [String: [String: Any]] = [:]
         for folder in folders {
@@ -237,6 +284,33 @@ struct SumiZenImportParser {
             return resolved
         }
 
+        // A folder whose `workspaceId` is blank would carry an empty space id
+        // all the way to the plan builder, which silently drops it along with
+        // everything inside. Recover the workspace from a tab that lives in the
+        // folder, then from an ancestor, then from the first space.
+        var unresolvedFolderNames: [String] = []
+        func resolvedSpaceId(for folder: [String: Any], id: String) -> String? {
+            if let declared = SumiImportTextNormalization.nilIfBlank(folder["workspaceId"] as? String) {
+                return declared
+            }
+            if let fromTabs = workspaceByFolderId[id] { return fromTabs }
+            var ancestorId = SumiImportTextNormalization.nilIfBlank(folder["parentId"] as? String)
+            var visited: Set<String> = [id]
+            while let current = ancestorId, visited.insert(current).inserted {
+                if let ancestor = rawById[current] {
+                    if let declared = SumiImportTextNormalization.nilIfBlank(ancestor["workspaceId"] as? String) {
+                        return declared
+                    }
+                    if let fromTabs = workspaceByFolderId[current] { return fromTabs }
+                    ancestorId = SumiImportTextNormalization.nilIfBlank(ancestor["parentId"] as? String)
+                } else {
+                    ancestorId = nil
+                }
+            }
+            unresolvedFolderNames.append(folder["name"] as? String ?? "Untitled Folder")
+            return fallbackSpaceId
+        }
+
         var previousSiblingInfoById: [String: (type: String, id: String?)] = [:]
         var records = folders.enumerated().compactMap { idx, folder -> SumiPortableFolder? in
             guard let id = folder["id"] as? String else { return nil }
@@ -250,7 +324,7 @@ struct SumiZenImportParser {
                 name: folderPath.last ?? "Untitled Folder",
                 icon: SumiZenFolderIconCatalog.normalizedFolderIconValue(folder["userIcon"] as? String),
                 colorHex: "#000000",
-                spaceId: folder["workspaceId"] as? String ?? "",
+                spaceId: resolvedSpaceId(for: folder, id: id) ?? "",
                 parentFolderId: SumiImportTextNormalization.nilIfBlank(folder["parentId"] as? String),
                 isOpen: !(folder["collapsed"] as? Bool ?? false),
                 index: idx,
@@ -262,6 +336,14 @@ struct SumiZenImportParser {
             previousSiblingInfoById: previousSiblingInfoById,
             pinnedSiblingIndexes: pinnedSiblingIndexes
         )
+        if unresolvedFolderNames.isEmpty == false {
+            let names = unresolvedFolderNames.sorted().joined(separator: ", ")
+            warningSink?(
+                fallbackSpaceId == nil
+                    ? "Zen folders without a workspace were skipped: \(names)."
+                    : "Zen folders without a workspace were moved to the first space: \(names)."
+            )
+        }
         return SumiPortableFolderHierarchyRepair.repaired(records)
     }
 
@@ -317,6 +399,18 @@ struct SumiZenImportParser {
         }
     }
 
+    /// A session tab's `index` is a 1-based cursor into its back/forward
+    /// history, so a tab the user navigated back in is not described by its
+    /// last entry. Falls back to the last entry when `index` is absent or out
+    /// of range.
+    static func currentEntry(of tab: [String: Any]) -> [String: Any]? {
+        guard let entries = tab["entries"] as? [[String: Any]], entries.isEmpty == false else { return nil }
+        if let index = tab["index"] as? Int, index >= 1, index <= entries.count {
+            return entries[index - 1]
+        }
+        return entries.last
+    }
+
     private func zenTabSiblingIdentifiers(from tab: [String: Any], fallbackId: String) -> [String] {
         var ids: [String] = [fallbackId]
         for key in ["id", "zenSyncId", "tabId"] {
@@ -362,35 +456,5 @@ struct SumiZenImportParser {
         // with every component <= 1 is near-black either way.
         let scale: Double = raw.contains(where: { $0 > 1.0 }) ? 255 : 1
         return SumiPortableRGBColor(r: raw[0] / scale, g: raw[1] / scale, b: raw[2] / scale)
-    }
-}
-
-private enum SumiMozLZ4 {
-    static func decode(_ data: Data) throws -> Data {
-        let magic = Data([0x6D, 0x6F, 0x7A, 0x4C, 0x7A, 0x34, 0x30, 0x00])
-        guard data.count >= 12, Data(data.prefix(8)) == magic else {
-            throw SumiImportExportError.unsupportedFile("Zen sessions file is not Mozilla LZ4.")
-        }
-        let size = data[8..<12].enumerated().reduce(UInt32(0)) { partial, item in
-            partial | (UInt32(item.element) << UInt32(item.offset * 8))
-        }
-        let compressed = data.dropFirst(12)
-        var output = Data(count: Int(size))
-        let decoded = output.withUnsafeMutableBytes { outPtr in
-            compressed.withUnsafeBytes { inPtr in
-                compression_decode_buffer(
-                    outPtr.bindMemory(to: UInt8.self).baseAddress!,
-                    Int(size),
-                    inPtr.bindMemory(to: UInt8.self).baseAddress!,
-                    compressed.count,
-                    nil,
-                    COMPRESSION_LZ4_RAW
-                )
-            }
-        }
-        guard decoded == Int(size) else {
-            throw SumiImportExportError.unsupportedFile("Sumi could not decode Zen's LZ4 session data.")
-        }
-        return output
     }
 }

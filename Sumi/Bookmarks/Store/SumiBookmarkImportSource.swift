@@ -183,25 +183,19 @@ enum BookmarkImportReader {
     }
 
     static func readFirefoxPlaces(from fileURL: URL) throws -> [SumiBookmarkImportNode] {
-        let tempURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("BookmarksFirefox-\(UUID().uuidString).sqlite")
-        try? FileManager.default.removeItem(at: tempURL)
-        try FileManager.default.copyItem(at: fileURL, to: tempURL)
-        defer { try? FileManager.default.removeItem(at: tempURL) }
-
-        var database: OpaquePointer?
-        guard sqlite3_open_v2(tempURL.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
-              let database
-        else {
+        // Snapshotting copies the WAL sidecars too, so bookmarks the source
+        // browser has committed but not yet checkpointed still import.
+        do {
+            return try SumiImportSQLiteSnapshotReader.withSnapshot(of: fileURL) { database in
+                let rootBookmarks = try firefoxChildren(parentID: 1, database: database)
+                if !rootBookmarks.isEmpty {
+                    return rootBookmarks
+                }
+                return try firefoxChildren(parentID: 0, database: database)
+            }
+        } catch is SumiImportSQLiteSnapshotReader.SnapshotError {
             throw BookmarkImportExportError.unreadableFirefoxDatabase
         }
-        defer { sqlite3_close(database) }
-
-        let rootBookmarks = try firefoxChildren(parentID: 1, database: database)
-        if !rootBookmarks.isEmpty {
-            return rootBookmarks
-        }
-        return try firefoxChildren(parentID: 0, database: database)
     }
 
     private static func parseBookmarkHTMLDL(_ dl: XMLNode) -> [SumiBookmarkImportNode] {

@@ -187,7 +187,7 @@ enum WebsiteViewContextFactory {
                         tabFactory: browserManager.tabFactory,
                         tabBrowserRuntime: TabBrowserRuntimeFactory.make(for: browserManager)
                     )
-                    return try await SumiImportTransaction(
+                    let report = try await SumiImportTransaction(
                         materializer: materializer,
                         runtime: runtime,
                         bookmarks: SumiImportBookmarkStore(
@@ -199,6 +199,25 @@ enum WebsiteViewContextFactory {
                     ).commit(
                         plan
                     )
+
+                    // Bulk data is applied only after the structural import has
+                    // committed: it is keyed to the profiles that import just
+                    // created, and none of it is worth writing if the structure
+                    // it belongs to rolled back.
+                    let bulkWarnings = await Self.applyBulkImport(
+                        request: request,
+                        transition: plan.profileTransition,
+                        browserManager: browserManager
+                    )
+                    guard bulkWarnings.isEmpty else {
+                        return SumiImportReport(
+                            warnings: report.warnings + bulkWarnings,
+                            preRestoreBackupURL: report.preRestoreBackupURL,
+                            appliedCategories: report.appliedCategories,
+                            bookmarkSummary: report.bookmarkSummary
+                        )
+                    }
+                    return report
                 }
             )
         )
@@ -301,6 +320,79 @@ enum WebsiteViewContextFactory {
                 browserManager?.sumiSettings
             }
         )
+    }
+
+    /// Applies staged history, site icons, and cookies onto the profiles the
+    /// structural import just created. Returns warnings; a bulk failure is
+    /// reported but never undoes the structure the user already has.
+    private static func applyBulkImport(
+        request: SumiImportRequest,
+        transition: SumiImportProfileTransition,
+        browserManager: BrowserManager
+    ) async -> [String] {
+        guard let manifest = request.bulkStaging,
+              request.bulkKinds.isEmpty == false
+        else {
+            return []
+        }
+
+        let staging = SumiImportBulkStagingStore()
+        defer { staging.discard(manifest.stagingID) }
+
+        // Bulk payloads are keyed by the source browser's profile directory;
+        // resolve each to the Sumi profile the plan mapped it onto.
+        var profileIDsBySourceKey: [String: UUID] = [:]
+        for profile in request.data.profiles {
+            guard let key = profile.sourceDirectoryKey else { continue }
+            let target = transition.sourceToTargetProfileID[profile.id]
+                .flatMap(UUID.init(uuidString:))
+                ?? browserManager.currentProfile?.id
+            guard let target else { continue }
+            profileIDsBySourceKey[key] = target
+        }
+
+        let installer = SumiImportBulkInstaller(
+            historyStore: browserManager.historyManager.store,
+            refreshHistory: { [weak browserManager] in
+                await browserManager?.historyManager.refreshAfterExternalMutation()
+            },
+            faviconIngestion: browserManager.dataServices.faviconCapabilities.localIconIngestion,
+            cookieInstaller: SumiProfileCookieInstallationService(
+                dataStoreProvider: { [weak browserManager] profileId in
+                    browserManager?.profileManager.profiles
+                        .first { $0.id == profileId }?
+                        .dataStore
+                }
+            ),
+            // Replace is the only mode where the user asked for the imported
+            // session to win over one already in Sumi.
+            overwriteExistingCookies: request.mode == .replace
+        )
+
+        let coordinator = SumiImportBulkApplyCoordinator(staging: staging, installer: installer)
+        var receipt = SumiImportBulkReceipt()
+        do {
+            try await coordinator.apply(
+                manifest: manifest,
+                kinds: request.bulkKinds,
+                profileIDsBySourceKey: profileIDsBySourceKey,
+                into: &receipt
+            )
+            return []
+        } catch {
+            let rollbackErrors = await coordinator.rollback(
+                receipt,
+                profileIDsBySourceKey: profileIDsBySourceKey
+            )
+            var warnings = [
+                "Browsing data could not be imported: \(error.localizedDescription). "
+                    + "Spaces, tabs, and bookmarks were imported successfully."
+            ]
+            if rollbackErrors.isEmpty == false {
+                warnings.append("Some partially imported browsing data could not be removed.")
+            }
+            return warnings
+        }
     }
 }
 

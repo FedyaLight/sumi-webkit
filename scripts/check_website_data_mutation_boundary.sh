@@ -22,6 +22,9 @@ participant_kernel_source="Packages/SumiWebRuntime/Sources/SumiWebRuntime/Transa
 terminal_receipt_source="Packages/SumiWebRuntime/Sources/SumiWebRuntime/Transactions/WebsiteDataCleanupTerminalReceipt.swift"
 navigation_barrier_source="Sumi/Managers/WebViewRuntime/WebsiteDataCleanupNavigationBarrier.swift"
 cleanup_transaction_source="Sumi/Managers/WebViewRuntime/WebsiteDataCleanupTransaction.swift"
+# Constructive cookie writes have exactly one owner, so importing sessions
+# cannot become the one website-data mutation nobody polices.
+cookie_installation_source="Sumi/Services/SumiProfileCookieInstallationService.swift"
 
 for source in \
   "$canonical_cleanup_source" \
@@ -32,9 +35,24 @@ for source in \
   "$participant_kernel_source" \
   "$terminal_receipt_source" \
   "$navigation_barrier_source" \
-  "$cleanup_transaction_source"; do
+  "$cleanup_transaction_source" \
+  "$cookie_installation_source"; do
   guard_require_file "$source"
 done
+
+set_cookie_hits="$(
+  guard_capture_matches \
+    '\.setCookie[[:space:]]*\(' \
+    --glob '*.swift' "${production_roots[@]}"
+)"
+while IFS= read -r match; do
+  [[ -n "$match" ]] || continue
+  case "${match%%:*}" in
+    "$canonical_cleanup_source") ;;
+    "$cookie_installation_source") ;;
+    *) guard_record_failure "cookies are written outside the profile cookie installation service: $match" ;;
+  esac
+done <<<"$set_cookie_hits"
 
 require_source_pattern() {
   local file="$1"
@@ -79,6 +97,12 @@ while IFS= read -r match; do
   file="${match%%:*}"
   case "$file" in
     "$canonical_cleanup_source"|"$extension_cleanup_source")
+      ;;
+    # The cookie installation service deletes only the cookies it has just
+    # written, to compensate a failed import. That is undoing its own mutation,
+    # not user-facing data deletion, so it must not drag in the quiesce
+    # transaction — but nothing else here may delete cookies.
+    "$cookie_installation_source")
       ;;
     *)
       guard_record_failure \

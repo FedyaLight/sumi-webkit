@@ -192,7 +192,12 @@ struct SumiApp: App {
                     profileRetirement: browserManager.profileLifecycleBundle
                         .importRetirement
                 )
-                return try await transaction.recoverIfNeeded()
+                let recovery = try await transaction.recoverIfNeeded()
+                // Bulk payloads staged for an import that never finished are
+                // dead weight; nothing outlives the transaction that referenced
+                // them, so anything still on disk here is an orphan.
+                SumiImportBulkStagingStore().sweepOrphans()
+                return recovery
             },
             hasSafeProfile: {
                 browserManager.profileManager.profiles.isEmpty == false

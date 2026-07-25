@@ -87,6 +87,13 @@ private final class NoOpBrowserFaviconCapabilities:
         partition _: SumiFaviconPartition,
         context _: SumiFaviconDisplayContext
     ) async -> NSImage? { nil }
+
+    func ingestImportedIcon(
+        payload _: Data,
+        iconURL _: URL,
+        documentURL _: URL,
+        partition _: SumiFaviconPartition
+    ) async {}
 }
 
 @MainActor

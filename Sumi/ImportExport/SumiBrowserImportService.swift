@@ -1,31 +1,38 @@
 import Foundation
 
+/// Identifies exactly which browser and profile an import should read.
+struct SumiImportSourceSelection: Equatable, Sendable {
+    var browser: SumiDetectedBrowser
+    var profile: SumiDetectedBrowserProfile
+}
+
 @MainActor
 final class SumiBrowserImportService {
-    private let zenProfilesRootProvider: @MainActor () -> URL
+    private let homeDirectoryProvider: @MainActor () -> URL
+    private let applications: any SumiInstalledApplicationLocating
 
     init(
-        zenProfilesRootProvider: @escaping @MainActor () -> URL = {
+        homeDirectoryProvider: @escaping @MainActor () -> URL = {
             FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent("Library/Application Support/zen/Profiles", isDirectory: true)
-        }
+        },
+        applications: any SumiInstalledApplicationLocating = SumiWorkspaceApplicationLocator()
     ) {
-        self.zenProfilesRootProvider = zenProfilesRootProvider
+        self.homeDirectoryProvider = homeDirectoryProvider
+        self.applications = applications
     }
 
-    func previewArcImport() async throws -> SumiImportPreview {
-        let sidebarURL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/Arc/StorableSidebar.json")
-        return try await SumiBrowserImportPreviewWorker.previewArc(sidebarURL: sidebarURL)
+    /// Every browser Sumi can import from, with per-profile detail and any
+    /// access problem that stands in the way.
+    func detectSources() async -> [SumiDetectedBrowser] {
+        let home = homeDirectoryProvider()
+        let applications = self.applications
+        return await SumiBrowserImportPreviewWorker.detached {
+            SumiBrowserSourceCatalog.detect(homeDirectory: home, applications: applications)
+        } ?? []
     }
 
-    func detectedZenProfiles() async -> [URL] {
-        let root = zenProfilesRootProvider()
-        return await SumiBrowserImportPreviewWorker.detectedZenProfiles(root: root)
-    }
-
-    func previewZenImport(profileURL: URL) async throws -> SumiImportPreview {
-        try await SumiBrowserImportPreviewWorker.previewZen(profileURL: profileURL)
+    func preview(_ selection: SumiImportSourceSelection) async throws -> SumiImportPreview {
+        try await SumiBrowserImportPreviewWorker.preview(selection)
     }
 
     func previewFileImport(fileURL: URL) async throws -> SumiImportPreview {
@@ -34,37 +41,36 @@ final class SumiBrowserImportService {
 }
 
 enum SumiBrowserImportPreviewWorker {
-    static func previewArc(sidebarURL: URL) async throws -> SumiImportPreview {
-        try await detached {
-            let result = try SumiArcImportParser().parseWithDiagnostics(sidebarURL: sidebarURL)
-            return SumiImportPreview(
-                title: "Arc",
-                sourceKind: .arc,
-                data: result.data,
-                suggestedCategories: result.data.nonEmptyCategories,
-                warnings: SumiImportPreviewWarningBuilder.warnings(for: result.data, source: "Arc") + result.warnings,
-                defaultMode: .merge
-            )
-        }
-    }
+    static func preview(_ selection: SumiImportSourceSelection) async throws -> SumiImportPreview {
+        let browser = selection.browser
+        let profile = selection.profile
+        return try await detached {
+            var preview: SumiImportPreview
+            switch browser.family {
+            case .arc:
+                preview = try previewArc(browser: browser)
+            case .zen:
+                preview = try previewZen(browser: browser, profile: profile)
+            case .chromium:
+                preview = try previewChromium(browser: browser, profile: profile)
+            case .firefox:
+                preview = try previewFirefox(browser: browser, profile: profile)
+            case .safari:
+                preview = try previewSafari(browser: browser)
+            }
 
-    static func detectedZenProfiles(root: URL) async -> [URL] {
-        (try? await detached {
-            try enumerateZenProfiles(root: root)
-        }) ?? []
-    }
-
-    static func previewZen(profileURL: URL) async throws -> SumiImportPreview {
-        try await detached {
-            let result = try SumiZenImportParser().parseWithDiagnostics(profileURL: profileURL)
-            return SumiImportPreview(
-                title: "Zen: \(profileURL.lastPathComponent)",
-                sourceKind: .zen,
-                data: result.data,
-                suggestedCategories: result.data.nonEmptyCategories,
-                warnings: SumiImportPreviewWarningBuilder.warnings(for: result.data, source: "Zen") + result.warnings,
-                defaultMode: .merge
-            )
+            // Bulk payloads are staged now, while the wizard is open, because
+            // reading them can prompt for keychain authorization; the user
+            // should meet that while deciding, not mid-import.
+            if let staged = SumiImportBulkStagingCoordinator().stage(
+                browser: browser,
+                profile: profile,
+                kinds: SumiImportBulkStagingCoordinator.supportedKinds(for: browser)
+            ) {
+                preview.bulkStaging = staged.manifest
+                preview.warnings.append(contentsOf: staged.warnings)
+            }
+            return preview
         }
     }
 
@@ -74,38 +80,92 @@ enum SumiBrowserImportPreviewWorker {
         }
     }
 
-    private static func enumerateZenProfiles(root: URL) throws -> [URL] {
-        let children: [URL]
-        do {
-            children = try FileManager.default.contentsOfDirectory(
-                at: root,
-                includingPropertiesForKeys: [.isDirectoryKey],
-                options: [.skipsHiddenFiles]
-            )
-        } catch {
-            let cocoaError = error as NSError
-            if cocoaError.domain == NSCocoaErrorDomain,
-               cocoaError.code == CocoaError.fileReadNoSuchFile.rawValue {
-                return []
-            }
-            throw error
-        }
-        return children.compactMap { url in
-            do {
-                guard try url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true,
-                      FileManager.default.fileExists(atPath: url.appendingPathComponent("places.sqlite").path)
-                else {
-                    return nil
-                }
-                return url
-            } catch {
-                return nil
-            }
-        }
-        .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+    // MARK: - Per-family previews
+
+    private static func previewArc(browser: SumiDetectedBrowser) throws -> SumiImportPreview {
+        let parser = SumiArcImportParser(
+            userDataURL: browser.dataRoot.appendingPathComponent("User Data", isDirectory: true)
+        )
+        let result = try parser.parseWithDiagnostics(
+            sidebarURL: browser.dataRoot.appendingPathComponent("StorableSidebar.json")
+        )
+        return preview(title: browser.displayName, kind: .arc, data: result.data, warnings: result.warnings)
     }
 
-    private static func detached<T: Sendable>(
+    private static func previewZen(
+        browser: SumiDetectedBrowser,
+        profile: SumiDetectedBrowserProfile
+    ) throws -> SumiImportPreview {
+        let result = try SumiZenImportParser().parseWithDiagnostics(profileURL: profile.directoryURL)
+        return preview(
+            title: "\(browser.displayName): \(profile.displayName)",
+            kind: .zen,
+            data: result.data,
+            warnings: result.warnings
+        )
+    }
+
+    private static func previewChromium(
+        browser: SumiDetectedBrowser,
+        profile: SumiDetectedBrowserProfile
+    ) throws -> SumiImportPreview {
+        let result = try SumiChromiumImportParser(
+            browserName: browser.displayName,
+            userDataURL: browser.dataRoot,
+            profileDirectoryName: profile.sourceDirectoryKey
+        ).parseWithDiagnostics()
+        return preview(
+            title: "\(browser.displayName): \(profile.displayName)",
+            kind: .chromium,
+            data: result.data,
+            warnings: result.warnings
+        )
+    }
+
+    private static func previewFirefox(
+        browser: SumiDetectedBrowser,
+        profile: SumiDetectedBrowserProfile
+    ) throws -> SumiImportPreview {
+        let result = try SumiFirefoxImportParser(
+            browserName: browser.displayName,
+            profileURL: profile.directoryURL,
+            directoryName: profile.sourceDirectoryKey
+        ).parseWithDiagnostics()
+        return preview(
+            title: "\(browser.displayName): \(profile.displayName)",
+            kind: .firefox,
+            data: result.data,
+            warnings: result.warnings
+        )
+    }
+
+    private static func previewSafari(browser: SumiDetectedBrowser) throws -> SumiImportPreview {
+        let result = try SumiSafariImportParser(
+            browserName: browser.displayName,
+            safariDirectoryURL: browser.dataRoot
+        ).parseWithDiagnostics()
+        return preview(title: browser.displayName, kind: .safari, data: result.data, warnings: result.warnings)
+    }
+
+    private static func preview(
+        title: String,
+        kind: SumiImportSourceKind,
+        data: SumiPortableData,
+        warnings: [String]
+    ) -> SumiImportPreview {
+        SumiImportPreview(
+            title: title,
+            sourceKind: kind,
+            data: data,
+            suggestedCategories: data.nonEmptyCategories,
+            warnings: SumiImportPreviewWarningBuilder.warnings(for: data, source: title) + warnings,
+            defaultMode: .merge
+        )
+    }
+
+    // MARK: - Execution
+
+    static func detached<T: Sendable>(
         _ operation: @escaping @Sendable () throws -> T
     ) async throws -> T {
         let interval = PerformanceTrace.beginInterval("Import.preview")
@@ -121,5 +181,11 @@ enum SumiBrowserImportPreviewWorker {
         } onCancel: {
             task.cancel()
         }
+    }
+
+    static func detached<T: Sendable>(
+        _ operation: @escaping @Sendable () -> T
+    ) async -> T? {
+        try? await detached { () throws -> T in operation() }
     }
 }

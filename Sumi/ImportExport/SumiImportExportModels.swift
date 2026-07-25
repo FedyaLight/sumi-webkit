@@ -80,6 +80,9 @@ enum SumiImportApplyMode: String, Codable, CaseIterable, Identifiable, Sendable 
 enum SumiImportSourceKind: String, Codable, Sendable {
     case arc
     case zen
+    case chromium
+    case firefox
+    case safari
     case browser2zen
     case sumiBackup
     case sumiTransfer
@@ -93,6 +96,9 @@ struct SumiImportPreview: Identifiable, Sendable {
     var suggestedCategories: Set<SumiImportCategory>
     var warnings: [String]
     var defaultMode: SumiImportApplyMode
+    /// Bulk payloads already staged on disk, described by counts only. The
+    /// payloads themselves never enter `SumiPortableData`.
+    var bulkStaging: SumiImportBulkStagingManifest? = nil
 
     var summary: SumiImportSummary {
         SumiImportSummary(data: data)
@@ -199,6 +205,11 @@ struct SumiPortableProfile: Codable, Equatable, Identifiable, Sendable {
     var id: String
     var name: String
     var index: Int
+    /// The source browser's own profile directory name (Chromium's `Profile 1`,
+    /// a Firefox profile folder). Bulk extractors join history, cookies, and
+    /// favicons to the right profile on this key; it is absent for sources that
+    /// have no on-disk profile directory.
+    var sourceDirectoryKey: String? = nil
 }
 
 struct SumiPortableSpace: Codable, Equatable, Identifiable, Sendable {

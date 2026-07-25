@@ -321,7 +321,7 @@
       "locationPolicy": "<Application Support>/<runtime bundle identifier>/ImportTransaction.json with an adjacent completed tombstone during durable retirement",
       "backupRestorePolicy": "The journal records baseline, target, runtime checkpoint, bookmark checkpoint, and optional pre-restore backup URL; it is recovery metadata rather than user-exported backup content",
       "corruptionRecoveryPolicy": "Malformed or unsupported journal data fails startup recovery closed. Phase transitions are validated and durably published; completed retirement is also fsynced.",
-      "legacySources": "Journal v1 remains readable; v2 adds durable profile reconciliation state",
+      "legacySources": "Journal v1 remains readable; v2 adds durable profile reconciliation state. Bulk browsing data is deliberately not journaled: it is applied after the structural commit and reverted from an in-memory receipt.",
       "productionTypes": ["SumiImportTransactionFileJournal", "SumiImportTransactionJournalRecord"],
       "semanticSources": ["Sumi/ImportExport/SumiImportTransactionFileJournal.swift"],
       "fixtures": [
@@ -330,6 +330,23 @@
         "SumiTests/Fixtures/Persistence/import/import-journal-v1.json",
         "SumiTests/Fixtures/Persistence/import/import-journal-v2.json"
       ]
+    },
+    {
+      "id": "import-staging",
+      "name": "Staged source-browser browsing data",
+      "classification": "recovery",
+      "technology": "Newline-delimited JSON payload files plus a versioned JSON manifest and an icon blob directory",
+      "versionOwner": "SumiImportBulkStagingManifest.currentVersion = 1",
+      "locationPolicy": "<Application Support>/<runtime bundle identifier>/ImportStaging/<staging identifier> holding per-kind NDJSON files and an icons blob directory",
+      "backupRestorePolicy": "Never included in logical backups. History, cookies, and favicons are staged here only for the duration of a single import and are deleted when it completes, fails, or is abandoned.",
+      "corruptionRecoveryPolicy": "An unreadable staged record is skipped rather than failing the import; a manifest declaring an unsupported version is rejected. Staging directories left by an interrupted import are swept on the next launch.",
+      "legacySources": "No legacy sources; staging is created and deleted within one import and is never read from an earlier build",
+      "productionTypes": ["SumiImportBulkStagingStore", "SumiImportBulkStagingManifest", "SumiImportBulkStagingCoordinator"],
+      "semanticSources": [
+        "Sumi/ImportExport/Bulk/SumiImportBulkStagingStore.swift",
+        "Sumi/ImportExport/Bulk/SumiImportFaviconExtractor.swift"
+      ],
+      "fixtures": []
     },
     {
       "id": "logical-backups",
@@ -442,10 +459,10 @@
   "crossStoreOperations": [
     {
       "operation": "Logical import or restore",
-      "stores": ["logical-backups", "import-journal", "startup-swiftdata", "bookmarks-coredata"],
-      "ordering": ["Decode and validate archive", "Create automatic pre-restore backup", "Publish prepared journal", "Commit SwiftData/runtime state", "Commit Core Data bookmarks", "Mark completed and retire journal"],
-      "compensation": "The journal carries runtime and bookmark checkpoints. Failure after either commit enters compensating, restores the committed checkpoint(s), then completes or leaves the durable journal for next-launch recovery.",
-      "atomicity": "Intentionally not atomic across JSON files, SwiftData, and Core Data. Durable phase ordering and compensation provide recovery, not a distributed transaction."
+      "stores": ["logical-backups", "import-journal", "import-staging", "startup-swiftdata", "bookmarks-coredata", "favicon-cache", "webkit-website-data"],
+      "ordering": ["Stage source browsing data during preview", "Decode and validate archive", "Create automatic pre-restore backup", "Publish prepared journal", "Commit SwiftData/runtime state", "Commit Core Data bookmarks", "Mark completed and retire journal", "Apply staged history, then favicon cache, then cookies", "Discard staging"],
+      "compensation": "The journal carries runtime and bookmark checkpoints. Failure after either commit enters compensating, restores the committed checkpoint(s), then completes or leaves the durable journal for next-launch recovery. Bulk browsing data is applied only after the structural commit and is reverted in decreasing order of reversibility: history exactly from its receipt, cookies best effort, and the favicon cache not at all because it is a rebuildable cache. A bulk failure is reported as a warning and never rolls back the structure the user already has.",
+      "atomicity": "Intentionally not atomic across JSON files, SwiftData, and Core Data. Durable phase ordering and compensation provide recovery, not a distributed transaction. Bulk browsing data sits outside the transaction entirely."
     },
     {
       "operation": "Extension install or update",
@@ -643,6 +660,14 @@
       "paths": ["Sumi/ImportExport/SumiImportTransactionFileJournal.swift"]
     },
     {
+      "owner": "import-staging",
+      "kind": "file_write",
+      "paths": [
+        "Sumi/ImportExport/Bulk/SumiImportBulkStagingStore.swift",
+        "Sumi/ImportExport/Bulk/SumiImportFaviconExtractor.swift"
+      ]
+    },
+    {
       "owner": "logical-backups",
       "kind": "file_write",
       "paths": [
@@ -681,7 +706,8 @@
   ],
   "semanticExclusions": [
     {"kind": "file_write", "path": "Sumi/Bookmarks/Store/BookmarkHTMLExporter.swift", "reason": "Writes a user-selected HTML export, not an app-owned store"},
-    {"kind": "file_write", "path": "Sumi/Bookmarks/Store/SumiBookmarkImportSource.swift", "reason": "Copies a security-scoped import into a temporary staging file"},
+    {"kind": "file_write", "path": "Sumi/ImportExport/Sources/SumiImportSQLiteSnapshotReader.swift", "reason": "Copies a source browser's database and its write-ahead log into a discarded temporary snapshot so the original is never opened"},
+    {"kind": "keychain", "path": "Sumi/ImportExport/Bulk/SumiChromiumSafeStorageDecryptor.swift", "reason": "Reads another browser's own keychain item to decrypt its cookies during import, subject to the user's authorization; Sumi stores nothing there"},
     {"kind": "file_write", "path": "Sumi/Boosts/SumiBoostEditorSessionActions.swift", "reason": "Writes a user-selected per-Boost export"},
     {"kind": "file_write", "path": "Sumi/Managers/DownloadManager/SumiDownloadFileFinalizer.swift", "reason": "Writes and publishes downloaded content to the destination reserved by the download filesystem port; the file is user-owned, not a Sumi store"},
     {"kind": "file_write", "path": "Sumi/Managers/ExtensionManager/SafariExtension/BitwardenNativeMessagingAdapter.swift", "reason": "Writes native-host data to a user-selected save-panel URL"}
