@@ -107,6 +107,7 @@
         "Settings/SumiSettingsService.swift",
         "Settings/ThemeSettingsStore.swift",
         "Sumi/Components/Sidebar/URLBarHubPopover.swift",
+        "Sumi/Components/Sidebar/URLBarHubScreenshotSettingsPresenter.swift",
         "Sumi/ContentBlocking/AdblockSitePolicy.swift",
         "Sumi/ContentBlocking/SumiAdblockZapperStore.swift",
         "Sumi/ContentBlocking/SumiCompiledContentRuleListCatalog.swift",
@@ -388,6 +389,20 @@
       ]
     },
     {
+      "id": "essential-backdrop-cache",
+      "name": "Essential tile backdrop cache",
+      "classification": "cache",
+      "technology": "Baked PNG backdrop files in per-partition directories",
+      "versionOwner": "essential-backdrops-v1 root directory component",
+      "locationPolicy": "<Application Support>/<runtime bundle identifier>/Favicons/essential-backdrops-v1 partition directories",
+      "backupRestorePolicy": "Excluded from logical backup/restore and safe to rebuild by re-baking from the favicon cache",
+      "corruptionRecoveryPolicy": "An unreadable or missing backdrop file is treated as a cache miss and re-baked from the current favicon; backdrop bytes are never authoritative browser state",
+      "legacySources": "No legacy roots; a superseded backdrop generation is discarded rather than imported",
+      "productionTypes": ["SumiEssentialBackdropDiskStorage", "SumiEssentialBackdropRenderer"],
+      "semanticSources": ["Sumi/Favicons/EssentialBackdrop/SumiEssentialBackdropDiskStorage.swift"],
+      "fixtures": []
+    },
+    {
       "id": "adblock-generation-cache",
       "name": "Generated adblock archives",
       "classification": "cache",
@@ -535,6 +550,7 @@
         "Settings/SumiSettingsService.swift",
         "Settings/ThemeSettingsStore.swift",
         "Sumi/Components/Sidebar/URLBarHubPopover.swift",
+        "Sumi/Components/Sidebar/URLBarHubScreenshotSettingsPresenter.swift",
         "Sumi/ContentBlocking/AdblockSitePolicy.swift",
         "Sumi/ContentBlocking/SumiAdblockZapperStore.swift",
         "Sumi/ContentBlocking/SumiCompiledContentRuleListCatalog.swift",
@@ -681,6 +697,11 @@
       "paths": ["Sumi/Favicons/V2/SumiFaviconBlobDiskStorage.swift"]
     },
     {
+      "owner": "essential-backdrop-cache",
+      "kind": "file_write",
+      "paths": ["Sumi/Favicons/EssentialBackdrop/SumiEssentialBackdropDiskStorage.swift"]
+    },
+    {
       "owner": "adblock-generation-cache",
       "kind": "file_write",
       "paths": ["Sumi/ContentBlocking/AdblockGenerationArchive.swift"]
@@ -725,6 +746,7 @@
     {"path": "Sumi/ContentBlocking/SumiProtectionBundleUpdateStatusStore.swift", "declaration": "static let lastReleaseVersion = \"settings.protection.bundleUpdate.lastReleaseVersion\"", "owner": "excluded", "reason": "UserDefaults key name, not a schema version"},
     {"path": "Sumi/ContentBlocking/SumiProtectionBundleUpdateStatusStore.swift", "declaration": "static let lastSigningKeyVersion = \"settings.protection.bundleUpdate.lastSigningKeyVersion\"", "owner": "excluded", "reason": "UserDefaults key name, not a schema version"},
     {"path": "Sumi/Favicons/V2/SumiFaviconBlobModels.swift", "declaration": "static let currentSchemaVersion = 2", "owner": "favicon-cache"},
+    {"path": "Sumi/ImportExport/Bulk/SumiImportBulkModels.swift", "declaration": "static let currentVersion = 1", "owner": "import-staging"},
     {"path": "Sumi/ImportExport/SumiImportExportModels.swift", "declaration": "static let currentVersion = 1", "owner": "logical-backups"},
     {"path": "Sumi/ImportExport/SumiImportTransactionJournal.swift", "declaration": "static let currentVersion = 2", "owner": "import-journal"},
     {"path": "Sumi/Managers/TabManager/TabPersistenceCodec.swift", "declaration": "static let schemaVersion = 2", "owner": "preferences-userdefaults"},

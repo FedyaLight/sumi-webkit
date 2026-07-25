@@ -340,19 +340,23 @@ final class CommandPaletteCapabilitiesTests: XCTestCase {
         loadPage: @escaping @MainActor (URL, Tab, BrowserWindowState) -> Void = { _, _, _ in /* no-op */ }
     ) -> CommandPaletteCommitService {
         let split = split ?? BrowserManager().splitEmptyPlaceholders
+        let tabTargets = CommandPaletteTabTargetCommitter(
+            splitPlaceholders: split,
+            selectTab: selectTab
+        )
         return CommandPaletteCommitService(
             presentation: presentation,
-            tabOpening: { opening },
-            tabTargets: CommandPaletteTabTargetCommitter(
-                splitPlaceholders: split,
-                selectTab: selectTab
+            destinations: CommandPaletteDestinationRouter(
+                tabOpening: { opening },
+                tabTargets: tabTargets,
+                pageNavigation: CommandPalettePageNavigationService(
+                    settings: { settings },
+                    loadPage: loadPage
+                ),
+                activePageTab: activePageTab
             ),
+            tabTargets: tabTargets,
             tabForID: tabForID,
-            activePageTab: activePageTab,
-            pageNavigation: CommandPalettePageNavigationService(
-                settings: { settings },
-                loadPage: loadPage
-            ),
             activateNavigationTarget: activateNavigationTarget
         )
     }

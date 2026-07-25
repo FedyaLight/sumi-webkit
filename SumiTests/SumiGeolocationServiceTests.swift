@@ -48,7 +48,12 @@ final class SumiGeolocationServiceTests: XCTestCase {
         var receivedLocation: CLLocation?
 
         let error = await service.startUpdatingLocation(highAccuracy: true) { result in
-            receivedLocation = try? result.get()
+            switch result {
+            case .success(let location):
+                receivedLocation = location
+            case .failure(let failure):
+                XCTFail("Location update failed: \(failure)")
+            }
             expectation.fulfill()
         }
         manager.emit(CLLocation(latitude: 1, longitude: 2))

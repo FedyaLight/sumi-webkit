@@ -235,10 +235,12 @@ fi
 
 # No universal callback hub, closure-bag or manager-root wrapper may replace
 # the two narrow settlements.
+# Scoped to the extension surface this guard governs: "CallbackCoordinator" is
+# also the SwiftUI NSViewRepresentable idiom, unrelated to native messaging.
 callback_hub_hits="$(
   guard_capture_matches \
     'NativeMessagingCallbackHub|NativeMessagingDependencies|NativeMessagingActions|CallbackCoordinator' \
-    Sumi -g '*.swift'
+    Sumi/Managers/ExtensionManager -g '*.swift'
 )"
 record_scan_matches "universal native-messaging callback hub appeared" "$callback_hub_hits"
 

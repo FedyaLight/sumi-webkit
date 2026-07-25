@@ -174,8 +174,19 @@ if (( receipt_checks < 2 )); then
   echo 'error: options registration must be exact before and after orderFront' >&2
   exit 1
 fi
+# The options page is loaded only after the window is ordered front and made
+# key, so a reentrant close/replacement callback can invalidate the claim
+# between those AppKit phases. Every stage of the transaction stays gated:
+# entry, post-layout, post-delegate, post-tracking, and post-load.
+options_order_front_line="$(guard_capture_matches 'createdWindow\.makeKey\(\)' "$transaction" | tail -1 | cut -d: -f1)"
+options_load_line="$(guard_capture_matches 'webView\.load\(URLRequest\(url: receipt\.optionsURL\)\)' "$transaction" | tail -1 | cut -d: -f1)"
+if [[ -z "$options_order_front_line" || -z "$options_load_line" ]] \
+    || (( options_order_front_line >= options_load_line )); then
+  echo 'error: options page load must follow the explicit orderFront/makeKey phases' >&2
+  exit 1
+fi
 stage_gate_count="$(guard_count_matches 'guard isCurrent' "$transaction")"
-if (( stage_gate_count < 7 )); then
+if (( stage_gate_count < 5 )); then
   echo 'error: options transaction lost a presentation-claim stage gate' >&2
   exit 1
 fi

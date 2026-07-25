@@ -99,14 +99,12 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
             description: "latest ABA transition reconciled"
         )
         var refreshedProfiles: [UUID] = []
-        let transition = ExtensionProfileRuntimeTransition(
-            installedExtensions: InstalledExtensionCollection(),
+        let transition = makeProfileTransition(
             profileRuntime: profileRuntime,
             runtimeLifecycle: lifecycle,
             browserConfiguration: browserConfiguration,
             controllerProvisioning: provisioning,
             inactiveContextRetirement: retirement,
-            actionAnchors: ExtensionActionPopupAnchorStore(),
             toolbarProfiles: toolbar,
             reconcileProfile: {
                 reconciledProfiles.append($0)
@@ -150,14 +148,13 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
             profileRuntime: profileRuntime
         )
         let browserConfiguration = BrowserConfiguration()
-        let transition = ExtensionProfileRuntimeTransition(
+        let transition = makeProfileTransition(
             installedExtensions: installed,
             profileRuntime: profileRuntime,
             runtimeLifecycle: lifecycle,
             browserConfiguration: browserConfiguration,
             controllerProvisioning: provisioning,
             inactiveContextRetirement: InactiveContextRetirementProbe(),
-            actionAnchors: ExtensionActionPopupAnchorStore(),
             toolbarProfiles: ToolbarProfileReloadProbe(),
             reconcileProfile: { _ in },
             refreshActionSurfaces: { _ in }
@@ -182,14 +179,12 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
         )
         var reconciledProfiles: [UUID] = []
         var transition: ExtensionProfileRuntimeTransition? =
-            ExtensionProfileRuntimeTransition(
-                installedExtensions: InstalledExtensionCollection(),
+            makeProfileTransition(
                 profileRuntime: profileRuntime,
                 runtimeLifecycle: lifecycle,
                 browserConfiguration: BrowserConfiguration(),
                 controllerProvisioning: provisioning,
                 inactiveContextRetirement: InactiveContextRetirementProbe(),
-                actionAnchors: ExtensionActionPopupAnchorStore(),
                 toolbarProfiles: ToolbarProfileReloadProbe(),
                 reconcileProfile: { reconciledProfiles.append($0) },
                 refreshActionSurfaces: { _ in }
@@ -215,14 +210,12 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
         )
         var reconciledProfiles: [UUID] = []
         var refreshedProfiles: [UUID] = []
-        let transition = ExtensionProfileRuntimeTransition(
-            installedExtensions: InstalledExtensionCollection(),
+        let transition = makeProfileTransition(
             profileRuntime: profileRuntime,
             runtimeLifecycle: lifecycle,
             browserConfiguration: BrowserConfiguration(),
             controllerProvisioning: provisioning,
             inactiveContextRetirement: InactiveContextRetirementProbe(),
-            actionAnchors: ExtensionActionPopupAnchorStore(),
             toolbarProfiles: ToolbarProfileReloadProbe(),
             reconcileProfile: { reconciledProfiles.append($0) },
             refreshActionSurfaces: { refreshedProfiles.append($0) }
@@ -370,6 +363,47 @@ final class ExtensionRuntimeLifecycleBoundaryTests: XCTestCase {
             ),
             projectionProbe: projectionProbe,
             settlement: settlement
+        )
+    }
+
+    /// Wires the profile-transition roles the production composition builds, so
+    /// each test states only the collaborators it asserts against.
+    private func makeProfileTransition(
+        installedExtensions: InstalledExtensionCollection
+            = InstalledExtensionCollection(),
+        profileRuntime: ExtensionProfileRuntime,
+        runtimeLifecycle: ExtensionRuntimeLifecycleAuthority,
+        browserConfiguration: BrowserConfiguration,
+        controllerProvisioning: any ExtensionControllerProvisioning,
+        inactiveContextRetirement: any ExtensionInactiveProfileContextRetiring,
+        actionAnchors: ExtensionActionPopupAnchorStore
+            = ExtensionActionPopupAnchorStore(),
+        toolbarProfiles: any ExtensionToolbarProfileReloading,
+        reconcileProfile: @escaping @MainActor (UUID) -> Void,
+        refreshActionSurfaces: @escaping @MainActor (UUID) -> Void
+    ) -> ExtensionProfileRuntimeTransition {
+        ExtensionProfileRuntimeTransition(
+            readinessProbe: ExtensionProfileReadinessProbe(
+                installedExtensions: installedExtensions,
+                profileRuntime: profileRuntime,
+                runtimeLifecycle: runtimeLifecycle
+            ),
+            transitionLease: ExtensionProfileTransitionLease(
+                profileRuntime: profileRuntime
+            ),
+            profileRuntime: profileRuntime,
+            runtimeLifecycle: runtimeLifecycle,
+            browserConfiguration: browserConfiguration,
+            controllerProvisioning: controllerProvisioning,
+            surfaceHandoff: ExtensionProfileSurfaceHandoff(
+                actionAnchors: actionAnchors,
+                toolbarProfiles: toolbarProfiles,
+                browserConfiguration: browserConfiguration,
+                profileRuntime: profileRuntime,
+                inactiveContextRetirement: inactiveContextRetirement
+            ),
+            reconcileProfile: reconcileProfile,
+            refreshActionSurfaces: refreshActionSurfaces
         )
     }
 

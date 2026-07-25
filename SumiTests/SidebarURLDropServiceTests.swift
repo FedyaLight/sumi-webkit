@@ -130,8 +130,10 @@ private final class Harness {
         let destinations = DropDestinations(spaces: spaces, folders: folders)
         self.destinations = destinations
         self.service = SidebarURLDropService(
-            tabOpening: tabOpening,
-            nativeSurfaces: nativeSurfaces,
+            pageOpening: SidebarURLDropTabOpening(
+                tabOpening: tabOpening,
+                nativeSurfaces: nativeSurfaces
+            ),
             destinations: destinations,
             shortcutInsertion: shortcutInsertion
         )

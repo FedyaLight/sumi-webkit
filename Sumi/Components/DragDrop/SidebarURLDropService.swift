@@ -3,21 +3,18 @@ import SumiDomain
 
 @MainActor
 final class SidebarURLDropService {
-    private let tabOpening: any URLTabOpening
-    private let nativeSurfaces: any NativeBrowserSurfaceOpening
+    private let pageOpening: SidebarURLDropTabOpening
     private let destinations: any SidebarURLDropDestinationResolving
     private let shortcutInsertion: any ShortcutURLInserting
     private let orderProjection: any SidebarDropOrderProjecting
 
     init(
-        tabOpening: any URLTabOpening,
-        nativeSurfaces: any NativeBrowserSurfaceOpening,
+        pageOpening: SidebarURLDropTabOpening,
         destinations: any SidebarURLDropDestinationResolving,
         shortcutInsertion: any ShortcutURLInserting,
         orderProjection: any SidebarDropOrderProjecting = SidebarIdentityDropOrderProjection()
     ) {
-        self.tabOpening = tabOpening
-        self.nativeSurfaces = nativeSurfaces
+        self.pageOpening = pageOpening
         self.destinations = destinations
         self.shortcutInsertion = shortcutInsertion
         self.orderProjection = orderProjection
@@ -32,31 +29,18 @@ final class SidebarURLDropService {
         guard slot != .empty else { return false }
 
         if windowState.isIncognito {
-            return openEphemeral(url, in: windowState)
+            return pageOpening.open(url, in: windowState)
         }
 
         switch slot {
         case .spaceRegular(let spaceID, let index):
             guard let space = destinations.space(spaceID) else { return false }
-            if let nativeKind = nativeSurfaceKind(for: url) {
-                nativeSurfaces.openNativeBrowserSurface(
-                    nativeKind,
-                    url: url,
-                    in: windowState,
-                    preferredSpaceId: space.id
-                )
-                return true
-            }
-            guard url.scheme?.lowercased() != "sumi" else { return false }
-            _ = tabOpening.openNewTab(
-                url: url.absoluteString,
-                context: .foreground(
-                    windowState: windowState,
-                    preferredSpaceId: space.id,
-                    regularInsertionIndex: index
-                )
+            return pageOpening.open(
+                url,
+                in: windowState,
+                preferredSpaceID: space.id,
+                regularInsertionIndex: index
             )
-            return true
 
         case .spacePinned(let spaceID, let index):
             guard url.scheme?.lowercased() != "sumi",
@@ -120,31 +104,4 @@ final class SidebarURLDropService {
         }
     }
 
-    private func openEphemeral(
-        _ url: URL,
-        in windowState: BrowserWindowState
-    ) -> Bool {
-        if let nativeKind = nativeSurfaceKind(for: url) {
-            nativeSurfaces.openNativeBrowserSurface(
-                nativeKind,
-                url: url,
-                in: windowState,
-                preferredSpaceId: nil
-            )
-            return true
-        }
-        guard url.scheme?.lowercased() != "sumi" else { return false }
-        _ = tabOpening.openNewTab(
-            url: url.absoluteString,
-            context: .foreground(windowState: windowState)
-        )
-        return true
-    }
-
-    private func nativeSurfaceKind(for url: URL) -> SumiNativeBrowserSurfaceKind? {
-        if SumiSurface.isSettingsSurfaceURL(url) { return .settings }
-        if SumiSurface.isHistorySurfaceURL(url) { return .history }
-        if SumiSurface.isBookmarksSurfaceURL(url) { return .bookmarks }
-        return nil
-    }
 }

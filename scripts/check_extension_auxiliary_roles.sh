@@ -264,8 +264,10 @@ require_matches -F 'auxiliaryWindows.teardown.teardown(receipt, reason: reason)'
   "$close_router"
 require_matches -U 'auxiliaryTabs\.remove\(tab\)[[:space:]]+extensions\.notifyTabClosedIfLoaded\(tab\)' \
   "$close_router"
-atomic_load_line="$(capture_matches 'let load = loadResolver\.resolve' "$window_router" | tail -1 | cut -d: -f1)"
-atomic_reject_line="$(capture_matches 'load\.hasUnresolvedExtensionOwnership == false' "$window_router" | tail -2 | head -1 | cut -d: -f1)"
+# openAtomicWindow resolves every requested URL up front, rejects the whole
+# batch if any load is extension-owned but unresolved, and only then preloads.
+atomic_load_line="$(capture_matches 'loadResolver\.resolve\(' "$window_router" | tail -1 | cut -d: -f1)"
+atomic_reject_line="$(capture_matches 'loads\.allSatisfy\(\{ \$0\.hasUnresolvedExtensionOwnership == false \}\)' "$window_router" | tail -1 | cut -d: -f1)"
 atomic_prepare_line="$(capture_matches 'await prepare\(' "$window_router" | tail -1 | cut -d: -f1)"
 if [[ -z "$atomic_load_line" || -z "$atomic_reject_line" \
       || -z "$atomic_prepare_line" ]] \
@@ -300,7 +302,7 @@ last_owner_validation_line="$(capture_matches 'runtime\.integration\.resolveExte
   "$extension_opening" | tail -1 | cut -d: -f1)"
 extension_create_line="$(capture_matches 'guard let tab = tabs\.createMiniWindowTab' \
   "$extension_opening" | cut -d: -f1)"
-load_line="$(capture_matches 'tab\.loadURL\(loadURL\)' "$extension_opening" | cut -d: -f1)"
+load_line="$(capture_matches 'WebRuntimeMainFrameLoader\.load\(loadURL, on: webView\)' "$extension_opening" | cut -d: -f1)"
 history_line="$(capture_matches 'runtime\.recentRequests\.record\(loadURL\)' \
   "$extension_opening" | cut -d: -f1)"
 if [[ -z "$last_owner_validation_line" || -z "$extension_create_line" \

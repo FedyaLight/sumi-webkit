@@ -76,8 +76,10 @@ enum BrowserShortcutActionComposition {
             page: BrowserShortcutPageCommandDispatcher(
                 history: history,
                 page: pageCommands,
-                pageActions: pageActions,
-                boosts: boosts,
+                artifacts: BrowserShortcutPageArtifactCommands(
+                    pageActions: pageActions,
+                    boosts: boosts
+                ),
                 zoom: zoom,
                 privacy: privacyAndPopovers
             ),
@@ -96,11 +98,15 @@ enum BrowserShortcutActionComposition {
             chrome: BrowserShortcutChromeCommandDispatcher(
                 chrome: privacyAndPopovers,
                 theme: theme,
-                sidebar: sidebar,
+                sidebar: BrowserShortcutSidebarCommands(
+                    presentation: sidebar,
+                    actions: folderActions
+                ),
                 reader: readerCommands,
-                folderActions: folderActions,
-                settings: settings,
-                settingsAttachment: settingsAttachment
+                settings: BrowserShortcutSettingsCommands(
+                    navigation: settings,
+                    attachment: settingsAttachment
+                )
             ),
             overlays: BrowserShortcutOverlayCommandDispatcher(
                 find: find,

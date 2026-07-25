@@ -10,6 +10,11 @@ enum SidebarThemeTokens {
     enum Colors {
         static let collapsedSidebarShadow = NSColor.black
 
+        /// A SwiftUI mask composites by luminance, so a fully-shown region is
+        /// pure white in every theme. This is a mask channel value, not a
+        /// palette colour, and must not follow the workspace theme.
+        static let opaqueMask = Color.white
+
         static func collapsedSidebarTransitionOverlay(isNativeSurfaceLight: Bool) -> Color {
             isNativeSurfaceLight ? Color.black : Color.white
         }
@@ -38,6 +43,24 @@ enum SidebarThemeTokens {
 
         static func pinnedTileGlyphText(size: CGFloat) -> Font {
             .system(size: size * 0.72)
+        }
+
+        /// Collapsed-folder hover preview. The panel is denser than the sidebar
+        /// list it hovers over, so it carries its own scale rather than
+        /// inheriting the row tokens above.
+        enum FolderPreview {
+            static let searchFieldIcon = Font.system(size: 12, weight: .medium)
+            static let emptyState = Font.system(size: 12, weight: .medium)
+            static let rowTitle = Font.system(size: 13, weight: .regular)
+            static let rowSecondaryText = Font.system(size: 10, weight: .medium)
+
+            static func rowGlyphText(iconSize: CGFloat) -> Font {
+                .system(size: iconSize - 2)
+            }
+
+            static func rowTemplateIcon(iconSize: CGFloat) -> Font {
+                .system(size: iconSize - 3, weight: .medium)
+            }
         }
     }
 }

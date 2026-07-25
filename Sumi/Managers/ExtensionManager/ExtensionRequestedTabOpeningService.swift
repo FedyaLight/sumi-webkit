@@ -121,28 +121,12 @@ struct ExtensionRequestedTabOpeningService {
             ?? profileRuntime.profileId(for: controller)
             ?? profileRuntime.currentProfileId
 
-        let newTab: Tab
-        if opensTransientInternalTab, let loadURL = load.url {
-            newTab = browserContext.createTransientExtensionTab(
-                url: loadURL,
-                in: target.space,
-                webExtensionContextOverride: load.extensionContext
-            )
-        } else if let loadURL = load.url {
-            newTab = browserContext.createExtensionTab(
-                url: loadURL,
-                in: target.space,
-                activate: false,
-                webExtensionContextOverride: load.extensionContext
-            )
-        } else {
-            newTab = browserContext.createExtensionTab(
-                url: nil,
-                in: target.space,
-                activate: false,
-                webExtensionContextOverride: load.extensionContext
-            )
-        }
+        let newTab = ExtensionRequestedTabCreation.makeTab(
+            for: load,
+            opensTransientInternalTab: opensTransientInternalTab,
+            in: target.space,
+            browserContext: browserContext
+        )
 
         var didCommit = false
         defer {
@@ -216,29 +200,15 @@ struct ExtensionRequestedTabOpeningService {
                 .requestedTabUnavailable.nsError()
         }
 
-        if shouldBeActive {
-            guard let committedResidence else {
-                throw ExtensionManagerCallbackError
-                    .requestedTabUnavailable.nsError()
-            }
-            guard invocation.isCurrent else { throw CancellationError() }
-            browserContext.selectExtensionTab(
-                newTab,
-                in: committedResidence
-            )
-        }
-        if shouldBePinned {
-            // Display active Tabs before regular-to-shortcut conversion.
-            guard invocation.isCurrent else { throw CancellationError() }
-            guard browserContext.pinExtensionTab(
-                newTab,
-                targetWindow: committedResidence,
-                targetSpace: target.space
-            ) else {
-                throw ExtensionManagerCallbackError
-                    .requestedTabUnavailable.nsError()
-            }
-        }
+        try ExtensionRequestedTabDisposition.apply(
+            to: newTab,
+            shouldBeActive: shouldBeActive,
+            shouldBePinned: shouldBePinned,
+            committedResidence: committedResidence,
+            targetSpace: target.space,
+            invocation: invocation,
+            browserContext: browserContext
+        )
 
         guard invocation.isCurrent else { throw CancellationError() }
         if recordsRecentRequest {

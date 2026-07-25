@@ -1175,8 +1175,10 @@ private final class URLDropHarness {
         let destinations = URLDropDestinations(spaces: spaces)
         self.destinations = destinations
         self.service = SidebarURLDropService(
-            tabOpening: tabOpening,
-            nativeSurfaces: nativeSurfaces,
+            pageOpening: SidebarURLDropTabOpening(
+                tabOpening: tabOpening,
+                nativeSurfaces: nativeSurfaces
+            ),
             destinations: destinations,
             shortcutInsertion: shortcutInsertion
         )

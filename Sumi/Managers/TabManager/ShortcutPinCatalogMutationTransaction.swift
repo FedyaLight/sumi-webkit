@@ -3,22 +3,19 @@ import SumiDomain
 
 @MainActor
 final class ShortcutPinCatalogMutationTransaction {
-    private let pins: ShortcutPinCollectionStateOwner
+    private let containers: ShortcutPinContainerPlacement
     private let structuralMutations: TabStructuralCollectionMutationOwner
-    private let spacePinnedStructure: SpacePinnedStructureOwner
     private let spacePinnedVisualOrder: SpacePinnedVisualOrderTransaction
     private let profileAdmissions: ProfileReferenceAdmissionLedger
 
     init(
-        pins: ShortcutPinCollectionStateOwner,
+        containers: ShortcutPinContainerPlacement,
         structuralMutations: TabStructuralCollectionMutationOwner,
-        spacePinnedStructure: SpacePinnedStructureOwner,
         spacePinnedVisualOrder: SpacePinnedVisualOrderTransaction,
         profileAdmissions: ProfileReferenceAdmissionLedger
     ) {
-        self.pins = pins
+        self.containers = containers
         self.structuralMutations = structuralMutations
-        self.spacePinnedStructure = spacePinnedStructure
         self.spacePinnedVisualOrder = spacePinnedVisualOrder
         self.profileAdmissions = profileAdmissions
     }
@@ -33,7 +30,7 @@ final class ShortcutPinCatalogMutationTransaction {
             guard aggregate != nil || structuralMutations.hasOpenAggregate else {
                 return nil
             }
-            guard let inserted = insertAdmitted(pin, at: targetIndex),
+            guard let inserted = containers.insert(pin, at: targetIndex),
                   finalizePlacement(
                       of: inserted,
                       at: targetIndex,
@@ -56,13 +53,13 @@ final class ShortcutPinCatalogMutationTransaction {
         withProfileReferenceLease(
             for: source.profileReferenceIDs.union(target.profileReferenceIDs)
         ) {
-            guard pins.shortcutPin(by: source.id) === source else { return nil }
+            guard containers.isCanonical(source) else { return nil }
             let aggregate = structuralMutations.prepareAggregate()
             guard aggregate != nil || structuralMutations.hasOpenAggregate else {
                 return nil
             }
-            removeFromContainers(source)
-            guard let inserted = insertAdmitted(target, at: target.index),
+            containers.remove(source)
+            guard let inserted = containers.insert(target, at: target.index),
                   finalizePlacement(
                       of: inserted,
                       at: target.index,
@@ -72,8 +69,8 @@ final class ShortcutPinCatalogMutationTransaction {
                 if let aggregate {
                     precondition(aggregate.rollback())
                 } else {
-                    removeFromContainers(target)
-                    restoreToSource(source)
+                    containers.remove(target)
+                    containers.restore(source)
                 }
                 return nil
             }
@@ -83,81 +80,7 @@ final class ShortcutPinCatalogMutationTransaction {
     }
 
     func removeFromContainers(_ pin: ShortcutPin) {
-        switch pin.role {
-        case .essential:
-            guard let profileID = pin.profileId else { return }
-            let remaining = pins.essentialPins(for: profileID).filter {
-                $0.id != pin.id
-            }
-            structuralMutations.setPinnedTabs(
-                ShortcutPin.reindexed(remaining),
-                for: profileID
-            )
-        case .spacePinned:
-            guard let spaceID = pin.spaceId else { return }
-            if pin.folderId == nil {
-                let remaining = spacePinnedStructure
-                    .topLevelSpacePinnedItems(for: spaceID).filter { item in
-                        if case .shortcut(let existing) = item {
-                            return existing.id != pin.id
-                        }
-                        return true
-                    }
-                spacePinnedStructure.applyTopLevelSpacePinnedOrder(
-                    remaining,
-                    for: spaceID
-                )
-            } else {
-                spacePinnedStructure.withSpacePinnedShortcutGroup(
-                    for: spaceID,
-                    folderId: pin.folderId
-                ) { $0.removeAll { $0.id == pin.id } }
-            }
-        }
-    }
-
-    private func insertAdmitted(
-        _ pin: ShortcutPin,
-        at targetIndex: Int
-    ) -> ShortcutPin? {
-        switch pin.role {
-        case .essential:
-            guard let profileID = pin.profileId else { return nil }
-            var destination = pins.essentialPins(for: profileID)
-            destination.removeAll { $0.id == pin.id }
-            guard destination.count
-                    < EssentialsShortcutPlacementOwner.CapacityPolicy
-                        .maxStoredMembers
-            else { return nil }
-            let safeIndex = max(0, min(targetIndex, destination.count))
-            destination.insert(pin, at: safeIndex)
-            let replacement = ShortcutPin.reindexed(destination)
-            structuralMutations.setPinnedTabs(replacement, for: profileID)
-            return replacement[safeIndex]
-        case .spacePinned:
-            guard let spaceID = pin.spaceId else { return nil }
-            if pin.folderId == nil {
-                guard let inserted = spacePinnedStructure.insertTopLevelSpacePinnedShortcut(
-                    pin,
-                    in: spaceID,
-                    at: targetIndex
-                ) else { return nil }
-                return pins.spacePinnedPins(for: spaceID)
-                    .first { $0.id == inserted.id }
-            }
-            spacePinnedStructure.withSpacePinnedShortcutGroup(
-                for: spaceID,
-                folderId: pin.folderId
-            ) { destination in
-                destination.removeAll { $0.id == pin.id }
-                destination.insert(
-                    pin,
-                    at: max(0, min(targetIndex, destination.count))
-                )
-            }
-            return pins.spacePinnedPins(for: spaceID)
-                .first { $0.id == pin.id }
-        }
+        containers.remove(pin)
     }
 
     private func finalizePlacement(
@@ -180,43 +103,6 @@ final class ShortcutPinCatalogMutationTransaction {
             at: targetIndex,
             applying: sideEffect
         )
-    }
-
-    private func restoreToSource(_ pin: ShortcutPin) {
-        switch pin.role {
-        case .essential:
-            guard let profileID = pin.profileId else { return }
-            var destination = pins.essentialPins(for: profileID)
-            destination.removeAll { $0.id == pin.id }
-            destination.insert(
-                pin,
-                at: max(0, min(pin.index, destination.count))
-            )
-            structuralMutations.setPinnedTabs(
-                ShortcutPin.reindexed(destination),
-                for: profileID
-            )
-        case .spacePinned:
-            guard let spaceID = pin.spaceId else { return }
-            if pin.folderId == nil {
-                _ = spacePinnedStructure.insertTopLevelSpacePinnedShortcut(
-                    pin,
-                    in: spaceID,
-                    at: pin.index
-                )
-            } else {
-                spacePinnedStructure.withSpacePinnedShortcutGroup(
-                    for: spaceID,
-                    folderId: pin.folderId
-                ) { destination in
-                    destination.removeAll { $0.id == pin.id }
-                    destination.insert(
-                        pin,
-                        at: max(0, min(pin.index, destination.count))
-                    )
-                }
-            }
-        }
     }
 
     private func settle(

@@ -76,6 +76,8 @@ requested_tab_sources=(
   Sumi/Managers/ExtensionManager/ExtensionCreatedTabPublicationValidator.swift
   Sumi/Managers/ExtensionManager/ExtensionRequestedTabContextPreloader.swift
   Sumi/Managers/ExtensionManager/ExtensionRequestedTabOpeningService.swift
+  Sumi/Managers/ExtensionManager/ExtensionRequestedTabCreation.swift
+  Sumi/Managers/ExtensionManager/ExtensionRequestedTabDisposition.swift
   Sumi/Managers/ExtensionManager/ExtensionRequestedTabRuntimeAdmission.swift
   Sumi/Managers/ExtensionManager/ExtensionRequestedTabBindingDiagnostics.swift
   Sumi/Managers/ExtensionManager/ExtensionRequestedTabRuntimeCapabilities.swift
@@ -107,6 +109,8 @@ requested_tab_size_limits=(
   'Sumi/Managers/ExtensionManager/ExtensionCreatedTabPublicationValidator.swift:220'
   'Sumi/Managers/ExtensionManager/ExtensionRequestedTabContextPreloader.swift:120'
   'Sumi/Managers/ExtensionManager/ExtensionRequestedTabOpeningService.swift:240'
+  'Sumi/Managers/ExtensionManager/ExtensionRequestedTabCreation.swift:60'
+  'Sumi/Managers/ExtensionManager/ExtensionRequestedTabDisposition.swift:60'
   'Sumi/Managers/ExtensionManager/ExtensionRequestedTabRuntimeAdmission.swift:80'
   'Sumi/Managers/ExtensionManager/ExtensionRequestedTabBindingDiagnostics.swift:80'
   'Sumi/Managers/ExtensionManager/ExtensionRequestedTabRuntimeCapabilities.swift:80'

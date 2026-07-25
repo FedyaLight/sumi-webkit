@@ -117,10 +117,13 @@ record_scan_matches \
   "$hidden_url_effects"
 
 # No universal callback hub may replace the narrow admission capability.
+# Scoped to the extension surface this guard governs: generic names like
+# "CallbackCoordinator" are also the SwiftUI NSViewRepresentable idiom, which
+# is unrelated to extension callback admission.
 callback_hub_hits="$(
   guard_capture_matches \
     'CallbackCoordinator|CallbackHub|CallbackFacade|CallbackDependencies|CallbackActions' \
-    Sumi -g '*.swift'
+    Sumi/Managers/ExtensionManager -g '*.swift'
 )"
 record_scan_matches "universal extension callback hub appeared" "$callback_hub_hits"
 

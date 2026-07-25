@@ -4,28 +4,22 @@ import SumiDomain
 final class BrowserShortcutChromeCommandDispatcher {
     private let chrome: BrowserChromeCommands
     private let theme: BrowserWorkspaceThemeEditorOwner
-    private let sidebar: BrowserSidebarPresentationOwner
+    private let sidebar: BrowserShortcutSidebarCommands
     private let reader: BrowserKeyboardReaderCommands
-    private let folderActions: BrowserSidebarActionOwner
-    private let settings: BrowserSettingsNavigationService
-    private let settingsAttachment: BrowserSettingsAttachmentCoordinator
+    private let settings: BrowserShortcutSettingsCommands
 
     init(
         chrome: BrowserChromeCommands,
         theme: BrowserWorkspaceThemeEditorOwner,
-        sidebar: BrowserSidebarPresentationOwner,
+        sidebar: BrowserShortcutSidebarCommands,
         reader: BrowserKeyboardReaderCommands,
-        folderActions: BrowserSidebarActionOwner,
-        settings: BrowserSettingsNavigationService,
-        settingsAttachment: BrowserSettingsAttachmentCoordinator
+        settings: BrowserShortcutSettingsCommands
     ) {
         self.chrome = chrome
         self.theme = theme
         self.sidebar = sidebar
         self.reader = reader
-        self.folderActions = folderActions
         self.settings = settings
-        self.settingsAttachment = settingsAttachment
     }
 
     func dispatch(
@@ -42,9 +36,7 @@ final class BrowserShortcutChromeCommandDispatcher {
         case .customizeSpaceGradient:
             theme.showGradientEditor(in: context.windowState)
         case .newFolder:
-            folderActions.createFolderInCurrentSpace(
-                in: context.windowState
-            )
+            sidebar.createFolderInCurrentSpace(in: context.windowState)
         case .openSettings:
             settings.openSettings(
                 selecting: .general,
@@ -56,26 +48,13 @@ final class BrowserShortcutChromeCommandDispatcher {
                 in: context.windowState
             )
         case .toggleTabsOnRight:
-            guard let settings = settingsAttachment.settings else {
-                return false
-            }
-            settings.sidebarPosition =
-                settings.sidebarPosition == .left ? .right : .left
+            return settings.toggleTabsOnRight()
         case .switchToAutomaticAppearance:
-            guard let settings = settingsAttachment.settings else {
-                return false
-            }
-            settings.windowSchemeMode = .auto
+            return settings.applyWindowScheme(.auto)
         case .switchToLightMode:
-            guard let settings = settingsAttachment.settings else {
-                return false
-            }
-            settings.windowSchemeMode = .light
+            return settings.applyWindowScheme(.light)
         case .switchToDarkMode:
-            guard let settings = settingsAttachment.settings else {
-                return false
-            }
-            settings.windowSchemeMode = .dark
+            return settings.applyWindowScheme(.dark)
         default:
             return false
         }
@@ -91,23 +70,15 @@ final class BrowserShortcutChromeCommandDispatcher {
              .openSettings, .manageExtensions:
             true
         case .newFolder:
-            folderActions.canCreateFolderInCurrentSpace(
-                in: context.windowState
-            )
+            sidebar.canCreateFolderInCurrentSpace(in: context.windowState)
         case .toggleTabsOnRight:
-            settingsAttachment.settings != nil
+            settings.isAttached
         case .switchToAutomaticAppearance:
-            settingsAttachment.settings.map {
-                $0.windowSchemeMode != .auto
-            } ?? false
+            settings.canApplyWindowScheme(.auto)
         case .switchToLightMode:
-            settingsAttachment.settings.map {
-                $0.windowSchemeMode != .light
-            } ?? false
+            settings.canApplyWindowScheme(.light)
         case .switchToDarkMode:
-            settingsAttachment.settings.map {
-                $0.windowSchemeMode != .dark
-            } ?? false
+            settings.canApplyWindowScheme(.dark)
         case .toggleReaderMode:
             context.page != nil
         default:

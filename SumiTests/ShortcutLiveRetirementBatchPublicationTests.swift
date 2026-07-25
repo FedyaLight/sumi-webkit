@@ -204,8 +204,10 @@ final class ShortcutLiveRetirementBatchPublicationTests: XCTestCase {
         let compositorVersion = fixture.window.compositorInvalidation
             .compositorVersion
         let service = ShortcutHostedSplitUnloadService(
-            runtimeConnection: tabs.runtimePortConnection,
-            splitGroups: tabs.splitGroupStore,
+            admission: ShortcutHostedSplitUnloadAdmission(
+                runtimeConnection: tabs.runtimePortConnection,
+                splitGroups: tabs.splitGroupStore
+            ),
             splitMembership: tabs.splitGroupMembership,
             retirement: tabs.shortcutLiveTabRetirement,
             fallback: ShortcutHostedSplitFallbackQuery(
@@ -299,8 +301,10 @@ final class ShortcutLiveRetirementBatchPublicationTests: XCTestCase {
             persist: false
         ))
         let service = ShortcutHostedSplitUnloadService(
-            runtimeConnection: browser.runtimePortConnection,
-            splitGroups: browser.splitGroupStore,
+            admission: ShortcutHostedSplitUnloadAdmission(
+                runtimeConnection: browser.runtimePortConnection,
+                splitGroups: browser.splitGroupStore
+            ),
             splitMembership: browser.splitGroupMembership,
             retirement: browser.shortcutLiveTabRetirement,
             fallback: ShortcutHostedSplitFallbackQuery(
@@ -347,8 +351,10 @@ final class ShortcutLiveRetirementBatchPublicationTests: XCTestCase {
             pins: browser.shortcutPinCollectionStateOwner,
             pinCommands: browser.sidebarPinCommands,
             hostedUnload: ShortcutHostedSplitUnloadService(
-                runtimeConnection: browser.runtimePortConnection,
-                splitGroups: browser.splitGroupStore,
+                admission: ShortcutHostedSplitUnloadAdmission(
+                    runtimeConnection: browser.runtimePortConnection,
+                    splitGroups: browser.splitGroupStore
+                ),
                 splitMembership: browser.splitGroupMembership,
                 retirement: browser.shortcutLiveTabRetirement,
                 fallback: ShortcutHostedSplitFallbackQuery(
@@ -394,8 +400,10 @@ final class ShortcutLiveRetirementBatchPublicationTests: XCTestCase {
             pins: browser.shortcutPinCollectionStateOwner,
             pinCommands: browser.sidebarPinCommands,
             hostedUnload: ShortcutHostedSplitUnloadService(
-                runtimeConnection: browser.runtimePortConnection,
-                splitGroups: browser.splitGroupStore,
+                admission: ShortcutHostedSplitUnloadAdmission(
+                    runtimeConnection: browser.runtimePortConnection,
+                    splitGroups: browser.splitGroupStore
+                ),
                 splitMembership: browser.splitGroupMembership,
                 retirement: browser.shortcutLiveTabRetirement,
                 fallback: ShortcutHostedSplitFallbackQuery(

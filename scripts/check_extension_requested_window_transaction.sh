@@ -49,7 +49,7 @@ fi
 
 require_literal "$creation" 'protocol PreparedExtensionRequestedWindow' \
   'requested-window preparation capability is missing'
-require_literal "$creation" 'func present() -> Bool' \
+require_literal "$creation" 'func present(activate: Bool) -> Bool' \
   'requested-window presentation is no longer explicitly deferred'
 require_literal "$creation" 'func accept() -> Bool' \
   'requested-window post-focus acceptance boundary is missing'
@@ -69,10 +69,11 @@ for literal in \
 done
 
 for literal in \
-  'guard tabURLs.count <= 1 else' \
+  'request.tabURLs.map(Optional.some)' \
+  'loads.allSatisfy({ $0.hasUnresolvedExtensionOwnership == false })' \
   'creator.prepareExtensionRequestedWindow(' \
   'let adapter = publishedWindow(window, profileID)' \
-  'guard preparedWindow.present(),' \
+  'guard preparedWindow.present(activate: request.shouldBeFocused),' \
   'publishedWindow(window, profileID) === adapter' \
   'preparedWindow.accept()' \
   'preparedWindow.cancel()' \

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Sidebar drop commit must not reach BrowserManager/TabManager through
-# SidebarDropCoordinator. Source projection lives in SidebarDragSourceInventory;
-# mutation stays on SidebarDragOperationExecuting / the existing router.
+# SidebarDropCoordinator. Visual-to-storage order projection lives in
+# SidebarDropOrderProjection; mutation stays on SidebarDragOperationExecuting /
+# the existing router.
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -13,7 +14,7 @@ guard_initialize "$repo_root"
 status=0
 
 coordinator='Sumi/Components/DragDrop/SidebarDropCoordinator.swift'
-inventory='Sumi/Components/DragDrop/SidebarDragSourceInventory.swift'
+order_projection='Sumi/Components/DragDrop/SidebarDropOrderProjection.swift'
 executing='Sumi/Components/DragDrop/SidebarDragOperationExecuting.swift'
 projection='Sumi/Components/DragDrop/SidebarDropProjection.swift'
 port='Sumi/Components/DragDrop/SidebarDragTransactionPort.swift'
@@ -28,7 +29,7 @@ router_roles=(
   "$router"
 )
 
-for file in "$coordinator" "$inventory" "$executing" "$projection" "$port" "$composition" "${router_roles[@]}"; do
+for file in "$coordinator" "$order_projection" "$executing" "$projection" "$port" "$composition" "${router_roles[@]}"; do
   guard_require_file "$file"
 done
 for role_file in "${router_roles[@]}"; do
@@ -56,18 +57,18 @@ if [[ -n "$coordinator_manager_hits" ]]; then
 $coordinator_manager_hits"
 fi
 
-# Read inventory must not hold manager roots or DI bags.
-inventory_manager_hits="$(
-  guard_capture_matches '\bBrowserManager\b|\bTabManager\b' "$inventory"
+# Order projection must not hold manager roots or DI bags.
+order_projection_manager_hits="$(
+  guard_capture_matches '\bBrowserManager\b|\bTabManager\b' "$order_projection"
 )"
-if [[ -n "$inventory_manager_hits" ]]; then
-  guard_record_failure "SidebarDragSourceInventory contains manager-root:
-$inventory_manager_hits"
+if [[ -n "$order_projection_manager_hits" ]]; then
+  guard_record_failure "SidebarDropOrderProjection contains manager-root:
+$order_projection_manager_hits"
 fi
 
 closure_bag_hits="$(
   guard_capture_matches '\bstruct[[:space:]]+Dependencies\b|\bstruct[[:space:]]+Actions\b' \
-    "$coordinator" "$inventory" "$executing" "$projection" "${router_roles[@]}"
+    "$coordinator" "$order_projection" "$executing" "$projection" "${router_roles[@]}"
 )"
 if [[ -n "$closure_bag_hits" ]]; then
   guard_record_failure "sidebar drop boundary grew a Dependencies/Actions closure bag:
@@ -91,11 +92,12 @@ fi
 
 # Coordinator must compose through the narrow inventory + operation seams.
 required_contracts=(
-  "$coordinator|sourceInventory:[[:space:]]*any[[:space:]]+SidebarDragSourceInventorying|SidebarDropCoordinator lost SidebarDragSourceInventorying collaborator"
   "$coordinator|dragOperations:[[:space:]]*any[[:space:]]+SidebarDragOperationExecuting|SidebarDropCoordinator lost SidebarDragOperationExecuting collaborator"
+  "$order_projection|protocol[[:space:]]+SidebarDropOrderProjecting|SidebarDropOrderProjecting protocol missing"
+  "$order_projection|final[[:space:]]+class[[:space:]]+SidebarDropOrderProjection:[[:space:]]*SidebarDropOrderProjecting|SidebarDropOrderProjection must remain the live order-projection authority"
   "$executing|protocol[[:space:]]+SidebarDragOperationExecuting|SidebarDragOperationExecuting protocol missing"
   "$executing|extension[[:space:]]+SidebarDragOperationRouter:[[:space:]]*SidebarDragOperationExecuting|SidebarDragOperationRouter must remain the live operation authority"
-  "$composition|SidebarDragSourceInventory\\(|window-view composition must build SidebarDragSourceInventory"
+  "$composition|SidebarDropOrderProjection\\(|window-view composition must build SidebarDropOrderProjection"
   "$composition|dragOperations:[[:space:]]*(self\\.)?sidebarDragRouter|window-sidebar composition must pass the eager sidebarDragRouter"
   "$composition|dragTransactions:[[:space:]]*dragTransactions|window-view composition must pass the exact transaction port"
   "$port|windows\\.contains\\(windowState\\)|SidebarDragTransactionPort must validate exact window identity"
@@ -122,22 +124,22 @@ if [[ -n "$runtime_router_reach" ]]; then
 $runtime_router_reach"
 fi
 
-# Focused surface size caps keep the inventory from becoming a god-object.
-inventory_lines="$(guard_count_lines "$inventory")"
-inventory_collaborators="$(
-  guard_count_matches '^[[:space:]]*private[[:space:]]+(let|weak[[:space:]]+var)\b' "$inventory"
+# Focused surface size caps keep the order projection from becoming a god-object.
+order_projection_lines="$(guard_count_lines "$order_projection")"
+order_projection_collaborators="$(
+  guard_count_matches '^[[:space:]]*private[[:space:]]+(let|weak[[:space:]]+var)\b' "$order_projection"
 )"
 coordinator_lines="$(guard_count_lines "$coordinator")"
 executing_lines="$(guard_count_lines "$executing")"
 
-if (( inventory_lines > 200 )); then
-  printf 'error: SidebarDragSourceInventory exceeded focused LOC cap (%s > 200)\n' \
-    "$inventory_lines" >&2
+if (( order_projection_lines > 200 )); then
+  printf 'error: SidebarDropOrderProjection exceeded focused LOC cap (%s > 200)\n' \
+    "$order_projection_lines" >&2
   status=1
 fi
-if (( ${inventory_collaborators:-0} > 5 )); then
-  printf 'error: SidebarDragSourceInventory became a collaboration hub (%s > 5)\n' \
-    "${inventory_collaborators:-0}" >&2
+if (( ${order_projection_collaborators:-0} > 5 )); then
+  printf 'error: SidebarDropOrderProjection became a collaboration hub (%s > 5)\n' \
+    "${order_projection_collaborators:-0}" >&2
   status=1
 fi
 if (( coordinator_lines > 160 )); then

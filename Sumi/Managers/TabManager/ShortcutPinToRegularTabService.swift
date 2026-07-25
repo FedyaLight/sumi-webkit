@@ -6,19 +6,16 @@ import SumiDomain
 @MainActor
 final class ShortcutPinToRegularTabService {
     private let promotion: ShortcutTabPromotionService
-    private let splitGroups: SplitGroupStore
-    private let pins: ShortcutPinCollectionStateOwner
+    private let admission: ShortcutPinPromotionAdmission
     private let transaction: ShortcutPinRegularConversionTransaction
 
     init(
         promotion: ShortcutTabPromotionService,
-        splitGroups: SplitGroupStore,
-        pins: ShortcutPinCollectionStateOwner,
+        admission: ShortcutPinPromotionAdmission,
         transaction: ShortcutPinRegularConversionTransaction
     ) {
         self.promotion = promotion
-        self.splitGroups = splitGroups
-        self.pins = pins
+        self.admission = admission
         self.transaction = transaction
     }
 
@@ -29,7 +26,7 @@ final class ShortcutPinToRegularTabService {
         at targetIndex: Int? = nil,
         preferredWindowId: UUID? = nil
     ) -> Bool {
-        guard let pin = pins.shortcutPin(by: candidatePin.id),
+        guard let pin = admission.canonicalPin(for: candidatePin),
               let plan = promotion.preparePromotion(
                   pin,
                   into: targetSpaceId,
@@ -38,16 +35,11 @@ final class ShortcutPinToRegularTabService {
                   allowsGroupedPin: true
               ) else { return false }
 
-        let group = splitGroups.group(containing: .shortcutPin(pin.id))
-        let split = group.flatMap {
-            ShortcutPinRegularSplitTransitionPlanner().transition(
-                group: $0,
-                pinID: pin.id,
-                promotedTabID: plan.tab.id,
-                targetSpaceID: targetSpaceId
-            )
-        }
-        guard group == nil || split != nil else {
+        guard case .admitted(let split) = admission.splitOutcome(
+            pinID: pin.id,
+            promotedTabID: plan.tab.id,
+            targetSpaceID: targetSpaceId
+        ) else {
             _ = plan.placement.cancel()
             return false
         }
@@ -60,13 +52,8 @@ final class ShortcutPinToRegularTabService {
         at targetIndex: Int,
         preferredWindowID: UUID?
     ) -> Bool {
-        guard splitGroups.group(id: group.id) == group,
-              group.container.isShortcutSidebar else { return false }
-        let groupPins = group.memberIDs.compactMap { memberID -> ShortcutPin? in
-            guard case .shortcutPin(let pinID) = memberID else { return nil }
-            return pins.shortcutPin(by: pinID)
-        }
-        guard groupPins.count == group.memberIDs.count else { return false }
+        guard let groupPins = admission.canonicalGroupPins(for: group)
+        else { return false }
         return transaction.commitGroup(
             group,
             pins: groupPins,

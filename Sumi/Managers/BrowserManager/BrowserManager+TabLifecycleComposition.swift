@@ -20,8 +20,10 @@ extension BrowserManager {
             tabStore: tabStore,
             structuralLookup: structuralLookupCoordinator,
             retirement: shortcutLiveTabRetirement,
-            fallbackPlanner: tabCloseFallbackPlanner,
-            splitMembership: splitGroupMembership,
+            selectionTarget: ShortcutLiveTabCloseSelectionTarget(
+                fallbackPlanner: tabCloseFallbackPlanner,
+                splitMembership: splitGroupMembership
+            ),
             visuals: shellRuntime.windowVisuals
         )
         let publication = ShortcutLiveTabClosePublication(
@@ -39,32 +41,38 @@ extension BrowserManager {
 
     func composeTabCloseOrchestration() -> BrowserTabCloseOrchestrationOwner {
         let shellRuntime = shellRuntime
+        let glanceInterception = GlanceTabCloseInterception(
+            glanceManager: glanceManager
+        )
+        let routing = BrowserTabCloseRouting(
+            regularTabs: BrowserRegularTabCloseTransaction(
+                tabClosure: tabClosureService,
+                fallbackPlanner: tabCloseFallbackPlanner,
+                presentation: BrowserRegularTabClosePresentation(
+                    selection: browserTabSelection,
+                    visuals: shellRuntime.windowVisuals,
+                    persistence: windowSessionPersistenceCoordinator
+                ),
+                residences: tabResidenceAuthority
+            ),
+            incognitoTabs: BrowserIncognitoTabCloseTransaction(
+                selection: browserTabSelection
+            ),
+            shortcutTabs: shortcutLiveTabClose
+        )
         return BrowserTabCloseOrchestrationOwner(
             context: BrowserCurrentTabCloseContext(
                 windows: windowRegistry,
                 tabs: shellRuntime.windowTabs
             ),
-            glanceInterception: GlanceTabCloseInterception(
-                glanceManager: glanceManager
-            ),
-            routing: BrowserTabCloseRouting(
-                regularTabs: BrowserRegularTabCloseTransaction(
-                    tabClosure: tabClosureService,
-                    fallbackPlanner: tabCloseFallbackPlanner,
-                    presentation: BrowserRegularTabClosePresentation(
-                        selection: browserTabSelection,
-                        visuals: shellRuntime.windowVisuals,
-                        persistence: windowSessionPersistenceCoordinator
-                    ),
-                    residences: tabResidenceAuthority
-                ),
-                incognitoTabs: BrowserIncognitoTabCloseTransaction(
-                    selection: browserTabSelection
-                ),
-                shortcutTabs: shortcutLiveTabClose
-            ),
-            residences: tabResidenceAuthority,
-            notifications: notificationPresenter
+            glanceInterception: glanceInterception,
+            routing: routing,
+            execution: BrowserTabCloseExecution(
+                residences: tabResidenceAuthority,
+                glanceInterception: glanceInterception,
+                routing: routing,
+                notifications: notificationPresenter
+            )
         )
     }
 

@@ -658,14 +658,17 @@ private struct EssentialSplitChromeMask: View {
                     cornerRadius: cornerRadius,
                     style: .continuous
                 )
-                .strokeBorder(Color.white, lineWidth: thickness)
+                .strokeBorder(
+                    SidebarThemeTokens.Colors.opaqueMask,
+                    lineWidth: thickness
+                )
 
                 ForEach(
                     Array(geometry.dividerRects.enumerated()),
                     id: \.offset
                 ) { _, rect in
                     Rectangle()
-                        .fill(Color.white)
+                        .fill(SidebarThemeTokens.Colors.opaqueMask)
                         .frame(width: rect.width, height: rect.height)
                         .position(x: rect.midX, y: rect.midY)
                 }

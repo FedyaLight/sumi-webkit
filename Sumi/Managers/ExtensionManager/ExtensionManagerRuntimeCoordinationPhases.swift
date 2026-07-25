@@ -89,14 +89,25 @@ extension ExtensionManagerAssembler {
         contextResidency: ExtensionContextResidencyOwner
     ) -> ExtensionProfileRuntimeTransition {
         ExtensionProfileRuntimeTransition(
-                installedExtensions: contexts.installedExtensions,
+                readinessProbe: ExtensionProfileReadinessProbe(
+                    installedExtensions: contexts.installedExtensions,
+                    profileRuntime: runtime.profileRuntime,
+                    runtimeLifecycle: runtime.lifecycle
+                ),
+                transitionLease: ExtensionProfileTransitionLease(
+                    profileRuntime: runtime.profileRuntime
+                ),
                 profileRuntime: runtime.profileRuntime,
                 runtimeLifecycle: runtime.lifecycle,
                 browserConfiguration: controller.browserConfiguration,
                 controllerProvisioning: controllerCore.provisioning,
-                inactiveContextRetirement: contextResidency,
-                actionAnchors: actions.actionPopupAnchors,
-                toolbarProfiles: actionPolicy.toolbarPinning,
+                surfaceHandoff: ExtensionProfileSurfaceHandoff(
+                    actionAnchors: actions.actionPopupAnchors,
+                    toolbarProfiles: actionPolicy.toolbarPinning,
+                    browserConfiguration: controller.browserConfiguration,
+                    profileRuntime: runtime.profileRuntime,
+                    inactiveContextRetirement: contextResidency
+                ),
                 reconcileProfile: { [reloads = browser.reloads] profileID in
                     reloads.reconcile(
                         profileID: profileID,

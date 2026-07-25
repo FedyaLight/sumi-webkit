@@ -66,7 +66,7 @@ struct BrowserNotificationView: View {
             HStack(spacing: 10) {
                 if let icon = notification.icon {
                     Image(systemName: icon)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(BrowserNotificationThemeTokens.Typography.leadingIcon)
                         .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(.primary)
                         .frame(width: 18, height: 18)
@@ -74,13 +74,13 @@ struct BrowserNotificationView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(notification.title)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(BrowserNotificationThemeTokens.Typography.title)
                         .foregroundStyle(.primary)
                         .lineLimit(1)
 
                     if let subtitle = notification.subtitle {
                         Text(subtitle)
-                            .font(.system(size: 11))
+                            .font(BrowserNotificationThemeTokens.Typography.subtitle)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
@@ -179,10 +179,10 @@ private struct BrowserNotificationControlButton: View {
         switch control.kind {
         case let .systemImage(name):
             Image(systemName: name)
-                .font(.system(size: 11, weight: .semibold))
+                .font(BrowserNotificationThemeTokens.Typography.actionIcon)
         case let .text(label):
             Text(label)
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .font(BrowserNotificationThemeTokens.Typography.actionLabel)
         }
     }
 }
@@ -214,13 +214,14 @@ private struct BrowserNotificationControlButtonStyle: ButtonStyle {
     }
 
     private func backgroundColor(isPressed: Bool) -> Color {
+        let ramp = BrowserNotificationThemeTokens.Colors.ActionBackground.self
         if isPressed {
-            return Color.primary.opacity(0.12)
+            return ramp.pressed
         }
         if isHovering {
-            return Color.primary.opacity(0.08)
+            return ramp.hovered
         }
-        return Color.primary.opacity(0.04)
+        return ramp.rest
     }
 }
 

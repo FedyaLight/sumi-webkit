@@ -513,9 +513,12 @@ extension BrowserCompositionRoot {
                 spacePinnedStructure: spacePinnedStructureOwner
             ),
             mutations: ShortcutPinCatalogMutationTransaction(
-                pins: state.shortcutPins,
+                containers: ShortcutPinContainerPlacement(
+                    pins: state.shortcutPins,
+                    structuralMutations: structuralCollectionMutationOwner,
+                    spacePinnedStructure: spacePinnedStructureOwner
+                ),
                 structuralMutations: structuralCollectionMutationOwner,
-                spacePinnedStructure: spacePinnedStructureOwner,
                 spacePinnedVisualOrder: spacePinnedVisualOrder,
                 profileAdmissions: profileReferenceAdmission
             ),

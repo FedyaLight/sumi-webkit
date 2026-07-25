@@ -21,15 +21,13 @@ final class ExtensionProfileRuntimeTransition {
         }
     }
 
-    private let installedExtensions: InstalledExtensionCollection
+    private let readinessProbe: ExtensionProfileReadinessProbe
+    private let transitionLease: ExtensionProfileTransitionLease
     private let profileRuntime: ExtensionProfileRuntime
     private let runtimeLifecycle: ExtensionRuntimeLifecycleAuthority
     private let browserConfiguration: BrowserConfiguration
     private let controllerProvisioning: any ExtensionControllerProvisioning
-    private let inactiveContextRetirement:
-        any ExtensionInactiveProfileContextRetiring
-    private let actionAnchors: ExtensionActionPopupAnchorStore
-    private let toolbarProfiles: any ExtensionToolbarProfileReloading
+    private let surfaceHandoff: ExtensionProfileSurfaceHandoff
     private let reconcileProfile: @MainActor (UUID) -> Void
     private let refreshActionSurfaces: @MainActor (UUID) -> Void
 
@@ -37,25 +35,23 @@ final class ExtensionProfileRuntimeTransition {
     private var pendingReconciliation: Task<Void, Never>?
 
     init(
-        installedExtensions: InstalledExtensionCollection,
+        readinessProbe: ExtensionProfileReadinessProbe,
+        transitionLease: ExtensionProfileTransitionLease,
         profileRuntime: ExtensionProfileRuntime,
         runtimeLifecycle: ExtensionRuntimeLifecycleAuthority,
         browserConfiguration: BrowserConfiguration,
         controllerProvisioning: any ExtensionControllerProvisioning,
-        inactiveContextRetirement: any ExtensionInactiveProfileContextRetiring,
-        actionAnchors: ExtensionActionPopupAnchorStore,
-        toolbarProfiles: any ExtensionToolbarProfileReloading,
+        surfaceHandoff: ExtensionProfileSurfaceHandoff,
         reconcileProfile: @escaping @MainActor (UUID) -> Void,
         refreshActionSurfaces: @escaping @MainActor (UUID) -> Void
     ) {
-        self.installedExtensions = installedExtensions
+        self.readinessProbe = readinessProbe
+        self.transitionLease = transitionLease
         self.profileRuntime = profileRuntime
         self.runtimeLifecycle = runtimeLifecycle
         self.browserConfiguration = browserConfiguration
         self.controllerProvisioning = controllerProvisioning
-        self.inactiveContextRetirement = inactiveContextRetirement
-        self.actionAnchors = actionAnchors
-        self.toolbarProfiles = toolbarProfiles
+        self.surfaceHandoff = surfaceHandoff
         self.reconcileProfile = reconcileProfile
         self.refreshActionSurfaces = refreshActionSurfaces
     }
@@ -85,62 +81,37 @@ final class ExtensionProfileRuntimeTransition {
             profileAdmission: nil
         )
 
-        let ownsMutationLease = suppliedMutationLease == nil
-        guard let profileAdmission = profileRuntime.admitProfileReference(
-            to: profileID
-        ), let mutationLease = suppliedMutationLease
-            ?? profileRuntime.beginProfileReferenceMutation(to: profileID)
-            ?? profileRuntime.beginProfileRetirementMigration(to: profileID),
-           profileRuntime.validateProfileReferenceMutation(
-            mutationLease,
-            profileID: profileID
-           ) else { return pendingReceipt }
-        defer {
-            if ownsMutationLease {
-                precondition(profileRuntime.endProfileReferenceMutation(mutationLease))
-            }
-        }
-        let catalogSnapshot = installedExtensions.records
-        let enabledExtensionIDs = Set(
-            catalogSnapshot.lazy.filter(\.isEnabled).map(\.id)
-        )
-        let hasEnabledExtensionDemand = enabledExtensionIDs.isEmpty == false
+        guard let grant = transitionLease.acquire(
+            profileID: profileID,
+            suppliedMutationLease: suppliedMutationLease
+        ) else { return pendingReceipt }
+        defer { transitionLease.release(grant) }
+        let enabledExtensionIDs = readinessProbe.enabledExtensionIDs
         guard let runtimeInitialized = profileRuntime.activateProfileIfAdmitted(
             profileID,
-            hasExtensionDemand: hasEnabledExtensionDemand,
+            hasExtensionDemand: enabledExtensionIDs.isEmpty == false,
             runtimeIsReadyOrLoading: runtimeLifecycle.isReadyOrLoading,
-            mutationLease: mutationLease
+            mutationLease: grant.mutationLease
         ) else { return pendingReceipt }
-        actionAnchors.clearAnchors(notMatching: profileID)
-        toolbarProfiles.reloadPinnedToolbarExtensionsForCurrentProfile()
-
-        guard runtimeInitialized else {
-            return pendingReceipt
-        }
-        if let publishedController = browserConfiguration.webViewConfiguration
-            .webExtensionController,
-           profileRuntime.profileId(for: publishedController) != profileID {
-            browserConfiguration.webViewConfiguration.webExtensionController = nil
-        }
+        surfaceHandoff.prepareForActivation(of: profileID)
+        guard runtimeInitialized else { return pendingReceipt }
+        surfaceHandoff.detachForeignPublishedController(for: profileID)
         guard let controller = controllerProvisioning.controllerIfAdmitted(
             for: profileID,
-            mutationLease: mutationLease
+            mutationLease: grant.mutationLease
         ) else { return pendingReceipt }
-        let readiness = profileRuntime.readinessContext(
-            for: profileID,
-            hasEnabledExtensionDemand: hasEnabledExtensionDemand,
-            enabledExtensionIDs: enabledExtensionIDs,
-            globalRuntimeReady: runtimeLifecycle.isReady
+        runtimeLifecycle.updateReadiness(
+            isReady: readinessProbe.isProfileReady(
+                profileID,
+                enabledExtensionIDs: enabledExtensionIDs
+            )
         )
-        runtimeLifecycle.updateReadiness(isReady: readiness.isProfileReady)
-        inactiveContextRetirement.unloadExtensionContextsForInactiveProfiles(
-            keepingProfileId: profileID
-        )
+        surfaceHandoff.retireInactiveProfiles(keeping: profileID)
         let receipt = Receipt(
             revision: revision,
             profileID: profileID,
             controller: controller,
-            profileAdmission: profileAdmission
+            profileAdmission: grant.profileAdmission
         )
         pendingReconciliation = Task { @MainActor [weak self] in
             await Task.yield()
@@ -191,16 +162,10 @@ final class ExtensionProfileRuntimeTransition {
         guard profileRuntime.currentProfileId == profileID,
               profileRuntime.controller(for: profileID) === controller
         else { return false }
-        let enabledExtensionIDs = Set(
-            installedExtensions.records.lazy.filter(\.isEnabled).map(\.id)
-        )
-        let readiness = profileRuntime.readinessContext(
-            for: profileID,
-            hasEnabledExtensionDemand: enabledExtensionIDs.isEmpty == false,
-            enabledExtensionIDs: enabledExtensionIDs,
-            globalRuntimeReady: runtimeLifecycle.isReady
-        )
-        guard readiness.isProfileReady else { return false }
+        guard readinessProbe.isProfileReady(
+            profileID,
+            enabledExtensionIDs: readinessProbe.enabledExtensionIDs
+        ) else { return false }
 
         browserConfiguration.webViewConfiguration.webExtensionController =
             controller

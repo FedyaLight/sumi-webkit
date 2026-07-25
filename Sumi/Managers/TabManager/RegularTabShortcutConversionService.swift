@@ -1,15 +1,6 @@
 import Foundation
 import SumiDomain
 
-struct TabShortcutPinDestination {
-    let role: ShortcutPinRole
-    let profileId: UUID?
-    let spaceId: UUID?
-    let folderId: UUID?
-    let index: Int
-    let opensFolder: Bool
-}
-
 /// Narrow command surface for regular-tab conversion. Preparation, replacement
 /// validation and transactional commit have independent concrete services.
 @MainActor

@@ -200,8 +200,10 @@ extension BrowserManager {
 
     func composeSplitShortcutHostedUnload() -> ShortcutHostedSplitUnloadService {
         ShortcutHostedSplitUnloadService(
-            runtimeConnection: runtimePortConnection,
-            splitGroups: splitGroupStore,
+            admission: ShortcutHostedSplitUnloadAdmission(
+                runtimeConnection: runtimePortConnection,
+                splitGroups: splitGroupStore
+            ),
             splitMembership: splitGroupMembership,
             retirement: shortcutLiveTabRetirement,
             fallback: ShortcutHostedSplitFallbackQuery(

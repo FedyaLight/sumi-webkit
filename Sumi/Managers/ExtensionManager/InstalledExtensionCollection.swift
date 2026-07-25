@@ -12,9 +12,7 @@ final class InstalledExtensionCollection: ObservableObject {
 
     @Published private(set) var records: [InstalledExtension] = []
     private var didChangeRecords: (() -> Void)?
-    // Tombstoned per-extension mutation revisions: entries survive removal so
-    // remove/re-add cannot revive authority captured against an older record.
-    private var recordRevisionsByID: [String: UInt64] = [:]
+    private let revisions = InstalledExtensionRecordRevisions()
     private var durabilityByID: [String: RecordDurability] = [:]
 
     func connectRecordChanges(_ handler: @escaping () -> Void) {
@@ -25,11 +23,8 @@ final class InstalledExtensionCollection: ObservableObject {
         didChangeRecords = handler
     }
 
-    /// Monotonic revision of one extension's catalog record. Any semantic
-    /// mutation of that record (install, replace, enable/disable, removal)
-    /// advances it; unrelated extensions keep their revisions.
     func recordRevision(for id: String) -> UInt64 {
-        recordRevisionsByID[id] ?? 0
+        revisions.revision(for: id)
     }
 
     func recordDurability(for id: String) -> RecordDurability? {
@@ -55,7 +50,7 @@ final class InstalledExtensionCollection: ObservableObject {
         }
         durabilityByID[record.id] = durability
         if advancesRevision {
-            bumpRecordRevision(record.id)
+            revisions.bump(record.id)
         }
         sortRecords()
         notifyRecordChanges()
@@ -66,10 +61,10 @@ final class InstalledExtensionCollection: ObservableObject {
         let previousID = records[index].id
         records[index] = record
         durabilityByID[record.id] = .durable
-        bumpRecordRevision(previousID)
+        revisions.bump(previousID)
         if record.id != previousID {
             durabilityByID.removeValue(forKey: previousID)
-            bumpRecordRevision(record.id)
+            revisions.bump(record.id)
         }
         notifyRecordChanges()
     }
@@ -79,7 +74,7 @@ final class InstalledExtensionCollection: ObservableObject {
         records.removeAll { $0.id == id }
         guard records.count != originalCount else { return }
         durabilityByID.removeValue(forKey: id)
-        bumpRecordRevision(id)
+        revisions.bump(id)
         notifyRecordChanges()
     }
 
@@ -95,10 +90,10 @@ final class InstalledExtensionCollection: ObservableObject {
         for id in Set(previousByID.keys).union(replacementByID.keys) {
             switch (previousByID[id], replacementByID[id]) {
             case (nil, .some), (.some, nil):
-                bumpRecordRevision(id)
+                revisions.bump(id)
             case (.some(let previous), .some(let replacement)):
                 if Self.sameCatalogRecord(previous, replacement) == false {
-                    bumpRecordRevision(id)
+                    revisions.bump(id)
                 }
             case (nil, nil):
                 break
@@ -115,12 +110,6 @@ final class InstalledExtensionCollection: ObservableObject {
     func sort() {
         sortRecords()
         notifyRecordChanges()
-    }
-
-    private func bumpRecordRevision(_ id: String) {
-        let current = recordRevisionsByID[id] ?? 0
-        precondition(current < UInt64.max, "Installed-extension record revision exhausted")
-        recordRevisionsByID[id] = current + 1
     }
 
     /// Value identity used only to keep idempotent catalog reloads from

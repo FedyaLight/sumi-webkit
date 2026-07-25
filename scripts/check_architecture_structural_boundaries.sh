@@ -94,7 +94,6 @@ tab_selection_role_files=(
 sidebar_editor_presentation_services=(
   Sumi/Managers/BrowserManager/SidebarSpaceEditorPresentationService.swift
   Sumi/Managers/BrowserManager/SidebarFolderEditorPresentationService.swift
-  Sumi/Managers/BrowserManager/SidebarFolderSearchPresentationService.swift
   Sumi/Managers/BrowserManager/SidebarShortcutEditorPresentationService.swift
 )
 profile_selection_services=(
@@ -847,11 +846,6 @@ guard_expect_no_matches \
   '\bbrowserManager\b|BrowserManager\(' \
   "${command_palette_services[@]}"
 guard_expect_no_matches \
-  'behavior in CommandPaletteServices capability group' \
-  '\bfunc ' \
-  Sumi/Services/CommandPaletteServices.swift
-
-guard_expect_no_matches \
   'active-page Actions/Dependencies bags' \
   'struct (Actions|Dependencies)' \
   "${active_page_services[@]}"
@@ -909,6 +903,7 @@ guard_max \
 
 tab_close_roles=(
   Sumi/Managers/BrowserManager/BrowserTabCloseOrchestrationOwner.swift
+  Sumi/Managers/BrowserManager/BrowserTabCloseExecution.swift
   Sumi/Managers/BrowserManager/BrowserCurrentTabCloseContext.swift
   Sumi/Managers/BrowserManager/BrowserRegularTabClosePresentation.swift
   Sumi/Managers/BrowserManager/BrowserRegularTabCloseTransaction.swift

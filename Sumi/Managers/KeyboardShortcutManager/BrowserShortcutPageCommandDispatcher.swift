@@ -4,23 +4,20 @@ import SumiDomain
 final class BrowserShortcutPageCommandDispatcher {
     private let history: BrowserHistoryNavigationOwner
     private let page: ActivePageCommandService
-    private let pageActions: URLBarHubPageActionOwner
-    private let boosts: SumiBoostsModule
+    private let artifacts: BrowserShortcutPageArtifactCommands
     private let zoom: BrowserZoomCommandOwner
     private let privacy: BrowserChromeCommands
 
     init(
         history: BrowserHistoryNavigationOwner,
         page: ActivePageCommandService,
-        pageActions: URLBarHubPageActionOwner,
-        boosts: SumiBoostsModule,
+        artifacts: BrowserShortcutPageArtifactCommands,
         zoom: BrowserZoomCommandOwner,
         privacy: BrowserChromeCommands
     ) {
         self.history = history
         self.page = page
-        self.pageActions = pageActions
-        self.boosts = boosts
+        self.artifacts = artifacts
         self.zoom = zoom
         self.privacy = privacy
     }
@@ -66,23 +63,9 @@ final class BrowserShortcutPageCommandDispatcher {
         case .printPage:
             return page.printPage(context.page)
         case .captureScreenshot:
-            return pageActions.captureUsingSavedSettings(context.page)
+            return artifacts.captureScreenshot(in: context)
         case .newBoost:
-            guard let target = context.page else { return false }
-            DispatchQueue.main.async { [boosts] in
-                do {
-                    try boosts.createBoostAndOpenEditor(
-                        tab: target.tab,
-                        profile: target.tab.resolveProfile(),
-                        windowState: context.windowState
-                    )
-                } catch {
-                    RuntimeDiagnostics.debug(
-                        "Command palette Boost creation failed: \(error)",
-                        category: "CommandPalette"
-                    )
-                }
-            }
+            return artifacts.createBoost(in: context)
         default:
             return false
         }
@@ -112,10 +95,9 @@ final class BrowserShortcutPageCommandDispatcher {
         case .zoomIn, .zoomOut, .actualSize:
             zoom.canZoomCurrentTab(in: context.windowState)
         case .captureScreenshot:
-            pageActions.canCapture(context.page)
+            artifacts.canCaptureScreenshot(in: context)
         case .newBoost:
-            context.page?.source == .selectedTab
-                && boosts.canBoost(url: context.page?.url)
+            artifacts.canCreateBoost(in: context)
         default:
             false
         }

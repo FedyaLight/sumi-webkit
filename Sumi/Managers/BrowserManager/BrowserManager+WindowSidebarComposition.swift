@@ -82,8 +82,10 @@ extension BrowserManager {
             }
         )
         let urlDrops = SidebarURLDropService(
-            tabOpening: tabOpening,
-            nativeSurfaces: chromeBundle.nativeSurfaceRoutingOwner,
+            pageOpening: SidebarURLDropTabOpening(
+                tabOpening: tabOpening,
+                nativeSurfaces: chromeBundle.nativeSurfaceRoutingOwner
+            ),
             destinations: SidebarURLDropDestinationCatalog(
                 spaces: spaceStateOwner,
                 folders: folderCollectionStateOwner,

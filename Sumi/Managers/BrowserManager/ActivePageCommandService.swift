@@ -121,23 +121,7 @@ final class ActivePageCommandService {
     @discardableResult
     func printPage(_ page: ActivePageResolution?) -> Bool {
         guard canPrint(page),
-              let page,
-              let webView = page.presentationWebView else { return false }
-        let printInfo =
-            NSPrintInfo.shared.copy() as? NSPrintInfo ?? NSPrintInfo()
-        let operation = webView.printOperation(with: printInfo)
-        DispatchQueue.main.async { [weak webView] in
-            if let window = webView?.window {
-                operation.runModal(
-                    for: window,
-                    delegate: nil,
-                    didRun: nil,
-                    contextInfo: nil
-                )
-            } else {
-                operation.run()
-            }
-        }
-        return true
+              let webView = page?.presentationWebView else { return false }
+        return ActivePagePrintService.print(webView)
     }
 }

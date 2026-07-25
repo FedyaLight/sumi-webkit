@@ -9,23 +9,20 @@ struct ShortcutHostedSplitUnloadResult {
 /// is already canonical and is therefore never rewritten during unload.
 @MainActor
 final class ShortcutHostedSplitUnloadService {
-    private let runtimeConnection: TabRuntimePortConnection
-    private let splitGroups: SplitGroupStore
+    private let admission: ShortcutHostedSplitUnloadAdmission
     private let splitMembership: SplitGroupMembershipQuery
     private let retirement: ShortcutLiveTabRetirementService
     private let fallback: ShortcutHostedSplitFallbackQuery
     private let visuals: BrowserWindowVisualCoordinator
 
     init(
-        runtimeConnection: TabRuntimePortConnection,
-        splitGroups: SplitGroupStore,
+        admission: ShortcutHostedSplitUnloadAdmission,
         splitMembership: SplitGroupMembershipQuery,
         retirement: ShortcutLiveTabRetirementService,
         fallback: ShortcutHostedSplitFallbackQuery,
         visuals: BrowserWindowVisualCoordinator
     ) {
-        self.runtimeConnection = runtimeConnection
-        self.splitGroups = splitGroups
+        self.admission = admission
         self.splitMembership = splitMembership
         self.retirement = retirement
         self.fallback = fallback
@@ -37,18 +34,7 @@ final class ShortcutHostedSplitUnloadService {
         _ group: SumiDomain.SplitGroup,
         in windowState: BrowserWindowState
     ) -> ShortcutHostedSplitUnloadResult? {
-        guard runtimeConnection.current != nil,
-              group.container.isShortcutSidebar,
-              splitGroups.group(id: group.id) == group
-        else {
-            return nil
-        }
-
-        let pinIDs = Set(group.memberIDs.compactMap { memberID -> UUID? in
-            guard case .shortcutPin(let pinID) = memberID else { return nil }
-            return pinID
-        })
-        guard pinIDs.count == group.memberIDs.count else {
+        guard let pinIDs = admission.admittedPinIDs(for: group) else {
             return nil
         }
         var target = windowState.unpublishedShortcutMutationState

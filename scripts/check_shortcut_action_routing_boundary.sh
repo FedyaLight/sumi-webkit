@@ -111,10 +111,27 @@ guard_exact \
   'router contains five behaviorful domain dispatchers' \
   "$(guard_count_matches '^final class BrowserShortcut.*CommandDispatcher' "${dispatcher_files[@]}")" \
   5
+# Each domain dispatcher pairs exactly one execution surface with exactly one
+# availability surface, so a shortcut can never be dispatchable without also
+# being answerable by the menu/validation path. Counting `switch action`
+# outright is not a useful fingerprint: a dispatcher legitimately derives
+# payloads (split side, layout kind) with nested expression switches.
 guard_exact \
-  'five contextual switches, application switch, and domain router' \
-  "$(guard_count_matches 'switch action' "$router" "${dispatcher_files[@]}")" \
-  7
+  'every domain dispatcher exposes one dispatch surface' \
+  "$(guard_count_matches '^    func dispatch\(' "${dispatcher_files[@]}")" \
+  5
+guard_exact \
+  'every domain dispatcher exposes one availability surface' \
+  "$(guard_count_matches '^    func canDispatch\(' "${dispatcher_files[@]}")" \
+  5
+guard_exact \
+  'application actions keep a single dispatch switch' \
+  "$(guard_count_matches 'func dispatchApplicationAction\(' "${dispatcher_files[@]}")" \
+  1
+guard_exact \
+  'router classifies by domain for execution and availability only' \
+  "$(guard_count_matches 'switch action\.browserCommandDomain' "$router")" \
+  2
 guard_exact \
   'shortcut domain classification is exhaustive' \
   "$(guard_count_matches 'switch self' "$router")" \

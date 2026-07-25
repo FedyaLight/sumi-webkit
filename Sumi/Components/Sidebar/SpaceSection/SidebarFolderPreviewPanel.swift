@@ -85,7 +85,7 @@ struct SidebarFolderPreviewPanel: View {
     private var searchHeader: some View {
         HStack(spacing: 0) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 12, weight: .medium))
+                .font(SidebarThemeTokens.Typography.FolderPreview.searchFieldIcon)
                 .foregroundStyle(tokens.primaryText)
                 .opacity(0.7)
                 .frame(
@@ -114,7 +114,7 @@ struct SidebarFolderPreviewPanel: View {
             VStack(spacing: 0) {
                 Spacer(minLength: 0)
                 Text("No tabs matching that search 🤔")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(SidebarThemeTokens.Typography.FolderPreview.emptyState)
                     .foregroundStyle(tokens.secondaryText)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 12)
@@ -238,7 +238,7 @@ private struct SidebarFolderPreviewRow: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(candidate.title)
-                    .font(.system(size: 13, weight: .regular))
+                    .font(SidebarThemeTokens.Typography.FolderPreview.rowTitle)
                     .foregroundStyle(tokens.primaryText)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -246,7 +246,7 @@ private struct SidebarFolderPreviewRow: View {
 
                 if !candidate.secondaryText.isEmpty {
                     Text(candidate.secondaryText)
-                        .font(.system(size: 10, weight: .medium))
+                        .font(SidebarThemeTokens.Typography.FolderPreview.rowSecondaryText)
                         .foregroundStyle(tokens.primaryText.opacity(0.6))
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -328,7 +328,9 @@ private struct SidebarFolderPreviewRowIcon: View {
     private func shortcutIcon(_ presentation: SidebarShortcutIconPresentation) -> some View {
         if let glyphText = presentation.glyphText {
             Text(glyphText)
-                .font(.system(size: SidebarFolderPreviewMetrics.rowIconSize - 2))
+                .font(SidebarThemeTokens.Typography.FolderPreview.rowGlyphText(
+                    iconSize: SidebarFolderPreviewMetrics.rowIconSize
+                ))
                 .lineLimit(1)
                 .minimumScaleFactor(0.45)
                 .frame(
@@ -346,7 +348,9 @@ private struct SidebarFolderPreviewRowIcon: View {
 
     private func templateIcon(_ systemName: String) -> some View {
         Image(systemName: systemName)
-            .font(.system(size: SidebarFolderPreviewMetrics.rowIconSize - 3, weight: .medium))
+            .font(SidebarThemeTokens.Typography.FolderPreview.rowTemplateIcon(
+                iconSize: SidebarFolderPreviewMetrics.rowIconSize
+            ))
             .symbolRenderingMode(.monochrome)
             .foregroundStyle(tokens.primaryText)
     }

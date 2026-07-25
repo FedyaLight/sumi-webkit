@@ -7,23 +7,20 @@ final class ShortcutLiveTabStandaloneCloseTransaction {
     private let tabStore: any ShellSelectionTabStore
     private let structuralLookup: TabStructuralLookupCoordinator
     private let retirement: ShortcutLiveTabRetirementService
-    private let fallbackPlanner: BrowserTabCloseFallbackPlanner
-    private let splitMembership: SplitGroupMembershipQuery
+    private let selectionTarget: ShortcutLiveTabCloseSelectionTarget
     private let visuals: BrowserWindowVisualCoordinator
 
     init(
         tabStore: any ShellSelectionTabStore,
         structuralLookup: TabStructuralLookupCoordinator,
         retirement: ShortcutLiveTabRetirementService,
-        fallbackPlanner: BrowserTabCloseFallbackPlanner,
-        splitMembership: SplitGroupMembershipQuery,
+        selectionTarget: ShortcutLiveTabCloseSelectionTarget,
         visuals: BrowserWindowVisualCoordinator
     ) {
         self.tabStore = tabStore
         self.structuralLookup = structuralLookup
         self.retirement = retirement
-        self.fallbackPlanner = fallbackPlanner
-        self.splitMembership = splitMembership
+        self.selectionTarget = selectionTarget
         self.visuals = visuals
     }
 
@@ -41,28 +38,11 @@ final class ShortcutLiveTabStandaloneCloseTransaction {
             pinId: pinID,
             in: windowState
         )
-        let fallback = wasCurrent
-            ? fallbackPlanner.fallbackAfterClosingShortcutLiveTab(
-                tab,
-                in: windowState
-            )
-            : nil
-
-        var target = windowState.unpublishedShortcutMutationState
-        if wasCurrent, let fallback {
-            _ = WindowTabSelectionStateApplicator.applyFallback(
-                fallback,
-                to: &target,
-                splitMembership: splitMembership,
-                updateSpaceFromTab: true,
-                rememberSelection: true
-            )
-        } else if wasCurrent {
-            target.currentTabId = nil
-            target.currentShortcutPinId = nil
-            target.currentShortcutPinRole = nil
-            target.isShowingEmptyState = true
-        }
+        let target = selectionTarget.target(
+            afterClosing: tab,
+            in: windowState,
+            wasCurrent: wasCurrent
+        )
         let preparedRetirement = structuralLookup.withTransaction {
             retirement.prepareRetirement(
                 pinId: pinID,

@@ -19,8 +19,10 @@ extension ShortcutPinToRegularTabService {
         )
         return Self(
             promotion: promotion,
-            splitGroups: splitGroups,
-            pins: pins,
+            admission: ShortcutPinPromotionAdmission(
+                splitGroups: splitGroups,
+                pins: pins
+            ),
             transaction: transaction
         )
     }

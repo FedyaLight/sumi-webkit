@@ -5,21 +5,18 @@ final class BrowserTabCloseOrchestrationOwner {
     private let context: BrowserCurrentTabCloseContext
     private let glanceInterception: GlanceTabCloseInterception
     private let routing: BrowserTabCloseRouting
-    private let residences: BrowserTabResidenceAuthority
-    private let notifications: any BrowserNotificationPresenting
+    private let execution: BrowserTabCloseExecution
 
     init(
         context: BrowserCurrentTabCloseContext,
         glanceInterception: GlanceTabCloseInterception,
         routing: BrowserTabCloseRouting,
-        residences: BrowserTabResidenceAuthority,
-        notifications: any BrowserNotificationPresenting
+        execution: BrowserTabCloseExecution
     ) {
         self.context = context
         self.glanceInterception = glanceInterception
         self.routing = routing
-        self.residences = residences
-        self.notifications = notifications
+        self.execution = execution
     }
 
     func closeCurrentTab() {
@@ -68,41 +65,13 @@ final class BrowserTabCloseOrchestrationOwner {
 
     @discardableResult
     func closeTab(_ tab: Tab, in windowState: BrowserWindowState) -> Bool {
-        guard residences.containsExact(tab, in: windowState) else {
-            return false
-        }
-        glanceInterception.interceptSourceClose(tab)
-        return routing.close(tab, in: windowState)
+        execution.closeTab(tab, in: windowState)
     }
 
     func closeSplitGroup(
         _ tabs: [Tab],
         in windowState: BrowserWindowState
     ) {
-        guard tabs.count > 1 else {
-            tabs.forEach { closeTab($0, in: windowState) }
-            return
-        }
-        if tabs.contains(where: \.isShortcutLiveInstance) {
-            tabs.forEach { closeTab($0, in: windowState) }
-            return
-        }
-        let closedCount = tabs.reduce(into: 0) { count, tab in
-            guard residences.containsExact(tab, in: windowState) else { return }
-            glanceInterception.interceptSourceClose(tab)
-            if routing.close(
-                tab,
-                in: windowState,
-                presentNotification: false
-            ) {
-                count += 1
-            }
-        }
-        if closedCount > 0 {
-            notifications.presentSplitViewClosureNotification(
-                tabCount: closedCount,
-                in: windowState
-            )
-        }
+        execution.closeSplitGroup(tabs, in: windowState)
     }
 }

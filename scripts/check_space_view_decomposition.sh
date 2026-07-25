@@ -57,7 +57,7 @@ for declaration in \
   'struct TabFolderLiveItemEntryView: View' \
   'struct TabFolderSplitGroupEntryView: View' \
   'struct SpaceScrollChromeSurface<Content: View>: View' \
-  'struct SpacePinnedListProjection'; do
+  'struct SpacePinnedDisclosureProjection'; do
   declaration_count="$(guard_count_matches "$declaration" -F "$space_root")"
   if (( declaration_count == 0 )); then
     echo "SpaceView decomposition guard: missing semantic boundary: $declaration" >&2
