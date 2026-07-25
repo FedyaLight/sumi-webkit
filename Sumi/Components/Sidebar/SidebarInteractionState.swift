@@ -135,7 +135,10 @@ final class SidebarInteractionState {
         }
 
         let localPoint = owner.convert(windowPoint, from: nil)
-        return owner.bounds.contains(localPoint)
+        return owner.containsVisibleSidebarRoutingPoint(
+            windowPoint,
+            boundedBy: hostedSidebarView
+        )
             && owner.shouldCaptureInteraction(
                 at: localPoint,
                 eventType: eventType,
@@ -246,7 +249,10 @@ private final class SidebarInteractiveOwnerRegistry {
             else { continue }
 
             let localPoint = owner.convert(windowPoint, from: nil)
-            guard owner.bounds.contains(localPoint),
+            guard owner.containsVisibleSidebarRoutingPoint(
+                    windowPoint,
+                    boundedBy: hostedSidebarView
+                  ),
                   owner.shouldCaptureInteraction(
                     at: localPoint,
                     eventType: eventType,
@@ -337,6 +343,33 @@ private final class SidebarInteractiveOwnerRegistry {
 }
 
 private extension NSView {
+    func containsVisibleSidebarRoutingPoint(
+        _ windowPoint: NSPoint,
+        boundedBy hostedSidebarView: NSView?
+    ) -> Bool {
+        guard bounds.contains(convert(windowPoint, from: nil)) else {
+            return false
+        }
+
+        var ancestor = superview
+        while let view = ancestor {
+            let constrainsVisibleContent = view === hostedSidebarView
+                || view is NSClipView
+                || view.clipsToBounds
+                || view.layer?.masksToBounds == true
+            if constrainsVisibleContent,
+               !view.bounds.contains(view.convert(windowPoint, from: nil)) {
+                return false
+            }
+            if view === hostedSidebarView {
+                return true
+            }
+            ancestor = view.superview
+        }
+
+        return hostedSidebarView == nil
+    }
+
     var sidebarOwnerHierarchyDepth: Int {
         var depth = 0
         var current = superview

@@ -816,6 +816,53 @@ final class SidebarZenMotionTests: XCTestCase {
         XCTAssertEqual(playPauseCount, 1)
     }
 
+    func testInteractiveOwnerRoutesOnlyTheVisiblePartOfAClippedRow() {
+        let state = SidebarInteractionState()
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 240, height: 160),
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+
+        let sidebarHost = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 160))
+        let clippedViewport = NSView(frame: NSRect(x: 0, y: 0, width: 200, height: 60))
+        clippedViewport.clipsToBounds = true
+        let rowOwner = makeInteractiveItemView(
+            sourceID: "partially-clipped-row",
+            state: state
+        )
+        rowOwner.frame = NSRect(x: 0, y: 40, width: 200, height: 40)
+
+        window.contentView = sidebarHost
+        sidebarHost.addSubview(clippedViewport)
+        clippedViewport.addSubview(rowOwner)
+        state.registerInteractiveOwner(rowOwner)
+        defer {
+            state.unregisterInteractiveOwner(rowOwner)
+            rowOwner.prepareForDismantle()
+            window.contentView = nil
+            window.close()
+        }
+
+        let visibleHit = state.interactiveOwner(
+            at: NSPoint(x: 20, y: 50),
+            in: window,
+            eventType: .leftMouseDown,
+            hostedSidebarView: sidebarHost
+        )
+        let clippedHit = state.interactiveOwner(
+            at: NSPoint(x: 20, y: 70),
+            in: window,
+            eventType: .leftMouseDown,
+            hostedSidebarView: sidebarHost
+        )
+
+        XCTAssertTrue(visibleHit === rowOwner)
+        XCTAssertNil(clippedHit)
+    }
+
     func testSidebarColumnLeavesSideButtonsForWorkspaceCaptureSurface() {
         let containerView = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 160))
         let captureView = NSView(frame: containerView.bounds)

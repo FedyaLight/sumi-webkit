@@ -236,9 +236,10 @@ struct SpacesSideBarView: View {
             in: makeTransitionContext(spaces: spaces)
         )
 
-        Group {
+        VStack(spacing: 8) {
             spacesPageView(spaces: spaces)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .layoutPriority(1)
 
             VStack(spacing: 8) {
                 if allowsSidebarInteractiveWork {
@@ -260,8 +261,11 @@ struct SpacesSideBarView: View {
                 )
                 .environment(windowState)
             }
+            .fixedSize(horizontal: false, vertical: true)
             .padding(.bottom, 8)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipped()
         .onAppear {
             handlePendingSplitGroupFocusRequest(
                 windowState.presentationState.pendingSplitGroupFocusRequest,
