@@ -1,13 +1,11 @@
 import SwiftUI
 import SumiDomain
 
-/// "Choose a Theme" row of the space-creation panel. Opens the full
-/// gradient editor bound to the draft session's theme; the space does not
-/// exist yet, so there is no live window preview — the row's mini swatch
-/// is the feedback.
+/// "Choose a Theme" row of the space-creation panel. The editor writes into
+/// the window-local creation draft, whose owner previews the same theme through
+/// the runtime workspace-theme coordinator before the Space is committed.
 struct SidebarSpaceCreationThemeRow: View {
     @ObservedObject var session: SpaceCreationSession
-    let defaultDraftTheme: @MainActor () -> WorkspaceTheme
     let tokens: ChromeThemeTokens
     let rowCornerRadius: CGFloat
 
@@ -32,13 +30,7 @@ struct SidebarSpaceCreationThemeRow: View {
 
                 Spacer(minLength: 0)
 
-                if let draftTheme = session.workspaceTheme {
-                    themeMiniPreview(draftTheme)
-                } else {
-                    Image(systemName: "chevron.right")
-                        .font(SidebarSpaceCreationThemeTokens.Typography.profileMenuChevron)
-                        .foregroundStyle(tokens.secondaryText)
-                }
+                themeMiniPreview(session.workspaceTheme)
             }
             .padding(.leading, SidebarRowLayout.leadingInset)
             .padding(.trailing, SidebarRowLayout.trailingInset)
@@ -49,7 +41,7 @@ struct SidebarSpaceCreationThemeRow: View {
         .buttonStyle(.plain)
         .accessibilityIdentifier("sidebar-space-creation-theme")
         .popover(isPresented: $showsThemeEditor, arrowEdge: .trailing) {
-            GradientEditorView(workspaceTheme: draftThemeBinding)
+            GradientEditorView(workspaceTheme: $session.workspaceTheme)
         }
     }
 
@@ -68,13 +60,4 @@ struct SidebarSpaceCreationThemeRow: View {
         }
     }
 
-    /// Reads through to the would-be default so the editor opens on the theme
-    /// the space gets when the user never touches this row; only an actual
-    /// edit writes back, so open-then-close keeps `workspaceTheme` nil.
-    private var draftThemeBinding: Binding<WorkspaceTheme> {
-        Binding(
-            get: { session.workspaceTheme ?? defaultDraftTheme() },
-            set: { session.workspaceTheme = $0 }
-        )
-    }
 }

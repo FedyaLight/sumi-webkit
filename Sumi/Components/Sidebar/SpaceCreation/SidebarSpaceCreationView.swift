@@ -44,7 +44,7 @@ struct SpaceCreationProfileContext {
 struct SidebarSpaceCreationView: View {
     @ObservedObject var session: SpaceCreationSession
     let profileContext: SpaceCreationProfileContext
-    let defaultDraftTheme: @MainActor () -> WorkspaceTheme
+    let onThemePreview: @MainActor (WorkspaceTheme) -> Void
     let onCreate: () -> Void
     let onCancel: () -> Void
 
@@ -79,6 +79,9 @@ struct SidebarSpaceCreationView: View {
         .padding(.horizontal, SidebarSpaceCreationMetrics.horizontalPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear(perform: focusNameField)
+        .onChange(of: session.workspaceTheme) { _, theme in
+            onThemePreview(theme)
+        }
         .onExitCommand(perform: cancel)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("sidebar-space-creation")
@@ -127,7 +130,6 @@ struct SidebarSpaceCreationView: View {
     private var themeCard: some View {
         SidebarSpaceCreationThemeRow(
             session: session,
-            defaultDraftTheme: defaultDraftTheme,
             tokens: tokens,
             rowCornerRadius: rowCornerRadius
         )

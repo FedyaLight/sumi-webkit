@@ -5,12 +5,14 @@
     @MainActor
     extension SpaceCatalogCommands {
         func createSpace(
+            id: UUID = UUID(),
             name: String,
             icon: String = SumiPersistentGlyph.spaceDefaultIconValue,
             workspaceTheme: WorkspaceTheme? = nil,
             profileId: UUID? = nil
         ) -> Space {
             guard let space = createSpaceIfAdmitted(
+                id: id,
                 name: name,
                 icon: icon,
                 workspaceTheme: workspaceTheme,

@@ -38,12 +38,14 @@ final class SpaceCatalogCommands {
     }
     @discardableResult
     func createSpaceIfAdmitted(
+        id: UUID = UUID(),
         name: String,
         icon: String = SumiPersistentGlyph.spaceDefaultIconValue,
         workspaceTheme: WorkspaceTheme? = nil,
         profileId: UUID? = nil
     ) -> Space? {
         creation.create(
+            id: id,
             name: name,
             icon: icon,
             workspaceTheme: workspaceTheme,

@@ -7,7 +7,9 @@ final class SpaceCreationSession: ObservableObject, Identifiable {
     static let defaultIcon = SumiPersistentGlyph.spaceDefaultIconValue
 
     let id = UUID()
+    let reservedSpaceID: UUID
     let previousSpaceID: UUID?
+    let originalWorkspaceTheme: WorkspaceTheme
     let source: SidebarTransientPresentationSource
     let transientSessionToken: SidebarTransientSessionToken?
 
@@ -16,12 +18,14 @@ final class SpaceCreationSession: ObservableObject, Identifiable {
     @Published var profileID: UUID?
     @Published var createsNewProfile: Bool
     @Published var newProfileName: String
-    @Published var workspaceTheme: WorkspaceTheme?
+    @Published var workspaceTheme: WorkspaceTheme
 
     var cancelsOnDismiss = false
 
     init(
+        reservedSpaceID: UUID,
         previousSpaceID: UUID?,
+        originalWorkspaceTheme: WorkspaceTheme,
         source: SidebarTransientPresentationSource,
         transientSessionToken: SidebarTransientSessionToken?,
         name: String = "",
@@ -29,9 +33,11 @@ final class SpaceCreationSession: ObservableObject, Identifiable {
         profileID: UUID?,
         createsNewProfile: Bool = false,
         newProfileName: String = "",
-        workspaceTheme: WorkspaceTheme? = nil
+        workspaceTheme: WorkspaceTheme
     ) {
+        self.reservedSpaceID = reservedSpaceID
         self.previousSpaceID = previousSpaceID
+        self.originalWorkspaceTheme = originalWorkspaceTheme
         self.source = source
         self.transientSessionToken = transientSessionToken
         self.name = name

@@ -1,4 +1,5 @@
 @testable import Sumi
+import SumiDomain
 import XCTest
 
 final class SpaceCreationSessionTests: XCTestCase {
@@ -6,18 +7,31 @@ final class SpaceCreationSessionTests: XCTestCase {
     func testWindowStateOwnsSingleSpaceCreationSessionAndReleasesTransientState() {
         let windowState = BrowserWindowState()
         let previousSpaceID = UUID()
+        let reservedSpaceID = UUID()
         let defaultProfileID = UUID()
+        let initialWorkspaceTheme = WorkspaceTheme(
+            gradientTheme: .incognito
+        )
+        let originalWorkspaceTheme = WorkspaceTheme(
+            gradientTheme: .default
+        )
         windowState.currentSpaceId = previousSpaceID
 
         let session = windowState.spaceCreationSession.begin(
             source: windowState.resolveSidebarPresentationSource(in: nil),
             previousSpaceID: windowState.currentSpaceId,
-            defaultProfileID: defaultProfileID
+            reservedSpaceID: reservedSpaceID,
+            defaultProfileID: defaultProfileID,
+            workspaceTheme: initialWorkspaceTheme,
+            originalWorkspaceTheme: originalWorkspaceTheme
         )
 
         XCTAssertIdentical(windowState.spaceCreationSession.activeSession, session)
         XCTAssertEqual(session.previousSpaceID, previousSpaceID)
+        XCTAssertEqual(session.reservedSpaceID, reservedSpaceID)
         XCTAssertEqual(session.profileID, defaultProfileID)
+        XCTAssertTrue(session.workspaceTheme.visuallyEquals(initialWorkspaceTheme))
+        XCTAssertTrue(session.originalWorkspaceTheme.visuallyEquals(originalWorkspaceTheme))
         XCTAssertEqual(session.resolvedIcon, SumiPersistentGlyph.spaceDefaultIconValue)
         XCTAssertEqual(SumiPersistentGlyph.resolvedSpaceIconPresentation(session.resolvedIcon), .defaultDot)
         XCTAssertFalse(session.canCommit)
@@ -41,10 +55,15 @@ final class SpaceCreationSessionTests: XCTestCase {
         let duplicate = windowState.spaceCreationSession.begin(
             source: windowState.resolveSidebarPresentationSource(in: nil),
             previousSpaceID: windowState.currentSpaceId,
-            defaultProfileID: UUID()
+            reservedSpaceID: UUID(),
+            defaultProfileID: UUID(),
+            workspaceTheme: .default,
+            originalWorkspaceTheme: .default
         )
 
         XCTAssertIdentical(duplicate, session)
+        XCTAssertEqual(duplicate.reservedSpaceID, reservedSpaceID)
+        XCTAssertTrue(duplicate.workspaceTheme.visuallyEquals(initialWorkspaceTheme))
 
         windowState.spaceCreationSession.finish(session, reason: "SpaceCreationSessionTests")
 

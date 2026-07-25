@@ -69,6 +69,7 @@ final class SidebarSpaceLifecycle {
 
     @discardableResult
     func createSpace(
+        id: UUID = UUID(),
         name: String,
         icon: String,
         workspaceTheme: WorkspaceTheme? = nil,
@@ -76,6 +77,7 @@ final class SidebarSpaceLifecycle {
     ) -> Space? {
         guard runtimeIsAlive() else { return nil }
         return catalog.createSpaceIfAdmitted(
+            id: id,
             name: name,
             icon: icon,
             workspaceTheme: workspaceTheme,

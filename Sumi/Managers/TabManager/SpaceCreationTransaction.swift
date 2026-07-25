@@ -24,6 +24,7 @@ final class SpaceCreationTransaction {
     }
 
     func create(
+        id: UUID,
         name: String,
         icon: String,
         workspaceTheme: WorkspaceTheme?,
@@ -44,6 +45,7 @@ final class SpaceCreationTransaction {
                 return nil
             }
             let space = Space(
+                id: id,
                 name: name,
                 icon: icon,
                 workspaceTheme: resolvedTheme,

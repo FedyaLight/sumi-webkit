@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 @MainActor
 final class BrowserSpaceTransitionRoutingOwner {
@@ -40,6 +41,14 @@ final class BrowserSpaceTransitionRoutingOwner {
             in: windowState,
             completingTransition: transition
         )
+    }
+
+    func previewWorkspaceTheme(
+        _ theme: WorkspaceTheme,
+        in windowState: BrowserWindowState
+    ) {
+        guard !windowState.isIncognito else { return }
+        themeTransitions.commitWorkspaceTheme(theme, for: windowState)
     }
 
     func beginInteractiveSpaceTransition(

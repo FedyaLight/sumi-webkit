@@ -6,6 +6,7 @@
 
 import Foundation
 import Observation
+import SumiDomain
 
 /// Owns the window-local draft session for the Zen-style in-sidebar space creation flow.
 ///
@@ -25,7 +26,10 @@ final class WindowSpaceCreationSessionOwner {
     func begin(
         source: SidebarTransientPresentationSource,
         previousSpaceID: UUID?,
-        defaultProfileID: UUID?
+        reservedSpaceID: UUID,
+        defaultProfileID: UUID?,
+        workspaceTheme: WorkspaceTheme,
+        originalWorkspaceTheme: WorkspaceTheme
     ) -> SpaceCreationSession {
         if let activeSession {
             return activeSession
@@ -37,10 +41,13 @@ final class WindowSpaceCreationSessionOwner {
             path: "WindowSpaceCreationSessionOwner.begin"
         )
         let session = SpaceCreationSession(
+            reservedSpaceID: reservedSpaceID,
             previousSpaceID: previousSpaceID,
+            originalWorkspaceTheme: originalWorkspaceTheme,
             source: source,
             transientSessionToken: token,
-            profileID: defaultProfileID
+            profileID: defaultProfileID,
+            workspaceTheme: workspaceTheme
         )
         activeSession = session
         return session

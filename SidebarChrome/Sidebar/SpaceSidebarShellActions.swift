@@ -85,11 +85,24 @@ extension SpacesSideBarView {
         let defaultProfileID = windowState.currentProfileId
             ?? browserContext.profileAuthority.currentProfile?.id
             ?? browserContext.profileManager.profiles.first?.id
+        let defaultTheme = SumiWorkspaceThemePresets.rotatingTheme(
+            at: spaceLifecycle.availableSpaces(
+                isIncognito: windowState.isIncognito,
+                ephemeralSpaces: windowState.ephemeralSpaces
+            ).count
+        )
 
-        windowState.spaceCreationSession.begin(
+        let session = windowState.spaceCreationSession.begin(
             source: source,
             previousSpaceID: windowState.currentSpaceId,
-            defaultProfileID: defaultProfileID
+            reservedSpaceID: UUID(),
+            defaultProfileID: defaultProfileID,
+            workspaceTheme: defaultTheme,
+            originalWorkspaceTheme: windowState.workspaceTheme
+        )
+        browserContext.spaceTransitions.previewWorkspaceTheme(
+            session.workspaceTheme,
+            in: windowState
         )
     }
 
@@ -114,19 +127,18 @@ extension SpacesSideBarView {
             profileId = session.profileID
         }
 
-        let newSpace = spaceLifecycle.createSpace(
+        guard let newSpace = spaceLifecycle.createSpace(
+            id: session.reservedSpaceID,
             name: session.trimmedName,
             icon: session.resolvedIcon,
             workspaceTheme: session.workspaceTheme,
             profileID: profileId
+        ), let resolvedSpace = spaceLifecycle.space(id: newSpace.id)
+        else { return }
+        browserContext.spaceTransitions.setActiveSpace(
+            resolvedSpace,
+            in: windowState
         )
-        if let newSpace,
-           let resolvedSpace = spaceLifecycle.space(id: newSpace.id) {
-            browserContext.spaceTransitions.setActiveSpace(
-                resolvedSpace,
-                in: windowState
-            )
-        }
 
         windowState.spaceCreationSession.finish(
             session,
@@ -136,6 +148,13 @@ extension SpacesSideBarView {
 
     func cancelSpaceCreationSession(_ session: SpaceCreationSession) {
         session.cancelsOnDismiss = true
+        let restoredTheme = session.previousSpaceID
+            .flatMap { spaceLifecycle.space(id: $0)?.workspaceTheme }
+            ?? session.originalWorkspaceTheme
+        browserContext.spaceTransitions.previewWorkspaceTheme(
+            restoredTheme,
+            in: windowState
+        )
         windowState.spaceCreationSession.finish(
             session,
             reason: "SpacesSideBarView.cancelSpaceCreationSession"

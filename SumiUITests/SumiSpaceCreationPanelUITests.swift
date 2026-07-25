@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 
 final class SumiSpaceCreationPanelUITests: SumiLaunchSmokeUITestCase {
@@ -23,6 +24,7 @@ final class SumiSpaceCreationPanelUITests: SumiLaunchSmokeUITestCase {
             .firstMatch
         let nameField = window.textFields["sidebar-space-creation-name"]
         XCTAssertTrue(nameField.waitForExistence(timeout: 5))
+        try paste("Panel Smoke Space", into: nameField, in: app)
         _ = panel
 
         XCTAssertTrue(window.staticTexts["Create a Space"].exists)
@@ -30,8 +32,29 @@ final class SumiSpaceCreationPanelUITests: SumiLaunchSmokeUITestCase {
             window.buttons["sidebar-space-creation-theme"].exists,
             "Theme row should be present in the creation panel"
         )
+        window.buttons["sidebar-space-creation-theme"].click()
 
-        let profileMenu = window.menuButtons["sidebar-space-creation-profile-menu"]
+        let picker = app.descendants(matching: .any)
+            .matching(identifier: "workspace-theme-picker-panel")
+            .firstMatch
+        XCTAssertTrue(
+            picker.waitForExistence(timeout: 5),
+            "Theme editor should open from the Space creation draft"
+        )
+        let lightMono1Preset = app.buttons[
+            "workspace-theme-preset-Light Mono-1"
+        ]
+        XCTAssertTrue(
+            lightMono1Preset.waitForExistence(timeout: 3),
+            "Light Mono-1 should be available for live preview"
+        )
+        lightMono1Preset.click()
+        attachScreenshot(app, name: "space-creation-theme-preview")
+        Self.dismissThemePicker(app: app, window: window)
+
+        let profileMenu = window.menuButtons[
+            "sidebar-space-creation-profile-menu"
+        ].firstMatch
         XCTAssertTrue(profileMenu.exists, "Profile picker should be present")
         profileMenu.click()
 
@@ -43,8 +66,6 @@ final class SumiSpaceCreationPanelUITests: SumiLaunchSmokeUITestCase {
         attachScreenshot(app, name: "space-creation-profile-menu")
         app.typeKey(.escape, modifierFlags: [])
 
-        nameField.click()
-        nameField.typeText("Panel Smoke Space")
         attachScreenshot(app, name: "space-creation-panel")
 
         let createButton = window.buttons["Create Space"]
@@ -72,5 +93,33 @@ final class SumiSpaceCreationPanelUITests: SumiLaunchSmokeUITestCase {
                 .appendingPathComponent("\(name).png")
             try? app.screenshot().pngRepresentation.write(to: url)
         }
+    }
+
+    private func paste(
+        _ text: String,
+        into input: XCUIElement,
+        in app: XCUIApplication
+    ) throws {
+        let pasteboard = NSPasteboard.general
+        let previousContents = pasteboard.types?.compactMap { type in
+            pasteboard.data(forType: type).map { (type, $0) }
+        } ?? []
+        defer {
+            pasteboard.clearContents()
+            pasteboard.declareTypes(previousContents.map(\.0), owner: nil)
+            for (type, data) in previousContents {
+                pasteboard.setData(data, forType: type)
+            }
+        }
+
+        pasteboard.clearContents()
+        guard pasteboard.setString(text, forType: .string) else {
+            throw FixtureError.missingValue("Unable to seed the Space name pasteboard")
+        }
+        input.click()
+        app.menuBars.menuBarItems["Edit"].click()
+        let pasteItem = app.menuItems["Paste"].firstMatch
+        XCTAssertTrue(pasteItem.waitForExistence(timeout: 2))
+        pasteItem.click()
     }
 }

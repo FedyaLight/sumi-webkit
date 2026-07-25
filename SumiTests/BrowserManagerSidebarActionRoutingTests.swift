@@ -1,4 +1,5 @@
 import XCTest
+import SumiDomain
 
 @testable import Sumi
 
@@ -35,6 +36,30 @@ final class BrowserManagerSidebarActionRoutingTests: XCTestCase {
 
         XCTAssertEqual(harness.windowRegistry.activeWindowId, harness.windowState.id)
         XCTAssertFalse(harness.windowState.isSidebarVisible)
+    }
+
+    func testWorkspaceThemePreviewTargetsOnlyRequestedWindowAndCanRestoreOriginalTheme() {
+        removePersistedWindowSession()
+        defer { removePersistedWindowSession() }
+
+        let harness = makeHarness()
+        let otherTheme = WorkspaceTheme(gradientTheme: .incognito)
+        let otherWindow = BrowserWindowState(initialWorkspaceTheme: otherTheme)
+        harness.windowRegistry.register(otherWindow)
+        let originalTheme = harness.primarySpace.workspaceTheme
+        let draftTheme = SumiWorkspaceThemePresets.rotatingTheme(at: 3)
+        let routing = harness.browserManager.composeSidebarSpaceTransitionRoutingOwner()
+
+        routing.previewWorkspaceTheme(draftTheme, in: harness.windowState)
+
+        XCTAssertTrue(harness.windowState.workspaceTheme.visuallyEquals(draftTheme))
+        XCTAssertTrue(otherWindow.workspaceTheme.visuallyEquals(otherTheme))
+        XCTAssertTrue(harness.primarySpace.workspaceTheme.visuallyEquals(originalTheme))
+
+        routing.previewWorkspaceTheme(originalTheme, in: harness.windowState)
+
+        XCTAssertTrue(harness.windowState.workspaceTheme.visuallyEquals(originalTheme))
+        XCTAssertTrue(otherWindow.workspaceTheme.visuallyEquals(otherTheme))
     }
 
     private func makeHarness(activateWindow: Bool = true) -> Harness {

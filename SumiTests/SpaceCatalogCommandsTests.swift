@@ -42,16 +42,19 @@ final class SpaceCatalogCommandsTests: XCTestCase {
         let current = Space(name: "Current")
         fixture.spaces.replaceSpaces([current])
         fixture.spaces.replaceCurrentSpace(current)
+        let reservedSpaceID = UUID()
         let explicitProfileID = UUID()
         let explicitTheme = WorkspaceTheme.default
 
         let created = fixture.commands.createSpace(
+            id: reservedSpaceID,
             name: "Focus",
             icon: "star",
             workspaceTheme: explicitTheme,
             profileId: explicitProfileID
         )
 
+        XCTAssertEqual(created.id, reservedSpaceID)
         XCTAssertEqual(created.profileId, explicitProfileID)
         XCTAssertEqual(created.workspaceTheme, explicitTheme)
         XCTAssertEqual(

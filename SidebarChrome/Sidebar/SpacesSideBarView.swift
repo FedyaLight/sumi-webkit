@@ -186,12 +186,10 @@ struct SpacesSideBarView: View {
                     currentProfileID: {
                         browserContext.profileAuthority.currentProfile?.id
                     },
-                    defaultDraftTheme: { [spaceLifecycle, windowState] in
-                        SumiWorkspaceThemePresets.rotatingTheme(
-                            at: spaceLifecycle.availableSpaces(
-                                isIncognito: windowState.isIncognito,
-                                ephemeralSpaces: windowState.ephemeralSpaces
-                            ).count
+                    onThemePreview: { [browserContext, windowState] theme in
+                        browserContext.spaceTransitions.previewWorkspaceTheme(
+                            theme,
+                            in: windowState
                         )
                     },
                     onCreate: { commitSpaceCreationSession(creationSession) },

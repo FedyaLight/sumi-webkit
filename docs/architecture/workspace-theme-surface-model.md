@@ -19,6 +19,9 @@ Produces the concrete chrome colors used by browser-owned surfaces.
 - Browser chrome consumes resolved theme tokens, not page-derived colors.
 - Global app appearance remains independent from workspace color styling.
 - Space switching updates workspace theme through the interactive transition path only.
+- A window-local Space creation draft previews through the coordinator without
+  entering the Space catalog; committing preserves its reserved identity and
+  cancelling restores the source Space theme.
 
 ## Anti-patterns to avoid
 

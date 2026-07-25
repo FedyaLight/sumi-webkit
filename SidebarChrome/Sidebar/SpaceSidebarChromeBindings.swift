@@ -117,7 +117,7 @@ struct SidebarSpaceCreationProfilesView: View {
     let profileUpdates: SidebarProfileUpdates
     let isActive: Bool
     let currentProfileID: @MainActor () -> UUID?
-    let defaultDraftTheme: @MainActor () -> WorkspaceTheme
+    let onThemePreview: @MainActor (WorkspaceTheme) -> Void
     let onCreate: () -> Void
     let onCancel: () -> Void
 
@@ -133,7 +133,7 @@ struct SidebarSpaceCreationProfilesView: View {
                     profiles: profiles,
                     currentProfileID: currentProfileID()
                 ),
-                defaultDraftTheme: defaultDraftTheme,
+                onThemePreview: onThemePreview,
                 onCreate: onCreate,
                 onCancel: onCancel
             )

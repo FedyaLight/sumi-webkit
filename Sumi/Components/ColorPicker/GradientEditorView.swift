@@ -107,6 +107,7 @@ struct GradientEditorView: View {
         .frame(width: Self.panelWidth, alignment: .top)
         .background(tokens.floatingSurfaceBackground)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("workspace-theme-picker-panel")
         .sumiNativeSurfaceColorScheme(
             pickerThemeContext.globalColorScheme,
@@ -213,6 +214,8 @@ struct GradientEditorView: View {
                         )
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(preset.id)
+                    .accessibilityIdentifier("workspace-theme-preset-\(preset.id)")
                 }
             }
             .frame(maxWidth: .infinity)
