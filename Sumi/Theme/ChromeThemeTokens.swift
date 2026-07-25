@@ -36,6 +36,8 @@ struct ChromeThemeTokens {
     let windowBackground: Color
     /// Opaque floating surface shared by palettes, popovers, and modal cards.
     let floatingSurfaceBackground: Color
+    /// Crisp outer edge for custom floating surfaces drawn inside the app window.
+    let floatingSurfaceBorder: Color
     /// Secondary fills within a floating surface, such as chips and icon wells.
     let floatingSurfaceSecondaryBackground: Color
     let floatingSurfaceSelection: Color
@@ -108,6 +110,9 @@ enum ThemeChromeRecipeColors {
         static let backgroundLight = Color.white
         static let backgroundDark = Color(hex: "1C1C1E")
         static let backgroundFallback = Color.white
+        static let borderLight = Color.black.opacity(0.20)
+        static let borderDark = Color.white.opacity(0.26)
+        static let borderFallback = Color.primary.opacity(0.20)
         static let secondaryLight = Color.black.opacity(0.06)
         static let secondaryDark = Color.white.opacity(0.10)
         static let secondaryFallback = Color.black.opacity(0.06)

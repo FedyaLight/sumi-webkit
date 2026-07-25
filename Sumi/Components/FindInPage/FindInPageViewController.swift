@@ -543,7 +543,7 @@ final class FindInPageViewController: NSViewController {
                 hover.updateTintColor()
             }
             statusPillView?.backgroundColor = paint.secondaryText.withAlphaComponent(0.10)
-            backgroundView.borderColor = paint.secondaryText.withAlphaComponent(0.18)
+            backgroundView.borderColor = paint.shellBorder
         } else {
             applyChromeColorsFromAssets()
         }

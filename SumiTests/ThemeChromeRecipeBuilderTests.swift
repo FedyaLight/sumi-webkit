@@ -51,6 +51,20 @@ final class ThemeChromeRecipeBuilderTests: XCTestCase {
         XCTAssertEqual(a.alpha, b.alpha, accuracy: 0.02)
     }
 
+    func testFloatingSurfaceBorderKeepsCanonicalLightAndDarkContrast() {
+        let light = ThemeChromeRecipeBuilder.floatingSurfaceBorder(scheme: .light).sRGBComponents
+        XCTAssertEqual(light.red, 0, accuracy: 0.02)
+        XCTAssertEqual(light.green, 0, accuracy: 0.02)
+        XCTAssertEqual(light.blue, 0, accuracy: 0.02)
+        XCTAssertEqual(light.alpha, 0.20, accuracy: 0.02)
+
+        let dark = ThemeChromeRecipeBuilder.floatingSurfaceBorder(scheme: .dark).sRGBComponents
+        XCTAssertEqual(dark.red, 1, accuracy: 0.02)
+        XCTAssertEqual(dark.green, 1, accuracy: 0.02)
+        XCTAssertEqual(dark.blue, 1, accuracy: 0.02)
+        XCTAssertEqual(dark.alpha, 0.26, accuracy: 0.02)
+    }
+
     func testUrlBarHubVeilGradientBottomStopDiffersForActiveVsInactive() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -201,6 +215,21 @@ final class ThemeChromeRecipeBuilderTests: XCTestCase {
         XCTAssertEqual(Self.alpha(of: paint.shellBackground), 1, accuracy: 0.02)
         XCTAssertEqual(Self.alpha(of: paint.fieldUnfocused), 1, accuracy: 0.02)
         XCTAssertEqual(Self.alpha(of: paint.fieldFocused), 1, accuracy: 0.02)
+    }
+
+    func testFindInPagePaintUsesFloatingSurfaceBorder() {
+        for scheme in [ColorScheme.light, .dark] {
+            let paint = findInPagePaint(scheme: scheme)
+            let expected = ThemeChromeRecipeBuilder
+                .floatingSurfaceBorder(scheme: scheme)
+                .sRGBComponents
+            let actual = Color(nsColor: paint.shellBorder).sRGBComponents
+
+            XCTAssertEqual(actual.red, expected.red, accuracy: 0.02)
+            XCTAssertEqual(actual.green, expected.green, accuracy: 0.02)
+            XCTAssertEqual(actual.blue, expected.blue, accuracy: 0.02)
+            XCTAssertEqual(actual.alpha, expected.alpha, accuracy: 0.02)
+        }
     }
 
     private func findInPagePaint(scheme: ColorScheme) -> FindInPageChromePaint {

@@ -10,6 +10,7 @@ import SwiftUI
 struct FindInPageChromePaint {
     /// Outer strip behind the inner focus ring.
     var shellBackground: NSColor
+    var shellBorder: NSColor
     var fieldUnfocused: NSColor
     var fieldFocused: NSColor
     var accentStroke: NSColor
@@ -26,6 +27,7 @@ struct FindInPageChromePaint {
 
         return FindInPageChromePaint(
             shellBackground: Self.ns(shell),
+            shellBorder: Self.ns(tokens.floatingSurfaceBorder),
             fieldUnfocused: Self.ns(fieldIdle),
             fieldFocused: Self.ns(fieldActive),
             accentStroke: Self.ns(accent),

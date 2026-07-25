@@ -298,7 +298,7 @@ struct CommandPaletteView: View {
                         .overlay {
                             RoundedRectangle(cornerRadius: ChromeLayoutTokens.commandPaletteCornerRadius, style: .continuous)
                                 .strokeBorder(
-                                    tokens.separator,
+                                    tokens.floatingSurfaceBorder,
                                     lineWidth: 0.5,
                                     antialiased: false
                                 )

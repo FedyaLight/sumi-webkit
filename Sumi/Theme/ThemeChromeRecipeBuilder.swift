@@ -246,6 +246,7 @@ struct ThemeChromePalette {
     let buttonSecondaryBackground: Color
     let windowBackground: Color
     let floatingSurfaceBackground: Color
+    let floatingSurfaceBorder: Color
     let floatingSurfaceSecondaryBackground: Color
     let floatingSurfaceSelection: Color
     let floatingSurfaceHover: Color
@@ -288,6 +289,8 @@ struct ThemeChromePalette {
         )
         let floatingSurfaceBackground = ThemeChromeRecipeBuilder
             .floatingSurfaceBackground(scheme: scheme)
+        let floatingSurfaceBorder = ThemeChromeRecipeBuilder
+            .floatingSurfaceBorder(scheme: scheme)
         let floatingSurfaceSecondaryBackground = ThemeChromeRecipeBuilder
             .floatingSurfaceSecondaryBackground(scheme: scheme)
         let floatingSurfaceSelection = ThemeChromeRecipeBuilder
@@ -377,6 +380,7 @@ struct ThemeChromePalette {
                 }
             }(),
             floatingSurfaceBackground: floatingSurfaceBackground,
+            floatingSurfaceBorder: floatingSurfaceBorder,
             floatingSurfaceSecondaryBackground: floatingSurfaceSecondaryBackground,
             floatingSurfaceSelection: floatingSurfaceSelection,
             floatingSurfaceHover: floatingSurfaceHover
@@ -421,6 +425,7 @@ struct ThemeChromePalette {
             buttonSecondaryBackground: mix(buttonSecondaryBackground, other.buttonSecondaryBackground),
             windowBackground: mix(windowBackground, other.windowBackground),
             floatingSurfaceBackground: mix(floatingSurfaceBackground, other.floatingSurfaceBackground),
+            floatingSurfaceBorder: mix(floatingSurfaceBorder, other.floatingSurfaceBorder),
             floatingSurfaceSecondaryBackground: mix(floatingSurfaceSecondaryBackground, other.floatingSurfaceSecondaryBackground),
             floatingSurfaceSelection: mix(floatingSurfaceSelection, other.floatingSurfaceSelection),
             floatingSurfaceHover: mix(floatingSurfaceHover, other.floatingSurfaceHover)
@@ -459,6 +464,7 @@ struct ThemeChromePalette {
             buttonSecondaryBackground: buttonSecondaryBackground,
             windowBackground: windowBackground,
             floatingSurfaceBackground: floatingSurfaceBackground,
+            floatingSurfaceBorder: floatingSurfaceBorder,
             floatingSurfaceSecondaryBackground: floatingSurfaceSecondaryBackground,
             floatingSurfaceSelection: floatingSurfaceSelection,
             floatingSurfaceHover: floatingSurfaceHover
@@ -616,6 +622,17 @@ enum ThemeChromeRecipeBuilder {
             return ThemeChromeRecipeColors.FloatingSurface.backgroundDark
         @unknown default:
             return ThemeChromeRecipeColors.FloatingSurface.backgroundFallback
+        }
+    }
+
+    static func floatingSurfaceBorder(scheme: ColorScheme) -> Color {
+        switch scheme {
+        case .light:
+            return ThemeChromeRecipeColors.FloatingSurface.borderLight
+        case .dark:
+            return ThemeChromeRecipeColors.FloatingSurface.borderDark
+        @unknown default:
+            return ThemeChromeRecipeColors.FloatingSurface.borderFallback
         }
     }
 

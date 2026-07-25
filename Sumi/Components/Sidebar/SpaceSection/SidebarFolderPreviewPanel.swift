@@ -69,7 +69,7 @@ struct SidebarFolderPreviewPanel: View {
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .strokeBorder(tokens.separator, lineWidth: 1, antialiased: false)
+                .strokeBorder(tokens.floatingSurfaceBorder, lineWidth: 1, antialiased: false)
         }
         .shadow(color: .black.opacity(0.22), radius: 14, y: 4)
         .sidebarHover(onChange: onHoverChanged)
