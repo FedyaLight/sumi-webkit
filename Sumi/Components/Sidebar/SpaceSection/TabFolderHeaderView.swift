@@ -9,6 +9,7 @@ import SwiftUI
 /// Folder header chrome: title row, drop geometry, context menu, and search-hover anchor.
 struct TabFolderHeaderView: View {
     let folder: TabFolder
+    let presentation: SidebarFolderPresentationCell
     let space: Space
     let browserContext: SidebarBrowserContext
     let inventory: SidebarSpaceInventorySnapshot
@@ -77,7 +78,7 @@ struct TabFolderHeaderView: View {
 
     var body: some View {
         TabFolderHeaderRow(
-            title: folder.name,
+            title: presentation.title,
             glyphPresentation: folderGlyphPresentation,
             glyphPalette: folderShellPalette,
             isDropHighlighted: isDropHighlighted,
@@ -90,7 +91,7 @@ struct TabFolderHeaderView: View {
             parentFolderId: parentFolderId,
             topLevelIndex: topLevelIndex,
             childCount: contentProjection.childCount,
-            isOpen: folder.isOpen,
+            isOpen: presentation.isExpanded,
             region: .header,
             generation: geometryGeneration,
             isActive: isInteractive && !projection.isLiveFolder
@@ -99,7 +100,10 @@ struct TabFolderHeaderView: View {
             isEnabled: true,
             isInteractionEnabled: isInteractive,
             dragSource: SidebarDragSourceConfiguration(
-                item: SumiDragItem.folder(folderId: folder.id, title: folder.name),
+                item: SumiDragItem.folder(
+                    folderId: folder.id,
+                    title: presentation.title
+                ),
                 sourceZone: parentFolderId.map(DropZoneID.folder) ?? .spacePinned(space.id),
                 previewKind: .folderRow,
                 folderGlyphPresentation: folderGlyphPresentation,
@@ -109,6 +113,7 @@ struct TabFolderHeaderView: View {
             ),
             primaryAction: onToggle,
             sourceID: folderHeaderSourceID,
+            suppressesPrimaryActionAnimation: false,
             entries: contextMenuEntries
         )
         .overlay {
@@ -123,13 +128,13 @@ struct TabFolderHeaderView: View {
             windowState.sidebarFolderPreview.close(folderID: folder.id)
         }
         .accessibilityIdentifier("folder-header-\(folder.id.uuidString)")
-        .accessibilityLabel(folder.name)
-        .accessibilityValue(folder.isOpen ? "expanded" : "collapsed")
+        .accessibilityLabel(presentation.title)
+        .accessibilityValue(presentation.isExpanded ? "expanded" : "collapsed")
     }
 
     private var folderGlyphPresentation: SumiFolderGlyphPresentationState {
         SumiFolderGlyphPresentationState(
-            iconValue: folder.icon,
+            iconValue: presentation.iconValue,
             isOpen: folderPreviewIsOpen,
             hasActiveProjection: hasActiveProjection
                 || hasActiveSelection
@@ -176,7 +181,7 @@ struct TabFolderHeaderView: View {
         windowState.sidebarFolderPreview.open(
             request: SidebarFolderPreviewRequest(
                 folderID: folder.id,
-                folderName: folder.name,
+                folderName: presentation.title,
                 candidates: candidates,
                 anchorRect: anchorRect
             ),

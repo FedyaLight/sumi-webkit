@@ -11,7 +11,10 @@ import SwiftUI
 /// `TabFolderView` keeps the recursive state boundary, while this view keeps
 /// header/body rendering out of that recursive composition root.
 struct TabFolderContentView: View {
+    private static let folderBodyVerticalPadding: CGFloat = 4
+
     let folder: TabFolder
+    let presentation: SidebarFolderPresentationCell
     let browserContext: SidebarBrowserContext
     let space: Space
     let inventory: SidebarSpaceInventorySnapshot
@@ -51,6 +54,7 @@ struct TabFolderContentView: View {
     private var stickyOwner: SidebarFolderStickyProjectionOwner {
         SidebarFolderStickyProjectionOwner(
             folder: folder,
+            presentation: presentation,
             inventory: inventory,
             selection: selection,
             selectionSnapshot: sidebarSelection,
@@ -67,6 +71,15 @@ struct TabFolderContentView: View {
         return dragSnapshot.isCompletingDrop
             ? SidebarMotionPolicy.dropSettleAnimation(for: mode)
             : SidebarMotionPolicy.folderLayoutAnimation(for: mode)
+    }
+
+    private var disclosureAnimation: Animation? {
+        guard isInteractive else { return nil }
+        return SidebarMotionPolicy.disclosureAnimation(
+            for: SidebarMotionPolicy.currentMode(
+                reduceMotion: reduceMotion || sumiSettings.shouldReduceChromeMotion
+            )
+        )
     }
 
     private var mutationActions: TabFolderMutationActions {
@@ -104,9 +117,12 @@ struct TabFolderContentView: View {
     }
 
     private var targetCollapsedProjectionIDs: [UUID] {
-        guard !folder.isOpen else { return [] }
+        guard !presentation.isExpanded else { return [] }
         return SidebarFolderDisplayProjection.targetCollapsedProjectionIDs(
-            stickyItemIDs: folderProjectionState.stickyItemIDs,
+            stickyItemIDs: SidebarFolderDisplayProjection.disclosureTargetStickyItemIDs(
+                currentStickyItemIDs: folderProjectionState.stickyItemIDs,
+                selectedDescendantItemID: projection.selectedCollapsedProjectionItemID
+            ),
             orderedDescendantItemIDs: orderedDescendantItemIDs,
             projection: projection
         )
@@ -115,7 +131,7 @@ struct TabFolderContentView: View {
     private var contentProjection: SidebarFolderContentProjection {
         SidebarFolderContentProjection(
             baseItems: projection.baseItems,
-            isFolderOpen: folder.isOpen,
+            isFolderOpen: presentation.isExpanded,
             displayedCollapsedProjectionIDs: displayedCollapsedProjectionIDs,
             stickyItemIDs: folderProjectionState.stickyItemIDs,
             orderedDescendantItemIDs: orderedDescendantItemIDs,
@@ -124,7 +140,7 @@ struct TabFolderContentView: View {
     }
 
     private var folderBodyShouldRender: Bool {
-        folder.isOpen || contentProjection.hasCollapsedProjectionForLayout
+        presentation.isExpanded || contentProjection.hasCollapsedProjectionForLayout
     }
 
     private var folderBodyGeometryIsActive: Bool {
@@ -147,7 +163,7 @@ struct TabFolderContentView: View {
                 syncDisplayedCollapsedProjectionIDs(animated: true)
                 stickyOwner.prunePublish()
             }
-            .onChange(of: folder.isOpen) { _, isOpen in
+            .onChange(of: presentation.isExpanded) { _, isOpen in
                 if isOpen {
                     stickyOwner.handleExpand()
                 } else {
@@ -175,6 +191,7 @@ struct TabFolderContentView: View {
         VStack(spacing: 0) {
             TabFolderHeaderView(
                 folder: folder,
+                presentation: presentation,
                 space: space,
                 browserContext: browserContext,
                 inventory: inventory,
@@ -188,7 +205,7 @@ struct TabFolderContentView: View {
                 isDropHighlighted: dragSnapshot.isContainTargeted(folderID: folder.id),
                 folderPreviewIsOpen: dragSnapshot.isFolderPreviewOpen(
                     folderID: folder.id,
-                    isOpen: folder.isOpen
+                    isOpen: presentation.isExpanded
                 ),
                 hasActiveSelection: folderHasActiveSelection,
                 hasActiveProjection: folderProjectionState.hasActiveProjection,
@@ -197,7 +214,7 @@ struct TabFolderContentView: View {
                 contextMenuEntries: { contextMenuActionOwner.folderHeaderContextMenuEntries() },
                 onToggle: { mutationActions.toggleFolderOpenState(folder.id) },
                 onActivateShortcutPin: mutationActions.activateShortcutPin,
-                onResetProjection: !folder.isOpen
+                onResetProjection: !presentation.isExpanded
                     && !contentProjection.visibleCollapsedProjectionIDs.isEmpty
                     ? { mutationActions.resetCollapsedProjection(folder, inventory: inventory) }
                     : nil
@@ -210,38 +227,42 @@ struct TabFolderContentView: View {
     }
 
     private var folderBodyContainer: some View {
-        folderBodyAnimatedContent
+        SidebarDisclosureHost(
+            target: SidebarDisclosureTarget(
+                isRevealed: presentation.isExpanded,
+                items: contentProjection.bodyItems,
+                topPadding: folderBodyShouldRender
+                    ? Self.folderBodyVerticalPadding
+                    : 0,
+                bottomPadding: folderBodyShouldRender
+                    ? Self.folderBodyVerticalPadding
+                    : 0
+            ),
+            disclosureAnimation: disclosureAnimation,
+            layoutAnimation: folderLayoutAnimation
+        ) { disclosurePresentation, reportsGeometry in
+            folderBodyVisibleContent(
+                disclosurePresentation: disclosurePresentation,
+                reportsGeometry: reportsGeometry
+            )
+        }
             .sidebarFolderDropGeometry(
                 folderId: folder.id,
                 spaceId: space.id,
                 parentFolderId: parentFolderId,
                 topLevelIndex: containerIndex,
                 childCount: contentProjection.childCount,
-                isOpen: folder.isOpen,
+                isOpen: presentation.isExpanded,
                 region: .body,
                 generation: dragSnapshot.geometryGeneration,
                 isActive: folderBodyGeometryIsActive
             )
     }
 
-    @ViewBuilder
-    private var folderBodyAnimatedContent: some View {
-        if folderBodyShouldRender {
-            folderBodyVisibleContent
-                .transition(.sidebarRowContentOpacity)
-                .animation(folderLayoutAnimation, value: folder.isOpen)
-                .animation(folderLayoutAnimation, value: contentProjection.bodyItems)
-                .animation(folderLayoutAnimation, value: displayedCollapsedProjectionIDs)
-                .animation(folderLayoutAnimation, value: contentProjection.targetCollapsedProjectionIDs)
-        } else {
-            Color.clear
-                .frame(height: 0)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-        }
-    }
-
-    private var folderBodyVisibleContent: some View {
+    private func folderBodyVisibleContent(
+        disclosurePresentation: SidebarDisclosurePresentation<SidebarFolderListItem>,
+        reportsGeometry: Bool
+    ) -> some View {
         TabFolderBodyListView(
             folder: folder,
             browserContext: browserContext,
@@ -257,19 +278,17 @@ struct TabFolderContentView: View {
             isInteractive: isInteractive,
             nestingDepth: nestingDepth,
             contentProjection: contentProjection,
+            disclosurePresentation: disclosurePresentation,
             projection: projection,
-            reportsGeometry: true,
-            reportsFolderChildGeometry: folder.isOpen,
-            folderLayoutAnimation: folderLayoutAnimation,
+            reportsGeometry: reportsGeometry,
+            reportsFolderChildGeometry: presentation.isExpanded,
             contextMenuActionOwner: contextMenuActionOwner,
             mutationActions: mutationActions,
             dragSnapshot: dragSnapshot
         )
-        .allowsHitTesting(folder.isOpen || !contentProjection.visibleCollapsedProjectionIDs.isEmpty)
-        .animation(folderLayoutAnimation, value: folder.isOpen)
-        .animation(folderLayoutAnimation, value: contentProjection.bodyItems)
-        .animation(folderLayoutAnimation, value: displayedCollapsedProjectionIDs)
-        .animation(folderLayoutAnimation, value: contentProjection.targetCollapsedProjectionIDs)
+        .allowsHitTesting(
+            presentation.isExpanded || !contentProjection.visibleCollapsedProjectionIDs.isEmpty
+        )
     }
 
     private var folderAfterDropTarget: some View {
@@ -288,7 +307,7 @@ struct TabFolderContentView: View {
                 parentFolderId: parentFolderId,
                 topLevelIndex: containerIndex,
                 childCount: contentProjection.childCount,
-                isOpen: folder.isOpen,
+                isOpen: presentation.isExpanded,
                 region: .after,
                 generation: dragSnapshot.geometryGeneration,
                 isActive: isInteractive && height > 0
@@ -297,7 +316,7 @@ struct TabFolderContentView: View {
     }
 
     private func refreshLiveFolderIfNeeded() {
-        guard folder.isOpen else { return }
+        guard presentation.isExpanded else { return }
         browserContext.liveFolderManager.refreshIfStale(folderId: folder.id)
     }
 

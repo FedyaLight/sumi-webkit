@@ -36,8 +36,32 @@ _Avoid_: Pinned backdrop, global launcher gradient
 One ordered sidebar identity presented and moved as a whole. A regular tab, launcher, folder, or Split Group each occupies one visual position regardless of the number of durable records behind it.
 _Avoid_: Render row record, split member slot
 
+**Folder Expansion**:
+The durable open or closed state of a saved folder, shared across every window presenting that folder. Window-local animation and drag preview never create a second expansion truth.
+_Avoid_: Window-local folder state, rendered open flag
+
+**Folder Drop Preview**:
+A temporary window-local opening of a saved folder while a drag targets its contents. It ends on drop or cancellation and never changes Folder Expansion.
+_Avoid_: Auto-opened folder, drag-mutated expansion
+
+**Folder Expansion Transition**:
+The interruptible window-local visual movement toward the latest Folder Expansion revision. It never delays, merges, or rejects accepted expansion commands.
+_Avoid_: Expansion debounce, click gate, animation-owned state
+
+**Space Pinned Collapse**:
+The persisted window-local choice to present one Space's Pinned content either in full or condensed to its selected and live sticky projections. It never changes Folder Expansion or the saved-content inventory.
+_Avoid_: Collapsed Space, hidden Pinned state
+
+**Space Pinned Disclosure Transition**:
+The interruptible window-local visual movement toward the latest Space Pinned Collapse value. A nested sticky destination may appear from the first frame while its full-presentation occurrence departs; this never creates a second selection or saved item and never delays, merges, or rejects collapse commands.
+_Avoid_: Pinned fade, collapse debounce, duplicated selected item
+
+**Sidebar Mutation Order**:
+The single window-observable order of saved-content structural changes and Folder Expansion revisions. A later revision for the same identity cannot be overwritten by an older presentation snapshot.
+_Avoid_: Independent UI update order, best-effort snapshot delivery
+
 **Sidebar Pointer Session**:
-The single exclusive pointer interaction for one Sidebar Visual Item in a window, from press through activation or drag until completion, cancellation, replacement, or disappearance. Starting a session cancels the previous one. During drag, ordinary hover is absent; when the session ends, hover is resolved once from the pointer's current position.
+The single exclusive pointer interaction for one Sidebar Visual Item in a window, from press through activation or drag until completion, cancellation, replacement, or disappearance. Presentation changes preserve the session; release accepts the current action of the same identity. Starting a session cancels the previous one, and hover is reconciled once after drag ends.
 _Avoid_: Row click state, sticky hover, parallel drag flag
 
 **Sidebar Hover Session**:

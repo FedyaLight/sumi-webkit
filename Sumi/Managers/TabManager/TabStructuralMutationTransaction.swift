@@ -24,7 +24,9 @@ final class TabStructuralMutationTransaction {
         }
 
         @MainActor
-        func restore() {
+        @discardableResult
+        func restore() -> Bool {
+            let didRestoreExpansion = folder.isOpen != isOpen
             if folder.name != name { folder.name = name }
             if folder.placementSnapshot != placement {
                 folder.installPlacement(placement)
@@ -32,6 +34,7 @@ final class TabStructuralMutationTransaction {
             if folder.isOpen != isOpen { folder.isOpen = isOpen }
             if folder.icon != icon { folder.icon = icon }
             if folder.color != color { folder.color = color }
+            return didRestoreExpansion
         }
 
         @MainActor

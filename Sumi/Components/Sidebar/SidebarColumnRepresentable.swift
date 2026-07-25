@@ -39,6 +39,8 @@ struct SidebarColumnHostedRootView: View {
             regularTabShortcutCommands: regularTabShortcutCommands,
             regularTabPlacementCommands: regularTabPlacementCommands,
             dragTransactions: dragTransactions,
+            dragState: environmentContext.sidebarDragState,
+            dragGeometry: environmentContext.sidebarDragState.geometry,
             inventoryUpdates: inventoryUpdates,
             profileUpdates: profileUpdates,
             nowPlayingController: environmentContext.nowPlayingController,

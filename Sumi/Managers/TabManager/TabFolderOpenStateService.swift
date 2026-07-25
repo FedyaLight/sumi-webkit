@@ -23,7 +23,7 @@ final class TabFolderOpenStateService {
             guard let folder = folders.folder(by: folderID),
                   folder.isOpen != isOpen else { return }
             folder.isOpen = isOpen
-            publishChange(in: folder.spaceId)
+            publishExpansionChange([folder.id: folder.isOpen], in: folder.spaceId)
         }
     }
 
@@ -31,7 +31,7 @@ final class TabFolderOpenStateService {
         structuralLookup.withTransaction {
             guard let folder = folders.folder(by: folderID) else { return }
             folder.isOpen.toggle()
-            publishChange(in: folder.spaceId)
+            publishExpansionChange([folder.id: folder.isOpen], in: folder.spaceId)
         }
     }
 
@@ -42,7 +42,10 @@ final class TabFolderOpenStateService {
             }
             guard candidates.isEmpty == false else { return }
             candidates.forEach { $0.isOpen = isOpen }
-            publishChange(in: spaceID)
+            publishExpansionChange(
+                Dictionary(uniqueKeysWithValues: candidates.map { ($0.id, $0.isOpen) }),
+                in: spaceID
+            )
         }
     }
 
@@ -50,9 +53,15 @@ final class TabFolderOpenStateService {
         setFolder(folderID, open: true)
     }
 
-    private func publishChange(in spaceID: UUID) {
+    private func publishExpansionChange(
+        _ expansionByFolderID: [UUID: Bool],
+        in spaceID: UUID
+    ) {
         persistence.markFoldersStructurallyDirty(for: spaceID)
-        structuralLookup.requestPublish(scope: .space(spaceID))
+        structuralLookup.publishFolderExpansionChange(
+            spaceID: spaceID,
+            expansionByFolderID: expansionByFolderID
+        )
         persistence.scheduleStructuralPersistence()
     }
 }

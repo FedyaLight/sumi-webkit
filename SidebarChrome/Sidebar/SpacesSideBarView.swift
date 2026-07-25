@@ -32,8 +32,6 @@ struct SpacesSideBarView: View {
     @Environment(\.sumiSettings) var sumiSettings
     @Environment(\.resolvedThemeContext) var themeContext
     @Environment(\.accessibilityReduceMotion) var reduceMotion
-    @EnvironmentObject var dragState: SidebarDragState
-    @EnvironmentObject var dragGeometry: SidebarDragGeometryModule
 
     @State var isSidebarHovered: Bool = false
     @State var transitionCoordinator = SpaceSidebarTransitionCoordinator()
@@ -54,6 +52,8 @@ struct SpacesSideBarView: View {
     let regularTabShortcutCommands: SidebarRegularTabShortcutCommands
     let regularTabPlacementCommands: SidebarRegularTabPlacementCommands
     let dragTransactions: SidebarDragTransactionPort
+    let dragState: SidebarDragState
+    let dragGeometry: SidebarDragGeometryModule
     let inventoryUpdates: SidebarInventoryUpdates
     let profileUpdates: SidebarProfileUpdates
     let nowPlayingController: SumiNativeNowPlayingController
@@ -76,6 +76,8 @@ struct SpacesSideBarView: View {
         regularTabShortcutCommands: SidebarRegularTabShortcutCommands,
         regularTabPlacementCommands: SidebarRegularTabPlacementCommands,
         dragTransactions: SidebarDragTransactionPort,
+        dragState: SidebarDragState,
+        dragGeometry: SidebarDragGeometryModule,
         inventoryUpdates: SidebarInventoryUpdates,
         profileUpdates: SidebarProfileUpdates,
         nowPlayingController: SumiNativeNowPlayingController,
@@ -97,6 +99,8 @@ struct SpacesSideBarView: View {
         self.regularTabShortcutCommands = regularTabShortcutCommands
         self.regularTabPlacementCommands = regularTabPlacementCommands
         self.dragTransactions = dragTransactions
+        self.dragState = dragState
+        self.dragGeometry = dragGeometry
         self.inventoryUpdates = inventoryUpdates
         self.profileUpdates = profileUpdates
         self.nowPlayingController = nowPlayingController

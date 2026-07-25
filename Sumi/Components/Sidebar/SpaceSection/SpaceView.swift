@@ -45,6 +45,7 @@ struct SpaceView: View {
     let regularTabLifecycleCommands: SidebarRegularTabLifecycleCommands
     let regularTabShortcutCommands: SidebarRegularTabShortcutCommands
     let regularTabPlacementCommands: SidebarRegularTabPlacementCommands
+    let pinnedDragPresentation: SidebarPinnedDragPresentation
     let renderMode: SpaceViewRenderMode
     let allowsInteraction: Bool
     let restoredScrollViewport: SpaceSidebarSnapshotViewport?
@@ -89,15 +90,6 @@ struct SpaceView: View {
         renderMode.resolvesInteraction(allowsInteraction: allowsInteraction)
     }
 
-    private var pinnedLayoutAnimation: Animation? {
-        guard isInteractive else { return nil }
-        return SidebarMotionPolicy.folderLayoutAnimation(
-            for: SidebarMotionPolicy.currentMode(
-                reduceMotion: reduceMotion || sumiSettings.shouldReduceChromeMotion
-            )
-        )
-    }
-
     private var pinnedSection: SpacePinnedSectionView {
         SpacePinnedSectionView(
             space: space,
@@ -109,6 +101,7 @@ struct SpaceView: View {
             folderCommands: folderCommands,
             spaceLifecycle: spaceLifecycle,
             browserContext: browserContext,
+            dragPresentation: pinnedDragPresentation,
             isInteractive: isInteractive,
             onSetPinnedContentCollapsed: setPinnedContentCollapsed
         )
@@ -208,14 +201,12 @@ struct SpaceView: View {
         let collapseState = windowState.sidebarSpacePinnedCollapse
         guard collapseState.isCollapsed(space.id) != isCollapsed else { return }
 
-        withAnimation(pinnedLayoutAnimation) {
-            if isCollapsed {
-                _ = collapseState.setCollapsed(true, for: space.id)
-                pinnedStickyOwner.handleCollapse()
-            } else {
-                pinnedStickyOwner.handleExpand()
-                _ = collapseState.setCollapsed(false, for: space.id)
-            }
+        if isCollapsed {
+            _ = collapseState.setCollapsed(true, for: space.id)
+            pinnedStickyOwner.handleCollapse()
+        } else {
+            pinnedStickyOwner.handleExpand()
+            _ = collapseState.setCollapsed(false, for: space.id)
         }
         persistWindowSession(windowState)
     }

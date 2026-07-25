@@ -209,7 +209,9 @@ final class TabStructuralCollectionMutationOwner {
         case .committed:
             publisher.publish(settlement)
         case .rolledBack(let snapshot):
-            snapshots.restore(snapshot)
+            publisher.publishFolderExpansionChanges(
+                snapshots.restore(snapshot)
+            )
         }
         isApplyingSettlement = false
         settlingTransaction = nil
@@ -263,9 +265,11 @@ final class TabStructuralCollectionMutationOwner {
     ) -> Bool {
         guard settlingTransaction === candidate,
               let settlingTarget else { return false }
-        snapshots.restoreUncontended(
-            source: source,
-            target: settlingTarget
+        publisher.publishFolderExpansionChanges(
+            snapshots.restoreUncontended(
+                source: source,
+                target: settlingTarget
+            )
         )
         settlingTransaction = nil
         self.settlingTarget = nil
@@ -340,9 +344,11 @@ final class TabStructuralCollectionMutationOwner {
            let settlingTransaction,
            let settlingTarget {
             let source = settlingTransaction.discardInvalidated()
-            snapshots.restoreUncontended(
-                source: source,
-                target: settlingTarget
+            publisher.publishFolderExpansionChanges(
+                snapshots.restoreUncontended(
+                    source: source,
+                    target: settlingTarget
+                )
             )
             self.settlingTransaction = nil
             self.settlingTarget = nil

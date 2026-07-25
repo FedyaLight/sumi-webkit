@@ -17,6 +17,7 @@ struct SpacePinnedSectionView: View {
     let folderCommands: SidebarFolderCommands
     let spaceLifecycle: SidebarSpaceLifecycle
     let browserContext: SidebarBrowserContext
+    let dragPresentation: SidebarPinnedDragPresentation
     let isInteractive: Bool
     let onSetPinnedContentCollapsed: (Bool) -> Void
 
@@ -35,7 +36,8 @@ struct SpacePinnedSectionView: View {
 
     var body: some View {
         SpacePinnedDragSnapshotReader(
-            spaceID: space.id
+            spaceID: space.id,
+            dragPresentation: dragPresentation
         ) { dragSnapshot in
             SpacePinnedSectionContentView(
                 space: space,
@@ -62,41 +64,75 @@ struct SpacePinnedDragSnapshot: Equatable {
     let isDragging: Bool
     let isCompletingDrop: Bool
     let activeDragItemID: UUID?
+    let activeHoveredFolderID: UUID?
+    let folderDropIntent: FolderDropIntent
     let isHoveringEmptySection: Bool
     let geometryGeneration: Int
 
+    init(
+        isDragging: Bool,
+        isCompletingDrop: Bool,
+        activeDragItemID: UUID?,
+        activeHoveredFolderID: UUID?,
+        folderDropIntent: FolderDropIntent,
+        isHoveringEmptySection: Bool,
+        geometryGeneration: Int
+    ) {
+        self.isDragging = isDragging
+        self.isCompletingDrop = isCompletingDrop
+        self.activeDragItemID = activeDragItemID
+        self.activeHoveredFolderID = activeHoveredFolderID
+        self.folderDropIntent = folderDropIntent
+        self.isHoveringEmptySection = isHoveringEmptySection
+        self.geometryGeneration = geometryGeneration
+    }
+
     @MainActor
     init(
-        dragState: SidebarDragState,
+        frame: SidebarPinnedDragPresentationFrame,
         geometryGeneration: Int,
         spaceID: UUID
     ) {
         let hoveredSpaceID: UUID?
-        if case .spacePinned(let candidateSpaceID, _) = dragState.projectionHoveredSlot {
+        if case .spacePinned(let candidateSpaceID, _) = frame.projectionHoveredSlot {
             hoveredSpaceID = candidateSpaceID
         } else {
             hoveredSpaceID = nil
         }
 
-        isDragging = dragState.isDragging
-        isCompletingDrop = dragState.isCompletingDrop
-        activeDragItemID = dragState.activeDragItemId
-        self.geometryGeneration = geometryGeneration
-        isHoveringEmptySection = hoveredSpaceID == spaceID
+        self.init(
+            isDragging: frame.isDragging,
+            isCompletingDrop: frame.isCompletingDrop,
+            activeDragItemID: frame.activeDragItemID,
+            activeHoveredFolderID: frame.activeHoveredFolderID,
+            folderDropIntent: frame.folderDropIntent,
+            isHoveringEmptySection: hoveredSpaceID == spaceID,
+            geometryGeneration: geometryGeneration
+        )
+    }
+
+    var folderSnapshot: SidebarFolderDragSnapshot {
+        SidebarFolderDragSnapshot(
+            isDragging: isDragging,
+            isCompletingDrop: isCompletingDrop,
+            activeDragItemID: activeDragItemID,
+            activeHoveredFolderID: activeHoveredFolderID,
+            folderDropIntent: folderDropIntent,
+            geometryGeneration: geometryGeneration
+        )
     }
 }
 
 private struct SpacePinnedDragSnapshotReader<Content: View>: View {
     let spaceID: UUID
-    @ViewBuilder let content: (SpacePinnedDragSnapshot) -> Content
-
-    @EnvironmentObject private var dragState: SidebarDragState
+    @ObservedObject var dragPresentation: SidebarPinnedDragPresentation
     @EnvironmentObject private var dragGeometry: SidebarDragGeometryModule
+    @ViewBuilder let content: (SpacePinnedDragSnapshot) -> Content
 
     var body: some View {
         content(
             SpacePinnedDragSnapshot(
-                dragState: dragState,
+                frame: dragPresentation.frame,
                 geometryGeneration: dragGeometry.sidebarGeometryGeneration,
                 spaceID: spaceID
             )
@@ -174,6 +210,15 @@ private struct SpacePinnedSectionContentView: View {
             : SidebarMotionPolicy.folderLayoutAnimation(for: mode)
     }
 
+    private var disclosureAnimation: Animation? {
+        guard isInteractive else { return nil }
+        return SidebarMotionPolicy.disclosureAnimation(
+            for: SidebarMotionPolicy.currentMode(
+                reduceMotion: reduceMotion || sumiSettings.shouldReduceChromeMotion
+            )
+        )
+    }
+
     private var actionOwner: SpacePinnedActionOwner {
         SpacePinnedActionOwner(
             space: space,
@@ -213,15 +258,6 @@ private struct SpacePinnedSectionContentView: View {
         }
         .animation(isInteractive ? .easeInOut(duration: 0.25) : nil, value: hasContent)
         .animation(isInteractive ? .easeInOut(duration: 0.18) : nil, value: showsEmptyDropPlaceholder)
-        .animation(contentMutationAnimation, value: pinnedItems)
-        .animation(contentMutationAnimation, value: visibleStickyItemIDs)
-        .animation(contentMutationAnimation, value: isCollapsed)
-        .sidebarSectionGeometry(
-            for: .spacePinned,
-            spaceId: space.id,
-            generation: dragSnapshot.geometryGeneration,
-            isEnabled: isInteractive
-        )
         .onAppear {
             stickyOwner.reconcileOnAppear()
             if !hasPinnedContent, isCollapsed {
@@ -264,6 +300,7 @@ private struct SpacePinnedSectionContentView: View {
             pinnedItems: pinnedItems,
             stickyItemIDs: visibleStickyItemIDs,
             dragSnapshot: dragSnapshot,
+            disclosureAnimation: disclosureAnimation,
             contentMutationAnimation: contentMutationAnimation,
             actionOwner: actionOwner
         )
@@ -277,5 +314,11 @@ private struct SpacePinnedSectionContentView: View {
                 height: showsEmptyDropPlaceholder ? SidebarRowLayout.rowHeight : 0
             )
             .frame(maxWidth: .infinity)
+            .sidebarSectionGeometry(
+                for: .spacePinned,
+                spaceId: space.id,
+                generation: dragSnapshot.geometryGeneration,
+                isEnabled: isInteractive
+            )
     }
 }

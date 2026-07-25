@@ -123,9 +123,16 @@ struct TabStructureChangeScope: Equatable, Sendable {
     }
 }
 
+struct TabFolderExpansionChange: Equatable, Sendable {
+    let revision: UInt64
+    let spaceID: UUID
+    let expansionByFolderID: [UUID: Bool]
+}
+
 @MainActor
 enum TabStructureEvent: Equatable, Sendable {
     case structureChanged(TabStructureChangeScope)
+    case folderExpansionChanged(TabFolderExpansionChange)
     case initialDataLoaded
 }
 
@@ -158,6 +165,15 @@ final class TabStructureEventBus {
             .eraseToAnyPublisher()
     }
 
+    var folderExpansionChangesPublisher: AnyPublisher<TabFolderExpansionChange, Never> {
+        subject
+            .compactMap { event -> TabFolderExpansionChange? in
+                guard case .folderExpansionChanged(let change) = event else { return nil }
+                return change
+            }
+            .eraseToAnyPublisher()
+    }
+
     var initialDataLoadedPublisher: AnyPublisher<Void, Never> {
         initialDataLoadedState
             .filter { $0 }
@@ -174,6 +190,10 @@ final class TabStructureEventBus {
 
     func publishStructureChanged(scope: TabStructureChangeScope = .all) {
         publish(.structureChanged(scope))
+    }
+
+    func publishFolderExpansionChanged(_ change: TabFolderExpansionChange) {
+        publish(.folderExpansionChanged(change))
     }
 
     func publishInitialDataLoaded() {

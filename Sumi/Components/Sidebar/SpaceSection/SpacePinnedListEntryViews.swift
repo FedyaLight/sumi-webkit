@@ -9,6 +9,7 @@ import SwiftUI
 /// Recursive folder entry plus the top-level drag geometry owned by its slot.
 struct SpacePinnedFolderEntryView: View {
     let folder: TabFolder
+    let presentation: SidebarFolderPresentationCell
     let space: Space
     let inventory: SidebarSpaceInventorySnapshot
     let selection: SidebarWindowSelectionQuery
@@ -21,12 +22,14 @@ struct SpacePinnedFolderEntryView: View {
     let elevatedFolderIDs: Set<UUID>
     let topLevelIndex: Int
     let geometryGeneration: Int
+    let dragSnapshot: SidebarFolderDragSnapshot
     let isInteractive: Bool
     let reportsDropGeometry: Bool
 
     var body: some View {
         TabFolderView(
             folder: folder,
+            presentation: presentation,
             browserContext: browserContext,
             space: space,
             inventory: inventory,
@@ -40,7 +43,8 @@ struct SpacePinnedFolderEntryView: View {
             isInteractive: isInteractive,
             parentFolderId: nil,
             containerIndex: topLevelIndex,
-            nestingDepth: 0
+            nestingDepth: 0,
+            dragSnapshot: dragSnapshot
         )
         .sidebarTopLevelPinnedItemGeometry(
             itemId: folder.id,

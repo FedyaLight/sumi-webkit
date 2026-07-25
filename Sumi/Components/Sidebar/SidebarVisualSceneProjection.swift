@@ -124,7 +124,11 @@ struct SidebarVisualSceneProjection {
         var targets: [SidebarScrollTargetID] = []
         for folder in folders.reversed() {
             targets.append(.folder(folder.id))
-            if !folder.isOpen { break }
+            let isExpanded = inventory.folderPresentation(id: folder.id)?.isExpanded
+                ?? folder.isOpen
+            if !isExpanded {
+                break
+            }
         }
         targets.append(targetID)
         return SidebarSelectedItemRevealPath(targets)

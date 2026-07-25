@@ -25,6 +25,7 @@ final class SidebarInventoryDescendantItemsTests: XCTestCase {
             folderPinsByFolderID: [:],
             folderItemsByFolderID: folderItemsByFolderID,
             foldersByID: [:],
+            folderPresentationsByID: [:],
             pinsByID: [:],
             tabsByID: [:],
             splitGroupsByID: [:]

@@ -12,7 +12,6 @@ private typealias FolderDisplayEntry = SidebarFolderDisplayEntry
 /// Renders the folder's child list (nested folders, shortcuts, live items, splits, gaps).
 struct TabFolderBodyListView: View {
     private static let folderContentLeadingPadding: CGFloat = 14
-    private static let folderContentVerticalPadding: CGFloat = 4
 
     let folder: TabFolder
     let browserContext: SidebarBrowserContext
@@ -28,10 +27,10 @@ struct TabFolderBodyListView: View {
     let isInteractive: Bool
     let nestingDepth: Int
     let contentProjection: SidebarFolderContentProjection
+    let disclosurePresentation: SidebarDisclosurePresentation<SidebarFolderListItem>
     let projection: SidebarFolderViewProjection
     let reportsGeometry: Bool
     let reportsFolderChildGeometry: Bool
-    let folderLayoutAnimation: Animation?
     let contextMenuActionOwner: TabFolderContextMenuActionOwner
     let mutationActions: TabFolderMutationActions
     let dragSnapshot: SidebarFolderDragSnapshot
@@ -52,14 +51,29 @@ struct TabFolderBodyListView: View {
             uniqueKeysWithValues: (inventory.childFoldersByParentID[folder.id] ?? []).map { ($0.id, $0) }
         )
 
-        LazyVStack(spacing: 0) {
-            ForEach(contentProjection.bodyDisplayEntries) { entry in
+        SidebarDisclosureTrackLayout(
+            progress: disclosurePresentation.progress,
+            sourceOrder: disclosurePresentation.sourceOrder,
+            destinationOrder: disclosurePresentation.destinationOrder,
+            sourceTopPadding: disclosurePresentation.sourceTopPadding,
+            sourceBottomPadding: disclosurePresentation.sourceBottomPadding,
+            destinationTopPadding: disclosurePresentation.destinationTopPadding,
+            destinationBottomPadding: disclosurePresentation.destinationBottomPadding,
+            itemSpacing: 0
+        ) {
+            ForEach(
+                SidebarFolderDisplayProjection.displayEntries(
+                    from: disclosurePresentation.items
+                )
+            ) { entry in
                 VStack(spacing: 0) {
                     switch entry.item {
                     case .folder(let folderId):
-                        if let childFolder = childFoldersById[folderId] {
+                        if let childFolder = childFoldersById[folderId],
+                           let childPresentation = inventory.folderPresentation(id: folderId) {
                             TabFolderNestedFolderEntryView(
                                 folder: childFolder,
+                                presentation: childPresentation,
                                 browserContext: browserContext,
                                 space: space,
                                 inventory: inventory,
@@ -73,7 +87,8 @@ struct TabFolderBodyListView: View {
                                 isInteractive: isInteractive,
                                 parentFolderID: folder.id,
                                 containerIndex: entry.dropIndex,
-                                nestingDepth: nestingDepth
+                                nestingDepth: nestingDepth,
+                                dragSnapshot: dragSnapshot
                             )
                                 .sidebarFolderChildDropGeometry(
                                     spaceId: space.id,
@@ -138,12 +153,14 @@ struct TabFolderBodyListView: View {
                 .sidebarScrollTarget(scrollTargetID(for: entry.item))
             }
         }
+        .clipped()
         .padding(.leading, Self.folderContentLeadingPadding)
-        .padding(.vertical, Self.folderContentVerticalPadding)
         .background(alignment: .leading) {
-            folderNestingGuide(isVisible: !contentProjection.bodyItems.isEmpty)
+            folderNestingGuide(
+                isVisible: disclosurePresentation.sourceTopPadding > 0
+                    || disclosurePresentation.destinationTopPadding > 0
+            )
         }
-        .animation(folderLayoutAnimation, value: contentProjection.bodyItems)
     }
 
     private func scrollTargetID(

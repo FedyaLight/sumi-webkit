@@ -281,6 +281,7 @@ final class SidebarVisualSceneProjectionTests: XCTestCase {
             folderPinsByFolderID: [:],
             folderItemsByFolderID: [:],
             foldersByID: [:],
+            folderPresentationsByID: [:],
             pinsByID: [:],
             tabsByID: Dictionary(
                 uniqueKeysWithValues: regularTabs.map { ($0.id, $0) }

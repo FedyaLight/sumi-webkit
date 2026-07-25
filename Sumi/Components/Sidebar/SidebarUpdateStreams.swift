@@ -7,6 +7,14 @@ struct SidebarProfileRuntimeSnapshot: Equatable {
     let isTransitioning: Bool
 }
 
+enum SidebarScopedSnapshotDelivery {
+    case deferredOnMainRunLoop
+    /// The upstream publisher must already be confined to the main actor.
+    case mainActorImmediate(
+        deferWhile: @MainActor () -> Bool = { false }
+    )
+}
+
 /// Exact structural invalidation source. It owns no subscription; mounted
 /// snapshot readers subscribe only while their sidebar surface is interactive.
 struct SidebarInventoryUpdates {
@@ -50,15 +58,19 @@ final class SidebarScopedSnapshotModel<Value>: ObservableObject {
 
     private let current: @MainActor () -> Value
     private let changes: AnyPublisher<Value, Never>
+    private let delivery: SidebarScopedSnapshotDelivery
     private var cancellable: AnyCancellable?
     private var activationGeneration: UInt64 = 0
+    private var receivedChangeRevision: UInt64 = 0
 
     init(
         current: @escaping @MainActor () -> Value,
-        changes: AnyPublisher<Value, Never>
+        changes: AnyPublisher<Value, Never>,
+        delivery: SidebarScopedSnapshotDelivery = .deferredOnMainRunLoop
     ) {
         self.current = current
         self.changes = changes
+        self.delivery = delivery
         snapshot = current()
     }
 
@@ -74,16 +86,57 @@ final class SidebarScopedSnapshotModel<Value>: ObservableObject {
         activationGeneration &+= 1
         let generation = activationGeneration
         // Subscribe before the demand-time read so a mutation re-entering that
-        // read cannot fall into a read→subscribe gap. Delivery is scheduled on
-        // the main run loop, so the fresh read is installed first and the exact
-        // queued mutation wins afterward.
-        cancellable = changes
-            .receive(on: RunLoop.main)
-            .sink { [weak self] snapshot in
-                guard self?.activationGeneration == generation else { return }
-                self?.snapshot = snapshot
+        // read cannot fall into a read→subscribe gap.
+        switch delivery {
+        case .deferredOnMainRunLoop:
+            cancellable = changes
+                .receive(on: RunLoop.main)
+                .sink { [weak self] snapshot in
+                    guard self?.activationGeneration == generation else { return }
+                    self?.snapshot = snapshot
+                }
+            snapshot = current()
+        case .mainActorImmediate(let deferWhile):
+            cancellable = changes
+                .sink { [weak self] snapshot in
+                    self?.receiveImmediateSnapshot(
+                        snapshot,
+                        generation: generation,
+                        deferWhile: deferWhile
+                    )
+                }
+            let revisionBeforeRead = receivedChangeRevision
+            let currentSnapshot = current()
+            if receivedChangeRevision == revisionBeforeRead {
+                snapshot = currentSnapshot
             }
-        snapshot = current()
+        }
+    }
+
+    private func receiveImmediateSnapshot(
+        _ newSnapshot: Value,
+        generation: UInt64,
+        deferWhile: @MainActor () -> Bool
+    ) {
+        guard activationGeneration == generation else { return }
+        receivedChangeRevision &+= 1
+        let revision = receivedChangeRevision
+
+        guard deferWhile() else {
+            snapshot = newSnapshot
+            return
+        }
+
+        // Drop commits disable SwiftUI animations. Publish after that transaction
+        // so the settle animation and AppKit interaction owner remain intact.
+        RunLoop.main.schedule { [weak self] in
+            guard let self,
+                  self.activationGeneration == generation,
+                  self.receivedChangeRevision == revision else {
+                return
+            }
+            self.snapshot = newSnapshot
+        }
     }
 
     isolated deinit {
@@ -102,6 +155,7 @@ struct SidebarScopedSnapshotReader<Value, Content: View>: View {
     init(
         current: @escaping @MainActor () -> Value,
         changes: AnyPublisher<Value, Never>,
+        delivery: SidebarScopedSnapshotDelivery = .deferredOnMainRunLoop,
         isActive: Bool,
         @ViewBuilder content: @escaping (Value) -> Content
     ) {
@@ -110,7 +164,8 @@ struct SidebarScopedSnapshotReader<Value, Content: View>: View {
         _model = StateObject(
             wrappedValue: SidebarScopedSnapshotModel(
                 current: current,
-                changes: changes
+                changes: changes,
+                delivery: delivery
             )
         )
     }

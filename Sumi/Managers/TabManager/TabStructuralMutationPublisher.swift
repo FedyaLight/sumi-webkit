@@ -42,6 +42,18 @@ final class TabStructuralMutationPublisher {
         lookup.requestPublish(scope: scope)
     }
 
+    func publishFolderExpansionChanges(
+        _ expansionBySpaceID: [UUID: [UUID: Bool]]
+    ) {
+        for (spaceID, expansionByFolderID) in expansionBySpaceID
+        where !expansionByFolderID.isEmpty {
+            lookup.publishFolderExpansionChange(
+                spaceID: spaceID,
+                expansionByFolderID: expansionByFolderID
+            )
+        }
+    }
+
     @discardableResult
     func withTransaction<T>(
         _ operation: @MainActor @Sendable () throws -> T

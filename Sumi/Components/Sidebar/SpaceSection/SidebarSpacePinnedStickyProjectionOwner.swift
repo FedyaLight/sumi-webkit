@@ -43,13 +43,19 @@ struct SidebarSpacePinnedStickyProjectionOwner {
             sticky: sticky,
             ancestorChainsByItemID: ancestorChains(for: sticky),
             collapsedFolderIDs: Set(
-                inventory.foldersByID.values.filter { !$0.isOpen }.map(\.id)
+                inventory.foldersByID.values.filter {
+                    !(inventory.folderPresentation(id: $0.id)?.isExpanded
+                        ?? $0.isOpen)
+                }.map(\.id)
             )
         )
         for (folderID, itemIDs) in transfers {
-            guard let folder = inventory.folder(id: folderID) else { continue }
+            guard let folder = inventory.folder(id: folderID),
+                  let presentation = inventory.folderPresentation(id: folderID)
+            else { continue }
             SidebarFolderStickyProjectionOwner(
                 folder: folder,
+                presentation: presentation,
                 inventory: inventory,
                 selection: selection,
                 selectionSnapshot: selectionSnapshot,

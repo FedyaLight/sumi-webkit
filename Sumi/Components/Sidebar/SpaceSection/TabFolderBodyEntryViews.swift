@@ -9,6 +9,7 @@ import SwiftUI
 /// One recursive child folder; the parent list owns only slot geometry.
 struct TabFolderNestedFolderEntryView: View {
     let folder: TabFolder
+    let presentation: SidebarFolderPresentationCell
     let browserContext: SidebarBrowserContext
     let space: Space
     let inventory: SidebarSpaceInventorySnapshot
@@ -23,10 +24,12 @@ struct TabFolderNestedFolderEntryView: View {
     let parentFolderID: UUID
     let containerIndex: Int
     let nestingDepth: Int
+    let dragSnapshot: SidebarFolderDragSnapshot
 
     var body: some View {
         TabFolderView(
             folder: folder,
+            presentation: presentation,
             browserContext: browserContext,
             space: space,
             inventory: inventory,
@@ -40,7 +43,8 @@ struct TabFolderNestedFolderEntryView: View {
             isInteractive: isInteractive,
             parentFolderId: parentFolderID,
             containerIndex: containerIndex,
-            nestingDepth: nestingDepth + 1
+            nestingDepth: nestingDepth + 1,
+            dragSnapshot: dragSnapshot
         )
     }
 }

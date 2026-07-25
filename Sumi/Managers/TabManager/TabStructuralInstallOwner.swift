@@ -193,6 +193,16 @@ final class TabStructuralInstallOwner {
             state.spaces.replaceSpaces(spaces)
             state.regularTabs.replaceTabsBySpace(tabsBySpace)
             state.folders.replaceFoldersBySpace(foldersBySpace)
+            for (spaceID, folders) in foldersBySpace where !folders.isEmpty {
+                structuralLookup.publishFolderExpansionChange(
+                    spaceID: spaceID,
+                    expansionByFolderID: Dictionary(
+                        uniqueKeysWithValues: folders.map {
+                            ($0.id, $0.isOpen)
+                        }
+                    )
+                )
+            }
             state.splitGroups.replaceAll(with: splitGroups)
             state.shortcutPins.replaceAll(
                 pinnedByProfile: pinnedByProfile,

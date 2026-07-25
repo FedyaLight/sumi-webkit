@@ -45,6 +45,22 @@ final class TabStructuralPublishOwner {
         emitStructureChanged(scope: scope)
     }
 
+    @discardableResult
+    func publishFolderExpansionChange(
+        spaceID: UUID,
+        expansionByFolderID: [UUID: Bool]
+    ) -> TabFolderExpansionChange {
+        precondition(expansionByFolderID.isEmpty == false)
+        mutationRevision += 1
+        let change = TabFolderExpansionChange(
+            revision: mutationRevision,
+            spaceID: spaceID,
+            expansionByFolderID: expansionByFolderID
+        )
+        eventBus.publishFolderExpansionChanged(change)
+        return change
+    }
+
     func runAfterCurrentBatch(_ action: @escaping @MainActor () -> Void) {
         guard structuralUpdateDepth > 0 else {
             action()

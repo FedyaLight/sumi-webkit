@@ -1161,17 +1161,25 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         XCTAssertEqual(tabManager.tabCollectionMembershipOwner.tab(for: convertedTab.id)?.id, convertedTab.id)
     }
 
-    func testTogglingFolderOpenStatePublishesOnce() throws {
+    func testTogglingFolderOpenStatePublishesOnlyExpansionRevision() throws {
         let tabManager = BrowserManager()
         let recorder = StructuralEventRecorder(tabManager: tabManager)
         let space = makeSpace(in: tabManager, name: "Workspace")
         let folder = makeFolder(in: tabManager, spaceID: space.id, name: "Folder")
+        var expansionChanges: [TabFolderExpansionChange] = []
+        let expansionCancellable = tabManager.tabStructureEventBus
+            .folderExpansionChangesPublisher
+            .sink { expansionChanges.append($0) }
         recorder.reset()
 
         tabManager.folderOpenState.toggleFolderOpenState(folder.id)
 
         XCTAssertTrue(folder.isOpen)
-        XCTAssertEqual(recorder.count, 1)
+        XCTAssertEqual(recorder.count, 0)
+        XCTAssertEqual(expansionChanges.count, 1)
+        XCTAssertEqual(expansionChanges.first?.spaceID, space.id)
+        XCTAssertEqual(expansionChanges.first?.expansionByFolderID, [folder.id: true])
+        withExtendedLifetime(expansionCancellable) {}
     }
 
     func testFolderShortcutPlacementTargetUsesCanonicalPinAndAppendIndex() throws {

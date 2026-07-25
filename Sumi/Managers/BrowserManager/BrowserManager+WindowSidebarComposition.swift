@@ -25,7 +25,8 @@ extension BrowserManager {
             folders: folderCollectionStateOwner,
             pins: shortcutPinCollectionStateOwner,
             splitGroups: splitGroupStore,
-            splitOrdering: splitGroupSidebarOrdering
+            splitOrdering: splitGroupSidebarOrdering,
+            folderExpansionChanges: tabStructureEventBus.folderExpansionChangesPublisher
         )
         let inventory = SidebarSpaceInventoryProjection(
             runtime: runtimeConnection,

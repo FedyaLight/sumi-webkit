@@ -6,6 +6,44 @@ import XCTest
 
 @MainActor
 final class SidebarSpacePinnedCollapseStateTests: XCTestCase {
+    func testExpandedDisclosurePresentsEveryPinnedIdentityInOrder() {
+        let first = UUID()
+        let second = UUID()
+        let items: [SpacePinnedListItem] = [
+            .shortcut(first),
+            .folder(second),
+        ]
+
+        XCTAssertEqual(
+            SpacePinnedDisclosureProjection.items(
+                isCollapsed: false,
+                pinnedItems: items,
+                stickyItemIDs: [second],
+                knownNestedItemIDs: []
+            ),
+            items.map(SpacePinnedDisclosureItem.pinned)
+        )
+    }
+
+    func testCollapsedDisclosureHasNestedStickyDestinationOnFirstFrame() {
+        let topLevel = UUID()
+        let nested = UUID()
+        let unknown = UUID()
+
+        XCTAssertEqual(
+            SpacePinnedDisclosureProjection.items(
+                isCollapsed: true,
+                pinnedItems: [.shortcut(topLevel)],
+                stickyItemIDs: [nested, topLevel, unknown],
+                knownNestedItemIDs: [nested]
+            ),
+            [
+                .nestedSticky(nested),
+                .pinned(.shortcut(topLevel)),
+            ]
+        )
+    }
+
     func testCollapsedSpacesAreWindowLocalAndCanonicallySorted() {
         let firstID = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
         let secondID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
@@ -131,6 +169,24 @@ final class SpaceTitleLeadingPresentationTests: XCTestCase {
             )
         )
     }
+
+    func testChevronRotationOvershootsBothDestinationsByTwentyDegrees() {
+        XCTAssertEqual(
+            SpaceTitleChevronRotationPlan.resolve(isExpanded: true),
+            SpaceTitleChevronRotationPlan(
+                overshootDegrees: 110,
+                destinationDegrees: 90
+            )
+        )
+        XCTAssertEqual(
+            SpaceTitleChevronRotationPlan.resolve(isExpanded: false),
+            SpaceTitleChevronRotationPlan(
+                overshootDegrees: -20,
+                destinationDegrees: 0
+            )
+        )
+    }
+
 }
 
 @MainActor
@@ -149,22 +205,6 @@ final class SidebarSpacePinnedCollapseSessionTests: XCTestCase {
         )
 
         XCTAssertEqual(decoded.collapsedPinnedSpaceIDs, [secondID, firstID])
-    }
-
-    func testLegacySessionWithoutCollapsedSpacesDecodesExpanded() throws {
-        let data = try JSONEncoder().encode(makeSnapshot())
-        var object = try XCTUnwrap(
-            JSONSerialization.jsonObject(with: data) as? [String: Any]
-        )
-        object.removeValue(forKey: "collapsedPinnedSpaceIDs")
-        let legacyData = try JSONSerialization.data(withJSONObject: object)
-
-        let decoded = try JSONDecoder().decode(
-            WindowSessionSnapshot.self,
-            from: legacyData
-        )
-
-        XCTAssertTrue(decoded.collapsedPinnedSpaceIDs.isEmpty)
     }
 
     func testFactoryAndApplierRoundTripWindowLocalCollapsedSpaces() {

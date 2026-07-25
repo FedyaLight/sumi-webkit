@@ -3,6 +3,27 @@ import Combine
 import SumiDomain
 import SwiftUI
 
+struct SidebarPinnedDragPresentationFrame: Equatable {
+    var isDragging = false
+    var isCompletingDrop = false
+    var activeDragItemID: UUID?
+    var activeHoveredFolderID: UUID?
+    var folderDropIntent: FolderDropIntent = .none
+    var projectionHoveredSlot: DropZoneSlot = .empty
+}
+
+/// Atomic read model for the pinned section. The broader drag coordinator can
+/// mutate several internal fields per command; rendering receives one frame.
+@MainActor
+final class SidebarPinnedDragPresentation: ObservableObject {
+    @Published private(set) var frame = SidebarPinnedDragPresentationFrame()
+
+    fileprivate func publish(_ frame: SidebarPinnedDragPresentationFrame) {
+        guard self.frame != frame else { return }
+        self.frame = frame
+    }
+}
+
 @MainActor
 final class SidebarDragState: ObservableObject {
     /// Window-scoped registry for tab-list drag autoscroll + swipe forwarding.
@@ -13,6 +34,7 @@ final class SidebarDragState: ObservableObject {
     /// drag state would re-render all of them on every hover-slot change.
     let activityState = SidebarDragActivityState()
     let geometry = SidebarDragGeometryModule()
+    let pinnedPresentation = SidebarPinnedDragPresentation()
 
     // Every setter below drops writes that don't change the value. The AppKit drag
     // pipeline re-resolves state on each pointer sample (and on periodic dragging
@@ -27,12 +49,15 @@ final class SidebarDragState: ObservableObject {
     @Published var previewModel: SidebarDragPreviewModel?
     @Published private var storedIsInternalDragSession = false
     @Published private var storedActiveDragScope: SidebarDragScope?
+    private var pinnedPresentationMutationDepth = 0
+    private var pinnedPresentationNeedsPublish = false
 
     var isDragging: Bool {
         get { storedIsDragging }
         set {
             guard storedIsDragging != newValue else { return }
             storedIsDragging = newValue
+            markPinnedPresentationChanged()
             activityState.isDragging = newValue
             interactionState?.setDragActive(newValue, source: .visualItem)
             syncGeometryCollectionContext()
@@ -60,6 +85,7 @@ final class SidebarDragState: ObservableObject {
         set {
             guard storedActiveDragItemId != newValue else { return }
             storedActiveDragItemId = newValue
+            markPinnedPresentationChanged()
         }
     }
 
@@ -176,47 +202,51 @@ final class SidebarDragState: ObservableObject {
     func beginDropCommit(
         refreshingIfEmpty refresh: () -> SidebarDropResolution? = { nil }
     ) -> SidebarDropResolution? {
-        let resolution = hoveredSlot == .empty
-            ? refresh()
-            : presentedDropIntent.active
-        guard let resolution, resolution.slot != .empty else {
-            return nil
+        withPinnedPresentationMutation {
+            let resolution = hoveredSlot == .empty
+                ? refresh()
+                : presentedDropIntent.active
+            guard let resolution, resolution.slot != .empty else {
+                return nil
+            }
+            cancelPendingDropCompletion()
+            dropCompletionGeneration += 1
+            var projection = presentedDropIntent
+            projection.begin(
+                itemId: activeDragItemId,
+                scope: activeDragScope,
+                resolution: resolution
+            )
+            setPresentedDropIntent(projection)
+            return resolution
         }
-        cancelPendingDropCompletion()
-        dropCompletionGeneration += 1
-        var projection = presentedDropIntent
-        projection.begin(
-            itemId: activeDragItemId,
-            scope: activeDragScope,
-            resolution: resolution
-        )
-        presentedDropIntent = projection
-        return resolution
     }
 
     func resetInteractionState() {
-        isDragging = false
-        clearHoverState()
-        activeDragItemId = nil
-        dragLocation = nil
-        previewDragLocation = nil
-        previewKind = nil
-        previewAssets = [:]
-        previewModel = nil
-        isInternalDragSession = false
-        activeDragScope = nil
-        if isCompletingDrop {
-            let expectedGeneration = dropCompletionGeneration
-            scheduleDropCompletionFinish(expectedGeneration: expectedGeneration)
-        } else {
-            finishDropCompletion()
+        withPinnedPresentationMutation {
+            isDragging = false
+            clearHoverState()
+            activeDragItemId = nil
+            dragLocation = nil
+            previewDragLocation = nil
+            previewKind = nil
+            previewAssets = [:]
+            previewModel = nil
+            isInternalDragSession = false
+            activeDragScope = nil
+            if isCompletingDrop {
+                let expectedGeneration = dropCompletionGeneration
+                scheduleDropCompletionFinish(expectedGeneration: expectedGeneration)
+            } else {
+                finishDropCompletion()
+            }
+            isInternalDragGeometryArmed = false
+            armedDragScope = nil
+            syncGeometryCollectionContext()
+            isHoveringNearEdge = false
+            clearEssentialsPreviewState()
+            requestGeometryRefresh()
         }
-        isInternalDragGeometryArmed = false
-        armedDragScope = nil
-        syncGeometryCollectionContext()
-        isHoveringNearEdge = false
-        clearEssentialsPreviewState()
-        requestGeometryRefresh()
     }
 
     private func scheduleDropCompletionFinish(expectedGeneration: Int) {
@@ -238,7 +268,7 @@ final class SidebarDragState: ObservableObject {
         cancelPendingDropCompletion()
         var projection = presentedDropIntent
         projection.finish()
-        presentedDropIntent = projection
+        setPresentedDropIntent(projection)
     }
 
     func beginPendingGeometryEpoch(
@@ -268,36 +298,40 @@ final class SidebarDragState: ObservableObject {
         previewModel: SidebarDragPreviewModel? = nil,
         scope: SidebarDragScope? = nil
     ) {
-        let resolvedScope = scope ?? armedDragScope
-        isDragging = true
-        activeDragItemId = itemId
-        dragLocation = location
-        previewDragLocation = previewLocation ?? location
-        self.previewKind = previewKind
-        self.previewAssets = previewAssets
-        self.previewModel = previewModel
-        isInternalDragSession = true
-        activeDragScope = resolvedScope
-        isInternalDragGeometryArmed = false
-        armedDragScope = nil
-        syncGeometryCollectionContext()
-        clearEssentialsPreviewState()
-        requestGeometryRefresh()
-        geometry.flushDeferredGeometryForDragStart()
+        withPinnedPresentationMutation {
+            let resolvedScope = scope ?? armedDragScope
+            isDragging = true
+            activeDragItemId = itemId
+            dragLocation = location
+            previewDragLocation = previewLocation ?? location
+            self.previewKind = previewKind
+            self.previewAssets = previewAssets
+            self.previewModel = previewModel
+            isInternalDragSession = true
+            activeDragScope = resolvedScope
+            isInternalDragGeometryArmed = false
+            armedDragScope = nil
+            syncGeometryCollectionContext()
+            clearEssentialsPreviewState()
+            requestGeometryRefresh()
+            geometry.flushDeferredGeometryForDragStart()
+        }
     }
 
     func beginExternalDragSession(itemId: UUID?) {
-        isDragging = true
-        activeDragItemId = itemId
-        previewDragLocation = nil
-        isInternalDragSession = false
-        activeDragScope = nil
-        isInternalDragGeometryArmed = false
-        armedDragScope = nil
-        syncGeometryCollectionContext()
-        clearEssentialsPreviewState()
-        requestGeometryRefresh()
-        geometry.flushDeferredGeometryForDragStart()
+        withPinnedPresentationMutation {
+            isDragging = true
+            activeDragItemId = itemId
+            previewDragLocation = nil
+            isInternalDragSession = false
+            activeDragScope = nil
+            isInternalDragGeometryArmed = false
+            armedDragScope = nil
+            syncGeometryCollectionContext()
+            clearEssentialsPreviewState()
+            requestGeometryRefresh()
+            geometry.flushDeferredGeometryForDragStart()
+        }
     }
 
     func armInternalDragGeometry(scope: SidebarDragScope?) {
@@ -335,7 +369,7 @@ final class SidebarDragState: ObservableObject {
     func clearHoverState() {
         var intent = presentedDropIntent
         intent.clearPresentation()
-        presentedDropIntent = intent
+        setPresentedDropIntent(intent)
         activeSplitTarget = nil
         clearEssentialsPreviewState()
     }
@@ -344,7 +378,7 @@ final class SidebarDragState: ObservableObject {
         guard presentedDropIntent.active != resolution else { return }
         var intent = presentedDropIntent
         intent.present(resolution)
-        presentedDropIntent = intent
+        setPresentedDropIntent(intent)
     }
 
     func updateEssentialsPreviewState(
@@ -399,6 +433,49 @@ final class SidebarDragState: ObservableObject {
             activeScope: storedActiveDragScope,
             isArmed: isInternalDragGeometryArmed,
             armedScope: armedDragScope
+        )
+    }
+
+    private func setPresentedDropIntent(
+        _ intent: SidebarPresentedDropIntentState
+    ) {
+        presentedDropIntent = intent
+        markPinnedPresentationChanged()
+    }
+
+    private func withPinnedPresentationMutation<T>(
+        _ update: () throws -> T
+    ) rethrows -> T {
+        pinnedPresentationMutationDepth += 1
+        defer {
+            pinnedPresentationMutationDepth -= 1
+            if pinnedPresentationMutationDepth == 0,
+               pinnedPresentationNeedsPublish {
+                pinnedPresentationNeedsPublish = false
+                publishPinnedPresentation()
+            }
+        }
+        return try update()
+    }
+
+    private func markPinnedPresentationChanged() {
+        guard pinnedPresentationMutationDepth > 0 else {
+            publishPinnedPresentation()
+            return
+        }
+        pinnedPresentationNeedsPublish = true
+    }
+
+    private func publishPinnedPresentation() {
+        pinnedPresentation.publish(
+            SidebarPinnedDragPresentationFrame(
+                isDragging: isDragging,
+                isCompletingDrop: isCompletingDrop,
+                activeDragItemID: activeDragItemId,
+                activeHoveredFolderID: activeHoveredFolderId,
+                folderDropIntent: folderDropIntent,
+                projectionHoveredSlot: projectionHoveredSlot
+            )
         )
     }
 }

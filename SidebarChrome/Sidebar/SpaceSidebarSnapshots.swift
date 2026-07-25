@@ -732,11 +732,13 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         nextVisited.insert(folder.id)
         let projectionState = context.windowState.sidebarFolderProjections
             .pendingOrCurrentProjection(for: folder.id)
+        let presentation = context.inventory.folderPresentation(id: folder.id)
+        let isExpanded = presentation?.isExpanded ?? folder.isOpen
 
         let bodyChildren: [SpacePinnedItemSnapshot]
         let hasActiveSelection: Bool
 
-        if folder.isOpen {
+        if isExpanded {
             bodyChildren = folderBodyChildSnapshots(
                 items: context.inventory.folderItems(for: folder.id),
                 context: context,
@@ -761,10 +763,10 @@ enum SpaceSidebarTransitionSnapshotBuilder {
 
         return SpaceFolderSnapshot(
             id: folder.id,
-            title: folder.name,
-            iconValue: folder.icon,
-            isOpen: folder.isOpen,
-            hasActiveSelection: hasActiveSelection || (!folder.isOpen && !bodyChildren.isEmpty),
+            title: presentation?.title ?? folder.name,
+            iconValue: presentation?.iconValue ?? folder.icon,
+            isOpen: isExpanded,
+            hasActiveSelection: hasActiveSelection || (!isExpanded && !bodyChildren.isEmpty),
             bodyChildren: bodyChildren
         )
     }

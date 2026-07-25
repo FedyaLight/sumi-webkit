@@ -4,11 +4,134 @@ import XCTest
 
 @MainActor
 final class SidebarZenMotionTests: XCTestCase {
+    func testFolderCollapseHasStickyDestinationOnItsFirstFrame() {
+        let selectedID = UUID()
+
+        XCTAssertEqual(
+            SidebarFolderDisplayProjection.disclosureTargetStickyItemIDs(
+                currentStickyItemIDs: [],
+                selectedDescendantItemID: selectedID
+            ),
+            [selectedID]
+        )
+    }
+
+    func testFolderDisclosureMovesTheWholeListUnderTheHeader() {
+        XCTAssertEqual(
+            SidebarDisclosureTrackGeometry.resolve(
+                itemHeights: [50, 50],
+                sourceOrder: [0, 1],
+                destinationOrder: [],
+                progress: 0.5
+            ),
+            SidebarDisclosureTrackGeometry(
+                height: 50,
+                itemOffsetsY: [-50, 0]
+            )
+        )
+    }
+
+    func testFolderDisclosureKeepsOneStickyRowAndMovesItTowardTheHeader() {
+        XCTAssertEqual(
+            SidebarDisclosureTrackGeometry.resolve(
+                itemHeights: [40, 40, 40],
+                sourceOrder: [0, 1, 2],
+                destinationOrder: [2],
+                progress: 0.5
+            ),
+            SidebarDisclosureTrackGeometry(
+                height: 80,
+                itemOffsetsY: [-60, -20, 40]
+            )
+        )
+    }
+
+    func testFolderDisclosureTrackDoesNotDuplicateSharedStickyItems() {
+        let first = UUID()
+        let second = UUID()
+        let sticky = UUID()
+        let plan = SidebarDisclosureTrackPlan.resolve(
+            sourceItems: [first, second, sticky],
+            destinationItems: [sticky]
+        )
+
+        XCTAssertEqual(plan.items, [first, second, sticky])
+        XCTAssertEqual(plan.sourceOrder, [0, 1, 2])
+        XCTAssertEqual(plan.destinationOrder, [2])
+    }
+
+    func testFolderDisclosureOpeningMovesTheListDownFromUnderTheHeader() {
+        XCTAssertEqual(
+            SidebarDisclosureTrackGeometry.resolve(
+                itemHeights: [50, 50],
+                sourceOrder: [],
+                destinationOrder: [0, 1],
+                progress: 0.5
+            ),
+            SidebarDisclosureTrackGeometry(
+                height: 50,
+                itemOffsetsY: [-50, 0]
+            )
+        )
+    }
+
+    func testDisclosureTrackInterpolatesPaddingSpacingAndSharedPosition() {
+        XCTAssertEqual(
+            SidebarDisclosureTrackGeometry.resolve(
+                itemHeights: [40, 40],
+                sourceOrder: [0, 1],
+                destinationOrder: [1],
+                sourceTopPadding: 10,
+                sourceBottomPadding: 5,
+                destinationTopPadding: 6,
+                destinationBottomPadding: 2,
+                itemSpacing: 4,
+                progress: 0.5
+            ),
+            SidebarDisclosureTrackGeometry(
+                height: 73.5,
+                itemOffsetsY: [-39.5, 30]
+            )
+        )
+    }
+
+    func testDisclosurePresentationCrossfadesOnlyChangingIdentities() {
+        let outgoing = UUID()
+        let shared = UUID()
+        let incoming = UUID()
+        let source = SidebarDisclosureTarget(
+            isRevealed: true,
+            items: [outgoing, shared]
+        )
+        let destination = SidebarDisclosureTarget(
+            isRevealed: false,
+            items: [shared, incoming]
+        )
+        let presentation = SidebarDisclosurePresentation(
+            plan: SidebarDisclosureTrackPlan.resolve(
+                sourceItems: source.items,
+                destinationItems: destination.items
+            ),
+            sourceTarget: source,
+            destinationTarget: destination,
+            progress: 0.25
+        )
+
+        XCTAssertEqual(presentation.crossfadeOpacity(for: outgoing), 0.75)
+        XCTAssertEqual(presentation.crossfadeOpacity(for: shared), 1)
+        XCTAssertEqual(presentation.crossfadeOpacity(for: incoming), 0.25)
+    }
+
     func testSidebarMotionPolicyUsesReducedMotionContract() {
         XCTAssertEqual(SidebarMotionPolicy.currentMode(reduceMotion: true), .reducedMotion)
         XCTAssertNil(SidebarMotionPolicy.dockedLayoutAnimation(for: .reducedMotion, isShowing: true))
         XCTAssertFalse(SidebarMotionPolicy.overlayUsesTravel(for: .reducedMotion))
         XCTAssertEqual(SidebarMotionPolicy.overlayAnimationDuration(for: .reducedMotion), 0.08)
+        XCTAssertNil(
+            SidebarMotionPolicy.disclosureAnimation(
+                for: .reducedMotion
+            )
+        )
     }
 
     func testSidebarMotionPolicyKeepsStandardShellMotion() {
@@ -16,6 +139,13 @@ final class SidebarZenMotionTests: XCTestCase {
         XCTAssertNotNil(SidebarMotionPolicy.dockedLayoutAnimation(for: .standard, isShowing: true))
         XCTAssertTrue(SidebarMotionPolicy.overlayUsesTravel(for: .standard))
         XCTAssertEqual(SidebarMotionPolicy.overlayAnimationDuration(for: .standard), 0.22)
+        XCTAssertNotNil(
+            SidebarMotionPolicy.disclosureAnimation(for: .standard)
+        )
+        XCTAssertEqual(
+            SidebarMotionPolicy.disclosureDuration,
+            0.12
+        )
     }
 
     func testSidebarMotionPolicyUsesReducedMotionWhenEnergySaverRequestsIt() {
@@ -95,6 +225,65 @@ final class SidebarZenMotionTests: XCTestCase {
         view.mouseUp(with: mouseEvent(.leftMouseUp))
 
         XCTAssertEqual(activationCount, 1)
+        XCTAssertNil(state.activePressedSourceID)
+    }
+
+    func testPresentationConfigurationChurnDuringPressKeepsCurrentPrimaryActionAlive() {
+        let state = SidebarInteractionState()
+        let itemID = UUID()
+        let spaceID = UUID()
+        var originalActivationCount = 0
+        var currentActivationCount = 0
+        let view = SidebarInteractiveItemView(
+            frame: NSRect(x: 0, y: 0, width: 160, height: 36)
+        )
+        view.sidebarDragState = SidebarDragState()
+        view.update(
+            configuration: SidebarAppKitItemConfiguration(
+                interactionState: state,
+                menu: SidebarContextMenuLeafConfiguration(
+                    isEnabled: true,
+                    surfaceKind: .row,
+                    triggers: .rightClick,
+                    entries: { [] },
+                    onMenuVisibilityChanged: { _ in }
+                ),
+                dragSource: SidebarDragSourceConfiguration(
+                    item: SumiDragItem.folder(folderId: itemID, title: "Before"),
+                    sourceZone: .spacePinned(spaceID),
+                    previewKind: .folderRow
+                ),
+                primaryAction: { originalActivationCount += 1 },
+                sourceID: "folder-header-\(itemID.uuidString)"
+            )
+        )
+
+        view.mouseDown(with: mouseEvent(.leftMouseDown))
+        view.update(
+            configuration: SidebarAppKitItemConfiguration(
+                interactionState: state,
+                menu: SidebarContextMenuLeafConfiguration(
+                    isEnabled: false,
+                    surfaceKind: .row,
+                    triggers: [.leftClick, .rightClick],
+                    entries: { [] },
+                    onMenuVisibilityChanged: { _ in }
+                ),
+                dragSource: SidebarDragSourceConfiguration(
+                    item: SumiDragItem.folder(folderId: itemID, title: "After"),
+                    sourceZone: .folder(UUID()),
+                    previewKind: .row
+                ),
+                primaryAction: { currentActivationCount += 1 },
+                sourceID: "folder-header-\(itemID.uuidString)",
+                suppressesPrimaryActionAnimation: true,
+                presentationMode: .collapsedVisible
+            )
+        )
+        view.mouseUp(with: mouseEvent(.leftMouseUp))
+
+        XCTAssertEqual(originalActivationCount, 0)
+        XCTAssertEqual(currentActivationCount, 1)
         XCTAssertNil(state.activePressedSourceID)
     }
 

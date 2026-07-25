@@ -100,6 +100,7 @@ extension SpacesSideBarView {
             regularTabLifecycleCommands: regularTabLifecycleCommands,
             regularTabShortcutCommands: regularTabShortcutCommands,
             regularTabPlacementCommands: regularTabPlacementCommands,
+            pinnedDragPresentation: dragState.pinnedPresentation,
             renderMode: renderMode,
             allowsInteraction: allowsInteraction,
             restoredScrollViewport: transitionCoordinator.scrollViewport(for: space.id),
@@ -188,6 +189,9 @@ extension SpacesSideBarView {
                 )
             }
             .eraseToAnyPublisher(),
+            delivery: .mainActorImmediate(
+                deferWhile: { dragState.isCompletingDrop }
+            ),
             isActive: allowsInteractiveWork
         ) { pageInventory in
             sidebarPageContent(

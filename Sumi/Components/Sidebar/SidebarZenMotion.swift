@@ -23,23 +23,6 @@ enum SidebarRowCollapseGapMotion {
     static let duration: Double = SidebarDropMotion.contentLayoutDuration
 }
 
-/// Height + opacity collapse used for row removal and split-group row dismissal.
-struct SidebarRowLifecycleModifier: ViewModifier {
-    let isCollapsed: Bool
-
-    func body(content: Content) -> some View {
-        let row = content
-            .frame(height: isCollapsed ? 0 : SidebarRowLayout.rowHeight, alignment: .top)
-            .opacity(isCollapsed ? SidebarRowInsertionMotionPolicy.hiddenOpacity : SidebarRowInsertionMotionPolicy.visibleOpacity)
-
-        if isCollapsed {
-            row.clipped()
-        } else {
-            row
-        }
-    }
-}
-
 /// Opacity-only reveal for row content while the slot keeps full row height.
 private struct SidebarRowContentRevealModifier: ViewModifier {
     let isHidden: Bool
@@ -335,10 +318,6 @@ extension View {
                 isEnabled: isEnabled
             )
         )
-    }
-
-    func sidebarRowLifecycle(isCollapsed: Bool) -> some View {
-        modifier(SidebarRowLifecycleModifier(isCollapsed: isCollapsed))
     }
 
     func sidebarRowListItemTransition(isEnabled: Bool = true) -> some View {

@@ -15,6 +15,7 @@ private struct SidebarAppKitItemModifier: ViewModifier {
     let onMiddleClick: (() -> Void)?
     let sourceID: String?
     let isInteractionEnabled: Bool
+    let suppressesPrimaryActionAnimation: Bool?
 
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -51,11 +52,13 @@ private struct SidebarAppKitItemModifier: ViewModifier {
                         primaryAction: primaryAction,
                         onMiddleClick: onMiddleClick,
                         sourceID: sourceID,
-                        suppressesPrimaryActionAnimation: dragSource != nil,
+                        suppressesPrimaryActionAnimation:
+                            suppressesPrimaryActionAnimation ?? (dragSource != nil),
                         presentationMode: presentationContext.mode
                     )
                 )
             }
+            .geometryGroup()
         case .leanDockedContextMenu:
             content.overlay {
                 SumiAppKitContextMenuOverlay(
@@ -193,6 +196,7 @@ extension View {
         primaryAction: (() -> Void)? = nil,
         onMiddleClick: (() -> Void)? = nil,
         sourceID: String? = nil,
+        suppressesPrimaryActionAnimation: Bool? = nil,
         entries: @escaping () -> [SidebarContextMenuEntry],
         onMenuVisibilityChanged: @escaping (Bool) -> Void = { _ in }
     ) -> some View {
@@ -209,7 +213,8 @@ extension View {
                 primaryAction: primaryAction,
                 onMiddleClick: onMiddleClick,
                 sourceID: sourceID,
-                isInteractionEnabled: isInteractionEnabled
+                isInteractionEnabled: isInteractionEnabled,
+                suppressesPrimaryActionAnimation: suppressesPrimaryActionAnimation
             )
         )
     }

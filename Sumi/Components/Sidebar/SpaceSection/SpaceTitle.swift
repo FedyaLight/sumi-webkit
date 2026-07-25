@@ -43,12 +43,154 @@ enum SpaceTitleLeadingPresentation: Equatable {
 }
 
 enum SpaceTitleCollapseMotion {
+    static let presentationDuration: TimeInterval = 0.1
+    static let rotationOvershootDuration: TimeInterval = 0.11
+    static let rotationSettleDelay: TimeInterval = 0.055
+    static let rotationSettleDuration: TimeInterval = 0.1
+
     static func animation(
         reduceMotion: Bool,
         shouldReduceChromeMotion: Bool
     ) -> Animation? {
         guard !reduceMotion, !shouldReduceChromeMotion else { return nil }
-        return .easeInOut(duration: 0.1)
+        return .easeInOut(duration: presentationDuration)
+    }
+
+    static var rotationOvershootAnimation: Animation {
+        .timingCurve(
+            0.2,
+            0.0,
+            0.0,
+            1.0,
+            duration: rotationOvershootDuration
+        )
+    }
+
+    static var rotationSettleAnimation: Animation {
+        .easeInOut(duration: rotationSettleDuration)
+            .delay(rotationSettleDelay)
+    }
+}
+
+struct SpaceTitleChevronRotationPlan: Equatable {
+    let overshootDegrees: Double
+    let destinationDegrees: Double
+
+    static func resolve(isExpanded: Bool) -> Self {
+        let destinationDegrees = isExpanded ? 90.0 : 0.0
+        return Self(
+            overshootDegrees: destinationDegrees + (isExpanded ? 20.0 : -20.0),
+            destinationDegrees: destinationDegrees
+        )
+    }
+}
+
+private struct SpaceTitleLeadingGlyphView: View {
+    let iconValue: String
+    let isExpanded: Bool
+    let showsChevron: Bool
+    let textColor: Color
+    let presentationAnimation: Animation?
+
+    @State private var displayedDegrees: Double
+    @State private var isRotationActive = false
+    @State private var rotationGeneration = 0
+
+    init(
+        iconValue: String,
+        isExpanded: Bool,
+        showsChevron: Bool,
+        textColor: Color,
+        presentationAnimation: Animation?
+    ) {
+        self.iconValue = iconValue
+        self.isExpanded = isExpanded
+        self.showsChevron = showsChevron
+        self.textColor = textColor
+        self.presentationAnimation = presentationAnimation
+        _displayedDegrees = State(
+            initialValue: SpaceTitleChevronRotationPlan
+                .resolve(isExpanded: isExpanded)
+                .destinationDegrees
+        )
+    }
+
+    var body: some View {
+        ZStack {
+            SpaceTitleIconView(
+                iconValue: iconValue,
+                textColor: textColor
+            )
+            .opacity(displaysChevron ? 0 : 1)
+            .animation(visibilityAnimation, value: displaysChevron)
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(textColor)
+                .rotationEffect(.degrees(displayedDegrees))
+                .opacity(displaysChevron ? 1 : 0)
+                .animation(visibilityAnimation, value: displaysChevron)
+                .accessibilityHidden(true)
+        }
+        .onChange(of: isExpanded) { _, isExpanded in
+            animateRotation(isExpanded: isExpanded)
+        }
+        .onChange(of: animatesRotation) { _, animatesRotation in
+            guard !animatesRotation else { return }
+            settleImmediately(isExpanded: isExpanded)
+        }
+    }
+
+    private var animatesRotation: Bool {
+        presentationAnimation != nil
+    }
+
+    private var displaysChevron: Bool {
+        showsChevron || isRotationActive
+    }
+
+    private var visibilityAnimation: Animation? {
+        isRotationActive ? nil : presentationAnimation
+    }
+
+    private func animateRotation(isExpanded: Bool) {
+        let plan = SpaceTitleChevronRotationPlan.resolve(isExpanded: isExpanded)
+        guard animatesRotation else {
+            settleImmediately(isExpanded: isExpanded)
+            return
+        }
+
+        rotationGeneration += 1
+        let generation = rotationGeneration
+        isRotationActive = true
+        withAnimation(
+            SpaceTitleCollapseMotion.rotationOvershootAnimation,
+            completionCriteria: .logicallyComplete
+        ) {
+            displayedDegrees = plan.overshootDegrees
+        } completion: {
+            guard rotationGeneration == generation else { return }
+            withAnimation(
+                SpaceTitleCollapseMotion.rotationSettleAnimation,
+                completionCriteria: .logicallyComplete
+            ) {
+                displayedDegrees = plan.destinationDegrees
+            } completion: {
+                guard rotationGeneration == generation else { return }
+                isRotationActive = false
+            }
+        }
+    }
+
+    private func settleImmediately(isExpanded: Bool) {
+        rotationGeneration += 1
+        isRotationActive = false
+        let destinationDegrees = SpaceTitleChevronRotationPlan
+            .resolve(isExpanded: isExpanded)
+            .destinationDegrees
+        withTransaction(Transaction(animation: nil)) {
+            displayedDegrees = destinationDegrees
+        }
     }
 }
 
@@ -213,34 +355,26 @@ struct SpaceTitle: View {
 
     @ViewBuilder
     private var iconView: some View {
-        ZStack {
-            SpaceTitleIconView(
-                iconValue: space.icon,
-                textColor: textColor
-            )
-            .opacity(showsCollapseChevron ? 0 : 1)
-            .background(EmojiPickerAnchor(manager: emojiManager))
-            .onTapGesture(count: 2) {
-                if !hasPinnedContent {
-                    toggleSpaceIconPicker()
-                }
+        SpaceTitleLeadingGlyphView(
+            iconValue: space.icon,
+            isExpanded: chevronIsExpanded,
+            showsChevron: showsCollapseChevron,
+            textColor: textColor,
+            presentationAnimation: collapseChevronAnimation
+        )
+        .background(EmojiPickerAnchor(manager: emojiManager))
+        .onTapGesture(count: 2) {
+            if !hasPinnedContent {
+                toggleSpaceIconPicker()
             }
-            .modifier(
-                SpaceTitleEmojiPickModifier(
-                    emojiManager: emojiManager,
-                    space: space,
-                    persistCommittedEmoji: actions.persistCommittedEmoji
-                )
-            )
-
-            Image(systemName: "chevron.right")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(textColor)
-                .rotationEffect(.degrees(chevronIsExpanded ? 90 : 0))
-                .opacity(showsCollapseChevron ? 1 : 0)
-                .accessibilityHidden(true)
         }
-        .animation(collapseChevronAnimation, value: leadingPresentation)
+        .modifier(
+            SpaceTitleEmojiPickModifier(
+                emojiManager: emojiManager,
+                space: space,
+                persistCommittedEmoji: actions.persistCommittedEmoji
+            )
+        )
     }
 
     @ViewBuilder

@@ -6,15 +6,39 @@
 import SumiDomain
 import SwiftUI
 
-private enum SpacePinnedContentRenderedItem {
+typealias SpacePinnedListItem = SplitGroupVisualListItem
+
+enum SpacePinnedDisclosureItem: Hashable {
     case pinned(SpacePinnedListItem)
     case nestedSticky(UUID)
 }
 
 private struct SpacePinnedContentDisplayEntry: Identifiable {
-    let item: SpacePinnedContentRenderedItem
+    let item: SpacePinnedDisclosureItem
     let dropIndex: Int
-    let id: String
+    var id: SpacePinnedDisclosureItem { item }
+}
+
+struct SpacePinnedDisclosureProjection {
+    static func items(
+        isCollapsed: Bool,
+        pinnedItems: [SpacePinnedListItem],
+        stickyItemIDs: [UUID],
+        knownNestedItemIDs: Set<UUID>
+    ) -> [SpacePinnedDisclosureItem] {
+        guard isCollapsed else {
+            return pinnedItems.map(SpacePinnedDisclosureItem.pinned)
+        }
+
+        return stickyItemIDs.compactMap { itemID in
+            if let item = pinnedItems.first(where: { $0.id == itemID }) {
+                return .pinned(item)
+            }
+            return knownNestedItemIDs.contains(itemID)
+                ? .nestedSticky(itemID)
+                : nil
+        }
+    }
 }
 
 /// Renders and reorders the top-level saved folders, shortcuts, and split groups.
@@ -33,6 +57,7 @@ struct SpacePinnedListView: View {
     let pinnedItems: [SpacePinnedListItem]
     let stickyItemIDs: [UUID]
     let dragSnapshot: SpacePinnedDragSnapshot
+    let disclosureAnimation: Animation?
     let contentMutationAnimation: Animation?
     let actionOwner: SpacePinnedActionOwner
 
@@ -47,54 +72,34 @@ struct SpacePinnedListView: View {
         windowState.isIncognito ? [] : inventory.topLevelFolders
     }
 
-    private var projection: SpacePinnedListProjection {
-        SpacePinnedListProjection(
-            spaceId: space.id,
-            items: pinnedItems
+    private var knownNestedItemIDs: Set<UUID> {
+        Set(stickyItemIDs.filter { itemID in
+            inventory.pin(id: itemID) != nil
+                || inventory.splitGroup(id: itemID) != nil
+        })
+    }
+
+    private var disclosureItems: [SpacePinnedDisclosureItem] {
+        SpacePinnedDisclosureProjection.items(
+            isCollapsed: isCollapsed,
+            pinnedItems: pinnedItems,
+            stickyItemIDs: stickyItemIDs,
+            knownNestedItemIDs: knownNestedItemIDs
         )
     }
 
-    private var contentDisplayEntries: [SpacePinnedContentDisplayEntry] {
-        guard isCollapsed else {
-            return projection.displayEntries.map { entry in
-                SpacePinnedContentDisplayEntry(
-                    item: .pinned(entry.item),
-                    dropIndex: entry.dropIndex,
-                    id: entry.id
-                )
-            }
-        }
-
-        return stickyItemIDs.compactMap { itemID in
-            if let index = pinnedItems.firstIndex(where: { $0.id == itemID }) {
-                return SpacePinnedContentDisplayEntry(
-                    item: .pinned(pinnedItems[index]),
-                    dropIndex: index,
-                    id: "item-\(itemID.uuidString)"
-                )
-            }
-
-            guard inventory.pin(id: itemID) != nil
-                    || inventory.splitGroup(id: itemID) != nil else {
-                return nil
-            }
-            return SpacePinnedContentDisplayEntry(
-                item: .nestedSticky(itemID),
-                dropIndex: 0,
-                id: "item-\(itemID.uuidString)"
-            )
-        }
+    private var disclosureTarget: SidebarDisclosureTarget<SpacePinnedDisclosureItem> {
+        SidebarDisclosureTarget(
+            isRevealed: !isCollapsed,
+            items: disclosureItems,
+            topPadding: isCollapsed && disclosureItems.isEmpty
+                ? collapsedEmptyTargetHeight
+                : SidebarInsertionGuide.visualCenterY
+        )
     }
 
-    private var showsCollapsedEmptyTarget: Bool {
-        isCollapsed && stickyItemIDs.isEmpty
-    }
-
-    private var leadingSpacerHeight: CGFloat {
-        guard showsCollapsedEmptyTarget else {
-            return SidebarInsertionGuide.visualCenterY
-        }
-        return isInteractive && dragSnapshot.isHoveringEmptySection
+    private var collapsedEmptyTargetHeight: CGFloat {
+        isInteractive && dragSnapshot.isHoveringEmptySection
             ? SidebarRowLayout.rowHeight
             : 6
     }
@@ -119,6 +124,24 @@ struct SpacePinnedListView: View {
         ).elevatedFolderIds
     }
 
+    private func contentDisplayEntries(
+        from items: [SpacePinnedDisclosureItem]
+    ) -> [SpacePinnedContentDisplayEntry] {
+        items.map { item in
+            let dropIndex: Int
+            switch item {
+            case .pinned(let pinnedItem):
+                dropIndex = pinnedItems.firstIndex(of: pinnedItem) ?? 0
+            case .nestedSticky:
+                dropIndex = 0
+            }
+            return SpacePinnedContentDisplayEntry(
+                item: item,
+                dropIndex: dropIndex
+            )
+        }
+    }
+
     var body: some View {
         let selectionSnapshot = sidebarSelection
         let elevatedFolderIDs = elevatedFolderIDs(
@@ -127,105 +150,139 @@ struct SpacePinnedListView: View {
         let foldersByID = Dictionary(uniqueKeysWithValues: topLevelFolders.map { ($0.id, $0) })
         let pinsByID = Dictionary(uniqueKeysWithValues: topLevelPins.map { ($0.id, $0) })
 
-        LazyVStack(spacing: SidebarRowLayout.rowGap) {
-            ForEach(contentDisplayEntries) { entry in
-                VStack(spacing: 0) {
-                    switch entry.item {
-                    case .pinned(let item):
-                        switch item {
-                        case .folder(let folderID):
-                            if let folder = foldersByID[folderID] {
-                                SpacePinnedFolderEntryView(
-                                    folder: folder,
-                                    space: space,
-                                    inventory: inventory,
-                                    selection: selection,
-                                    pinProjection: pinProjection,
-                                    pinCommands: pinCommands,
-                                    pinExecution: pinExecution,
-                                    folderCommands: folderCommands,
-                                    spaceLifecycle: spaceLifecycle,
-                                    browserContext: browserContext,
-                                    elevatedFolderIDs: elevatedFolderIDs,
-                                    topLevelIndex: entry.dropIndex,
-                                    geometryGeneration: dragSnapshot.geometryGeneration,
-                                    isInteractive: isInteractive,
-                                    reportsDropGeometry: !usesUniformDropGeometry
-                                )
-                                .opacity(itemOpacity(folderID))
-                            }
-                        case .shortcut(let pinID):
-                            if let pin = pinsByID[pinID] {
-                                shortcutEntry(
-                                    pin,
-                                    topLevelIndex: entry.dropIndex,
-                                    selectionSnapshot: selectionSnapshot
-                                )
-                            }
-                        case .splitGroup(let groupID):
-                            if let group = inventory.splitGroup(id: groupID) {
-                                SpacePinnedSplitGroupEntryView(
-                                    group: group,
-                                    items: SplitGroupSidebarModel.items(
-                                        for: group,
+        SidebarDisclosureHost(
+            target: disclosureTarget,
+            disclosureAnimation: disclosureAnimation,
+            layoutAnimation: contentMutationAnimation
+        ) { disclosurePresentation, reportsGeometry in
+            let displayEntries = contentDisplayEntries(
+                from: disclosurePresentation.items
+            )
+            let rowIsInteractive = isInteractive && reportsGeometry
+
+            SidebarDisclosureTrackLayout(
+                progress: disclosurePresentation.progress,
+                sourceOrder: disclosurePresentation.sourceOrder,
+                destinationOrder: disclosurePresentation.destinationOrder,
+                sourceTopPadding: disclosurePresentation.sourceTopPadding,
+                sourceBottomPadding: disclosurePresentation.sourceBottomPadding,
+                destinationTopPadding: disclosurePresentation.destinationTopPadding,
+                destinationBottomPadding: disclosurePresentation.destinationBottomPadding,
+                itemSpacing: SidebarRowLayout.rowGap
+            ) {
+                ForEach(displayEntries) { entry in
+                    VStack(spacing: 0) {
+                        switch entry.item {
+                        case .pinned(let item):
+                            switch item {
+                            case .folder(let folderID):
+                                if let folder = foldersByID[folderID],
+                                   let presentation = inventory.folderPresentation(id: folderID) {
+                                    SpacePinnedFolderEntryView(
+                                        folder: folder,
+                                        presentation: presentation,
+                                        space: space,
                                         inventory: inventory,
                                         selection: selection,
-                                        windowState: windowState
-                                    ),
-                                    space: space,
-                                    browserContext: browserContext,
-                                    isInteractive: isInteractive,
-                                    topLevelIndex: entry.dropIndex,
-                                    geometryGeneration: dragSnapshot.geometryGeneration,
-                                    reportsDropGeometry: !usesUniformDropGeometry
-                                )
-                                .opacity(itemOpacity(groupID))
+                                        pinProjection: pinProjection,
+                                        pinCommands: pinCommands,
+                                        pinExecution: pinExecution,
+                                        folderCommands: folderCommands,
+                                        spaceLifecycle: spaceLifecycle,
+                                        browserContext: browserContext,
+                                        elevatedFolderIDs: elevatedFolderIDs,
+                                        topLevelIndex: entry.dropIndex,
+                                        geometryGeneration: dragSnapshot.geometryGeneration,
+                                        dragSnapshot: dragSnapshot.folderSnapshot,
+                                        isInteractive: rowIsInteractive,
+                                        reportsDropGeometry: rowIsInteractive
+                                            && !usesUniformDropGeometry
+                                    )
+                                    .opacity(itemOpacity(folderID))
+                                }
+                            case .shortcut(let pinID):
+                                if let pin = pinsByID[pinID] {
+                                    shortcutEntry(
+                                        pin,
+                                        topLevelIndex: entry.dropIndex,
+                                        selectionSnapshot: selectionSnapshot,
+                                        isInteractive: rowIsInteractive
+                                    )
+                                }
+                            case .splitGroup(let groupID):
+                                if let group = inventory.splitGroup(id: groupID) {
+                                    SpacePinnedSplitGroupEntryView(
+                                        group: group,
+                                        items: SplitGroupSidebarModel.items(
+                                            for: group,
+                                            inventory: inventory,
+                                            selection: selection,
+                                            windowState: windowState
+                                        ),
+                                        space: space,
+                                        browserContext: browserContext,
+                                        isInteractive: rowIsInteractive,
+                                        topLevelIndex: entry.dropIndex,
+                                        geometryGeneration: dragSnapshot.geometryGeneration,
+                                        reportsDropGeometry: rowIsInteractive
+                                            && !usesUniformDropGeometry
+                                    )
+                                    .opacity(itemOpacity(groupID))
+                                }
                             }
+                        case .nestedSticky(let itemID):
+                            SpaceNestedPinnedStickyEntryView(
+                                space: space,
+                                inventory: inventory,
+                                selection: selection,
+                                pinProjection: pinProjection,
+                                pinCommands: pinCommands,
+                                pinExecution: pinExecution,
+                                folderCommands: folderCommands,
+                                spaceLifecycle: spaceLifecycle,
+                                browserContext: browserContext,
+                                isInteractive: rowIsInteractive,
+                                itemID: itemID,
+                                dragSnapshot: dragSnapshot,
+                                contentMutationAnimation: contentMutationAnimation
+                            )
                         }
-                    case .nestedSticky(let itemID):
-                        SpaceNestedPinnedStickyEntryView(
-                            space: space,
-                            inventory: inventory,
-                            selection: selection,
-                            pinProjection: pinProjection,
-                            pinCommands: pinCommands,
-                            pinExecution: pinExecution,
-                            folderCommands: folderCommands,
-                            spaceLifecycle: spaceLifecycle,
-                            browserContext: browserContext,
-                            isInteractive: isInteractive,
-                            itemID: itemID,
-                            dragSnapshot: dragSnapshot,
-                            contentMutationAnimation: contentMutationAnimation
-                        )
                     }
-                }
-                .zIndex(
-                    displayEntryZIndex(
-                        entry,
-                        selectionSnapshot: selectionSnapshot,
-                        elevatedFolderIDs: elevatedFolderIDs
+                    .opacity(
+                        disclosurePresentation.crossfadeOpacity(
+                            for: entry.item
+                        )
                     )
-                )
-                .sidebarScrollTarget(scrollTargetID(for: entry.item))
+                    .zIndex(
+                        displayEntryZIndex(
+                            entry,
+                            selectionSnapshot: selectionSnapshot,
+                            elevatedFolderIDs: elevatedFolderIDs
+                        )
+                    )
+                    .sidebarScrollTarget(scrollTargetID(for: entry.item))
+                }
             }
+            .clipped()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .sidebarPinnedListHitGeometry(
+                for: space.id,
+                rowCount: disclosureItems.count,
+                leadingInset: disclosureTarget.topPadding,
+                generation: dragSnapshot.geometryGeneration,
+                isEnabled: rowIsInteractive && usesUniformDropGeometry
+            )
+            .sidebarSectionGeometry(
+                for: .spacePinned,
+                spaceId: space.id,
+                generation: dragSnapshot.geometryGeneration,
+                isEnabled: rowIsInteractive
+            )
         }
-        .padding(.top, leadingSpacerHeight)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .sidebarPinnedListHitGeometry(
-            for: space.id,
-            rowCount: contentDisplayEntries.count,
-            leadingInset: leadingSpacerHeight,
-            generation: dragSnapshot.geometryGeneration,
-            isEnabled: isInteractive && usesUniformDropGeometry
-        )
-        .animation(contentMutationAnimation, value: pinnedItems)
-        .animation(contentMutationAnimation, value: contentDisplayEntries.map(\.id))
-        .animation(contentMutationAnimation, value: isCollapsed)
     }
 
     private func scrollTargetID(
-        for item: SpacePinnedContentRenderedItem
+        for item: SpacePinnedDisclosureItem
     ) -> SidebarScrollTargetID {
         switch item {
         case .pinned(.folder(let folderID)):
@@ -244,7 +301,8 @@ struct SpacePinnedListView: View {
     private func shortcutEntry(
         _ pin: ShortcutPin,
         topLevelIndex: Int,
-        selectionSnapshot: SidebarWindowSelectionSnapshot
+        selectionSnapshot: SidebarWindowSelectionSnapshot,
+        isInteractive: Bool
     ) -> SpacePinnedShortcutEntryView {
         return SpacePinnedShortcutEntryView(
             pin: pin,
@@ -264,7 +322,7 @@ struct SpacePinnedListView: View {
             opacity: itemOpacity(pin.id),
             topLevelIndex: topLevelIndex,
             geometryGeneration: dragSnapshot.geometryGeneration,
-            reportsDropGeometry: !usesUniformDropGeometry,
+            reportsDropGeometry: isInteractive && !usesUniformDropGeometry,
             actionOwner: actionOwner
         )
     }

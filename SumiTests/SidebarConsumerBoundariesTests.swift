@@ -205,6 +205,101 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
         XCTAssertEqual(probe.cancellations, 2)
     }
 
+    func testPinnedDragSnapshotCarriesFolderInteractionThroughSectionBoundary() {
+        let itemID = UUID()
+        let folderID = UUID()
+        let snapshot = SpacePinnedDragSnapshot(
+            isDragging: true,
+            isCompletingDrop: true,
+            activeDragItemID: itemID,
+            activeHoveredFolderID: folderID,
+            folderDropIntent: .contain(folderId: folderID),
+            isHoveringEmptySection: false,
+            geometryGeneration: 17
+        )
+
+        XCTAssertEqual(
+            snapshot.folderSnapshot,
+            SidebarFolderDragSnapshot(
+                isDragging: true,
+                isCompletingDrop: true,
+                activeDragItemID: itemID,
+                activeHoveredFolderID: folderID,
+                folderDropIntent: .contain(folderId: folderID),
+                geometryGeneration: 17
+            )
+        )
+    }
+
+    func testPinnedDragPresentationPublishesOneAtomicFrameAtDragStart() {
+        let state = SidebarDragState()
+        let itemID = UUID()
+        var frames: [SidebarPinnedDragPresentationFrame] = []
+        let cancellable = state.pinnedPresentation.$frame
+            .dropFirst()
+            .sink { frames.append($0) }
+
+        state.beginInternalDragSession(
+            itemId: itemID,
+            location: CGPoint(x: 12, y: 20),
+            previewKind: .row,
+            previewAssets: [:]
+        )
+
+        XCTAssertEqual(frames.count, 1)
+        XCTAssertEqual(frames.first?.isDragging, true)
+        XCTAssertEqual(frames.first?.activeDragItemID, itemID)
+        withExtendedLifetime(cancellable) {}
+    }
+
+    func testFolderPresentationKeepsIdentityAndRejectsStaleExpansion() throws {
+        let changes = PassthroughSubject<TabFolderExpansionChange, Never>()
+        let session = SidebarSavedContentPresentationSession(
+            expansionChanges: changes.eraseToAnyPublisher()
+        )
+        let spaceID = UUID()
+        let folder = TabFolder(name: "Folder", spaceId: spaceID, index: 0)
+        let original = try XCTUnwrap(
+            session.reconcile(folders: [folder])[folder.id]
+        )
+
+        changes.send(
+            TabFolderExpansionChange(
+                revision: 8,
+                spaceID: spaceID,
+                expansionByFolderID: [folder.id: true]
+            )
+        )
+        folder.isOpen = false
+        let reconciled = try XCTUnwrap(
+            session.reconcile(folders: [folder])[folder.id]
+        )
+
+        XCTAssertTrue(original === reconciled)
+        XCTAssertTrue(reconciled.isExpanded)
+        XCTAssertEqual(reconciled.expansionRevision, 8)
+
+        changes.send(
+            TabFolderExpansionChange(
+                revision: 7,
+                spaceID: spaceID,
+                expansionByFolderID: [folder.id: false]
+            )
+        )
+        XCTAssertTrue(reconciled.isExpanded)
+        XCTAssertEqual(reconciled.expansionRevision, 8)
+
+        changes.send(
+            TabFolderExpansionChange(
+                revision: 9,
+                spaceID: spaceID,
+                expansionByFolderID: [folder.id: false]
+            )
+        )
+        XCTAssertFalse(reconciled.isExpanded)
+        XCTAssertEqual(reconciled.expansionRevision, 9)
+    }
+
     func testMountedIncognitoInventoryPublishesExactAddCloseAndCatalogChanges() {
         let windowState = BrowserWindowState()
         windowState.isIncognito = true
@@ -446,6 +541,78 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
         shouldMutateDuringRead = true
         model.setActive(true)
 
+        wait(for: [delivered], timeout: 1)
+        XCTAssertEqual(model.snapshot, 1)
+        withExtendedLifetime(cancellable) {}
+    }
+
+    func testScopedSnapshotModelCanDeliverInteractionStateImmediately() {
+        let changes = PassthroughSubject<Bool, Never>()
+        let model = SidebarScopedSnapshotModel(
+            current: { false },
+            changes: changes.eraseToAnyPublisher(),
+            delivery: .mainActorImmediate()
+        )
+        model.setActive(true)
+
+        changes.send(true)
+
+        XCTAssertTrue(model.snapshot)
+    }
+
+    func testImmediateScopedSnapshotModelPreservesMutationReenteringDemandRead() {
+        let changes = PassthroughSubject<Int, Never>()
+        var currentSnapshot = 0
+        var shouldMutateDuringRead = false
+        let model = SidebarScopedSnapshotModel(
+            current: {
+                let valueAtReadStart = currentSnapshot
+                if shouldMutateDuringRead {
+                    shouldMutateDuringRead = false
+                    currentSnapshot = 1
+                    changes.send(1)
+                }
+                return valueAtReadStart
+            },
+            changes: changes.eraseToAnyPublisher(),
+            delivery: .mainActorImmediate()
+        )
+
+        shouldMutateDuringRead = true
+        model.setActive(true)
+
+        XCTAssertEqual(model.snapshot, 1)
+    }
+
+    func testInteractionSnapshotDefersStructuralDropMutationUntilNextRunLoopTurn() {
+        let changes = PassthroughSubject<Int, Never>()
+        let dragState = SidebarDragState()
+        dragState.presentDropResolution(
+            SidebarDropResolution(
+                slot: .spacePinned(spaceId: UUID(), slot: 0),
+                folderIntent: .none,
+                activeHoveredFolderId: nil
+            )
+        )
+        _ = dragState.beginDropCommit()
+        let model = SidebarScopedSnapshotModel(
+            current: { 0 },
+            changes: changes.eraseToAnyPublisher(),
+            delivery: .mainActorImmediate(
+                deferWhile: { dragState.isCompletingDrop }
+            )
+        )
+        model.setActive(true)
+
+        changes.send(1)
+
+        XCTAssertEqual(model.snapshot, 0)
+
+        let delivered = expectation(description: "drop mutation delivered after tracking turn")
+        let cancellable = model.$snapshot
+            .filter { $0 == 1 }
+            .prefix(1)
+            .sink { _ in delivered.fulfill() }
         wait(for: [delivered], timeout: 1)
         XCTAssertEqual(model.snapshot, 1)
         withExtendedLifetime(cancellable) {}

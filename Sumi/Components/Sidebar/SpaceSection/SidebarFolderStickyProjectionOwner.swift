@@ -11,6 +11,7 @@ import SumiDomain
 @MainActor
 struct SidebarFolderStickyProjectionOwner {
     let folder: TabFolder
+    let presentation: SidebarFolderPresentationCell
     let inventory: SidebarSpaceInventorySnapshot
     let selection: SidebarWindowSelectionQuery
     let selectionSnapshot: SidebarWindowSelectionSnapshot
@@ -59,7 +60,7 @@ struct SidebarFolderStickyProjectionOwner {
     /// selected joins the sticky set. Never removes entries — switching away
     /// must keep prior sticky rows visible.
     func handleSelectionChange() {
-        guard !folder.isOpen else { return }
+        guard !presentation.isExpanded else { return }
         let context = makeContext(for: folder)
         guard context.selectedDescendantItemID != nil else { return }
         scheduleTransform(for: folder.id, context: context) { current in
@@ -97,7 +98,7 @@ struct SidebarFolderStickyProjectionOwner {
     /// A collapsed ancestor stopped owning these projected rows. Preserve
     /// them in this still-collapsed folder before the ancestor expands.
     func adoptStickyItemIDs(_ itemIDs: [UUID]) {
-        guard !folder.isOpen, !itemIDs.isEmpty else { return }
+        guard !presentation.isExpanded, !itemIDs.isEmpty else { return }
         let context = makeContext(for: folder)
         scheduleTransform(for: folder.id, context: context) { current in
             SidebarFolderStickyProjectionPolicy.stickyPruned(
@@ -151,7 +152,7 @@ struct SidebarFolderStickyProjectionOwner {
         ).launcherItems(descendantItems)
 
         return SidebarFolderStickyProjectionPolicy.Context(
-            isFolderOpen: contextFolder.isOpen,
+            isFolderOpen: isExpanded(contextFolder),
             orderedDescendantItemIDs: projectedItems.map(\.id),
             visibleEligibleItemIDs: Set(
                 projectedItems.lazy.filter(\.isLive).map(\.id)
@@ -196,7 +197,7 @@ struct SidebarFolderStickyProjectionOwner {
         func walk(_ parentID: UUID) {
             guard visited.insert(parentID).inserted else { return }
             for child in inventory.childFoldersByParentID[parentID] ?? [] {
-                if !child.isOpen {
+                if !isExpanded(child) {
                     collapsed.insert(child.id)
                 }
                 walk(child.id)
@@ -205,5 +206,13 @@ struct SidebarFolderStickyProjectionOwner {
 
         walk(folder.id)
         return collapsed
+    }
+
+    private func isExpanded(_ contextFolder: TabFolder) -> Bool {
+        if contextFolder.id == folder.id {
+            return presentation.isExpanded
+        }
+        return inventory.folderPresentation(id: contextFolder.id)?.isExpanded
+            ?? contextFolder.isOpen
     }
 }

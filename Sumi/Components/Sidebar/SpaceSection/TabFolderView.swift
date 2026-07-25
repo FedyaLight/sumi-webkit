@@ -15,6 +15,7 @@ struct SidebarLiveFolderSnapshot: Equatable {
 
 struct TabFolderView: View {
     var folder: TabFolder
+    let presentation: SidebarFolderPresentationCell
     let browserContext: SidebarBrowserContext
     let space: Space
     let inventory: SidebarSpaceInventorySnapshot
@@ -29,6 +30,7 @@ struct TabFolderView: View {
     let parentFolderId: UUID?
     let containerIndex: Int
     let nestingDepth: Int
+    let dragSnapshot: SidebarFolderDragSnapshot
 
     @State private var displayedCollapsedProjectionIDs: [UUID] = []
 
@@ -52,36 +54,35 @@ struct TabFolderView: View {
                 .eraseToAnyPublisher(),
             isActive: isInteractive
         ) { liveFolderSnapshot in
-            SidebarFolderDragSnapshotReader { dragSnapshot in
-                SidebarFolderViewProjectionReader(
+            SidebarFolderViewProjectionReader(
+                folder: folder,
+                space: space,
+                shortcutPins: shortcutPinsInFolder,
+                inventory: inventory,
+                selection: selection,
+                liveFolderSnapshot: liveFolderSnapshot,
+            ) { projection in
+                TabFolderContentView(
                     folder: folder,
+                    presentation: presentation,
+                    browserContext: browserContext,
                     space: space,
-                    shortcutPins: shortcutPinsInFolder,
                     inventory: inventory,
                     selection: selection,
-                    liveFolderSnapshot: liveFolderSnapshot,
-                ) { projection in
-                    TabFolderContentView(
-                        folder: folder,
-                        browserContext: browserContext,
-                        space: space,
-                        inventory: inventory,
-                        selection: selection,
-                        pinProjection: pinProjection,
-                        pinCommands: pinCommands,
-                        pinExecution: pinExecution,
-                        folderCommands: folderCommands,
-                        spaceLifecycle: spaceLifecycle,
-                        displayedCollapsedProjectionIDs: $displayedCollapsedProjectionIDs,
-                        elevatedFolderIds: elevatedFolderIds,
-                        isInteractive: isInteractive,
-                        parentFolderId: parentFolderId,
-                        containerIndex: containerIndex,
-                        nestingDepth: nestingDepth,
-                        projection: projection,
-                        dragSnapshot: dragSnapshot
-                    )
-                }
+                    pinProjection: pinProjection,
+                    pinCommands: pinCommands,
+                    pinExecution: pinExecution,
+                    folderCommands: folderCommands,
+                    spaceLifecycle: spaceLifecycle,
+                    displayedCollapsedProjectionIDs: $displayedCollapsedProjectionIDs,
+                    elevatedFolderIds: elevatedFolderIds,
+                    isInteractive: isInteractive,
+                    parentFolderId: parentFolderId,
+                    containerIndex: containerIndex,
+                    nestingDepth: nestingDepth,
+                    projection: projection,
+                    dragSnapshot: dragSnapshot
+                )
             }
         }
     }

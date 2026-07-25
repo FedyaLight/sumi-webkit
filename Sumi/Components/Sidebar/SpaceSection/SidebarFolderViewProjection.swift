@@ -92,6 +92,17 @@ enum SidebarFolderDisplayProjection {
             : displayedCollapsedProjectionIDs
     }
 
+    static func disclosureTargetStickyItemIDs(
+        currentStickyItemIDs: [UUID],
+        selectedDescendantItemID: UUID?
+    ) -> [UUID] {
+        guard let selectedDescendantItemID,
+              !currentStickyItemIDs.contains(selectedDescendantItemID) else {
+            return currentStickyItemIDs
+        }
+        return currentStickyItemIDs + [selectedDescendantItemID]
+    }
+
     private static func displayID(for item: SidebarFolderListItem) -> String {
         switch item {
         case .folder(let id):
@@ -117,6 +128,7 @@ struct SidebarFolderViewProjection {
     let liveTabsByPinId: [UUID: Tab]
     let liveCollapsedProjectionItemIDs: Set<UUID>
     let selectedPinIds: Set<UUID>
+    let selectedCollapsedProjectionItemID: UUID?
     let currentTabURLString: String?
 
     var isLiveFolder: Bool {
@@ -207,8 +219,11 @@ struct SidebarFolderViewProjection {
                 )
                     ? pin.id
                     : nil
-            }
+                }
         )
+        self.selectedCollapsedProjectionItemID = launcherItems.first(
+            where: \.isSelected
+        )?.id
         self.currentTabURLString = currentTab?.url.absoluteString
     }
 

@@ -102,6 +102,20 @@ enum SidebarMotionPolicy {
         return .smooth(duration: contentLayoutDuration)
     }
 
+    /// Preserve Zen's 120ms response while front-loading the visible movement.
+    static let disclosureDuration: TimeInterval = 0.12
+
+    static func disclosureAnimation(for mode: Mode) -> Animation? {
+        guard mode != .reducedMotion else { return nil }
+        return .timingCurve(
+            0.2,
+            0.0,
+            0.0,
+            1.0,
+            duration: disclosureDuration
+        )
+    }
+
     static let selectedItemRevealDuration: TimeInterval = 0.25
 
     static func selectedItemRevealAnimation(for mode: Mode) -> Animation? {

@@ -183,6 +183,33 @@ final class TabStructuralCollectionMutationOwnerTests: XCTestCase {
         XCTAssertEqual(harness.tabsSnapshotPublishCount, 0)
     }
 
+    func testRejectedReversibleBatchPublishesRestoredFolderExpansion() throws {
+        let spaceID = UUID()
+        let folder = Self.makeFolder(
+            name: "Folder",
+            spaceId: spaceID,
+            index: 0
+        )
+        let harness = try Harness()
+        harness.foldersBySpace[spaceID] = [folder]
+        let owner = harness.makeOwner()
+
+        let committed = owner.withReversibleSideEffects {
+            folder.isOpen = true
+            owner.setFolders([folder], for: spaceID)
+            return false
+        }
+
+        XCTAssertFalse(committed)
+        XCTAssertFalse(folder.isOpen)
+        XCTAssertEqual(harness.expansionChanges.count, 1)
+        XCTAssertEqual(harness.expansionChanges.first?.spaceID, spaceID)
+        XCTAssertEqual(
+            harness.expansionChanges.first?.expansionByFolderID,
+            [folder.id: false]
+        )
+    }
+
     func testPreparedAggregateDefersEffectsUntilTerminalPublish() throws {
         let spaceID = UUID()
         let source = Self.makeTab(index: 0)
@@ -545,6 +572,7 @@ final class TabStructuralCollectionMutationOwnerTests: XCTestCase {
         private var cancellables = Set<AnyCancellable>()
         private(set) var announceCount = 0
         private(set) var tabsSnapshotPublishCount = 0
+        private(set) var expansionChanges: [TabFolderExpansionChange] = []
 
         init(
             faviconService: (any BrowserFaviconServicing)? = nil
@@ -553,8 +581,9 @@ final class TabStructuralCollectionMutationOwnerTests: XCTestCase {
             retainedModelContainer = container
             let state = TabStateStore()
             self.state = state
+            let eventBus = TabStructureEventBus()
             let lookup = TabStructuralLookupCoordinator(
-                eventBus: TabStructureEventBus(),
+                eventBus: eventBus,
                 stateStore: state
             )
             self.lookup = lookup
@@ -603,6 +632,9 @@ final class TabStructuralCollectionMutationOwnerTests: XCTestCase {
             }.store(in: &cancellables)
             state.regularTabs.tabsBySpacePublisher.sink {
                 [weak self] _ in self?.tabsSnapshotPublishCount += 1
+            }.store(in: &cancellables)
+            eventBus.folderExpansionChangesPublisher.sink {
+                [weak self] change in self?.expansionChanges.append(change)
             }.store(in: &cancellables)
         }
 
@@ -727,7 +759,13 @@ final class TabStructuralInstallOwnerTests: XCTestCase {
             harness.lookup.lookupOwner.containsExact(tab)
         )
         XCTAssertTrue(harness.persistence.dirtySet.isEmpty)
-        XCTAssertEqual(harness.publishCount, 1)
+        XCTAssertEqual(harness.publishCount, 2)
+        XCTAssertEqual(harness.expansionChanges.count, 1)
+        XCTAssertEqual(harness.expansionChanges.first?.spaceID, space.id)
+        XCTAssertEqual(
+            harness.expansionChanges.first?.expansionByFolderID,
+            [folder.id: false]
+        )
     }
 
     func testInstallRestoredCollectionsDoesNotResetStructuralDirtyState() throws {
@@ -859,6 +897,7 @@ final class TabStructuralInstallOwnerTests: XCTestCase {
         private let owner: TabStructuralInstallOwner
         private var cancellables = Set<AnyCancellable>()
         var objectWillChangeCount = 0
+        private(set) var expansionChanges: [TabFolderExpansionChange] = []
 
         init(profileReferenceAdmission: ProfileReferenceAdmissionLedger) throws {
             let container = try makeInMemoryStartupModelContainer()
@@ -870,8 +909,9 @@ final class TabStructuralInstallOwnerTests: XCTestCase {
             self.changes = changes
             let state = TabStateStore()
             self.state = state
+            let eventBus = TabStructureEventBus()
             let lookup = TabStructuralLookupCoordinator(
-                eventBus: TabStructureEventBus(),
+                eventBus: eventBus,
                 stateStore: state
             )
             self.lookup = lookup
@@ -895,6 +935,9 @@ final class TabStructuralInstallOwnerTests: XCTestCase {
             )
             changes.sink { [weak self] _ in
                 self?.objectWillChangeCount += 1
+            }.store(in: &cancellables)
+            eventBus.folderExpansionChangesPublisher.sink {
+                [weak self] change in self?.expansionChanges.append(change)
             }.store(in: &cancellables)
         }
 

@@ -19,9 +19,7 @@ struct TabFolderMutationActions {
     let folderLayoutAnimation: Animation?
 
     func toggleFolderOpenState(_ folderId: UUID) {
-        withAnimation(folderLayoutAnimation) {
-            _ = folderCommands.toggleFolder(folderId)
-        }
+        _ = folderCommands.toggleFolder(folderId)
     }
 
     func deleteNestedFolder(_ childFolder: TabFolder) {

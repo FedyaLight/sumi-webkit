@@ -25,6 +25,17 @@ struct SidebarAppKitItemBridgeUpdateSignature: Equatable {
     let supportsPrimaryMouseTracking: Bool
 }
 
+struct SidebarAppKitItemInteractionIdentity: Equatable {
+    enum SemanticItem: Equatable {
+        case sourceID(String)
+        case dragItem(id: UUID, kind: SumiDragItemKind)
+        case anonymous
+    }
+
+    let item: SemanticItem
+    let interactionStateID: ObjectIdentifier?
+}
+
 extension SidebarAppKitItemConfiguration {
     var bridgeUpdateSignature: SidebarAppKitItemBridgeUpdateSignature {
         SidebarAppKitItemBridgeUpdateSignature(
@@ -49,5 +60,21 @@ extension SidebarAppKitItemConfiguration {
 
     var supportsPrimaryMouseTracking: Bool {
         primaryAction != nil || dragSource?.isEnabled == true || dragSource?.onActivate != nil
+    }
+
+    var interactionIdentity: SidebarAppKitItemInteractionIdentity {
+        let item: SidebarAppKitItemInteractionIdentity.SemanticItem
+        if let sourceID {
+            item = .sourceID(sourceID)
+        } else if let dragItem = dragSource?.item {
+            item = .dragItem(id: dragItem.stableID, kind: dragItem.kind)
+        } else {
+            item = .anonymous
+        }
+
+        return SidebarAppKitItemInteractionIdentity(
+            item: item,
+            interactionStateID: interactionState.map(ObjectIdentifier.init)
+        )
     }
 }

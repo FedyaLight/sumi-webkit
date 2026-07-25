@@ -157,10 +157,10 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
             ) ?? []
         )
         collapsedPinnedSpaceIDs = Self.canonicalized(
-            try container.decodeIfPresent(
+            try container.decode(
                 [UUID].self,
                 forKey: .collapsedPinnedSpaceIDs
-            ) ?? []
+            )
         )
         sidebarWidth = try container.decode(Double.self, forKey: .sidebarWidth)
         savedSidebarWidth = try container.decode(Double.self, forKey: .savedSidebarWidth)

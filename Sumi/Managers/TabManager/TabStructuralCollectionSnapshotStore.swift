@@ -30,8 +30,15 @@ final class TabStructuralCollectionSnapshotStore {
         )
     }
 
-    func restore(_ snapshot: TabStructuralMutationTransaction.Snapshot) {
-        snapshot.folderReceipts.forEach { $0.restore() }
+    func restore(
+        _ snapshot: TabStructuralMutationTransaction.Snapshot
+    ) -> [UUID: [UUID: Bool]] {
+        var restoredExpansionBySpaceID: [UUID: [UUID: Bool]] = [:]
+        for receipt in snapshot.folderReceipts where receipt.restore() {
+            restoredExpansionBySpaceID[receipt.folder.spaceId, default: [:]][
+                receipt.folder.id
+            ] = receipt.isOpen
+        }
         regularTabs.replaceTabsBySpace(snapshot.tabs, publish: false)
         folders.replaceFoldersBySpace(snapshot.folders)
         shortcutPins.replaceAll(
@@ -39,12 +46,13 @@ final class TabStructuralCollectionSnapshotStore {
             spacePinnedShortcuts: snapshot.spacePinned,
             pendingPinnedWithoutProfile: snapshot.pendingPinnedWithoutProfile
         )
+        return restoredExpansionBySpaceID
     }
 
     func restoreUncontended(
         source: TabStructuralMutationTransaction.Snapshot,
         target: TabStructuralMutationTransaction.Snapshot
-    ) {
+    ) -> [UUID: [UUID: Bool]] {
         let current = capture()
         let restoredFolderKeys = restorableFolderKeys(
             current: current,
@@ -62,9 +70,14 @@ final class TabStructuralCollectionSnapshotStore {
         ] = source.folderReceipts.reduce(into: [:]) {
             $0[ObjectIdentifier($1.folder)] = $1
         }
+        var restoredExpansionBySpaceID: [UUID: [UUID: Bool]] = [:]
         restoredFolderKeys.forEach { key in
             source.folders[key]?.forEach { folder in
-                sourceFolderReceipts[ObjectIdentifier(folder)]?.restore()
+                guard let receipt = sourceFolderReceipts[ObjectIdentifier(folder)],
+                      receipt.restore() else { return }
+                restoredExpansionBySpaceID[receipt.folder.spaceId, default: [:]][
+                    receipt.folder.id
+                ] = receipt.isOpen
             }
         }
 
@@ -94,6 +107,7 @@ final class TabStructuralCollectionSnapshotStore {
             ) ? source.pendingPinnedWithoutProfile
                 : current.pendingPinnedWithoutProfile
         )
+        return restoredExpansionBySpaceID
     }
 
     func matches(_ expected: TabStructuralMutationTransaction.Snapshot) -> Bool {

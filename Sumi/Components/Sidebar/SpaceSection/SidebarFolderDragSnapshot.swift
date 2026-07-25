@@ -1,6 +1,5 @@
 import CoreGraphics
 import Foundation
-import SwiftUI
 
 struct SidebarFolderDragSnapshot: Equatable {
     let isDragging: Bool
@@ -26,18 +25,6 @@ struct SidebarFolderDragSnapshot: Equatable {
         self.geometryGeneration = geometryGeneration
     }
 
-    @MainActor
-    init(dragState: SidebarDragState, geometryGeneration: Int) {
-        self.init(
-            isDragging: dragState.isDragging,
-            isCompletingDrop: dragState.isCompletingDrop,
-            activeDragItemID: dragState.activeDragItemId,
-            activeHoveredFolderID: dragState.activeHoveredFolderId,
-            folderDropIntent: dragState.folderDropIntent,
-            geometryGeneration: geometryGeneration
-        )
-    }
-
     func isContainTargeted(folderID: UUID) -> Bool {
         folderDropIntent == .contain(folderId: folderID)
     }
@@ -52,21 +39,5 @@ struct SidebarFolderDragSnapshot: Equatable {
 
     func childOpacity(itemID: UUID) -> Double {
         isDragging && activeDragItemID == itemID ? SidebarDragSourceDim.opacity : 1
-    }
-}
-
-/// Isolates the coarse `SidebarDragState.objectWillChange` stream to a tiny
-/// reader and hands the folder subtree one immutable interaction snapshot.
-struct SidebarFolderDragSnapshotReader<Content: View>: View {
-    @EnvironmentObject private var dragState: SidebarDragState
-    @EnvironmentObject private var dragGeometry: SidebarDragGeometryModule
-
-    @ViewBuilder let content: (SidebarFolderDragSnapshot) -> Content
-
-    var body: some View {
-        content(SidebarFolderDragSnapshot(
-            dragState: dragState,
-            geometryGeneration: dragGeometry.sidebarGeometryGeneration
-        ))
     }
 }

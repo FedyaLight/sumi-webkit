@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import SumiDomain
 
 enum SidebarPinnedInventoryItem: Hashable {
@@ -29,6 +30,7 @@ struct SidebarSpaceInventorySnapshot {
     let folderPinsByFolderID: [UUID: [ShortcutPin]]
     let folderItemsByFolderID: [UUID: [SidebarPinnedInventoryItem]]
     let foldersByID: [UUID: TabFolder]
+    let folderPresentationsByID: [UUID: SidebarFolderPresentationCell]
     let pinsByID: [UUID: ShortcutPin]
     let tabsByID: [UUID: Tab]
     let splitGroupsByID: [UUID: SplitGroup]
@@ -40,6 +42,10 @@ struct SidebarSpaceInventorySnapshot {
 
     func folder(id: UUID) -> TabFolder? {
         foldersByID[id]
+    }
+
+    func folderPresentation(id: UUID) -> SidebarFolderPresentationCell? {
+        folderPresentationsByID[id]
     }
 
     func pin(id: UUID) -> ShortcutPin? {
@@ -184,6 +190,7 @@ struct SidebarSpaceInventorySnapshot {
             folderPinsByFolderID: [:],
             folderItemsByFolderID: [:],
             foldersByID: [:],
+            folderPresentationsByID: [:],
             pinsByID: [:],
             tabsByID: Dictionary(
                 uniqueKeysWithValues: regularTabs.map { ($0.id, $0) }
@@ -270,17 +277,23 @@ final class SidebarPinnedInventoryProjection {
     private let pins: ShortcutPinCollectionStateOwner
     private let splitGroups: SplitGroupStore
     private let splitOrdering: SplitGroupSidebarOrderingService
+    private let presentation: SidebarSavedContentPresentationSession
 
     init(
         folders: TabFolderCollectionStateOwner,
         pins: ShortcutPinCollectionStateOwner,
         splitGroups: SplitGroupStore,
-        splitOrdering: SplitGroupSidebarOrderingService
+        splitOrdering: SplitGroupSidebarOrderingService,
+        folderExpansionChanges: AnyPublisher<TabFolderExpansionChange, Never> =
+            Empty(completeImmediately: false).eraseToAnyPublisher()
     ) {
         self.folders = folders
         self.pins = pins
         self.splitGroups = splitGroups
         self.splitOrdering = splitOrdering
+        self.presentation = SidebarSavedContentPresentationSession(
+            expansionChanges: folderExpansionChanges
+        )
     }
 
     func snapshot(
@@ -304,6 +317,7 @@ final class SidebarPinnedInventoryProjection {
         )
         let visiblePins = allPins.filter { !shortcutHostedPinIDs.contains($0.id) }
         let foldersByID = Dictionary(uniqueKeysWithValues: allFolders.map { ($0.id, $0) })
+        let folderPresentationsByID = presentation.reconcile(folders: allFolders)
         let pinsByID = Dictionary(uniqueKeysWithValues: allPins.map { ($0.id, $0) })
         let pageTabs = regularTabs
         let tabsByID = Dictionary(uniqueKeysWithValues: pageTabs.map { ($0.id, $0) })
@@ -345,6 +359,7 @@ final class SidebarPinnedInventoryProjection {
             folderPinsByFolderID: folderPinsByFolderID,
             folderItemsByFolderID: folderItemsByFolderID,
             foldersByID: foldersByID,
+            folderPresentationsByID: folderPresentationsByID,
             pinsByID: pinsByID,
             tabsByID: tabsByID,
             splitGroupsByID: splitGroups.groupMap

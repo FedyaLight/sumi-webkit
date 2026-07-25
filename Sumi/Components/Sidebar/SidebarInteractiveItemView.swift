@@ -71,13 +71,15 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource {
     func update(configuration: SidebarAppKitItemConfiguration) {
         let previousSignature = itemConfiguration.bridgeUpdateSignature
         let nextSignature = configuration.bridgeUpdateSignature
-        let didReplaceInteraction = previousSignature != nextSignature
+        let didChangeConfiguration = previousSignature != nextSignature
+        let didReplaceInteraction =
+            itemConfiguration.interactionIdentity != configuration.interactionIdentity
 
         if didReplaceInteraction && hasInFlightClickGesture {
             resetMouseState()
         }
         itemConfiguration = configuration
-        guard didReplaceInteraction else { return }
+        guard didChangeConfiguration else { return }
 
         isConfigurationInteractionEnabled = configuration.isInteractionEnabled
         identifier = configuration.sourceID.map { NSUserInterfaceItemIdentifier($0) }

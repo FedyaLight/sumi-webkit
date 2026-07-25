@@ -52,6 +52,17 @@ final class TabStructuralLookupCoordinator {
         publishOwner.requestPublish(scope: scope)
     }
 
+    @discardableResult
+    func publishFolderExpansionChange(
+        spaceID: UUID,
+        expansionByFolderID: [UUID: Bool]
+    ) -> TabFolderExpansionChange {
+        publishOwner.publishFolderExpansionChange(
+            spaceID: spaceID,
+            expansionByFolderID: expansionByFolderID
+        )
+    }
+
     /// Makes writes queued by the current structural transaction available to
     /// an internal reader without opening external structural publication.
     func flushPendingWritesForRead() {

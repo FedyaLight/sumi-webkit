@@ -8,6 +8,7 @@ final class TabStructureEventBusTests: XCTestCase {
     func testTypedPublishersReceiveOnlyTheirEvents() {
         let bus = TabStructureEventBus()
         var structureChangedCount = 0
+        var folderExpansionChangedCount = 0
         var initialDataLoadedCount = 0
         let structureCancellable = bus.structureChangedPublisher.sink {
             structureChangedCount += 1
@@ -15,14 +16,29 @@ final class TabStructureEventBusTests: XCTestCase {
         let initialDataCancellable = bus.initialDataLoadedPublisher.sink {
             initialDataLoadedCount += 1
         }
+        let expansionCancellable = bus.folderExpansionChangesPublisher.sink { _ in
+            folderExpansionChangedCount += 1
+        }
 
         bus.publishInitialDataLoaded()
         bus.publishStructureChanged()
         bus.publishStructureChanged()
+        bus.publishFolderExpansionChanged(
+            TabFolderExpansionChange(
+                revision: 3,
+                spaceID: UUID(),
+                expansionByFolderID: [UUID(): true]
+            )
+        )
 
         XCTAssertEqual(structureChangedCount, 2)
+        XCTAssertEqual(folderExpansionChangedCount, 1)
         XCTAssertEqual(initialDataLoadedCount, 1)
-        withExtendedLifetime((structureCancellable, initialDataCancellable)) {}
+        withExtendedLifetime((
+            structureCancellable,
+            initialDataCancellable,
+            expansionCancellable
+        )) {}
     }
 
     func testGeneralPublisherPreservesEventOrder() {
