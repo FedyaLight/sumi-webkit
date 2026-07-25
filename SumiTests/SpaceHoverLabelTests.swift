@@ -143,6 +143,22 @@ final class SpaceHoverLabelTests: XCTestCase {
         XCTAssertEqual(centerX - 100, 0, accuracy: 0.001)
     }
 
+    func testLabelFrameAlignsToRetinaPixelGrid() {
+        let scale: CGFloat = 2
+        let size = CGSize(width: 83.25, height: 34.25)
+        let frame = SpaceHoverLabelPlacement.frame(
+            anchorX: 116.25,
+            targetMinY: 40.25,
+            containerBounds: CGRect(x: 0, y: 0, width: 300, height: 80),
+            labelSize: size,
+            displayScale: scale
+        )
+
+        for edge in [frame.minX, frame.minY, frame.maxX, frame.maxY] {
+            XCTAssertEqual(edge * scale, (edge * scale).rounded(), accuracy: 0.001)
+        }
+    }
+
     // MARK: - Palette
 
     @MainActor

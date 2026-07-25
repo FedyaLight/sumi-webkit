@@ -90,7 +90,7 @@ struct SpaceHoverLabelPalette: Equatable {
     }
 
     private static let accentTextBlendStep: CGFloat = 0.05
-    private static let surfaceBorderBlend: CGFloat = 0.14
+    private static let surfaceBorderBlend: CGFloat = 0.20
 }
 
 private extension Color {

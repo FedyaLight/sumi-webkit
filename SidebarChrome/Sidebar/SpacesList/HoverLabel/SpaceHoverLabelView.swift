@@ -59,9 +59,13 @@ private struct ThemedSpaceHoverLabelPlate: View {
 
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.displayScale) private var displayScale
 
     var body: some View {
-        SpaceHoverLabelPositioningLayout(target: target) {
+        SpaceHoverLabelPositioningLayout(
+            target: target,
+            displayScale: displayScale
+        ) {
             SpaceHoverLabelPlate(
                 label: label,
                 palette: SpaceHoverLabelPalette.make(
@@ -74,6 +78,7 @@ private struct ThemedSpaceHoverLabelPlate: View {
 
 private struct SpaceHoverLabelPositioningLayout: Layout {
     let target: CGRect
+    let displayScale: CGFloat
 
     func sizeThatFits(
         proposal: ProposedViewSize,
@@ -98,18 +103,17 @@ private struct SpaceHoverLabelPositioningLayout: Layout {
         let plateSize = plate.sizeThatFits(
             ProposedViewSize(width: bounds.width, height: nil)
         )
-        let centerX = bounds.minX + SpaceHoverLabelPlacement.centerX(
+        let frame = SpaceHoverLabelPlacement.frame(
             anchorX: target.midX,
-            containerWidth: bounds.width,
-            labelWidth: plateSize.width
+            targetMinY: target.minY,
+            containerBounds: bounds,
+            labelSize: plateSize,
+            displayScale: displayScale
         )
-        let centerY = bounds.minY + target.minY
-            - SpaceHoverLabelPlacement.verticalOffset
-            - plateSize.height / 2
         plate.place(
-            at: CGPoint(x: centerX, y: centerY),
-            anchor: .center,
-            proposal: ProposedViewSize(plateSize)
+            at: frame.origin,
+            anchor: .topLeading,
+            proposal: ProposedViewSize(frame.size)
         )
     }
 }
@@ -143,7 +147,11 @@ struct SpaceHoverLabelPlate: View {
                 cornerRadius: SpaceHoverLabelLayout.plateCornerRadius,
                 style: .continuous
             )
-            .strokeBorder(palette.surfaceBorder, lineWidth: 1)
+            .strokeBorder(
+                palette.surfaceBorder,
+                lineWidth: 1,
+                antialiased: false
+            )
         }
     }
 }

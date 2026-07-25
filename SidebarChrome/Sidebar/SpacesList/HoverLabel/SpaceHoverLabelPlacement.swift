@@ -41,4 +41,38 @@ enum SpaceHoverLabelPlacement {
         let lastFittingCenter = max(containerWidth - halfWidth, firstFittingCenter)
         return min(max(anchorX, firstFittingCenter), lastFittingCenter)
     }
+
+    static func frame(
+        anchorX: CGFloat,
+        targetMinY: CGFloat,
+        containerBounds: CGRect,
+        labelSize: CGSize,
+        displayScale: CGFloat
+    ) -> CGRect {
+        let centerX = containerBounds.minX + centerX(
+            anchorX: anchorX,
+            containerWidth: containerBounds.width,
+            labelWidth: labelSize.width
+        )
+        let unalignedFrame = CGRect(
+            x: centerX - labelSize.width / 2,
+            y: containerBounds.minY + targetMinY - verticalOffset - labelSize.height,
+            width: labelSize.width,
+            height: labelSize.height
+        )
+        let scale = max(displayScale, 1)
+
+        func aligned(_ value: CGFloat) -> CGFloat {
+            (value * scale).rounded() / scale
+        }
+
+        let minX = aligned(unalignedFrame.minX)
+        let minY = aligned(unalignedFrame.minY)
+        return CGRect(
+            x: minX,
+            y: minY,
+            width: max(aligned(unalignedFrame.maxX) - minX, 0),
+            height: max(aligned(unalignedFrame.maxY) - minY, 0)
+        )
+    }
 }
