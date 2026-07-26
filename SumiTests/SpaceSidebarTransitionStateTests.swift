@@ -1,6 +1,7 @@
 import AppKit
 @testable import Sumi
 import SumiDomain
+import SwiftUI
 import XCTest
 
 @MainActor
@@ -1130,8 +1131,9 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             settings: settings
         )
 
-        XCTAssertEqual(snapshot.source.regularTabs.map(\.id), [first.id, second.id])
-        XCTAssertEqual(snapshot.source.regularTabs.map(\.isSelected), [false, true])
+        let regularTabs = regularTabRows(in: snapshot.source)
+        XCTAssertEqual(regularTabs.map(\.id), [first.id, second.id])
+        XCTAssertEqual(regularTabs.map(\.isSelected), [false, true])
     }
 
     func testSnapshotBuilderPreservesRegularTabUnloadedIndicator() {
@@ -1164,7 +1166,263 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         )
 
         XCTAssertTrue(unloadedTab.showsWebViewUnloadedIndicator)
-        XCTAssertEqual(snapshot.source.regularTabs.map(\.showsUnloadedIndicator), [true])
+        XCTAssertEqual(
+            regularTabRows(in: snapshot.source).map(\.showsUnloadedIndicator),
+            [true]
+        )
+    }
+
+    func testSnapshotBuilderProjectsRegularSplitAsOneRowWithResolvedFavicons() throws {
+        let browser = BrowserManager()
+        let windowState = BrowserWindowState()
+        let settings = makeIsolatedSettings()
+        let profileID = UUID()
+        let source = Space(name: "Source", profileId: profileID)
+        let destination = Space(name: "Destination", profileId: profileID)
+        let tabs = (0..<3).map { index in
+            browser.tabFactory.makeTab(
+                url: URL(string: "https://split-\(index).example")!,
+                name: "Split \(index)",
+                favicon: index == 0 ? "star.fill" : "bolt.fill",
+                spaceId: source.id,
+                index: index,
+                loadsCachedFaviconOnInit: false
+            )
+        }
+        tabs.forEach {
+            $0.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browser))
+        }
+
+        browser.spaceStateOwner.replaceSpaces([source, destination])
+        tabs.forEach { browser.regularTabLifecycleOwner.addTab($0) }
+        let group = try XCTUnwrap(
+            SplitGroup.make(
+                members: [
+                    .regularTab(tabs[0].id),
+                    .regularTab(tabs[1].id),
+                ],
+                layoutKind: .horizontal,
+                container: .regularTabs(spaceId: source.id)
+            )
+        )
+        XCTAssertTrue(browser.splitGroupMutations.insert(group, persist: false))
+        windowState.currentProfileId = profileID
+        windowState.currentSpaceId = source.id
+        windowState.currentTabId = tabs[0].id
+
+        let snapshot = makeTransitionSnapshot(
+            sourceSpace: source,
+            destinationSpace: destination,
+            browserManager: browser,
+            windowState: windowState,
+            settings: settings
+        )
+
+        XCTAssertEqual(snapshot.source.regularRows.count, 2)
+        guard case .splitGroup(let split) = snapshot.source.regularRows[0] else {
+            return XCTFail("Expected one split-group row before the trailing tab")
+        }
+        XCTAssertEqual(split.id, group.id)
+        XCTAssertEqual(split.members.map(\.id), group.memberIDs)
+        XCTAssertTrue(split.members.allSatisfy { member in
+            if case .system("globe") = member.icon {
+                return false
+            }
+            return true
+        })
+        guard case .tab(let trailing) = snapshot.source.regularRows[1] else {
+            return XCTFail("Expected the remaining regular tab")
+        }
+        XCTAssertEqual(trailing.id, tabs[2].id)
+    }
+
+    func testSnapshotSplitMemberContentMatchesLiveVerticalCenter() throws {
+        let image = try renderedSnapshotSplitRow()
+        var redPixelRows: [Int] = []
+
+        for y in 0..<image.pixelsHigh {
+            for x in 0..<image.pixelsWide {
+                guard let color = image.colorAt(x: x, y: y)?
+                    .usingColorSpace(.deviceRGB) else {
+                    continue
+                }
+                if color.redComponent > 0.8,
+                   color.greenComponent < 0.4,
+                   color.blueComponent < 0.4,
+                   color.alphaComponent > 0.8 {
+                    redPixelRows.append(y)
+                }
+            }
+        }
+
+        let minY = try XCTUnwrap(redPixelRows.min())
+        let maxY = try XCTUnwrap(redPixelRows.max())
+        XCTAssertEqual(
+            CGFloat(minY + maxY) / 2,
+            SidebarRowLayout.rowHeight / 2,
+            accuracy: 0.5,
+            "Snapshot split favicons and titles must not jump above live rows"
+        )
+    }
+
+    func testSnapshotSplitFaviconMatchesLiveSize() throws {
+        let image = try renderedSnapshotSplitRow(
+            sourceIconSize: 32,
+            memberCount: 1
+        )
+        var redPixelColumns: [Int] = []
+        var redPixelRows: [Int] = []
+
+        for y in 0..<image.pixelsHigh {
+            for x in 0..<image.pixelsWide {
+                guard let color = image.colorAt(x: x, y: y)?
+                    .usingColorSpace(.deviceRGB) else {
+                    continue
+                }
+                if color.redComponent > 0.8,
+                   color.greenComponent < 0.4,
+                   color.blueComponent < 0.4,
+                   color.alphaComponent > 0.8 {
+                    redPixelColumns.append(x)
+                    redPixelRows.append(y)
+                }
+            }
+        }
+
+        let minX = try XCTUnwrap(redPixelColumns.min())
+        let maxX = try XCTUnwrap(redPixelColumns.max())
+        let minY = try XCTUnwrap(redPixelRows.min())
+        let maxY = try XCTUnwrap(redPixelRows.max())
+        XCTAssertEqual(
+            maxX - minX + 1,
+            Int(SplitGroupSidebarVisualLayout.iconWidth),
+            accuracy: 1,
+            "Snapshot bitmaps must scale down to the live split favicon width"
+        )
+        XCTAssertEqual(
+            maxY - minY + 1,
+            Int(SplitGroupSidebarVisualLayout.iconWidth),
+            accuracy: 1,
+            "Snapshot bitmaps must scale down to the live split favicon height"
+        )
+    }
+
+    func testSnapshotLauncherFaviconKeepsLiveIntrinsicSize() throws {
+        let sourceIconSize: CGFloat = 32
+        let image = try renderedSnapshotLauncherIcon(
+            sourceIconSize: sourceIconSize
+        )
+        var redPixelColumns: [Int] = []
+        var redPixelRows: [Int] = []
+
+        for y in 0..<image.pixelsHigh {
+            for x in 0..<image.pixelsWide {
+                guard let color = image.colorAt(x: x, y: y)?
+                    .usingColorSpace(.deviceRGB) else {
+                    continue
+                }
+                if color.redComponent > 0.8,
+                   color.greenComponent < 0.4,
+                   color.blueComponent < 0.4,
+                   color.alphaComponent > 0.8 {
+                    redPixelColumns.append(x)
+                    redPixelRows.append(y)
+                }
+            }
+        }
+
+        let minX = try XCTUnwrap(redPixelColumns.min())
+        let maxX = try XCTUnwrap(redPixelColumns.max())
+        let minY = try XCTUnwrap(redPixelRows.min())
+        let maxY = try XCTUnwrap(redPixelRows.max())
+        XCTAssertEqual(
+            maxX - minX + 1,
+            Int(sourceIconSize),
+            accuracy: 1,
+            "Snapshot launchers must preserve the same intrinsic bitmap presentation as live rows"
+        )
+        XCTAssertEqual(
+            maxY - minY + 1,
+            Int(sourceIconSize),
+            accuracy: 1,
+            "Snapshot launchers must preserve the same intrinsic bitmap presentation as live rows"
+        )
+    }
+
+    func testSnapshotBuilderKeepsPinnedSplitIconsDuringTransition() throws {
+        let browser = BrowserManager()
+        let windowState = BrowserWindowState()
+        let settings = makeIsolatedSettings()
+        let profileID = UUID()
+        let source = Space(name: "Source", profileId: profileID)
+        let destination = Space(name: "Destination", profileId: profileID)
+        let pins = [
+            ShortcutPin(
+                id: UUID(),
+                role: .spacePinned,
+                spaceId: source.id,
+                index: 0,
+                launchURL: URL(string: "https://first-split.example")!,
+                title: "First",
+                iconAsset: "star.fill"
+            ),
+            ShortcutPin(
+                id: UUID(),
+                role: .spacePinned,
+                spaceId: source.id,
+                index: 1,
+                launchURL: URL(string: "https://second-split.example")!,
+                title: "Second",
+                iconAsset: "bolt.fill"
+            ),
+        ]
+        let group = try XCTUnwrap(
+            SplitGroup.make(
+                members: pins.map { .shortcutPin($0.id) },
+                layoutKind: .horizontal,
+                container: .shortcutSidebar(
+                    spaceId: source.id,
+                    profileId: profileID,
+                    folderId: nil,
+                    index: 0
+                ),
+                title: "Research",
+                iconAsset: "rectangle.split.2x1"
+            )
+        )
+
+        browser.spaceStateOwner.replaceSpaces([source, destination])
+        browser.structuralCollectionMutationOwner
+            .setSpacePinnedShortcuts(pins, for: source.id)
+        XCTAssertTrue(browser.splitGroupMutations.insert(group, persist: false))
+        windowState.currentProfileId = profileID
+        windowState.currentSpaceId = source.id
+
+        let snapshot = makeTransitionSnapshot(
+            sourceSpace: source,
+            destinationSpace: destination,
+            browserManager: browser,
+            windowState: windowState,
+            settings: settings
+        )
+
+        XCTAssertEqual(snapshot.source.pinnedItems.count, 1)
+        guard case .splitGroup(let split) = snapshot.source.pinnedItems[0] else {
+            return XCTFail("Expected one pinned split-group row")
+        }
+        XCTAssertEqual(split.members.map(\.id), group.memberIDs)
+        XCTAssertEqual(split.displayTitle, "Research")
+        guard case .system("rectangle.split.2x1") = split.customIcon else {
+            return XCTFail("Expected the custom group icon in the snapshot")
+        }
+        XCTAssertTrue(split.members.allSatisfy(\.desaturatesIcon))
+        XCTAssertEqual(
+            split.members.compactMap { member -> String? in
+                guard case .system(let name) = member.icon else { return nil }
+                return name
+            },
+            ["star.fill", "bolt.fill"]
+        )
     }
 
     func testSnapshotBuilderKeepsOnlyStickyPinnedRowsWhenSpaceIsCollapsed() {
@@ -1231,7 +1489,10 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         XCTAssertTrue(snapshot.source.hasPinnedContent)
         XCTAssertTrue(snapshot.source.isPinnedContentCollapsed)
         XCTAssertEqual(snapshot.source.pinnedItems.map(\.id), [stickyPin.id])
-        XCTAssertEqual(snapshot.source.regularTabs.map(\.id), [regularTab.id])
+        XCTAssertEqual(
+            regularTabRows(in: snapshot.source).map(\.id),
+            [regularTab.id]
+        )
     }
 
     func testSnapshotFolderBodyKeepsLiveFolderLayoutMetrics() {
@@ -1683,6 +1944,132 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         XCTAssertFalse(tracker.didSendBeginEvent)
     }
 
+    private func renderedSnapshotSplitRow(
+        sourceIconSize: CGFloat = SidebarRowLayout.faviconSize,
+        memberCount: Int = 2
+    ) throws -> NSBitmapImageRep {
+        let rowWidth: CGFloat = 213
+        let redIcon = NSImage(
+            size: CGSize(width: sourceIconSize, height: sourceIconSize)
+        )
+        redIcon.lockFocus()
+        NSColor.red.setFill()
+        NSBezierPath(
+            rect: CGRect(
+                x: 0,
+                y: 0,
+                width: sourceIconSize,
+                height: sourceIconSize
+            )
+        ).fill()
+        redIcon.unlockFocus()
+
+        let members = (0..<memberCount).map { _ in
+            SpaceSplitGroupMemberSnapshot(
+                id: .regularTab(UUID()),
+                title: "",
+                icon: .image(Image(nsImage: redIcon)),
+                desaturatesIcon: false,
+                accentSource: nil,
+                essentialBackdrop: nil,
+                isSelected: false
+            )
+        }
+        let snapshot = SpaceSplitGroupSnapshot(
+            id: UUID(),
+            displayTitle: "",
+            customIcon: nil,
+            members: members,
+            isSelected: false,
+            isLoaded: true
+        )
+        let settings = makeIsolatedSettings()
+        let tokens = ResolvedThemeContext.default.tokens(settings: settings)
+        let root = SpaceSnapshotSplitGroupView(
+            splitGroup: snapshot,
+            rowCornerRadius: SidebarRowLayout.defaultCornerRadius,
+            tokens: tokens
+        )
+        .frame(width: rowWidth, height: SidebarRowLayout.rowHeight)
+        let host = NSHostingView(rootView: root)
+        host.wantsLayer = true
+        host.frame = CGRect(
+            x: 0,
+            y: 0,
+            width: rowWidth,
+            height: SidebarRowLayout.rowHeight
+        )
+        let window = NSWindow(
+            contentRect: host.frame,
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.contentView = host
+        window.layoutIfNeeded()
+        host.layoutSubtreeIfNeeded()
+        host.displayIfNeeded()
+        let image = try XCTUnwrap(
+            host.bitmapImageRepForCachingDisplay(in: host.bounds)
+        )
+        host.cacheDisplay(in: host.bounds, to: image)
+        return image
+    }
+
+    private func renderedSnapshotLauncherIcon(
+        sourceIconSize: CGFloat
+    ) throws -> NSBitmapImageRep {
+        let canvasSize: CGFloat = 64
+        let redIcon = NSImage(
+            size: CGSize(width: sourceIconSize, height: sourceIconSize)
+        )
+        redIcon.lockFocus()
+        NSColor.red.setFill()
+        NSBezierPath(
+            rect: CGRect(
+                x: 0,
+                y: 0,
+                width: sourceIconSize,
+                height: sourceIconSize
+            )
+        ).fill()
+        redIcon.unlockFocus()
+
+        let root = SpaceSnapshotIconView(
+            icon: .image(Image(nsImage: redIcon)),
+            size: SidebarRowLayout.faviconSize,
+            foregroundColor: .black
+        )
+        .frame(width: canvasSize, height: canvasSize)
+        let host = NSHostingView(rootView: root)
+        host.wantsLayer = true
+        host.frame = CGRect(
+            x: 0,
+            y: 0,
+            width: canvasSize,
+            height: canvasSize
+        )
+        let window = NSWindow(
+            contentRect: host.frame,
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.contentView = host
+        window.layoutIfNeeded()
+        host.layoutSubtreeIfNeeded()
+        host.displayIfNeeded()
+        let image = try XCTUnwrap(
+            host.bitmapImageRepForCachingDisplay(in: host.bounds)
+        )
+        host.cacheDisplay(in: host.bounds, to: image)
+        return image
+    }
+
     private func makeIsolatedSettings() -> SumiSettingsService {
         let suiteName = "SpaceSidebarTransitionStateTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -1731,12 +2118,21 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             hasPinnedContent: false,
             isPinnedContentCollapsed: false,
             pinnedItems: [],
-            regularTabs: [],
+            regularRows: [],
             showsNewTabButtonInList: true,
             showsTopNewTabButton: false,
             rowCornerRadius: SpaceTitleRowLayout.defaultCornerRadius,
             scrollViewport: .zero
         )
+    }
+
+    private func regularTabRows(
+        in snapshot: SpaceSidebarPageSnapshot
+    ) -> [SpaceTabRowSnapshot] {
+        snapshot.regularRows.compactMap { row in
+            guard case .tab(let tab) = row else { return nil }
+            return tab
+        }
     }
 
     private func makeEssentialPin(profileId: UUID, title: String) -> ShortcutPin {

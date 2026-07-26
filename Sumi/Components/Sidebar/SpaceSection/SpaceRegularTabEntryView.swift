@@ -14,6 +14,7 @@ struct SpaceRegularTabEntryView: View {
     let isCurrentTab: Bool
     let opacity: Double
     let isInteractive: Bool
+    let projectedSplitTarget: SidebarSplitPairingTarget?
     let actionOwner: SpaceRegularTabActionOwner
     let onClose: () -> Void
 
@@ -34,6 +35,7 @@ struct SpaceRegularTabEntryView: View {
                 isEnabled: !tab.isRenaming && isInteractive
             ),
             isAppKitInteractionEnabled: isInteractive,
+            projectedSplitTarget: projectedSplitTarget,
             action: { actionOwner.activate(tab) },
             onClose: onClose,
             onMiddleClick: onClose,

@@ -59,6 +59,9 @@ struct SpaceNestedPinnedStickyEntryView: View {
             folderID: folder.id,
             isInteractive: isInteractive,
             opacity: itemOpacity(pin.id),
+            projectedSplitTarget:
+                dragSnapshot.splitPairingTarget?
+                    .projectedTarget(for: .shortcutPin(pin.id)),
             contextMenuActionOwner: contextOwner,
             mutationActions: mutationActions
         )
@@ -75,7 +78,11 @@ struct SpaceNestedPinnedStickyEntryView: View {
             ),
             space: space,
             browserContext: browserContext,
-            isInteractive: isInteractive
+            isInteractive: isInteractive,
+            isDropHighlighted:
+                dragSnapshot.folderSnapshot.isExistingSplitGroupTargeted(
+                    memberIDs: group.memberIDs
+                )
         )
     }
 

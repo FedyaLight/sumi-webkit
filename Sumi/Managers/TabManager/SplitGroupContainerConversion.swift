@@ -38,8 +38,8 @@ final class SplitGroupContainerConversion {
     }
 
     @discardableResult
-    func move(_ group: SplitGroup, operation: DragOperation) -> Bool {
-        guard ordering.group(id: group.id) == group,
+    func move(groupID: UUID, operation: DragOperation) -> Bool {
+        guard let group = ordering.group(id: groupID),
               sourceContainerMatches(group.container, operation.fromContainer)
         else { return false }
 

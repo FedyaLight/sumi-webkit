@@ -66,6 +66,7 @@ struct SpacePinnedDragSnapshot: Equatable {
     let activeDragItemID: UUID?
     let activeHoveredFolderID: UUID?
     let folderDropIntent: FolderDropIntent
+    let splitPairingTarget: SidebarSplitPairingTarget?
     let isHoveringEmptySection: Bool
     let geometryGeneration: Int
 
@@ -75,6 +76,7 @@ struct SpacePinnedDragSnapshot: Equatable {
         activeDragItemID: UUID?,
         activeHoveredFolderID: UUID?,
         folderDropIntent: FolderDropIntent,
+        splitPairingTarget: SidebarSplitPairingTarget? = nil,
         isHoveringEmptySection: Bool,
         geometryGeneration: Int
     ) {
@@ -83,6 +85,7 @@ struct SpacePinnedDragSnapshot: Equatable {
         self.activeDragItemID = activeDragItemID
         self.activeHoveredFolderID = activeHoveredFolderID
         self.folderDropIntent = folderDropIntent
+        self.splitPairingTarget = splitPairingTarget
         self.isHoveringEmptySection = isHoveringEmptySection
         self.geometryGeneration = geometryGeneration
     }
@@ -106,6 +109,7 @@ struct SpacePinnedDragSnapshot: Equatable {
             activeDragItemID: frame.activeDragItemID,
             activeHoveredFolderID: frame.activeHoveredFolderID,
             folderDropIntent: frame.folderDropIntent,
+            splitPairingTarget: frame.splitPairingTarget,
             isHoveringEmptySection: hoveredSpaceID == spaceID,
             geometryGeneration: geometryGeneration
         )
@@ -118,6 +122,7 @@ struct SpacePinnedDragSnapshot: Equatable {
             activeDragItemID: activeDragItemID,
             activeHoveredFolderID: activeHoveredFolderID,
             folderDropIntent: folderDropIntent,
+            splitPairingTarget: splitPairingTarget,
             geometryGeneration: geometryGeneration
         )
     }

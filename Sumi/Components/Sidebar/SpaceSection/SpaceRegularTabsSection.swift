@@ -14,6 +14,7 @@ struct SpaceRegularDragSnapshot: Equatable {
     let isDragging: Bool
     let isCompletingDrop: Bool
     let activeDragItemID: UUID?
+    let splitPairingTarget: SidebarSplitPairingTarget?
     let geometryGeneration: Int
 
     @MainActor
@@ -21,6 +22,7 @@ struct SpaceRegularDragSnapshot: Equatable {
         isDragging = dragState.isDragging
         isCompletingDrop = dragState.isCompletingDrop
         activeDragItemID = dragState.activeDragItemId
+        splitPairingTarget = dragState.projectionSplitPairingTarget
         self.geometryGeneration = geometryGeneration
     }
 }
@@ -133,7 +135,7 @@ private struct SpaceRegularTabsContentView: View {
     }
 
     private var renderedRowCount: Int {
-        interactionSession.listAnimation.renderedItems.count
+        interactionSession.listAnimation.renderedRows.count
     }
 
     var body: some View {

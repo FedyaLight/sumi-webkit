@@ -11,6 +11,7 @@ struct SpaceTab: View {
     @ObservedObject var tab: Tab
     var dragSourceConfiguration: SidebarDragSourceConfiguration?
     var isAppKitInteractionEnabled: Bool = true
+    var projectedSplitTarget: SidebarSplitPairingTarget? = nil
     var action: () -> Void
     var onClose: () -> Void
     var onMiddleClick: () -> Void
@@ -30,6 +31,77 @@ struct SpaceTab: View {
     @Environment(\.resolvedThemeContext) private var themeContext
 
     var body: some View {
+        presentedRow
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityIdentifier("tab-row-\(tab.id.uuidString)")
+        .accessibilityValue(isCurrentTab ? "selected" : "not selected")
+        .sidebarSelectedItemVisibility(
+            .regularTab(tab.id),
+            isSelected: isCurrentTab,
+            isEnabled: isAppKitInteractionEnabled
+        )
+        .sidebarHover($isRowHovered, isEnabled: isAppKitInteractionEnabled)
+        .onChange(of: isRowHovered) { _, hovering in
+            if !hovering {
+                suppressRegularCloseUntilHoverExit = false
+            }
+        }
+        .onChange(of: activeGlanceSessionForRow?.id) { oldValue, newValue in
+            if oldValue != nil, newValue == nil, isRowHovered {
+                suppressRegularCloseUntilHoverExit = true
+            } else if newValue != nil {
+                suppressRegularCloseUntilHoverExit = false
+            }
+        }
+        .sidebarZenPressEffect(
+            sourceID: rowSourceID,
+            isEnabled: isAppKitInteractionEnabled && !tab.isRenaming
+        )
+        .background(
+            Group {
+                if tab.isRenaming {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            tab.saveRename()
+                        }
+                }
+            }
+        )
+        .sidebarAppKitContextMenu(
+            isInteractionEnabled: isAppKitInteractionEnabled,
+            dragSource: effectiveDragSourceConfiguration,
+            primaryAction: {
+                if tab.isRenaming {
+                    tab.saveRename()
+                }
+                action()
+            },
+            onMiddleClick: onMiddleClick,
+            sourceID: rowSourceID,
+            entries: contextMenuEntries
+        )
+        .task(id: tab.url) {
+            guard fetchesVisiblePresentation else { return }
+            await tab.fetchFaviconForVisiblePresentation()
+        }
+    }
+
+    @ViewBuilder
+    private var presentedRow: some View {
+        if let projectedSplitTarget {
+            SidebarProjectedSplitPairTarget(
+                target: projectedSplitTarget,
+                title: tab.name
+            ) {
+                favicon
+            }
+        } else {
+            ordinaryRow
+        }
+    }
+
+    private var ordinaryRow: some View {
         ZStack {
             HStack(spacing: 8) {
                 favicon
@@ -132,59 +204,6 @@ struct SpaceTab: View {
                 isVisible: drawsRowSurface,
                 drawsSelectionShadow: isCurrentTab
             )
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityIdentifier("tab-row-\(tab.id.uuidString)")
-        .accessibilityValue(isCurrentTab ? "selected" : "not selected")
-        .sidebarSelectedItemVisibility(
-            .regularTab(tab.id),
-            isSelected: isCurrentTab,
-            isEnabled: isAppKitInteractionEnabled
-        )
-        .sidebarHover($isRowHovered, isEnabled: isAppKitInteractionEnabled)
-        .onChange(of: isRowHovered) { _, hovering in
-            if !hovering {
-                suppressRegularCloseUntilHoverExit = false
-            }
-        }
-        .onChange(of: activeGlanceSessionForRow?.id) { oldValue, newValue in
-            if oldValue != nil, newValue == nil, isRowHovered {
-                suppressRegularCloseUntilHoverExit = true
-            } else if newValue != nil {
-                suppressRegularCloseUntilHoverExit = false
-            }
-        }
-        .sidebarZenPressEffect(
-            sourceID: rowSourceID,
-            isEnabled: isAppKitInteractionEnabled && !tab.isRenaming
-        )
-        .background(
-            Group {
-                if tab.isRenaming {
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            tab.saveRename()
-                        }
-                }
-            }
-        )
-        .sidebarAppKitContextMenu(
-            isInteractionEnabled: isAppKitInteractionEnabled,
-            dragSource: effectiveDragSourceConfiguration,
-            primaryAction: {
-                if tab.isRenaming {
-                    tab.saveRename()
-                }
-                action()
-            },
-            onMiddleClick: onMiddleClick,
-            sourceID: rowSourceID,
-            entries: contextMenuEntries
-        )
-        .task(id: tab.url) {
-            guard fetchesVisiblePresentation else { return }
-            await tab.fetchFaviconForVisiblePresentation()
         }
     }
 

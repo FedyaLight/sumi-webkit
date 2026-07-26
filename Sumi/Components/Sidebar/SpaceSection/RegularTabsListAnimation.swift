@@ -5,21 +5,60 @@
 
 import SwiftUI
 
-enum RegularTabRenderedItem: Identifiable, Hashable {
-    case tab(UUID)
-
-    var id: Self { self }
-
-    var tabID: UUID {
-        switch self {
-        case .tab(let id): return id
-        }
-    }
-}
-
 enum RegularTabRemovalMode: Equatable {
     case fadeOnly
     case heightCollapse
+}
+
+enum RegularSidebarVisualChange: Equatable {
+    case none
+    case insertion(Set<UUID>)
+    case removal(UUID)
+    case immediateReplacement
+    case reorder
+
+    static func resolve(
+        from oldRun: SidebarVisualSceneProjection.RegularRun,
+        to newRun: SidebarVisualSceneProjection.RegularRun
+    ) -> Self {
+        let oldIdentities = oldRun.rows.map(\.identity)
+        let newIdentities = newRun.rows.map(\.identity)
+        let oldIdentitySet = Set(oldIdentities)
+        let newIdentitySet = Set(newIdentities)
+        let insertedRows = newRun.rows.filter {
+            !oldIdentitySet.contains($0.identity)
+        }
+        let removedRows = oldRun.rows.filter {
+            !newIdentitySet.contains($0.identity)
+        }
+
+        guard insertedRows.isEmpty || removedRows.isEmpty else {
+            return .immediateReplacement
+        }
+
+        if !insertedRows.isEmpty {
+            let insertedTabIDs = insertedRows.compactMap { row -> UUID? in
+                guard case .tab(let tabID) = row.identity else { return nil }
+                return tabID
+            }
+            return insertedTabIDs.count == insertedRows.count
+                ? .insertion(Set(insertedTabIDs))
+                : .immediateReplacement
+        }
+
+        if removedRows.count == 1,
+           case .tab(let tabID) = removedRows[0].identity {
+            return .removal(tabID)
+        }
+        if !removedRows.isEmpty {
+            return .immediateReplacement
+        }
+
+        if oldRun != newRun {
+            return .reorder
+        }
+        return .none
+    }
 }
 
 struct RegularTabRowMotion: Equatable {
@@ -31,11 +70,11 @@ struct RegularTabRowMotion: Equatable {
 struct RegularTabRemovalPlan {
     let generation: Int
     let mode: RegularTabRemovalMode
-    let finalItems: [RegularTabRenderedItem]
+    let finalRows: [SidebarVisualSceneProjection.RegularRow]
 }
 
 struct RegularTabsListAnimationState {
-    var renderedItems: [RegularTabRenderedItem] = []
+    var renderedRows: [SidebarVisualSceneProjection.RegularRow] = []
     var gapHeights: [UUID: CGFloat] = [:]
     var appearingTabIds: Set<UUID> = []
     var disappearingTabIds: Set<UUID> = []
@@ -47,8 +86,14 @@ struct RegularTabsListAnimationState {
         !removalModes.isEmpty
     }
 
-    mutating func reset(to tabIds: [UUID]) {
-        renderedItems = tabIds.map(RegularTabRenderedItem.tab)
+    var renderedRun: SidebarVisualSceneProjection.RegularRun {
+        SidebarVisualSceneProjection.RegularRun(rows: renderedRows)
+    }
+
+    mutating func reset(
+        to run: SidebarVisualSceneProjection.RegularRun
+    ) {
+        renderedRows = run.rows
         gapHeights.removeAll()
         appearingTabIds.removeAll()
         disappearingTabIds.removeAll()
@@ -80,9 +125,8 @@ struct RegularTabsListAnimationState {
     }
 
     func containsRenderedTab(_ tabId: UUID) -> Bool {
-        renderedItems.contains { item in
-            if case .tab(let id) = item { return id == tabId }
-            return false
+        renderedRows.contains { row in
+            row.identity == .tab(tabId)
         }
     }
 
@@ -134,7 +178,7 @@ struct RegularTabsListAnimationState {
         return RegularTabRemovalPlan(
             generation: layoutAnimationGeneration,
             mode: mode,
-            finalItems: finalItems(removing: tabId)
+            finalRows: finalRows(removing: tabId)
         )
     }
 
@@ -149,10 +193,10 @@ struct RegularTabsListAnimationState {
     mutating func finishRemoval(
         tabId: UUID,
         generation: Int,
-        finalItems: [RegularTabRenderedItem]
+        finalRows: [SidebarVisualSceneProjection.RegularRow]
     ) -> Bool {
         guard layoutAnimationGeneration == generation else { return false }
-        renderedItems = finalItems
+        renderedRows = finalRows
         gapHeights.removeValue(forKey: tabId)
         removalModes.removeValue(forKey: tabId)
         disappearingTabIds.remove(tabId)
@@ -160,17 +204,15 @@ struct RegularTabsListAnimationState {
     }
 
     private func isLastRowRemoval(tabId: UUID) -> Bool {
-        let renderedTabIds = renderedItems.compactMap { item -> UUID? in
-            guard case .tab(let id) = item else { return nil }
-            return id
-        }
-        return renderedTabIds.count == 1 && renderedTabIds[0] == tabId
+        renderedRows.count == 1
+            && renderedRows[0].identity == .tab(tabId)
     }
 
-    private func finalItems(removing tabId: UUID) -> [RegularTabRenderedItem] {
-        renderedItems.compactMap { item in
-            guard case .tab(let id) = item else { return item }
-            return id == tabId ? nil : item
+    private func finalRows(
+        removing tabId: UUID
+    ) -> [SidebarVisualSceneProjection.RegularRow] {
+        renderedRows.filter { row in
+            row.identity != .tab(tabId)
         }
     }
 }

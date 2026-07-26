@@ -9,6 +9,7 @@ struct ShortcutHostedSplitGroupRow: View {
     let emptySplitCreation: EmptySplitCreationWorkflow
     let groupEditor: SidebarSplitGroupEditorPresentationService
     let groupContextMenuActions: SplitGroupContextMenuActions
+    let isDropHighlighted: Bool
     let isAppKitInteractionEnabled: Bool
     let faviconImageReader: any BrowserFaviconImageReading
     let accessibilityID: String
@@ -23,6 +24,7 @@ struct ShortcutHostedSplitGroupRow: View {
         emptySplitCreation: EmptySplitCreationWorkflow,
         groupEditor: SidebarSplitGroupEditorPresentationService,
         groupContextMenuActions: SplitGroupContextMenuActions,
+        isDropHighlighted: Bool = false,
         isAppKitInteractionEnabled: Bool,
         faviconImageReader: any BrowserFaviconImageReading,
         accessibilityID: String,
@@ -36,6 +38,7 @@ struct ShortcutHostedSplitGroupRow: View {
         self.emptySplitCreation = emptySplitCreation
         self.groupEditor = groupEditor
         self.groupContextMenuActions = groupContextMenuActions
+        self.isDropHighlighted = isDropHighlighted
         self.isAppKitInteractionEnabled = isAppKitInteractionEnabled
         self.faviconImageReader = faviconImageReader
         self.accessibilityID = accessibilityID
@@ -48,6 +51,7 @@ struct ShortcutHostedSplitGroupRow: View {
             group: group,
             items: items,
             spaceId: spaceId,
+            isDropHighlighted: isDropHighlighted,
             isAppKitInteractionEnabled: isAppKitInteractionEnabled,
             faviconImageReader: faviconImageReader,
             splitLayout: splitLayout,

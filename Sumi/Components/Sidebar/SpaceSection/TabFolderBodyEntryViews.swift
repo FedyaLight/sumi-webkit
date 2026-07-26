@@ -59,6 +59,7 @@ struct TabFolderShortcutEntryView: View {
     let folderID: UUID
     let isInteractive: Bool
     let opacity: Double
+    let projectedSplitTarget: SidebarSplitPairingTarget?
     let contextMenuActionOwner: TabFolderContextMenuActionOwner
     let mutationActions: TabFolderMutationActions
 
@@ -69,6 +70,7 @@ struct TabFolderShortcutEntryView: View {
             faviconPartition: faviconPartition,
             faviconImageReader: faviconImageReader,
             runtimeAffordance: runtimeAffordance,
+            projectedSplitTarget: projectedSplitTarget,
             accessibilityID: "folder-shortcut-\(pin.id.uuidString)",
             contextMenuEntries: {
                 contextMenuActionOwner.folderShortcutContextMenuEntries(pin)
@@ -119,6 +121,7 @@ struct TabFolderSplitGroupEntryView: View {
     let space: Space
     let browserContext: SidebarBrowserContext
     let isInteractive: Bool
+    var isDropHighlighted = false
 
     @Environment(BrowserWindowState.self) private var windowState
 
@@ -133,6 +136,7 @@ struct TabFolderSplitGroupEntryView: View {
                 groupEditor: browserContext.splitGroupEditor,
                 groupContextMenuActions: browserContext.splitGroupLifecycle
                     .contextMenuActions(for: group, in: windowState),
+                isDropHighlighted: isDropHighlighted,
                 isAppKitInteractionEnabled: isInteractive,
                 faviconImageReader: browserContext.faviconImageReader,
                 accessibilityID: "folder-shortcut-host-split-row-\(group.id.uuidString)",

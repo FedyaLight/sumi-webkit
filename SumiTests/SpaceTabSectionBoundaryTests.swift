@@ -113,15 +113,17 @@ final class SpaceTabSectionBoundaryTests: XCTestCase {
         hasPinnedContent: Bool,
         regularTabCount: Int
     ) -> SpaceSidebarPageSnapshot {
-        let regularTabs = (0..<regularTabCount).map { index in
-            SpaceTabRowSnapshot(
-                id: UUID(),
-                title: "Tab \(index)",
-                icon: .system("globe"),
-                isSelected: false,
-                showsUnloadedIndicator: false,
-                showsAudioButton: false,
-                isMuted: false
+        let regularRows = (0..<regularTabCount).map { index in
+            SpaceRegularRowSnapshot.tab(
+                SpaceTabRowSnapshot(
+                    id: UUID(),
+                    title: "Tab \(index)",
+                    icon: .system("globe"),
+                    isSelected: false,
+                    showsUnloadedIndicator: false,
+                    showsAudioButton: false,
+                    isMuted: false
+                )
             )
         }
 
@@ -134,7 +136,7 @@ final class SpaceTabSectionBoundaryTests: XCTestCase {
             hasPinnedContent: hasPinnedContent,
             isPinnedContentCollapsed: false,
             pinnedItems: [],
-            regularTabs: regularTabs,
+            regularRows: regularRows,
             showsNewTabButtonInList: true,
             showsTopNewTabButton: false,
             rowCornerRadius: 12,

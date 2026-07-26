@@ -1,5 +1,8 @@
+import AppKit
 import CoreGraphics
 import Foundation
+import SumiDomain
+import SwiftUI
 import XCTest
 
 @testable import Sumi
@@ -10,6 +13,315 @@ final class SidebarDropIndicatorGeometryTests: XCTestCase {
 
     private let inset = SidebarDropIndicatorGeometry.Metrics.horizontalInset
     private let lineHeight = SidebarDropIndicatorGeometry.Metrics.lineHeight
+
+    func testSplitPairingProjectsEmptyPillOnHoveredSide() throws {
+        let sourceID = UUID()
+        let targetID = SplitMemberID.regularTab(UUID())
+        let candidate = SidebarSplitPairingCandidate(
+            frame: CGRect(x: 10, y: 20, width: 200, height: 36),
+            memberIDs: [targetID]
+        )
+        let item = SumiDragItem(tabId: sourceID, title: "Source")
+
+        XCTAssertNil(
+            SidebarSplitPairingPolicy.target(
+                at: CGPoint(x: 60, y: 24),
+                draggedItem: item,
+                candidate: candidate
+            )
+        )
+
+        let rightTarget = try XCTUnwrap(
+            SidebarSplitPairingPolicy.target(
+                at: CGPoint(x: 160, y: 38),
+                draggedItem: item,
+                candidate: candidate
+            )
+        )
+        XCTAssertEqual(rightTarget.memberID, targetID)
+        XCTAssertEqual(rightTarget.side, .right)
+        XCTAssertEqual(rightTarget.rect.minY, 24)
+        XCTAssertEqual(rightTarget.rect.height, 28)
+        XCTAssertEqual(
+            rightTarget.rect.width,
+            SplitGroupSidebarVisualLayout.segmentWidth(
+                rowWidth: candidate.frame.width
+                    - SplitGroupSidebarVisualLayout.outerRowInset * 2,
+                segmentCount: 2
+            )
+        )
+        XCTAssertGreaterThan(rightTarget.rect.minX, candidate.frame.midX)
+        guard case .projectedPair(let rightCompanionRect) =
+            rightTarget.presentation else {
+            return XCTFail("Expected a projected two-pill row")
+        }
+        XCTAssertLessThan(rightCompanionRect.maxX, rightTarget.rect.minX)
+        XCTAssertEqual(rightCompanionRect.width, rightTarget.rect.width)
+
+        let leftTarget = try XCTUnwrap(
+            SidebarSplitPairingPolicy.target(
+                at: CGPoint(x: 40, y: 38),
+                draggedItem: item,
+                candidate: candidate
+            )
+        )
+        XCTAssertEqual(leftTarget.side, .left)
+        XCTAssertLessThan(leftTarget.rect.maxX, candidate.frame.midX)
+        guard case .projectedPair(let leftCompanionRect) =
+            leftTarget.presentation else {
+            return XCTFail("Expected a projected two-pill row")
+        }
+        XCTAssertGreaterThan(leftCompanionRect.minX, leftTarget.rect.maxX)
+    }
+
+    func testExistingSplitPairingHighlightsWholeRowAndAppends() throws {
+        let sourceID = UUID()
+        let leftID = SplitMemberID.regularTab(UUID())
+        let rightID = SplitMemberID.regularTab(UUID())
+        let candidate = SidebarSplitPairingCandidate(
+            frame: CGRect(x: 10, y: 20, width: 200, height: 36),
+            memberIDs: [leftID, rightID]
+        )
+
+        let target = try XCTUnwrap(
+            SidebarSplitPairingPolicy.target(
+                at: CGPoint(x: 40, y: 38),
+                draggedItem: SumiDragItem(
+                    tabId: sourceID,
+                    title: "Source"
+                ),
+                candidate: candidate
+            )
+        )
+
+        XCTAssertEqual(target.memberID, rightID)
+        XCTAssertEqual(target.side, .right)
+        XCTAssertEqual(target.rect, candidate.frame)
+        XCTAssertEqual(target.presentation, .existingGroupRow)
+    }
+
+    func testSplitPairingRejectsSelfWholeGroupsAndFullTargets() {
+        let sourceID = UUID()
+        let memberID = SplitMemberID.regularTab(sourceID)
+        let frame = CGRect(x: 0, y: 0, width: 200, height: 36)
+
+        XCTAssertNil(
+            SidebarSplitPairingPolicy.target(
+                at: CGPoint(x: 50, y: 18),
+                draggedItem: SumiDragItem(tabId: sourceID, title: "Source"),
+                candidate: SidebarSplitPairingCandidate(
+                    frame: frame,
+                    memberIDs: [memberID]
+                )
+            )
+        )
+        XCTAssertNil(
+            SidebarSplitPairingPolicy.target(
+                at: CGPoint(x: 50, y: 18),
+                draggedItem: .splitGroup(UUID(), title: "Group"),
+                candidate: SidebarSplitPairingCandidate(
+                    frame: frame,
+                    memberIDs: [.regularTab(UUID())]
+                )
+            )
+        )
+        XCTAssertNil(
+            SidebarSplitPairingPolicy.target(
+                at: CGPoint(x: 50, y: 18),
+                draggedItem: SumiDragItem(tabId: sourceID, title: "Source"),
+                candidate: SidebarSplitPairingCandidate(
+                    frame: frame,
+                    memberIDs: (0..<SplitGroup.maximumMembers).map { _ in
+                        .regularTab(UUID())
+                    }
+                )
+            )
+        )
+    }
+
+    func testSplitFirstFaviconMatchesOrdinaryRowLeadingEdge() {
+        XCTAssertEqual(
+            SplitGroupSidebarVisualLayout.outerRowInset
+                + SplitGroupSidebarVisualLayout.horizontalInset
+                + SplitGroupSidebarVisualLayout.labelLeadingInset,
+            SidebarRowLayout.leadingInset
+        )
+        XCTAssertEqual(
+            SplitGroupSidebarVisualLayout.iconWidth,
+            SidebarRowLayout.faviconSize
+        )
+        XCTAssertEqual(
+            SplitGroupSidebarVisualLayout.outerRowInset
+                + SplitGroupSidebarVisualLayout.customIconLeadingInset,
+            SidebarRowLayout.leadingInset
+        )
+    }
+
+    func testProjectedTargetKeepsOrdinaryFaviconCoordinate() {
+        let memberWidth: CGFloat = 100
+        let companionSize = CGSize(
+            width: memberWidth,
+            height: 28
+        )
+        let previewOnRight = SidebarProjectedSplitPairGeometry(
+            previewSide: .right,
+            companionSize: companionSize
+        )
+        let previewOnLeft = SidebarProjectedSplitPairGeometry(
+            previewSide: .left,
+            companionSize: companionSize
+        )
+
+        XCTAssertEqual(
+            previewOnRight.companionOriginX
+                + SplitGroupSidebarVisualLayout.labelLeadingInset,
+            SidebarRowLayout.leadingInset
+        )
+        XCTAssertEqual(
+            previewOnLeft.companionOriginX
+                + SplitGroupSidebarVisualLayout.labelLeadingInset,
+            memberWidth
+                + SplitGroupSidebarVisualLayout.segmentSpacing
+                + SidebarRowLayout.leadingInset
+        )
+    }
+
+    func testProjectedTargetTitleMatchesCommittedSplitSegmentCoordinate() {
+        let geometry = SidebarProjectedSplitPairGeometry(
+            previewSide: .right,
+            companionSize: CGSize(width: 100, height: 28)
+        )
+
+        XCTAssertEqual(
+            geometry.companionOriginX
+                + SplitGroupSidebarVisualLayout.labelLeadingInset
+                + SplitGroupSidebarVisualLayout.iconWidth
+                + SplitGroupSidebarVisualLayout.iconTitleSpacing,
+            SidebarRowLayout.leadingInset
+                + SplitGroupSidebarVisualLayout.iconWidth
+                + SplitGroupSidebarVisualLayout.iconTitleSpacing,
+            "The projected title must not jump when the drop commits"
+        )
+    }
+
+    func testProjectedTargetUsesCommittedSplitTitleVisibility() {
+        let geometry = SidebarProjectedSplitPairGeometry(
+            previewSide: .right,
+            companionSize: CGSize(width: 60, height: 28)
+        )
+
+        XCTAssertEqual(
+            geometry.showsTitle("Wide title"),
+            SplitGroupSidebarVisualLayout.showsTitle(
+                title: "Wide title",
+                segmentWidth: geometry.companionSize.width,
+                trailingPadding:
+                    SplitGroupSidebarVisualLayout.standardTrailingPadding
+            )
+        )
+        XCTAssertFalse(geometry.showsTitle("Wide title"))
+    }
+
+    @MainActor
+    func testProjectedTargetDrawsNoRowMaterial() throws {
+        let image = try renderedProjectedPair()
+        let targetColor = try XCTUnwrap(
+            image.colorAt(x: 80, y: 18)?.usingColorSpace(.deviceRGB)
+        )
+        let baseColor = try XCTUnwrap(
+            image.colorAt(x: 150, y: 18)?.usingColorSpace(.deviceRGB)
+        )
+
+        XCTAssertEqual(
+            targetColor.alphaComponent,
+            0,
+            accuracy: 0.01,
+            "The DnD target must remain an inactive transparent row"
+        )
+        XCTAssertEqual(
+            baseColor.alphaComponent,
+            0,
+            accuracy: 0.01,
+            "Only the separate DnD preview-pill layer may draw material"
+        )
+    }
+
+    @MainActor
+    func testProjectedTargetContentIsVerticallyCentered() throws {
+        let image = try renderedProjectedPair()
+        var redPixelRows: [Int] = []
+
+        for y in 0..<image.pixelsHigh {
+            for x in 0..<image.pixelsWide {
+                guard let color = image.colorAt(x: x, y: y)?
+                    .usingColorSpace(.deviceRGB) else {
+                    continue
+                }
+                if color.redComponent > 0.8,
+                   color.greenComponent < 0.4,
+                   color.blueComponent < 0.4,
+                   color.alphaComponent > 0.8 {
+                    redPixelRows.append(y)
+                }
+            }
+        }
+
+        guard let minY = redPixelRows.min(),
+              let maxY = redPixelRows.max() else {
+            let samples = [
+                image.colorAt(x: 12, y: 18),
+                image.colorAt(x: 20, y: 18),
+                image.colorAt(x: 80, y: 18),
+            ]
+            return XCTFail(
+                "Expected red favicon pixels in \(image.pixelsWide)x\(image.pixelsHigh); samples: \(samples)"
+            )
+        }
+        XCTAssertEqual(
+            CGFloat(minY + maxY) / 2,
+            SidebarRowLayout.rowHeight / 2,
+            accuracy: 0.5,
+            "Projected favicon and title must use the committed pill's vertical center"
+        )
+    }
+
+    func testSplitTitleDisappearsBeforeOnlyEllipsisFits() {
+        XCTAssertFalse(
+            SplitGroupSidebarVisualLayout.showsTitle(
+                title: "Wide title",
+                segmentWidth: 60,
+                trailingPadding: SidebarRowLayout.trailingActionPadding
+            )
+        )
+        XCTAssertTrue(
+            SplitGroupSidebarVisualLayout.showsTitle(
+                title: "Wide title",
+                segmentWidth: 100,
+                trailingPadding: 7
+            )
+        )
+    }
+
+    func testRegularSplitReservesCloseButtonWidthOnlyWhenVisible() {
+        XCTAssertEqual(
+            SplitGroupSidebarVisualLayout.trailingPadding(
+                hasMemberAction: true,
+                showsMemberAction: false,
+                isLastVisibleItem: false,
+                showsGroupAction: false
+            ),
+            SplitGroupSidebarVisualLayout.standardTrailingPadding
+        )
+        XCTAssertEqual(
+            SplitGroupSidebarVisualLayout.trailingPadding(
+                hasMemberAction: true,
+                showsMemberAction: true,
+                isLastVisibleItem: false,
+                showsGroupAction: false
+            ),
+            SidebarRowLayout.trailingActionPadding
+        )
+    }
 
     // MARK: - Hidden states
 
@@ -100,6 +412,10 @@ final class SidebarDropIndicatorGeometryTests: XCTestCase {
         let pinnedMetrics = SidebarPinnedListHitMetrics(
             frame: CGRect(x: 12, y: 80, width: 240, height: 134),
             rowCount: 3,
+            splitPairingMemberIDsByRow: Array(
+                repeating: [],
+                count: 3
+            ),
             leadingInset: 18
         )
         let regularBoundaryOffset = regularLine.midY - regularFrame.minY
@@ -240,6 +556,25 @@ final class SidebarDropIndicatorGeometryTests: XCTestCase {
         XCTAssertEqual(metrics.rowBoundaryIndex(forLocalY: firstRowMidpoint + 0.25), 1)
     }
 
+    func testRegularPairingHitIndexRejectsTheInterRowGap() {
+        let metrics = SidebarRegularListHitMetrics(
+            frame: CGRect(x: 0, y: 0, width: 240, height: 116),
+            rowIdentities: (0..<3).map { _ in .tab(UUID()) }
+        )
+
+        XCTAssertEqual(
+            metrics.rowIndex(containing: CGPoint(x: 20, y: 35)),
+            0
+        )
+        XCTAssertNil(
+            metrics.rowIndex(containing: CGPoint(x: 20, y: 38))
+        )
+        XCTAssertEqual(
+            metrics.rowIndex(containing: CGPoint(x: 20, y: 42)),
+            1
+        )
+    }
+
     func testRegularHitMetricsDoNotAccumulateSplitMemberOffsetNearListBottom() {
         let leadingIDs = (0..<7).map { _ in UUID() }
         let splitID = UUID()
@@ -308,6 +643,10 @@ final class SidebarDropIndicatorGeometryTests: XCTestCase {
             spaceId: SidebarPinnedListHitMetrics(
                 frame: CGRect(x: 12, y: 80, width: 240, height: 134),
                 rowCount: 3,
+                splitPairingMemberIDsByRow: Array(
+                    repeating: [],
+                    count: 3
+                ),
                 leadingInset: 18
             ),
         ]
@@ -329,6 +668,10 @@ final class SidebarDropIndicatorGeometryTests: XCTestCase {
         let metrics = SidebarPinnedListHitMetrics(
             frame: CGRect(x: 0, y: 100, width: 240, height: height),
             rowCount: rowCount,
+            splitPairingMemberIDsByRow: Array(
+                repeating: [],
+                count: rowCount
+            ),
             leadingInset: leadingInset
         )
 
@@ -348,12 +691,54 @@ final class SidebarDropIndicatorGeometryTests: XCTestCase {
         let metrics = SidebarPinnedListHitMetrics(
             frame: CGRect(x: 0, y: 100, width: 240, height: 116),
             rowCount: 3,
+            splitPairingMemberIDsByRow: Array(
+                repeating: [],
+                count: 3
+            ),
             leadingInset: 0
         )
         let firstRowMidpoint = metrics.rowsFrame.minY + SidebarRowLayout.rowHeight / 2
 
         XCTAssertEqual(metrics.rowBoundaryIndex(forGlobalY: firstRowMidpoint - 0.25), 0)
         XCTAssertEqual(metrics.rowBoundaryIndex(forGlobalY: firstRowMidpoint + 0.25), 1)
+    }
+
+    func testPinnedPairingHitIndexRejectsTheInterRowGap() {
+        let metrics = SidebarPinnedListHitMetrics(
+            frame: CGRect(x: 0, y: 100, width: 240, height: 116),
+            rowCount: 3,
+            splitPairingMemberIDsByRow: Array(
+                repeating: [],
+                count: 3
+            ),
+            leadingInset: 0
+        )
+
+        XCTAssertEqual(
+            metrics.rowIndex(containing: CGPoint(x: 20, y: 135)),
+            0
+        )
+        XCTAssertNil(
+            metrics.rowIndex(containing: CGPoint(x: 20, y: 138))
+        )
+        XCTAssertEqual(
+            metrics.rowIndex(containing: CGPoint(x: 20, y: 142)),
+            1
+        )
+    }
+
+    func testPinnedRowGeometryDoesNotDependOnPairingMetadata() {
+        let metrics = SidebarPinnedListHitMetrics(
+            frame: CGRect(x: 0, y: 100, width: 240, height: 116),
+            rowCount: 3,
+            splitPairingMemberIDsByRow: [
+                [.shortcutPin(UUID())],
+            ],
+            leadingInset: 0
+        )
+
+        XCTAssertNotNil(metrics.rowFrame(at: 2))
+        XCTAssertNil(metrics.splitPairingCandidate(at: 2))
     }
 
     // MARK: - Folder children
@@ -498,6 +883,68 @@ final class SidebarDropIndicatorGeometryTests: XCTestCase {
             folderChildDropTargets: childTargets
         )
         return geometry
+    }
+
+    @MainActor
+    private func renderedProjectedPair() throws -> NSBitmapImageRep {
+        let rowWidth: CGFloat = 213
+        let memberWidth: CGFloat = 100
+        let target = SidebarSplitPairingTarget(
+            memberID: .regularTab(UUID()),
+            side: .right,
+            rect: CGRect(
+                x: 108,
+                y: 4,
+                width: memberWidth,
+                height: 28
+            ),
+            presentation: .projectedPair(
+                companionRect: CGRect(
+                    x: 5,
+                    y: 4,
+                    width: memberWidth,
+                    height: 28
+                )
+            )
+        )
+        let root = SidebarProjectedSplitPairTarget(
+            target: target,
+            title: ""
+        ) {
+            Color.red.frame(
+                width: SidebarRowLayout.faviconSize,
+                height: SidebarRowLayout.faviconSize
+            )
+        }
+        .frame(
+            width: rowWidth,
+            height: SidebarRowLayout.rowHeight
+        )
+        let host = NSHostingView(rootView: root)
+        host.wantsLayer = true
+        host.frame = CGRect(
+            x: 0,
+            y: 0,
+            width: rowWidth,
+            height: SidebarRowLayout.rowHeight
+        )
+        let window = NSWindow(
+            contentRect: host.frame,
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.contentView = host
+        window.layoutIfNeeded()
+        host.layoutSubtreeIfNeeded()
+        host.displayIfNeeded()
+        let image = try XCTUnwrap(
+            host.bitmapImageRepForCachingDisplay(in: host.bounds)
+        )
+        host.cacheDisplay(in: host.bounds, to: image)
+        return image
     }
 
     private func pinnedLine(slot: Int, geometry: SidebarGeometrySnapshot) -> CGRect? {

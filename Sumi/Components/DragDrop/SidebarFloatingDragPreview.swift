@@ -311,35 +311,34 @@ private struct SidebarSplitRowPreviewVisual: View {
     @Environment(\.chromeThemeTokens) private var scopedChromeTokens
 
     var body: some View {
-        GeometryReader { geometry in
-            let count = max(min(members.count, SplitGroup.maximumMembers), 1)
-            let segmentWidth = max(
-                0,
-                (geometry.size.width - CGFloat(count - 1)) / CGFloat(count)
-            )
-            HStack(spacing: 0) {
-                ForEach(0..<count, id: \.self) { index in
-                    SplitGroupSegmentLabel(
-                        title: members.indices.contains(index)
-                            ? members[index].title : String(localized: "Tab"),
-                        trailingPadding: 7,
-                        textColor: tokens.primaryText
-                    ) {
-                        previewIcon(at: index)
-                            .saturation(desaturatesIcons ? 0 : 1)
-                            .opacity(desaturatesIcons ? 0.8 : 1)
-                    }
-                    .frame(width: segmentWidth)
-
-                    if index < count - 1 {
-                        Rectangle()
-                            .fill(tokens.separator.opacity(0.7))
-                            .frame(width: 1, height: 22)
-                            .padding(.vertical, 6)
-                    }
-                }
+        SplitGroupSegmentedRow(
+            slots: previewSlots,
+            material: .dragCarrier,
+            tokens: tokens,
+            departingIDs: []
+        ) { _, slot, metrics in
+            SplitGroupSegmentLabel(
+                title: slot.member.title,
+                showsTitle: metrics.showsTitle(
+                    slot.member.title,
+                    trailingPadding:
+                        SplitGroupSidebarVisualLayout.standardTrailingPadding
+                ),
+                trailingPadding:
+                    SplitGroupSidebarVisualLayout.standardTrailingPadding,
+                textColor: tokens.primaryText
+            ) {
+                SplitGroupRowIconView(
+                    icon: slot.member.splitGroupRowIcon,
+                    foregroundColor: tokens.primaryText,
+                    desaturates: desaturatesIcons
+                )
             }
         }
+        .padding(
+            .horizontal,
+            SplitGroupSidebarVisualLayout.outerRowInset
+        )
         .frame(height: SidebarRowLayout.rowHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(tokens.sidebarRowHover)
@@ -351,29 +350,42 @@ private struct SidebarSplitRowPreviewVisual: View {
         scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 
-    @ViewBuilder
-    private func previewIcon(at index: Int) -> some View {
-        if members.indices.contains(index),
-           let glyph = members[index].glyphText {
-            Text(glyph)
-                .font(.system(size: 16))
-                .frame(width: 16, height: 16)
-        } else if members.indices.contains(index),
-                  let systemName = members[index].systemImageName {
-            Image(systemName: systemName)
-                .font(.system(size: 15, weight: .medium))
-                .symbolRenderingMode(.monochrome)
-                .frame(width: 16, height: 16)
-        } else {
-            (members.indices.contains(index)
-                ? members[index].icon : Image(systemName: "globe"))
-                .resizable()
-                .scaledToFit()
-                .frame(width: 16, height: 16)
-                .clipShape(
-                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+    private var previewSlots: [SidebarSplitRowPreviewSlot] {
+        let visibleMembers = Array(members.prefix(SplitGroup.maximumMembers))
+        if visibleMembers.isEmpty {
+            return [
+                SidebarSplitRowPreviewSlot(
+                    id: 0,
+                    member: EssentialSplitTileMemberPresentation(
+                        icon: Image(systemName: "globe"),
+                        glyphText: nil,
+                        systemImageName: "globe",
+                        accentColor: .clear,
+                        title: String(localized: "Tab")
+                    )
                 )
+            ]
         }
+        return visibleMembers.enumerated().map {
+            SidebarSplitRowPreviewSlot(id: $0.offset, member: $0.element)
+        }
+    }
+}
+
+private struct SidebarSplitRowPreviewSlot: Identifiable {
+    let id: Int
+    let member: EssentialSplitTileMemberPresentation
+}
+
+private extension EssentialSplitTileMemberPresentation {
+    var splitGroupRowIcon: SplitGroupRowIcon {
+        if let glyphText {
+            return .emoji(glyphText)
+        }
+        if let systemImageName {
+            return .system(systemImageName)
+        }
+        return .image(icon)
     }
 }
 

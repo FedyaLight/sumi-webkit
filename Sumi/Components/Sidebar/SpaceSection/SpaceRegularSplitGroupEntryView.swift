@@ -18,6 +18,7 @@ struct SpaceRegularSplitGroupEntryView: View {
     let regularTabTargets: SidebarRegularTabTargetQuery
     let browserContext: SidebarBrowserContext
     let isInteractive: Bool
+    let isDropHighlighted: Bool
     let tabActionOwner: SpaceRegularTabActionOwner
 
     @Environment(BrowserWindowState.self) private var windowState
@@ -42,6 +43,7 @@ struct SpaceRegularSplitGroupEntryView: View {
             group: group,
             items: items,
             spaceId: space.id,
+            isDropHighlighted: isDropHighlighted,
             isAppKitInteractionEnabled: isInteractive,
             faviconImageReader: browserContext.faviconImageReader,
             splitLayout: browserContext.splitLayout,

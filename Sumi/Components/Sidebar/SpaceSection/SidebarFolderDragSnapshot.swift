@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import SumiDomain
 
 struct SidebarFolderDragSnapshot: Equatable {
     let isDragging: Bool
@@ -7,6 +8,7 @@ struct SidebarFolderDragSnapshot: Equatable {
     let activeDragItemID: UUID?
     let activeHoveredFolderID: UUID?
     let folderDropIntent: FolderDropIntent
+    let splitPairingTarget: SidebarSplitPairingTarget?
     let geometryGeneration: Int
 
     init(
@@ -15,6 +17,7 @@ struct SidebarFolderDragSnapshot: Equatable {
         activeDragItemID: UUID? = nil,
         activeHoveredFolderID: UUID? = nil,
         folderDropIntent: FolderDropIntent = .none,
+        splitPairingTarget: SidebarSplitPairingTarget? = nil,
         geometryGeneration: Int = 0
     ) {
         self.isDragging = isDragging
@@ -22,11 +25,21 @@ struct SidebarFolderDragSnapshot: Equatable {
         self.activeDragItemID = activeDragItemID
         self.activeHoveredFolderID = activeHoveredFolderID
         self.folderDropIntent = folderDropIntent
+        self.splitPairingTarget = splitPairingTarget
         self.geometryGeneration = geometryGeneration
     }
 
     func isContainTargeted(folderID: UUID) -> Bool {
         folderDropIntent == .contain(folderId: folderID)
+    }
+
+    func isExistingSplitGroupTargeted(memberIDs: [SplitMemberID]) -> Bool {
+        guard let target = splitPairingTarget,
+              target.presentation == .existingGroupRow
+        else {
+            return false
+        }
+        return memberIDs.contains(target.memberID)
     }
 
     func isFolderPreviewOpen(folderID: UUID, isOpen: Bool) -> Bool {

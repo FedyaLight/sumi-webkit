@@ -10,6 +10,7 @@ struct SidebarPinnedDragPresentationFrame: Equatable {
     var activeHoveredFolderID: UUID?
     var folderDropIntent: FolderDropIntent = .none
     var projectionHoveredSlot: DropZoneSlot = .empty
+    var splitPairingTarget: SidebarSplitPairingTarget?
 }
 
 /// Atomic read model for the pinned section. The broader drag coordinator can
@@ -176,6 +177,10 @@ final class SidebarDragState: ObservableObject {
 
     var projectionHoveredSlot: DropZoneSlot {
         presentedDropIntent.projected.slot
+    }
+
+    var projectionSplitPairingTarget: SidebarSplitPairingTarget? {
+        presentedDropIntent.projected.splitPairingTarget
     }
 
     var projectionFolderDropIntent: FolderDropIntent {
@@ -474,7 +479,8 @@ final class SidebarDragState: ObservableObject {
                 activeDragItemID: activeDragItemId,
                 activeHoveredFolderID: activeHoveredFolderId,
                 folderDropIntent: folderDropIntent,
-                projectionHoveredSlot: projectionHoveredSlot
+                projectionHoveredSlot: projectionHoveredSlot,
+                splitPairingTarget: projectionSplitPairingTarget
             )
         )
     }

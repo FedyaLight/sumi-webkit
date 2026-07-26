@@ -100,7 +100,10 @@ extension BrowserManager {
         let dragTransactions = SidebarDragTransactionPort(
             windows: windowIdentity,
             dragOperations: sidebarDragRouter,
-            urlDropService: urlDrops
+            urlDropService: urlDrops,
+            splitPairing: SidebarSplitPairingTransaction(
+                splitDrops: splitDrops
+            )
         )
         let profileManager = profileManager
         let profileUpdates = SidebarProfileUpdates(

@@ -308,13 +308,6 @@ enum SplitGroupSidebarModel {
         return animationSnapshot.map { currentByID[$0.id] ?? $0 }
     }
 
-    static func shortcutPin(
-        for item: SplitGroupSidebarItem,
-        member _: SplitMember?
-    ) -> ShortcutPin? {
-        item.pin
-    }
-
     static func sourceZone(
         for pin: ShortcutPin,
         fallbackSpaceId: UUID

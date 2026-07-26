@@ -107,6 +107,25 @@ struct SpaceTabRowSnapshot: Identifiable {
     let isMuted: Bool
 }
 
+enum SpaceRegularRowSnapshot: Identifiable {
+    enum Identity: Hashable {
+        case tab(UUID)
+        case splitGroup(UUID)
+    }
+
+    case tab(SpaceTabRowSnapshot)
+    case splitGroup(SpaceSplitGroupSnapshot)
+
+    var id: Identity {
+        switch self {
+        case .tab(let tab):
+            return .tab(tab.id)
+        case .splitGroup(let group):
+            return .splitGroup(group.id)
+        }
+    }
+}
+
 struct SpaceShortcutSnapshot: Identifiable {
     let id: UUID
     let title: String
@@ -137,6 +156,7 @@ struct SpaceSplitGroupMemberSnapshot: Identifiable {
     let id: SplitMemberID
     let title: String
     let icon: SpaceSidebarSnapshotIcon
+    let desaturatesIcon: Bool
     let accentSource: SpaceShortcutSnapshotAccentSource?
     let essentialBackdrop: Image?
     let isSelected: Bool
@@ -144,6 +164,8 @@ struct SpaceSplitGroupMemberSnapshot: Identifiable {
 
 struct SpaceSplitGroupSnapshot: Identifiable {
     let id: UUID
+    let displayTitle: String
+    let customIcon: SpaceSidebarSnapshotIcon?
     let members: [SpaceSplitGroupMemberSnapshot]
     let isSelected: Bool
     let isLoaded: Bool
@@ -217,16 +239,46 @@ struct SpaceSidebarPageSnapshot {
     let hasPinnedContent: Bool
     let isPinnedContentCollapsed: Bool
     let pinnedItems: [SpacePinnedItemSnapshot]
-    let regularTabs: [SpaceTabRowSnapshot]
+    let regularRows: [SpaceRegularRowSnapshot]
     let showsNewTabButtonInList: Bool
     let showsTopNewTabButton: Bool
     let rowCornerRadius: CGFloat
     let scrollViewport: SpaceSidebarSnapshotViewport
 
+    init(
+        spaceId: UUID,
+        title: String,
+        iconValue: String,
+        extensionActions: ExtensionActionGridSnapshot?,
+        essentials: EssentialsSnapshot?,
+        hasPinnedContent: Bool,
+        isPinnedContentCollapsed: Bool,
+        pinnedItems: [SpacePinnedItemSnapshot],
+        regularRows: [SpaceRegularRowSnapshot],
+        showsNewTabButtonInList: Bool,
+        showsTopNewTabButton: Bool,
+        rowCornerRadius: CGFloat,
+        scrollViewport: SpaceSidebarSnapshotViewport
+    ) {
+        self.spaceId = spaceId
+        self.title = title
+        self.iconValue = iconValue
+        self.extensionActions = extensionActions
+        self.essentials = essentials
+        self.hasPinnedContent = hasPinnedContent
+        self.isPinnedContentCollapsed = isPinnedContentCollapsed
+        self.pinnedItems = pinnedItems
+        self.regularRows = regularRows
+        self.showsNewTabButtonInList = showsNewTabButtonInList
+        self.showsTopNewTabButton = showsTopNewTabButton
+        self.rowCornerRadius = rowCornerRadius
+        self.scrollViewport = scrollViewport
+    }
+
     var tabSectionBoundaryLayout: SpaceTabSectionBoundaryLayout {
         SpaceTabSectionBoundaryLayout(
             hasPinnedContent: hasPinnedContent,
-            regularTabCount: regularTabs.count
+            regularTabCount: regularRows.count
         )
     }
 }
@@ -349,9 +401,15 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             ? windowState.ephemeralTabs.sorted { $0.index < $1.index }
             : (projection?.regularTabs ?? [])
         let currentTabID = selection.selectedTabID(in: windowState)
-        let regularTabs = tabs.map {
-            tabSnapshot($0, currentTabId: currentTabID)
-        }
+        let regularRows = regularRowsSnapshot(
+            tabs: tabs,
+            projection: projection,
+            selection: selection,
+            pinProjection: pinProjection,
+            imageReader: browserContext.faviconImageReader,
+            windowState: windowState,
+            currentTabID: currentTabID
+        )
         let hasPinnedContent = projection?.topLevelItems.isEmpty == false
         let isPinnedContentCollapsed = hasPinnedContent
             && windowState.sidebarSpacePinnedCollapse.isCollapsed(space.id)
@@ -397,7 +455,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             hasPinnedContent: hasPinnedContent,
             isPinnedContentCollapsed: isPinnedContentCollapsed,
             pinnedItems: pinnedItems,
-            regularTabs: regularTabs,
+            regularRows: regularRows,
             showsNewTabButtonInList: settings.showNewTabButtonInTabList,
             showsTopNewTabButton: settings.tabListNewTabButtonPosition == .top,
             rowCornerRadius: settings.resolvedCornerRadius(12),
@@ -571,6 +629,61 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                 context: folderContext,
                 visitedFolderIds: []
             )
+        }
+    }
+
+    private static func regularRowsSnapshot(
+        tabs: [Tab],
+        projection: SidebarSpaceInventorySnapshot?,
+        selection: SidebarWindowSelectionQuery,
+        pinProjection: SidebarPinFolderProjection,
+        imageReader: any BrowserFaviconImageReading,
+        windowState: BrowserWindowState,
+        currentTabID: UUID?
+    ) -> [SpaceRegularRowSnapshot] {
+        guard let projection else {
+            return tabs.map {
+                .tab(tabSnapshot($0, currentTabId: currentTabID))
+            }
+        }
+
+        let groups = projection.splitGroupsByID.values.filter {
+            if case .regularTabs(let spaceID) = $0.container {
+                return spaceID == projection.spaceID
+            }
+            return false
+        }
+        let groupsByID = Dictionary(
+            uniqueKeysWithValues: groups.map { ($0.id, $0) }
+        )
+        let tabsByID = Dictionary(
+            uniqueKeysWithValues: tabs.map { ($0.id, $0) }
+        )
+        let context = FolderSnapshotContext(
+            childFoldersByParentId: projection.childFoldersByParentID,
+            folderPinsByFolderId: projection.folderPinsByFolderID,
+            liveTabsByPinId: [:],
+            inventory: projection,
+            selection: selection,
+            pinProjection: pinProjection,
+            imageReader: imageReader,
+            windowState: windowState
+        )
+
+        return SidebarVisualSceneProjection.regularRun(
+            tabIDs: tabs.map(\.id),
+            groups: groups
+        ).rows.compactMap { row in
+            switch row.identity {
+            case .tab(let tabID):
+                return tabsByID[tabID].map {
+                    .tab(tabSnapshot($0, currentTabId: currentTabID))
+                }
+            case .splitGroup(let groupID):
+                return groupsByID[groupID].map {
+                    .splitGroup(splitGroupSnapshot(for: $0, context: context))
+                }
+            }
         }
     }
 
@@ -827,26 +940,24 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             windowState: context.windowState
         )
         let members = items.map { item in
+            let presentation = SplitGroupMemberIconResolver.resolve(
+                item: item,
+                loadedStoredFavicon: nil,
+                imageReader: context.imageReader
+            )
             let icon: SpaceSidebarSnapshotIcon
-            if let pin = item.pin {
-                icon = shortcutIcon(
-                    for: pin,
-                    liveTab: item.tab,
-                    faviconPartition: context.pinProjection.faviconPartition(
-                        for: pin,
-                        currentSpaceID: context.inventory.spaceID
-                    ),
-                    imageReader: context.imageReader
-                )
-            } else if let tab = item.tab {
-                icon = tabIcon(for: tab)
+            if let glyphText = presentation.glyphText {
+                icon = .emoji(glyphText)
+            } else if let systemImageName = presentation.systemImageName {
+                icon = .system(systemImageName)
             } else {
-                icon = .system("globe")
+                icon = .image(presentation.image)
             }
             return SpaceSplitGroupMemberSnapshot(
                 id: item.id,
                 title: item.title,
                 icon: icon,
+                desaturatesIcon: presentation.shouldDesaturate,
                 accentSource: item.pin.map { pin in
                     SpaceShortcutSnapshotAccentSource(
                         launchURL: pin.launchURL,
@@ -871,6 +982,16 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         }
         return SpaceSplitGroupSnapshot(
             id: group.id,
+            displayTitle: SplitGroupSidebarModel.displayTitle(for: group),
+            customIcon: group.iconAsset.map { iconAsset in
+                SumiPersistentGlyph.presentsAsEmoji(iconAsset)
+                    ? .emoji(iconAsset)
+                    : .system(
+                        SumiPersistentGlyph.resolvedLauncherSystemImageName(
+                            iconAsset
+                        )
+                    )
+            },
             members: members,
             isSelected: context.selection.isSplitGroupSelected(
                 group,

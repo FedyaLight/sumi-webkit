@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import SumiDomain
 
 @MainActor
 final class SidebarDragGeometryRepository {
@@ -162,6 +163,7 @@ final class SidebarDragGeometryRepository {
         spaceId: UUID,
         frame: CGRect?,
         rowCount: Int,
+        splitPairingMemberIDsByRow: [[SplitMemberID]],
         leadingInset: CGFloat,
         generation: Int
     ) {
@@ -170,6 +172,7 @@ final class SidebarDragGeometryRepository {
                 spaceId: spaceId,
                 frame: frame,
                 rowCount: rowCount,
+                splitPairingMemberIDsByRow: splitPairingMemberIDsByRow,
                 leadingInset: leadingInset,
                 generation: generation
             )
@@ -180,6 +183,7 @@ final class SidebarDragGeometryRepository {
         spaceId: UUID,
         frame: CGRect?,
         rowIdentities: [SidebarVisualSceneProjection.RegularRow.Identity],
+        splitPairingMemberIDsByRow: [[SplitMemberID]] = [],
         generation: Int
     ) {
         enqueueDeferredGeometryMutation(
@@ -189,6 +193,7 @@ final class SidebarDragGeometryRepository {
                 spaceId: spaceId,
                 frame: frame,
                 rowIdentities: rowIdentities,
+                splitPairingMemberIDsByRow: splitPairingMemberIDsByRow,
                 generation: generation
             )
         }
@@ -396,6 +401,7 @@ final class SidebarDragGeometryRepository {
         spaceId: UUID,
         frame: CGRect?,
         rowIdentities: [SidebarVisualSceneProjection.RegularRow.Identity],
+        splitPairingMemberIDsByRow: [[SplitMemberID]] = [],
         generation: Int
     ) {
         let frame = frame.map { normalizedFrame($0, for: generation) }
@@ -403,7 +409,8 @@ final class SidebarDragGeometryRepository {
             if let frame {
                 let target = SidebarRegularListHitMetrics(
                     frame: frame,
-                    rowIdentities: rowIdentities
+                    rowIdentities: rowIdentities,
+                    splitPairingMemberIDsByRow: splitPairingMemberIDsByRow
                 )
                 guard store.regularListHitTargets[spaceId] != target else { return false }
                 store.regularListHitTargets[spaceId] = target
@@ -420,6 +427,7 @@ final class SidebarDragGeometryRepository {
         spaceId: UUID,
         frame: CGRect?,
         rowCount: Int,
+        splitPairingMemberIDsByRow: [[SplitMemberID]],
         leadingInset: CGFloat,
         generation: Int
     ) {
@@ -429,6 +437,8 @@ final class SidebarDragGeometryRepository {
                 let target = SidebarPinnedListHitMetrics(
                     frame: frame,
                     rowCount: rowCount,
+                    splitPairingMemberIDsByRow:
+                        splitPairingMemberIDsByRow,
                     leadingInset: leadingInset
                 )
                 guard store.pinnedListHitTargets[spaceId] != target else { return false }

@@ -34,7 +34,10 @@ final class SidebarCanonicalDragMutation {
 
         if let splitGroup = operation.splitGroup {
             guard operation.toContainer != .none else { return false }
-            return splits.move(splitGroup, operation: operation)
+            return splits.move(
+                groupID: splitGroup.id,
+                operation: operation
+            )
         }
 
         if let pin = operation.pin {

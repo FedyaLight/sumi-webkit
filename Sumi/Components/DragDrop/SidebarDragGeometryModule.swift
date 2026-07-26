@@ -1,6 +1,7 @@
 import Combine
 import CoreGraphics
 import Foundation
+import SumiDomain
 
 enum SidebarDragGeometryFact {
     case page(
@@ -17,12 +18,14 @@ enum SidebarDragGeometryFact {
         spaceId: UUID,
         frame: CGRect?,
         rowCount: Int,
+        splitPairingMemberIDsByRow: [[SplitMemberID]],
         leadingInset: CGFloat
     )
     case regularList(
         spaceId: UUID,
         frame: CGRect?,
-        rowIdentities: [SidebarVisualSceneProjection.RegularRow.Identity]
+        rowIdentities: [SidebarVisualSceneProjection.RegularRow.Identity],
+        splitPairingMemberIDsByRow: [[SplitMemberID]]
     )
     case essentials(SidebarEssentialsLayoutUpdate)
 }
@@ -148,19 +151,32 @@ final class SidebarDragGeometryModule: ObservableObject {
             repository.scheduleTopLevelPinnedItemTarget(update, generation: generation)
         case .folderChild(let update):
             repository.scheduleFolderChildDropTarget(update, generation: generation)
-        case .pinnedList(let spaceId, let frame, let rowCount, let leadingInset):
+        case .pinnedList(
+            let spaceId,
+            let frame,
+            let rowCount,
+            let splitPairingMemberIDsByRow,
+            let leadingInset
+        ):
             repository.schedulePinnedListHitTarget(
                 spaceId: spaceId,
                 frame: frame,
                 rowCount: rowCount,
+                splitPairingMemberIDsByRow: splitPairingMemberIDsByRow,
                 leadingInset: leadingInset,
                 generation: generation
             )
-        case .regularList(let spaceId, let frame, let rowIdentities):
+        case .regularList(
+            let spaceId,
+            let frame,
+            let rowIdentities,
+            let splitPairingMemberIDsByRow
+        ):
             repository.scheduleRegularListHitTarget(
                 spaceId: spaceId,
                 frame: frame,
                 rowIdentities: rowIdentities,
+                splitPairingMemberIDsByRow: splitPairingMemberIDsByRow,
                 generation: generation
             )
         case .essentials(let update):

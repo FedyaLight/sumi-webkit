@@ -1,3 +1,4 @@
+import SumiDomain
 import SwiftUI
 
 // MARK: - Geometry Tracking
@@ -221,6 +222,7 @@ extension View {
         itemId: UUID,
         spaceId: UUID,
         topLevelIndex: Int,
+        splitPairingMemberIDs: [SplitMemberID] = [],
         generation: Int,
         isActive: Bool = true
     ) -> some View {
@@ -239,7 +241,8 @@ extension View {
                                 itemId: itemId,
                                 spaceId: spaceId,
                                 topLevelIndex: topLevelIndex,
-                                frame: frame
+                                frame: frame,
+                                splitPairingMemberIDs: splitPairingMemberIDs
                             )
                         )
                         : SidebarTopLevelPinnedItemTargetUpdate(itemId: itemId)
@@ -265,6 +268,7 @@ extension View {
         folderId: UUID,
         childId: UUID,
         index: Int,
+        splitPairingMemberIDs: [SplitMemberID] = [],
         generation: Int,
         isActive: Bool = true
     ) -> some View {
@@ -283,7 +287,8 @@ extension View {
                                 childId: childId,
                                 folderId: folderId,
                                 index: index,
-                                frame: frame
+                                frame: frame,
+                                splitPairingMemberIDs: splitPairingMemberIDs
                             )
                         )
                         : SidebarFolderChildDropTargetUpdate(childId: childId)
@@ -307,6 +312,7 @@ extension View {
     func sidebarRegularListHitGeometry(
         for spaceId: UUID,
         rowIdentities: [SidebarVisualSceneProjection.RegularRow.Identity],
+        splitPairingMemberIDsByRow: [[SplitMemberID]],
         generation: Int,
         isEnabled: Bool = true
     ) -> some View {
@@ -316,6 +322,7 @@ extension View {
                 detailedGeometrySpace: (spaceId, nil),
                 trigger: [
                     AnyHashable(rowIdentities),
+                    AnyHashable(splitPairingMemberIDsByRow),
                     AnyHashable(generation),
                 ],
                 report: { geometry, frame in
@@ -324,7 +331,8 @@ extension View {
                             .regularList(
                                 spaceId: spaceId,
                                 frame: frame,
-                                rowIdentities: rowIdentities
+                                rowIdentities: rowIdentities,
+                                splitPairingMemberIDsByRow: splitPairingMemberIDsByRow
                             ),
                             generation: generation
                         )
@@ -333,7 +341,8 @@ extension View {
                             .regularList(
                                 spaceId: spaceId,
                                 frame: nil,
-                                rowIdentities: []
+                                rowIdentities: [],
+                                splitPairingMemberIDsByRow: []
                             ),
                             generation: generation
                         )
@@ -344,7 +353,8 @@ extension View {
                         .regularList(
                             spaceId: spaceId,
                             frame: nil,
-                            rowIdentities: []
+                            rowIdentities: [],
+                            splitPairingMemberIDsByRow: []
                         ),
                         generation: generation
                     )
@@ -356,6 +366,7 @@ extension View {
     func sidebarPinnedListHitGeometry(
         for spaceId: UUID,
         rowCount: Int,
+        splitPairingMemberIDsByRow: [[SplitMemberID]],
         leadingInset: CGFloat,
         generation: Int,
         isEnabled: Bool
@@ -365,29 +376,33 @@ extension View {
                 isEnabled: isEnabled,
                 detailedGeometrySpace: (spaceId, nil),
                 trigger: [
+                    AnyHashable(splitPairingMemberIDsByRow),
                     AnyHashable(rowCount),
                     AnyHashable(leadingInset),
                     AnyHashable(generation),
                 ],
                 report: { geometry, frame in
                     geometry.report(
-                        .pinnedList(
-                            spaceId: spaceId,
-                            frame: frame,
-                            rowCount: rowCount,
-                            leadingInset: leadingInset
-                        ),
+                            .pinnedList(
+                                spaceId: spaceId,
+                                frame: frame,
+                                rowCount: rowCount,
+                                splitPairingMemberIDsByRow:
+                                    splitPairingMemberIDsByRow,
+                                leadingInset: leadingInset
+                            ),
                         generation: generation
                     )
                 },
                 remove: { geometry in
                     geometry.report(
-                        .pinnedList(
-                            spaceId: spaceId,
-                            frame: nil,
-                            rowCount: 0,
-                            leadingInset: 0
-                        ),
+                            .pinnedList(
+                                spaceId: spaceId,
+                                frame: nil,
+                                rowCount: 0,
+                                splitPairingMemberIDsByRow: [],
+                                leadingInset: 0
+                            ),
                         generation: generation
                     )
                 }

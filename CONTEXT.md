@@ -76,6 +76,10 @@ _Avoid_: Recomputed drop target, approximate hover slot
 The target-adaptive appearance of one Sidebar Visual Item while it is being moved. It preserves item identity while matching the row, folder, or Essentials surface of the current Presented Drop Intent.
 _Avoid_: Drag snapshot copy, generic ghost
 
+**Split Group Row Presentation**:
+The canonical row appearance of a Split Group across live, transition, and drag surfaces. Member order, pill geometry, title visibility, icon treatment, and selection material do not vary by surface.
+_Avoid_: Split row variant, snapshot split row
+
 ## Command Palette Language
 
 **Command Palette Session**:

@@ -35,6 +35,10 @@ struct SidebarGlobalDragOverlay: NSViewRepresentable {
             primaryColorHex: themeContext.gradient.primaryColorHex,
             isDarkChrome: themeContext.chromeColorScheme == .dark
         )
+        view.dropIndicatorPresenter.pairingPreviewColor =
+            NSColor(
+                themeContext.tokens(settings: sumiSettings).fieldBackgroundHover
+            )
         view.dropIndicatorPresenter.prefersReducedMotion =
             SumiChromeMotionPolicy.currentMode(
                 reduceMotion: reduceMotion,
@@ -243,9 +247,33 @@ class SidebarDragNSView: NSView {
     /// rect arrives in scroll-normalized SwiftUI-global space; strip the
     /// autoscroll delta, flip into window coordinates, then into view space.
     private func presentDropIndicator(for resolution: SidebarDropResolution?) {
-        guard let resolution,
-              let window,
-              var lineRect = resolution.indicatorLineRect else {
+        guard let resolution, let window else {
+            dropIndicatorPresenter.hide()
+            return
+        }
+
+        if let target = resolution.splitPairingTarget {
+            if target.presentation == .existingGroupRow {
+                // Existing groups render the containment cue behind their
+                // content, exactly like folder rows.
+                dropIndicatorPresenter.hide()
+                return
+            }
+            let scrollOffset =
+                -dragState.geometry.geometrySnapshot.cumulativeScrollDeltaY
+            let presentedRect = target.rect.offsetBy(dx: 0, dy: scrollOffset)
+            let windowRect = SidebarDragLocationMapper.windowRect(
+                fromSwiftUITopLeftRect: presentedRect,
+                in: window
+            )
+            dropIndicatorPresenter.updatePairingTarget(
+                rect: convert(windowRect, from: nil),
+                target: target
+            )
+            return
+        }
+
+        guard var lineRect = resolution.indicatorLineRect else {
             dropIndicatorPresenter.hide()
             return
         }

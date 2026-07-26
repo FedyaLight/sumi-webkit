@@ -845,7 +845,8 @@ private func applyRegularListGeometry(
                 .tab(UUID(uuidString: "00000000-0000-0000-0000-000000000004")!),
                 .tab(UUID(uuidString: "00000000-0000-0000-0000-000000000005")!),
                 .tab(UUID(uuidString: "00000000-0000-0000-0000-000000000006")!),
-            ]
+            ],
+            splitPairingMemberIDsByRow: []
         ),
         generation: generation
     )

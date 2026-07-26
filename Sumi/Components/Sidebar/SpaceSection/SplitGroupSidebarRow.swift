@@ -10,6 +10,7 @@ struct SplitGroupSidebarRow: View {
     let group: SplitGroup
     let items: [SplitGroupSidebarItem]
     let spaceId: UUID
+    var isDropHighlighted = false
     let isAppKitInteractionEnabled: Bool
     let faviconImageReader: any BrowserFaviconImageReading
     let splitLayout: SplitLayoutService
@@ -38,8 +39,14 @@ struct SplitGroupSidebarRow: View {
     var body: some View {
         rowContent
         .frame(height: SidebarRowLayout.rowHeight, alignment: .top)
-        .padding(.horizontal, 2)
+        .padding(.horizontal, SplitGroupSidebarVisualLayout.outerRowInset)
         .frame(minWidth: 0, maxWidth: .infinity)
+        .background {
+            if isDropHighlighted {
+                Rectangle()
+                    .fill(tokens.sidebarRowHover)
+            }
+        }
         .sidebarRowSurface(
             background: rowBackground,
             cornerRadius: sumiSettings.resolvedCornerRadius(
@@ -81,73 +88,59 @@ struct SplitGroupSidebarRow: View {
     }
 
     private var segmentedRow: some View {
-        GeometryReader { geometry in
-            let rowItems = resolvedDisplayItems
-            let activeCount = max(rowItems.filter { !isDeparting($0) }.count, 1)
-            let separatorCount = max(activeCount - 1, 0)
-            let segmentWidth = max(
-                0,
-                (geometry.size.width - CGFloat(separatorCount)) / CGFloat(activeCount)
-            )
-
-            HStack(spacing: 0) {
-                ForEach(Array(rowItems.enumerated()), id: \.element.id) { index, item in
-                    let itemAction = memberAction(item)
-                    SplitGroupSegment(
-                        groupID: group.id,
-                        item: item,
-                        spaceId: spaceId,
-                        isDeparting: isDeparting(item),
-                        trailingPadding: segmentTrailingPadding(
-                            for: index,
-                            in: rowItems
-                        ),
-                        reservesTrailingAction: itemAction != nil || (
-                            isLastVisibleItem(at: index, in: rowItems)
-                                && groupAction != nil
-                        ),
-                        memberAction: itemAction,
-                        isAppKitInteractionEnabled: isAppKitInteractionEnabled && !isDeparting(item),
-                        faviconImageReader: faviconImageReader,
-                        dragSourceConfiguration: dragSource(item),
-                        dragPreviewSourceGeometry: SidebarDragPreviewSourceGeometry(
-                            size: geometry.size,
-                            localOrigin: CGPoint(
-                                x: segmentLeadingOffset(
-                                    for: index,
-                                    in: rowItems,
-                                    segmentWidth: segmentWidth
-                                ),
-                                y: 0
-                            )
-                        ),
-                        contextMenuEntries: {
-                            groupContextMenuEntries
-                        },
-                        onActivate: { activate(item) },
-                        onMemberAction: { onMemberAction(item) },
-                        onMiddleClick: middleClickAction(for: item)
+        let rowItems = resolvedDisplayItems
+        return SplitGroupSegmentedRow(
+            slots: rowItems,
+            material: .settled(isSelected: isFocusedGroup),
+            tokens: tokens,
+            departingIDs: departingItemIds
+        ) { index, item, metrics in
+            let itemAction = memberAction(item)
+            SplitGroupSegment(
+                groupID: group.id,
+                item: item,
+                spaceId: spaceId,
+                isDeparting: isDeparting(item),
+                segmentWidth: metrics.width,
+                trailingPadding: segmentTrailingPadding(
+                    for: index,
+                    in: rowItems
+                ),
+                reservesTrailingAction: itemAction != nil || (
+                    isLastVisibleItem(at: index, in: rowItems)
+                        && groupAction != nil
+                ),
+                memberAction: itemAction,
+                isRowHovered: isRowHovered,
+                isAppKitInteractionEnabled:
+                    isAppKitInteractionEnabled && !isDeparting(item),
+                faviconImageReader: faviconImageReader,
+                dragSourceConfiguration: dragSource(item),
+                dragPreviewSourceGeometry: SidebarDragPreviewSourceGeometry(
+                    size: metrics.rowSize,
+                    localOrigin: CGPoint(
+                        x: metrics.leadingOffset,
+                        y: 0
                     )
-                    .frame(width: isDeparting(item) ? 0 : segmentWidth)
-                    .clipped()
-
-                    if shouldShowSeparator(after: index, in: rowItems) {
-                        Rectangle()
-                            .fill(tokens.separator.opacity(0.7))
-                            .frame(width: 1, height: 22)
-                            .padding(.vertical, 6)
-                    }
-                }
-            }
-            .animation(
-                shouldAnimateProjectedLayout ? SidebarDropMotion.contentLayout : nil,
-                value: displayedItems.map(\.id)
-            )
-            .animation(
-                shouldAnimateProjectedLayout ? SidebarDropMotion.contentLayout : nil,
-                value: departingItemIds.map(\.sidebarStableDescription).sorted()
+                ),
+                contextMenuEntries: {
+                    groupContextMenuEntries
+                },
+                onActivate: { activate(item) },
+                onMemberAction: { onMemberAction(item) },
+                onMiddleClick: middleClickAction(for: item)
             )
         }
+        .animation(
+            shouldAnimateProjectedLayout
+                ? SidebarDropMotion.contentLayout : nil,
+            value: displayedItems.map(\.id)
+        )
+        .animation(
+            shouldAnimateProjectedLayout
+                ? SidebarDropMotion.contentLayout : nil,
+            value: departingItemIds.map(\.sidebarStableDescription).sorted()
+        )
     }
 
     private func customIconRow(
@@ -183,7 +176,10 @@ struct SplitGroupSidebarRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.trailing, reservedTrailingWidth)
         }
-        .padding(.leading, SidebarRowLayout.leadingInset)
+        .padding(
+            .leading,
+            SplitGroupSidebarVisualLayout.customIconLeadingInset
+        )
         .padding(.trailing, SidebarRowLayout.trailingInset)
         .frame(height: SidebarRowLayout.rowHeight)
         .contentShape(Rectangle())
@@ -252,7 +248,7 @@ struct SplitGroupSidebarRow: View {
     }
 
     private var showsGroupAction: Bool {
-        guard let groupAction else { return false }
+        guard groupAction != nil else { return false }
         return SidebarHoverChrome.showsTrailingAction(
             isHovered: isRowHovered,
             isSelected: false
@@ -267,11 +263,15 @@ struct SplitGroupSidebarRow: View {
         for index: Int,
         in rowItems: [SplitGroupSidebarItem]
     ) -> CGFloat {
-        if memberAction(rowItems[index]) != nil {
-            return SidebarRowLayout.trailingActionPadding
-        }
-        return isLastVisibleItem(at: index, in: rowItems) && showsGroupAction
-            ? SidebarRowLayout.trailingActionPadding : 7
+        SplitGroupSidebarVisualLayout.trailingPadding(
+            hasMemberAction: memberAction(rowItems[index]) != nil,
+            showsMemberAction: isRowHovered,
+            isLastVisibleItem: isLastVisibleItem(
+                at: index,
+                in: rowItems
+            ),
+            showsGroupAction: showsGroupAction
+        )
     }
 
     private func middleClickAction(
@@ -288,17 +288,6 @@ struct SplitGroupSidebarRow: View {
         in rowItems: [SplitGroupSidebarItem]
     ) -> Bool {
         rowItems[(index + 1)...].contains { !isDeparting($0) } == false
-    }
-
-    private func segmentLeadingOffset(
-        for index: Int,
-        in rowItems: [SplitGroupSidebarItem],
-        segmentWidth: CGFloat
-    ) -> CGFloat {
-        let precedingVisibleCount = rowItems[..<index].count {
-            !isDeparting($0)
-        }
-        return CGFloat(precedingVisibleCount) * (segmentWidth + 1)
     }
 
     @ViewBuilder

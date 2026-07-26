@@ -15,13 +15,22 @@ final class SidebarDropIndicatorPresenter {
         }
     }
 
+    var pairingPreviewColor: NSColor = .controlBackgroundColor {
+        didSet {
+            guard pairingPreviewColor != oldValue else { return }
+            applyColors()
+        }
+    }
+
     var prefersReducedMotion = false
 
     private weak var hostLayer: CALayer?
     private var lineLayer: CALayer?
     private var ringLayer: CALayer?
+    private var pairingLayer: CALayer?
     private var lastSlotKey: DropZoneSlot?
     private var lastLineRect: CGRect?
+    private var lastPairingTarget: SidebarSplitPairingTarget?
 
     func attach(to hostLayer: CALayer) {
         self.hostLayer = hostLayer
@@ -41,6 +50,7 @@ final class SidebarDropIndicatorPresenter {
         }
         lastSlotKey = slotKey
         lastLineRect = lineRect
+        lastPairingTarget = nil
 
         let animatesSlide = !wasHidden && !prefersReducedMotion
 
@@ -53,6 +63,7 @@ final class SidebarDropIndicatorPresenter {
         } else {
             CATransaction.setDisableActions(true)
         }
+        pairingLayer?.isHidden = true
         line.isHidden = false
         ring.isHidden = false
         line.frame = barFrame(for: lineRect)
@@ -67,14 +78,55 @@ final class SidebarDropIndicatorPresenter {
         }
     }
 
+    func updatePairingTarget(
+        rect: CGRect,
+        target: SidebarSplitPairingTarget
+    ) {
+        let layer = materializedPairingLayer()
+        let wasHidden = layer.isHidden
+        let targetChanged = target != lastPairingTarget
+        guard wasHidden
+                || targetChanged
+                || layer.frame != rect
+        else { return }
+
+        lastSlotKey = nil
+        lastLineRect = nil
+        lastPairingTarget = target
+
+        CATransaction.begin()
+        if !wasHidden, !prefersReducedMotion {
+            CATransaction.setAnimationDuration(Metrics.slideDuration)
+            CATransaction.setAnimationTimingFunction(
+                CAMediaTimingFunction(name: .easeOut)
+            )
+        } else {
+            CATransaction.setDisableActions(true)
+        }
+        lineLayer?.isHidden = true
+        ringLayer?.isHidden = true
+        layer.isHidden = false
+        layer.frame = rect
+        applyPairingStyle()
+        CATransaction.commit()
+
+        if targetChanged, !wasHidden {
+            NSHapticFeedbackManager.defaultPerformer.perform(
+                .alignment,
+                performanceTime: .default
+            )
+        }
+    }
+
     func hide() {
         lastSlotKey = nil
         lastLineRect = nil
-        guard let lineLayer, !lineLayer.isHidden else { return }
+        lastPairingTarget = nil
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        lineLayer.isHidden = true
+        lineLayer?.isHidden = true
         ringLayer?.isHidden = true
+        pairingLayer?.isHidden = true
         CATransaction.commit()
     }
 
@@ -103,12 +155,37 @@ final class SidebarDropIndicatorPresenter {
         return (line, ring)
     }
 
+    private func materializedPairingLayer() -> CALayer {
+        if let pairingLayer {
+            return pairingLayer
+        }
+
+        let layer = CALayer()
+        layer.cornerRadius =
+            SplitGroupSidebarVisualLayout.segmentCornerRadius
+        layer.isHidden = true
+        hostLayer?.addSublayer(layer)
+        pairingLayer = layer
+        applyColors()
+        return layer
+    }
+
     private func applyColors() {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         lineLayer?.backgroundColor = accentColor.cgColor
         ringLayer?.borderColor = accentColor.cgColor
+        if lastPairingTarget != nil {
+            applyPairingStyle()
+        }
         CATransaction.commit()
+    }
+
+    private func applyPairingStyle() {
+        pairingLayer?.cornerRadius =
+            SplitGroupSidebarVisualLayout.segmentCornerRadius
+        pairingLayer?.borderWidth = 0
+        pairingLayer?.backgroundColor = pairingPreviewColor.cgColor
     }
 
     // MARK: - Frames (host-view coordinates, bottom-left origin)

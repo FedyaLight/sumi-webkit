@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import SumiDomain
 
 enum SidebarFolderDragRegion: Hashable {
     case header
@@ -12,6 +13,7 @@ struct SidebarTopLevelPinnedItemMetrics: Equatable {
     var spaceId: UUID
     var topLevelIndex: Int
     var frame: CGRect
+    var splitPairingMemberIDs: [SplitMemberID] = []
 }
 
 struct SidebarTopLevelPinnedItemTargetUpdate: Equatable {
@@ -71,6 +73,7 @@ struct SidebarFolderChildDropTargetMetrics: Equatable {
     var folderId: UUID
     var index: Int
     var frame: CGRect
+    var splitPairingMemberIDs: [SplitMemberID] = []
 }
 
 struct SidebarFolderChildDropTargetUpdate: Equatable {
@@ -125,6 +128,7 @@ private enum SidebarUniformRowDropGeometry {
 struct SidebarRegularListHitMetrics: Equatable {
     let frame: CGRect
     let rowIdentities: [SidebarVisualSceneProjection.RegularRow.Identity]
+    let splitPairingMemberIDsByRow: [[SplitMemberID]]
 
     /// Number of rendered rows. A split group is one row regardless of its
     /// member count.
@@ -132,10 +136,12 @@ struct SidebarRegularListHitMetrics: Equatable {
 
     init(
         frame: CGRect,
-        rowIdentities: [SidebarVisualSceneProjection.RegularRow.Identity]
+        rowIdentities: [SidebarVisualSceneProjection.RegularRow.Identity],
+        splitPairingMemberIDsByRow: [[SplitMemberID]] = []
     ) {
         self.frame = frame
         self.rowIdentities = rowIdentities
+        self.splitPairingMemberIDsByRow = splitPairingMemberIDsByRow
     }
 
     /// Nearest visual row boundary for a Y offset inside the list frame.
@@ -164,13 +170,50 @@ struct SidebarRegularListHitMetrics: Equatable {
             after: safeIndex < rowCount ? rowIdentities[safeIndex] : nil
         )
     }
+
+    func rowFrame(at index: Int) -> CGRect? {
+        guard rowIdentities.indices.contains(index) else { return nil }
+        return CGRect(
+            x: frame.minX,
+            y: frame.minY + CGFloat(index) * SidebarRowLayout.rowPitch,
+            width: frame.width,
+            height: SidebarRowLayout.rowHeight
+        )
+    }
+
+    func rowIndex(containing location: CGPoint) -> Int? {
+        guard frame.contains(location) else { return nil }
+        let index = Int(
+            ((location.y - frame.minY) / SidebarRowLayout.rowPitch)
+                .rounded(.down)
+        )
+        guard let rowFrame = rowFrame(at: index),
+              rowFrame.contains(location) else {
+            return nil
+        }
+        return index
+    }
+
+    func splitPairingCandidate(
+        at index: Int
+    ) -> SidebarSplitPairingCandidate? {
+        guard let frame = rowFrame(at: index),
+              splitPairingMemberIDsByRow.indices.contains(index) else {
+            return nil
+        }
+        return SidebarSplitPairingCandidate(
+            frame: frame,
+            memberIDs: splitPairingMemberIDsByRow[index]
+        )
+    }
 }
 
 /// Compact geometry for the common Pinned layout where every top-level item
 /// is one fixed-height row and no folder expands the stack.
 struct SidebarPinnedListHitMetrics: Equatable {
     var frame: CGRect
-    var rowCount: Int
+    let rowCount: Int
+    let splitPairingMemberIDsByRow: [[SplitMemberID]]
     var leadingInset: CGFloat
 
     var rowsFrame: CGRect {
@@ -197,6 +240,39 @@ struct SidebarPinnedListHitMetrics: Equatable {
             maxY: rowsFrame.maxY,
             slot: slot,
             rowCount: rowCount
+        )
+    }
+
+    func rowIndex(containing location: CGPoint) -> Int? {
+        guard rowsFrame.contains(location) else { return nil }
+        let index = Int(
+            ((location.y - rowsFrame.minY) / SidebarRowLayout.rowPitch)
+                .rounded(.down)
+        )
+        guard let rowFrame = rowFrame(at: index) else { return nil }
+        return rowFrame.contains(location) ? index : nil
+    }
+
+    func rowFrame(at index: Int) -> CGRect? {
+        guard (0..<rowCount).contains(index) else { return nil }
+        return CGRect(
+            x: rowsFrame.minX,
+            y: rowsFrame.minY + CGFloat(index) * SidebarRowLayout.rowPitch,
+            width: rowsFrame.width,
+            height: SidebarRowLayout.rowHeight
+        )
+    }
+
+    func splitPairingCandidate(
+        at index: Int
+    ) -> SidebarSplitPairingCandidate? {
+        guard let frame = rowFrame(at: index),
+              splitPairingMemberIDsByRow.indices.contains(index) else {
+            return nil
+        }
+        return SidebarSplitPairingCandidate(
+            frame: frame,
+            memberIDs: splitPairingMemberIDsByRow[index]
         )
     }
 }

@@ -52,6 +52,7 @@ extension ShortcutSidebarRowChrome {
     }
 
     var backgroundColor: Color {
+        guard projectedSplitTarget == nil else { return .clear }
         if runtimeAffordance.isSelected {
             return tokens.sidebarRowActive
         } else if displayIsHovering {
@@ -61,7 +62,8 @@ extension ShortcutSidebarRowChrome {
     }
 
     var drawsRowSurface: Bool {
-        runtimeAffordance.isSelected || displayIsHovering
+        projectedSplitTarget == nil
+            && (runtimeAffordance.isSelected || displayIsHovering)
     }
 
     var rowSourceID: String {

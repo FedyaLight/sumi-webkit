@@ -34,7 +34,8 @@ final class SidebarSplitGroupMoveService {
         for group: SplitGroup,
         in windowState: BrowserWindowState
     ) -> [Destination] {
-        guard let spaceID = group.container.spaceId
+        guard let group = ordering.group(id: group.id),
+              let spaceID = group.container.spaceId
                 ?? windowState.currentSpaceId else { return [] }
         var result: [Destination] = []
         if group.container != .regularTabs(spaceId: spaceID) {
@@ -71,13 +72,14 @@ final class SidebarSplitGroupMoveService {
         to destination: Destination,
         in windowState: BrowserWindowState
     ) -> Bool {
-        guard let source = source(for: group),
+        guard let canonicalGroup = ordering.group(id: group.id),
+              let source = source(for: canonicalGroup),
               let scope = SidebarDragScope(
                   windowState: windowState,
                   sourceZone: source.zone,
                   item: .splitGroup(
-                      group.id,
-                      title: group.title ?? "Split View"
+                      canonicalGroup.id,
+                      title: canonicalGroup.title ?? "Split View"
                   )
               ) else { return false }
         let target: TabManagerDragTarget
@@ -107,9 +109,9 @@ final class SidebarSplitGroupMoveService {
             )
         }
         return conversion.move(
-            group,
+            groupID: canonicalGroup.id,
             operation: DragOperation(
-                payload: .splitGroup(group),
+                payload: .splitGroup(canonicalGroup),
                 scope: scope,
                 fromContainer: source.container,
                 toContainer: target.container,

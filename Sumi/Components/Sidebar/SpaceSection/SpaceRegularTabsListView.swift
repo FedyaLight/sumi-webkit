@@ -38,10 +38,7 @@ struct SpaceRegularTabsListView: View {
             tabIDs: tabs.map(\.id),
             groups: splitGroups
         )
-        let renderedRun = SidebarVisualSceneProjection.regularRun(
-            tabIDs: interactionSession.listAnimation.renderedItems.map(\.tabID),
-            groups: splitGroups
-        )
+        let renderedRun = interactionSession.listAnimation.renderedRun
 
         LazyVStack(alignment: .leading, spacing: SidebarRowLayout.rowGap) {
             ForEach(renderedRun.rows) { row in
@@ -58,6 +55,8 @@ struct SpaceRegularTabsListView: View {
                                 regularTabTargets: regularTabTargets,
                                 browserContext: browserContext,
                                 isInteractive: isInteractive,
+                                isDropHighlighted:
+                                    isExistingGroupDropTarget(group),
                                 tabActionOwner: tabActionOwner
                             )
                             .opacity(
@@ -89,22 +88,27 @@ struct SpaceRegularTabsListView: View {
         .sidebarRegularListHitGeometry(
             for: space.id,
             rowIdentities: regularRun.rows.map(\.identity),
+            splitPairingMemberIDsByRow: regularRun.rows.map {
+                $0.tabIDs.map(SplitMemberID.regularTab)
+            },
             generation: dragSnapshot.geometryGeneration,
             isEnabled: isInteractive
         )
         .contentShape(Rectangle())
         .onAppear {
             interactionSession.listAnimation.cacheTabs(tabs)
-            syncRenderedTabsWithoutAnimation(to: tabs.map(\.id))
+            syncRenderedRowsWithoutAnimation(to: regularRun)
         }
-        .onChange(of: tabs.map(\.id)) { oldValue, newValue in
+        .onChange(of: regularRun) { oldRun, newRun in
+            let oldTabIDs = oldRun.rows.flatMap(\.tabIDs)
+            let newTabIDs = newRun.rows.flatMap(\.tabIDs)
             interactionSession.listAnimation.preserveSnapshots(
-                from: oldValue,
-                to: newValue,
+                from: oldTabIDs,
+                to: newTabIDs,
                 liveTab: { regularTabCatalog.tab(for: $0) }
             )
             interactionSession.listAnimation.cacheTabs(tabs)
-            animateRenderedTabsChange(from: oldValue, to: newValue)
+            animateRenderedRowsChange(from: oldRun, to: newRun)
         }
     }
 
@@ -130,6 +134,15 @@ struct SpaceRegularTabsListView: View {
         )
     }
 
+    private func isExistingGroupDropTarget(_ group: SplitGroup) -> Bool {
+        guard let target = dragSnapshot.splitPairingTarget,
+              target.presentation == .existingGroupRow
+        else {
+            return false
+        }
+        return group.memberIDs.contains(target.memberID)
+    }
+
     private func animatedTabRow(
         _ tab: Tab,
         selectionSnapshot: SidebarWindowSelectionSnapshot
@@ -143,6 +156,8 @@ struct SpaceRegularTabsListView: View {
                 ? SidebarDragSourceDim.opacity
                 : 1,
             isInteractive: isInteractive,
+            projectedSplitTarget: dragSnapshot.splitPairingTarget?
+                .projectedTarget(for: .regularTab(tab.id)),
             actionOwner: tabActionOwner,
             onClose: { closeRegularTab(tab) }
         )
@@ -191,47 +206,58 @@ struct SpaceRegularTabsListView: View {
         }
     }
 
-    private func syncRenderedTabsWithoutAnimation(to tabIDs: [UUID]) {
+    private func syncRenderedRowsWithoutAnimation(
+        to run: SidebarVisualSceneProjection.RegularRun
+    ) {
         SidebarMotionTransaction.withoutAnimation {
-            interactionSession.listAnimation.reset(to: tabIDs)
+            interactionSession.listAnimation.reset(to: run)
         }
     }
 
-    private func animateRenderedTabsChange(from oldIDs: [UUID], to newIDs: [UUID]) {
+    private func animateRenderedRowsChange(
+        from oldRun: SidebarVisualSceneProjection.RegularRun,
+        to newRun: SidebarVisualSceneProjection.RegularRun
+    ) {
         guard let animation = contentMutationAnimation else {
-            syncRenderedTabsWithoutAnimation(to: newIDs)
+            syncRenderedRowsWithoutAnimation(to: newRun)
             return
         }
 
-        let insertedIDs = Set(newIDs.filter { !oldIDs.contains($0) })
-        if !insertedIDs.isEmpty {
-            animateInsertion(insertedIDs: insertedIDs, newIDs: newIDs, animation: animation)
-            return
-        }
-
-        if let removedID = oldIDs.first(where: { !newIDs.contains($0) }) {
+        switch RegularSidebarVisualChange.resolve(
+            from: oldRun,
+            to: newRun
+        ) {
+        case .insertion(let insertedIDs):
+            animateInsertion(
+                insertedIDs: insertedIDs,
+                newRun: newRun,
+                animation: animation
+            )
+        case .removal(let removedID):
             if interactionSession.listAnimation.isRemovalInFlight(for: removedID) { return }
             guard interactionSession.listAnimation.containsRenderedTab(removedID),
                   let tab = interactionSession.listAnimation.resolvedTab(
                     for: removedID,
                     liveTab: { regularTabCatalog.tab(for: $0) }
                   ) else {
-                syncRenderedTabsWithoutAnimation(to: newIDs)
+                syncRenderedRowsWithoutAnimation(to: newRun)
                 return
             }
             animateRowRemoval(tabID: removedID, tab: tab, animation: animation)
-            return
-        }
-
-        guard oldIDs != newIDs else { return }
-        withAnimation(animation) {
-            interactionSession.listAnimation.renderedItems = newIDs.map(RegularTabRenderedItem.tab)
+        case .immediateReplacement:
+            syncRenderedRowsWithoutAnimation(to: newRun)
+        case .reorder:
+            withAnimation(animation) {
+                interactionSession.listAnimation.renderedRows = newRun.rows
+            }
+        case .none:
+            break
         }
     }
 
     private func animateInsertion(
         insertedIDs: Set<UUID>,
-        newIDs: [UUID],
+        newRun: SidebarVisualSceneProjection.RegularRun,
         animation: Animation
     ) {
         SidebarMotionTransaction.withoutAnimation {
@@ -240,7 +266,7 @@ struct SpaceRegularTabsListView: View {
             }
         }
         withAnimation(animation) {
-            interactionSession.listAnimation.renderedItems = newIDs.map(RegularTabRenderedItem.tab)
+            interactionSession.listAnimation.renderedRows = newRun.rows
         }
         DispatchQueue.main.async {
             withAnimation(animation) {
@@ -266,7 +292,7 @@ struct SpaceRegularTabsListView: View {
             guard interactionSession.listAnimation.finishRemoval(
                 tabId: tabID,
                 generation: plan.generation,
-                finalItems: plan.finalItems
+                finalRows: plan.finalRows
             ) else { return }
             onComplete?()
         }

@@ -13,6 +13,7 @@ struct ShortcutSidebarRowChrome: View {
     let faviconImageReader: any BrowserFaviconImageReading
     let resolvedTitle: String
     let runtimeAffordance: SumiLauncherRuntimeAffordanceState
+    let projectedSplitTarget: SidebarSplitPairingTarget?
     var accessibilityID: String?
     var contextMenuEntries: () -> [SidebarContextMenuEntry] = { [] }
     let action: () -> Void
@@ -36,6 +37,75 @@ struct ShortcutSidebarRowChrome: View {
     @StateObject var storedFaviconLoader = SidebarStoredFaviconLoader()
 
     var body: some View {
+        presentedRow
+        .sidebarRowSurface(
+            background: backgroundColor,
+            cornerRadius: rowCornerRadius,
+            tokens: tokens,
+            isVisible: drawsRowSurface,
+            drawsSelectionShadow: runtimeAffordance.isSelected
+        )
+        .sidebarSelectedItemVisibility(
+            .launcher(pin.id),
+            isSelected: runtimeAffordance.isSelected,
+            isEnabled: dragIsEnabled
+        )
+        .sidebarHover($isRowHovered, isEnabled: dragIsEnabled)
+        .onChange(of: isRowHovered) { _, hovering in
+            if !hovering {
+                suppressRegularActionUntilHoverExit = false
+            }
+        }
+        .onChange(of: activeGlanceSessionForRow?.id) { oldValue, newValue in
+            if oldValue != nil, newValue == nil, isRowHovered {
+                suppressRegularActionUntilHoverExit = true
+            } else if newValue != nil {
+                suppressRegularActionUntilHoverExit = false
+            }
+        }
+        .sidebarZenPressEffect(sourceID: rowSourceID, isEnabled: dragIsEnabled)
+        .task(id: storedFaviconLoadKey) {
+            await loadStoredFavicon()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .faviconCacheUpdated)) { notification in
+            guard pin.iconAsset == nil else { return }
+            storedFaviconLoader.invalidateIfNeeded(
+                for: notification,
+                launchURL: pin.launchURL,
+                partition: faviconPartition
+            )
+        }
+        .sidebarAppKitContextMenu(
+            isInteractionEnabled: dragIsEnabled,
+            dragSource: dragSourceConfiguration,
+            primaryAction: action,
+            onMiddleClick: onUnload,
+            sourceID: rowSourceID,
+            entries: contextMenuEntries
+        )
+        // Expose the outer row so context-menu and action overlays cannot
+        // replace its stable accessibility identity or selection value.
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(accessibilityID ?? "shortcut-sidebar-row")
+        .accessibilityValue(runtimeAffordance.isSelected ? "selected" : "not selected")
+        .accessibilityAddTraits(runtimeAffordance.isSelected ? .isSelected : [])
+    }
+
+    @ViewBuilder
+    private var presentedRow: some View {
+        if let projectedSplitTarget {
+            SidebarProjectedSplitPairTarget(
+                target: projectedSplitTarget,
+                title: resolvedTitle
+            ) {
+                rowIcon
+            }
+        } else {
+            ordinaryRow
+        }
+    }
+
+    private var ordinaryRow: some View {
         HStack(spacing: 0) {
             if runtimeAffordance.usesResetLeadingAction, let onResetToLaunchURL {
                 Button(action: onResetToLaunchURL) {
@@ -96,56 +166,5 @@ struct ShortcutSidebarRowChrome: View {
             trailingActionButton
                 .padding(.trailing, SidebarRowLayout.trailingInset)
         }
-        .sidebarRowSurface(
-            background: backgroundColor,
-            cornerRadius: rowCornerRadius,
-            tokens: tokens,
-            isVisible: drawsRowSurface,
-            drawsSelectionShadow: runtimeAffordance.isSelected
-        )
-        .sidebarSelectedItemVisibility(
-            .launcher(pin.id),
-            isSelected: runtimeAffordance.isSelected,
-            isEnabled: dragIsEnabled
-        )
-        .sidebarHover($isRowHovered, isEnabled: dragIsEnabled)
-        .onChange(of: isRowHovered) { _, hovering in
-            if !hovering {
-                suppressRegularActionUntilHoverExit = false
-            }
-        }
-        .onChange(of: activeGlanceSessionForRow?.id) { oldValue, newValue in
-            if oldValue != nil, newValue == nil, isRowHovered {
-                suppressRegularActionUntilHoverExit = true
-            } else if newValue != nil {
-                suppressRegularActionUntilHoverExit = false
-            }
-        }
-        .sidebarZenPressEffect(sourceID: rowSourceID, isEnabled: dragIsEnabled)
-        .task(id: storedFaviconLoadKey) {
-            await loadStoredFavicon()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .faviconCacheUpdated)) { notification in
-            guard pin.iconAsset == nil else { return }
-            storedFaviconLoader.invalidateIfNeeded(
-                for: notification,
-                launchURL: pin.launchURL,
-                partition: faviconPartition
-            )
-        }
-        .sidebarAppKitContextMenu(
-            isInteractionEnabled: dragIsEnabled,
-            dragSource: dragSourceConfiguration,
-            primaryAction: action,
-            onMiddleClick: onUnload,
-            sourceID: rowSourceID,
-            entries: contextMenuEntries
-        )
-        // Expose the outer row so context-menu and action overlays cannot
-        // replace its stable accessibility identity or selection value.
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier(accessibilityID ?? "shortcut-sidebar-row")
-        .accessibilityValue(runtimeAffordance.isSelected ? "selected" : "not selected")
-        .accessibilityAddTraits(runtimeAffordance.isSelected ? .isSelected : [])
     }
 }

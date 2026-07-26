@@ -70,6 +70,7 @@ struct SpacePinnedShortcutEntryView: View {
     let topLevelIndex: Int
     let geometryGeneration: Int
     let reportsDropGeometry: Bool
+    let projectedSplitTarget: SidebarSplitPairingTarget?
     let actionOwner: SpacePinnedActionOwner
 
     var body: some View {
@@ -79,6 +80,7 @@ struct SpacePinnedShortcutEntryView: View {
             faviconPartition: faviconPartition,
             faviconImageReader: faviconImageReader,
             runtimeAffordance: runtimeAffordance,
+            projectedSplitTarget: projectedSplitTarget,
             accessibilityID: "space-pinned-shortcut-\(pin.id.uuidString)",
             contextMenuEntries: { actionOwner.pinnedShortcutContextMenuEntries(pin) },
             action: { actionOwner.activateShortcutPin(pin) },
@@ -94,6 +96,7 @@ struct SpacePinnedShortcutEntryView: View {
             itemId: pin.id,
             spaceId: spaceID,
             topLevelIndex: topLevelIndex,
+            splitPairingMemberIDs: [.shortcutPin(pin.id)],
             generation: geometryGeneration,
             isActive: isInteractive && reportsDropGeometry
         )
@@ -110,6 +113,7 @@ struct SpacePinnedSplitGroupEntryView: View {
     let isInteractive: Bool
     let topLevelIndex: Int
     let geometryGeneration: Int
+    let dragSnapshot: SidebarFolderDragSnapshot
     let reportsDropGeometry: Bool
 
     @Environment(BrowserWindowState.self) private var windowState
@@ -125,6 +129,10 @@ struct SpacePinnedSplitGroupEntryView: View {
                 groupEditor: browserContext.splitGroupEditor,
                 groupContextMenuActions: browserContext.splitGroupLifecycle
                     .contextMenuActions(for: group, in: windowState),
+                isDropHighlighted:
+                    dragSnapshot.isExistingSplitGroupTargeted(
+                        memberIDs: group.memberIDs
+                    ),
                 isAppKitInteractionEnabled: isInteractive,
                 faviconImageReader: browserContext.faviconImageReader,
                 accessibilityID: "shortcut-host-split-row-\(group.id.uuidString)",
@@ -146,6 +154,7 @@ struct SpacePinnedSplitGroupEntryView: View {
                 itemId: group.id,
                 spaceId: space.id,
                 topLevelIndex: topLevelIndex,
+                splitPairingMemberIDs: group.memberIDs,
                 generation: geometryGeneration,
                 isActive: isInteractive && reportsDropGeometry
             )

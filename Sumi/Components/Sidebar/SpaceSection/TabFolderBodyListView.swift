@@ -110,6 +110,7 @@ struct TabFolderBodyListView: View {
                                     folderId: folder.id,
                                     childId: pin.id,
                                     index: entry.dropIndex,
+                                    splitPairingMemberIDs: [.shortcutPin(pin.id)],
                                     generation: dragSnapshot.geometryGeneration,
                                     isActive: isInteractive && reportsGeometry && reportsFolderChildGeometry
                                 )
@@ -131,13 +132,18 @@ struct TabFolderBodyListView: View {
                                 items: projection.splitGroupItems(for: groupId),
                                 space: space,
                                 browserContext: browserContext,
-                                isInteractive: isInteractive
+                                isInteractive: isInteractive,
+                                isDropHighlighted:
+                                    dragSnapshot.isExistingSplitGroupTargeted(
+                                        memberIDs: group.memberIDs
+                                    )
                             )
                                 .sidebarFolderChildDropGeometry(
                                     spaceId: space.id,
                                     folderId: folder.id,
                                     childId: group.id,
                                     index: entry.dropIndex,
+                                    splitPairingMemberIDs: group.memberIDs,
                                     generation: dragSnapshot.geometryGeneration,
                                     isActive: isInteractive && reportsGeometry && reportsFolderChildGeometry
                                 )
@@ -250,6 +256,8 @@ struct TabFolderBodyListView: View {
             folderID: folder.id,
             isInteractive: isInteractive,
             opacity: dragSnapshot.childOpacity(itemID: pin.id),
+            projectedSplitTarget: dragSnapshot.splitPairingTarget?
+                .projectedTarget(for: .shortcutPin(pin.id)),
             contextMenuActionOwner: contextMenuActionOwner,
             mutationActions: mutationActions
         )

@@ -106,9 +106,9 @@ final class SidebarDragPayloadResolver {
             guard folders.folder(by: folder.id) === folder else { return nil }
             return .folder(folder)
         case .splitGroup(let group):
-            guard let canonical = splits.group(id: group.id),
-                  canonical == group else { return nil }
-            return .splitGroup(canonical)
+            return splits.group(id: group.id).map(
+                DragOperation.Payload.splitGroup
+            )
         }
     }
 

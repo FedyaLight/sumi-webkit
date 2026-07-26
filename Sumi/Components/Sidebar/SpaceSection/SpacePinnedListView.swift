@@ -88,6 +88,19 @@ struct SpacePinnedListView: View {
         )
     }
 
+    private var splitPairingMemberIDsByDisclosureRow: [[SplitMemberID]] {
+        disclosureItems.map { item in
+            switch item {
+            case .pinned(.shortcut(let pinID)):
+                return [.shortcutPin(pinID)]
+            case .pinned(.splitGroup(let groupID)):
+                return inventory.splitGroup(id: groupID)?.memberIDs ?? []
+            case .pinned(.folder), .nestedSticky:
+                return []
+            }
+        }
+    }
+
     private var disclosureTarget: SidebarDisclosureTarget<SpacePinnedDisclosureItem> {
         SidebarDisclosureTarget(
             isRevealed: !isCollapsed,
@@ -224,6 +237,7 @@ struct SpacePinnedListView: View {
                                         isInteractive: rowIsInteractive,
                                         topLevelIndex: entry.dropIndex,
                                         geometryGeneration: dragSnapshot.geometryGeneration,
+                                        dragSnapshot: dragSnapshot.folderSnapshot,
                                         reportsDropGeometry: rowIsInteractive
                                             && !usesUniformDropGeometry
                                     )
@@ -268,6 +282,8 @@ struct SpacePinnedListView: View {
             .sidebarPinnedListHitGeometry(
                 for: space.id,
                 rowCount: disclosureItems.count,
+                splitPairingMemberIDsByRow:
+                    splitPairingMemberIDsByDisclosureRow,
                 leadingInset: disclosureTarget.topPadding,
                 generation: dragSnapshot.geometryGeneration,
                 isEnabled: rowIsInteractive && usesUniformDropGeometry
@@ -323,6 +339,8 @@ struct SpacePinnedListView: View {
             topLevelIndex: topLevelIndex,
             geometryGeneration: dragSnapshot.geometryGeneration,
             reportsDropGeometry: isInteractive && !usesUniformDropGeometry,
+            projectedSplitTarget: dragSnapshot.splitPairingTarget?
+                .projectedTarget(for: .shortcutPin(pin.id)),
             actionOwner: actionOwner
         )
     }

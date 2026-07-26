@@ -1,4 +1,5 @@
 import CoreGraphics
+import SumiDomain
 import XCTest
 
 @testable import Sumi
@@ -32,6 +33,10 @@ final class ExternalDragGeometryReadinessTests: XCTestCase {
                 spaceId: spaceId,
                 frame: CGRect(x: 0, y: 80, width: 240, height: 134),
                 rowCount: 3,
+                splitPairingMemberIDsByRow: Array(
+                    repeating: [],
+                    count: 3
+                ),
                 leadingInset: 18
             ),
             generation: generation
@@ -45,6 +50,65 @@ final class ExternalDragGeometryReadinessTests: XCTestCase {
         )
 
         XCTAssertEqual(resolution.slot, .spacePinned(spaceId: spaceId, slot: 1))
+    }
+
+    func testUniformPinnedListResolvesPairingWithoutPerRowGeometry() throws {
+        let dragState = SidebarDragState()
+        let spaceId = UUID()
+        let targetPinID = UUID()
+        let generation = dragState.geometry.activeGeometryGeneration
+
+        dragState.geometry.report(
+            .page(
+                spaceId: spaceId,
+                profileId: nil,
+                frame: CGRect(x: 0, y: 0, width: 240, height: 420),
+                renderMode: .interactive
+            ),
+            generation: generation
+        )
+        dragState.geometry.report(
+            .section(
+                spaceId: spaceId,
+                section: .spacePinned,
+                frame: CGRect(x: 0, y: 80, width: 240, height: 134)
+            ),
+            generation: generation
+        )
+        dragState.geometry.report(
+            .pinnedList(
+                spaceId: spaceId,
+                frame: CGRect(x: 0, y: 80, width: 240, height: 134),
+                rowCount: 3,
+                splitPairingMemberIDsByRow: [
+                    [.shortcutPin(targetPinID)],
+                    [.shortcutPin(UUID())],
+                    [.shortcutPin(UUID())],
+                ],
+                leadingInset: 18
+            ),
+            generation: generation
+        )
+
+        dragState.beginExternalDragSession(itemId: nil)
+        let resolution = SidebarDropResolver.resolve(
+            location: CGPoint(x: 190, y: 116),
+            state: dragState,
+            draggedItem: SumiDragItem(
+                tabId: UUID(),
+                title: "Dragged"
+            )
+        )
+
+        XCTAssertEqual(
+            resolution.slot,
+            .spacePinned(spaceId: spaceId, slot: 1)
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(resolution.splitPairingTarget).memberID,
+            .shortcutPin(targetPinID)
+        )
+        XCTAssertEqual(resolution.splitPairingTarget?.side, .right)
     }
 
     func testExternalDragStartFlushesDeferredGeometryBeforeFirstDropResolution() {
@@ -74,7 +138,8 @@ final class ExternalDragGeometryReadinessTests: XCTestCase {
             .regularList(
                 spaceId: spaceId,
                 frame: CGRect(x: 0, y: 120, width: 240, height: 240),
-                rowIdentities: (0..<4).map { _ in .tab(UUID()) }
+                rowIdentities: (0..<4).map { _ in .tab(UUID()) },
+                splitPairingMemberIDsByRow: []
             ),
             generation: generation
         )

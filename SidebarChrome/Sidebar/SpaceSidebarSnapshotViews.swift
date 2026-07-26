@@ -431,50 +431,17 @@ private struct SpaceSnapshotPinnedItemView: View {
     }
 }
 
-private struct SpaceSnapshotSplitGroupView: View {
+struct SpaceSnapshotSplitGroupView: View {
     let splitGroup: SpaceSplitGroupSnapshot
     let rowCornerRadius: CGFloat
     let tokens: ChromeThemeTokens
 
     var body: some View {
-        GeometryReader { geometry in
-            let memberCount = max(splitGroup.members.count, 1)
-            let separatorCount = max(memberCount - 1, 0)
-            let segmentWidth = max(
-                0,
-                (geometry.size.width - CGFloat(separatorCount)) / CGFloat(memberCount)
-            )
-
-            HStack(spacing: 0) {
-                ForEach(Array(splitGroup.members.enumerated()), id: \.element.id) { index, member in
-                    HStack(spacing: 6) {
-                        SpaceSnapshotIconView(
-                            icon: member.icon,
-                            size: SidebarRowLayout.faviconSize,
-                            foregroundColor: tokens.primaryText
-                        )
-                        SidebarRowTitleLabel(
-                            title: member.title,
-                            font: .system(size: 12, weight: member.isSelected ? .semibold : .regular),
-                            color: tokens.primaryText,
-                            height: SidebarRowLayout.titleHeight
-                        )
-                        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-                    }
-                    .padding(.horizontal, 7)
-                    .frame(width: segmentWidth, height: SidebarRowLayout.rowHeight)
-                    .clipped()
-
-                    if index < splitGroup.members.count - 1 {
-                        Rectangle()
-                            .fill(tokens.separator.opacity(0.7))
-                            .frame(width: 1, height: 22)
-                            .padding(.vertical, 6)
-                    }
-                }
-            }
-        }
-        .padding(.horizontal, 2)
+        rowContent
+        .padding(
+            .horizontal,
+            SplitGroupSidebarVisualLayout.outerRowInset
+        )
         .frame(height: SidebarRowLayout.rowHeight)
         .frame(minWidth: 0, maxWidth: .infinity)
         .sidebarRowSurface(
@@ -484,6 +451,82 @@ private struct SpaceSnapshotSplitGroupView: View {
             isVisible: splitGroup.isSelected,
             drawsSelectionShadow: splitGroup.isSelected
         )
+    }
+
+    @ViewBuilder
+    private var rowContent: some View {
+        if let customIcon = splitGroup.customIcon {
+            customIconRow(customIcon)
+        } else {
+            segmentedRow
+        }
+    }
+
+    private var segmentedRow: some View {
+        SplitGroupSegmentedRow(
+            slots: splitGroup.members,
+            material: .settled(isSelected: splitGroup.isSelected),
+            tokens: tokens,
+            departingIDs: []
+        ) { _, member, metrics in
+            SplitGroupSegmentLabel(
+                title: member.title,
+                showsTitle: metrics.showsTitle(
+                    member.title,
+                    trailingPadding:
+                        SplitGroupSidebarVisualLayout.standardTrailingPadding
+                ),
+                trailingPadding:
+                    SplitGroupSidebarVisualLayout.standardTrailingPadding,
+                textColor: tokens.primaryText
+            ) {
+                SplitGroupRowIconView(
+                    icon: member.icon.splitGroupRowIcon,
+                    foregroundColor: tokens.primaryText,
+                    desaturates: member.desaturatesIcon
+                )
+            }
+            .frame(maxHeight: .infinity)
+        }
+    }
+
+    private func customIconRow(
+        _ icon: SpaceSidebarSnapshotIcon
+    ) -> some View {
+        HStack(spacing: SidebarRowLayout.iconTrailingSpacing) {
+            SpaceSnapshotIconView(
+                icon: icon,
+                size: SidebarRowLayout.faviconSize,
+                foregroundColor: tokens.primaryText
+            )
+            .saturation(splitGroup.isLoaded ? 1 : 0)
+            .opacity(splitGroup.isLoaded ? 1 : 0.8)
+
+            SidebarRowTitleLabel(
+                title: splitGroup.displayTitle,
+                font: SidebarThemeTokens.Typography.rowTitle,
+                color: tokens.primaryText
+            )
+        }
+        .padding(
+            .leading,
+            SplitGroupSidebarVisualLayout.customIconLeadingInset
+        )
+        .padding(.trailing, SidebarRowLayout.trailingInset)
+        .frame(height: SidebarRowLayout.rowHeight)
+    }
+}
+
+private extension SpaceSidebarSnapshotIcon {
+    var splitGroupRowIcon: SplitGroupRowIcon {
+        switch self {
+        case .image(let image):
+            return .image(image)
+        case .system(let systemName):
+            return .system(systemName)
+        case .emoji(let emoji):
+            return .emoji(emoji)
+        }
     }
 }
 
@@ -637,7 +680,7 @@ private struct SpaceSnapshotRegularTabsSectionView: View {
             contentColumn
 
             Color.clear
-                .frame(height: snapshot.regularTabs.isEmpty ? 48 : 24)
+                .frame(height: snapshot.regularRows.isEmpty ? 48 : 24)
         }
     }
 
@@ -648,24 +691,33 @@ private struct SpaceSnapshotRegularTabsSectionView: View {
         VStack(spacing: 0) {
             if showsTopNewTabButton {
                 newTabRow
-                if !snapshot.regularTabs.isEmpty {
+                if !snapshot.regularRows.isEmpty {
                     Color.clear.frame(height: SidebarRowLayout.rowGap)
                 }
             }
 
             VStack(spacing: SidebarRowLayout.rowGap) {
-                ForEach(snapshot.regularTabs) { tab in
-                    SpaceSnapshotRegularTabRowView(
-                        tab: tab,
-                        rowCornerRadius: snapshot.rowCornerRadius,
-                        tokens: tokens
-                    )
+                ForEach(snapshot.regularRows) { row in
+                    switch row {
+                    case .tab(let tab):
+                        SpaceSnapshotRegularTabRowView(
+                            tab: tab,
+                            rowCornerRadius: snapshot.rowCornerRadius,
+                            tokens: tokens
+                        )
+                    case .splitGroup(let splitGroup):
+                        SpaceSnapshotSplitGroupView(
+                            splitGroup: splitGroup,
+                            rowCornerRadius: snapshot.rowCornerRadius,
+                            tokens: tokens
+                        )
+                    }
                 }
             }
             .frame(minWidth: 0, maxWidth: innerWidth, alignment: .leading)
 
             if showsBottomNewTabButton {
-                if !snapshot.regularTabs.isEmpty {
+                if !snapshot.regularRows.isEmpty {
                     Color.clear.frame(height: SidebarRowLayout.rowGap)
                 }
                 newTabRow

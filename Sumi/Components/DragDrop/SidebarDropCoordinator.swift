@@ -63,6 +63,7 @@ enum SidebarDropCoordinator {
         resolution: SidebarDropResolution,
         dragOperations: any SidebarDragOperationExecuting,
         urlDropService: SidebarURLDropService,
+        splitPairing: (any SidebarSplitPairingCommitting)? = nil,
         windowState: BrowserWindowState?
     ) -> Bool {
         guard resolution.slot != .empty else { return false }
@@ -75,6 +76,15 @@ enum SidebarDropCoordinator {
             ),
                   let payload = dragOperations.resolveSidebarDragPayload(for: draggedItem) else {
                 return false
+            }
+
+            if let target = resolution.splitPairingTarget {
+                guard let windowState else { return false }
+                return splitPairing?.commit(
+                    payload,
+                    to: target,
+                    in: windowState
+                ) ?? false
             }
 
             let intent = SidebarDragCommitIntent(

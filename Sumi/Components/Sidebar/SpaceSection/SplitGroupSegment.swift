@@ -3,6 +3,7 @@
 //  Sumi
 //
 
+import AppKit
 import SwiftUI
 
 struct SplitGroupSegment: View {
@@ -10,9 +11,11 @@ struct SplitGroupSegment: View {
     let item: SplitGroupSidebarItem
     let spaceId: UUID
     let isDeparting: Bool
+    let segmentWidth: CGFloat
     let trailingPadding: CGFloat
     let reservesTrailingAction: Bool
     let memberAction: SplitGroupSidebarMemberAction?
+    let isRowHovered: Bool
     let isAppKitInteractionEnabled: Bool
     let faviconImageReader: any BrowserFaviconImageReading
     let dragSourceConfiguration: SidebarDragSourceConfiguration?
@@ -60,20 +63,17 @@ struct SplitGroupSegment: View {
 
     @ViewBuilder
     private var hoverTrackedContent: some View {
-        if memberAction != nil {
-            segmentContent.sidebarHover(
-                $isSegmentHovered,
-                isEnabled: isAppKitInteractionEnabled
-            )
-        } else {
-            segmentContent
-        }
+        segmentContent.sidebarHover(
+            $isSegmentHovered,
+            isEnabled: isAppKitInteractionEnabled
+        )
     }
 
     private var segmentContent: some View {
         ZStack(alignment: .trailing) {
             SplitGroupSegmentLabel(
                 title: item.title,
+                showsTitle: showsTitle,
                 trailingPadding: trailingPadding,
                 textColor: tokens.primaryText
             ) {
@@ -140,7 +140,15 @@ struct SplitGroupSegment: View {
     }
 
     private var showsMemberAction: Bool {
-        memberAction != nil && isSegmentHovered
+        memberAction != nil && (isRowHovered || isSegmentHovered)
+    }
+
+    private var showsTitle: Bool {
+        SplitGroupSidebarVisualLayout.showsTitle(
+            title: item.title,
+            segmentWidth: segmentWidth,
+            trailingPadding: trailingPadding
+        )
     }
 
     private var freezesHoverState: Bool {
@@ -269,49 +277,22 @@ private struct SplitGroupResolvedMemberIcon: View {
     let presentation: SplitGroupMemberIconPresentation
 
     var body: some View {
-        Group {
-            if let glyph = presentation.glyphText {
-                Text(glyph)
-                    .font(.system(size: 16))
-            } else if let systemName = presentation.systemImageName {
-                Image(systemName: systemName)
-                    .font(.system(size: 15, weight: .medium))
-                    .symbolRenderingMode(.monochrome)
-            } else {
-                presentation.image
-                    .resizable()
-                    .scaledToFit()
-                    .clipShape(
-                        RoundedRectangle(
-                            cornerRadius: 4,
-                            style: .continuous
-                        )
-                    )
-            }
-        }
-        .frame(width: 16, height: 16)
-        .saturation(presentation.shouldDesaturate ? 0 : 1)
-        .opacity(presentation.shouldDesaturate ? 0.8 : 1)
+        SplitGroupRowIconView(
+            icon: presentation.rowIcon,
+            foregroundColor: .primary,
+            desaturates: presentation.shouldDesaturate
+        )
     }
 }
 
-struct SplitGroupSegmentLabel<Icon: View>: View {
-    let title: String
-    let trailingPadding: CGFloat
-    let textColor: Color
-    @ViewBuilder let icon: () -> Icon
-
-    var body: some View {
-        HStack(spacing: 6) {
-            icon()
-            SumiTabTitleLabel(
-                title: title,
-                font: SidebarThemeTokens.Typography.rowTitle,
-                textColor: textColor
-            )
-            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+private extension SplitGroupMemberIconPresentation {
+    var rowIcon: SplitGroupRowIcon {
+        if let glyphText {
+            return .emoji(glyphText)
         }
-        .padding(.leading, 7)
-        .padding(.trailing, trailingPadding)
+        if let systemImageName {
+            return .system(systemImageName)
+        }
+        return .image(image)
     }
 }
