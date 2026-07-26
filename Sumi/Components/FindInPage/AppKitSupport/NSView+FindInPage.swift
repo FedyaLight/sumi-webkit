@@ -43,11 +43,4 @@ extension NSView {
     func sumi_chromeIsMouseLocationInsideBounds(_ point: NSPoint? = nil) -> Bool {
         sumi_chromeMouseLocationInsideBounds(point) != nil
     }
-
-    func sumi_chromeMakeMeFirstResponder() {
-        guard let window else { return }
-        guard window.firstResponder !== (self as? NSControl)?.currentEditor() ?? self else { return }
-
-        window.makeFirstResponder(self)
-    }
 }

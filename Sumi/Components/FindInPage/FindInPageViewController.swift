@@ -150,6 +150,7 @@ final class FindInPageViewController: NSViewController {
     weak var previousButton: NSButton!
 
     private var statusPillView: ColorView?
+    private weak var textFocusHost: ChromeTextFieldFocusHostView?
     private weak var textActivationBoundaryView: NSView?
     private var modelCancellables = Set<AnyCancellable>()
     private var lastSyncedFocusRingStroke: Bool?
@@ -238,6 +239,11 @@ final class FindInPageViewController: NSViewController {
         textField.setContentHuggingPriority(.defaultLow, for: .horizontal)
         textField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
+        let textFocusHost = ChromeTextFieldFocusHostView(textField: textField)
+        textFocusHost.translatesAutoresizingMaskIntoConstraints = false
+        textFocusHost.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        textFocusHost.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
         let statusPillView = ColorView(frame: .zero)
         statusPillView.translatesAutoresizingMaskIntoConstraints = false
         statusPillView.cornerRadius = 7
@@ -267,7 +273,7 @@ final class FindInPageViewController: NSViewController {
         )
 
         let stackView = NSStackView(views: [
-            textField,
+            textFocusHost,
             statusPillView,
             previousButton,
             nextButton,
@@ -278,7 +284,7 @@ final class FindInPageViewController: NSViewController {
         stackView.alignment = .centerY
         stackView.distribution = .fill
         stackView.spacing = 8
-        stackView.setCustomSpacing(12, after: textField)
+        stackView.setCustomSpacing(12, after: textFocusHost)
         stackView.setCustomSpacing(8, after: statusPillView)
         stackView.setCustomSpacing(4, after: previousButton)
         stackView.setCustomSpacing(10, after: nextButton)
@@ -292,6 +298,7 @@ final class FindInPageViewController: NSViewController {
 
         self.backgroundView = backgroundView
         self.textField = textField
+        self.textFocusHost = textFocusHost
         self.focusRingView = focusRingView
         self.statusPillView = statusPillView
         self.statusField = statusField
@@ -425,12 +432,12 @@ final class FindInPageViewController: NSViewController {
         }
     }
 
-    func makeMeFirstResponder() {
-        if textField.sumi_chromeIsFirstResponder {
-            textField.currentEditor()?.selectAll(nil)
-        } else {
-            textField.sumi_chromeMakeMeFirstResponder()
-        }
+    func requestTextFocus(generation: UInt) {
+        textFocusHost?.requestFocus(id: generation, selectAll: true)
+    }
+
+    func cancelPendingTextFocus() {
+        textFocusHost?.cancelPendingFocus()
     }
 
     private func subscribeToModelChanges(model: FindInPageModel?) {

@@ -25,7 +25,7 @@ struct CommandPaletteView: View {
     @State private var searchModeConfirmation: CommandPaletteSearchModeConfirmation?
     @State private var nativeInteraction =
         CommandPaletteNativeInteraction()
-    @State private var searchFocusRequestID = 0
+    @State private var searchFocusRequestID: UInt = 0
     @State private var searchFocusSelectAll = false
 
     init(browserContext: CommandPaletteBrowserContext) {

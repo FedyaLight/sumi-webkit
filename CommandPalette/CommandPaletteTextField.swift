@@ -12,7 +12,7 @@ struct CommandPaletteTextField: NSViewRepresentable {
     var isFocused: FocusState<Bool>.Binding
     let font: NSFont
     let primaryColor: NSColor
-    let focusRequestID: Int
+    let focusRequestID: UInt
     let focusSelectAll: Bool
     let onTab: () -> Bool
     let onReturn: () -> Void
@@ -58,7 +58,7 @@ struct CommandPaletteTextField: NSViewRepresentable {
         )
 
         nsView.wantsTextFocus = isFocused.wrappedValue
-        nsView.handleFocusRequest(id: focusRequestID, selectAll: focusSelectAll)
+        nsView.requestFocus(id: focusRequestID, selectAll: focusSelectAll)
     }
 
     final class Coordinator: NSObject, NSTextFieldDelegate {
@@ -126,24 +126,13 @@ struct CommandPaletteTextField: NSViewRepresentable {
     }
 }
 
-final class CommandPaletteTextFieldView: NSView {
-    let textField = CommandPaletteNSTextField()
-    // Focus-maintenance hint only. Explicit focus requests (handleFocusRequest)
+final class CommandPaletteTextFieldView: ChromeTextFieldFocusHostView {
+    // Focus-maintenance hint only. Explicit focus requests (requestFocus)
     // are authoritative and must not be gated on this: the SwiftUI FocusState
     // backing it has no .focused() anchor, so it can stay false forever.
-    var wantsTextFocus = false {
-        didSet {
-            guard wantsTextFocus, wantsTextFocus != oldValue else { return }
-            attemptPendingFocus()
-        }
-    }
-    private var handledFocusRequestID = 0
-    private var pendingFocusSelectAll: Bool?
-    private var isObservingWindowKey = false
-    private var hasScheduledAttachedRetry = false
 
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
+    init() {
+        super.init(textField: NSTextField())
         setup()
     }
 
@@ -152,18 +141,10 @@ final class CommandPaletteTextFieldView: NSView {
         nil
     }
 
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        removeWindowKeyObserver()
-        focusTextFieldIfNeeded()
-        attemptPendingFocus()
-    }
-
     private func setup() {
         wantsLayer = true
         layer?.masksToBounds = true
 
-        textField.translatesAutoresizingMaskIntoConstraints = false
         textField.isBordered = false
         textField.isBezeled = false
         textField.drawsBackground = false
@@ -174,15 +155,6 @@ final class CommandPaletteTextFieldView: NSView {
         textField.setAccessibilityIdentifier("command-palette-input")
         textField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         textField.setContentHuggingPriority(.defaultLow, for: .horizontal)
-
-        addSubview(textField)
-
-        NSLayoutConstraint.activate([
-            textField.leadingAnchor.constraint(equalTo: leadingAnchor),
-            textField.trailingAnchor.constraint(equalTo: trailingAnchor),
-            textField.centerYAnchor.constraint(equalTo: centerYAnchor),
-            textField.heightAnchor.constraint(equalTo: heightAnchor),
-        ])
     }
 
     func configure(
@@ -192,123 +164,16 @@ final class CommandPaletteTextFieldView: NSView {
     ) {
         textField.font = font
         textField.textColor = primaryColor
-        textField.applyText(text)
-    }
-
-    func focusTextFieldIfNeeded() {
-        guard wantsTextFocus, let window else { return }
-        if window.firstResponder !== textField,
-           window.firstResponder !== textField.currentEditor() {
-            window.makeFirstResponder(textField)
-        }
-    }
-
-    func handleFocusRequest(id: Int, selectAll: Bool) {
-        guard id != handledFocusRequestID else { return }
-        handledFocusRequestID = id
-
-        // Persist the intent until focus actually lands: at launch the view may
-        // not be in a window yet, and the window may not be key yet.
-        pendingFocusSelectAll = selectAll
-        hasScheduledAttachedRetry = false
-        attemptPendingFocus()
-    }
-
-    private func attemptPendingFocus() {
-        guard let selectAll = pendingFocusSelectAll else { return }
-
-        guard let window else {
-            // viewDidMoveToWindow re-attempts once attached.
-            return
-        }
-
-        guard window.isKeyWindow else {
-            installWindowKeyObserverIfNeeded()
-            return
-        }
-
-        if isTextFieldFocused(in: window) {
-            pendingFocusSelectAll = nil
-            removeWindowKeyObserver()
-            return
-        }
-
-        window.makeFirstResponder(textField)
-        textField.beginEditing(selectAll: selectAll)
-
-        if isTextFieldFocused(in: window) {
-            pendingFocusSelectAll = nil
-            removeWindowKeyObserver()
-        } else {
-            scheduleAttachedFocusRetryIfNeeded()
-        }
-    }
-
-    private func isTextFieldFocused(in window: NSWindow) -> Bool {
-        window.firstResponder === textField
-            || (textField.currentEditor() != nil && window.firstResponder === textField.currentEditor())
-    }
-
-    private func installWindowKeyObserverIfNeeded() {
-        guard !isObservingWindowKey, let window else { return }
-        isObservingWindowKey = true
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(windowDidBecomeKey(_:)),
-            name: NSWindow.didBecomeKeyNotification,
-            object: window
-        )
-    }
-
-    private func removeWindowKeyObserver() {
-        guard isObservingWindowKey else { return }
-        isObservingWindowKey = false
-        NotificationCenter.default.removeObserver(
-            self,
-            name: NSWindow.didBecomeKeyNotification,
-            object: nil
-        )
-    }
-
-    @objc private func windowDidBecomeKey(_: Notification) {
-        hasScheduledAttachedRetry = false
-        attemptPendingFocus()
-    }
-
-    private func scheduleAttachedFocusRetryIfNeeded() {
-        guard !hasScheduledAttachedRetry else { return }
-        hasScheduledAttachedRetry = true
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.attemptPendingFocus()
-        }
-    }
-}
-
-final class CommandPaletteNSTextField: NSTextField {
-    func applyText(_ text: String) {
-        if let editor = currentEditor() as? NSTextView {
+        if let editor = textField.currentEditor() as? NSTextView {
             if editor.string != text {
                 editor.string = text
             }
-            stringValue = text
+            textField.stringValue = text
             return
         }
 
-        if stringValue != text {
-            stringValue = text
+        if textField.stringValue != text {
+            textField.stringValue = text
         }
-    }
-
-    func beginEditing(selectAll: Bool) {
-        selectText(nil)
-        guard !selectAll else { return }
-        moveInsertionPointToEnd()
-    }
-
-    private func moveInsertionPointToEnd() {
-        guard let editor = currentEditor() as? NSTextView else { return }
-        let end = (editor.string as NSString).length
-        editor.setSelectedRange(NSRange(location: end, length: 0))
     }
 }

@@ -263,6 +263,7 @@ struct FindInPageChromeRepresentable: NSViewControllerRepresentable {
 
     static func dismantleNSViewController(_ nsViewController: NSViewController, coordinator: Coordinator) {
         (nsViewController.view as? FindInPageChromeContainerView)?.setHoverShieldEnabled(false)
+        coordinator.findViewController?.cancelPendingTextFocus()
 
         guard let window = nsViewController.view.window,
               let responder = window.firstResponder as? NSView,
@@ -288,6 +289,9 @@ struct FindInPageChromeRepresentable: NSViewControllerRepresentable {
            responder.isDescendant(of: container.view) {
             window.makeFirstResponder(nil)
         }
+        if !visible || !isInteractive {
+            findVC.cancelPendingTextFocus()
+        }
 
         findVC.view.isHidden = !shouldRender
         container.view.isHidden = !shouldRender
@@ -309,18 +313,10 @@ struct FindInPageChromeRepresentable: NSViewControllerRepresentable {
             if findVC.model !== displayModel {
                 findVC.model = displayModel
             }
-            let generation = findManager.findFieldFocusGeneration
-            if visible && isInteractive && generation != context.coordinator.lastAppliedFocusGeneration {
-                context.coordinator.lastAppliedFocusGeneration = generation
-                findVC.makeMeFirstResponder()
-                // One deferred retry: representable can update before the NSView is in a window or first responder commits.
-                if container.view.window == nil || !findVC.textField.sumi_chromeIsFirstResponder {
-                    let containerView = container.view
-                    DispatchQueue.main.async { [weak findVC, weak containerView] in
-                        guard let findVC, containerView?.window != nil else { return }
-                        findVC.makeMeFirstResponder()
-                    }
-                }
+            if visible && isInteractive {
+                findVC.requestTextFocus(
+                    generation: findManager.findFieldFocusGeneration
+                )
             }
         } else if findVC.model != nil {
             findVC.model = nil
@@ -333,7 +329,6 @@ struct FindInPageChromeRepresentable: NSViewControllerRepresentable {
         weak var findManager: FindManager?
         weak var findViewController: FindInPageViewController?
         var lastVisibleModel: FindInPageModel?
-        var lastAppliedFocusGeneration: UInt = 0
         var lastChromePaintSignature: FindChromePaintSignature?
 
         init(findManager: FindManager) {
