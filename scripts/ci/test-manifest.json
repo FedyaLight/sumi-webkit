@@ -452,6 +452,7 @@
         "SumiTests/BrowserWindowSpaceTransitionServiceTests",
         "SumiTests/BrowserWindowTabContextTests",
         "SumiTests/BrowserWindowVisualCoordinatorTests",
+        "SumiTests/ChromeTextFieldFocusHostViewTests",
         "SumiTests/CollapsedSidebarShadowChromeTests",
         "SumiTests/CommandPaletteCapabilitiesTests",
         "SumiTests/CommandPaletteNativeInteractionTests",
