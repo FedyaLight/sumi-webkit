@@ -107,6 +107,22 @@ final class SpaceTabSectionBoundaryTests: XCTestCase {
         XCTAssertEqual(SidebarRowLayout.rowGap, 4)
     }
 
+    func testSpaceTitleUsesTheSameVerticalPitchAsRows() {
+        XCTAssertEqual(
+            SpaceTitleRowLayout.minimumHeight,
+            SidebarRowLayout.rowHeight,
+            "Space Title and tab rows must share one vertical rhythm."
+        )
+    }
+
+    func testRegularSectionEndsAtNewTabWithoutTrailingClearance() {
+        XCTAssertEqual(
+            SpaceRegularTabsTailLayout.trailingClearance,
+            0,
+            "New Tab must be the final content row in live and snapshot layouts."
+        )
+    }
+
     // MARK: - Fixtures
 
     private func makeSnapshot(

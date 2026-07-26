@@ -37,7 +37,7 @@ struct SpaceTransitionSnapshotPageView: View {
                 .padding(.horizontal, 8)
             }
 
-            VStack(spacing: 4) {
+            VStack(spacing: SidebarRowLayout.rowGap) {
                 SpaceSnapshotTitleView(
                     title: snapshot.title,
                     iconValue: snapshot.iconValue,
@@ -680,7 +680,7 @@ private struct SpaceSnapshotRegularTabsSectionView: View {
             contentColumn
 
             Color.clear
-                .frame(height: snapshot.regularRows.isEmpty ? 48 : 24)
+                .frame(height: SpaceRegularTabsTailLayout.trailingClearance)
         }
     }
 

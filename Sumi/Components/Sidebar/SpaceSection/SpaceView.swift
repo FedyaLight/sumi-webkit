@@ -156,7 +156,7 @@ struct SpaceView: View {
     // sections settle rows into place (SidebarMotionPolicy.dropSettleAnimation)
     // while the essentials grid keeps its own commit suppression in PinnedGrid.
     var body: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: SidebarRowLayout.rowGap) {
             SpaceTitle(
                 space: space,
                 actions: spaceTitleActions,

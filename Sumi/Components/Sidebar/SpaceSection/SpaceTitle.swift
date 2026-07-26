@@ -16,7 +16,7 @@ enum SpaceTitleRowLayout {
     static let titleFontSize: CGFloat = 14
     static let titleFontWeight: Font.Weight = .semibold
     static let trailingControlSize: CGFloat = 28
-    static let verticalPadding: CGFloat = 5
+    static let verticalPadding: CGFloat = 4
     static let defaultCornerRadius: CGFloat = 12
 
     static var iconFontSize: CGFloat {

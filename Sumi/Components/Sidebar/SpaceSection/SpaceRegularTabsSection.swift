@@ -6,6 +6,12 @@
 import SumiDomain
 import SwiftUI
 
+enum SpaceRegularTabsTailLayout {
+    /// Zen ends scroll content at the New Tab row; any remaining sidebar room
+    /// belongs to the outer workspace surface, not to an invisible list footer.
+    static let trailingClearance: CGFloat = 0
+}
+
 struct SpaceRegularTabsInteractionSession {
     var listAnimation = RegularTabsListAnimationState()
 }
@@ -134,10 +140,6 @@ private struct SpaceRegularTabsContentView: View {
         showsNewTabButtonInList && !showsNewTabButtonAtTop
     }
 
-    private var renderedRowCount: Int {
-        interactionSession.listAnimation.renderedRows.count
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             SpaceTabSectionBoundary(layout: boundaryLayout) {
@@ -157,9 +159,7 @@ private struct SpaceRegularTabsContentView: View {
             contentColumn
 
             Color.clear.frame(
-                height: renderedRowCount == 0 && !interactionSession.listAnimation.hasRemovalInFlight
-                    ? 48
-                    : 24
+                height: SpaceRegularTabsTailLayout.trailingClearance
             )
         }
         .sidebarSectionGeometry(
