@@ -93,10 +93,8 @@ struct RegularSplitSegmentResolver {
         for item: SplitGroupSidebarItem,
         in group: SplitGroup,
         faviconImageReader: any BrowserFaviconImageReading,
-        shortcutPin: (UUID) -> ShortcutPin?,
         splitPresentation: SidebarSplitDragPresentation,
-        isGroupSelected: Bool,
-        onActivateMember: @escaping () -> Void
+        isGroupSelected: Bool
     ) -> SidebarDragSourceConfiguration? {
         guard let tab = item.tab else { return nil }
         let memberIcon = SplitGroupMemberIconResolver.resolve(
@@ -135,7 +133,6 @@ struct RegularSplitSegmentResolver {
             previewPresentationState: isGroupSelected
                 ? .visuallySelected : .liveBackgrounded,
             exclusionZones: [.trailingStrip(32)],
-            onActivate: onActivateMember,
             isEnabled: isInteractive
         )
     }

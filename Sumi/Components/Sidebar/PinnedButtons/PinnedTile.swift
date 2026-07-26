@@ -68,7 +68,6 @@ func makePinnedTileDragSourceConfiguration(
     chromeTemplateSystemImageName: String? = nil,
     previewPresentationState: ShortcutPresentationState? = nil,
     exclusionZones: [SidebarDragSourceExclusionZone],
-    onActivate: (() -> Void)? = nil,
     isEnabled: Bool = true
 ) -> SidebarDragSourceConfiguration {
     SidebarDragSourceConfiguration(
@@ -84,7 +83,6 @@ func makePinnedTileDragSourceConfiguration(
         chromeTemplateSystemImageName: chromeTemplateSystemImageName,
         previewPresentationState: previewPresentationState,
         exclusionZones: exclusionZones,
-        onActivate: onActivate,
         isEnabled: isEnabled
     )
 }

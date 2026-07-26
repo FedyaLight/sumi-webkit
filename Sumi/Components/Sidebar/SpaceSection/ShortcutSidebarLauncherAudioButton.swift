@@ -49,7 +49,10 @@ struct LauncherAudioButton: View {
                 )
                 .frame(width: 22, height: 22)
                 .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .sidebarHover($isHovering, isEnabled: isAppKitInteractionEnabled)
+                .sidebarHover(
+                    $isHovering,
+                    isEnabled: isAppKitInteractionEnabled
+                )
                 .accessibilityIdentifier(accessibilityID ?? "shortcut-sidebar-audio")
                 .sidebarAppKitPrimaryAction(
                     isEnabled: !windowState.sidebarInteractionState.freezesSidebarHoverState,

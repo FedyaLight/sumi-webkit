@@ -345,7 +345,8 @@ struct SpaceTitle: View {
         }
         .sidebarAppKitContextMenu(
             isInteractionEnabled: isAppKitInteractionEnabled,
-            primaryAction: hasPinnedContent ? onTogglePinnedContent : nil,
+            primaryActionExclusionZones: [.trailingStrip(40)],
+            releaseAction: hasPinnedContent ? onTogglePinnedContent : nil,
             sourceID: hasPinnedContent ? "space-title-toggle-\(space.id.uuidString)" : nil,
             entries: {
                 spaceContextMenuEntries()

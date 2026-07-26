@@ -148,6 +148,9 @@ struct SpacePinnedSplitGroupEntryView: View {
                         group,
                         in: windowState
                     )
+                },
+                onCloseGroup: {
+                    browserContext.splitGroupLifecycle.deleteSaved(group)
                 }
             )
             .sidebarTopLevelPinnedItemGeometry(

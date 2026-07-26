@@ -13,7 +13,7 @@ struct SplitGroupSegment: View {
     let isDeparting: Bool
     let segmentWidth: CGFloat
     let trailingPadding: CGFloat
-    let reservesTrailingAction: Bool
+    let trailingActionExclusionWidth: CGFloat
     let memberAction: SplitGroupSidebarMemberAction?
     let isRowHovered: Bool
     let isAppKitInteractionEnabled: Bool
@@ -85,7 +85,10 @@ struct SplitGroupSegment: View {
             .sidebarAppKitContextMenu(
                 isInteractionEnabled: (item.tab != nil || dragSourceConfiguration != nil) && isAppKitInteractionEnabled,
                 dragSource: resolvedDragSourceConfiguration,
-                primaryAction: onActivate,
+                primaryActionExclusionZones:
+                    trailingActionExclusionZones,
+                pageActivation: onActivate,
+                showsPressVisual: item.tab != nil,
                 onMiddleClick: onMiddleClick,
                 sourceID: rowSourceID,
                 entries: contextMenuEntries
@@ -223,7 +226,7 @@ struct SplitGroupSegment: View {
     private var resolvedDragSourceConfiguration: SidebarDragSourceConfiguration? {
         if let dragSourceConfiguration {
             return dragSourceConfiguration.replacingExclusionZones(
-                reservesTrailingAction ? [.trailingStrip(32)] : []
+                trailingActionExclusionZones
             )
             .replacingPreviewSourceGeometry(dragPreviewSourceGeometry)
         }
@@ -238,11 +241,14 @@ struct SplitGroupSegment: View {
             previewKind: .row,
             previewIcon: tab.favicon,
             previewSourceGeometry: dragPreviewSourceGeometry,
-            exclusionZones: reservesTrailingAction
-                ? [.trailingStrip(32)] : [],
-            onActivate: onActivate,
+            exclusionZones: trailingActionExclusionZones,
             isEnabled: isAppKitInteractionEnabled
         )
+    }
+
+    private var trailingActionExclusionZones: [SidebarDragSourceExclusionZone] {
+        guard trailingActionExclusionWidth > 0 else { return [] }
+        return [.trailingStrip(trailingActionExclusionWidth)]
     }
 
     private var rowSourceID: String {

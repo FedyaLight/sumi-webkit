@@ -212,17 +212,33 @@ enum SplitGroupMemberIconResolver {
 
 enum SplitGroupSidebarAction: Equatable {
     case unload
+    case close
 
     var systemImageName: String {
-        "minus"
+        switch self {
+        case .unload:
+            return "minus"
+        case .close:
+            return "xmark"
+        }
     }
 
     var accessibilityPrefix: String {
-        "space-split-group-unload"
+        switch self {
+        case .unload:
+            return "space-split-group-unload"
+        case .close:
+            return "space-split-group-close"
+        }
     }
 
     var help: String {
-        String(localized: "Unload Split View")
+        switch self {
+        case .unload:
+            return String(localized: "Unload Split View")
+        case .close:
+            return String(localized: "Close Split View")
+        }
     }
 }
 
@@ -279,7 +295,9 @@ enum SplitGroupSidebarModel {
         case .regularTabs:
             return nil
         case .essentialSidebar, .shortcutSidebar:
-            return items.contains { $0.tab != nil } ? .unload : nil
+            return items.contains { $0.tab != nil }
+                ? .unload
+                : .close
         }
     }
 

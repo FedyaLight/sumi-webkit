@@ -6,7 +6,7 @@ enum SidebarDragSourceDim {
     static let opacity: Double = 0.5
 }
 
-enum SidebarDragSourceExclusionZone {
+enum SidebarDragSourceExclusionZone: Equatable {
     case leadingStrip(CGFloat)
     case trailingStrip(CGFloat)
     case fixedRect(CGRect)
@@ -72,7 +72,6 @@ struct SidebarDragSourceConfiguration {
     let folderGlyphPalette: SumiFolderGlyphPalette?
     let previewSourceGeometry: SidebarDragPreviewSourceGeometry?
     let exclusionZones: [SidebarDragSourceExclusionZone]
-    let onActivate: (() -> Void)?
     let isEnabled: Bool
 
     init(
@@ -89,7 +88,6 @@ struct SidebarDragSourceConfiguration {
         folderGlyphPalette: SumiFolderGlyphPalette? = nil,
         previewSourceGeometry: SidebarDragPreviewSourceGeometry? = nil,
         exclusionZones: [SidebarDragSourceExclusionZone] = [],
-        onActivate: (() -> Void)? = nil,
         isEnabled: Bool = true
     ) {
         self.item = item
@@ -105,7 +103,6 @@ struct SidebarDragSourceConfiguration {
         self.folderGlyphPalette = folderGlyphPalette
         self.previewSourceGeometry = previewSourceGeometry
         self.exclusionZones = exclusionZones
-        self.onActivate = onActivate
         self.isEnabled = isEnabled
     }
 
@@ -126,7 +123,6 @@ struct SidebarDragSourceConfiguration {
             folderGlyphPalette: folderGlyphPalette,
             previewSourceGeometry: previewSourceGeometry,
             exclusionZones: exclusionZones,
-            onActivate: onActivate,
             isEnabled: isEnabled
         )
     }
@@ -148,7 +144,6 @@ struct SidebarDragSourceConfiguration {
             folderGlyphPalette: folderGlyphPalette,
             previewSourceGeometry: previewSourceGeometry,
             exclusionZones: exclusionZones,
-            onActivate: onActivate,
             isEnabled: isEnabled
         )
     }

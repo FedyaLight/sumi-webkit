@@ -63,7 +63,7 @@ struct ShortcutSidebarRowChrome: View {
                 suppressRegularActionUntilHoverExit = false
             }
         }
-        .sidebarZenPressEffect(sourceID: rowSourceID, isEnabled: dragIsEnabled)
+        .sidebarZenPressEffect(sourceID: rowSourceID)
         .task(id: storedFaviconLoadKey) {
             await loadStoredFavicon()
         }
@@ -78,7 +78,9 @@ struct ShortcutSidebarRowChrome: View {
         .sidebarAppKitContextMenu(
             isInteractionEnabled: dragIsEnabled,
             dragSource: dragSourceConfiguration,
-            primaryAction: action,
+            primaryActionExclusionZones: primaryActionExclusionZones,
+            pageActivation: action,
+            showsPressVisual: liveTab != nil,
             onMiddleClick: onUnload,
             sourceID: rowSourceID,
             entries: contextMenuEntries
@@ -88,6 +90,7 @@ struct ShortcutSidebarRowChrome: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(accessibilityID ?? "shortcut-sidebar-row")
         .accessibilityValue(runtimeAffordance.isSelected ? "selected" : "not selected")
+        .accessibilityAction(.default, action)
         .accessibilityAddTraits(runtimeAffordance.isSelected ? .isSelected : [])
     }
 
@@ -159,9 +162,6 @@ struct ShortcutSidebarRowChrome: View {
         }
         .frame(height: SidebarRowLayout.rowHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(alignment: .leading) {
-            rowActivationOverlay
-        }
         .overlay(alignment: .trailing) {
             trailingActionButton
                 .padding(.trailing, SidebarRowLayout.trailingInset)

@@ -46,7 +46,6 @@ struct LivePinnedTileContent: View {
                 chromeTemplateSystemImageName: chromeTemplateSystemImageName,
                 previewPresentationState: presentationState,
                 exclusionZones: dragExclusionZones,
-                onActivate: onActivate,
                 isEnabled: dragIsEnabled
             ),
             accessibilityID: accessibilityID,

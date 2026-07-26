@@ -122,7 +122,6 @@ struct EssentialSplitGroupTile: View {
                                 isInteractionEnabled: isAppKitInteractionEnabled,
                                 surfaceKind: .button,
                                 dragSource: dragSource(
-                                    memberID: member.id,
                                     title: member.title,
                                     url: member.url,
                                     previewIcon: member.icon,
@@ -136,7 +135,7 @@ struct EssentialSplitGroupTile: View {
                                             )
                                         )
                                 ),
-                                primaryAction: {
+                                pageActivation: {
                                     onActivateMember(member.id)
                                 },
                                 onMiddleClick: supportsUnload
@@ -172,12 +171,11 @@ struct EssentialSplitGroupTile: View {
             isInteractionEnabled: isAppKitInteractionEnabled,
             surfaceKind: .button,
             dragSource: dragSource(
-                memberID: activationMember.id,
                 title: groupDisplayTitle,
                 url: activationMember.url,
                 previewIcon: nil
             ),
-            primaryAction: { onActivateMember(activationMember.id) },
+            pageActivation: { onActivateMember(activationMember.id) },
             onMiddleClick: supportsUnload ? onUnloadGroup : nil,
             sourceID: "essential-split-group-icon-\(group.id.uuidString)",
             entries: contextMenuEntries
@@ -408,7 +406,6 @@ struct EssentialSplitGroupTile: View {
     }
 
     private func dragSource(
-        memberID: SplitMemberID,
         title: String,
         url: URL,
         previewIcon: Image?,
@@ -436,7 +433,6 @@ struct EssentialSplitGroupTile: View {
             previewPresentationState: groupPresentationState,
             previewSourceGeometry: previewSourceGeometry,
             exclusionZones: [],
-            onActivate: { onActivateMember(memberID) },
             isEnabled: isAppKitInteractionEnabled
         )
     }

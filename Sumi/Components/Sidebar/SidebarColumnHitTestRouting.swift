@@ -12,13 +12,6 @@ enum SidebarColumnHitTestRouting {
         eventButtonNumber: Int? = nil,
         capturesOverlayBackgroundPointerEvents: Bool = false
     ) -> NSView? {
-        if eventType == .leftMouseDragged || eventType == .leftMouseUp,
-           let owner = contextMenuController?.interactionState.activePointerSessionOwner(
-            in: containerView.window
-           ) {
-            return owner
-        }
-
         guard containerView.bounds.contains(point) else {
             return originalHit
         }

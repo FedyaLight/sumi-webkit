@@ -245,13 +245,13 @@ enum SplitGroupSidebarVisualLayout {
         hasMemberAction: Bool,
         showsMemberAction: Bool,
         isLastVisibleItem: Bool,
-        showsGroupAction: Bool
+        groupActionTrailingPadding: CGFloat
     ) -> CGFloat {
         if hasMemberAction, showsMemberAction {
             return SidebarRowLayout.trailingActionPadding
         }
-        if isLastVisibleItem, showsGroupAction {
-            return SidebarRowLayout.trailingActionPadding
+        if isLastVisibleItem, groupActionTrailingPadding > 0 {
+            return groupActionTrailingPadding
         }
         return standardTrailingPadding
     }

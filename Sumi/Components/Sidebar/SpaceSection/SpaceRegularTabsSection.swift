@@ -259,7 +259,7 @@ private struct SpaceRegularNewTabRow: View {
         )
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .sidebarHover($isHovered, isEnabled: isInteractive)
-        .sidebarZenPressEffect(sourceID: sourceID, isEnabled: isInteractive)
+        .sidebarZenPressEffect(sourceID: sourceID)
         .accessibilityIdentifier(sourceID)
         .sidebarAppKitPrimaryAction(
             isInteractionEnabled: isInteractive,

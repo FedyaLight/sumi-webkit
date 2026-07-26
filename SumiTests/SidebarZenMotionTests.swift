@@ -1,5 +1,6 @@
 import AppKit
 @testable import Sumi
+import SwiftUI
 import XCTest
 
 @MainActor
@@ -167,7 +168,273 @@ final class SidebarZenMotionTests: XCTestCase {
 
         view.mouseDown(with: mouseEvent(.leftMouseDown))
 
-        XCTAssertEqual(state.activePressedSourceID, "tab-row-test")
+        XCTAssertTrue(state.presentsPressVisual(for: "tab-row-test"))
+    }
+
+    func testSidebarInteractiveItemActivatesPageOnMouseDownOnlyOnce() {
+        let state = SidebarInteractionState()
+        let dragState = SidebarDragState()
+        let spaceID = UUID()
+        var activationCount = 0
+        let view = SidebarInteractiveItemView(
+            frame: NSRect(x: 0, y: 0, width: 160, height: 36)
+        )
+        view.sidebarDragState = dragState
+        view.update(
+            configuration: SidebarAppKitItemConfiguration(
+                interactionState: state,
+                dragSource: SidebarDragSourceConfiguration(
+                    item: SumiDragItem(
+                        tabId: UUID(),
+                        title: "Press activation"
+                    ),
+                    sourceZone: .spaceRegular(spaceID),
+                    previewKind: .row
+                ),
+                pageActivation: { activationCount += 1 },
+                sourceID: "tab-row-test"
+            )
+        )
+
+        view.mouseDown(with: mouseEvent(.leftMouseDown))
+
+        XCTAssertEqual(activationCount, 1)
+        XCTAssertTrue(state.hasActivePointerSession(for: "tab-row-test"))
+        XCTAssertTrue(dragState.isInternalDragGeometryArmed)
+
+        view.mouseUp(
+            with: mouseEvent(
+                .leftMouseUp,
+                location: NSPoint(x: 180, y: 12)
+            )
+        )
+
+        XCTAssertEqual(activationCount, 1)
+    }
+
+    func testPageActivationDoesNotRunInsideNestedControlExclusionZone() {
+        let state = SidebarInteractionState()
+        let spaceID = UUID()
+        var activationCount = 0
+        let view = SidebarInteractiveItemView(
+            frame: NSRect(x: 0, y: 0, width: 160, height: 36)
+        )
+        view.update(
+            configuration: SidebarAppKitItemConfiguration(
+                interactionState: state,
+                dragSource: SidebarDragSourceConfiguration(
+                    item: SumiDragItem(
+                        tabId: UUID(),
+                        title: "Nested control exclusion"
+                    ),
+                    sourceZone: .spaceRegular(spaceID),
+                    previewKind: .row,
+                    exclusionZones: [.trailingStrip(40)]
+                ),
+                primaryActionExclusionZones: [.trailingStrip(40)],
+                pageActivation: { activationCount += 1 },
+                sourceID: "tab-row-test"
+            )
+        )
+
+        view.mouseDown(
+            with: mouseEvent(
+                .leftMouseDown,
+                location: NSPoint(x: 140, y: 12)
+            )
+        )
+
+        XCTAssertEqual(activationCount, 0)
+        XCTAssertFalse(state.hasActivePointerSession)
+    }
+
+    func testNestedControlExclusionDoesNotDependOnDragSource() {
+        let state = SidebarInteractionState()
+        var activationCount = 0
+        let view = SidebarInteractiveItemView(
+            frame: NSRect(x: 0, y: 0, width: 160, height: 36)
+        )
+        view.update(
+            configuration: SidebarAppKitItemConfiguration(
+                interactionState: state,
+                primaryActionExclusionZones: [.trailingStrip(40)],
+                pageActivation: { activationCount += 1 },
+                sourceID: "launcher-row-without-drag-source"
+            )
+        )
+
+        view.mouseDown(
+            with: mouseEvent(
+                .leftMouseDown,
+                location: NSPoint(x: 140, y: 12)
+            )
+        )
+
+        XCTAssertEqual(activationCount, 0)
+        XCTAssertFalse(state.hasActivePointerSession)
+    }
+
+    func testPageActivationPresentationChurnCannotBecomeReleaseAction() {
+        let state = SidebarInteractionState()
+        var originalActivationCount = 0
+        var currentActivationCount = 0
+        let view = SidebarInteractiveItemView(
+            frame: NSRect(x: 0, y: 0, width: 160, height: 36)
+        )
+        view.update(
+            configuration: SidebarAppKitItemConfiguration(
+                interactionState: state,
+                pageActivation: { originalActivationCount += 1 },
+                sourceID: "launcher-row-test"
+            )
+        )
+
+        view.mouseDown(with: mouseEvent(.leftMouseDown))
+        view.update(
+            configuration: SidebarAppKitItemConfiguration(
+                interactionState: state,
+                releaseAction: { currentActivationCount += 1 },
+                sourceID: "launcher-row-test"
+            )
+        )
+        view.mouseUp(with: mouseEvent(.leftMouseUp))
+
+        XCTAssertEqual(originalActivationCount, 1)
+        XCTAssertEqual(currentActivationCount, 0)
+        XCTAssertFalse(state.hasActivePointerSession)
+    }
+
+    func testPageActivationKeepsPressedSessionWhenPresentationReplacesOwner() {
+        let state = SidebarInteractionState()
+        let dragState = SidebarDragState()
+        let sourceID = "launcher-row-test"
+        let spaceID = UUID()
+        let dragItem = SumiDragItem(
+            tabId: UUID(),
+            title: "Replacing launcher"
+        )
+        let originalView = SidebarInteractiveItemView(
+            frame: NSRect(x: 0, y: 0, width: 160, height: 36)
+        )
+        let replacementView = SidebarInteractiveItemView(
+            frame: NSRect(x: 0, y: 0, width: 160, height: 36)
+        )
+        originalView.sidebarDragState = dragState
+        replacementView.sidebarDragState = dragState
+        originalView.update(
+            configuration: SidebarAppKitItemConfiguration(
+                interactionState: state,
+                dragSource: SidebarDragSourceConfiguration(
+                    item: dragItem,
+                    sourceZone: .spaceRegular(spaceID),
+                    previewKind: .row
+                ),
+                pageActivation: { /* no-op */ },
+                sourceID: sourceID
+            )
+        )
+
+        originalView.mouseDown(with: mouseEvent(.leftMouseDown))
+        replacementView.update(
+            configuration: SidebarAppKitItemConfiguration(
+                interactionState: state,
+                dragSource: SidebarDragSourceConfiguration(
+                    item: dragItem,
+                    sourceZone: .spaceRegular(spaceID),
+                    previewKind: .row
+                ),
+                pageActivation: { /* no-op */ },
+                sourceID: sourceID
+            )
+        )
+        originalView.prepareForDismantle()
+
+        XCTAssertTrue(state.hasActivePointerSession(for: sourceID))
+        XCTAssertTrue(dragState.isInternalDragGeometryArmed)
+
+        replacementView.mouseUp(with: mouseEvent(.leftMouseUp))
+
+        XCTAssertFalse(state.hasActivePointerSession)
+        XCTAssertFalse(dragState.isInternalDragGeometryArmed)
+    }
+
+    func testLauncherPresentationReplacementKeepsPressedSessionUntilMouseUp() throws {
+        let state = SidebarInteractionState()
+        let coordinator = SidebarTransientSessionCoordinator(
+            windowID: UUID(),
+            interactionState: state
+        )
+        let controller = SidebarContextMenuController(
+            interactionState: state,
+            transientSessionCoordinator: coordinator
+        )
+        let presentation = SidebarPressReplacementPresentation()
+        let host = NSHostingView(
+            rootView: SidebarPressReplacementFixture(
+                presentation: presentation,
+                state: state,
+                controller: controller
+            )
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 160, height: 36),
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        host.frame = window.contentView?.bounds ?? .zero
+        host.layoutSubtreeIfNeeded()
+        let originalOwner = try XCTUnwrap(
+            interactiveItemViews(in: host).first
+        )
+        defer {
+            interactiveItemViews(in: host).forEach { $0.prepareForDismantle() }
+            window.contentView = nil
+            window.close()
+        }
+
+        originalOwner.mouseDown(with: mouseEvent(.leftMouseDown))
+        RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+        host.layoutSubtreeIfNeeded()
+
+        XCTAssertEqual(presentation.phase, .gap)
+        XCTAssertTrue(interactiveItemViews(in: host).isEmpty)
+        XCTAssertTrue(state.hasActivePointerSession(for: "launcher-row-test"))
+
+        presentation.phase = .live
+        RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        host.layoutSubtreeIfNeeded()
+
+        let currentOwner = try XCTUnwrap(
+            interactiveItemViews(in: host).first
+        )
+        XCTAssertNotIdentical(currentOwner, originalOwner)
+
+        currentOwner.mouseUp(with: mouseEvent(.leftMouseUp))
+
+        XCTAssertFalse(state.hasActivePointerSession)
+    }
+
+    func testMouseUpEndsPressedSessionWhilePresentationOwnerIsDetached() {
+        let state = SidebarInteractionState()
+        let owner = makeInteractiveItemView(
+            sourceID: "launcher-row-test",
+            state: state
+        )
+
+        owner.mouseDown(with: mouseEvent(.leftMouseDown))
+        owner.prepareForDismantle()
+
+        XCTAssertTrue(state.hasActivePointerSession(for: "launcher-row-test"))
+        XCTAssertTrue(
+            state.pointerSessions.continueEvent(
+                mouseEvent(.leftMouseUp)
+            )
+        )
+
+        XCTAssertFalse(state.hasActivePointerSession)
     }
 
     func testSidebarInteractiveItemClearsPressedSourceOnMouseUp() {
@@ -181,9 +448,12 @@ final class SidebarZenMotionTests: XCTestCase {
         }
 
         view.mouseDown(with: mouseEvent(.leftMouseDown))
+
+        XCTAssertEqual(activationCount, 0)
+
         view.mouseUp(with: mouseEvent(.leftMouseUp))
 
-        XCTAssertNil(state.activePressedSourceID)
+        XCTAssertFalse(state.hasActivePointerSession)
         XCTAssertEqual(activationCount, 1)
     }
 
@@ -195,16 +465,16 @@ final class SidebarZenMotionTests: XCTestCase {
         )
 
         view.mouseDown(with: mouseEvent(.leftMouseDown))
-        view.cancelPrimaryMouseTracking()
+        view.cancelPointerSession()
 
-        XCTAssertNil(state.activePressedSourceID)
+        XCTAssertFalse(state.hasActivePointerSession)
     }
 
     /// Opening or closing the folder preview writes the transient interaction
     /// state, which re-renders every folder header mid-click. That re-render
     /// reaches the bridge with an unchanged signature, and must leave the row's
     /// in-flight gesture alone — otherwise the click never reaches its action.
-    func testBridgeUpdateDuringPressKeepsPrimaryActionAlive() {
+    func testBridgeUpdateDuringPressKeepsReleaseActionAlive() {
         let state = SidebarInteractionState()
         var activationCount = 0
         let action = { activationCount += 1 }
@@ -218,17 +488,17 @@ final class SidebarZenMotionTests: XCTestCase {
         view.update(
             configuration: SidebarAppKitItemConfiguration(
                 interactionState: state,
-                primaryAction: action,
+                releaseAction: action,
                 sourceID: "folder-header-test"
             )
         )
         view.mouseUp(with: mouseEvent(.leftMouseUp))
 
         XCTAssertEqual(activationCount, 1)
-        XCTAssertNil(state.activePressedSourceID)
+        XCTAssertFalse(state.hasActivePointerSession)
     }
 
-    func testPresentationConfigurationChurnDuringPressKeepsCurrentPrimaryActionAlive() {
+    func testPresentationConfigurationChurnDuringPressKeepsCurrentReleaseActionAlive() {
         let state = SidebarInteractionState()
         let itemID = UUID()
         let spaceID = UUID()
@@ -246,14 +516,14 @@ final class SidebarZenMotionTests: XCTestCase {
                     surfaceKind: .row,
                     triggers: .rightClick,
                     entries: { [] },
-                    onMenuVisibilityChanged: { _ in }
+                    onMenuVisibilityChanged: { _ in /* no-op */ }
                 ),
                 dragSource: SidebarDragSourceConfiguration(
                     item: SumiDragItem.folder(folderId: itemID, title: "Before"),
                     sourceZone: .spacePinned(spaceID),
                     previewKind: .folderRow
                 ),
-                primaryAction: { originalActivationCount += 1 },
+                releaseAction: { originalActivationCount += 1 },
                 sourceID: "folder-header-\(itemID.uuidString)"
             )
         )
@@ -267,16 +537,16 @@ final class SidebarZenMotionTests: XCTestCase {
                     surfaceKind: .row,
                     triggers: [.leftClick, .rightClick],
                     entries: { [] },
-                    onMenuVisibilityChanged: { _ in }
+                    onMenuVisibilityChanged: { _ in /* no-op */ }
                 ),
                 dragSource: SidebarDragSourceConfiguration(
                     item: SumiDragItem.folder(folderId: itemID, title: "After"),
                     sourceZone: .folder(UUID()),
                     previewKind: .row
                 ),
-                primaryAction: { currentActivationCount += 1 },
+                releaseAction: { currentActivationCount += 1 },
                 sourceID: "folder-header-\(itemID.uuidString)",
-                suppressesPrimaryActionAnimation: true,
+                suppressesActionAnimation: true,
                 presentationMode: .collapsedVisible
             )
         )
@@ -284,10 +554,10 @@ final class SidebarZenMotionTests: XCTestCase {
 
         XCTAssertEqual(originalActivationCount, 0)
         XCTAssertEqual(currentActivationCount, 1)
-        XCTAssertNil(state.activePressedSourceID)
+        XCTAssertFalse(state.hasActivePointerSession)
     }
 
-    func testBridgeReuseForDifferentSourceCancelsInFlightPrimaryAction() {
+    func testBridgeReuseForDifferentSourceCancelsInFlightReleaseAction() {
         let state = SidebarInteractionState()
         var firstActivationCount = 0
         var secondActivationCount = 0
@@ -302,12 +572,12 @@ final class SidebarZenMotionTests: XCTestCase {
         view.update(
             configuration: SidebarAppKitItemConfiguration(
                 interactionState: state,
-                primaryAction: { secondActivationCount += 1 },
+                releaseAction: { secondActivationCount += 1 },
                 sourceID: "folder-header-second"
             )
         )
 
-        XCTAssertNil(state.activePressedSourceID)
+        XCTAssertFalse(state.hasActivePointerSession)
 
         view.mouseUp(with: mouseEvent(.leftMouseUp))
 
@@ -344,7 +614,7 @@ final class SidebarZenMotionTests: XCTestCase {
         folderView.mouseUp(with: mouseEvent(.leftMouseUp))
 
         XCTAssertEqual(folderToggleCount, 0)
-        XCTAssertEqual(state.activePressedSourceID, "folder-child-test")
+        XCTAssertTrue(state.hasActivePointerSession(for: "folder-child-test"))
     }
 
     func testBridgeUpdateWithoutLocalGestureDoesNotCancelAnotherRowsArmedDrag() {
@@ -357,11 +627,11 @@ final class SidebarZenMotionTests: XCTestCase {
 
         view.update(
             configuration: SidebarAppKitItemConfiguration(
-                primaryAction: { /* no-op */ },
+                releaseAction: { /* no-op */ },
                 sourceID: "folder-header-test"
             )
         )
-        view.cancelPrimaryMouseTracking()
+        view.cancelPointerSession()
 
         XCTAssertTrue(dragState.isInternalDragGeometryArmed)
     }
@@ -384,7 +654,7 @@ final class SidebarZenMotionTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(state.activePressedSourceID, "tab-row-test")
+        XCTAssertTrue(state.hasActivePointerSession(for: "tab-row-test"))
     }
 
     func testFolderPreviewKeepsFolderPreviewHoverTrackingAllowed() {
@@ -489,7 +759,7 @@ final class SidebarZenMotionTests: XCTestCase {
         )
 
         XCTAssertTrue(result.sourceOwnerResolved)
-        XCTAssertEqual(state.activePressedSourceID, "folder-child-current")
+        XCTAssertTrue(state.hasActivePointerSession(for: "folder-child-current"))
     }
 
     func testStartingOtherTransientDismissesFolderPreview() {
@@ -612,6 +882,7 @@ final class SidebarZenMotionTests: XCTestCase {
     }
 
     func testSidebarInteractiveItemUsesInjectedDragStateForArmedGeometry() {
+        let interactionState = SidebarInteractionState()
         let injectedDragState = SidebarDragState()
         let otherDragState = SidebarDragState()
         let itemId = UUID()
@@ -635,6 +906,7 @@ final class SidebarZenMotionTests: XCTestCase {
         view.sidebarDragState = injectedDragState
         view.update(
             configuration: SidebarAppKitItemConfiguration(
+                interactionState: interactionState,
                 dragSource: SidebarDragSourceConfiguration(
                     item: item,
                     sourceZone: .spaceRegular(spaceId),
@@ -651,7 +923,7 @@ final class SidebarZenMotionTests: XCTestCase {
         XCTAssertEqual(injectedDragState.armedDragScope, scope)
         XCTAssertNil(otherDragState.armedDragScope)
 
-        view.cancelPrimaryMouseTracking()
+        view.cancelPointerSession()
 
         XCTAssertFalse(injectedDragState.isInternalDragGeometryArmed)
         XCTAssertNil(injectedDragState.armedDragScope)
@@ -901,7 +1173,7 @@ final class SidebarZenMotionTests: XCTestCase {
         view.update(
             configuration: SidebarAppKitItemConfiguration(
                 interactionState: state,
-                primaryAction: action,
+                releaseAction: action,
                 sourceID: sourceID,
                 routingPriorityBoost: routingPriorityBoost
             )
@@ -925,4 +1197,50 @@ final class SidebarZenMotionTests: XCTestCase {
             pressure: 1
         )!
     }
+}
+
+@MainActor
+private final class SidebarPressReplacementPresentation: ObservableObject {
+    enum Phase: Equatable {
+        case stored
+        case gap
+        case live
+    }
+
+    @Published var phase: Phase = .stored
+}
+
+private struct SidebarPressReplacementFixture: View {
+    @ObservedObject var presentation: SidebarPressReplacementPresentation
+    let state: SidebarInteractionState
+    let controller: SidebarContextMenuController
+
+    var body: some View {
+        Group {
+            switch presentation.phase {
+            case .stored, .live:
+                interactiveOwner
+            case .gap:
+                Color.clear
+            }
+        }
+        .frame(width: 160, height: 36)
+    }
+
+    private var interactiveOwner: some View {
+        SidebarAppKitItemBridge(
+            controller: controller,
+            configuration: SidebarAppKitItemConfiguration(
+                interactionState: state,
+                pageActivation: { presentation.phase = .gap },
+                sourceID: "launcher-row-test"
+            )
+        )
+    }
+}
+
+@MainActor
+private func interactiveItemViews(in root: NSView) -> [SidebarInteractiveItemView] {
+    let directMatches = root.subviews.compactMap { $0 as? SidebarInteractiveItemView }
+    return directMatches + root.subviews.flatMap(interactiveItemViews)
 }

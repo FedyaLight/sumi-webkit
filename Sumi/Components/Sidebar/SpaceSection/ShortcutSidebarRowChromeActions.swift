@@ -41,7 +41,10 @@ extension ShortcutSidebarRowChrome {
             .opacity(showsActionButton ? 1 : 0)
             .allowsHitTesting(showsActionButton && !freezesHoverState)
             .accessibilityHidden(!showsActionButton)
-            .sidebarHover($isActionHovered, isEnabled: showsActionButton && dragIsEnabled)
+            .sidebarHover(
+                $isActionHovered,
+                isEnabled: showsActionButton && dragIsEnabled
+            )
             .accessibilityIdentifier(trailingActionAccessibilityID ?? "shortcut-sidebar-action")
             .sidebarAppKitPrimaryAction(
                 isEnabled: showsActionButton && !freezesHoverState,
@@ -181,59 +184,21 @@ extension ShortcutSidebarRowChrome {
             hasLiveAudioExclusion: liveTab?.audioState.showsTabAudioButton == true,
             trailingActionExclusionWidth: trailingActivationExclusionWidth,
             previewIcon: displayFavicon,
-            action: action,
             dragIsEnabled: dragIsEnabled
+        )
+    }
+
+    var primaryActionExclusionZones: [SidebarDragSourceExclusionZone] {
+        makeShortcutSidebarDragExclusionZones(
+            runtimeAffordance: runtimeAffordance,
+            dragHasTrailingActionExclusion: dragHasTrailingActionExclusion,
+            hasLiveAudioExclusion: liveTab?.audioState.showsTabAudioButton == true,
+            trailingActionExclusionWidth: trailingActivationExclusionWidth
         )
     }
 
     var textColor: Color {
         tokens.primaryText
-    }
-
-    var audioButtonHitFrame: CGRect? {
-        guard liveTab?.audioState.showsTabAudioButton == true else { return nil }
-
-        return ShortcutSidebarAudioHitArea.frameInRow(
-            usesResetLeadingAction: runtimeAffordance.usesResetLeadingAction
-        )
-    }
-
-    @ViewBuilder
-    var rowActivationOverlay: some View {
-        GeometryReader { proxy in
-            let resetExclusionWidth = runtimeAffordance.usesResetLeadingAction
-                ? ShortcutSidebarAudioHitArea.contentStartX(usesResetLeadingAction: true)
-                : 0
-            let trailingLimit = max(proxy.size.width - trailingActivationExclusionWidth, resetExclusionWidth)
-
-            ZStack(alignment: .leading) {
-                if let audioButtonHitFrame {
-                    activationHitRegion(
-                        x: resetExclusionWidth,
-                        width: max(audioButtonHitFrame.minX - resetExclusionWidth, 0)
-                    )
-
-                    activationHitRegion(
-                        x: audioButtonHitFrame.maxX,
-                        width: max(trailingLimit - audioButtonHitFrame.maxX, 0)
-                    )
-                } else {
-                    activationHitRegion(
-                        x: resetExclusionWidth,
-                        width: max(trailingLimit - resetExclusionWidth, 0)
-                    )
-                }
-            }
-        }
-        .frame(height: SidebarRowLayout.rowHeight)
-    }
-
-    func activationHitRegion(x: CGFloat, width: CGFloat) -> some View {
-        Color.clear
-            .frame(width: max(width, 0), height: SidebarRowLayout.rowHeight)
-            .contentShape(Rectangle())
-            .offset(x: x)
-            .onTapGesture(perform: action)
     }
 
     func performActionButton() {

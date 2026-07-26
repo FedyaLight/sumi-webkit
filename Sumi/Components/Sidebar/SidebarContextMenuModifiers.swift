@@ -11,11 +11,14 @@ private struct SidebarAppKitItemModifier: ViewModifier {
 
     let menu: SidebarContextMenuLeafConfiguration
     let dragSource: SidebarDragSourceConfiguration?
-    let primaryAction: (() -> Void)?
+    let primaryActionExclusionZones: [SidebarDragSourceExclusionZone]
+    let pageActivation: (() -> Void)?
+    let releaseAction: (() -> Void)?
+    let showsPressVisual: Bool
     let onMiddleClick: (() -> Void)?
     let sourceID: String?
     let isInteractionEnabled: Bool
-    let suppressesPrimaryActionAnimation: Bool?
+    let suppressesActionAnimation: Bool?
 
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -26,7 +29,8 @@ private struct SidebarAppKitItemModifier: ViewModifier {
             menu: menu,
             dragSource: dragSource,
             hasMiddleClick: onMiddleClick != nil,
-            requiresManualPrimaryMouseTracking: primaryAction != nil,
+            requiresManualPrimaryMouseTracking:
+                pageActivation != nil || releaseAction != nil,
             requiresAppKitRecovery: sourceID != nil
         )
 
@@ -49,11 +53,14 @@ private struct SidebarAppKitItemModifier: ViewModifier {
                         menu: menu,
                         dragSource: dragSource,
                         dragScope: dragScope,
-                        primaryAction: primaryAction,
+                        primaryActionExclusionZones: primaryActionExclusionZones,
+                        pageActivation: pageActivation,
+                        releaseAction: releaseAction,
+                        showsPressVisual: showsPressVisual,
                         onMiddleClick: onMiddleClick,
                         sourceID: sourceID,
-                        suppressesPrimaryActionAnimation:
-                            suppressesPrimaryActionAnimation ?? (dragSource != nil),
+                        suppressesActionAnimation:
+                            suppressesActionAnimation ?? (dragSource != nil),
                         presentationMode: presentationContext.mode
                     )
                 )
@@ -92,7 +99,7 @@ private struct SidebarAppKitPrimaryActionModifier: ViewModifier {
             sourceID: sourceID,
             hasMiddleClick: onMiddleClick != nil
         ) {
-            let primaryAction: (() -> Void)? = isEnabled ? action : nil
+            let releaseAction: (() -> Void)? = isEnabled ? action : nil
             let middleClickAction: (() -> Void)? = isEnabled ? onMiddleClick : nil
             let effectiveInteractionEnabled = isInteractionEnabled
                 && presentationContext.allowsInteractiveWork
@@ -102,7 +109,7 @@ private struct SidebarAppKitPrimaryActionModifier: ViewModifier {
                     configuration: SidebarAppKitItemConfiguration(
                         isInteractionEnabled: effectiveInteractionEnabled,
                         interactionState: windowState.sidebarInteractionState,
-                        primaryAction: primaryAction,
+                        releaseAction: releaseAction,
                         onMiddleClick: middleClickAction,
                         sourceID: sourceID,
                         routingPriorityBoost: routingPriorityBoost,
@@ -193,10 +200,13 @@ extension View {
         surfaceKind: SidebarContextMenuSurfaceKind = .row,
         triggers: SidebarContextMenuTriggers = [.rightClick],
         dragSource: SidebarDragSourceConfiguration? = nil,
-        primaryAction: (() -> Void)? = nil,
+        primaryActionExclusionZones: [SidebarDragSourceExclusionZone] = [],
+        pageActivation: (() -> Void)? = nil,
+        releaseAction: (() -> Void)? = nil,
+        showsPressVisual: Bool = true,
         onMiddleClick: (() -> Void)? = nil,
         sourceID: String? = nil,
-        suppressesPrimaryActionAnimation: Bool? = nil,
+        suppressesActionAnimation: Bool? = nil,
         entries: @escaping () -> [SidebarContextMenuEntry],
         onMenuVisibilityChanged: @escaping (Bool) -> Void = { _ in }
     ) -> some View {
@@ -210,11 +220,14 @@ extension View {
                     onMenuVisibilityChanged: onMenuVisibilityChanged
                 ),
                 dragSource: dragSource,
-                primaryAction: primaryAction,
+                primaryActionExclusionZones: primaryActionExclusionZones,
+                pageActivation: pageActivation,
+                releaseAction: releaseAction,
+                showsPressVisual: showsPressVisual,
                 onMiddleClick: onMiddleClick,
                 sourceID: sourceID,
                 isInteractionEnabled: isInteractionEnabled,
-                suppressesPrimaryActionAnimation: suppressesPrimaryActionAnimation
+                suppressesActionAnimation: suppressesActionAnimation
             )
         )
     }

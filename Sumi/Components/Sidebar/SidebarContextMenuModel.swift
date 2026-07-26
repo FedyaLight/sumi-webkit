@@ -163,11 +163,14 @@ struct SidebarAppKitItemConfiguration {
     var menu: SidebarContextMenuLeafConfiguration?
     var dragSource: SidebarDragSourceConfiguration?
     var dragScope: SidebarDragScope?
-    var primaryAction: (() -> Void)?
+    var primaryActionExclusionZones: [SidebarDragSourceExclusionZone] = []
+    var pageActivation: (() -> Void)?
+    var releaseAction: (() -> Void)?
+    var showsPressVisual: Bool = true
     var onMiddleClick: (() -> Void)?
     var sourceID: String?
     var routingPriorityBoost: Int = 0
-    var suppressesPrimaryActionAnimation: Bool = false
+    var suppressesActionAnimation: Bool = false
     var presentationMode: SidebarPresentationMode = .docked
 
     var surfaceKind: SidebarContextMenuSurfaceKind {

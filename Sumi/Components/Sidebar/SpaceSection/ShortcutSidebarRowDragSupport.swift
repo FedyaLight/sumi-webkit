@@ -16,7 +16,6 @@ func makeShortcutSidebarDragSourceConfiguration(
     hasLiveAudioExclusion: Bool = false,
     trailingActionExclusionWidth: CGFloat = 40,
     previewIcon: Image,
-    action: (() -> Void)? = nil,
     dragIsEnabled: Bool = true
 ) -> SidebarDragSourceConfiguration? {
     guard let dragSourceZone else { return nil }
@@ -36,7 +35,6 @@ func makeShortcutSidebarDragSourceConfiguration(
             hasLiveAudioExclusion: hasLiveAudioExclusion,
             trailingActionExclusionWidth: trailingActionExclusionWidth
         ),
-        onActivate: action,
         isEnabled: dragIsEnabled
     )
 }

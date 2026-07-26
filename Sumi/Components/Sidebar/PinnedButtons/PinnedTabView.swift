@@ -119,15 +119,17 @@ struct PinnedTabView: View {
         .frame(height: PinnedTileMetrics.height)
         .frame(minWidth: PinnedTileMetrics.minWidth)
         .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        .onTapGesture(perform: action)
         .accessibilityIdentifier(accessibilityID ?? "pinned-tile")
         .accessibilityValue(presentationState.isSelected ? "selected" : "not selected")
+        .accessibilityAction(.default, action)
         .sidebarHover($isTileHovered, isEnabled: isAppKitInteractionEnabled)
-        .sidebarZenPressEffect(sourceID: tileSourceID, isEnabled: isAppKitInteractionEnabled)
+        .sidebarZenPressEffect(sourceID: tileSourceID)
         .sidebarAppKitContextMenu(
             isInteractionEnabled: isAppKitInteractionEnabled,
             dragSource: dragSourceConfiguration,
-            primaryAction: action,
+            primaryActionExclusionZones: primaryActionExclusionZones,
+            pageActivation: action,
+            showsPressVisual: liveTab != nil,
             onMiddleClick: supportsMiddleClickUnload ? onUnload : nil,
             sourceID: tileSourceID,
             entries: contextMenuEntries
@@ -192,6 +194,17 @@ struct PinnedTabView: View {
 
     private var supportsActionButton: Bool {
         showsUnloadIndicator && presentationState.isOpenLive
+    }
+
+    private var primaryActionExclusionZones: [SidebarDragSourceExclusionZone] {
+        var zones: [SidebarDragSourceExclusionZone] = []
+        if supportsActionButton {
+            zones.append(.topTrailingSquare(size: 22, inset: 6))
+        }
+        if liveTab?.audioState.showsTabAudioButton == true {
+            zones.append(.topLeadingSquare(size: 22, inset: 6))
+        }
+        return zones
     }
 
     private var freezesHoverState: Bool {
@@ -412,7 +425,10 @@ private struct PinnedTileAudioButton: View {
                             && !windowState.sidebarInteractionState.freezesSidebarHoverState
                     )
                 )
-                .sidebarHover($isHovering, isEnabled: isAppKitInteractionEnabled)
+                .sidebarHover(
+                    $isHovering,
+                    isEnabled: isAppKitInteractionEnabled
+                )
                 .accessibilityIdentifier(accessibilityID ?? "pinned-tile-audio")
                 .sidebarAppKitPrimaryAction(
                     isEnabled: !windowState.sidebarInteractionState.freezesSidebarHoverState,

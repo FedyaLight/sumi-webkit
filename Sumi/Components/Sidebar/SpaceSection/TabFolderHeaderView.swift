@@ -111,9 +111,11 @@ struct TabFolderHeaderView: View {
                 exclusionZones: onResetProjection != nil ? [.trailingStrip(40)] : [],
                 isEnabled: isInteractive
             ),
-            primaryAction: onToggle,
+            primaryActionExclusionZones:
+                onResetProjection != nil ? [.trailingStrip(40)] : [],
+            releaseAction: onToggle,
             sourceID: folderHeaderSourceID,
-            suppressesPrimaryActionAnimation: false,
+            suppressesActionAnimation: false,
             entries: contextMenuEntries
         )
         .overlay {
@@ -165,8 +167,8 @@ struct TabFolderHeaderView: View {
         guard folderPreviewHoverIsEnabled,
               SidebarFolderPreviewHoverPolicy.allowsOpen(
                   isSidebarDragging: isDragging,
-                  isHeaderPressed: windowState.sidebarInteractionState.activePressedSourceID
-                      == folderHeaderSourceID,
+                  isHeaderPressed: windowState.sidebarInteractionState
+                      .presentsPressVisual(for: folderHeaderSourceID),
                   isTextEntryActive: SidebarFolderPreviewAnchorBridge.isTextEntryActive(
                       in: anchorView.window
                   )

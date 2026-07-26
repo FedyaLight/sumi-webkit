@@ -47,7 +47,6 @@ struct StoredPinnedTileContent: View {
                 chromeTemplateSystemImageName: resolvedChromeTemplateSystemImageName,
                 previewPresentationState: presentationState,
                 exclusionZones: dragExclusionZones,
-                onActivate: onActivate,
                 isEnabled: dragIsEnabled
             ),
             accessibilityID: accessibilityID,

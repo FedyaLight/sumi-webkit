@@ -277,9 +277,10 @@ final class SidebarDropIndicatorGeometryTests: XCTestCase {
                 "Expected red favicon pixels in \(image.pixelsWide)x\(image.pixelsHigh); samples: \(samples)"
             )
         }
+        let pixelsPerPoint = CGFloat(image.pixelsHigh) / image.size.height
         XCTAssertEqual(
             CGFloat(minY + maxY) / 2,
-            SidebarRowLayout.rowHeight / 2,
+            SidebarRowLayout.rowHeight / 2 * pixelsPerPoint,
             accuracy: 0.5,
             "Projected favicon and title must use the committed pill's vertical center"
         )
@@ -308,7 +309,7 @@ final class SidebarDropIndicatorGeometryTests: XCTestCase {
                 hasMemberAction: true,
                 showsMemberAction: false,
                 isLastVisibleItem: false,
-                showsGroupAction: false
+                groupActionTrailingPadding: 0
             ),
             SplitGroupSidebarVisualLayout.standardTrailingPadding
         )
@@ -317,7 +318,7 @@ final class SidebarDropIndicatorGeometryTests: XCTestCase {
                 hasMemberAction: true,
                 showsMemberAction: true,
                 isLastVisibleItem: false,
-                showsGroupAction: false
+                groupActionTrailingPadding: 0
             ),
             SidebarRowLayout.trailingActionPadding
         )

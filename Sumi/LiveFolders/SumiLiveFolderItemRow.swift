@@ -43,10 +43,10 @@ struct SumiLiveFolderItemRow: View {
         .accessibilityIdentifier(accessibilityID)
         .accessibilityValue(isSelected ? "selected" : "not selected")
         .sidebarHover($isRowHovered, isEnabled: true)
-        .sidebarZenPressEffect(sourceID: accessibilityID, isEnabled: true)
+        .sidebarZenPressEffect(sourceID: accessibilityID)
         .sidebarAppKitContextMenu(
             isInteractionEnabled: true,
-            primaryAction: action,
+            releaseAction: action,
             sourceID: accessibilityID,
             entries: contextMenuEntries
         )

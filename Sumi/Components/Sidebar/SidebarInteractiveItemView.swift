@@ -8,8 +8,6 @@ import SwiftUI
 
 @MainActor
 final class SidebarInteractiveItemView: NSView, NSDraggingSource {
-    private let dragThreshold: CGFloat = 3
-
     var sidebarDragState: SidebarDragState?
 
     weak var contextMenuController: SidebarContextMenuController? {
@@ -21,14 +19,7 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource {
     }
 
     private(set) var isInteractive = true
-    private var isConfigurationInteractionEnabled = true
     private var itemConfiguration = SidebarAppKitItemConfiguration()
-    private var mouseDownEvent: NSEvent?
-    private var mouseDownPoint: CGPoint?
-    private var mouseDownCanStartDrag = false
-    private var didStartDrag = false
-    private var didArmDragGeometry = false
-    private var isTrackingDragGesture = false
     private var middleMouseDownPoint: CGPoint?
 
     override init(frame frameRect: NSRect) {
@@ -59,10 +50,16 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         contextMenuController?.ownerViewDidAttach(self)
+        pointerSessionAuthority?.present(
+            sourceID: itemConfiguration.sourceID,
+            with: self,
+            release: configuredReleaseIntent
+        )
     }
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         if newWindow == nil {
+            pointerSessionAuthority?.detach(self)
             contextMenuController?.ownerViewDidDetach(self)
         }
         super.viewWillMove(toWindow: newWindow)
@@ -75,15 +72,19 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource {
         let didReplaceInteraction =
             itemConfiguration.interactionIdentity != configuration.interactionIdentity
 
-        if didReplaceInteraction && hasInFlightClickGesture {
-            resetMouseState()
+        if didReplaceInteraction {
+            middleMouseDownPoint = nil
         }
         itemConfiguration = configuration
+        pointerSessionAuthority?.present(
+            sourceID: configuration.sourceID,
+            with: self,
+            release: configuredReleaseIntent
+        )
         guard didChangeConfiguration else { return }
 
-        isConfigurationInteractionEnabled = configuration.isInteractionEnabled
+        isInteractive = configuration.isInteractionEnabled
         identifier = configuration.sourceID.map { NSUserInterfaceItemIdentifier($0) }
-        applyEffectiveInteractionEnabled()
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -107,25 +108,22 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource {
             return
         }
 
-        let capturesPrimaryAction = shouldCapturePrimaryAction(at: point)
+        let capturesPageActivation = shouldCapturePageActivation(at: point)
+        let capturesReleaseAction = shouldCaptureReleaseAction(at: point)
         let capturesDrag = shouldCaptureDrag(at: point)
 
-        if capturesPrimaryAction || capturesDrag {
+        if capturesPageActivation || capturesReleaseAction || capturesDrag {
             window?.makeFirstResponder(self)
-            mouseDownEvent = event
-            mouseDownPoint = point
-            mouseDownCanStartDrag = capturesDrag
-            didStartDrag = false
-            isTrackingDragGesture = true
-            pointerInteractionState?.beginPointerSession(
+            pointerSessionAuthority?.begin(
+                event: event,
                 owner: self,
-                sourceID: itemConfiguration.sourceID
-            )
-            if capturesDrag {
-                sidebarDragState?.armInternalDragGeometry(
-                    scope: itemConfiguration.dragScope
+                intent: primaryPointerIntent(
+                    capturesDrag: capturesDrag,
+                    capturesReleaseAction: capturesReleaseAction
                 )
-                didArmDragGeometry = true
+            )
+            if capturesPageActivation {
+                performAction(itemConfiguration.pageActivation)
             }
             return
         }
@@ -134,39 +132,23 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard isInteractive,
-              isTrackingDragGesture,
-              !didStartDrag,
-              let mouseDownPoint
-        else {
-            super.mouseDragged(with: event)
+        if pointerSessionAuthority?.continueEvent(
+            event,
+            deliveredTo: self
+        ) == true {
             return
         }
-        guard mouseDownCanStartDrag else { return }
-
-        let point = convert(event.locationInWindow, from: nil)
-        let distance = hypot(point.x - mouseDownPoint.x, point.y - mouseDownPoint.y)
-        guard distance >= dragThreshold else { return }
-        startDrag(
-            with: event,
-            sessionEvent: mouseDownEvent ?? event,
-            anchorPoint: mouseDownPoint
-        )
+        super.mouseDragged(with: event)
     }
 
     override func mouseUp(with event: NSEvent) {
-        guard isTrackingDragGesture else {
-            super.mouseUp(with: event)
+        if pointerSessionAuthority?.continueEvent(
+            event,
+            deliveredTo: self
+        ) == true {
             return
         }
-
-        let point = convert(event.locationInWindow, from: nil)
-        let primaryAction = itemConfiguration.primaryAction ?? itemConfiguration.dragSource?.onActivate
-        let shouldInvokePrimaryAction = !didStartDrag && shouldCapturePrimaryAction(at: point)
-        resetMouseState()
-        if shouldInvokePrimaryAction {
-            performPrimaryAction(primaryAction)
-        }
+        super.mouseUp(with: event)
     }
 
     override func rightMouseDown(with event: NSEvent) {
@@ -219,48 +201,29 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource {
         endedAt screenPoint: NSPoint,
         operation: NSDragOperation
     ) {
-        sidebarDragState?.resetInteractionState()
-        resetMouseState()
+        pointerSessionAuthority?.nativeDragEnded(from: self)
     }
 
     func draggingSession(
         _ session: NSDraggingSession,
         movedTo screenPoint: NSPoint
     ) {
-        guard didStartDrag,
-              let locations = SidebarDragLocationMapper.sourceLocationsFromScreenPoint(
-                callbackScreenPoint: screenPoint,
-                in: self
-              ) else { return }
-        updateInternalDragState(
-            at: locations.dropLocation,
-            previewLocation: locations.previewLocation
+        pointerSessionAuthority?.nativeDragMoved(
+            from: self,
+            to: screenPoint
         )
     }
 
-    private func applyEffectiveInteractionEnabled() {
-        guard isInteractive != isConfigurationInteractionEnabled else { return }
-
-        if !isConfigurationInteractionEnabled,
-           didStartDrag,
-           !shouldPreserveDragStateOnTeardown {
-            sidebarDragState?.resetInteractionState()
-        }
-
-        isInteractive = isConfigurationInteractionEnabled
-        resetMouseState()
-    }
-
-    func cancelPrimaryMouseTracking() {
-        resetMouseState()
+    func cancelPointerSession() {
+        pointerSessionAuthority?.cancel(presentedBy: self)
     }
 
     func prepareForDismantle() {
-        isConfigurationInteractionEnabled = false
-        applyEffectiveInteractionEnabled()
+        pointerSessionAuthority?.detach(self)
+        isInteractive = false
         itemConfiguration = SidebarAppKitItemConfiguration()
         contextMenuController = nil
-        resetMouseState()
+        middleMouseDownPoint = nil
     }
 
     func shouldCaptureInteraction(
@@ -275,7 +238,9 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource {
             if shouldPresentMenu(trigger: .leftMouseDown, at: point) {
                 return true
             }
-            return shouldCapturePrimaryAction(at: point) || shouldCaptureDrag(at: point)
+            return shouldCapturePageActivation(at: point)
+                || shouldCaptureReleaseAction(at: point)
+                || shouldCaptureDrag(at: point)
         case .rightMouseDown?:
             return shouldPresentMenu(trigger: .rightMouseDown, at: point)
         case .otherMouseDown?, .otherMouseUp?:
@@ -297,13 +262,16 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource {
             : 0
         switch eventType {
         case .leftMouseDown?:
+            if shouldCaptureReleaseAction(at: point) {
+                return inputBonus + 40
+            }
             if shouldCaptureDrag(at: point) {
                 return inputBonus + 30
             }
             if shouldPresentMenu(trigger: .leftMouseDown, at: point) {
                 return inputBonus + 20
             }
-            if shouldCapturePrimaryAction(at: point) {
+            if shouldCapturePageActivation(at: point) {
                 return inputBonus + 10
             }
         case .rightMouseDown?:
@@ -347,19 +315,30 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource {
         return !configuration.exclusionZones.contains { $0.contains(point, in: bounds) }
     }
 
-    private func shouldCapturePrimaryAction(at point: NSPoint) -> Bool {
-        guard itemConfiguration.primaryAction != nil || itemConfiguration.dragSource?.onActivate != nil,
+    private func shouldCapturePageActivation(at point: NSPoint) -> Bool {
+        guard itemConfiguration.pageActivation != nil,
               bounds.contains(point)
         else {
             return false
         }
 
-        return !isInPrimaryActionExclusionZone(point)
+        return !isInActionExclusionZone(point)
     }
 
-    private func isInPrimaryActionExclusionZone(_ point: NSPoint) -> Bool {
-        guard let dragSource = itemConfiguration.dragSource else { return false }
-        return dragSource.exclusionZones.contains { $0.contains(point, in: bounds) }
+    private func shouldCaptureReleaseAction(at point: NSPoint) -> Bool {
+        guard itemConfiguration.releaseAction != nil,
+              bounds.contains(point)
+        else {
+            return false
+        }
+
+        return !isInActionExclusionZone(point)
+    }
+
+    private func isInActionExclusionZone(_ point: NSPoint) -> Bool {
+        itemConfiguration.primaryActionExclusionZones.contains {
+            $0.contains(point, in: bounds)
+        }
     }
 
     private func shouldHandleMiddleClick(_ event: NSEvent, at point: NSPoint) -> Bool {
@@ -389,100 +368,6 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource {
         )
     }
 
-    private func startDrag(
-        with event: NSEvent,
-        sessionEvent: NSEvent,
-        anchorPoint: CGPoint?
-    ) {
-        guard let configuration = itemConfiguration.dragSource,
-              isInteractive,
-              configuration.isEnabled,
-              allowsTransientDragSourceHitTesting,
-              let dragScope = itemConfiguration.dragScope,
-              let sidebarDragState
-        else {
-            return
-        }
-
-        let point = convert(event.locationInWindow, from: nil)
-        let resolvedAnchorPoint = anchorPoint ?? point
-        let previewSourceSize = configuration.previewSourceGeometry?.size
-            ?? bounds.size
-        let previewAnchorPoint = configuration.previewSourceGeometry?
-            .anchor(forLocalPoint: resolvedAnchorPoint)
-            ?? resolvedAnchorPoint
-        guard let previewSession = SidebarDragPreviewSessionFactory.make(
-            configuration: configuration,
-            sourceSize: previewSourceSize,
-            sourceOffsetFromBottomLeading: previewAnchorPoint
-        ) else { return }
-
-        didStartDrag = true
-        pointerInteractionState?.transitionPointerSessionToDrag(owner: self)
-        let dragLocation = SidebarDragLocationMapper.swiftUIGlobalPoint(
-            fromLocalPoint: point,
-            in: self
-        )
-        let previewLocation = SidebarDragLocationMapper.swiftUIPreviewPoint(
-            fromLocalPoint: point,
-            in: self
-        )
-        sidebarDragState.beginInternalDragSession(
-            itemId: configuration.item.tabId,
-            location: dragLocation,
-            previewLocation: previewLocation,
-            previewKind: configuration.previewKind,
-            previewAssets: previewSession.previewAssets,
-            previewModel: previewSession.previewModel,
-            scope: dragScope
-        )
-        sidebarDragState.geometry.flushDeferredGeometryForDragStart()
-        updateInternalDragState(
-            at: dragLocation,
-            previewLocation: previewLocation
-        )
-
-        let dragItem = NSDraggingItem(
-            pasteboardWriter: configuration.item.pasteboardItem(scope: dragScope)
-        )
-        let frame = NSRect(
-            x: resolvedAnchorPoint.x,
-            y: resolvedAnchorPoint.y,
-            width: 1,
-            height: 1
-        )
-        dragItem.setDraggingFrame(frame, contents: Self.transparentDragImage)
-
-        let session = beginDraggingSession(with: [dragItem], event: sessionEvent, source: self)
-        session.animatesToStartingPositionsOnCancelOrFail = true
-    }
-
-    private func updateInternalDragState(
-        at location: CGPoint,
-        previewLocation: CGPoint? = nil
-    ) {
-        guard let configuration = itemConfiguration.dragSource,
-              let sidebarDragState else { return }
-        SidebarDropResolver.updateState(
-            location: location,
-            previewLocation: previewLocation,
-            state: sidebarDragState,
-            draggedItem: configuration.item
-        )
-    }
-
-    private var shouldPreserveDragStateOnTeardown: Bool {
-        guard didStartDrag,
-              let dragItemID = itemConfiguration.dragSource?.item.tabId,
-              let state = sidebarDragState else {
-            return false
-        }
-
-        return state.isDragging
-            && state.isInternalDragSession
-            && state.activeDragItemId == dragItemID
-    }
-
     private var allowsTransientDragSourceHitTesting: Bool {
         pointerInteractionState?.allowsSidebarDragSourceHitTesting ?? true
     }
@@ -491,36 +376,54 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource {
         itemConfiguration.interactionState ?? contextMenuController?.interactionState
     }
 
-    private func resetMouseState() {
-        let pointerInteractionState = pointerInteractionState
-        let shouldCancelArmedGeometry = didArmDragGeometry && !didStartDrag
-        mouseDownEvent = nil
-        mouseDownPoint = nil
-        mouseDownCanStartDrag = false
-        middleMouseDownPoint = nil
-        didStartDrag = false
-        didArmDragGeometry = false
-        isTrackingDragGesture = false
-        pointerInteractionState?.endPointerSession(self)
-        if shouldCancelArmedGeometry {
-            sidebarDragState?.cancelArmedDragGeometry()
+    private var pointerSessionAuthority: SidebarPointerSessionAuthority? {
+        pointerInteractionState?.pointerSessions
+    }
+
+    private func primaryPointerIntent(
+        capturesDrag: Bool,
+        capturesReleaseAction: Bool
+    ) -> SidebarPrimaryPointerIntent {
+        let drag: SidebarPrimaryPointerIntent.Drag?
+        if capturesDrag,
+           let source = itemConfiguration.dragSource,
+           let sidebarDragState {
+            drag = SidebarPrimaryPointerIntent.Drag(
+                source: source,
+                scope: itemConfiguration.dragScope,
+                state: sidebarDragState
+            )
+        } else {
+            drag = nil
         }
+
+        return SidebarPrimaryPointerIntent(
+            sourceID: itemConfiguration.sourceID,
+            showsPressVisual: itemConfiguration.showsPressVisual,
+            drag: drag,
+            release: capturesReleaseAction ? configuredReleaseIntent : nil
+        )
     }
 
-    private var hasInFlightClickGesture: Bool {
-        (isTrackingDragGesture && !didStartDrag) || middleMouseDownPoint != nil
+    private var configuredReleaseIntent: SidebarPrimaryPointerIntent.Release? {
+        guard let action = itemConfiguration.releaseAction else { return nil }
+        return SidebarPrimaryPointerIntent.Release(
+            action: action,
+            exclusionZones: itemConfiguration.primaryActionExclusionZones,
+            suppressesAnimation: itemConfiguration.suppressesActionAnimation
+        )
     }
 
-    private func performPrimaryAction(_ primaryAction: (() -> Void)?) {
-        guard let primaryAction else { return }
-        if itemConfiguration.suppressesPrimaryActionAnimation {
+    private func performAction(_ action: (() -> Void)?) {
+        guard let action else { return }
+        if itemConfiguration.suppressesActionAnimation {
             var transaction = Transaction()
             transaction.disablesAnimations = true
             transaction.animation = nil
-            withTransaction(transaction, primaryAction)
+            withTransaction(transaction, action)
             return
         }
-        primaryAction()
+        action()
     }
 
     var recoveryMetadata: SidebarInteractiveOwnerRecoveryMetadata {
@@ -548,10 +451,4 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource {
 
         return "dragKey"
     }
-}
-
-private extension SidebarInteractiveItemView {
-    static let transparentDragImage: NSImage = {
-        NSImage(size: NSSize(width: 1, height: 1))
-    }()
 }

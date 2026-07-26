@@ -17,13 +17,13 @@ struct SplitGroupSidebarRow: View {
     let emptySplitCreation: EmptySplitCreationWorkflow
     let groupEditor: SidebarSplitGroupEditorPresentationService
     var groupContextMenuActions: SplitGroupContextMenuActions = .empty
-    let groupAction: SplitGroupSidebarAction?
+    var groupAction: SplitGroupSidebarAction? = nil
     var memberAction: (SplitGroupSidebarItem) -> SplitGroupSidebarMemberAction? = { _ in nil }
     var dragSource: (SplitGroupSidebarItem) -> SidebarDragSourceConfiguration? = { _ in nil }
     let contextMenuEntries: (SplitGroupSidebarItem) -> [SidebarContextMenuEntry]
     let onActivateMember: (SplitMemberID) -> Void
     var onMemberAction: (SplitGroupSidebarItem) -> Void = { _ in }
-    var onGroupAction: () -> Void = {}
+    var onGroupAction: (SplitGroupSidebarAction) -> Void = { _ in }
 
     @Environment(BrowserWindowState.self) var windowState
     @Environment(\.accessibilityReduceMotion) var reduceMotion
@@ -32,7 +32,6 @@ struct SplitGroupSidebarRow: View {
     @Environment(\.chromeThemeTokens) var scopedChromeTokens
     @Environment(\.sidebarWindowSelectionSnapshot) var sidebarSelection
     @State var isRowHovered = false
-    @State private var isActionHovered = false
     @State var displayedItems: [SplitGroupSidebarItem] = []
     @State var departingItemIds = Set<SplitMemberID>()
 
@@ -106,9 +105,12 @@ struct SplitGroupSidebarRow: View {
                     for: index,
                     in: rowItems
                 ),
-                reservesTrailingAction: itemAction != nil || (
-                    isLastVisibleItem(at: index, in: rowItems)
-                        && groupAction != nil
+                trailingActionExclusionWidth: trailingActionExclusionWidth(
+                    hasMemberAction: itemAction != nil,
+                    isLastVisibleItem: isLastVisibleItem(
+                        at: index,
+                        in: rowItems
+                    )
                 ),
                 memberAction: itemAction,
                 isRowHovered: isRowHovered,
@@ -188,8 +190,11 @@ struct SplitGroupSidebarRow: View {
             isInteractionEnabled: isAppKitInteractionEnabled,
             surfaceKind: .row,
             dragSource: dragSource(activationItem),
-            primaryAction: { activate(activationItem) },
-            onMiddleClick: groupAction == nil ? nil : onGroupAction,
+            primaryActionExclusionZones:
+                groupActionExclusionZones,
+            pageActivation: { activate(activationItem) },
+            showsPressVisual: !isSavedGroupUnloaded,
+            onMiddleClick: middleClickGroupAction,
             sourceID: "split-group-custom-icon-\(group.id.uuidString)",
             entries: { groupContextMenuEntries }
         )
@@ -270,7 +275,10 @@ struct SplitGroupSidebarRow: View {
                 at: index,
                 in: rowItems
             ),
-            showsGroupAction: showsGroupAction
+            groupActionTrailingPadding:
+                showsGroupAction
+                    ? SidebarRowLayout.trailingActionPadding
+                    : 0
         )
     }
 
@@ -280,7 +288,7 @@ struct SplitGroupSidebarRow: View {
         if memberAction(item) != nil {
             return { onMemberAction(item) }
         }
-        return groupAction == nil ? nil : onGroupAction
+        return middleClickGroupAction
     }
 
     private func isLastVisibleItem(
@@ -293,41 +301,15 @@ struct SplitGroupSidebarRow: View {
     @ViewBuilder
     private var trailingActionButton: some View {
         if let groupAction {
-            Button(action: onGroupAction) {
-                Image(systemName: groupAction.systemImageName)
-                    .font(SidebarThemeTokens.Typography.trailingAction)
-                    .foregroundColor(tokens.primaryText)
-                    .frame(
-                        width: SidebarRowLayout.trailingActionSize,
-                        height: SidebarRowLayout.trailingActionSize
-                    )
-                    .background(
-                        displayIsActionHovering
-                            ? actionBackground : Color.clear
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-            }
-            .buttonStyle(
-                SidebarZenActionButtonStyle(
-                    isEnabled: showsGroupAction && !freezesHoverState
-                )
-            )
-            .opacity(showsGroupAction ? 1 : 0)
-            .sidebarZenActionOpacity(showsGroupAction)
-            .allowsHitTesting(showsGroupAction && !freezesHoverState)
-            .accessibilityHidden(!showsGroupAction)
-            .sidebarHover(
-                $isActionHovered,
-                isEnabled: showsGroupAction && isAppKitInteractionEnabled
-            )
-            .accessibilityIdentifier(
-                "\(groupAction.accessibilityPrefix)-\(group.id.uuidString)"
-            )
-            .help(groupAction.help)
-            .sidebarAppKitPrimaryAction(
-                isEnabled: showsGroupAction && !freezesHoverState,
+            SplitGroupTrailingActionButton(
+                action: groupAction,
+                groupID: group.id,
+                showsAction: showsGroupAction,
                 isInteractionEnabled: isAppKitInteractionEnabled,
-                action: onGroupAction
+                freezesHoverState: freezesHoverState,
+                textColor: tokens.primaryText,
+                hoverBackground: actionBackground,
+                perform: { onGroupAction(groupAction) }
             )
         }
     }
@@ -336,12 +318,35 @@ struct SplitGroupSidebarRow: View {
         windowState.sidebarInteractionState.freezesSidebarHoverState
     }
 
-    private var displayIsActionHovering: Bool {
-        isActionHovered
-    }
-
     private var actionBackground: Color {
         isFocusedGroup ? tokens.fieldBackgroundHover : tokens.fieldBackground
+    }
+
+    private var groupActionExclusionWidth: CGFloat {
+        guard groupAction != nil else { return 0 }
+        return SidebarRowLayout.trailingActionPadding
+            + SidebarRowLayout.trailingInset
+    }
+
+    private var groupActionExclusionZones: [SidebarDragSourceExclusionZone] {
+        guard groupActionExclusionWidth > 0 else { return [] }
+        return [.trailingStrip(groupActionExclusionWidth)]
+    }
+
+    private var middleClickGroupAction: (() -> Void)? {
+        guard groupAction == .unload else { return nil }
+        return { onGroupAction(.unload) }
+    }
+
+    private func trailingActionExclusionWidth(
+        hasMemberAction: Bool,
+        isLastVisibleItem: Bool
+    ) -> CGFloat {
+        if hasMemberAction {
+            return SidebarRowLayout.trailingActionSize
+                + SidebarRowLayout.trailingActionGap * 2
+        }
+        return isLastVisibleItem ? groupActionExclusionWidth : 0
     }
 
     var groupContextMenuEntries: [SidebarContextMenuEntry] {
@@ -403,6 +408,55 @@ struct SplitGroupSidebarRow: View {
             }
         }
         return actions
+    }
+}
+
+private struct SplitGroupTrailingActionButton: View {
+    let action: SplitGroupSidebarAction
+    let groupID: UUID
+    let showsAction: Bool
+    let isInteractionEnabled: Bool
+    let freezesHoverState: Bool
+    let textColor: Color
+    let hoverBackground: Color
+    let perform: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: perform) {
+            Image(systemName: action.systemImageName)
+                .font(SidebarThemeTokens.Typography.trailingAction)
+                .foregroundColor(textColor)
+                .frame(
+                    width: SidebarRowLayout.trailingActionSize,
+                    height: SidebarRowLayout.trailingActionSize
+                )
+                .background(isHovered ? hoverBackground : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(
+            SidebarZenActionButtonStyle(
+                isEnabled: showsAction && !freezesHoverState
+            )
+        )
+        .opacity(showsAction ? 1 : 0)
+        .sidebarZenActionOpacity(showsAction)
+        .allowsHitTesting(showsAction && !freezesHoverState)
+        .accessibilityHidden(!showsAction)
+        .sidebarHover(
+            $isHovered,
+            isEnabled: showsAction && isInteractionEnabled
+        )
+        .accessibilityIdentifier(
+            "\(action.accessibilityPrefix)-\(groupID.uuidString)"
+        )
+        .help(action.help)
+        .sidebarAppKitPrimaryAction(
+            isEnabled: showsAction && !freezesHoverState,
+            isInteractionEnabled: isInteractionEnabled,
+            action: perform
+        )
     }
 }
 

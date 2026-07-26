@@ -16,11 +16,14 @@ struct SidebarAppKitItemBridgeUpdateSignature: Equatable {
     let dragPreviewKind: SidebarDragPreviewKind?
     let dragIsEnabled: Bool?
     let dragScope: SidebarDragScope?
-    let hasPrimaryAction: Bool
+    let primaryActionExclusionZones: [SidebarDragSourceExclusionZone]
+    let hasPageActivation: Bool
+    let hasReleaseAction: Bool
+    let showsPressVisual: Bool
     let hasMiddleClick: Bool
     let sourceID: String?
     let routingPriorityBoost: Int
-    let suppressesPrimaryActionAnimation: Bool
+    let suppressesActionAnimation: Bool
     let presentationMode: SidebarPresentationMode
     let supportsPrimaryMouseTracking: Bool
 }
@@ -48,18 +51,21 @@ extension SidebarAppKitItemConfiguration {
             dragPreviewKind: dragSource?.previewKind,
             dragIsEnabled: dragSource?.isEnabled,
             dragScope: dragScope,
-            hasPrimaryAction: primaryAction != nil,
+            primaryActionExclusionZones: primaryActionExclusionZones,
+            hasPageActivation: pageActivation != nil,
+            hasReleaseAction: releaseAction != nil,
+            showsPressVisual: showsPressVisual,
             hasMiddleClick: onMiddleClick != nil,
             sourceID: sourceID,
             routingPriorityBoost: routingPriorityBoost,
-            suppressesPrimaryActionAnimation: suppressesPrimaryActionAnimation,
+            suppressesActionAnimation: suppressesActionAnimation,
             presentationMode: presentationMode,
             supportsPrimaryMouseTracking: supportsPrimaryMouseTracking
         )
     }
 
     var supportsPrimaryMouseTracking: Bool {
-        primaryAction != nil || dragSource?.isEnabled == true || dragSource?.onActivate != nil
+        pageActivation != nil || releaseAction != nil || dragSource?.isEnabled == true
     }
 
     var interactionIdentity: SidebarAppKitItemInteractionIdentity {

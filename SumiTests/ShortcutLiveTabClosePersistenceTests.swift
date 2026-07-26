@@ -1,4 +1,5 @@
 import AppKit
+import WebKit
 import XCTest
 
 @testable import Sumi
@@ -24,11 +25,18 @@ final class ShortcutLiveTabClosePersistenceTests: XCTestCase {
 
     func testBackgroundCloseDoesNotWriteUnchangedWindowSession() throws {
         let fixture = try makeFixture(hasFallback: true, liveTabIsSelected: false)
+        let currentWebView = WKWebView()
+        try XCTUnwrap(fixture.fallback).replaceUntrackedWebView(currentWebView)
 
         XCTAssertTrue(fixture.closeLiveTab())
 
         XCTAssertTrue(fixture.probe.commits.isEmpty)
         XCTAssertEqual(fixture.windowState.currentTabId, fixture.fallback?.id)
+        XCTAssertIdentical(
+            fixture.fallback?.resolvedCurrentWebView(),
+            currentWebView
+        )
+        XCTAssertFalse(fixture.probe.didPerformVisualHandoff)
     }
 
     func testSelectedCloseWithoutFallbackCommitsFinalEmptyStateOnce() throws {

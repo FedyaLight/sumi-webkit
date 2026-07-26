@@ -5,27 +5,22 @@ struct ShortcutHostedSplitUnloadResult {
     let unloadedTabCount: Int
 }
 
-/// Stops presenting a shortcut-sidebar split in one window. The durable group
-/// is already canonical and is therefore never rewritten during unload.
+/// Retires one shortcut-sidebar split's runtime pages in a window. The durable
+/// group is never rewritten; foreground presentation changes only when that
+/// exact group owns it.
 @MainActor
 final class ShortcutHostedSplitUnloadService {
-    private let admission: ShortcutHostedSplitUnloadAdmission
-    private let splitMembership: SplitGroupMembershipQuery
+    private let planner: ShortcutHostedSplitUnloadPlanner
     private let retirement: ShortcutLiveTabRetirementService
-    private let fallback: ShortcutHostedSplitFallbackQuery
     private let visuals: BrowserWindowVisualCoordinator
 
     init(
-        admission: ShortcutHostedSplitUnloadAdmission,
-        splitMembership: SplitGroupMembershipQuery,
+        planner: ShortcutHostedSplitUnloadPlanner,
         retirement: ShortcutLiveTabRetirementService,
-        fallback: ShortcutHostedSplitFallbackQuery,
         visuals: BrowserWindowVisualCoordinator
     ) {
-        self.admission = admission
-        self.splitMembership = splitMembership
+        self.planner = planner
         self.retirement = retirement
-        self.fallback = fallback
         self.visuals = visuals
     }
 
@@ -34,35 +29,25 @@ final class ShortcutHostedSplitUnloadService {
         _ group: SumiDomain.SplitGroup,
         in windowState: BrowserWindowState
     ) -> ShortcutHostedSplitUnloadResult? {
-        guard let pinIDs = admission.admittedPinIDs(for: group) else {
+        guard let plan = planner.plan(group: group, in: windowState) else {
             return nil
         }
-        var target = windowState.unpublishedShortcutMutationState
-        target.splitSelection = nil
-        if let fallback = fallback.visibleRegularTab(in: windowState) {
-            _ = WindowTabSelectionStateApplicator.applyFallback(
-                fallback,
-                to: &target,
-                splitMembership: splitMembership,
-                updateSpaceFromTab: true,
-                rememberSelection: true
-            )
-        } else {
-            target.currentTabId = nil
-            target.currentShortcutPinId = nil
-            target.currentShortcutPinRole = nil
-            target.isShowingEmptyState = true
-        }
         guard let preparedRetirement = retirement.prepareRetirements(
-            pinIds: pinIDs,
+            pinIds: plan.pinIDs,
             in: windowState.id,
-            targetWindowState: target
+            targetWindowState: plan.targetWindowState
         ), preparedRetirement.result.didRetire else { return nil }
         let unloadedTabCount = preparedRetirement.result.retiredTabIds.count
-        _ = visuals.performImmediateVisualHandoffIfPossible(in: windowState)
+        if plan.replacesPresentation {
+            _ = visuals.performImmediateVisualHandoffIfPossible(
+                in: windowState
+            )
+        }
 
         _ = retirement.finish(preparedRetirement)
-        visuals.refreshCompositor(for: windowState)
+        if plan.replacesPresentation {
+            visuals.refreshCompositor(for: windowState)
+        }
         return ShortcutHostedSplitUnloadResult(
             unloadedTabCount: unloadedTabCount
         )

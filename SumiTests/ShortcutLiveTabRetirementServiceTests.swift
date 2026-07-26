@@ -8,6 +8,48 @@ import XCTest
 
 @MainActor
 final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
+    func testRetirementProjectionReportsSelectionChangeFromFinalOverride() {
+        let windowID = UUID()
+        let spaceID = UUID()
+        let selectedTabID = UUID()
+        let selectedPinID = UUID()
+        let retiredPinID = UUID()
+        let retiredTab = Tab(
+            url: URL(string: "https://background.example")!,
+            name: "Background",
+            spaceId: spaceID,
+            loadsCachedFaviconOnInit: false
+        )
+        let entry = LiveShortcutTabEntry(
+            windowId: windowID,
+            pinId: retiredPinID,
+            tab: retiredTab,
+            presentationPage: LiveShortcutPresentationPageReceipt(
+                windowID: windowID,
+                spaceID: spaceID,
+                profileID: nil
+            )
+        )
+        let source = BrowserWindowShortcutMutationState(
+            currentTabId: selectedTabID,
+            currentSpaceId: spaceID,
+            currentShortcutPinId: selectedPinID
+        )
+        var override = source
+        override.currentTabId = UUID()
+        override.currentShortcutPinId = nil
+
+        let update = ShortcutLiveRetirementWindowProjection
+            .removingInstances(
+                [entry],
+                from: source,
+                targetOverride: override
+            )
+
+        XCTAssertEqual(update.target, override)
+        XCTAssertTrue(update.didClearCurrentSelection)
+    }
+
     func testMissingRuntimeLeavesLiveRegistryUnchanged() throws {
         let container = try makeInMemoryStartupModelContainer()
         let webViewSessions = WebViewSessionRepository()

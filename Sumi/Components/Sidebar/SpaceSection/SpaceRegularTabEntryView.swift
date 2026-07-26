@@ -31,7 +31,6 @@ struct SpaceRegularTabEntryView: View {
                 previewKind: .row,
                 previewIcon: tab.favicon,
                 exclusionZones: dragExclusionZones,
-                onActivate: { actionOwner.activate(tab) },
                 isEnabled: !tab.isRenaming && isInteractive
             ),
             isAppKitInteractionEnabled: isInteractive,

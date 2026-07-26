@@ -80,17 +80,9 @@ struct SpaceRegularSplitGroupEntryView: View {
             for: item,
             in: group,
             faviconImageReader: browserContext.faviconImageReader,
-            shortcutPin: { regularTabTargets.shortcutPin(by: $0) },
             splitPresentation: splitDragPresentation,
             isGroupSelected:
-                sidebarSelection.splitSelection?.groupID == group.id,
-            onActivateMember: {
-                browserContext.splitFocusCommands.focusGroup(
-                    group.id,
-                    item.id,
-                    windowState.id
-                )
-            }
+                sidebarSelection.splitSelection?.groupID == group.id
         )
     }
 

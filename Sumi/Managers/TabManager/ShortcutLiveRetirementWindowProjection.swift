@@ -15,12 +15,12 @@ enum ShortcutLiveRetirementWindowProjection {
     ) -> Update {
         var target = source
         entries.forEach { removeInstance($0, from: &target) }
-        let didClear = target.currentTabId != source.currentTabId
-            || target.currentShortcutPinId != source.currentShortcutPinId
         if let targetOverride { target = targetOverride }
         return Update(
             target: target,
-            didClearCurrentSelection: didClear,
+            didClearCurrentSelection:
+                target.currentTabId != source.currentTabId
+                || target.currentShortcutPinId != source.currentShortcutPinId,
             requiresPersistence: target != source
         )
     }

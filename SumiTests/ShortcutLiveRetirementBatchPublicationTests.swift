@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import Observation
 import SumiDomain
+import WebKit
 import XCTest
 
 @testable import Sumi
@@ -203,19 +204,7 @@ final class ShortcutLiveRetirementBatchPublicationTests: XCTestCase {
         )
         let compositorVersion = fixture.window.compositorInvalidation
             .compositorVersion
-        let service = ShortcutHostedSplitUnloadService(
-            admission: ShortcutHostedSplitUnloadAdmission(
-                runtimeConnection: tabs.runtimePortConnection,
-                splitGroups: tabs.splitGroupStore
-            ),
-            splitMembership: tabs.splitGroupMembership,
-            retirement: tabs.shortcutLiveTabRetirement,
-            fallback: ShortcutHostedSplitFallbackQuery(
-                spaces: tabs.spaceStateOwner,
-                regularTabs: tabs.regularTabCollectionOwner
-            ),
-            visuals: tabs.shellRuntime.windowVisuals
-        )
+        let service = makeHostedSplitUnload(for: tabs)
         let oracle = PublicationOracle()
         let windowPublished = expectation(
             description: "Window publishes its terminal hosted-split state"
@@ -300,19 +289,7 @@ final class ShortcutLiveRetirementBatchPublicationTests: XCTestCase {
             fallbackGroup,
             persist: false
         ))
-        let service = ShortcutHostedSplitUnloadService(
-            admission: ShortcutHostedSplitUnloadAdmission(
-                runtimeConnection: browser.runtimePortConnection,
-                splitGroups: browser.splitGroupStore
-            ),
-            splitMembership: browser.splitGroupMembership,
-            retirement: browser.shortcutLiveTabRetirement,
-            fallback: ShortcutHostedSplitFallbackQuery(
-                spaces: browser.spaceStateOwner,
-                regularTabs: browser.regularTabCollectionOwner
-            ),
-            visuals: browser.shellRuntime.windowVisuals
-        )
+        let service = makeHostedSplitUnload(for: browser)
 
         XCTAssertEqual(service.unloadShortcutHostedSplitGroup(
             fixture.group,
@@ -336,6 +313,143 @@ final class ShortcutLiveRetirementBatchPublicationTests: XCTestCase {
         XCTAssertEqual(Set(presentation.visibleTabIDs), [first.id, second.id])
     }
 
+    func testBackgroundHostedSplitUnloadPreservesForegroundLauncherAndWebView()
+        throws {
+        let fixture = try PublicationFixture(
+            pinCount: 2,
+            hostedSplit: true
+        )
+        let browser = fixture.browser
+        let spaceID = try XCTUnwrap(fixture.window.currentSpaceId)
+        let foregroundPin = try XCTUnwrap(
+            browser.shortcutPinStoreOwner.insert(
+                PublicationFixture.makePin(index: 99, spaceID: spaceID),
+                at: 2
+            )
+        )
+        let foregroundTab = try XCTUnwrap(
+            browser.shortcutTabMaterializer.materialize(
+                foregroundPin,
+                in: fixture.window.id,
+                currentSpaceId: spaceID
+            )
+        )
+        let foregroundWebView = WKWebView()
+        foregroundTab.replaceUntrackedWebView(foregroundWebView)
+        fixture.window.currentTabId = foregroundTab.id
+        fixture.window.currentShortcutPinId = foregroundPin.id
+        fixture.window.currentShortcutPinRole = foregroundPin.role
+        fixture.window.splitSelection = nil
+        fixture.window.isShowingEmptyState = false
+        var handoffCount = 0
+        let compositorContainer = NSView()
+        browser.webViewRuntime.compositorRuntime.registerContainer(
+            compositorContainer,
+            for: fixture.window.id,
+            immediateVisualHandoffHandler: {
+                handoffCount += 1
+                return true
+            }
+        )
+        let service = makeHostedSplitUnload(for: browser)
+
+        XCTAssertEqual(
+            service.unloadShortcutHostedSplitGroup(
+                fixture.group,
+                in: fixture.window
+            )?.unloadedTabCount,
+            2
+        )
+
+        XCTAssertEqual(fixture.window.currentTabId, foregroundTab.id)
+        XCTAssertEqual(
+            fixture.window.currentShortcutPinId,
+            foregroundPin.id
+        )
+        XCTAssertNil(fixture.window.splitSelection)
+        XCTAssertFalse(fixture.window.isShowingEmptyState)
+        XCTAssertIdentical(
+            foregroundTab.resolvedCurrentWebView(),
+            foregroundWebView
+        )
+        XCTAssertEqual(handoffCount, 0)
+        withExtendedLifetime(compositorContainer) {}
+    }
+
+    func testBackgroundHostedSplitUnloadPreservesForegroundSplitGroup()
+        throws {
+        let fixture = try PublicationFixture(
+            pinCount: 2,
+            hostedSplit: true
+        )
+        let browser = fixture.browser
+        let spaceID = try XCTUnwrap(fixture.window.currentSpaceId)
+        let foregroundPins = try (2..<4).map { index in
+            try XCTUnwrap(browser.shortcutPinStoreOwner.insert(
+                PublicationFixture.makePin(index: index, spaceID: spaceID),
+                at: index
+            ))
+        }
+        let foregroundTabs = try foregroundPins.map { pin in
+            try XCTUnwrap(browser.shortcutTabMaterializer.materialize(
+                pin,
+                in: fixture.window.id,
+                currentSpaceId: spaceID
+            ))
+        }
+        let foregroundGroup = try XCTUnwrap(SplitGroup.make(
+            members: foregroundPins.map { .shortcutPin($0.id) },
+            layoutKind: .horizontal,
+            container: .shortcutSidebar(
+                spaceId: spaceID,
+                profileId: nil,
+                folderId: nil,
+                index: 1
+            )
+        ))
+        XCTAssertTrue(browser.splitGroupMutations.insert(
+            foregroundGroup,
+            persist: false
+        ))
+        let foregroundWebView = WKWebView()
+        foregroundTabs[0].replaceUntrackedWebView(foregroundWebView)
+        fixture.window.currentTabId = foregroundTabs[0].id
+        fixture.window.currentShortcutPinId = foregroundPins[0].id
+        fixture.window.currentShortcutPinRole = foregroundPins[0].role
+        fixture.window.splitSelection = WindowSplitSelection(
+            groupID: foregroundGroup.id,
+            activeMemberID: .shortcutPin(foregroundPins[0].id)
+        )
+
+        XCTAssertEqual(
+            makeHostedSplitUnload(for: browser)
+                .unloadShortcutHostedSplitGroup(
+                    fixture.group,
+                    in: fixture.window
+                )?.unloadedTabCount,
+            2
+        )
+
+        XCTAssertEqual(fixture.window.currentTabId, foregroundTabs[0].id)
+        XCTAssertEqual(
+            fixture.window.splitSelection,
+            WindowSplitSelection(
+                groupID: foregroundGroup.id,
+                activeMemberID: .shortcutPin(foregroundPins[0].id)
+            )
+        )
+        XCTAssertIdentical(
+            foregroundTabs[0].resolvedCurrentWebView(),
+            foregroundWebView
+        )
+        guard case .ready(let presentation) = browser.splitQuery.resolution(
+            in: fixture.window.id
+        ) else {
+            return XCTFail("Expected foreground Split Group presentation")
+        }
+        XCTAssertEqual(presentation.groupID, foregroundGroup.id)
+    }
+
     func testFolderSplitUnloadRetiresWholeGroupWithoutCollapsingFolder()
         throws {
         let fixture = try PublicationFixture(
@@ -350,19 +464,7 @@ final class ShortcutLiveRetirementBatchPublicationTests: XCTestCase {
             groups: browser.splitGroupStore,
             pins: browser.shortcutPinCollectionStateOwner,
             pinCommands: browser.sidebarPinCommands,
-            hostedUnload: ShortcutHostedSplitUnloadService(
-                admission: ShortcutHostedSplitUnloadAdmission(
-                    runtimeConnection: browser.runtimePortConnection,
-                    splitGroups: browser.splitGroupStore
-                ),
-                splitMembership: browser.splitGroupMembership,
-                retirement: browser.shortcutLiveTabRetirement,
-                fallback: ShortcutHostedSplitFallbackQuery(
-                    spaces: browser.spaceStateOwner,
-                    regularTabs: browser.regularTabCollectionOwner
-                ),
-                visuals: browser.shellRuntime.windowVisuals
-            ),
+            hostedUnload: makeHostedSplitUnload(for: browser),
             membership: browser.tabCollectionMembershipOwner,
             close: browser.tabCloseOrchestration,
             notifications: browser.notificationPresenter
@@ -399,19 +501,7 @@ final class ShortcutLiveRetirementBatchPublicationTests: XCTestCase {
             groups: browser.splitGroupStore,
             pins: browser.shortcutPinCollectionStateOwner,
             pinCommands: browser.sidebarPinCommands,
-            hostedUnload: ShortcutHostedSplitUnloadService(
-                admission: ShortcutHostedSplitUnloadAdmission(
-                    runtimeConnection: browser.runtimePortConnection,
-                    splitGroups: browser.splitGroupStore
-                ),
-                splitMembership: browser.splitGroupMembership,
-                retirement: browser.shortcutLiveTabRetirement,
-                fallback: ShortcutHostedSplitFallbackQuery(
-                    spaces: browser.spaceStateOwner,
-                    regularTabs: browser.regularTabCollectionOwner
-                ),
-                visuals: browser.shellRuntime.windowVisuals
-            ),
+            hostedUnload: makeHostedSplitUnload(for: browser),
             membership: browser.tabCollectionMembershipOwner,
             close: browser.tabCloseOrchestration,
             notifications: browser.notificationPresenter
@@ -571,5 +661,21 @@ final class ShortcutLiveRetirementBatchPublicationTests: XCTestCase {
             icon: SumiPersistentGlyph.spaceDefaultIconValue,
             profileID: nil
         ))
+    }
+
+    private func makeHostedSplitUnload(
+        for browser: BrowserManager
+    ) -> ShortcutHostedSplitUnloadService {
+        ShortcutHostedSplitUnloadService(
+            planner: ShortcutHostedSplitUnloadPlanner(
+                runtimeConnection: browser.runtimePortConnection,
+                groups: browser.splitGroupStore,
+                spaces: browser.spaceStateOwner,
+                regularTabs: browser.regularTabCollectionOwner,
+                splitMembership: browser.splitGroupMembership
+            ),
+            retirement: browser.shortcutLiveTabRetirement,
+            visuals: browser.shellRuntime.windowVisuals
+        )
     }
 }

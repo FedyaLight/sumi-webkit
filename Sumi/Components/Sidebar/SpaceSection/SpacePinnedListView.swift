@@ -171,7 +171,11 @@ struct SpacePinnedListView: View {
             let displayEntries = contentDisplayEntries(
                 from: disclosurePresentation.items
             )
-            let rowIsInteractive = isInteractive && reportsGeometry
+            // Disclosure layout owns drop-geometry readiness, not pointer
+            // eligibility. Existing rows remain interactive while their
+            // presentation changes, matching a stable browser tab element.
+            let rowIsInteractive = isInteractive
+            let reportsDropGeometry = isInteractive && reportsGeometry
 
             SidebarDisclosureTrackLayout(
                 progress: disclosurePresentation.progress,
@@ -208,7 +212,7 @@ struct SpacePinnedListView: View {
                                         geometryGeneration: dragSnapshot.geometryGeneration,
                                         dragSnapshot: dragSnapshot.folderSnapshot,
                                         isInteractive: rowIsInteractive,
-                                        reportsDropGeometry: rowIsInteractive
+                                        reportsDropGeometry: reportsDropGeometry
                                             && !usesUniformDropGeometry
                                     )
                                     .opacity(itemOpacity(folderID))
@@ -238,7 +242,7 @@ struct SpacePinnedListView: View {
                                         topLevelIndex: entry.dropIndex,
                                         geometryGeneration: dragSnapshot.geometryGeneration,
                                         dragSnapshot: dragSnapshot.folderSnapshot,
-                                        reportsDropGeometry: rowIsInteractive
+                                        reportsDropGeometry: reportsDropGeometry
                                             && !usesUniformDropGeometry
                                     )
                                     .opacity(itemOpacity(groupID))
@@ -286,13 +290,13 @@ struct SpacePinnedListView: View {
                     splitPairingMemberIDsByDisclosureRow,
                 leadingInset: disclosureTarget.topPadding,
                 generation: dragSnapshot.geometryGeneration,
-                isEnabled: rowIsInteractive && usesUniformDropGeometry
+                isEnabled: reportsDropGeometry && usesUniformDropGeometry
             )
             .sidebarSectionGeometry(
                 for: .spacePinned,
                 spaceId: space.id,
                 generation: dragSnapshot.geometryGeneration,
-                isEnabled: rowIsInteractive
+                isEnabled: reportsDropGeometry
             )
         }
     }

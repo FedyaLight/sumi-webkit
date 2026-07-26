@@ -171,7 +171,7 @@ final class RegularSplitSegmentResolverTests: XCTestCase {
         )
     }
 
-    func testSavedSplitRowOffersOneUnloadActionOnlyWhileLoaded() throws {
+    func testSavedSplitRowOffersUnloadWhileLoadedAndCloseWhileUnloaded() throws {
         let space = makeSpace()
         let firstPin = makePin(spaceID: space.id)
         let secondPin = makePin(spaceID: space.id)
@@ -208,10 +208,13 @@ final class RegularSplitSegmentResolverTests: XCTestCase {
             ),
             .unload
         )
-        XCTAssertNil(SplitGroupSidebarModel.rowAction(
-            for: group,
-            items: [unloaded]
-        ))
+        XCTAssertEqual(
+            SplitGroupSidebarModel.rowAction(
+                for: group,
+                items: [unloaded]
+            ),
+            .close
+        )
         XCTAssertNil(
             SplitGroupSidebarModel.memberAction(for: loaded, in: group)
         )
@@ -341,7 +344,6 @@ final class RegularSplitSegmentResolverTests: XCTestCase {
             splitLayout: context.splitLayout,
             emptySplitCreation: context.emptySplitCreation,
             groupEditor: context.splitGroupEditor,
-            groupAction: nil,
             memberAction: { item in
                 SplitGroupSidebarModel.memberAction(for: item, in: group)
             },
@@ -404,7 +406,6 @@ final class RegularSplitSegmentResolverTests: XCTestCase {
             for: item,
             in: group,
             faviconImageReader: TabDependencyIsolationDefaults.faviconCapabilities.images,
-            shortcutPin: { _ in nil },
             splitPresentation: SidebarSplitDragPresentation(
                 members: [tab, companion].map { member in
                     SidebarSplitDragPresentation.Member(
@@ -416,8 +417,7 @@ final class RegularSplitSegmentResolverTests: XCTestCase {
                     )
                 }
             ),
-            isGroupSelected: false,
-            onActivateMember: {}
+            isGroupSelected: false
         )
 
         XCTAssertEqual(source?.sourceZone, .spaceRegular(space.id))

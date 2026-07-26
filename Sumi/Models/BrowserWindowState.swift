@@ -556,7 +556,8 @@ class BrowserWindowState {
         id: UUID = UUID(),
         initialWorkspaceTheme: WorkspaceTheme? = nil,
         awaitsInitialSessionResolution: Bool = false,
-        sidebarRecoveryCoordinator: SidebarHostRecoveryHandling = SidebarHostRecoveryCoordinator()
+        sidebarRecoveryCoordinator: SidebarHostRecoveryHandling = SidebarHostRecoveryCoordinator(),
+        sidebarInteractionState injectedSidebarInteractionState: SidebarInteractionState? = nil
     ) {
         self.id = id
         self.restorationState = WindowRestorationState(
@@ -567,7 +568,8 @@ class BrowserWindowState {
         if let initialWorkspaceTheme {
             initialThemeState.restore(initialWorkspaceTheme)
         }
-        let sidebarInteractionState = SidebarInteractionState()
+        let sidebarInteractionState =
+            injectedSidebarInteractionState ?? SidebarInteractionState()
         let sidebarTransientSessionCoordinator = SidebarTransientSessionCoordinator(
             windowID: id,
             interactionState: sidebarInteractionState,

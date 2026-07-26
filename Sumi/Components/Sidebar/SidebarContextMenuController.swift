@@ -102,7 +102,6 @@ final class SidebarContextMenuController {
 
     func ownerViewDidDetach(_ ownerView: NSView) {
         if let ownerView = ownerView as? SidebarInteractiveItemView {
-            ownerView.cancelPrimaryMouseTracking()
             unregisterInteractiveOwner(ownerView)
         }
         guard activeOwnerView === ownerView else { return }

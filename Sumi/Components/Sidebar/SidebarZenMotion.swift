@@ -81,49 +81,25 @@ private struct SidebarZenPressEffectModifier: ViewModifier {
     @Environment(SidebarInteractionState.self) private var sidebarInteractionState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.sumiSettings) private var sumiSettings
-    @State private var visualPressed = false
 
     let sourceID: String
     let kind: SidebarZenPressKind
-    let isEnabled: Bool
 
     func body(content: Content) -> some View {
-        let appKitPressed = sidebarInteractionState.activePressedSourceID == sourceID
-        let isPressed = isEnabled && !shouldReduceMotion && appKitPressed
+        let isPressed = !shouldReduceMotion
+            && sidebarInteractionState.presentsPressVisual(for: sourceID)
 
         content
-            .scaleEffect(visualPressed ? SidebarRowMotionMetrics.pressedScale : 1)
-            .onAppear {
-                visualPressed = isPressed
-            }
-            .onChange(of: isPressed) { _, newValue in
-                updateVisualPressed(newValue)
-            }
-            .onChange(of: reduceMotion) { _, _ in
-                updateVisualPressed(isPressed)
-            }
-            .onChange(of: sumiSettings.shouldReduceChromeMotion) { _, _ in
-                updateVisualPressed(isPressed)
-            }
+            .scaleEffect(isPressed ? SidebarRowMotionMetrics.pressedScale : 1)
+            .animation(releaseAnimation(isPressed: isPressed), value: isPressed)
     }
 
-    private func updateVisualPressed(_ isPressed: Bool) {
-        if isPressed || shouldReduceMotion || !isEnabled {
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            transaction.animation = nil
-            withTransaction(transaction) {
-                visualPressed = isPressed
-            }
-            return
-        }
-
-        withAnimation(SidebarMotionPolicy.rowReleaseAnimation(
+    private func releaseAnimation(isPressed: Bool) -> Animation? {
+        guard !isPressed, !shouldReduceMotion else { return nil }
+        return SidebarMotionPolicy.rowReleaseAnimation(
             for: SidebarMotionPolicy.currentMode(reduceMotion: shouldReduceMotion),
             split: kind.isSplit
-        )) {
-            visualPressed = false
-        }
+        )
     }
 
     private var shouldReduceMotion: Bool {
@@ -308,14 +284,12 @@ extension AnyTransition {
 extension View {
     func sidebarZenPressEffect(
         sourceID: String,
-        kind: SidebarZenPressKind = .row,
-        isEnabled: Bool = true
+        kind: SidebarZenPressKind = .row
     ) -> some View {
         modifier(
             SidebarZenPressEffectModifier(
                 sourceID: sourceID,
-                kind: kind,
-                isEnabled: isEnabled
+                kind: kind
             )
         )
     }
@@ -352,5 +326,4 @@ extension View {
             content
         }
     }
-
 }

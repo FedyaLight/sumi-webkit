@@ -15,6 +15,7 @@ struct ShortcutHostedSplitGroupRow: View {
     let accessibilityID: String
     let onActivateMember: (SplitMemberID) -> Void
     let onUnloadGroup: () -> Void
+    let onCloseGroup: () -> Void
 
     init(
         group: SplitGroup,
@@ -29,7 +30,8 @@ struct ShortcutHostedSplitGroupRow: View {
         faviconImageReader: any BrowserFaviconImageReading,
         accessibilityID: String,
         onActivateMember: @escaping (SplitMemberID) -> Void,
-        onUnloadGroup: @escaping () -> Void
+        onUnloadGroup: @escaping () -> Void,
+        onCloseGroup: @escaping () -> Void
     ) {
         self.group = group
         self.items = items
@@ -44,6 +46,7 @@ struct ShortcutHostedSplitGroupRow: View {
         self.accessibilityID = accessibilityID
         self.onActivateMember = onActivateMember
         self.onUnloadGroup = onUnloadGroup
+        self.onCloseGroup = onCloseGroup
     }
 
     var body: some View {
@@ -65,9 +68,18 @@ struct ShortcutHostedSplitGroupRow: View {
             dragSource: shortcutHostedSplitSegmentDragSource,
             contextMenuEntries: { _ in [] },
             onActivateMember: onActivateMember,
-            onGroupAction: onUnloadGroup
+            onGroupAction: performGroupAction
         )
         .accessibilityIdentifier(accessibilityID)
+    }
+
+    private func performGroupAction(_ action: SplitGroupSidebarAction) {
+        switch action {
+        case .unload:
+            onUnloadGroup()
+        case .close:
+            onCloseGroup()
+        }
     }
 
     private func shortcutHostedSplitSegmentDragSource(
@@ -91,7 +103,6 @@ struct ShortcutHostedSplitGroupRow: View {
                 chromeTemplateSystemImageName: groupPreviewSystemImage,
                 previewPresentationState: groupPresentationState,
                 exclusionZones: [.trailingStrip(32)],
-                onActivate: { onActivateMember(item.id) },
                 isEnabled: isAppKitInteractionEnabled
             )
         }
@@ -112,7 +123,6 @@ struct ShortcutHostedSplitGroupRow: View {
             chromeTemplateSystemImageName: groupPreviewSystemImage,
             previewPresentationState: groupPresentationState,
             exclusionZones: [.trailingStrip(32)],
-            onActivate: { onActivateMember(item.id) },
             isEnabled: isAppKitInteractionEnabled
         )
     }

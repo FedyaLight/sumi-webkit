@@ -12,8 +12,8 @@ guard_initialize "$repo_root"
 sources=(
   Sumi/Managers/BrowserManager/SplitShortcutFocusPresentationService.swift
   Sumi/Managers/BrowserManager/SplitShortcutFocusService.swift
+  Sumi/Managers/BrowserManager/ShortcutHostedSplitUnloadPlanner.swift
   Sumi/Managers/BrowserManager/ShortcutHostedSplitUnloadService.swift
-  Sumi/Managers/BrowserManager/ShortcutHostedSplitFallbackQuery.swift
   Sumi/Managers/BrowserManager/ShortcutLiveTabCloseService.swift
   Sumi/Managers/BrowserManager/ShortcutLiveTabSplitCloseTransaction.swift
   Sumi/Managers/BrowserManager/ShortcutLiveTabStandaloneCloseTransaction.swift
@@ -53,8 +53,8 @@ guard_expect_no_matches \
 declare -a type_limits=(
   'SplitShortcutFocusPresentationService|3'
   'SplitShortcutFocusService|4'
-  'ShortcutHostedSplitFallbackQuery|2'
-  'ShortcutHostedSplitUnloadService|5'
+  'ShortcutHostedSplitUnloadPlanner|5'
+  'ShortcutHostedSplitUnloadService|3'
   'ShortcutLiveTabCloseService|4'
   'ShortcutLiveTabSplitCloseTransaction|3'
   'ShortcutLiveTabStandaloneCloseTransaction|5'

@@ -35,12 +35,16 @@ struct SpaceTab: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityIdentifier("tab-row-\(tab.id.uuidString)")
         .accessibilityValue(isCurrentTab ? "selected" : "not selected")
+        .accessibilityAction(.default, activatePage)
         .sidebarSelectedItemVisibility(
             .regularTab(tab.id),
             isSelected: isCurrentTab,
             isEnabled: isAppKitInteractionEnabled
         )
-        .sidebarHover($isRowHovered, isEnabled: isAppKitInteractionEnabled)
+        .sidebarHover(
+            $isRowHovered,
+            isEnabled: isAppKitInteractionEnabled
+        )
         .onChange(of: isRowHovered) { _, hovering in
             if !hovering {
                 suppressRegularCloseUntilHoverExit = false
@@ -54,8 +58,7 @@ struct SpaceTab: View {
             }
         }
         .sidebarZenPressEffect(
-            sourceID: rowSourceID,
-            isEnabled: isAppKitInteractionEnabled && !tab.isRenaming
+            sourceID: rowSourceID
         )
         .background(
             Group {
@@ -71,12 +74,8 @@ struct SpaceTab: View {
         .sidebarAppKitContextMenu(
             isInteractionEnabled: isAppKitInteractionEnabled,
             dragSource: effectiveDragSourceConfiguration,
-            primaryAction: {
-                if tab.isRenaming {
-                    tab.saveRename()
-                }
-                action()
-            },
+            primaryActionExclusionZones: primaryActionExclusionZones,
+            pageActivation: activatePage,
             onMiddleClick: onMiddleClick,
             sourceID: rowSourceID,
             entries: contextMenuEntries
@@ -141,7 +140,10 @@ struct SpaceTab: View {
                     )
                     .frame(width: 22, height: 22)
                     .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .sidebarHover($isSpeakerHovered, isEnabled: isAppKitInteractionEnabled)
+                    .sidebarHover(
+                        $isSpeakerHovered,
+                        isEnabled: isAppKitInteractionEnabled
+                    )
                     .accessibilityIdentifier("space-regular-tab-audio-\(tab.id.uuidString)")
                     .sidebarAppKitPrimaryAction(
                         isEnabled: !freezesHoverState,
@@ -190,9 +192,6 @@ struct SpaceTab: View {
             .frame(height: SidebarRowLayout.rowHeight)
             .frame(minWidth: 0, maxWidth: .infinity)
             .contentShape(Rectangle())
-            .overlay(alignment: .leading) {
-                rowActivationOverlay
-            }
             .overlay(alignment: .trailing) {
                 trailingAccessory
                     .padding(.trailing, SidebarRowLayout.trailingInset)
@@ -209,6 +208,13 @@ struct SpaceTab: View {
 
     private var rowSourceID: String {
         "tab-row-\(tab.id.uuidString)"
+    }
+
+    private func activatePage() {
+        if tab.isRenaming {
+            tab.saveRename()
+        }
+        action()
     }
 
     private var rowCornerRadius: CGFloat {
@@ -305,6 +311,16 @@ struct SpaceTab: View {
         return 40
     }
 
+    private var primaryActionExclusionZones: [SidebarDragSourceExclusionZone] {
+        var exclusions: [SidebarDragSourceExclusionZone] = [
+            .trailingStrip(trailingActivationExclusionWidth),
+        ]
+        if tab.audioState.showsTabAudioButton {
+            exclusions.append(.fixedRect(Self.audioButtonHitFrame))
+        }
+        return exclusions
+    }
+
     private var effectiveDragSourceConfiguration: SidebarDragSourceConfiguration? {
         guard let dragSourceConfiguration else { return nil }
         guard activeGlanceSessionForRow != nil else { return dragSourceConfiguration }
@@ -325,46 +341,6 @@ struct SpaceTab: View {
             width: 22,
             height: 22
         )
-    }
-
-    private var activeAudioButtonHitFrame: CGRect {
-        guard tab.audioState.showsTabAudioButton else { return .null }
-
-        return Self.audioButtonHitFrame
-    }
-
-    @ViewBuilder
-    private var rowActivationOverlay: some View {
-        if !tab.isRenaming {
-            GeometryReader { proxy in
-                let trailingLimit = max(proxy.size.width - trailingActivationExclusionWidth, 0)
-
-                ZStack(alignment: .leading) {
-                    if tab.audioState.showsTabAudioButton {
-                        activationHitRegion(width: activeAudioButtonHitFrame.minX)
-
-                        activationHitRegion(
-                            width: max(trailingLimit - activeAudioButtonHitFrame.maxX, 0)
-                        )
-                        .offset(x: activeAudioButtonHitFrame.maxX)
-                    } else {
-                        activationHitRegion(width: trailingLimit)
-                    }
-                }
-            }
-            .frame(height: SidebarRowLayout.rowHeight)
-        }
-    }
-
-    private func activationHitRegion(width: CGFloat) -> some View {
-        Color.clear
-            .frame(width: max(width, 0), height: SidebarRowLayout.rowHeight)
-            .contentShape(Rectangle())
-            .onTapGesture(perform: activateRow)
-    }
-
-    private func activateRow() {
-        action()
     }
 
     @ViewBuilder
@@ -411,7 +387,10 @@ struct SpaceTab: View {
         .sidebarZenActionOpacity(showsCloseButton)
         .allowsHitTesting(showsCloseButton && !freezesHoverState)
         .accessibilityHidden(!showsCloseButton)
-        .sidebarHover($isCloseHovered, isEnabled: showsCloseButton && isAppKitInteractionEnabled)
+        .sidebarHover(
+            $isCloseHovered,
+            isEnabled: showsCloseButton && isAppKitInteractionEnabled
+        )
         .accessibilityIdentifier("space-regular-tab-close-\(tab.id.uuidString)")
         .sidebarAppKitPrimaryAction(
             isEnabled: showsCloseButton && !freezesHoverState,
@@ -473,7 +452,10 @@ struct SidebarGlanceTrailingAccessory: View {
         .sidebarZenActionOpacity(showsCloseButton)
         .allowsHitTesting(showsCloseButton && isEnabled)
         .accessibilityHidden(!showsCloseButton)
-        .sidebarHover($isCloseHovered, isEnabled: showsCloseButton && isInteractionEnabled)
+        .sidebarHover(
+            $isCloseHovered,
+            isEnabled: showsCloseButton && isInteractionEnabled
+        )
         .accessibilityIdentifier("\(accessibilityPrefix)-close-\(sourceID)")
         .sidebarAppKitPrimaryAction(
             isEnabled: showsCloseButton && isEnabled,

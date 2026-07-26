@@ -53,7 +53,6 @@
 				CommandPaletteBrowserContext.swift,
 				CommandPaletteCardBoundsReader.swift,
 				CommandPaletteExtensionCatalog.swift,
-				CommandPaletteTextField.swift,
 				CommandPaletteLayoutPolicy.swift,
 				CommandPaletteMotionPolicy.swift,
 				CommandPaletteNativeInteraction.swift,
@@ -61,6 +60,7 @@
 				CommandPaletteRow.swift,
 				CommandPaletteSearchSessionOwner.swift,
 				CommandPaletteSpaceCatalog.swift,
+				CommandPaletteTextField.swift,
 				CommandPaletteView.swift,
 			);
 			target = 7F8340FB2E37F39400674A5D /* Sumi */;
