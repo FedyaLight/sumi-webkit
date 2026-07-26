@@ -62,7 +62,13 @@ struct SidebarFolderPreviewOverlay: View {
                     y: panelFrame.midY - containerFrame.minY
                 )
                 .id(presentation.id)
-                .transition(.opacity)
+                .transition(
+                    appearanceTransition(
+                        anchorRect: presentation.anchorRect,
+                        panelFrame: panelFrame,
+                        sidebarPosition: presentation.sidebarPosition
+                    )
+                )
                 // The session owner hit-tests outside clicks against this frame,
                 // and placement lives here, so the resolved rect is reported
                 // rather than re-derived from window geometry.
@@ -74,9 +80,6 @@ struct SidebarFolderPreviewOverlay: View {
                 }
             }
         }
-        // The session owner mutates outside a `withAnimation`, so the fade has to
-        // be driven from here.
-        .animation(appearanceAnimation, value: windowState.sidebarFolderPreview.openFolderID)
         // A live drag owns the pointer outright; the panel is on its way out and
         // must not intercept anything on the way.
         .allowsHitTesting(!isDragging)
@@ -86,11 +89,59 @@ struct SidebarFolderPreviewOverlay: View {
         }
     }
 
-    private var appearanceAnimation: Animation? {
-        reduceMotion || sumiSettings.shouldReduceChromeMotion
-            ? nil
-            : .easeOut(duration: 0.12)
+    private func appearanceTransition(
+        anchorRect: CGRect,
+        panelFrame: CGRect,
+        sidebarPosition: SidebarPosition
+    ) -> AnyTransition {
+        guard !reduceMotion, !sumiSettings.shouldReduceChromeMotion else {
+            return .identity
+        }
+
+        let sourceAnchor = SidebarFolderPreviewMotion.sourceAnchor(
+            anchorRect: anchorRect,
+            panelFrame: panelFrame,
+            sidebarPosition: sidebarPosition
+        )
+        let spatialTransition = AnyTransition
+            .scale(
+                scale: SidebarFolderPreviewMotion.initialScale,
+                anchor: sourceAnchor
+            )
+            .combined(with: .opacity)
+
+        return .asymmetric(
+            insertion: spatialTransition.animation(
+                .interactiveSpring(
+                    response: SidebarFolderPreviewMotion.appearResponse,
+                    dampingFraction: 1,
+                    blendDuration: 0.06
+                )
+            ),
+            removal: spatialTransition.animation(
+                .easeIn(duration: SidebarFolderPreviewMotion.dismissDuration)
+            )
+        )
     }
+}
+
+enum SidebarFolderPreviewMotion {
+    static let initialScale: CGFloat = 0.975
+    static let appearResponse: Double = 0.2
+    static let dismissDuration: Double = 0.12
+
+    static func sourceAnchor(
+        anchorRect: CGRect,
+        panelFrame: CGRect,
+        sidebarPosition: SidebarPosition
+    ) -> UnitPoint {
+        let relativeY = (anchorRect.midY - panelFrame.minY) / max(panelFrame.height, 1)
+        return UnitPoint(
+            x: sidebarPosition == .left ? 0 : 1,
+            y: min(max(relativeY, 0), 1)
+        )
+    }
+
 }
 
 /// Narrow subscription to the drag-activity flag so the overlay does not

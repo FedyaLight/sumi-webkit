@@ -309,12 +309,15 @@ final class SidebarHoverTests: XCTestCase {
     /// timer — need to tell a real pointer event apart from a hover the view
     /// inferred from the parked pointer.
     func testPointerEventsAreReportedAsPointerHover() {
+        var pointerScreenLocation = NSPoint(x: 900, y: 700)
         let window = Self.makeHoverWindow()
         let view = Self.addHoverView(
             to: window,
             frame: NSRect(x: 0, y: 0, width: 120, height: 36)
         )
-        let session = SidebarHoverSession()
+        let session = SidebarHoverSession(
+            pointerScreenLocation: { pointerScreenLocation }
+        )
         let registration = SidebarHoverRegistration()
         var sources: [SidebarHoverChangeSource] = []
         registration.update(
@@ -325,11 +328,13 @@ final class SidebarHoverTests: XCTestCase {
             sources.append(source)
         }
 
+        pointerScreenLocation.x += 20
         view.mouseEntered(with: Self.enterExitEvent(
             .mouseEntered,
             timestamp: 1,
             location: NSPoint(x: 12, y: 12)
         ))
+        pointerScreenLocation.x += 20
         view.mouseExited(with: Self.enterExitEvent(
             .mouseExited,
             timestamp: 2,
@@ -337,6 +342,56 @@ final class SidebarHoverTests: XCTestCase {
         ))
 
         XCTAssertEqual(sources, [.pointer, .pointer])
+    }
+
+    func testStartupTrackingEnterWithoutPointerMovementDoesNotArmFolderPreview() async throws {
+        var pointerScreenLocation = NSPoint(x: 900, y: 700)
+        let window = Self.makeHoverWindow()
+        let view = Self.addHoverView(
+            to: window,
+            frame: NSRect(x: 0, y: 0, width: 120, height: 36)
+        )
+        let session = SidebarHoverSession(
+            pointerScreenLocation: { pointerScreenLocation }
+        )
+        let coordinator = SidebarFolderPreviewAnchorBridge.Coordinator()
+        var openCount = 0
+        coordinator.update(
+            view: view,
+            hoverSession: session,
+            isEnabled: true,
+            onOpen: { _, _ in openCount += 1 },
+            onHoverChanged: { _ in }
+        )
+
+        view.mouseEntered(with: Self.enterExitEvent(
+            .mouseEntered,
+            timestamp: 1,
+            location: NSPoint(x: 12, y: 12)
+        ))
+
+        try await Task.sleep(
+            nanoseconds: SidebarFolderPreviewHoverPolicy.showDelayNanoseconds + 50_000_000
+        )
+        XCTAssertEqual(openCount, 0)
+
+        pointerScreenLocation.x += 20
+        view.mouseExited(with: Self.enterExitEvent(
+            .mouseExited,
+            timestamp: 2,
+            location: NSPoint(x: 200, y: 100)
+        ))
+        pointerScreenLocation.x += 20
+        view.mouseEntered(with: Self.enterExitEvent(
+            .mouseEntered,
+            timestamp: 3,
+            location: NSPoint(x: 12, y: 12)
+        ))
+
+        try await Task.sleep(
+            nanoseconds: SidebarFolderPreviewHoverPolicy.showDelayNanoseconds + 50_000_000
+        )
+        XCTAssertEqual(openCount, 1)
     }
 
     func testTrackingViewReconcilesHoverWhenMouseIsAlreadyInsideAfterReenable() {

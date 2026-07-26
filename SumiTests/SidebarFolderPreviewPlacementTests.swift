@@ -4,6 +4,48 @@ import XCTest
 
 @MainActor
 final class SidebarFolderPreviewPlacementTests: XCTestCase {
+    func testMotionOriginTracksFolderRowAtTheAttachedPanelEdge() {
+        let anchor = CGRect(x: 20, y: 180, width: 220, height: 36)
+        let panel = CGRect(x: 250, y: 80, width: 250, height: 300)
+
+        let leftOrigin = SidebarFolderPreviewMotion.sourceAnchor(
+            anchorRect: anchor,
+            panelFrame: panel,
+            sidebarPosition: .left
+        )
+        let rightOrigin = SidebarFolderPreviewMotion.sourceAnchor(
+            anchorRect: anchor,
+            panelFrame: panel,
+            sidebarPosition: .right
+        )
+
+        XCTAssertEqual(leftOrigin.x, 0)
+        XCTAssertEqual(rightOrigin.x, 1)
+        XCTAssertEqual(leftOrigin.y, (anchor.midY - panel.minY) / panel.height)
+        XCTAssertEqual(rightOrigin.y, leftOrigin.y)
+    }
+
+    func testMotionOriginClampsToPanelBounds() {
+        let panel = CGRect(x: 250, y: 80, width: 250, height: 300)
+
+        XCTAssertEqual(
+            SidebarFolderPreviewMotion.sourceAnchor(
+                anchorRect: CGRect(x: 20, y: -200, width: 220, height: 36),
+                panelFrame: panel,
+                sidebarPosition: .left
+            ).y,
+            0
+        )
+        XCTAssertEqual(
+            SidebarFolderPreviewMotion.sourceAnchor(
+                anchorRect: CGRect(x: 20, y: 700, width: 220, height: 36),
+                panelFrame: panel,
+                sidebarPosition: .left
+            ).y,
+            1
+        )
+    }
+
     private let containerBounds = CGRect(x: 0, y: 0, width: 1_400, height: 900)
 
     /// Zen: `position: "topright topleft"`, `x: 10`, `y: -(min(rows, 6) * 48) / 2`.

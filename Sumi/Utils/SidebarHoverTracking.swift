@@ -139,6 +139,14 @@ final class SidebarHoverSession: NSObject {
     private var isSuspended = false
     private var isApplicationActive = true
     private var observesLifecycle = false
+    private let pointerScreenLocation: () -> NSPoint
+    private var lastPointerScreenLocation: NSPoint
+
+    init(pointerScreenLocation: @escaping () -> NSPoint = { NSEvent.mouseLocation }) {
+        self.pointerScreenLocation = pointerScreenLocation
+        lastPointerScreenLocation = pointerScreenLocation()
+        super.init()
+    }
 
     func register(_ registration: SidebarHoverRegistration) {
         registrations[ObjectIdentifier(registration)] = WeakRegistration(value: registration)
@@ -170,7 +178,7 @@ final class SidebarHoverSession: NSObject {
             reconcile(
                 window: window,
                 mouseLocationInWindow: mouseLocation,
-                source: .pointer
+                source: pointerChangeSource()
             )
         case .lifecycle:
             requestLifecycleReconcile(for: registration)
@@ -269,6 +277,16 @@ final class SidebarHoverSession: NSObject {
         guard timestamp >= previous else { return false }
         lastPointerTimestampByWindow[windowID] = timestamp
         return true
+    }
+
+    /// AppKit can synthesize enter/exit callbacks when a tracking area is
+    /// installed or a window becomes visible. Those callbacks describe the
+    /// parked pointer, not user motion, so consumers such as the folder-preview
+    /// timer must see them as lifecycle reconciliation.
+    private func pointerChangeSource() -> SidebarHoverChangeSource {
+        let currentLocation = pointerScreenLocation()
+        defer { lastPointerScreenLocation = currentLocation }
+        return currentLocation == lastPointerScreenLocation ? .lifecycle : .pointer
     }
 
     private var liveRegistrations: [SidebarHoverRegistration] {
