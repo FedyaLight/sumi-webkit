@@ -31,10 +31,10 @@ final class BrowserTabCloseFallbackPlanner {
         let regularTabs = spaceTabs.filter { $0.id != tab.id }
         let regularTabById = tabLookup(excluding: tab.id, in: spaceTabs)
         if let historyMatch = historicalFallbackTab(
-            afterClosing: tab,
             in: windowState,
             targetSpaceId: targetSpaceId,
-            regularTabsById: regularTabById,
+            excludingTabIds: [tab.id],
+            excludingShortcutPinIds: [],
             tabStore: tabStore
         ) {
             return historyMatch
@@ -67,9 +67,30 @@ final class BrowserTabCloseFallbackPlanner {
         _ tab: Tab,
         in windowState: BrowserWindowState
     ) -> Tab? {
-        historicalFallbackTab(
-            afterClosing: tab,
+        let targetSpaceId = tab.spaceId ?? windowState.currentSpaceId
+        let excludedPinIds = tab.shortcutPinId.map { Set([$0]) } ?? []
+        return historicalFallbackTab(
             in: windowState,
+            targetSpaceId: targetSpaceId,
+            excludingTabIds: [tab.id],
+            excludingShortcutPinIds: excludedPinIds,
+            tabStore: tabStore
+        )
+        ?? selectionService.preferredRegularTabForWindow(
+            windowState,
+            tabStore: tabStore
+        )
+    }
+
+    func fallbackAfterClosingShortcutLiveTabs(
+        excludingShortcutPinIds pinIds: Set<UUID>,
+        in windowState: BrowserWindowState
+    ) -> Tab? {
+        historicalFallbackTab(
+            in: windowState,
+            targetSpaceId: windowState.currentSpaceId,
+            excludingTabIds: [],
+            excludingShortcutPinIds: pinIds,
             tabStore: tabStore
         )
         ?? selectionService.preferredRegularTabForWindow(
@@ -79,43 +100,43 @@ final class BrowserTabCloseFallbackPlanner {
     }
 
     private func historicalFallbackTab(
-        afterClosing tab: Tab,
         in windowState: BrowserWindowState,
+        targetSpaceId: UUID?,
+        excludingTabIds: Set<Tab.ID>,
+        excludingShortcutPinIds: Set<UUID>,
         tabStore: ShellSelectionTabStore
     ) -> Tab? {
-        let targetSpaceId = tab.spaceId ?? windowState.currentSpaceId
         guard let targetSpaceId,
-              let space = tabStore.spaces.first(where: { $0.id == targetSpaceId })
-        else {
-            return nil
+              let space = tabStore.spaces.first(where: {
+                  $0.id == targetSpaceId
+              })
+        else { return nil }
+        let regularTabsById = tabStore.tabs(in: space).reduce(
+            into: [Tab.ID: Tab]()
+        ) { lookup, tab in
+            guard excludingTabIds.contains(tab.id) == false,
+                  lookup[tab.id] == nil else { return }
+            lookup[tab.id] = tab
         }
-
-        return historicalFallbackTab(
-            afterClosing: tab,
-            in: windowState,
-            targetSpaceId: targetSpaceId,
-            regularTabsById: tabLookup(excluding: tab.id, in: tabStore.tabs(in: space)),
-            tabStore: tabStore
-        )
-    }
-
-    private func historicalFallbackTab(
-        afterClosing tab: Tab,
-        in windowState: BrowserWindowState,
-        targetSpaceId: UUID,
-        regularTabsById: [Tab.ID: Tab],
-        tabStore: ShellSelectionTabStore
-    ) -> Tab? {
-        for item in windowState.selectionHistory.recentSelectionItemsBySpace[targetSpaceId] ?? [] {
+        let history = windowState.selectionHistory
+            .recentSelectionItemsBySpace[targetSpaceId] ?? []
+        for item in history {
             switch item {
             case let .regularTab(tabId):
                 if let regularTab = regularTabsById[tabId] {
                     return regularTab
                 }
             case let .shortcutPin(pinId):
-                if let liveTab = tabStore.shortcutLiveTab(for: pinId, in: windowState.id),
-                   liveTab.id != tab.id,
-                   liveTab.shortcutPinRole == .essential || liveTab.spaceId == targetSpaceId {
+                guard excludingShortcutPinIds.contains(pinId) == false else {
+                    continue
+                }
+                if let liveTab = tabStore.shortcutLiveTab(
+                    for: pinId,
+                    in: windowState.id
+                ),
+                   excludingTabIds.contains(liveTab.id) == false,
+                   liveTab.shortcutPinRole == .essential
+                    || liveTab.spaceId == targetSpaceId {
                     return liveTab
                 }
             }

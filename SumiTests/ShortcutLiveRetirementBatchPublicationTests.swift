@@ -289,6 +289,15 @@ final class ShortcutLiveRetirementBatchPublicationTests: XCTestCase {
             fallbackGroup,
             persist: false
         ))
+        fixture.window.selectionHistory.recentRegularTabIdsBySpace[space.id] = [
+            second.id,
+            first.id,
+        ]
+        fixture.window.selectionHistory.recentSelectionItemsBySpace[space.id] = [
+            .shortcutPin(fixture.pins[0].id),
+            .regularTab(second.id),
+            .regularTab(first.id),
+        ]
         let service = makeHostedSplitUnload(for: browser)
 
         XCTAssertEqual(service.unloadShortcutHostedSplitGroup(
@@ -296,12 +305,12 @@ final class ShortcutLiveRetirementBatchPublicationTests: XCTestCase {
             in: fixture.window
         )?.unloadedTabCount, 2)
 
-        XCTAssertEqual(fixture.window.currentTabId, first.id)
+        XCTAssertEqual(fixture.window.currentTabId, second.id)
         XCTAssertEqual(
             fixture.window.splitSelection,
             WindowSplitSelection(
                 groupID: fallbackGroup.id,
-                activeMemberID: .regularTab(first.id)
+                activeMemberID: .regularTab(second.id)
             )
         )
         guard case .ready(let presentation) = browser.splitQuery.resolution(
@@ -311,6 +320,58 @@ final class ShortcutLiveRetirementBatchPublicationTests: XCTestCase {
         }
         XCTAssertEqual(presentation.groupID, fallbackGroup.id)
         XCTAssertEqual(Set(presentation.visibleTabIDs), [first.id, second.id])
+    }
+
+    func testHostedSplitUnloadHandsOffToPreviousEssential() throws {
+        let fixture = try PublicationFixture(
+            pinCount: 2,
+            hostedSplit: true
+        )
+        let profileID = try XCTUnwrap(fixture.window.currentProfileId)
+        let essentialPin = try XCTUnwrap(
+            fixture.browser.shortcutPinStoreOwner.insert(
+                ShortcutPin(
+                    id: UUID(),
+                    role: .essential,
+                    profileId: profileID,
+                    index: 0,
+                    launchURL: try XCTUnwrap(
+                        URL(string: "https://essential.example")
+                    ),
+                    title: "Essential"
+                ),
+                at: 0
+            )
+        )
+        let essentialTab = try XCTUnwrap(
+            fixture.browser.shortcutTabMaterializer.materialize(
+                essentialPin,
+                in: fixture.window.id,
+                currentSpaceId: fixture.window.currentSpaceId
+            )
+        )
+        let spaceID = try XCTUnwrap(fixture.window.currentSpaceId)
+        fixture.window.selectionHistory.recentSelectionItemsBySpace[spaceID] = [
+            .shortcutPin(fixture.pins[0].id),
+            .shortcutPin(essentialPin.id),
+        ]
+
+        XCTAssertEqual(
+            makeHostedSplitUnload(for: fixture.browser)
+                .unloadShortcutHostedSplitGroup(
+                    fixture.group,
+                    in: fixture.window
+                )?.unloadedTabCount,
+            2
+        )
+
+        XCTAssertEqual(fixture.window.currentTabId, essentialTab.id)
+        XCTAssertEqual(
+            fixture.window.currentShortcutPinId,
+            essentialPin.id
+        )
+        XCTAssertNil(fixture.window.splitSelection)
+        XCTAssertFalse(fixture.window.isShowingEmptyState)
     }
 
     func testBackgroundHostedSplitUnloadPreservesForegroundLauncherAndWebView()
@@ -670,8 +731,10 @@ final class ShortcutLiveRetirementBatchPublicationTests: XCTestCase {
             planner: ShortcutHostedSplitUnloadPlanner(
                 runtimeConnection: browser.runtimePortConnection,
                 groups: browser.splitGroupStore,
-                spaces: browser.spaceStateOwner,
-                regularTabs: browser.regularTabCollectionOwner,
+                fallbackPlanner: BrowserTabCloseFallbackPlanner(
+                    selectionService: browser.windowSelectionProjection,
+                    tabStore: browser.runtimeStore
+                ),
                 splitMembership: browser.splitGroupMembership
             ),
             retirement: browser.shortcutLiveTabRetirement,

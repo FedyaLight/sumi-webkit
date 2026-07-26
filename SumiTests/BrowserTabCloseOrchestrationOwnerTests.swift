@@ -70,6 +70,35 @@ final class BrowserTabCloseOrchestrationOwnerTests: XCTestCase {
         try assertClosedSplit(fixture)
     }
 
+    func testClosingCurrentRegularSplitHandsOffToPreviousTab() throws {
+        let fixture = try makeRegularSplitFixture()
+        let space = try XCTUnwrap(
+            fixture.browser.spaceStateOwner.space(
+                with: try XCTUnwrap(fixture.window.currentSpaceId)
+            )
+        )
+        let successor = fixture.browser.regularTabLifecycleOwner.createNewTab(
+            url: "https://successor.example",
+            in: space,
+            activate: false
+        )
+        fixture.window.selectionHistory.recentSelectionItemsBySpace[space.id] = [
+            .regularTab(fixture.first.id),
+            .regularTab(successor.id),
+        ]
+
+        fixture.browser.tabCloseOrchestration.closeCurrentTab(
+            in: fixture.window
+        )
+
+        XCTAssertEqual(fixture.window.currentTabId, successor.id)
+        XCTAssertIdentical(
+            fixture.browser.regularTabCollectionOwner.tab(for: successor.id),
+            successor
+        )
+        try assertClosedSplit(fixture)
+    }
+
     func testClosingOneRegularSplitMemberLeavesTheOtherTabOpen() throws {
         let fixture = try makeRegularSplitFixture()
 
@@ -89,6 +118,13 @@ final class BrowserTabCloseOrchestrationOwnerTests: XCTestCase {
             fixture.browser.regularTabCollectionOwner.tab(
                 for: fixture.second.id
             ),
+            fixture.second
+        )
+        XCTAssertEqual(fixture.window.currentTabId, fixture.second.id)
+        XCTAssertIdentical(
+            fixture.window.currentTabId.flatMap {
+                fixture.browser.tabCollectionMembershipOwner.tab(for: $0)
+            },
             fixture.second
         )
         XCTAssertNil(

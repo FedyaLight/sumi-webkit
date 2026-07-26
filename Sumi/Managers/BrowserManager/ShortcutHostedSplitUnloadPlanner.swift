@@ -9,26 +9,24 @@ struct ShortcutHostedSplitUnloadPlan {
 
 /// Admits a hosted split unload and projects the exact window state that the
 /// retirement transaction must publish. Background groups preserve the current
-/// presentation; the presented group hands off to a regular tab or empty state.
+/// presentation; the presented group hands off to the normal close successor
+/// or empty state.
 @MainActor
 final class ShortcutHostedSplitUnloadPlanner {
     private let runtimeConnection: TabRuntimePortConnection
     private let groups: SplitGroupStore
-    private let spaces: TabSpaceCollectionStateOwner
-    private let regularTabs: RegularTabCollectionOwner
+    private let fallbackPlanner: BrowserTabCloseFallbackPlanner
     private let splitMembership: SplitGroupMembershipQuery
 
     init(
         runtimeConnection: TabRuntimePortConnection,
         groups: SplitGroupStore,
-        spaces: TabSpaceCollectionStateOwner,
-        regularTabs: RegularTabCollectionOwner,
+        fallbackPlanner: BrowserTabCloseFallbackPlanner,
         splitMembership: SplitGroupMembershipQuery
     ) {
         self.runtimeConnection = runtimeConnection
         self.groups = groups
-        self.spaces = spaces
-        self.regularTabs = regularTabs
+        self.fallbackPlanner = fallbackPlanner
         self.splitMembership = splitMembership
     }
 
@@ -52,7 +50,11 @@ final class ShortcutHostedSplitUnloadPlanner {
             || windowState.currentShortcutPinId.map(pinIDs.contains) == true
         var target = windowState.unpublishedShortcutMutationState
         if replacesPresentation {
-            applyFallback(to: &target, in: windowState)
+            applyFallback(
+                to: &target,
+                in: windowState,
+                excludingShortcutPinIds: pinIDs
+            )
         }
         return ShortcutHostedSplitUnloadPlan(
             pinIDs: pinIDs,
@@ -63,10 +65,15 @@ final class ShortcutHostedSplitUnloadPlanner {
 
     private func applyFallback(
         to target: inout BrowserWindowShortcutMutationState,
-        in windowState: BrowserWindowState
+        in windowState: BrowserWindowState,
+        excludingShortcutPinIds pinIDs: Set<UUID>
     ) {
         target.splitSelection = nil
-        if let fallback = visibleRegularTab(in: windowState) {
+        if let fallback = fallbackPlanner
+            .fallbackAfterClosingShortcutLiveTabs(
+                excludingShortcutPinIds: pinIDs,
+                in: windowState
+            ) {
             _ = WindowTabSelectionStateApplicator.applyFallback(
                 fallback,
                 to: &target,
@@ -80,12 +87,5 @@ final class ShortcutHostedSplitUnloadPlanner {
             target.currentShortcutPinRole = nil
             target.isShowingEmptyState = true
         }
-    }
-
-    private func visibleRegularTab(in windowState: BrowserWindowState) -> Tab? {
-        guard let spaceID = windowState.currentSpaceId,
-              let space = spaces.space(with: spaceID)
-        else { return nil }
-        return regularTabs.tabs(in: space).first
     }
 }

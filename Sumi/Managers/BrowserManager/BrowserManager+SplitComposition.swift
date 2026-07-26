@@ -203,8 +203,7 @@ extension BrowserManager {
             planner: ShortcutHostedSplitUnloadPlanner(
                 runtimeConnection: runtimePortConnection,
                 groups: splitGroupStore,
-                spaces: spaceStateOwner,
-                regularTabs: regularTabCollectionOwner,
+                fallbackPlanner: tabCloseFallbackPlanner,
                 splitMembership: splitGroupMembership
             ),
             retirement: shortcutLiveTabRetirement,
