@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import SumiWebRuntime
 
@@ -18,9 +19,9 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
     @Binding var hoveredLink: String?
     var splitPresentation: WindowSplitPresentation?
     var isSplitDropCaptureActive: Bool
-    var chromeGeometry: BrowserChromeGeometry
+    var surfaceStyle: BrowserContentSurfaceStyle
     let windowState: BrowserWindowState
-    var contentBackgroundColor: Color
+    var isSurfaceVisible: Bool
 
     init(
         browserContext: any WindowWebContentBrowserContext,
@@ -38,9 +39,9 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
         hoveredLink: Binding<String?>,
         splitPresentation: WindowSplitPresentation?,
         isSplitDropCaptureActive: Bool,
-        chromeGeometry: BrowserChromeGeometry,
+        surfaceStyle: BrowserContentSurfaceStyle,
         windowState: BrowserWindowState,
-        contentBackgroundColor: Color
+        isSurfaceVisible: Bool
     ) {
         self.makeBrowserContext = { browserContext }
         self.resolveDragTab = resolveDragTab
@@ -60,9 +61,9 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
         self._hoveredLink = hoveredLink
         self.splitPresentation = splitPresentation
         self.isSplitDropCaptureActive = isSplitDropCaptureActive
-        self.chromeGeometry = chromeGeometry
+        self.surfaceStyle = surfaceStyle
         self.windowState = windowState
-        self.contentBackgroundColor = contentBackgroundColor
+        self.isSurfaceVisible = isSurfaceVisible
     }
 
     final class Coordinator {
@@ -117,8 +118,9 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
             sidebarDragState: sidebarDragState,
             windowState: windowState,
             resolveDragTab: resolveDragTab,
-            chromeGeometry: chromeGeometry
+            surfaceStyle: surfaceStyle
         )
+        containerView.isHidden = !isSurfaceVisible
         return WindowWebContentController(
             browserContext: makeBrowserContext(),
             splitQuery: splitQuery,
@@ -126,7 +128,7 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
             trackedWebViewAdmission: trackedWebViewAdmission,
             webViewCompositorRuntime: webViewCompositorRuntime,
             webViewProtectionRuntime: webViewProtectionRuntime,
-            chromeGeometry: chromeGeometry,
+            surfaceStyle: surfaceStyle,
             windowState: windowState,
             containerView: containerView
         )
@@ -137,8 +139,8 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
         controller.update(
             displayState: makeDisplayState(),
             hoveredLinkHandler: { context.coordinator.setHoveredLink($0) },
-            chromeGeometry: chromeGeometry,
-            contentBackgroundColor: contentBackgroundColor
+            surfaceStyle: surfaceStyle,
+            isSurfaceVisible: isSurfaceVisible
         )
     }
 

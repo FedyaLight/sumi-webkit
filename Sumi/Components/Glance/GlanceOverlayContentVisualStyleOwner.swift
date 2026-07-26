@@ -8,6 +8,7 @@ final class GlanceOverlayContentVisualStyleOwner {
         let shadowOpacity: Float
         let shadowRadius: CGFloat
         let shadowOffset: CGSize
+        let backgroundColor: NSColor
     }
 
     private let contentShadowView: NSView
@@ -39,11 +40,6 @@ final class GlanceOverlayContentVisualStyleOwner {
         }
     }
 
-    func applySurfaceColor(_ surfaceColor: NSColor) {
-        contentShadowView.layer?.backgroundColor = surfaceColor.cgColor
-        webClipView.layer?.backgroundColor = surfaceColor.cgColor
-    }
-
     func applyGlanceStyle(for configuration: GlanceOverlayConfiguration) {
         apply(style: Self.glanceStyle(for: configuration))
     }
@@ -70,6 +66,7 @@ final class GlanceOverlayContentVisualStyleOwner {
             "shadowOpacity",
             "shadowRadius",
             "shadowOffset",
+            "backgroundColor",
         ]
         for key in keys {
             contentShadowView.layer?.removeAnimation(forKey: "glancePromotion.\(key)")
@@ -84,7 +81,8 @@ final class GlanceOverlayContentVisualStyleOwner {
             cornerRadius: configuration.cornerRadius,
             shadowOpacity: GlanceOverlayLayout.Metrics.glanceShadowOpacity,
             shadowRadius: GlanceOverlayLayout.Metrics.glanceShadowRadius,
-            shadowOffset: GlanceOverlayLayout.Metrics.glanceShadowOffset
+            shadowOffset: GlanceOverlayLayout.Metrics.glanceShadowOffset,
+            backgroundColor: configuration.surfaceColor
         )
     }
 
@@ -92,13 +90,14 @@ final class GlanceOverlayContentVisualStyleOwner {
         for configuration: GlanceOverlayConfiguration
     ) -> Style {
         Style(
-            cornerRadius: configuration.browserContentCornerRadius,
+            cornerRadius: configuration.browserContentSurfaceStyle.geometry.contentCornerRadii.maxRadius,
             shadowOpacity: Float(BrowserContentViewportVisuals.shadowOpacity),
             shadowRadius: BrowserContentViewportVisuals.shadowRadius,
             shadowOffset: CGSize(
                 width: BrowserContentViewportVisuals.shadowX,
                 height: BrowserContentViewportVisuals.shadowY
-            )
+            ),
+            backgroundColor: configuration.browserContentSurfaceStyle.backgroundColor
         )
     }
 
@@ -109,7 +108,9 @@ final class GlanceOverlayContentVisualStyleOwner {
         contentShadowView.layer?.shadowOpacity = style.shadowOpacity
         contentShadowView.layer?.shadowRadius = style.shadowRadius
         contentShadowView.layer?.shadowOffset = style.shadowOffset
+        contentShadowView.layer?.backgroundColor = style.backgroundColor.cgColor
         webClipView.layer?.cornerRadius = style.cornerRadius
+        webClipView.layer?.backgroundColor = style.backgroundColor.cgColor
         CATransaction.commit()
     }
 
@@ -133,12 +134,30 @@ final class GlanceOverlayContentVisualStyleOwner {
         let fromShadowOpacity = currentShadowLayer.shadowOpacity
         let fromShadowRadius = currentShadowLayer.shadowRadius
         let fromShadowOffset = currentShadowLayer.shadowOffset
+        let fromShadowBackgroundColor = currentShadowLayer.backgroundColor
+        let fromClipBackgroundColor = currentClipLayer.backgroundColor
 
         addLayerAnimation(
             to: shadowLayer,
             keyPath: "cornerRadius",
             fromValue: fromShadowCornerRadius,
             toValue: style.cornerRadius,
+            duration: duration,
+            timingFunction: timingFunction
+        )
+        addLayerAnimation(
+            to: shadowLayer,
+            keyPath: "backgroundColor",
+            fromValue: fromShadowBackgroundColor ?? style.backgroundColor.cgColor,
+            toValue: style.backgroundColor.cgColor,
+            duration: duration,
+            timingFunction: timingFunction
+        )
+        addLayerAnimation(
+            to: clipLayer,
+            keyPath: "backgroundColor",
+            fromValue: fromClipBackgroundColor ?? style.backgroundColor.cgColor,
+            toValue: style.backgroundColor.cgColor,
             duration: duration,
             timingFunction: timingFunction
         )

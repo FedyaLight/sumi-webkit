@@ -1,63 +1,55 @@
 import CoreGraphics
-import QuartzCore
 
-/// Per-corner radii for the browser content viewport.
+/// The two rounded-corner shapes supported by the browser content viewport.
 ///
-/// Corners are named in screen space (`topLeading` is the visually top-left
-/// corner), independent of any view's `isFlipped` state. Consumers map to the
-/// appropriate coordinate convention (SwiftUI's y-down `RectangleCornerRadii`
-/// or AppKit/Core Animation's y-up `CACornerMask`).
+/// Callers can select a uniform or top-only shape. Keeping arbitrary per-corner
+/// values out of the interface prevents renderers from promising geometry that
+/// Core Animation's single `cornerRadius` cannot reproduce.
 struct ChromeCornerRadii: Equatable, Sendable {
-    var topLeading: CGFloat
-    var topTrailing: CGFloat
-    var bottomLeading: CGFloat
-    var bottomTrailing: CGFloat
+    private enum RoundedCorners: Equatable, Sendable {
+        case all
+        case top
+    }
+
+    private let radius: CGFloat
+    private let roundedCorners: RoundedCorners
+
+    private init(radius: CGFloat, roundedCorners: RoundedCorners) {
+        self.radius = max(0, radius)
+        self.roundedCorners = roundedCorners
+    }
 
     /// Uniform radius applied to all four corners.
     static func uniform(_ radius: CGFloat) -> Self {
-        ChromeCornerRadii(
-            topLeading: radius,
-            topTrailing: radius,
-            bottomLeading: radius,
-            bottomTrailing: radius
-        )
+        ChromeCornerRadii(radius: radius, roundedCorners: .all)
     }
 
     /// Radius applied to the top corners only; bottom corners are square.
     static func topOnly(_ radius: CGFloat) -> Self {
-        ChromeCornerRadii(
-            topLeading: radius,
-            topTrailing: radius,
-            bottomLeading: 0,
-            bottomTrailing: 0
+        ChromeCornerRadii(radius: radius, roundedCorners: .top)
+    }
+
+    var topLeading: CGFloat { radius }
+    var topTrailing: CGFloat { radius }
+    var bottomLeading: CGFloat { roundedCorners == .all ? radius : 0 }
+    var bottomTrailing: CGFloat { roundedCorners == .all ? radius : 0 }
+
+    var isUniform: Bool {
+        roundedCorners == .all || radius == 0
+    }
+
+    var maxRadius: CGFloat {
+        radius
+    }
+
+    func clamped(to size: CGSize) -> Self {
+        let maximum = max(0, min(size.width, size.height) / 2)
+        return ChromeCornerRadii(
+            radius: min(radius, maximum),
+            roundedCorners: roundedCorners
         )
     }
 
-    /// `true` when all four corners share the same radius.
-    var isUniform: Bool {
-        topLeading == topTrailing
-            && topTrailing == bottomLeading
-            && bottomLeading == bottomTrailing
-    }
-
-    /// The largest radius across the four corners.
-    var maxRadius: CGFloat {
-        max(topLeading, max(topTrailing, max(bottomLeading, bottomTrailing)))
-    }
-
-    /// Maps the radii to a `CACornerMask` for an AppKit-backed layer.
-    ///
-    /// Only corners with a non-zero radius are included. AppKit content layers
-    /// default to `isFlipped == false` (Core Animation y-up, origin bottom-left),
-    /// so visually-top corners correspond to the `MaxY` mask constants.
-    var caCornerMask: CACornerMask {
-        var mask: CACornerMask = []
-        if topLeading > 0 { mask.insert(.layerMinXMaxYCorner) }
-        if topTrailing > 0 { mask.insert(.layerMaxXMaxYCorner) }
-        if bottomLeading > 0 { mask.insert(.layerMinXMinYCorner) }
-        if bottomTrailing > 0 { mask.insert(.layerMaxXMinYCorner) }
-        return mask
-    }
 }
 
 /// Per-edge insets surrounding the browser content viewport.
@@ -137,12 +129,6 @@ struct BrowserChromeGeometry: Equatable {
 
     let outerRadius: CGFloat
     let elementSeparation: CGFloat
-    /// Uniform content corner radius.
-    ///
-    /// Kept as the canonical single-radius value for legacy consumers (e.g.
-    /// Glance overlay) and existing tests. Per-corner rounding is expressed via
-    /// `contentCornerRadii`; in the uniform case this equals `maxRadius`.
-    let contentRadius: CGFloat
     let contentEdgeInsets: ChromeEdgeInsets
     let contentCornerRadii: ChromeCornerRadii
 
@@ -157,7 +143,6 @@ struct BrowserChromeGeometry: Equatable {
             outerRadius: self.outerRadius,
             elementSeparation: self.elementSeparation
         )
-        self.contentRadius = resolvedContentRadius
         self.contentEdgeInsets = .uniform(self.elementSeparation)
         self.contentCornerRadii = .uniform(resolvedContentRadius)
     }
@@ -173,7 +158,6 @@ struct BrowserChromeGeometry: Equatable {
         )
         self.outerRadius = max(0, outerRadius)
         self.elementSeparation = max(0, elementSeparation)
-        self.contentRadius = contentRadius
         self.contentEdgeInsets = settings.framelessChrome
             ? .topOnly(elementSeparation)
             : .uniform(elementSeparation)

@@ -209,8 +209,16 @@ struct WebsiteView: View {
         )
     }
 
-    private var browserContentSurfaceBackground: Color {
-        tabThemeContext.nativeSurfaceThemeContext.tokens(settings: sumiSettings).windowBackground
+    private func browserContentSurfaceStyle(
+        for themeContext: ResolvedThemeContext
+    ) -> BrowserContentSurfaceStyle {
+        let background = themeContext.nativeSurfaceThemeContext
+            .tokens(settings: sumiSettings)
+            .windowBackground
+        return BrowserContentSurfaceStyle(
+            geometry: chromeGeometry,
+            backgroundColor: NSColor(background)
+        )
     }
 
     var body: some View {
@@ -220,12 +228,22 @@ struct WebsiteView: View {
             hasSelectedSplit: splitResolution.hasReadyPresentation
         )
         let previewState = splitPreviews.state(for: windowState.id)
+        let currentTabThemeContext = tabThemeContext
+        let surfaceStyle = browserContentSurfaceStyle(for: currentTabThemeContext)
 
         ZStack {
-            tabCompositor(splitPresentation: splitResolution.presentation)
+            tabCompositor(
+                splitPresentation: splitResolution.presentation,
+                surfaceStyle: surfaceStyle,
+                isSurfaceVisible: nativeSurfaceKind == nil
+            )
                 .allowsHitTesting(nativeSurfaceKind == nil)
 
-            nativeSurface(kind: nativeSurfaceKind)
+            nativeSurface(
+                kind: nativeSurfaceKind,
+                style: surfaceStyle,
+                themeContext: currentTabThemeContext
+            )
                 .id(windowState.compositorInvalidation.nativeSurfaceRoutingRevision)
 
             VStack {
@@ -250,7 +268,7 @@ struct WebsiteView: View {
         }
     }
 
-    private enum NativeSurfaceKind {
+    private enum NativeSurfaceKind: Equatable {
         case history
         case bookmarks
         case settings
@@ -270,7 +288,9 @@ struct WebsiteView: View {
     }
 
     private func tabCompositor(
-        splitPresentation: WindowSplitPresentation?
+        splitPresentation: WindowSplitPresentation?,
+        surfaceStyle: BrowserContentSurfaceStyle,
+        isSurfaceVisible: Bool
     ) -> some View {
         TabCompositorWrapper(
             browserContext: browserContext.makeWebContentContext(),
@@ -289,52 +309,47 @@ struct WebsiteView: View {
             splitPresentation: splitPresentation,
             isSplitDropCaptureActive: sidebarDragState.isInternalDragGeometryArmed
                 || (sidebarDragState.isDragging && sidebarDragState.isInternalDragSession),
-            chromeGeometry: chromeGeometry,
+            surfaceStyle: surfaceStyle,
             windowState: windowState,
-            contentBackgroundColor: browserContentSurfaceBackground
+            isSurfaceVisible: isSurfaceVisible
         )
         .coordinateSpace(name: dragCoordinateSpace)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     @ViewBuilder
-    private func nativeSurface(kind: NativeSurfaceKind?) -> some View {
-        let currentTabThemeContext = tabThemeContext
-        let contentBackground = currentTabThemeContext.nativeSurfaceThemeContext.tokens(settings: sumiSettings).windowBackground
+    private func nativeSurface(
+        kind: NativeSurfaceKind?,
+        style baseStyle: BrowserContentSurfaceStyle,
+        themeContext: ResolvedThemeContext
+    ) -> some View {
+        if let kind {
+            let style = BrowserContentSurfaceStyle(
+                geometry: baseStyle.geometry,
+                backgroundColor: kind == .empty
+                    ? baseStyle.backgroundColor.withAlphaComponent(0.2)
+                    : baseStyle.backgroundColor
+            )
+            nativeSurfaceContent(kind: kind)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .sumiChromeThemeScope(context: themeContext, settings: sumiSettings)
+                .browserContentSurface(style: style)
+                .allowsHitTesting(true)
+        }
+    }
 
+    @ViewBuilder
+    private func nativeSurfaceContent(kind: NativeSurfaceKind) -> some View {
         switch kind {
         case .history:
             nativeSurfaceRootBuilders.history(windowState)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .sumiChromeThemeScope(context: currentTabThemeContext, settings: sumiSettings)
-            .browserContentSurface(
-                geometry: chromeGeometry,
-                background: contentBackground
-            )
-            .allowsHitTesting(true)
         case .bookmarks:
             nativeSurfaceRootBuilders.bookmarks(windowState)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .sumiChromeThemeScope(context: currentTabThemeContext, settings: sumiSettings)
-            .browserContentSurface(
-                geometry: chromeGeometry,
-                background: contentBackground
-            )
-            .allowsHitTesting(true)
         case .settings:
             nativeSurfaceRootBuilders.settings(windowState)
-            .environment(keyboardShortcutManager)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .sumiChromeThemeScope(context: currentTabThemeContext, settings: sumiSettings)
-            .browserContentSurface(
-                geometry: chromeGeometry,
-                background: contentBackground
-            )
-            .allowsHitTesting(true)
+                .environment(keyboardShortcutManager)
         case .empty:
             EmptyWebsiteView()
-        case nil:
-            EmptyView()
         }
     }
 }

@@ -1,5 +1,45 @@
 import AppKit
 import QuartzCore
+import SwiftUI
+
+extension ChromeCornerRadii {
+    /// Maps the semantic shape to Core Animation's y-up corner mask.
+    var caCornerMask: CACornerMask {
+        guard maxRadius > 0 else { return [] }
+
+        var mask: CACornerMask = [
+            .layerMinXMaxYCorner,
+            .layerMaxXMaxYCorner,
+        ]
+        if isUniform {
+            mask.insert(.layerMinXMinYCorner)
+            mask.insert(.layerMaxXMinYCorner)
+        }
+        return mask
+    }
+}
+
+enum BrowserContentViewportShape {
+    static func path(
+        in rect: CGRect,
+        cornerRadii: ChromeCornerRadii
+    ) -> CGPath {
+        let radii = cornerRadii.clamped(to: rect.size)
+        // SwiftUI names corners in y-down screen space. AppKit is y-up, so swap
+        // top and bottom while preserving leading/trailing.
+        let corners = RectangleCornerRadii(
+            topLeading: radii.bottomLeading,
+            bottomLeading: radii.topLeading,
+            bottomTrailing: radii.topTrailing,
+            topTrailing: radii.bottomTrailing
+        )
+        return Path(
+            roundedRect: rect,
+            cornerRadii: corners,
+            style: .continuous
+        ).cgPath
+    }
+}
 
 @MainActor
 final class BrowserContentViewportShadowView: NSView {
@@ -13,15 +53,17 @@ final class BrowserContentViewportShadowView: NSView {
         )
     }
 
+    private struct ShapeSignature: Equatable {
+        let viewportRect: NSRect
+        let cornerRadii: ChromeCornerRadii
+        let scale: CGFloat
+    }
+
     private static let targetShadowOpacity = Float(BrowserContentViewportVisuals.shadowOpacity)
-
-    var viewportRect: NSRect = .zero {
-        didSet { updateLayerShape() }
-    }
-
-    var cornerRadii: ChromeCornerRadii = .uniform(0) {
-        didSet { updateLayerShape() }
-    }
+    private let shadowSurfaceLayer = CAShapeLayer()
+    private var viewportRect: NSRect = .zero
+    private var cornerRadii: ChromeCornerRadii = .uniform(0)
+    private var appliedShape: ShapeSignature?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -47,7 +89,18 @@ final class BrowserContentViewportShadowView: NSView {
 
     override func layout() {
         super.layout()
-        updateLayerShape()
+        updateLayerShapeIfNeeded()
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        updateLayerShapeIfNeeded()
+    }
+
+    func apply(viewportRect: NSRect, cornerRadii: ChromeCornerRadii) {
+        self.viewportRect = viewportRect
+        self.cornerRadii = cornerRadii
+        updateLayerShapeIfNeeded()
     }
 
     private func configureLayer() {
@@ -63,136 +116,103 @@ final class BrowserContentViewportShadowView: NSView {
             width: BrowserContentViewportVisuals.shadowX,
             height: BrowserContentViewportVisuals.shadowY
         )
-        updateLayerShape()
     }
 
-    private func updateLayerShape() {
+    private func updateLayerShapeIfNeeded() {
         let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        let signature = ShapeSignature(
+            viewportRect: viewportRect,
+            cornerRadii: cornerRadii.clamped(to: viewportRect.size),
+            scale: scale
+        )
+        guard appliedShape != signature else { return }
+        appliedShape = signature
 
-        // Clamp each corner radius to the viewport's half-extents so oversized
-        // radii degrade to a pill/half-pill rather than producing a degenerate path.
-        let boundsRect = shadowSurfaceLayer.bounds
-        let maxHalf = min(boundsRect.width, boundsRect.height) / 2
-        func clamp(_ value: CGFloat) -> CGFloat {
-            max(0, min(value, maxHalf))
-        }
-        let radii = ChromeCornerRadii(
-            topLeading: clamp(cornerRadii.topLeading),
-            topTrailing: clamp(cornerRadii.topTrailing),
-            bottomLeading: clamp(cornerRadii.bottomLeading),
-            bottomTrailing: clamp(cornerRadii.bottomTrailing)
+        let pathBounds = CGRect(origin: .zero, size: signature.viewportRect.size)
+        let path = BrowserContentViewportShape.path(
+            in: pathBounds,
+            cornerRadii: signature.cornerRadii
         )
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         layer?.contentsScale = scale
         shadowSurfaceLayer.contentsScale = scale
-        shadowSurfaceLayer.frame = viewportRect
-
-        let path = BrowserContentViewportShadowView.makeRoundedRectPath(
-            in: boundsRect,
-            radii: radii
-        )
+        shadowSurfaceLayer.frame = signature.viewportRect
         shadowSurfaceLayer.path = path
         shadowSurfaceLayer.shadowPath = path
         CATransaction.commit()
     }
+}
 
-    /// Builds a rounded-rect path matching the supplied per-corner radii.
-    /// Coordinates follow Core Animation's y-up convention (origin at the
-    /// bottom-left), so the visually top corners live at the path's `maxY` edge.
-    private static func makeRoundedRectPath(
-        in rect: CGRect,
-        radii: ChromeCornerRadii
-    ) -> CGPath {
-        // Uniform case: defer to the system primitive. This is the exact shape
-        // the original implementation produced, so the default chrome shadow is
-        // byte-for-byte unchanged.
-        if radii.isUniform {
-            let radius = max(0, min(radii.maxRadius, rect.width / 2, rect.height / 2))
-            return CGPath(
-                roundedRect: rect,
-                cornerWidth: radius,
-                cornerHeight: radius,
-                transform: nil
-            )
-        }
+@MainActor
+final class BrowserContentViewportClipView: NSView {
+    private var style: BrowserContentSurfaceStyle
+    private var hitPath: CGPath?
+    private var hitPathBounds: CGRect = .null
+    private var hitPathCornerRadii: ChromeCornerRadii = .uniform(0)
 
-        return makeAsymmetricRoundedRectPath(in: rect, radii: radii)
+    init(style: BrowserContentSurfaceStyle) {
+        self.style = style
+        super.init(frame: .zero)
+        wantsLayer = true
+        clipsToBounds = true
+        autoresizingMask = []
+        applyLayerStyle()
     }
 
-    /// Hand-built asymmetric path for the frameless (top-only) case. Traced
-    /// clockwise in y-up space; corners with a zero radius produce a sharp angle.
-    private static func makeAsymmetricRoundedRectPath(
-        in rect: CGRect,
-        radii: ChromeCornerRadii
-    ) -> CGPath {
-        let minX = rect.minX
-        let minY = rect.minY
-        let maxX = rect.maxX
-        let maxY = rect.maxY
-
-        let path = CGMutablePath()
-
-        // Bottom-leading corner (minX, minY).
-        path.move(to: CGPoint(x: minX, y: minY + radii.bottomLeading))
-        if radii.bottomLeading > 0 {
-            path.addArc(
-                center: CGPoint(x: minX + radii.bottomLeading, y: minY + radii.bottomLeading),
-                radius: radii.bottomLeading,
-                startAngle: .pi,
-                endAngle: 1.5 * .pi,
-                clockwise: false
-            )
-        } else {
-            path.addLine(to: CGPoint(x: minX, y: minY))
-        }
-
-        // Bottom edge → bottom-trailing corner (maxX, minY).
-        path.addLine(to: CGPoint(x: maxX - radii.bottomTrailing, y: minY))
-        if radii.bottomTrailing > 0 {
-            path.addArc(
-                center: CGPoint(x: maxX - radii.bottomTrailing, y: minY + radii.bottomTrailing),
-                radius: radii.bottomTrailing,
-                startAngle: 1.5 * .pi,
-                endAngle: 2 * .pi,
-                clockwise: false
-            )
-        } else {
-            path.addLine(to: CGPoint(x: maxX, y: minY))
-        }
-
-        // Right edge → top-trailing corner (maxX, maxY).
-        path.addLine(to: CGPoint(x: maxX, y: maxY - radii.topTrailing))
-        if radii.topTrailing > 0 {
-            path.addArc(
-                center: CGPoint(x: maxX - radii.topTrailing, y: maxY - radii.topTrailing),
-                radius: radii.topTrailing,
-                startAngle: 0,
-                endAngle: .pi / 2,
-                clockwise: false
-            )
-        } else {
-            path.addLine(to: CGPoint(x: maxX, y: maxY))
-        }
-
-        // Top edge → top-leading corner (minX, maxY).
-        path.addLine(to: CGPoint(x: minX + radii.topLeading, y: maxY))
-        if radii.topLeading > 0 {
-            path.addArc(
-                center: CGPoint(x: minX + radii.topLeading, y: maxY - radii.topLeading),
-                radius: radii.topLeading,
-                startAngle: .pi / 2,
-                endAngle: .pi,
-                clockwise: false
-            )
-        } else {
-            path.addLine(to: CGPoint(x: minX, y: maxY))
-        }
-
-        path.closeSubpath()
-        return path
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
 
-    private let shadowSurfaceLayer = CAShapeLayer()
+    override var acceptsFirstResponder: Bool { false }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        updateHitPathIfNeeded()
+        guard hitPath?.contains(point) == true else {
+            return nil
+        }
+        return super.hitTest(point)
+    }
+
+    override func layout() {
+        super.layout()
+        updateHitPathIfNeeded()
+    }
+
+    func apply(style: BrowserContentSurfaceStyle) {
+        guard self.style != style else { return }
+        self.style = style
+        applyLayerStyle()
+        hitPath = nil
+    }
+
+    private func applyLayerStyle() {
+        guard let layer else { return }
+        let radii = style.geometry.contentCornerRadii
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.backgroundColor = style.backgroundColor.cgColor
+        layer.cornerRadius = radii.maxRadius
+        layer.maskedCorners = radii.caCornerMask
+        layer.cornerCurve = .continuous
+        CATransaction.commit()
+    }
+
+    private func updateHitPathIfNeeded() {
+        let radii = style.geometry.contentCornerRadii.clamped(to: bounds.size)
+        guard hitPath == nil
+            || hitPathBounds != bounds
+            || hitPathCornerRadii != radii
+        else { return }
+
+        hitPathBounds = bounds
+        hitPathCornerRadii = radii
+        hitPath = BrowserContentViewportShape.path(
+            in: bounds,
+            cornerRadii: radii
+        )
+    }
 }

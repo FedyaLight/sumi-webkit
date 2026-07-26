@@ -405,9 +405,12 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             hoveredLink: .constant(nil),
             splitPresentation: nil,
             isSplitDropCaptureActive: false,
-            chromeGeometry: BrowserChromeGeometry(),
+            surfaceStyle: BrowserContentSurfaceStyle(
+                geometry: BrowserChromeGeometry(),
+                backgroundColor: .white
+            ),
             windowState: windowState,
-            contentBackgroundColor: .white
+            isSurfaceVisible: true
         )
 
         XCTAssertFalse(wrapper.isSplitDropCaptureActive)
@@ -468,7 +471,10 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 browserManager.sidebarDragRouter
                     .resolveDragTab(for: $0)
             },
-            chromeGeometry: BrowserChromeGeometry()
+            surfaceStyle: BrowserContentSurfaceStyle(
+                geometry: BrowserChromeGeometry(),
+                backgroundColor: .white
+            )
         )
         let planner = WindowWebContentPresentationPlanner(
             browserContext: browserContext,
@@ -501,6 +507,64 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertTrue(Set(tabs.map(\.id)).isDisjoint(
             with: [firstPinID, secondPinID]
         ))
+    }
+
+    func testContentSurfaceKeepsRoundedHitRegionAcrossSingleAndSplitPresentation() throws {
+        let firstTabID = UUID()
+        let secondTabID = UUID()
+        let group = try XCTUnwrap(SumiDomain.SplitGroup.make(
+            members: [.regularTab(firstTabID), .regularTab(secondTabID)],
+            layoutKind: .vertical
+        ))
+        let windowState = BrowserWindowState()
+        let presentation = try XCTUnwrap(WindowSplitPresentation(
+            windowID: windowState.id,
+            group: group,
+            selection: WindowSplitSelection(
+                groupID: group.id,
+                activeMemberID: .regularTab(firstTabID)
+            ),
+            liveTabIDByMemberID: [
+                .regularTab(firstTabID): firstTabID,
+                .regularTab(secondTabID): secondTabID,
+            ]
+        ))
+        let browserManager = BrowserManager()
+        let browserContext = CompositorBrowserContextStub()
+        let container = WindowWebContentSplitHostLayoutView(
+            splitLayout: browserManager.splitWindowContext.layout,
+            splitDrops: browserManager.splitWindowContext.drops,
+            splitDropTargets: browserManager.splitWindowContext.dropTargets,
+            splitPreviews: browserManager.splitWindowContext.previews,
+            sidebarDragState: browserContext.sidebarDragState,
+            windowState: windowState,
+            resolveDragTab: { _ in nil },
+            surfaceStyle: BrowserContentSurfaceStyle(
+                geometry: BrowserChromeGeometry(outerRadius: 32),
+                backgroundColor: .white
+            )
+        )
+        container.frame = NSRect(x: 0, y: 0, width: 300, height: 200)
+
+        func assertRoundedSurface(file: StaticString = #filePath, line: UInt = #line) {
+            container.layoutSubtreeIfNeeded()
+            XCTAssertNil(
+                container.hitTest(NSPoint(x: 1, y: container.bounds.maxY - 1)),
+                file: file,
+                line: line
+            )
+            XCTAssertNotNil(
+                container.hitTest(NSPoint(x: container.bounds.midX, y: container.bounds.midY)),
+                file: file,
+                line: line
+            )
+        }
+
+        assertRoundedSurface()
+        container.setPaneLayout(.split(presentation))
+        assertRoundedSurface()
+        container.setPaneLayout(.single)
+        assertRoundedSurface()
     }
 
     func testWindowWebContentHoverSessionReconcilesExactWebViewAndRejectsStaleRegistration() async throws {

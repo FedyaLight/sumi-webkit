@@ -15,7 +15,7 @@ final class BrowserWindowChromeTests: XCTestCase {
         XCTAssertEqual(geometry.outerRadius, expectedMetrics.defaultOuterRadius)
         XCTAssertEqual(geometry.elementSeparation, expectedMetrics.elementSeparation)
         XCTAssertEqual(
-            geometry.contentRadius,
+            geometry.contentCornerRadii.maxRadius,
             expectedMetrics.contentRadius(
                 outerRadius: expectedMetrics.defaultOuterRadius,
                 elementSeparation: expectedMetrics.elementSeparation
@@ -36,7 +36,7 @@ final class BrowserWindowChromeTests: XCTestCase {
         XCTAssertEqual(metrics.minimumContentRadius, 5)
         XCTAssertEqual(geometry.outerRadius, 7)
         XCTAssertEqual(geometry.elementSeparation, 8)
-        XCTAssertEqual(geometry.contentRadius, 5)
+        XCTAssertEqual(geometry.contentCornerRadii.maxRadius, 5)
     }
 
     func testBrowserChromeGeometryTahoeFallbackUsesConservativeViewportCornerMetrics() {
@@ -52,7 +52,7 @@ final class BrowserWindowChromeTests: XCTestCase {
         XCTAssertEqual(metrics.minimumContentRadius, 5)
         XCTAssertEqual(geometry.outerRadius, 14)
         XCTAssertEqual(geometry.elementSeparation, 8)
-        XCTAssertEqual(geometry.contentRadius, 10)
+        XCTAssertEqual(geometry.contentCornerRadii.maxRadius, 10)
     }
 
     func testBrowserChromeGeometryDerivesContentRadiusFromOuterRadiusAndSeparation() {
@@ -60,14 +60,14 @@ final class BrowserWindowChromeTests: XCTestCase {
 
         XCTAssertEqual(geometry.outerRadius, 14)
         XCTAssertEqual(geometry.elementSeparation, 8)
-        XCTAssertEqual(geometry.contentRadius, 10)
+        XCTAssertEqual(geometry.contentCornerRadii.maxRadius, 10)
     }
 
     func testBrowserChromeGeometryClampsContentRadiusToMinimum() {
         let geometry = BrowserChromeGeometry(outerRadius: 2)
 
         XCTAssertEqual(geometry.outerRadius, 2)
-        XCTAssertEqual(geometry.contentRadius, 5)
+        XCTAssertEqual(geometry.contentCornerRadii.maxRadius, 5)
     }
 
     func testBrowserChromeGeometrySettingsUseDefaultOuterRadiusForSentinelBorderRadius() {
@@ -81,7 +81,7 @@ final class BrowserWindowChromeTests: XCTestCase {
 
         XCTAssertEqual(geometry.outerRadius, expectedMetrics.defaultOuterRadius)
         XCTAssertEqual(
-            geometry.contentRadius,
+            geometry.contentCornerRadii.maxRadius,
             expectedMetrics.contentRadius(
                 outerRadius: expectedMetrics.defaultOuterRadius,
                 elementSeparation: expectedMetrics.elementSeparation
@@ -98,7 +98,7 @@ final class BrowserWindowChromeTests: XCTestCase {
         let geometry = BrowserChromeGeometry(settings: settings)
 
         XCTAssertEqual(geometry.outerRadius, 18)
-        XCTAssertEqual(geometry.contentRadius, 14)
+        XCTAssertEqual(geometry.contentCornerRadii.maxRadius, 14)
     }
 
     func testBrowserChromeGeometryCustomBorderRadiusOverridesTahoePlatformDefault() {
@@ -113,7 +113,7 @@ final class BrowserWindowChromeTests: XCTestCase {
         XCTAssertEqual(customOuterRadius, 18)
         XCTAssertEqual(geometry.outerRadius, 18)
         XCTAssertEqual(geometry.elementSeparation, 8)
-        XCTAssertEqual(geometry.contentRadius, 14)
+        XCTAssertEqual(geometry.contentCornerRadii.maxRadius, 14)
     }
 
     func testBrowserChromeGeometryDefaultsExposeUniformInsetsAndCornerRadii() {
@@ -121,7 +121,7 @@ final class BrowserWindowChromeTests: XCTestCase {
         let separation = geometry.elementSeparation
 
         XCTAssertEqual(geometry.contentEdgeInsets, .uniform(separation))
-        XCTAssertEqual(geometry.contentCornerRadii, .uniform(geometry.contentRadius))
+        XCTAssertEqual(geometry.contentCornerRadii, .uniform(geometry.contentCornerRadii.maxRadius))
         XCTAssertTrue(geometry.contentCornerRadii.isUniform)
     }
 
@@ -135,10 +135,10 @@ final class BrowserWindowChromeTests: XCTestCase {
 
         let separation = geometry.elementSeparation
         XCTAssertEqual(geometry.contentEdgeInsets, .uniform(separation))
-        XCTAssertEqual(geometry.contentCornerRadii, .uniform(geometry.contentRadius))
+        XCTAssertEqual(geometry.contentCornerRadii, .uniform(geometry.contentCornerRadii.maxRadius))
         XCTAssertTrue(geometry.contentCornerRadii.isUniform)
-        XCTAssertEqual(geometry.contentCornerRadii.bottomLeading, geometry.contentRadius)
-        XCTAssertEqual(geometry.contentCornerRadii.bottomTrailing, geometry.contentRadius)
+        XCTAssertEqual(geometry.contentCornerRadii.bottomLeading, geometry.contentCornerRadii.maxRadius)
+        XCTAssertEqual(geometry.contentCornerRadii.bottomTrailing, geometry.contentCornerRadii.maxRadius)
     }
 
     func testBrowserChromeGeometrySettingsUseTopOnlyChromeWhenFramelessEnabled() {
@@ -157,13 +157,11 @@ final class BrowserWindowChromeTests: XCTestCase {
         XCTAssertEqual(geometry.contentEdgeInsets.leading, 0)
         XCTAssertEqual(geometry.contentEdgeInsets.trailing, 0)
         // Only top corners are rounded; bottom corners are square.
-        XCTAssertEqual(geometry.contentCornerRadii, .topOnly(geometry.contentRadius))
-        XCTAssertEqual(geometry.contentCornerRadii.topLeading, geometry.contentRadius)
-        XCTAssertEqual(geometry.contentCornerRadii.topTrailing, geometry.contentRadius)
+        XCTAssertEqual(geometry.contentCornerRadii, .topOnly(geometry.contentCornerRadii.maxRadius))
+        XCTAssertEqual(geometry.contentCornerRadii.topLeading, geometry.contentCornerRadii.maxRadius)
+        XCTAssertEqual(geometry.contentCornerRadii.topTrailing, geometry.contentCornerRadii.maxRadius)
         XCTAssertEqual(geometry.contentCornerRadii.bottomLeading, 0)
         XCTAssertEqual(geometry.contentCornerRadii.bottomTrailing, 0)
-        // Legacy uniform `contentRadius` is preserved for existing consumers.
-        XCTAssertEqual(geometry.contentRadius, geometry.contentCornerRadii.maxRadius)
     }
 
     func testChromeCornerRadiiMapsToTopOnlyAppKitCornerMask() {
@@ -188,6 +186,54 @@ final class BrowserWindowChromeTests: XCTestCase {
     func testChromeCornerRadiiZeroRadiusProducesEmptyMask() {
         XCTAssertTrue(ChromeCornerRadii.uniform(0).caCornerMask.isEmpty)
         XCTAssertTrue(ChromeCornerRadii.topOnly(0).caCornerMask.isEmpty)
+    }
+
+    func testBrowserContentViewportShapeOwnsRoundedHitTesting() {
+        let rect = CGRect(x: 0, y: 0, width: 100, height: 100)
+        let uniform = BrowserContentViewportShape.path(
+            in: rect,
+            cornerRadii: .uniform(10)
+        )
+        let topOnly = BrowserContentViewportShape.path(
+            in: rect,
+            cornerRadii: .topOnly(10)
+        )
+
+        XCTAssertFalse(uniform.contains(CGPoint(x: 1, y: 1)))
+        XCTAssertFalse(uniform.contains(CGPoint(x: 1, y: 99)))
+        XCTAssertTrue(uniform.contains(CGPoint(x: 50, y: 50)))
+        XCTAssertTrue(topOnly.contains(CGPoint(x: 1, y: 1)))
+        XCTAssertFalse(topOnly.contains(CGPoint(x: 1, y: 99)))
+    }
+
+    func testBrowserContentViewportClipOwnsMaskBackgroundAndRoundedHitRegion() {
+        let backgroundColor = NSColor.systemPurple
+        let view = BrowserContentViewportClipView(
+            style: BrowserContentSurfaceStyle(
+                geometry: BrowserChromeGeometry(outerRadius: 24),
+                backgroundColor: backgroundColor
+            )
+        )
+        view.frame = NSRect(x: 0, y: 0, width: 100, height: 100)
+        view.layoutSubtreeIfNeeded()
+
+        XCTAssertTrue(view.clipsToBounds)
+        XCTAssertTrue(view.layer?.masksToBounds == true)
+        XCTAssertEqual(view.layer?.cornerRadius, 20)
+        XCTAssertEqual(view.layer?.backgroundColor, backgroundColor.cgColor)
+        XCTAssertNil(view.hitTest(NSPoint(x: 1, y: 99)))
+        XCTAssertIdentical(view.hitTest(NSPoint(x: 50, y: 50)), view)
+    }
+
+    func testChromeCornerRadiiClampAtViewportHalfExtent() {
+        XCTAssertEqual(
+            ChromeCornerRadii.uniform(20).clamped(to: CGSize(width: 10, height: 40)),
+            .uniform(5)
+        )
+        XCTAssertEqual(
+            ChromeCornerRadii.topOnly(20).clamped(to: CGSize(width: 40, height: 12)),
+            .topOnly(6)
+        )
     }
 
     private func assertMinimumWindowConstraints(

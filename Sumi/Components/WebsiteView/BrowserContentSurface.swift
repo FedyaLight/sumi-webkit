@@ -1,4 +1,15 @@
+import AppKit
 import SwiftUI
+
+struct BrowserContentSurfaceStyle: Equatable {
+    let geometry: BrowserChromeGeometry
+    let backgroundColor: NSColor
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.geometry == rhs.geometry
+            && lhs.backgroundColor.isEqual(rhs.backgroundColor)
+    }
+}
 
 extension ChromeCornerRadii {
     /// Maps the radii to SwiftUI's y-down `RectangleCornerRadii`.
@@ -20,15 +31,14 @@ enum BrowserContentViewportVisuals {
 }
 
 struct BrowserContentSurfaceModifier: ViewModifier {
-    let geometry: BrowserChromeGeometry
-    let background: Color
+    let style: BrowserContentSurfaceStyle
 
     func body(content: Content) -> some View {
         content
-            .background(background)
+            .background(Color(nsColor: style.backgroundColor))
             .clipShape(
                 UnevenRoundedRectangle(
-                    cornerRadii: geometry.contentCornerRadii.rectangleCornerRadii,
+                    cornerRadii: style.geometry.contentCornerRadii.rectangleCornerRadii,
                     style: .continuous
                 )
             )
@@ -37,16 +47,8 @@ struct BrowserContentSurfaceModifier: ViewModifier {
 }
 
 extension View {
-    func browserContentSurface(
-        geometry: BrowserChromeGeometry,
-        background: Color
-    ) -> some View {
-        modifier(
-            BrowserContentSurfaceModifier(
-                geometry: geometry,
-                background: background
-            )
-        )
+    func browserContentSurface(style: BrowserContentSurfaceStyle) -> some View {
+        modifier(BrowserContentSurfaceModifier(style: style))
     }
 
     func browserContentViewportShadow() -> some View {

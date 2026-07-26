@@ -39,7 +39,7 @@ struct GlanceOverlayLayout {
     ) -> CGRect {
         guard bounds.width > 0, bounds.height > 0 else { return .zero }
 
-        let horizontalInset = max(0, configuration.browserContentInset)
+        let horizontalInset = configuration.browserContentSurfaceStyle.geometry.elementSeparation
         var webArea = bounds.insetBy(
             dx: horizontalInset,
             dy: Metrics.webAreaVerticalInset
@@ -67,7 +67,7 @@ struct GlanceOverlayLayout {
             isSidebarVisible: configuration.isSidebarVisible,
             sidebarWidth: configuration.sidebarWidth,
             sidebarPosition: configuration.sidebarPosition,
-            elementSeparation: configuration.browserContentInset
+            elementSeparation: configuration.browserContentSurfaceStyle.geometry.elementSeparation
         )
     }
 

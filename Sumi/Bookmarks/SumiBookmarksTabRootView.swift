@@ -33,7 +33,6 @@ struct SumiBookmarksTabRootView: View {
             content
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(tokens.windowBackground)
         .sumiChromeThemeScope(context: surfaceThemeContext, settings: sumiSettings)
         .environment(\.colorScheme, surfaceThemeContext.chromeColorScheme)
         .environment(\.nativeSurfaceHoverUpdatesEnabled, scrollHoverCoordinator.hoverUpdatesEnabled)

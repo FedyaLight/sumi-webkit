@@ -1177,9 +1177,12 @@ final class SumiReaderPresentationTests: XCTestCase {
             hoveredLink: .constant(nil),
             splitPresentation: nil,
             isSplitDropCaptureActive: false,
-            chromeGeometry: BrowserChromeGeometry(),
+            surfaceStyle: BrowserContentSurfaceStyle(
+                geometry: BrowserChromeGeometry(),
+                backgroundColor: .white
+            ),
             windowState: windowState,
-            contentBackgroundColor: .white
+            isSurfaceVisible: true
         )
     }
 

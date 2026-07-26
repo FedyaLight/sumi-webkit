@@ -7,10 +7,6 @@ import SwiftUI
 
 enum SettingsThemeTokens {
     enum Colors {
-        static var pageBackground: Color {
-            Color(nsColor: .windowBackgroundColor)
-        }
-
         static var groupedBackground: Color {
             Color.primary.opacity(0.055)
         }

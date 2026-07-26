@@ -69,7 +69,6 @@ struct SumiSettingsTabRootView: View {
                 }
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
-            .background(SettingsSurfaceStyle.pageBackground)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .sumiChromeThemeScope(context: surfaceThemeContext, settings: sumiSettingsModel)
@@ -152,7 +151,6 @@ struct SumiSettingsTabRootView: View {
         }
         .frame(width: width, alignment: .topLeading)
         .frame(maxHeight: .infinity, alignment: .topLeading)
-        .background(SettingsSurfaceStyle.pageBackground)
     }
 
     private var settingsSearchField: some View {
@@ -262,7 +260,6 @@ struct SumiSettingsTabRootView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(SettingsSurfaceStyle.pageBackground)
     }
 
     private func compactNavigationRow(
@@ -318,7 +315,6 @@ struct SumiSettingsTabRootView: View {
             .padding(.horizontal, Layout.horizontalPadding)
             .padding(.vertical, Layout.verticalPadding)
         }
-        .background(SettingsSurfaceStyle.pageBackground)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 

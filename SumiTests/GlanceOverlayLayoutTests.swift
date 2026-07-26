@@ -133,8 +133,13 @@ final class GlanceOverlayLayoutTests: XCTestCase {
             sidebarWidth: sidebarWidth,
             sidebarPosition: sidebarPosition,
             cornerRadius: 14,
-            browserContentCornerRadius: 12,
-            browserContentInset: browserContentInset,
+            browserContentSurfaceStyle: BrowserContentSurfaceStyle(
+                geometry: BrowserChromeGeometry(
+                    outerRadius: 16,
+                    elementSeparation: browserContentInset
+                ),
+                backgroundColor: .windowBackgroundColor
+            ),
             accentColor: .controlAccentColor,
             surfaceColor: .windowBackgroundColor,
             reduceMotion: false

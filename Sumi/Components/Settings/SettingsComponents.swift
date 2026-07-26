@@ -15,10 +15,6 @@ enum SettingsSurfaceStyle {
     static let groupedCornerRadius: CGFloat = 14
     static let compactCornerRadius: CGFloat = 8
 
-    static var pageBackground: Color {
-        SettingsThemeTokens.Colors.pageBackground
-    }
-
     static var groupedBackground: Color {
         SettingsThemeTokens.Colors.groupedBackground
     }

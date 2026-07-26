@@ -1,5 +1,4 @@
 import AppKit
-import SwiftUI
 import SumiWebRuntime
 
 @MainActor
@@ -43,7 +42,7 @@ final class WindowWebContentController: NSViewController {
     private let webViewCompositorRuntime: WebViewCompositorRuntime
     private let webViewProtectionRuntime: WebViewProtectionRuntime
     private let windowState: BrowserWindowState
-    private var chromeGeometry: BrowserChromeGeometry
+    private var surfaceStyle: BrowserContentSurfaceStyle
     private let hostRegistry = WindowWebContentHostRegistry()
     private let containerView: WindowWebContentSplitHostLayoutView
 
@@ -51,7 +50,6 @@ final class WindowWebContentController: NSViewController {
     private var appliedDisplayState: WebsiteDisplayState?
     private var isDisplayStateApplyScheduled = false
     private var hoveredLinkHandler: ((String?) -> Void)?
-    private var contentBackgroundColor: Color = .white
     private lazy var compositorMutationGate = WindowWebContentCompositorMutationGate(
         isCurrentRegistration: { [weak self] registration in
             self?.webViewCompositorRuntime.owns(registration)
@@ -76,8 +74,7 @@ final class WindowWebContentController: NSViewController {
         protectionRuntime: webViewProtectionRuntime,
         backgroundTransitions: backgroundTransitions,
         windowID: windowState.id,
-        chromeGeometry: chromeGeometry,
-        contentBackgroundColor: contentBackgroundColor
+        surfaceStyle: surfaceStyle
     )
     private lazy var hostResolver = WindowWebContentHostResolver(
         ownershipQuery: webViewOwnershipQuery,
@@ -147,7 +144,7 @@ final class WindowWebContentController: NSViewController {
         trackedWebViewAdmission: TrackedWebViewAdmissionService,
         webViewCompositorRuntime: WebViewCompositorRuntime,
         webViewProtectionRuntime: WebViewProtectionRuntime,
-        chromeGeometry: BrowserChromeGeometry,
+        surfaceStyle: BrowserContentSurfaceStyle,
         windowState: BrowserWindowState,
         containerView: WindowWebContentSplitHostLayoutView
     ) {
@@ -157,7 +154,7 @@ final class WindowWebContentController: NSViewController {
         self.trackedWebViewAdmission = trackedWebViewAdmission
         self.webViewCompositorRuntime = webViewCompositorRuntime
         self.webViewProtectionRuntime = webViewProtectionRuntime
-        self.chromeGeometry = chromeGeometry
+        self.surfaceStyle = surfaceStyle
         self.windowState = windowState
         self.containerView = containerView
         super.init(nibName: nil, bundle: nil)
@@ -226,10 +223,11 @@ final class WindowWebContentController: NSViewController {
     func update(
         displayState: WebsiteDisplayState,
         hoveredLinkHandler: @escaping (String?) -> Void,
-        chromeGeometry: BrowserChromeGeometry,
-        contentBackgroundColor: Color
+        surfaceStyle: BrowserContentSurfaceStyle,
+        isSurfaceVisible: Bool
     ) {
         guard let registration = compositorMutationGate.currentRegistration else { return }
+        containerView.isHidden = !isSurfaceVisible
         let currentTab = browserContext.currentTab(for: windowState)
         let needsDisplayStateApply = presentationPlanner.needsDisplayStateApply(
             appliedDisplayState: appliedDisplayState,
@@ -237,17 +235,9 @@ final class WindowWebContentController: NSViewController {
             currentTab: currentTab
         )
 
-        let previousBg = self.contentBackgroundColor
-        self.contentBackgroundColor = contentBackgroundColor
-        let bgChanged = previousBg != contentBackgroundColor
-
-        if self.chromeGeometry != chromeGeometry || bgChanged {
-            self.chromeGeometry = chromeGeometry
-            containerView.setChromeGeometry(chromeGeometry)
-            hostAttachments.updateViewportStyle(
-                chromeGeometry: chromeGeometry,
-                contentBackgroundColor: contentBackgroundColor
-            )
+        if self.surfaceStyle != surfaceStyle {
+            self.surfaceStyle = surfaceStyle
+            hostAttachments.updateSurfaceStyle(surfaceStyle)
         }
 
         pendingDisplayState = displayState

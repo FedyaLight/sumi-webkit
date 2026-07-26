@@ -16,7 +16,7 @@ struct SafariExtensionInlineUIInfrastructureProbeResult: Equatable, Sendable {
     /// Extension inline overlays (fixed-position DOM, shadow roots, in-page iframes) render
     /// inside WKWebView's compositor and are not affected by the container's AppKit clipping.
     let clipsToBoundsAffectsInPageExtensionOverlays: Bool
-    let masksToBoundsOnRoundedViewport: Bool
+    let masksToBoundsOnTabContainer: Bool
     let requiresControllerBeforeWebViewCreation: Bool
     let inlineUINavigationResponderWired: Bool
     let detail: String
@@ -26,7 +26,6 @@ enum SafariExtensionInlineUIInfrastructureProbe {
     static let tabContainerRequiredSymbols: [String] = [
         "final class SumiWebViewContainerView",
         "clipsToBounds = true",
-        "layer?.masksToBounds = radius > 0",
     ]
 
     static let preconfiguredControllerRequiredSymbols: [String] = [
@@ -86,10 +85,6 @@ enum SafariExtensionInlineUIInfrastructureProbe {
         )
         let container = SumiWebViewContainerView(tabID: tab.id, webView: webView)
         container.frame = NSRect(x: 0, y: 0, width: 100, height: 100)
-        container.setBrowserContentViewport(
-            geometry: BrowserChromeGeometry(outerRadius: 16, elementSeparation: 0)
-        )
-
         let navigationBundle = tab.installNavigationDelegate(on: webView)
         let inlineUINavigationResponderWired =
             navigationBundle.isInstalled(on: webView)
@@ -111,7 +106,7 @@ enum SafariExtensionInlineUIInfrastructureProbe {
 
         return result(
             clipsToBoundsOnTabContainer: container.clipsToBounds,
-            masksToBoundsOnRoundedViewport: container.layer?.masksToBounds == true,
+            masksToBoundsOnTabContainer: container.layer?.masksToBounds == true,
             requiresControllerBeforeWebViewCreation:
                 requiresControllerBeforeWebViewCreation,
             inlineUINavigationResponderWired: inlineUINavigationResponderWired
@@ -132,7 +127,7 @@ enum SafariExtensionInlineUIInfrastructureProbe {
         let navigation = navigationResponderSource
         let clipsToBoundsOnTabContainer =
             tabContainerRequiredSymbols.allSatisfy { container?.contains($0) == true }
-        let masksToBoundsOnRoundedViewport = clipsToBoundsOnTabContainer
+        let masksToBoundsOnTabContainer = clipsToBoundsOnTabContainer
         let requiresControllerBeforeWebViewCreation =
             preconfiguredControllerRequiredSymbols.allSatisfy { symbol in
                 profiles?.contains(symbol) == true
@@ -145,7 +140,7 @@ enum SafariExtensionInlineUIInfrastructureProbe {
 
         return result(
             clipsToBoundsOnTabContainer: clipsToBoundsOnTabContainer,
-            masksToBoundsOnRoundedViewport: masksToBoundsOnRoundedViewport,
+            masksToBoundsOnTabContainer: masksToBoundsOnTabContainer,
             requiresControllerBeforeWebViewCreation:
                 requiresControllerBeforeWebViewCreation,
             inlineUINavigationResponderWired: inlineUINavigationResponderWired
@@ -154,7 +149,7 @@ enum SafariExtensionInlineUIInfrastructureProbe {
 
     private static func result(
         clipsToBoundsOnTabContainer: Bool,
-        masksToBoundsOnRoundedViewport: Bool,
+        masksToBoundsOnTabContainer: Bool,
         requiresControllerBeforeWebViewCreation: Bool,
         inlineUINavigationResponderWired: Bool
     ) -> SafariExtensionInlineUIInfrastructureProbeResult {
@@ -162,8 +157,8 @@ enum SafariExtensionInlineUIInfrastructureProbe {
         if clipsToBoundsOnTabContainer {
             detailParts.append("tabContainerClipsToBoundsChromeOnly")
         }
-        if masksToBoundsOnRoundedViewport {
-            detailParts.append("roundedViewportMasksToBounds")
+        if masksToBoundsOnTabContainer {
+            detailParts.append("tabContainerMasksToBounds")
         }
         if requiresControllerBeforeWebViewCreation {
             detailParts.append("controllerRequiredBeforeWebViewCreation")
@@ -175,7 +170,7 @@ enum SafariExtensionInlineUIInfrastructureProbe {
         return SafariExtensionInlineUIInfrastructureProbeResult(
             clipsToBoundsOnTabContainer: clipsToBoundsOnTabContainer,
             clipsToBoundsAffectsInPageExtensionOverlays: false,
-            masksToBoundsOnRoundedViewport: masksToBoundsOnRoundedViewport,
+            masksToBoundsOnTabContainer: masksToBoundsOnTabContainer,
             requiresControllerBeforeWebViewCreation:
                 requiresControllerBeforeWebViewCreation,
             inlineUINavigationResponderWired: inlineUINavigationResponderWired,

@@ -1,7 +1,7 @@
 import AppKit
 import QuartzCore
-import SwiftUI
 import SumiWebRuntime
+import WebKit
 
 @MainActor
 final class WindowWebContentHostAttachmentService {
@@ -11,8 +11,7 @@ final class WindowWebContentHostAttachmentService {
     private let protectionRuntime: WebViewProtectionRuntime
     private let backgroundTransitions: WindowWebContentBackgroundTransitionSession
     private let windowID: UUID
-    private var chromeGeometry: BrowserChromeGeometry
-    private var contentBackgroundColor: Color
+    private var surfaceStyle: BrowserContentSurfaceStyle
 
     init(
         containerView: WindowWebContentSplitHostLayoutView,
@@ -21,8 +20,7 @@ final class WindowWebContentHostAttachmentService {
         protectionRuntime: WebViewProtectionRuntime,
         backgroundTransitions: WindowWebContentBackgroundTransitionSession,
         windowID: UUID,
-        chromeGeometry: BrowserChromeGeometry,
-        contentBackgroundColor: Color
+        surfaceStyle: BrowserContentSurfaceStyle
     ) {
         self.containerView = containerView
         self.hostRegistry = hostRegistry
@@ -30,13 +28,11 @@ final class WindowWebContentHostAttachmentService {
         self.protectionRuntime = protectionRuntime
         self.backgroundTransitions = backgroundTransitions
         self.windowID = windowID
-        self.chromeGeometry = chromeGeometry
-        self.contentBackgroundColor = contentBackgroundColor
+        self.surfaceStyle = surfaceStyle
     }
 
     func replaceHost(_ host: SumiWebViewContainerView, in slot: WindowWebContentPaneSlot) {
         clearPaneHost(slot)
-        configureViewportStyle(on: host)
         hostRegistry.setHost(host, for: slot)
     }
 
@@ -45,7 +41,6 @@ final class WindowWebContentHostAttachmentService {
         to slot: WindowWebContentPaneSlot
     ) {
         clearPaneHost(slot)
-        configureViewportStyle(on: host)
         hostRegistry.clearReferences(to: host)
         hostRegistry.setHost(host, for: slot)
     }
@@ -71,7 +66,7 @@ final class WindowWebContentHostAttachmentService {
                 guard self.compositorRuntime.owns(containerRegistration) else { return }
                 self.hostRegistry.removeParkedProtectedHost(for: host.webView)
                 host.autoresizingMask = [.width, .height]
-                self.configureViewportStyle(on: host)
+                self.applySurfaceBackground(to: host.webView)
                 host.attachDisplayedContentIfNeeded()
             }
 
@@ -79,6 +74,7 @@ final class WindowWebContentHostAttachmentService {
             if isProtected {
                 hostRegistry.parkProtectedHost(host)
             }
+            containerView.contentVisibilityDidChange()
             compositorRuntime.completePromotedHostAttachment(
                 for: host.tabID,
                 in: windowID,
@@ -94,12 +90,12 @@ final class WindowWebContentHostAttachmentService {
                 host.prepareForSuperviewTransferPreservingDisplayedContent()
                 host.removeFromSuperview()
             }
-            if host.superview == nil || host.superview === paneView {
-                paneView.placeContentHostAboveChromeShadow(host)
+            if host.superview == nil {
+                paneView.placeContentHost(host)
             }
             host.frame = paneView.bounds
             host.autoresizingMask = [.width, .height]
-            self.configureViewportStyle(on: host)
+            self.applySurfaceBackground(to: host.webView)
 
             if needsTransitionGate {
                 self.backgroundTransitions.begin(for: host.webView)
@@ -111,6 +107,7 @@ final class WindowWebContentHostAttachmentService {
             paneView.layoutSubtreeIfNeeded()
             host.layoutSubtreeIfNeeded()
         }
+        containerView.contentVisibilityDidChange()
 
         guard compositorRuntime.owns(containerRegistration) else { return }
         if needsTransitionGate {
@@ -150,6 +147,7 @@ final class WindowWebContentHostAttachmentService {
             keeping: nil,
             shouldRemove: shouldRemoveHostedSubview
         )
+        containerView.contentVisibilityDidChange()
     }
 
     func clearSplitPaneHost(_ tabID: UUID) {
@@ -163,6 +161,7 @@ final class WindowWebContentHostAttachmentService {
                 shouldRemove: shouldRemoveHostedSubview
             )
         }
+        containerView.contentVisibilityDidChange()
     }
 
     func clearAllSplitPaneHosts() {
@@ -189,14 +188,12 @@ final class WindowWebContentHostAttachmentService {
         return true
     }
 
-    func updateViewportStyle(
-        chromeGeometry: BrowserChromeGeometry,
-        contentBackgroundColor: Color
-    ) {
-        self.chromeGeometry = chromeGeometry
-        self.contentBackgroundColor = contentBackgroundColor
+    func updateSurfaceStyle(_ style: BrowserContentSurfaceStyle) {
+        guard surfaceStyle != style else { return }
+        surfaceStyle = style
+        containerView.setSurfaceStyle(style)
         for host in hostRegistry.displayedHosts {
-            configureViewportStyle(on: host)
+            applySurfaceBackground(to: host.webView)
         }
     }
 
@@ -215,12 +212,8 @@ final class WindowWebContentHostAttachmentService {
         host.isHidden = true
     }
 
-    private func configureViewportStyle(on host: SumiWebViewContainerView) {
-        host.setBrowserContentViewport(geometry: chromeGeometry)
-        let backgroundColor = NSColor(contentBackgroundColor)
-        host.webView.underPageBackgroundColor = backgroundColor
-        host.webView.layer?.backgroundColor = backgroundColor.cgColor
-        host.layer?.backgroundColor = backgroundColor.cgColor
+    private func applySurfaceBackground(to webView: WKWebView) {
+        webView.underPageBackgroundColor = surfaceStyle.backgroundColor
     }
 
     private func performWithoutImplicitAnimations(_ updates: () -> Void) {

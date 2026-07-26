@@ -3,12 +3,13 @@ import SumiDomain
 import WebKit
 
 @MainActor
-private func hasHostedWebView(in root: NSView) -> Bool {
+private func hasVisibleHostedWebView(in root: NSView) -> Bool {
     for subview in root.subviews {
+        guard !subview.isHidden else { continue }
         if subview is SumiWebViewContainerView || subview is WKWebView {
             return true
         }
-        if hasHostedWebView(in: subview) {
+        if hasVisibleHostedWebView(in: subview) {
             return true
         }
     }
@@ -24,11 +25,13 @@ final class WindowWebContentSplitHostLayoutView: NSView, WindowWebContentVisualH
     }
 
     let singlePaneView = PaneContainerView()
+    private let surfaceShadowView = BrowserContentViewportShadowView(frame: .zero)
+    private let surfaceClipView: BrowserContentViewportClipView
     private let splitRootView = SplitRootView()
     private let visualHandoffOverlayView = VisualHandoffOverlayView()
     private var splitDropCaptureView: SplitDropCaptureView?
     private var paneLayout: PaneLayout = .single
-    private var chromeGeometry: BrowserChromeGeometry
+    private var surfaceStyle: BrowserContentSurfaceStyle
     private let splitLayout: SplitLayoutService
     private let splitDrops: SplitDropService
     private let splitDropTargets: SplitDropTargetService
@@ -50,9 +53,10 @@ final class WindowWebContentSplitHostLayoutView: NSView, WindowWebContentVisualH
         sidebarDragState: SidebarDragState,
         windowState: BrowserWindowState,
         resolveDragTab: @escaping (SumiDragItem) -> Tab?,
-        chromeGeometry: BrowserChromeGeometry
+        surfaceStyle: BrowserContentSurfaceStyle
     ) {
-        self.chromeGeometry = chromeGeometry
+        self.surfaceStyle = surfaceStyle
+        self.surfaceClipView = BrowserContentViewportClipView(style: surfaceStyle)
         self.splitLayout = splitLayout
         self.splitDrops = splitDrops
         self.splitDropTargets = splitDropTargets
@@ -64,13 +68,14 @@ final class WindowWebContentSplitHostLayoutView: NSView, WindowWebContentVisualH
         super.init(frame: .zero)
 
         singlePaneView.identifier = CompositorPaneDestination.single.viewIdentifier
-        singlePaneView.setChromeGeometry(chromeGeometry)
-        splitRootView.setChromeGeometry(chromeGeometry)
-
-        addSubview(singlePaneView)
-        addSubview(splitRootView)
+        surfaceShadowView.isHidden = true
+        addSubview(surfaceShadowView)
+        addSubview(surfaceClipView)
+        surfaceClipView.addSubview(singlePaneView)
+        surfaceClipView.addSubview(splitRootView)
         visualHandoffOverlayView.isHidden = true
-        addSubview(visualHandoffOverlayView)
+        surfaceClipView.addSubview(visualHandoffOverlayView)
+        applyPanePresentation()
     }
 
     @available(*, unavailable)
@@ -80,26 +85,39 @@ final class WindowWebContentSplitHostLayoutView: NSView, WindowWebContentVisualH
 
     override func layout() {
         super.layout()
-        applyPaneLayout()
-        visualHandoffOverlayView.frame = bounds
+        layoutSurface()
+        let contentBounds = surfaceClipView.bounds
+        switch paneLayout {
+        case .single:
+            singlePaneView.frame = contentBounds
+            splitRootView.frame = .zero
+        case .split:
+            singlePaneView.frame = .zero
+            splitRootView.frame = contentBounds
+        }
+        visualHandoffOverlayView.frame = contentBounds
         if let splitDropCaptureView,
-           splitDropCaptureView.superview === self {
-            splitDropCaptureView.frame = bounds
+           splitDropCaptureView.superview === surfaceClipView {
+            splitDropCaptureView.frame = contentBounds
         }
     }
 
     func setPaneLayout(_ layout: PaneLayout) {
         guard paneLayout != layout else { return }
         paneLayout = layout
+        applyPanePresentation()
         needsLayout = true
     }
 
-    func setChromeGeometry(_ geometry: BrowserChromeGeometry) {
-        guard chromeGeometry != geometry else { return }
-        chromeGeometry = geometry
-        singlePaneView.setChromeGeometry(geometry)
-        splitRootView.setChromeGeometry(geometry)
-        needsLayout = true
+    func setSurfaceStyle(_ style: BrowserContentSurfaceStyle) {
+        guard surfaceStyle != style else { return }
+        surfaceStyle = style
+        surfaceClipView.apply(style: style)
+        layoutSurface()
+    }
+
+    func contentVisibilityDidChange() {
+        updateSurfaceShadowVisibility()
     }
 
     func setSplitDropCaptureActive(
@@ -108,13 +126,13 @@ final class WindowWebContentSplitHostLayoutView: NSView, WindowWebContentVisualH
         if isActive {
             guard let splitDropCaptureView = activeSplitDropCaptureView()
             else { return }
-            if splitDropCaptureView.superview !== self {
-                addSubview(splitDropCaptureView, positioned: .above, relativeTo: nil)
+            if splitDropCaptureView.superview !== surfaceClipView {
+                surfaceClipView.addSubview(splitDropCaptureView, positioned: .above, relativeTo: nil)
             }
-            splitDropCaptureView.frame = bounds
+            splitDropCaptureView.frame = surfaceClipView.bounds
         } else if let splitDropCaptureView {
             splitDropCaptureView.cancelActiveDragPreview()
-            if splitDropCaptureView.superview === self {
+            if splitDropCaptureView.superview === surfaceClipView {
                 splitDropCaptureView.removeFromSuperview()
             }
             self.splitDropCaptureView = nil
@@ -152,6 +170,7 @@ final class WindowWebContentSplitHostLayoutView: NSView, WindowWebContentVisualH
         host.autoresizingMask = []
         host.isHidden = false
         visualHandoffOverlayView.isHidden = false
+        updateSurfaceShadowVisibility()
     }
 
     func removeVisualHandoffCover(_ host: SumiWebViewContainerView) {
@@ -159,28 +178,29 @@ final class WindowWebContentSplitHostLayoutView: NSView, WindowWebContentVisualH
             host.removeFromSuperview()
         }
         visualHandoffOverlayView.isHidden = visualHandoffOverlayView.subviews.isEmpty
+        updateSurfaceShadowVisibility()
     }
 
     override var acceptsFirstResponder: Bool { false }
 
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let target = super.hitTest(point)
+        return target === self ? nil : target
+    }
+
     override func resetCursorRects() {}
 
-    private func applyPaneLayout() {
+    private func applyPanePresentation() {
         switch paneLayout {
         case .single:
             singlePaneView.isHidden = false
             splitRootView.isHidden = true
-            singlePaneView.frame = bounds
-            splitRootView.frame = .zero
 
         case .split(let presentation):
             singlePaneView.isHidden = true
             splitRootView.isHidden = false
-            singlePaneView.frame = .zero
-            splitRootView.frame = bounds
             splitRootView.configure(
                 presentation: presentation,
-                chromeGeometry: chromeGeometry,
                 onResize: { [weak self] path, sizes in
                     guard let self else { return }
                     self.splitLayout.updateWeights(
@@ -192,6 +212,26 @@ final class WindowWebContentSplitHostLayoutView: NSView, WindowWebContentVisualH
                 }
             )
         }
+        updateSurfaceShadowVisibility()
+    }
+
+    private func layoutSurface() {
+        let outset = BrowserContentViewportShadowView.shadowOutset
+        surfaceShadowView.frame = bounds.insetBy(dx: -outset, dy: -outset)
+        surfaceShadowView.apply(
+            viewportRect: NSRect(
+                x: outset,
+                y: outset,
+                width: bounds.width,
+                height: bounds.height
+            ),
+            cornerRadii: surfaceStyle.geometry.contentCornerRadii
+        )
+        surfaceClipView.frame = bounds
+    }
+
+    private func updateSurfaceShadowVisibility() {
+        surfaceShadowView.isHidden = !hasVisibleHostedWebView(in: surfaceClipView)
     }
 
     private func activeSplitDropCaptureView() -> SplitDropCaptureView? {
@@ -220,7 +260,6 @@ private final class VisualHandoffOverlayView: NSView {
 }
 
 private final class SplitRootView: NSView {
-    private var chromeGeometry = BrowserChromeGeometry()
     private var paneViewsByTabId: [UUID: PaneContainerView] = [:]
     private var rootView: NSView?
     private var currentPresentation: WindowSplitPresentation?
@@ -228,25 +267,16 @@ private final class SplitRootView: NSView {
     private var layoutGeneration: UInt = 0
 
     var hasHostedWebViews: Bool {
-        rootView.map { hasHostedWebView(in: $0) } ?? false
+        rootView.map { hasVisibleHostedWebView(in: $0) } ?? false
     }
 
     override var acceptsFirstResponder: Bool { false }
 
-    func setChromeGeometry(_ geometry: BrowserChromeGeometry) {
-        guard chromeGeometry != geometry else { return }
-        chromeGeometry = geometry
-        paneViewsByTabId.values.forEach { $0.setChromeGeometry(geometry) }
-        needsLayout = true
-    }
-
     func configure(
         presentation: WindowSplitPresentation,
-        chromeGeometry: BrowserChromeGeometry,
         onResize: @escaping ([Int], [Double]) -> Void
     ) {
         self.onResize = onResize
-        setChromeGeometry(chromeGeometry)
         if let currentPresentation,
            currentPresentation.group.layoutTree.hasSameStructure(
                as: presentation.group.layoutTree
@@ -312,7 +342,6 @@ private final class SplitRootView: NSView {
             }
             let pane = PaneContainerView()
             pane.identifier = NSUserInterfaceItemIdentifier("split-pane-\(tabId.uuidString)")
-            pane.setChromeGeometry(chromeGeometry)
             paneViewsByTabId[tabId] = pane
             return pane
 
@@ -358,34 +387,14 @@ private final class SplitRootView: NSView {
 }
 
 final class PaneContainerView: NSView {
-    private let chromeShadowView = BrowserContentViewportShadowView(frame: .zero)
-    private var chromeGeometry = BrowserChromeGeometry()
     private var splitControlsView: SplitPaneControlsView?
     private var paneTrackingArea: NSTrackingArea?
     private var isPointerInside = false
 
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        chromeShadowView.isHidden = true
-        addSubview(chromeShadowView, positioned: .below, relativeTo: nil)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
     override var acceptsFirstResponder: Bool { false }
 
-    func setChromeGeometry(_ geometry: BrowserChromeGeometry) {
-        guard chromeGeometry != geometry else { return }
-        chromeGeometry = geometry
-        needsLayout = true
-    }
-
-    func placeContentHostAboveChromeShadow(_ host: SumiWebViewContainerView) {
-        chromeShadowView.isHidden = false
-        addSubview(host, positioned: .above, relativeTo: chromeShadowView)
+    func placeContentHost(_ host: SumiWebViewContainerView) {
+        addSubview(host)
         if let splitControlsView {
             addSubview(splitControlsView, positioned: .above, relativeTo: host)
         }
@@ -428,18 +437,16 @@ final class PaneContainerView: NSView {
         shouldRemove: (NSView) -> Bool = { _ in true }
     ) {
         for subview in subviews
-            where subview !== keepView && subview !== chromeShadowView && subview !== splitControlsView {
+            where subview !== keepView && subview !== splitControlsView {
             if shouldRemove(subview) {
                 subview.removeFromSuperview()
             }
         }
         keepView?.isHidden = false
-        chromeShadowView.isHidden = keepView == nil
     }
 
     override func layout() {
         super.layout()
-        layoutChromeShadow()
         layoutSplitControls()
     }
 
@@ -470,21 +477,6 @@ final class PaneContainerView: NSView {
         splitControlsView?.setVisible(false, animated: true)
     }
 
-    private func layoutChromeShadow() {
-        let outset = BrowserContentViewportShadowView.shadowOutset
-        chromeShadowView.isHidden = bounds.width <= 0
-            || bounds.height <= 0
-            || hostedContentView == nil
-        chromeShadowView.frame = bounds.insetBy(dx: -outset, dy: -outset)
-        chromeShadowView.viewportRect = NSRect(
-            x: outset,
-            y: outset,
-            width: bounds.width,
-            height: bounds.height
-        )
-        chromeShadowView.cornerRadii = chromeGeometry.contentCornerRadii
-    }
-
     private func layoutSplitControls() {
         guard let controls = splitControlsView else { return }
         let size = controls.intrinsicContentSize
@@ -494,10 +486,6 @@ final class PaneContainerView: NSView {
             width: size.width,
             height: size.height
         )
-    }
-
-    private var hostedContentView: SumiWebViewContainerView? {
-        subviews.first { $0 is SumiWebViewContainerView && !$0.isHidden } as? SumiWebViewContainerView
     }
 
     private var enclosingSplitHostLayoutView: WindowWebContentSplitHostLayoutView? {

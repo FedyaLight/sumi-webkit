@@ -426,13 +426,12 @@ enum SafariExtensionAutofillFillDiagnostics {
 
     static func recordAppKitContainerClipping(
         clipsToBounds: Bool,
-        masksToBounds: Bool,
-        inRoundedViewportContainer: Bool
+        masksToBounds: Bool
     ) {
         guard RuntimeDiagnostics.isVerboseEnabled else { return }
         guard clipsToBounds || masksToBounds else { return }
         let note =
-            "clipsToBounds=\(clipsToBounds) masksToBounds=\(masksToBounds) roundedContainer=\(inRoundedViewportContainer) inPageOverlaysUnaffected=true"
+            "clipsToBounds=\(clipsToBounds) masksToBounds=\(masksToBounds) inPageOverlaysUnaffected=true"
         record(.appKitLayerClippingSuspected, note: note)
     }
 
@@ -442,8 +441,7 @@ enum SafariExtensionAutofillFillDiagnostics {
         if probe.clipsToBoundsOnTabContainer {
             recordAppKitContainerClipping(
                 clipsToBounds: true,
-                masksToBounds: probe.masksToBoundsOnRoundedViewport,
-                inRoundedViewportContainer: true
+                masksToBounds: probe.masksToBoundsOnTabContainer
             )
         }
         if probe.requiresControllerBeforeWebViewCreation {

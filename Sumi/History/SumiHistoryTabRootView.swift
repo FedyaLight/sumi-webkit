@@ -39,7 +39,6 @@ struct SumiHistoryTabRootView: View {
                 .layoutPriority(1)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(tokens.windowBackground)
         .sumiChromeThemeScope(context: surfaceThemeContext, settings: sumiSettings)
         .environment(\.colorScheme, surfaceThemeContext.chromeColorScheme)
         .environment(\.nativeSurfaceHoverUpdatesEnabled, nativeSurfaceHoverUpdatesEnabled)

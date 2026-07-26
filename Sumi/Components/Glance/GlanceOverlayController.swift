@@ -223,7 +223,6 @@ final class GlanceOverlayController: NSObject {
     }
 
     private func apply(configuration: GlanceOverlayConfiguration) {
-        contentVisualStyleOwner.applySurfaceColor(configuration.surfaceColor)
         if !promotionHandoff.blocksPresentationUpdates {
             contentVisualStyleOwner.applyGlanceStyle(for: configuration)
         }
