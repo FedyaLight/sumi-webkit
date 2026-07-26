@@ -118,11 +118,13 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
             return
         }
 
+        let surfaceThemeContext = windowState.nativeSurfaceThemeContext(settings: settings)
         let hostingController = WorkspaceThemePickerPopoverHostingController(
             rootView: rootView(
                 session: session,
                 windowState: windowState,
                 settings: settings,
+                surfaceThemeContext: surfaceThemeContext,
                 previewDraft: runtime.previewDraft
             ),
             contentSize: Self.Metrics.contentSize
@@ -135,7 +137,7 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
         popover.contentViewController = hostingController
         popover.contentSize = Self.Metrics.contentSize
         popover.appearance = PopoverPresenterChromeSupport.appearance(
-            for: windowState.nativeSurfaceThemeContext(settings: settings).chromeColorScheme,
+            for: surfaceThemeContext.chromeColorScheme,
             fallback: resolvedAnchor.view.window?.effectiveAppearance
                 ?? windowState.shellWindow(in: windowRegistry)?.effectiveAppearance
         )
@@ -270,10 +272,15 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
         session: WorkspaceThemePickerSession,
         windowState: BrowserWindowState,
         settings: SumiSettingsService,
+        surfaceThemeContext: ResolvedThemeContext,
         previewDraft: @escaping WorkspaceThemePickerPopoverRuntime.PreviewDraftHandler
     ) -> AnyView {
         AnyView(
-            WorkspaceThemePickerPopoverContent(session: session) {
+            WorkspaceThemePickerPopoverContent(
+                session: session,
+                surfaceThemeContext: surfaceThemeContext,
+                settings: settings
+            ) {
                 previewDraft(session.id)
             }
                 .environment(windowState)
@@ -500,9 +507,9 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
 }
 
 private struct WorkspaceThemePickerPopoverContent: View {
-    @Environment(BrowserWindowState.self) private var windowState
-    @Environment(\.sumiSettings) private var sumiSettings
     @ObservedObject var session: WorkspaceThemePickerSession
+    let surfaceThemeContext: ResolvedThemeContext
+    let settings: SumiSettingsService
     let onPreviewDraft: () -> Void
 
     var body: some View {
@@ -518,12 +525,8 @@ private struct WorkspaceThemePickerPopoverContent: View {
         .sumiNativeSurfaceColorScheme(
             surfaceThemeContext.chromeColorScheme,
             themeContext: surfaceThemeContext,
-            settings: sumiSettings
+            settings: settings
         )
-    }
-
-    private var surfaceThemeContext: ResolvedThemeContext {
-        windowState.nativeSurfaceThemeContext(settings: sumiSettings)
     }
 }
 
@@ -574,6 +577,8 @@ private final class WorkspaceThemePickerPopoverContentView: NSView {
     private func commonInit() {
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
+        hostingView.wantsLayer = true
+        hostingView.layer?.backgroundColor = NSColor.clear.cgColor
         hostingView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(hostingView)
 

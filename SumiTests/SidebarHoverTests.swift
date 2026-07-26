@@ -276,6 +276,35 @@ final class SidebarHoverTests: XCTestCase {
         XCTAssertEqual(publishedHover, [])
     }
 
+    func testDetachingTrackingViewClearsHoverAfterLifecyclePass() async {
+        let window = Self.makeHoverWindow()
+        let view = Self.addHoverView(
+            to: window,
+            frame: NSRect(x: 0, y: 0, width: 120, height: 36)
+        )
+        let session = SidebarHoverSession()
+        let registration = SidebarHoverRegistration()
+        var reported: [Bool] = []
+        registration.update(
+            view: view,
+            session: session,
+            isEnabled: true
+        ) { hovering, _ in
+            reported.append(hovering)
+        }
+        session.reconcile(
+            window: window,
+            mouseLocationInWindow: NSPoint(x: 12, y: 12)
+        )
+        XCTAssertEqual(reported, [true])
+
+        view.removeFromSuperview()
+
+        XCTAssertEqual(reported, [true])
+        await Task.yield()
+        XCTAssertEqual(reported, [true, false])
+    }
+
     /// Consumers that stand in for a `mouseenter` — the folder preview's show
     /// timer — need to tell a real pointer event apart from a hover the view
     /// inferred from the parked pointer.

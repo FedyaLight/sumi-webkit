@@ -129,12 +129,11 @@ final class SidebarHoverSession: NSObject {
         weak var value: SidebarHoverRegistration?
     }
 
-    private struct WeakWindow {
-        weak var value: NSWindow?
-    }
-
     private var registrations: [ObjectIdentifier: WeakRegistration] = [:]
-    private var pendingWindows: [ObjectIdentifier: WeakWindow] = [:]
+    // AppKit can send viewWillMove(toWindow: nil) while an NSPopoverWindow is
+    // already deallocating. Queue the stable registration, never that window;
+    // the next main-queue pass resolves whichever window the view belongs to then.
+    private var pendingLifecycleRegistrations: [ObjectIdentifier: WeakRegistration] = [:]
     private var lastPointerTimestampByWindow: [ObjectIdentifier: TimeInterval] = [:]
     private var lifecycleReconcileScheduled = false
     private var isSuspended = false
@@ -182,7 +181,7 @@ final class SidebarHoverSession: NSObject {
         guard isSuspended != suspended else { return }
         isSuspended = suspended
         if suspended {
-            pendingWindows.removeAll()
+            pendingLifecycleRegistrations.removeAll()
             clearAll()
         } else {
             requestLifecycleReconcileForAllWindows()
@@ -209,27 +208,45 @@ final class SidebarHoverSession: NSObject {
     }
 
     private func requestLifecycleReconcile(for registration: SidebarHoverRegistration) {
-        guard let window = registration.view?.window else {
-            registration.publish(false, source: .lifecycle)
-            return
-        }
-        requestLifecycleReconcile(in: window)
+        pendingLifecycleRegistrations[ObjectIdentifier(registration)] =
+            WeakRegistration(value: registration)
+        scheduleLifecycleReconcileIfNeeded()
     }
 
     private func requestLifecycleReconcile(in window: NSWindow) {
-        pendingWindows[ObjectIdentifier(window)] = WeakWindow(value: window)
+        for registration in liveRegistrations where registration.view?.window === window {
+            pendingLifecycleRegistrations[ObjectIdentifier(registration)] =
+                WeakRegistration(value: registration)
+        }
+        scheduleLifecycleReconcileIfNeeded()
+    }
+
+    private func scheduleLifecycleReconcileIfNeeded() {
         guard !lifecycleReconcileScheduled else { return }
         lifecycleReconcileScheduled = true
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.lifecycleReconcileScheduled = false
-            let windows = self.pendingWindows.values.compactMap(\.value)
-            self.pendingWindows.removeAll()
+            let pendingRegistrations = self.pendingLifecycleRegistrations.values.compactMap(\.value)
+            self.pendingLifecycleRegistrations.removeAll()
             guard !self.isSuspended, self.isApplicationActive else {
                 self.clearAll()
                 return
             }
-            for window in windows {
+
+            var windows: [ObjectIdentifier: NSWindow] = [:]
+            for registration in pendingRegistrations {
+                guard self.registrations[ObjectIdentifier(registration)]?.value === registration else {
+                    continue
+                }
+                guard let window = registration.view?.window else {
+                    registration.publish(false, source: .lifecycle)
+                    continue
+                }
+                windows[ObjectIdentifier(window)] = window
+            }
+
+            for window in windows.values {
                 self.reconcile(
                     window: window,
                     mouseLocationInWindow: window.mouseLocationOutsideOfEventStream,
@@ -240,9 +257,8 @@ final class SidebarHoverSession: NSObject {
     }
 
     private func requestLifecycleReconcileForAllWindows() {
-        let windows = liveRegistrations.compactMap(\.view?.window)
-        for window in windows {
-            requestLifecycleReconcile(in: window)
+        for registration in liveRegistrations {
+            requestLifecycleReconcile(for: registration)
         }
     }
 
@@ -327,13 +343,13 @@ final class SidebarHoverSession: NSObject {
         guard registrations.isEmpty, observesLifecycle else { return }
         NotificationCenter.default.removeObserver(self)
         observesLifecycle = false
-        pendingWindows.removeAll()
+        pendingLifecycleRegistrations.removeAll()
         lastPointerTimestampByWindow.removeAll()
     }
 
     @objc private func applicationDidResignActive() {
         isApplicationActive = false
-        pendingWindows.removeAll()
+        pendingLifecycleRegistrations.removeAll()
         clearAll()
     }
 
@@ -345,7 +361,9 @@ final class SidebarHoverSession: NSObject {
     @objc private func windowDidBecomeUnavailable(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
         clearRegistrations(in: window)
-        pendingWindows.removeValue(forKey: ObjectIdentifier(window))
+        pendingLifecycleRegistrations = pendingLifecycleRegistrations.filter {
+            $0.value.value?.view?.window !== window
+        }
         lastPointerTimestampByWindow.removeValue(forKey: ObjectIdentifier(window))
     }
 

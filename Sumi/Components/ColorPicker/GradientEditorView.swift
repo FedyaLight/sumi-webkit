@@ -105,15 +105,10 @@ struct GradientEditorView: View {
         }
         .padding(panelPadding)
         .frame(width: Self.panelWidth, alignment: .top)
-        .background(tokens.floatingSurfaceBackground)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("workspace-theme-picker-panel")
-        .sumiNativeSurfaceColorScheme(
-            pickerThemeContext.globalColorScheme,
-            themeContext: pickerThemeContext,
-            settings: sumiSettings
-        )
+        .sumiNativeSurfaceColorScheme()
         .onAppear {
             syncEditorState(with: workspaceTheme)
             editorPreview.beginInteractivePreview()
