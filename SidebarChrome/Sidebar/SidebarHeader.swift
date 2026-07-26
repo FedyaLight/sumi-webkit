@@ -63,6 +63,7 @@ struct SidebarWindowControlsView: View {
     @Environment(WindowRegistry.self) private var windowRegistry
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.sidebarPresentationContext) private var sidebarPresentationContext
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isBrowserWindowFullScreen = false
     let toggleSidebar: () -> Void
 
@@ -107,23 +108,40 @@ struct SidebarWindowControlsView: View {
     private var trafficLightCluster: some View {
         BrowserWindowTrafficLights(
             actionProvider: .browserWindow(windowState.shellWindow(in: windowRegistry)),
-            isVisible: shouldRenderTrafficLightsInSidebarHeader
+            presentation: trafficLightPresentation,
+            travelProgress: trafficLightTravelProgress
+        )
+        .animation(
+            SidebarMotionPolicy.dockedLayoutAnimation(
+                for: sidebarMotionMode,
+                isShowing: windowState.isSidebarVisible
+            ),
+            value: trafficLightTravelProgress
         )
     }
 
-    private var shouldRenderTrafficLightsInSidebarHeader: Bool {
-        isBrowserWindowFullScreen == false && sidebarPresentationShowsTrafficLights
+    private var trafficLightPresentation: BrowserWindowTrafficLightPresentation {
+        SidebarTrafficLightPresentationPolicy.presentation(
+            isBrowserWindowFullScreen: isBrowserWindowFullScreen,
+            mode: sidebarPresentationContext.mode,
+            isSidebarVisible: windowState.isSidebarVisible,
+            overlayUsesTravel: SidebarMotionPolicy.overlayUsesTravel(for: sidebarMotionMode)
+        )
     }
 
-    private var sidebarPresentationShowsTrafficLights: Bool {
-        switch sidebarPresentationContext.mode {
-        case .docked:
-            return windowState.isSidebarVisible
-        case .collapsedVisible:
-            return true
-        case .collapsedHidden:
-            return false
-        }
+    private var trafficLightTravelProgress: CGFloat {
+        SidebarTrafficLightPresentationPolicy.travelProgress(
+            mode: sidebarPresentationContext.mode,
+            shellEdge: sidebarPresentationContext.shellEdge,
+            isSidebarVisible: windowState.isSidebarVisible
+        )
+    }
+
+    private var sidebarMotionMode: SidebarMotionPolicy.Mode {
+        SidebarMotionPolicy.currentMode(
+            reduceMotion: reduceMotion,
+            energySaverReducesMotion: sumiSettings.shouldReduceChromeMotion
+        )
     }
 
     private var browserWindowIdentity: ObjectIdentifier? {

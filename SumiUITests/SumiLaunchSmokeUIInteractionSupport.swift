@@ -1735,6 +1735,19 @@ extension SumiLaunchSmokeUITestCase {
             file: file,
             line: line
         )
+        for (label, spacing) in [
+            ("close→minimize", minimizeFrame.midX - closeFrame.midX),
+            ("minimize→zoom", zoomFrame.midX - minimizeFrame.midX),
+        ] {
+            XCTAssertEqual(
+                spacing,
+                expectedTrafficLightCenterSpacing,
+                accuracy: 1,
+                "Traffic lights should keep the system centre-to-centre pitch (\(label)). close=\(closeFrame) minimize=\(minimizeFrame) zoom=\(zoomFrame)",
+                file: file,
+                line: line
+            )
+        }
         XCTAssertLessThanOrEqual(
             closeFrame.minX,
             windowFrame.minX + 96,

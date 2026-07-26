@@ -127,6 +127,20 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
         assertNativeTrafficLightsHittable(in: app, window: window)
     }
 
+    func testCollapsedHoverSidebarWithdrawsTrafficLightsWhenOverlayCloses() throws {
+        _ = try loadPersonalSidebarFixture()
+        let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome(isSidebarVisible: false))
+        let window = app.windows.element(boundBy: 0)
+
+        XCTAssertTrue(window.waitForExistence(timeout: 5))
+        revealHoverSidebar(in: window)
+        assertNativeTrafficLightsHittable(in: app, window: window)
+
+        // Moving off the overlay closes it; the buttons ride it out and must stop responding.
+        window.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.6)).hover()
+        assertNativeTrafficLightsHidden(in: app, window: window)
+    }
+
     func testCollapsedHoverSidebarCanBeRevealedFromRestoredSession() throws {
         let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome(isSidebarVisible: false))
         let window = app.windows.element(boundBy: 0)

@@ -23,6 +23,16 @@ class SumiLaunchSmokeUITestCase: XCTestCase {
         }
     }
 
+    /// Centre-to-centre pitch AppKit uses for the standard window buttons. The sidebar cluster hosts
+    /// the live buttons, so it has to reproduce the system pitch exactly.
+    var expectedTrafficLightCenterSpacing: CGFloat {
+        if #available(macOS 26.0, *) {
+            return 23
+        } else {
+            return 20
+        }
+    }
+
     nonisolated(unsafe) var smokeAppSupportURL: URL?
     nonisolated(unsafe) var smokeAppSupportDirectories: [URL] = []
     nonisolated(unsafe) var sidebarDragMarkerURL: URL?

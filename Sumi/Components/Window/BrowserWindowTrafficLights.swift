@@ -21,15 +21,19 @@ enum BrowserWindowControlsAccessibilityIdentifiers {
 }
 
 enum BrowserWindowTrafficLightMetrics {
+    /// Diameter and pitch come from AppKit's own layout of the live buttons, so the cluster matches
+    /// system chrome on every macOS release instead of drifting whenever Apple retunes it.
+    @MainActor
     static var buttonDiameter: CGFloat {
-        if #available(macOS 26.0, *) {
-            return 14
-        } else {
-            return 12
-        }
+        BrowserWindowTrafficLightCustodian.resolvedGeometry.diameter
     }
 
-    static let buttonCenterSpacing: CGFloat = 20
+    @MainActor
+    static var buttonCenterSpacing: CGFloat {
+        BrowserWindowTrafficLightCustodian.resolvedGeometry.centerSpacing
+    }
+
+    @MainActor
     static var buttonSpacing: CGFloat {
         buttonCenterSpacing - buttonDiameter
     }
@@ -37,17 +41,39 @@ enum BrowserWindowTrafficLightMetrics {
     static let clusterTrailingInset: CGFloat = 14
     static let clusterHorizontalOffset: CGFloat = -1
 
+    @MainActor
     static var clusterWidth: CGFloat {
         buttonDiameter * 3 + buttonSpacing * 2
     }
 
+    @MainActor
     static var sidebarReservedWidth: CGFloat {
         clusterWidth + clusterTrailingInset
     }
 
-    static func sidebarReservedWidth(isVisible: Bool) -> CGFloat {
-        isVisible ? sidebarReservedWidth : 0
+    @MainActor
+    static func sidebarReservedWidth(
+        for presentation: BrowserWindowTrafficLightPresentation
+    ) -> CGFloat {
+        presentation.isAttached ? sidebarReservedWidth : 0
     }
+}
+
+/// How the cluster participates in the sidebar's current state.
+///
+/// The distinction between `attached` and `interactive` is what lets the buttons ride the sidebar's
+/// show/hide animation: they stay mounted and move with the panel while it travels, but stop
+/// responding the moment the sidebar is no longer usable.
+enum BrowserWindowTrafficLightPresentation: Equatable {
+    /// The sidebar is not on screen (or the window is fullscreen): custody returns to the titlebar.
+    case hidden
+    /// The sidebar is on screen but travelling in or out: rendered and moving, not clickable.
+    case attached
+    /// The sidebar is settled and usable.
+    case interactive
+
+    var isAttached: Bool { self != .hidden }
+    var isInteractive: Bool { self == .interactive }
 }
 
 enum BrowserWindowTrafficLightAction: CaseIterable, Hashable {
@@ -136,76 +162,84 @@ struct BrowserWindowTrafficLightActionProvider {
 
 struct BrowserWindowTrafficLights: View {
     var actionProvider: BrowserWindowTrafficLightActionProvider
-    var isVisible: Bool = true
+    var presentation: BrowserWindowTrafficLightPresentation
+    /// 1 while the sidebar is fully extended, 0 once it has fully travelled away. The collapsed
+    /// overlay translates its whole panel and therefore leaves this at 1; the docked column is
+    /// pinned to the leading edge and clipped from the trailing side, so the cluster has to carry
+    /// the travel itself or it would shrink-clip in place instead of sliding out.
+    var travelProgress: CGFloat = 1
 
     init(
         actionProvider: BrowserWindowTrafficLightActionProvider,
-        isVisible: Bool = true
+        presentation: BrowserWindowTrafficLightPresentation,
+        travelProgress: CGFloat = 1
     ) {
         self.actionProvider = actionProvider
-        self.isVisible = isVisible
+        self.presentation = presentation
+        self.travelProgress = travelProgress
     }
 
     var body: some View {
         BrowserWindowStandardTrafficLightCluster(
             actionProvider: actionProvider,
-            isVisible: isVisible
+            presentation: presentation
         )
         .frame(
-            width: BrowserWindowTrafficLightMetrics.sidebarReservedWidth(isVisible: isVisible),
+            width: BrowserWindowTrafficLightMetrics.sidebarReservedWidth(for: presentation),
             height: BrowserWindowTrafficLightMetrics.clusterHeight,
             alignment: .leading
         )
-        .offset(x: BrowserWindowTrafficLightMetrics.clusterHorizontalOffset)
-        .opacity(isVisible ? 1 : 0)
+        .offset(x: BrowserWindowTrafficLightMetrics.clusterHorizontalOffset + travelOffset)
+        .opacity(presentation.isAttached ? 1 : 0)
         .accessibilityElement(children: .contain)
-        .accessibilityHidden(!isVisible)
+        .accessibilityHidden(!presentation.isInteractive)
+    }
+
+    private var travelOffset: CGFloat {
+        guard presentation.isAttached else { return 0 }
+        let travelDistance = BrowserWindowTrafficLightMetrics.sidebarReservedWidth
+            + SidebarChromeMetrics.controlLeadingPadding
+        return -travelDistance * (1 - min(max(travelProgress, 0), 1))
     }
 }
 
 @MainActor
 private struct BrowserWindowStandardTrafficLightCluster: NSViewRepresentable {
     var actionProvider: BrowserWindowTrafficLightActionProvider
-    var isVisible: Bool
+    var presentation: BrowserWindowTrafficLightPresentation
 
     func makeNSView(context: Context) -> BrowserWindowStandardTrafficLightClusterView {
         let view = BrowserWindowStandardTrafficLightClusterView()
-        view.update(actionProvider: actionProvider, isVisible: isVisible)
+        view.update(actionProvider: actionProvider, presentation: presentation)
         return view
     }
 
     func updateNSView(_ nsView: BrowserWindowStandardTrafficLightClusterView, context: Context) {
-        nsView.update(actionProvider: actionProvider, isVisible: isVisible)
+        nsView.update(actionProvider: actionProvider, presentation: presentation)
     }
 
     static func dismantleNSView(
         _ nsView: BrowserWindowStandardTrafficLightClusterView,
         coordinator: Void
     ) {
-        nsView.clearWindowActionTargets()
+        nsView.releaseCustody()
     }
 }
 
-// Hosts the window's LIVE standard window buttons (close, minimize, zoom) repositioned from the
-// theme frame into the sidebar header. Because these are the real instances returned by
-// `window.standardWindowButton(_:)` (per Apple's documentation: "the window button of a given
-// kind in the window's view hierarchy"), AppKit keeps driving their active/inactive dimming and
-// hover glyphs. Reparenting via `addSubview` implicitly detaches a view from its previous parent
-// (documented NSView behavior), so no explicit detach call is needed. All three buttons therefore
-// behave identically — close, minimize and zoom are no longer asymmetric.
+// Hosts the window's LIVE standard window buttons (close, minimize, zoom) instead of copies:
+// `window.standardWindowButton(_:)` returns "the window button of a given kind in the window's view
+// hierarchy", so AppKit keeps driving their active/inactive dimming and hover glyphs for free.
+//
+// The view owns none of that. Parentage, frames and button state belong to
+// `BrowserWindowTrafficLightCustodian`, which is per-window rather than per-view — the sidebar can
+// have more than one cluster alive while it swaps between its docked column and collapsed overlay,
+// and three shared buttons cannot answer to several views at once. This view only claims custody,
+// releases it, and reports its own layout passes.
 @MainActor
 private final class BrowserWindowStandardTrafficLightClusterView: NSView {
-    private static let reclamationNotificationNames = [
-        NSWindow.didResignKeyNotification,
-        NSWindow.didBecomeKeyNotification,
-        NSWindow.didEndSheetNotification,
-    ]
-
-    private var buttonsByAction: [BrowserWindowTrafficLightAction: NSButton] = [:]
     private var actionProvider: BrowserWindowTrafficLightActionProvider?
-    private var isClusterVisible = false
-    private weak var observedReclamationWindow: NSWindow?
-    private var isObservingReclamationWindow = false
+    private var presentation: BrowserWindowTrafficLightPresentation = .hidden
+    private var custodian: BrowserWindowTrafficLightCustodian?
 
     override var isOpaque: Bool { false }
     override var mouseDownCanMoveWindow: Bool { false }
@@ -219,201 +253,66 @@ private final class BrowserWindowStandardTrafficLightClusterView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    isolated deinit {
-        removeReclamationObservers()
-    }
-
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         true
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        syncReclamationObservers()
-        if window != nil, isClusterVisible {
-            configure()
-        }
-        updateButtonStates()
-    }
-
-    // AppKit's theme frame reclaims the live standardWindowButton instances on certain window
-    // transitions (sheet attachment, key become/resign) and repositions them back into the
-    // titlebar. We cannot prevent that, so we reactively undo it: on each such transition we check
-    // whether the buttons are still descendants of this cluster and, if not, re-parent them back
-    // here. This keeps the buttons pinned to the sidebar header even while a sheet (e.g. the Cmd+Q
-    // confirmation) is attached. `didEndSheet` covers the documented re-grab case; the key
-    // notifications cover activation transitions. Main/occlusion overlap with key for a browser
-    // window and were trimmed to avoid redundant fires.
-    private func installReclamationObserversIfNeeded() {
-        guard let window else {
-            removeReclamationObservers()
-            return
-        }
-        guard isObservingReclamationWindow == false || observedReclamationWindow !== window else {
-            return
-        }
-
-        removeReclamationObservers()
-        let center = NotificationCenter.default
-        for name in Self.reclamationNotificationNames {
-            center.addObserver(
-                self,
-                selector: #selector(handleWindowReclamationNotification(_:)),
-                name: name,
-                object: window
-            )
-        }
-        observedReclamationWindow = window
-        isObservingReclamationWindow = true
-    }
-
-    private func syncReclamationObservers() {
-        guard isClusterVisible else {
-            removeReclamationObservers()
-            return
-        }
-
-        installReclamationObserversIfNeeded()
-    }
-
-    private func removeReclamationObservers() {
-        guard isObservingReclamationWindow else { return }
-
-        let center = NotificationCenter.default
-        for name in Self.reclamationNotificationNames {
-            center.removeObserver(self, name: name, object: observedReclamationWindow)
-        }
-        self.observedReclamationWindow = nil
-        isObservingReclamationWindow = false
-    }
-
-    @objc private func handleWindowReclamationNotification(_ notification: Notification) {
-        reclaimButtonsIfNeeded()
-    }
-
-    private func reclaimButtonsIfNeeded() {
-        guard isClusterVisible,
-              window != nil,
-              buttonsByAction.isEmpty == false,
-              buttonsByAction.values.contains(where: { $0.isDescendant(of: self) == false })
-        else { return }
-        configure()
-        needsLayout = true
+        syncCustody()
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        guard isClusterVisible, isHidden == false else { return nil }
+        guard presentation.isInteractive, isHidden == false else { return nil }
 
         let hitView = super.hitTest(point)
         return hitView === self ? nil : hitView
     }
 
-    func configure() {
-        // Re-fetch the live buttons whenever the hosting window changes or AppKit reclaims them.
-        // `standardWindowButton` returns the window's own button instance; `addSubview` reparents
-        // it here implicitly, and is skipped when the button is already in the cluster to avoid
-        // redundant will/didAddSubview churn.
+    override func layout() {
+        super.layout()
+        custodian?.enforce(host: self)
+    }
+
+    func update(
+        actionProvider: BrowserWindowTrafficLightActionProvider,
+        presentation: BrowserWindowTrafficLightPresentation
+    ) {
+        self.actionProvider = actionProvider
+        self.presentation = presentation
+        setAccessibilityElement(presentation.isInteractive)
+        syncCustody()
+    }
+
+    /// Gives the buttons up without touching `presentation`: that is the caller's state, and the
+    /// view is asked to release custody while still off-window (SwiftUI configures it before it is
+    /// inserted into a hierarchy) long before the caller has changed its mind about presentation.
+    func releaseCustody() {
+        custodian?.detach(host: self)
+        custodian = nil
+    }
+
+    private func syncCustody() {
         guard let window else {
-            buttonsByAction.removeAll()
+            releaseCustody()
             return
         }
 
-        var didReparent = false
-        for action in BrowserWindowTrafficLightAction.allCases {
-            guard let button = window.standardWindowButton(action.buttonType) else { continue }
-            buttonsByAction[action] = button
-            applyIdentity(to: button, for: action)
-            if button.isDescendant(of: self) == false {
-                button.translatesAutoresizingMaskIntoConstraints = true
-                button.autoresizingMask = []
-                addSubview(button)
-                didReparent = true
-            }
+        let resolvedCustodian = window.browserTrafficLightCustodian
+        if custodian !== resolvedCustodian {
+            custodian?.detach(host: self)
+            custodian = resolvedCustodian
         }
-
-        if didReparent {
-            needsLayout = true
-        }
-    }
-
-    // The identifier is constant for a given action, so it is set once at configure time. The
-    // accessibility label is handled in updateButtonStates because it can flip between
-    // "Enter"/"Exit Full Screen" based on the window's fullScreen style-mask bit.
-    private func applyIdentity(to button: NSButton, for action: BrowserWindowTrafficLightAction) {
-        button.identifier = NSUserInterfaceItemIdentifier(action.accessibilityIdentifier)
-        button.setAccessibilityIdentifier(action.accessibilityIdentifier)
-    }
-
-    func clearWindowActionTargets() {
-        // On dismantle we only stop observing and mark invisible. We deliberately do NOT nil the
-        // buttons' target/action: these are the window's live instances, which AppKit may reuse
-        // (e.g. when the titlebar buttons resurface during fullscreen). Stripping their wiring
-        // would leave dead buttons until the cluster is recreated. deinit owns observer removal.
-        isClusterVisible = false
-        removeReclamationObservers()
-    }
-
-    func update(actionProvider: BrowserWindowTrafficLightActionProvider, isVisible: Bool) {
-        self.actionProvider = actionProvider
-        isHidden = !isVisible
-        setAccessibilityElement(isVisible)
-        isClusterVisible = isVisible
-        syncReclamationObservers()
-        if isVisible {
-            // Re-grab in case AppKit reclaimed the live instances (sheet/key transition) since the
-            // last update; configure() is cheap when the buttons are already in the cluster.
-            configure()
-        }
-        updateButtonStates()
-        if isVisible {
-            needsLayout = true
-        }
-    }
-
-    override func layout() {
-        super.layout()
-        for (index, action) in BrowserWindowTrafficLightAction.allCases.enumerated() {
-            guard let button = buttonsByAction[action] else { continue }
-            let size = Self.buttonSize(for: button)
-            let x = CGFloat(index) * BrowserWindowTrafficLightMetrics.buttonCenterSpacing
-            let y = max((bounds.height - size.height) / 2, 0)
-            button.frame = NSRect(origin: NSPoint(x: x, y: y), size: size)
-        }
-    }
-
-    private func updateButtonStates() {
-        let targetWindow = actionProvider?.resolvedTargetWindow(preferred: window) ?? window
-
-        for action in BrowserWindowTrafficLightAction.allCases {
-            guard let button = buttonsByAction[action] else { continue }
-
-            button.target = targetWindow
-            button.action = action.selector
-            button.isHidden = !isClusterVisible
-            button.alphaValue = isClusterVisible ? 1 : 0
-            button.isEnabled = isClusterVisible
-                && (actionProvider?.isEnabled(action, preferred: window) ?? false)
-            button.setAccessibilityLabel(
-                actionProvider?.accessibilityLabel(for: action, preferred: window)
-                    ?? action.accessibilityLabel
-            )
-            button.setAccessibilityHidden(!isClusterVisible)
-        }
-    }
-
-    private static func buttonSize(for button: NSButton) -> NSSize {
-        let currentSize = button.frame.size
-        guard currentSize.width > 0, currentSize.height > 0 else {
-            return NSSize(
-                width: BrowserWindowTrafficLightMetrics.buttonDiameter,
-                height: BrowserWindowTrafficLightMetrics.buttonDiameter
-            )
-        }
-        return currentSize
+        resolvedCustodian.attach(
+            host: self,
+            presentation: presentation,
+            actionProvider: actionProvider
+        )
+        needsLayout = true
     }
 }
 
-private extension BrowserWindowTrafficLightAction {
+extension BrowserWindowTrafficLightAction {
     var selector: Selector {
         switch self {
         case .close:

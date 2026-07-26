@@ -337,29 +337,32 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
     }
 
     func testTrafficLightMetricsPreserveBrowserChromeClusterSize() {
-        let expectedDiameter: CGFloat
-        if #available(macOS 26.0, *) {
-            expectedDiameter = 14
-        } else {
-            expectedDiameter = 12
-        }
+        let geometry = BrowserWindowTrafficLightCustodian.resolvedGeometry
 
-        XCTAssertEqual(BrowserWindowTrafficLightMetrics.buttonDiameter, expectedDiameter)
-        XCTAssertEqual(BrowserWindowTrafficLightMetrics.buttonCenterSpacing, 20)
-        XCTAssertEqual(BrowserWindowTrafficLightMetrics.buttonSpacing, 20 - expectedDiameter)
+        XCTAssertEqual(BrowserWindowTrafficLightMetrics.buttonDiameter, geometry.diameter)
+        XCTAssertEqual(BrowserWindowTrafficLightMetrics.buttonCenterSpacing, geometry.centerSpacing)
+        XCTAssertEqual(
+            BrowserWindowTrafficLightMetrics.buttonSpacing,
+            geometry.centerSpacing - geometry.diameter
+        )
         XCTAssertEqual(BrowserWindowTrafficLightMetrics.clusterHeight, 30)
-        XCTAssertEqual(BrowserWindowTrafficLightMetrics.clusterWidth, expectedDiameter * 3 + (20 - expectedDiameter) * 2)
+        XCTAssertEqual(
+            BrowserWindowTrafficLightMetrics.clusterWidth,
+            geometry.diameter + geometry.centerSpacing * 2
+        )
         XCTAssertEqual(BrowserWindowTrafficLightMetrics.clusterTrailingInset, 14)
         XCTAssertEqual(BrowserWindowTrafficLightMetrics.clusterHorizontalOffset, -1)
         XCTAssertEqual(
             BrowserWindowTrafficLightMetrics.sidebarReservedWidth,
             BrowserWindowTrafficLightMetrics.clusterWidth + BrowserWindowTrafficLightMetrics.clusterTrailingInset
         )
-        XCTAssertEqual(
-            BrowserWindowTrafficLightMetrics.sidebarReservedWidth(isVisible: true),
-            BrowserWindowTrafficLightMetrics.sidebarReservedWidth
-        )
-        XCTAssertEqual(BrowserWindowTrafficLightMetrics.sidebarReservedWidth(isVisible: false), 0)
+        for presentation in [BrowserWindowTrafficLightPresentation.interactive, .attached] {
+            XCTAssertEqual(
+                BrowserWindowTrafficLightMetrics.sidebarReservedWidth(for: presentation),
+                BrowserWindowTrafficLightMetrics.sidebarReservedWidth
+            )
+        }
+        XCTAssertEqual(BrowserWindowTrafficLightMetrics.sidebarReservedWidth(for: .hidden), 0)
         XCTAssertEqual(SidebarChromeMetrics.topControlInset, 0)
         XCTAssertEqual(SidebarChromeMetrics.controlLeadingPadding, 18)
         XCTAssertEqual(SidebarChromeMetrics.contentHorizontalPadding, 8)
@@ -367,6 +370,284 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         XCTAssertEqual(SidebarChromeMetrics.controlSpacing, 0)
         XCTAssertEqual(SidebarChromeMetrics.navigationButtonSize, 30)
         XCTAssertEqual(SidebarChromeMetrics.navigationIconSize, 14)
+    }
+
+    // MARK: - Native geometry
+
+    func testTrafficLightGeometryDerivesNativeSpacingFromButtonFrames() {
+        // Frames as macOS 26 lays the cluster out in NSTitlebarView.
+        let geometry = BrowserWindowTrafficLightGeometry.measured(fromNativeFrames: [
+            NSRect(x: 9, y: 9, width: 14, height: 14),
+            NSRect(x: 32, y: 9, width: 14, height: 14),
+            NSRect(x: 55, y: 9, width: 14, height: 14),
+        ])
+
+        XCTAssertEqual(geometry?.diameter, 14)
+        XCTAssertEqual(geometry?.centerSpacing, 23)
+    }
+
+    func testTrafficLightGeometryRejectsFramesThatCannotDescribeACluster() {
+        let square = NSRect(x: 0, y: 0, width: 14, height: 14)
+
+        XCTAssertNil(BrowserWindowTrafficLightGeometry.measured(fromNativeFrames: []))
+        XCTAssertNil(BrowserWindowTrafficLightGeometry.measured(fromNativeFrames: [square, square]))
+        XCTAssertNil(BrowserWindowTrafficLightGeometry.measured(fromNativeFrames: [
+            .zero, .zero, .zero,
+        ]))
+        // Uneven pitch: the middle button is not centred between its neighbours.
+        XCTAssertNil(BrowserWindowTrafficLightGeometry.measured(fromNativeFrames: [
+            NSRect(x: 9, y: 9, width: 14, height: 14),
+            NSRect(x: 32, y: 9, width: 14, height: 14),
+            NSRect(x: 70, y: 9, width: 14, height: 14),
+        ]))
+        // Buttons still collapsed to a zero-height frame before their first layout.
+        XCTAssertNil(BrowserWindowTrafficLightGeometry.measured(fromNativeFrames: [
+            NSRect(x: 9, y: 9, width: 14, height: 0),
+            NSRect(x: 32, y: 9, width: 14, height: 0),
+            NSRect(x: 55, y: 9, width: 14, height: 0),
+        ]))
+    }
+
+    func testTrafficLightFallbackGeometryMatchesSystemClusterForCurrentOS() {
+        let fallback = BrowserWindowTrafficLightGeometry.fallback
+
+        if #available(macOS 26.0, *) {
+            XCTAssertEqual(fallback.diameter, 14)
+            XCTAssertEqual(fallback.centerSpacing, 23)
+        } else {
+            XCTAssertEqual(fallback.diameter, 12)
+            XCTAssertEqual(fallback.centerSpacing, 20)
+        }
+    }
+
+    func testTrafficLightCustodianLaysButtonsOutOnNativePitch() {
+        let window = WindowChromeTestSupport.makeBrowserWindow()
+        WindowChromeTestSupport.retain(window)
+        let host = Self.makeCustodyHost(in: window)
+        let custodian = window.browserTrafficLightCustodian
+
+        custodian.attach(
+            host: host,
+            presentation: .interactive,
+            actionProvider: .browserWindow(window)
+        )
+
+        let spacing = BrowserWindowTrafficLightCustodian.resolvedGeometry.centerSpacing
+        for (index, action) in BrowserWindowTrafficLightAction.allCases.enumerated() {
+            let button = custodian.hostedButton(for: action)
+            XCTAssertIdentical(button?.superview, host, "\(action)")
+            XCTAssertEqual(button?.frame.origin.x, CGFloat(index) * spacing, "\(action)")
+        }
+    }
+
+    // MARK: - Custody
+
+    func testTrafficLightCustodianKeepsASingleHostWhenTwoClustersClaim() {
+        let window = WindowChromeTestSupport.makeBrowserWindow()
+        WindowChromeTestSupport.retain(window)
+        let firstHost = Self.makeCustodyHost(in: window)
+        let secondHost = Self.makeCustodyHost(in: window)
+        let custodian = window.browserTrafficLightCustodian
+        let provider = BrowserWindowTrafficLightActionProvider.browserWindow(window)
+
+        custodian.attach(host: firstHost, presentation: .interactive, actionProvider: provider)
+        custodian.attach(host: secondHost, presentation: .interactive, actionProvider: provider)
+
+        for action in BrowserWindowTrafficLightAction.allCases {
+            XCTAssertIdentical(custodian.hostedButton(for: action)?.superview, secondHost, "\(action)")
+        }
+
+        // The cluster that lost the claim tears down later; that must not yank the buttons away
+        // from the winner.
+        custodian.detach(host: firstHost)
+
+        for action in BrowserWindowTrafficLightAction.allCases {
+            XCTAssertIdentical(custodian.hostedButton(for: action)?.superview, secondHost, "\(action)")
+        }
+    }
+
+    func testTrafficLightCustodianRestoresButtonsMovedBehindItsBack() {
+        let window = WindowChromeTestSupport.makeBrowserWindow()
+        WindowChromeTestSupport.retain(window)
+        let host = Self.makeCustodyHost(in: window)
+        let stray = NSView(frame: NSRect(x: 0, y: 0, width: 200, height: 40))
+        window.contentView?.addSubview(stray)
+        let custodian = window.browserTrafficLightCustodian
+
+        custodian.attach(
+            host: host,
+            presentation: .interactive,
+            actionProvider: .browserWindow(window)
+        )
+
+        guard let closeButton = custodian.hostedButton(for: .close) else {
+            return XCTFail("close button was not captured")
+        }
+        let expectedFrame = closeButton.frame
+
+        // AppKit relayout: the theme frame re-homes the button and drops it back at the window's
+        // top-left corner.
+        stray.addSubview(closeButton)
+        closeButton.frame = NSRect(x: 9, y: 9, width: expectedFrame.width, height: expectedFrame.height)
+        custodian.enforce(host: host)
+
+        XCTAssertIdentical(closeButton.superview, host)
+        XCTAssertEqual(closeButton.frame, expectedFrame)
+    }
+
+    func testTrafficLightCustodianReturnsButtonsToTheTitlebarOnRelease() {
+        let window = WindowChromeTestSupport.makeBrowserWindow()
+        WindowChromeTestSupport.retain(window)
+        let host = Self.makeCustodyHost(in: window)
+        let custodian = window.browserTrafficLightCustodian
+        let titlebarHomes = WindowChromeTestSupport.standardButtonTypes.map {
+            window.standardWindowButton($0)?.superview
+        }
+
+        custodian.attach(
+            host: host,
+            presentation: .interactive,
+            actionProvider: .browserWindow(window)
+        )
+        custodian.detach(host: host)
+
+        for (index, type) in WindowChromeTestSupport.standardButtonTypes.enumerated() {
+            XCTAssertIdentical(
+                window.standardWindowButton(type)?.superview,
+                titlebarHomes[index],
+                "\(type.rawValue)"
+            )
+        }
+    }
+
+    // MARK: - Presentation policy
+
+    func testTrafficLightsStayMountedWhileTheSidebarPanelIsStillOnScreen() {
+        // Docked collapse: `isSidebarVisible` flips first, the column animates away afterwards.
+        XCTAssertEqual(
+            SidebarTrafficLightPresentationPolicy.presentation(
+                isBrowserWindowFullScreen: false,
+                mode: .docked,
+                isSidebarVisible: false,
+                overlayUsesTravel: true
+            ),
+            .attached
+        )
+        // Collapsed overlay closing: the panel translates out and carries the buttons with it.
+        XCTAssertEqual(
+            SidebarTrafficLightPresentationPolicy.presentation(
+                isBrowserWindowFullScreen: false,
+                mode: .collapsedHidden,
+                isSidebarVisible: false,
+                overlayUsesTravel: true
+            ),
+            .attached
+        )
+    }
+
+    func testTrafficLightsAreInteractiveOnlyWhileTheSidebarIsSettled() {
+        XCTAssertEqual(
+            SidebarTrafficLightPresentationPolicy.presentation(
+                isBrowserWindowFullScreen: false,
+                mode: .docked,
+                isSidebarVisible: true,
+                overlayUsesTravel: true
+            ),
+            .interactive
+        )
+        XCTAssertEqual(
+            SidebarTrafficLightPresentationPolicy.presentation(
+                isBrowserWindowFullScreen: false,
+                mode: .collapsedVisible,
+                isSidebarVisible: false,
+                overlayUsesTravel: true
+            ),
+            .interactive
+        )
+    }
+
+    func testTrafficLightsWithdrawWhenThereIsNoPanelToRide() {
+        // Reduced motion removes the overlay's travel, so a closed overlay has nothing to ride out.
+        XCTAssertEqual(
+            SidebarTrafficLightPresentationPolicy.presentation(
+                isBrowserWindowFullScreen: false,
+                mode: .collapsedHidden,
+                isSidebarVisible: false,
+                overlayUsesTravel: false
+            ),
+            .hidden
+        )
+        // Fullscreen hands the buttons back to the system titlebar in every sidebar mode.
+        for mode in [SidebarPresentationMode.docked, .collapsedVisible, .collapsedHidden] {
+            XCTAssertEqual(
+                SidebarTrafficLightPresentationPolicy.presentation(
+                    isBrowserWindowFullScreen: true,
+                    mode: mode,
+                    isSidebarVisible: true,
+                    overlayUsesTravel: true
+                ),
+                .hidden,
+                "\(mode)"
+            )
+        }
+    }
+
+    func testTrafficLightTravelIsCarriedOnlyByALeftDockedColumn() {
+        XCTAssertEqual(
+            SidebarTrafficLightPresentationPolicy.travelProgress(
+                mode: .docked,
+                shellEdge: SidebarPosition.left.shellEdge,
+                isSidebarVisible: false
+            ),
+            0
+        )
+        XCTAssertEqual(
+            SidebarTrafficLightPresentationPolicy.travelProgress(
+                mode: .docked,
+                shellEdge: SidebarPosition.left.shellEdge,
+                isSidebarVisible: true
+            ),
+            1
+        )
+        // A right-docked column and the collapsed overlay are moved by their own containers.
+        XCTAssertEqual(
+            SidebarTrafficLightPresentationPolicy.travelProgress(
+                mode: .docked,
+                shellEdge: SidebarPosition.right.shellEdge,
+                isSidebarVisible: false
+            ),
+            1
+        )
+        XCTAssertEqual(
+            SidebarTrafficLightPresentationPolicy.travelProgress(
+                mode: .collapsedHidden,
+                shellEdge: SidebarPosition.left.shellEdge,
+                isSidebarVisible: false
+            ),
+            1
+        )
+    }
+
+    func testTrafficLightPresentationSeparatesTravelFromInteractivity() {
+        XCTAssertFalse(BrowserWindowTrafficLightPresentation.hidden.isAttached)
+        XCTAssertFalse(BrowserWindowTrafficLightPresentation.hidden.isInteractive)
+        XCTAssertTrue(BrowserWindowTrafficLightPresentation.attached.isAttached)
+        XCTAssertFalse(BrowserWindowTrafficLightPresentation.attached.isInteractive)
+        XCTAssertTrue(BrowserWindowTrafficLightPresentation.interactive.isAttached)
+        XCTAssertTrue(BrowserWindowTrafficLightPresentation.interactive.isInteractive)
+    }
+
+    private static func makeCustodyHost(in window: NSWindow) -> NSView {
+        let host = NSView(
+            frame: NSRect(
+                x: 0,
+                y: 0,
+                width: BrowserWindowTrafficLightMetrics.sidebarReservedWidth,
+                height: BrowserWindowTrafficLightMetrics.clusterHeight
+            )
+        )
+        window.contentView?.addSubview(host)
+        return host
     }
 
     func testTrafficLightActionProviderEnablesAvailableWindowActions() {
@@ -402,7 +683,7 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         let host = NSHostingView(
             rootView: BrowserWindowTrafficLights(
                 actionProvider: .browserWindow(nil),
-                isVisible: true
+                presentation: .interactive
             )
         )
         host.frame = NSRect(
