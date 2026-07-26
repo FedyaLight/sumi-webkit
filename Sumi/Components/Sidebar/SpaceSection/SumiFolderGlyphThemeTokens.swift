@@ -40,9 +40,7 @@ extension SumiFolderGlyphPalette {
             stroke: stroke,
             iconForeground: iconForeground,
             backOverlayTop: overlayTop,
-            backOverlayBottom: overlayBottom,
-            frontOverlayTop: overlayTop,
-            frontOverlayBottom: overlayBottom
+            backOverlayBottom: overlayBottom
         )
     }
 }

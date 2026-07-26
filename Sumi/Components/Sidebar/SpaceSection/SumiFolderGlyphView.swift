@@ -13,8 +13,6 @@ struct SumiFolderGlyphPalette {
     let iconForeground: Color
     let backOverlayTop: Color
     let backOverlayBottom: Color
-    let frontOverlayTop: Color
-    let frontOverlayBottom: Color
 }
 
 enum SumiFolderGlyphShellState: Equatable {
@@ -154,18 +152,6 @@ struct SumiFolderGlyphView: View {
                 style: .continuous
             )
             .fill(palette.frontFill)
-
-            RoundedRectangle(
-                cornerRadius: SumiFolderGlyphMetrics.frontCornerRadius * scale,
-                style: .continuous
-            )
-            .fill(
-                LinearGradient(
-                    colors: [palette.frontOverlayTop, palette.frontOverlayBottom],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
 
             RoundedRectangle(
                 cornerRadius: SumiFolderGlyphMetrics.frontCornerRadius * scale,
