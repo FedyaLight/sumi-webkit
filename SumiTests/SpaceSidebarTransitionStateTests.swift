@@ -956,6 +956,76 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         XCTAssertEqual(shortcut.accentSource.partition, expectedPartition)
     }
 
+    func testSnapshotBuilderIncludesEssentialSplitTileMembers() throws {
+        let browser = BrowserManager()
+        let windowState = BrowserWindowState()
+        let settings = makeIsolatedSettings()
+        let profileID = UUID()
+        let source = Space(name: "Source", profileId: profileID)
+        let destination = Space(name: "Destination", profileId: profileID)
+        let pins = [
+            ShortcutPin(
+                id: UUID(),
+                role: .essential,
+                profileId: profileID,
+                index: 0,
+                launchURL: URL(string: "https://first-essential-split.example")!,
+                title: "First",
+                iconAsset: "star.fill"
+            ),
+            ShortcutPin(
+                id: UUID(),
+                role: .essential,
+                profileId: profileID,
+                index: 1,
+                launchURL: URL(string: "https://second-essential-split.example")!,
+                title: "Second",
+                iconAsset: "bolt.fill"
+            ),
+        ]
+        let group = try XCTUnwrap(
+            SplitGroup.make(
+                members: pins.map { .shortcutPin($0.id) },
+                layoutKind: .horizontal,
+                container: .essentialSidebar(
+                    profileId: profileID,
+                    index: 0
+                )
+            )
+        )
+
+        browser.spaceStateOwner.replaceSpaces([source, destination])
+        browser.structuralCollectionMutationOwner.setPinnedTabs(
+            pins,
+            for: profileID
+        )
+        XCTAssertTrue(browser.splitGroupMutations.insert(group, persist: false))
+        windowState.currentProfileId = profileID
+        windowState.currentSpaceId = source.id
+
+        let snapshot = makeTransitionSnapshot(
+            sourceSpace: source,
+            destinationSpace: destination,
+            browserManager: browser,
+            windowState: windowState,
+            settings: settings
+        )
+
+        let item = try XCTUnwrap(snapshot.stationaryEssentials?.items.first)
+        guard case .splitGroup(let split) = item else {
+            return XCTFail("Expected one Essential Split Tile")
+        }
+        XCTAssertEqual(snapshot.stationaryEssentials?.items.count, 1)
+        XCTAssertEqual(split.members.map(\.id), group.memberIDs)
+        XCTAssertEqual(
+            split.members.compactMap { member -> String? in
+                guard case .system(let name) = member.icon else { return nil }
+                return name
+            },
+            ["star.fill", "bolt.fill"]
+        )
+    }
+
     func testSnapshotBuilderCapturesSpaceTitleNameIconAndCornerRadius() {
         let browserManager = BrowserManager()
         let windowState = BrowserWindowState()
@@ -1405,6 +1475,37 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             Int(sourceIconSize * backingScale),
             accuracy: Int(backingScale),
             "Snapshot launchers must preserve the same intrinsic bitmap presentation as live rows"
+        )
+    }
+
+    func testSelectedEssentialSplitSnapshotDoesNotDrawOutsideTileBounds() throws {
+        let rendered = try renderedSelectedEssentialSplitSnapshot()
+        let image = rendered.image
+        let tileFrame = rendered.tileFrame
+        let scaleX = CGFloat(image.pixelsWide) / image.size.width
+        let scaleY = CGFloat(image.pixelsHigh) / image.size.height
+        var exteriorPixelCount = 0
+
+        for y in 0..<image.pixelsHigh {
+            for x in 0..<image.pixelsWide {
+                let point = CGPoint(
+                    x: (CGFloat(x) + 0.5) / scaleX,
+                    y: (CGFloat(y) + 0.5) / scaleY
+                )
+                guard !tileFrame.contains(point),
+                      let color = image.colorAt(x: x, y: y)?
+                        .usingColorSpace(.deviceRGB),
+                      color.alphaComponent > 0.001 else {
+                    continue
+                }
+                exteriorPixelCount += 1
+            }
+        }
+
+        XCTAssertEqual(
+            exteriorPixelCount,
+            0,
+            "The transition snapshot must not add a shadow around an Essential split tile"
         )
     }
 
@@ -2075,6 +2176,77 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         )
         host.cacheDisplay(in: host.bounds, to: image)
         return image
+    }
+
+    private func renderedSelectedEssentialSplitSnapshot() throws -> (
+        image: NSBitmapImageRep,
+        tileFrame: CGRect
+    ) {
+        let padding: CGFloat = 8
+        let tileWidth: CGFloat = 101
+        let tileSize = CGSize(
+            width: tileWidth,
+            height: PinnedTileMetrics.height
+        )
+        let members = ["star.fill", "bolt.fill"].enumerated().map {
+            index, systemImageName in
+            SpaceSplitGroupMemberSnapshot(
+                id: .shortcutPin(UUID()),
+                title: "",
+                icon: .system(systemImageName),
+                desaturatesIcon: false,
+                accentSource: nil,
+                essentialBackdrop: nil,
+                isSelected: index == 0
+            )
+        }
+        let splitGroup = SpaceSplitGroupSnapshot(
+            id: UUID(),
+            displayTitle: "",
+            customIcon: nil,
+            members: members,
+            isSelected: true,
+            isLoaded: true
+        )
+        let settings = makeIsolatedSettings()
+        let tokens = ResolvedThemeContext.default.tokens(settings: settings)
+        let root = EssentialsSnapshotGrid(
+            snapshot: EssentialsSnapshot(items: [.splitGroup(splitGroup)]),
+            width: tileWidth,
+            tokens: tokens
+        )
+        .environment(\.sumiSettings, settings)
+        .padding(padding)
+        let canvasSize = CGSize(
+            width: tileSize.width + padding * 2,
+            height: tileSize.height + padding * 2
+        )
+        let host = NSHostingView(rootView: root)
+        host.wantsLayer = true
+        host.frame = CGRect(origin: .zero, size: canvasSize)
+        let window = NSWindow(
+            contentRect: host.frame,
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.contentView = host
+        window.layoutIfNeeded()
+        host.layoutSubtreeIfNeeded()
+        host.displayIfNeeded()
+        let image = try XCTUnwrap(
+            host.bitmapImageRepForCachingDisplay(in: host.bounds)
+        )
+        host.cacheDisplay(in: host.bounds, to: image)
+        return (
+            image: image,
+            tileFrame: CGRect(
+                origin: CGPoint(x: padding, y: padding),
+                size: tileSize
+            )
+        )
     }
 
     private func renderedSnapshotLauncherIcon(

@@ -545,6 +545,9 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             FolderSnapshotContext(
                 childFoldersByParentId: inventory.childFoldersByParentID,
                 folderPinsByFolderId: inventory.folderPinsByFolderID,
+                splitPinsById: Dictionary(
+                    uniqueKeysWithValues: pins.map { ($0.id, $0) }
+                ),
                 liveTabsByPinId: Dictionary(
                     uniqueKeysWithValues: pins.compactMap { pin in
                         selection.liveTab(for: pin.id, in: windowState).map {
@@ -592,6 +595,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
     private struct FolderSnapshotContext {
         let childFoldersByParentId: [UUID: [TabFolder]]
         let folderPinsByFolderId: [UUID: [ShortcutPin]]
+        let splitPinsById: [UUID: ShortcutPin]
         let liveTabsByPinId: [UUID: Tab]
         let inventory: SidebarSpaceInventorySnapshot
         let selection: SidebarWindowSelectionQuery
@@ -611,6 +615,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         let folderContext = FolderSnapshotContext(
             childFoldersByParentId: projection.childFoldersByParentID,
             folderPinsByFolderId: projection.folderPinsByFolderID,
+            splitPinsById: projection.pinsByID,
             liveTabsByPinId: Dictionary(
                 uniqueKeysWithValues: projection.pinsByID.values.compactMap { pin in
                     selection.liveTab(for: pin.id, in: windowState).map { (pin.id, $0) }
@@ -662,6 +667,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         let context = FolderSnapshotContext(
             childFoldersByParentId: projection.childFoldersByParentID,
             folderPinsByFolderId: projection.folderPinsByFolderID,
+            splitPinsById: projection.pinsByID,
             liveTabsByPinId: [:],
             inventory: projection,
             selection: selection,
@@ -699,6 +705,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         let context = FolderSnapshotContext(
             childFoldersByParentId: projection.childFoldersByParentID,
             folderPinsByFolderId: projection.folderPinsByFolderID,
+            splitPinsById: projection.pinsByID,
             liveTabsByPinId: Dictionary(
                 uniqueKeysWithValues: projection.pinsByID.values.compactMap { pin in
                     selection.liveTab(for: pin.id, in: windowState).map { (pin.id, $0) }
@@ -933,12 +940,26 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         let selectionSnapshot = SidebarWindowSelectionSnapshot(
             windowState: context.windowState
         )
-        let items = SplitGroupSidebarModel.items(
-            for: group,
-            inventory: context.inventory,
-            selection: context.selection,
-            windowState: context.windowState
-        )
+        let items = group.members.compactMap {
+            member -> SplitGroupSidebarItem? in
+            switch member.memberID {
+            case .regularTab(let tabID):
+                guard let tab = context.inventory.tab(id: tabID) else {
+                    return nil
+                }
+                return SplitGroupSidebarItem.regular(member, tab: tab)
+
+            case .shortcutPin(let pinID):
+                guard let pin = context.splitPinsById[pinID] else {
+                    return nil
+                }
+                return SplitGroupSidebarItem.shortcut(
+                    member,
+                    pin: pin,
+                    liveTab: context.liveTabsByPinId[pinID]
+                )
+            }
+        }
         let members = items.map { item in
             let presentation = SplitGroupMemberIconResolver.resolve(
                 item: item,

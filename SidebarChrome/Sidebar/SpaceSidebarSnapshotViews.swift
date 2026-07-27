@@ -339,11 +339,6 @@ private struct EssentialsSnapshotSplitTileView: View {
             desaturatesIcons: !splitGroup.isLoaded
         )
         .frame(width: tileSize.width, height: tileSize.height)
-        .shadow(
-            color: splitGroup.isSelected ? tokens.sidebarSelectionShadow : .clear,
-            radius: splitGroup.isSelected ? 2 : 0,
-            y: splitGroup.isSelected ? 1 : 0
-        )
         .accessibilityIdentifier(
             "essential-split-group-snapshot-\(splitGroup.id.uuidString)"
         )
