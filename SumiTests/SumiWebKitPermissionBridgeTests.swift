@@ -1,4 +1,3 @@
-import SwiftData
 import WebKit
 import XCTest
 
@@ -581,8 +580,7 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
             runtimeController: runtime
         )
         let browserManager = BrowserManager(
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()
             ),
             permissionCoordinator: coordinator,
             runtimePermissionController: runtime,
@@ -875,11 +873,8 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
         )
     }
 
-    private func makeInMemoryStartupContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+    private func makeInMemoryStartupContainer() throws -> SumiDatabase {
+        try SumiDatabase.inMemory()
     }
 
     private func makeSiteActivityStore() throws -> SumiPermissionSiteActivityStore {

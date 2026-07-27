@@ -11,7 +11,7 @@ extension SumiStartupPersistenceTests {
             var openAttempts = 0
 
             XCTAssertThrowsError(
-                try SumiStartupPersistence.makePersistentContainerForStartup(
+                try SumiStartupPersistence.makePersistentDatabaseForStartup(
                     storeURL: fixture.storeURL,
                     quarantineRootURL: fixture.quarantineRootURL,
                     performRecoveryOperation: { operation, body in
@@ -21,7 +21,7 @@ extension SumiStartupPersistenceTests {
                         }
                         try body()
                     },
-                    openPersistentContainer: { _ -> String in
+                    openDatabase: { _ -> String in
                         openAttempts += 1
                         if openAttempts == 1 {
                             throw StartupPersistenceFixtures.corruptStore
@@ -51,7 +51,7 @@ extension SumiStartupPersistenceTests {
             var openAttempts = 0
 
             XCTAssertThrowsError(
-                try SumiStartupPersistence.makePersistentContainerForStartup(
+                try SumiStartupPersistence.makePersistentDatabaseForStartup(
                     storeURL: fixture.storeURL,
                     quarantineRootURL: fixture.quarantineRootURL,
                     performRecoveryOperation: { operation, body in
@@ -61,7 +61,7 @@ extension SumiStartupPersistenceTests {
                         }
                         try body()
                     },
-                    openPersistentContainer: { _ -> String in
+                    openDatabase: { _ -> String in
                         openAttempts += 1
                         if openAttempts < 3 {
                             throw StartupPersistenceFixtures.corruptStore
@@ -113,7 +113,7 @@ extension SumiStartupPersistenceTests {
             preserving: quarantine
         )
         try overwritePreservedFileWithSameLength(
-            named: "default.store-wal",
+            named: "Sumi.sqlite-wal",
             in: quarantine,
             fixture: fixture
         )
@@ -258,12 +258,12 @@ enum StartupRecoveryOperationFixtures {
         .createQuarantineRoot,
         .synchronizeQuarantineRootParent,
         .createStagingTree,
-        .copyFamilyFile("default.store"),
-        .synchronizeFamilyFile("default.store"),
-        .copyFamilyFile("default.store-wal"),
-        .synchronizeFamilyFile("default.store-wal"),
-        .copyFamilyFile("default.store-shm"),
-        .synchronizeFamilyFile("default.store-shm"),
+        .copyFamilyFile("Sumi.sqlite"),
+        .synchronizeFamilyFile("Sumi.sqlite"),
+        .copyFamilyFile("Sumi.sqlite-wal"),
+        .synchronizeFamilyFile("Sumi.sqlite-wal"),
+        .copyFamilyFile("Sumi.sqlite-shm"),
+        .synchronizeFamilyFile("Sumi.sqlite-shm"),
         .synchronizePreservedDirectory,
         .writeManifest,
         .synchronizeManifest,
@@ -277,16 +277,16 @@ enum StartupRecoveryOperationFixtures {
         .synchronizeTransitionMarker(.restoringPreservedFamily),
         .publishTransitionMarker(.restoringPreservedFamily),
         .synchronizeTransitionParent(.restoringPreservedFamily),
-        .removeActiveFamilyFile(.restoringPreservedFamily, "default.store-shm"),
-        .removeActiveFamilyFile(.restoringPreservedFamily, "default.store-wal"),
-        .removeActiveFamilyFile(.restoringPreservedFamily, "default.store"),
+        .removeActiveFamilyFile(.restoringPreservedFamily, "Sumi.sqlite-shm"),
+        .removeActiveFamilyFile(.restoringPreservedFamily, "Sumi.sqlite-wal"),
+        .removeActiveFamilyFile(.restoringPreservedFamily, "Sumi.sqlite"),
         .synchronizeActiveDirectoryAfterRemoval(.restoringPreservedFamily),
-        .copyRestoredFamilyFile("default.store"),
-        .synchronizeRestoredFamilyFile("default.store"),
-        .copyRestoredFamilyFile("default.store-wal"),
-        .synchronizeRestoredFamilyFile("default.store-wal"),
-        .copyRestoredFamilyFile("default.store-shm"),
-        .synchronizeRestoredFamilyFile("default.store-shm"),
+        .copyRestoredFamilyFile("Sumi.sqlite"),
+        .synchronizeRestoredFamilyFile("Sumi.sqlite"),
+        .copyRestoredFamilyFile("Sumi.sqlite-wal"),
+        .synchronizeRestoredFamilyFile("Sumi.sqlite-wal"),
+        .copyRestoredFamilyFile("Sumi.sqlite-shm"),
+        .synchronizeRestoredFamilyFile("Sumi.sqlite-shm"),
         .synchronizeRestoredDirectory,
         .removeTransitionMarker(.restoringPreservedFamily),
         .synchronizeTransitionCompletionDirectory(.restoringPreservedFamily),
@@ -297,11 +297,52 @@ enum StartupRecoveryOperationFixtures {
         .synchronizeTransitionMarker(.preparingFreshStore),
         .publishTransitionMarker(.preparingFreshStore),
         .synchronizeTransitionParent(.preparingFreshStore),
-        .removeActiveFamilyFile(.preparingFreshStore, "default.store-shm"),
-        .removeActiveFamilyFile(.preparingFreshStore, "default.store-wal"),
-        .removeActiveFamilyFile(.preparingFreshStore, "default.store"),
+        .removeActiveFamilyFile(.preparingFreshStore, "Sumi.sqlite-shm"),
+        .removeActiveFamilyFile(.preparingFreshStore, "Sumi.sqlite-wal"),
+        .removeActiveFamilyFile(.preparingFreshStore, "Sumi.sqlite"),
         .synchronizeActiveDirectoryAfterRemoval(.preparingFreshStore),
         .removeTransitionMarker(.preparingFreshStore),
         .synchronizeTransitionCompletionDirectory(.preparingFreshStore),
     ]
+}
+
+struct StartupPersistenceInjectedFault: Error {}
+
+enum StartupPersistenceFixtures {
+    static let corruptStore = NSError(
+        domain: NSSQLiteErrorDomain,
+        code: 11,
+        userInfo: [NSLocalizedDescriptionKey: "database disk image is malformed"]
+    )
+
+    static let corruptStoreFamily = [
+        "Sumi.sqlite": Data("corrupt-primary-store-bytes".utf8),
+        "Sumi.sqlite-wal": Data("pending-wal-browser-data".utf8),
+        "Sumi.sqlite-shm": Data("shared-memory-browser-data".utf8),
+    ]
+}
+
+struct StartupPersistenceStoreFixture {
+    let rootURL: URL
+    let storeURL: URL
+    let quarantineRootURL: URL
+    let originalFamily: [String: Data]
+
+    init(fileManager: FileManager = .default) throws {
+        rootURL = fileManager.temporaryDirectory.appendingPathComponent(
+            "SumiStartupPersistenceTests-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        storeURL = rootURL.appendingPathComponent("Sumi.sqlite", isDirectory: false)
+        quarantineRootURL = rootURL.appendingPathComponent("quarantine", isDirectory: true)
+        originalFamily = StartupPersistenceFixtures.corruptStoreFamily
+
+        try fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        for (name, data) in originalFamily {
+            try data.write(
+                to: rootURL.appendingPathComponent(name, isDirectory: false),
+                options: .withoutOverwriting
+            )
+        }
+    }
 }

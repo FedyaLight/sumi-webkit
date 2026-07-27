@@ -1,4 +1,3 @@
-import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -36,16 +35,11 @@ final class ExtensionNormalWindowLifecycleTests: XCTestCase {
     }
 
     func testRuntimeTeardownInvalidatesInFlightReconciliation() throws {
-        let container = try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [
-                ModelConfiguration(isStoredInMemoryOnly: true),
-            ]
-        )
+        let container = try SumiDatabase.inMemory()
         let profile = Profile(name: "Lifecycle")
         let attachedRuntime = ExtensionAttachedRuntimeCapture()
         let manager = makeSafariExtensionTestExtensionManager(
-            context: container.mainContext,
+            database: container,
             initialProfile: profile,
             attachedRuntimeCapture: attachedRuntime
         )

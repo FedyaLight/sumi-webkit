@@ -18,7 +18,7 @@ final class SumiAdblockZapperStoreTests: XCTestCase {
     }
 
     func testInjectorSkipsJavaScriptWhenHostHasNoRules() {
-        let store = SumiAdblockZapperStore(userDefaults: makeDefaults())
+        let store = makeStore()
         let webView = WKWebView()
         var evaluatedScripts: [String] = []
         SumiAdblockZapperInjector.evaluateScript = { _, script in
@@ -38,8 +38,7 @@ final class SumiAdblockZapperStoreTests: XCTestCase {
     }
 
     func testInjectorClearsOnlyAfterRulesWereApplied() {
-        let defaults = makeDefaults()
-        let store = SumiAdblockZapperStore(userDefaults: defaults)
+        let store = makeStore()
         store.setRules(
             [".ad-slot"],
             forHost: "example.com",
@@ -71,8 +70,7 @@ final class SumiAdblockZapperStoreTests: XCTestCase {
     }
 
     func testPersistentProfilesDoNotShareZapperStateForSameHost() {
-        let defaults = makeDefaults()
-        let store = SumiAdblockZapperStore(userDefaults: defaults)
+        let store = makeStore()
 
         store.setRules(
             [".ad-slot"],
@@ -111,8 +109,8 @@ final class SumiAdblockZapperStoreTests: XCTestCase {
     }
 
     func testEphemeralProfileZapperStateIsSessionOnlyAndSeparateFromPersistentProfile() {
-        let defaults = makeDefaults()
-        let store = SumiAdblockZapperStore(userDefaults: defaults)
+        let database = makeDatabase()
+        let store = makeStore(database: database)
 
         store.setRules(
             [".persistent"],
@@ -144,7 +142,7 @@ final class SumiAdblockZapperStoreTests: XCTestCase {
             [".private"]
         )
 
-        let reloadedStore = SumiAdblockZapperStore(userDefaults: defaults)
+        let reloadedStore = makeStore(database: database)
         XCTAssertEqual(
             reloadedStore.state(
                 forHost: "example.com",
@@ -163,33 +161,14 @@ final class SumiAdblockZapperStoreTests: XCTestCase {
         )
     }
 
-    func testLegacyHostOnlyDefaultsAreNotLoadedAsProfileState() throws {
-        let defaults = makeDefaults()
-        let legacyState = [
-            "example.com": SumiAdblockZapperStore.State(rules: [".legacy"], disabled: false),
-        ]
-        let legacyData = try JSONEncoder().encode(legacyState)
-        defaults.set(legacyData, forKey: "settings.adblock.zapper.statesByHost.v1")
-
-        let store = SumiAdblockZapperStore(userDefaults: defaults)
-
-        XCTAssertEqual(
-            store.state(
-                forHost: "example.com",
-                profilePartitionId: ProfileID.a,
-                isEphemeralProfile: false
-            ),
-            .empty
-        )
-    }
-
-    func testPersistentMutationDoesNotOverwriteUnreadableBaseline() {
-        let defaults = makeDefaults()
-        let storageKey =
-            "settings.adblock.zapper.statesByPersistentProfileAndHost.v1"
+    func testPersistentMutationDoesNotOverwriteUnreadableBaseline() throws {
+        let database = makeDatabase()
+        let storageKey = "adblock.zapper-states"
         let corruptPayload = Data("not-json".utf8)
-        defaults.set(corruptPayload, forKey: storageKey)
-        let store = SumiAdblockZapperStore(userDefaults: defaults)
+        try database.transaction {
+            try $0.documents.save(corruptPayload, forKey: storageKey)
+        }
+        let store = makeStore(database: database)
 
         store.setRules(
             [".late-rule"],
@@ -198,7 +177,10 @@ final class SumiAdblockZapperStoreTests: XCTestCase {
             isEphemeralProfile: false
         )
 
-        XCTAssertEqual(defaults.data(forKey: storageKey), corruptPayload)
+        XCTAssertEqual(
+            try database.read { try $0.documents.data(forKey: storageKey) },
+            corruptPayload
+        )
         XCTAssertEqual(
             store.state(
                 forHost: "example.com",
@@ -209,10 +191,16 @@ final class SumiAdblockZapperStoreTests: XCTestCase {
         )
     }
 
-    private func makeDefaults() -> UserDefaults {
-        let suiteName = "SumiAdblockZapperStoreTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defaults.removePersistentDomain(forName: suiteName)
-        return defaults
+    private func makeDatabase() -> SumiDatabase {
+        try! SumiDatabase.inMemory()
+    }
+
+    private func makeStore(
+        database: SumiDatabase? = nil
+    ) -> SumiAdblockZapperStore {
+        SumiAdblockZapperStore(
+            database: database ?? makeDatabase(),
+            profileReferenceAdmission: .testingAllowingReferences()
+        )
     }
 }

@@ -781,7 +781,9 @@ struct ExtensionActionButton: View {
     ExtensionActionView(
         extensions: [],
         browserContext: ExtensionActionBrowserContext.unavailable(
-            extensionsModule: SumiExtensionsModule(),
+            extensionsModule: SumiExtensionsModule(
+                compiledRuleListCatalog: SumiCompiledContentRuleListCatalog()
+            ),
             windowState: BrowserWindowState()
         )
     )

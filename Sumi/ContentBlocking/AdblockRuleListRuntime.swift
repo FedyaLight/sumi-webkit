@@ -28,8 +28,7 @@ final class AdblockRuleListRuntime {
         isRuntimeEnabled: @escaping @Sendable () async -> Bool = { true },
         generationArchive: AdblockGenerationArchive? = nil,
         compiler: SumiContentRuleListCompiling = SumiWKContentRuleListCompiler(),
-        compiledRuleListCatalog: SumiCompiledContentRuleListCataloging =
-            AdblockRetainingCompiledRuleListCatalog(),
+        compiledRuleListCatalog: SumiCompiledContentRuleListCataloging,
         embeddedBundleURLProvider: @escaping @MainActor () -> URL? = {
             SumiAdblockNativeBundleReader().bundledDirectoryURL(
                 for: SumiProtectionBundleProfile.adblock

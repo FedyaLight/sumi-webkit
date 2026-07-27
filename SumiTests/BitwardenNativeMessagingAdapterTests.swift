@@ -1,4 +1,3 @@
-import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -667,7 +666,7 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
             requestedApplicationIdentifier: nil,
             extensionId: installed.id,
             installedExtensions: [installed],
-            importStore: SafariExtensionImportStore(defaults: makeDefaults()),
+            importStore: SafariExtensionImportStore(database: try! SumiDatabase.inMemory()),
             launcher: launcher,
             adapterRegistry: SumiNativeMessagingAdapterRegistry(adapters: [adapter])
         )
@@ -949,13 +948,10 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         // Native-messaging delegate callbacks live on the extracted
         // ExtensionControllerDelegateBridge role, which ExtensionManager wires
         // as the WKWebExtensionController delegate.
-        let container = try ModelContainer(
-            for: ExtensionEntity.self,
-            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-        )
+        let container = try SumiDatabase.inMemory()
         let inspection = ExtensionManagerInspectionCapture()
         _ = ExtensionManager(
-            context: ModelContext(container),
+            database: container,
             initialProfile: nil,
             testInspectionDidAssemble: inspection.install
         )

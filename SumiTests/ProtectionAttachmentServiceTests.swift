@@ -7,7 +7,10 @@ import XCTest
 final class ProtectionAttachmentServiceTests: XCTestCase {
     func testRuntimeLevelSynchronizationIsOneAtomicTransition() {
         let provider = FakeProtectionAttachmentRuleProvider()
-        let service = ProtectionAttachmentService(ruleProvider: provider)
+        let service = ProtectionAttachmentService(
+            ruleProvider: provider,
+            compiledRuleListCatalog: SumiCompiledContentRuleListCatalog()
+        )
 
         service.syncRuntime(for: .adblock)
         service.syncRuntime(for: .protection)
@@ -21,6 +24,7 @@ final class ProtectionAttachmentServiceTests: XCTestCase {
         var serviceFactoryCallCount = 0
         let service = ProtectionAttachmentService(
             ruleProvider: provider,
+            compiledRuleListCatalog: SumiCompiledContentRuleListCatalog(),
             contentBlockingServiceFactory: {
                 serviceFactoryCallCount += 1
                 return SumiContentBlockingService(policy: .disabled)
@@ -60,6 +64,7 @@ final class ProtectionAttachmentServiceTests: XCTestCase {
         )
         let service = ProtectionAttachmentService(
             ruleProvider: provider,
+            compiledRuleListCatalog: SumiCompiledContentRuleListCatalog(),
             contentBlockingServiceFactory: {
                 SumiContentBlockingService(policy: .disabled, compiler: compiler)
             }
@@ -111,7 +116,10 @@ final class ProtectionAttachmentServiceTests: XCTestCase {
                 invalidAdblockRuleList,
             ]
         )
-        let service = ProtectionAttachmentService(ruleProvider: provider)
+        let service = ProtectionAttachmentService(
+            ruleProvider: provider,
+            compiledRuleListCatalog: SumiCompiledContentRuleListCatalog()
+        )
 
         let plan = service.globalAttachmentPlan(
             for: .adblock,

@@ -33,7 +33,7 @@ final class NativeMessagingRelayHostTests: XCTestCase {
             appBundleID: "com.bitwarden.desktop",
             appexBundleID: "com.bitwarden.desktop.safari"
         )
-        let importStore = SafariExtensionImportStore(defaults: makeDefaults())
+        let importStore = SafariExtensionImportStore(database: try! SumiDatabase.inMemory())
         let installed = makeInstalledExtension(
             id: "ext-bitwarden",
             sourceBundlePath: appexPath
@@ -54,7 +54,7 @@ final class NativeMessagingRelayHostTests: XCTestCase {
             appBundleID: "com.1password.safari",
             appexBundleID: "com.1password.safari.extension"
         )
-        let importStore = SafariExtensionImportStore(defaults: makeDefaults())
+        let importStore = SafariExtensionImportStore(database: try! SumiDatabase.inMemory())
         let installed = makeInstalledExtension(
             id: "ext-1password",
             sourceBundlePath: appexPath
@@ -77,7 +77,7 @@ final class NativeMessagingRelayHostTests: XCTestCase {
             appBundleID: hostBundleID,
             appexBundleID: "com.example.passwordmanager.desktop.safari"
         )
-        let importStore = SafariExtensionImportStore(defaults: makeDefaults())
+        let importStore = SafariExtensionImportStore(database: try! SumiDatabase.inMemory())
         let installed = makeInstalledExtension(
             id: "ext-example-passwordmanager",
             sourceBundlePath: appexPath
@@ -123,7 +123,7 @@ final class NativeMessagingRelayHostTests: XCTestCase {
             appBundleID: "com.example.host",
             appexBundleID: "com.example.host.extension"
         )
-        let importStore = SafariExtensionImportStore(defaults: makeDefaults())
+        let importStore = SafariExtensionImportStore(database: try! SumiDatabase.inMemory())
         let installed = makeInstalledExtension(
             id: "ext-example",
             sourceBundlePath: appexPath
@@ -151,7 +151,7 @@ final class NativeMessagingRelayHostTests: XCTestCase {
     }
 
     func testResolverReturnsNilForDirectoryExtensionWithoutExplicitHostRequest() {
-        let importStore = SafariExtensionImportStore(defaults: makeDefaults())
+        let importStore = SafariExtensionImportStore(database: try! SumiDatabase.inMemory())
         let installed = makeInstalledExtension(
             id: "ext-directory",
             sourceBundlePath: "/tmp/unpacked-extension",

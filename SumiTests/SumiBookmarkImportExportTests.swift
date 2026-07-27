@@ -220,16 +220,16 @@ final class SumiBookmarkImportExportTests: XCTestCase {
     func testReplaceBookmarksCommitsDeletionAndImportAsOneRepositoryMutation() throws {
         let manager = try makeBookmarkManager()
         _ = try manager.importBookmarks([
-            .bookmark(name: "Old", url: URL(string: "https://old.example")!)
+            .bookmark(name: "Old", url: URL(string: "https://old.example")!),
         ])
 
         let summary = try manager.replaceBookmarks([
-            .bookmark(name: "New", url: URL(string: "https://old.example")!)
+            .bookmark(name: "New", url: URL(string: "https://old.example")!),
         ])
 
         XCTAssertEqual(summary, SumiBookmarksImportSummary(successful: 1, duplicates: 0, failed: 0))
         XCTAssertEqual(bookmarkOutline(in: manager), [
-            "bookmark:New|https://old.example"
+            "bookmark:New|https://old.example",
         ])
     }
 
@@ -243,9 +243,9 @@ final class SumiBookmarkImportExportTests: XCTestCase {
                     .bookmark(
                         name: "Original",
                         url: try XCTUnwrap(URL(string: "https://original.example"))
-                    )
+                    ),
                 ]
-            )
+            ),
         ])
         let checkpoint = manager.snapshot(sortMode: .manual)
 
@@ -253,7 +253,7 @@ final class SumiBookmarkImportExportTests: XCTestCase {
             .bookmark(
                 name: "Replacement",
                 url: try XCTUnwrap(URL(string: "https://replacement.example"))
-            )
+            ),
         ])
         try manager.restoreSnapshot(checkpoint)
 
@@ -267,7 +267,7 @@ final class SumiBookmarkImportExportTests: XCTestCase {
             .bookmark(
                 name: "Survivor",
                 url: try XCTUnwrap(URL(string: "https://survivor.example"))
-            )
+            ),
         ])
         let checkpoint = manager.snapshot(sortMode: .manual)
         var invalidRoot = checkpoint.root
@@ -302,12 +302,8 @@ final class SumiBookmarkImportExportTests: XCTestCase {
 
     @MainActor
     private func makeBookmarkManager() throws -> SumiBookmarkManager {
-        let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-            .appendingPathComponent("SumiBookmarkImportExportManager-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        temporaryDirectories.append(directory)
-        return SumiBookmarkManager(
-            database: SumiBookmarkDatabase(directory: directory),
+        SumiBookmarkManager(
+            database: try SumiDatabase.inMemory(),
             syncFavicons: false
         )
     }

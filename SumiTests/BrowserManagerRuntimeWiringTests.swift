@@ -1,7 +1,6 @@
 import AppKit
 import Combine
 import Foundation
-import SwiftData
 import WebKit
 import XCTest
 
@@ -13,8 +12,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
     func testShellWebViewAndSelectionRootsComposeWithoutRecursiveInitialization()
         throws {
         let browser = BrowserManager(
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()
             )
         )
 
@@ -42,8 +40,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         registry.enable(.boosts)
         let browserManager = BrowserManager(
             moduleRegistry: registry,
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()
             )
         )
         XCTAssertTrue(browserManager.optionalModules.boosts.isEnabled)
@@ -122,8 +119,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         let windowRegistry = WindowRegistry()
         let browserManager = BrowserManager(
             windowRegistry: windowRegistry,
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()
             )
         )
         let space = browserManager.spaceStateOwner.currentSpace
@@ -170,8 +166,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         let windowRegistry = WindowRegistry()
         let browserManager = BrowserManager(
             windowRegistry: windowRegistry,
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()
             )
         )
         let selectedSpace = browserManager.spaceStateOwner.currentSpace
@@ -381,21 +376,23 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
 
     func testBrowserManagerInitializationRetainsInjectedPermissionRuntimeDependencies() throws {
         let container = try makeInMemoryStartupContainer()
-        let permissionStore = SwiftDataPermissionStore(container: container)
+        let permissionStore = DatabasePermissionStore(database: container)
         let recentActivityStore = SumiPermissionRecentActivityStore()
         let siteActivityStore = try makeSiteActivityStore()
         let indicatorEventStore = SumiPermissionIndicatorEventStore()
         let cleanupService = SumiPermissionCleanupService(
             store: permissionStore,
             recentActivityStore: recentActivityStore,
-            antiAbuseStore: SumiPermissionAntiAbuseStore(),
+            antiAbuseStore: SumiPermissionAntiAbuseStore(
+                persistenceAuthority: siteActivityStore.persistenceAuthority
+            ),
             siteActivityStore: siteActivityStore
         )
         let blockedPopupStore = SumiBlockedPopupStore()
         let externalSchemeSessionStore = SumiExternalSchemeSessionStore()
 
         let browserManager = BrowserManager(
-            startupPersistence: BrowserManagerStartupPersistence(container: container),
+            startupPersistence: BrowserManagerStartupPersistence(database: container),
             permissionIndicatorEventStore: indicatorEventStore,
             permissionRecentActivityStore: recentActivityStore,
             permissionSiteActivityStore: siteActivityStore,
@@ -417,13 +414,11 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
 
     func testMissingPermissionStoreCreatesDistinctMemoryOnlyAuthorities() throws {
         let firstBrowserManager = BrowserManager(
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()
             )
         )
         let secondBrowserManager = BrowserManager(
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()
             )
         )
 
@@ -435,8 +430,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
 
     func testBrowserManagerPermissionFacadesRouteThroughScopedBridgeRegistry() throws {
         let browserManager = BrowserManager(
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()
             ),
             permissionSiteActivityStore: try makeSiteActivityStore()
         )
@@ -473,7 +467,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         )
 
         let browserManager = BrowserManager(
-            startupPersistence: BrowserManagerStartupPersistence(container: container),
+            startupPersistence: BrowserManagerStartupPersistence(database: container),
             systemPermissionService: systemPermissionService,
             permissionCoordinator: permissionCoordinator,
             permissionSiteActivityStore: siteActivityStore,
@@ -491,8 +485,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
     func testCanonicalWebViewRuntimeWiresInjectedBrowsingDataCleanupService() throws {
         let cleanupService = makeBrowsingDataCleanupService()
         let browserManager = BrowserManager(
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()
             ),
             browsingDataCleanupService: cleanupService,
             permissionSiteActivityStore: try makeSiteActivityStore()
@@ -508,8 +501,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         let windowRegistry = WindowRegistry()
         let browserManager = BrowserManager(
             windowRegistry: windowRegistry,
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()
             )
         )
         await browserManager.drainProtectionRuntimeTasksForTests()
@@ -554,8 +546,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
     func testBrowserManagerCreatesOneCanonicalWebViewRuntimeWithUsableServices() throws {
         let cleanupService = makeBrowsingDataCleanupService()
         let browserManager = BrowserManager(
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()
             ),
             browsingDataCleanupService: cleanupService,
             permissionSiteActivityStore: try makeSiteActivityStore()
@@ -621,8 +612,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         let windowRegistry = WindowRegistry()
         let browserManager = BrowserManager(
             windowRegistry: windowRegistry,
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()
             )
         )
         let runtimePorts = try XCTUnwrap(browserManager.runtimePortConnection.current)
@@ -646,8 +636,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         let windowRegistry = WindowRegistry()
         let browserManager = BrowserManager(
             windowRegistry: windowRegistry,
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()
             )
         )
         XCTAssertIdentical(browserManager.windowRegistry, windowRegistry)
@@ -676,8 +665,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             retainedRegistry = windowRegistry
             browserManager = BrowserManager(
                 windowRegistry: windowRegistry,
-                startupPersistence: BrowserManagerStartupPersistence(
-                    container: try makeInMemoryStartupContainer()
+                startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()
                 )
             )
         }
@@ -698,8 +686,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         let visitedLinkStore = FakeBrowserVisitedLinkStore()
         let privacyService = FakeBrowserPrivacyService()
         let browserManager = BrowserManager(
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()
             ),
             dataServices: BrowserManagerDataServices(
                 websiteDataCleanupService: FakeWebsiteDataCleanupService(),
@@ -805,8 +792,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         let faviconService = FakeBrowserFaviconService()
         let visitedLinkStore = FakeBrowserVisitedLinkStore()
         var browserManager: BrowserManager? = BrowserManager(
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()
             ),
             dataServices: BrowserManagerDataServices(
                 websiteDataCleanupService: FakeWebsiteDataCleanupService(),
@@ -861,8 +847,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         var windowRegistry: WindowRegistry? = WindowRegistry()
         var browserManager: BrowserManager? = BrowserManager(
             windowRegistry: try XCTUnwrap(windowRegistry),
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()
             )
         )
         let tab: Tab
@@ -907,8 +892,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         let faviconService = FakeBrowserFaviconService(partitionToReturn: injectedPartition)
         let visitedLinkStore = FakeBrowserVisitedLinkStore()
         let browserManager = BrowserManager(
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()
             ),
             dataServices: BrowserManagerDataServices(
                 websiteDataCleanupService: FakeWebsiteDataCleanupService(),
@@ -955,8 +939,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         let windowRegistry = WindowRegistry()
         let browserManager = BrowserManager(
             windowRegistry: windowRegistry,
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()
             ),
             permissionSiteActivityStore: try makeSiteActivityStore()
         )
@@ -1051,8 +1034,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         let windowRegistry = WindowRegistry()
         let browserManager = BrowserManager(
             windowRegistry: windowRegistry,
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()
             ),
             permissionSiteActivityStore: try makeSiteActivityStore()
         )
@@ -1115,8 +1097,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
     func testTabMediaLifecycleUsesBrowserManagerInjectedNowPlayingController() throws {
         let nowPlayingController = FakeNativeNowPlayingController()
         let browserManager = BrowserManager(
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()
             ),
             nowPlayingController: nowPlayingController,
             permissionSiteActivityStore: try makeSiteActivityStore()
@@ -1148,17 +1129,11 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
     }
 
     private func makeSiteDataPolicyStore() throws -> SumiSiteDataPolicyStore {
-        let suiteName = "BrowserManagerSiteDataPolicyStoreTests-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defaults.removePersistentDomain(forName: suiteName)
-        return SumiSiteDataPolicyStore(userDefaults: defaults)
+        SumiSiteDataPolicyStore(database: try SumiDatabase.inMemory())
     }
 
-    private func makeInMemoryStartupContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+    private func makeInMemoryStartupContainer() throws -> SumiDatabase {
+        try SumiDatabase.inMemory()
     }
 
     private func makeSiteActivityStore() throws -> SumiPermissionSiteActivityStore {

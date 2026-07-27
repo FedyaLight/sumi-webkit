@@ -8,7 +8,6 @@ import AppKit
 import Combine
 import SumiDomain
 import SumiWebRuntime
-import SwiftData
 import SwiftUI
 import WebKit
 
@@ -26,7 +25,7 @@ class BrowserManager: ObservableObject {
 
     let webViewSessions: WebViewSessionRepository
     let windowRegistry: WindowRegistry
-    var modelContext: ModelContext
+    let database: SumiDatabase
     let profileRetirementStartupPreflight: ProfileRetirementStartupPreflightStatus
     let moduleRegistry: SumiModuleRegistry
     let adBlockingModule: SumiAdBlockingModule
@@ -124,7 +123,7 @@ class BrowserManager: ObservableObject {
         didSet { settingsAttachment.attach(sumiSettings) }
     }
     weak var keyboardShortcutManager: KeyboardShortcutManager?
-    let liveFolderManager = SumiLiveFolderManager()
+    let liveFolderManager: SumiLiveFolderManager
     let settingsState = BrowserSettingsState()
     let startupMaterializationGate: BrowserStartupMaterializationGate
     let webViewWindowCommands = BrowserWebViewWindowCommandChannel()
@@ -435,7 +434,10 @@ class BrowserManager: ObservableObject {
         self.objectWillChange = graph.objectWillChange
         self.webViewSessions = graph.webViewSessions
         self.windowRegistry = graph.windowRegistry
-        self.modelContext = graph.modelContext
+        self.database = graph.database
+        self.liveFolderManager = SumiLiveFolderManager(
+            store: SumiLiveFolderStore(database: graph.database)
+        )
         self.moduleRegistry = graph.moduleRegistry
         self.sidebarHostRecoveryCoordinator = graph.sidebarHostRecoveryCoordinator
         self.adBlockingModule = graph.adBlockingModule

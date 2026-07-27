@@ -1,4 +1,3 @@
-import SwiftData
 import WebKit
 import XCTest
 
@@ -73,7 +72,7 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
         async throws {
         let container = try makeTestContainer()
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: Profile(name: "Malicious ID Profile")
         )
         let manager = fixture.manager
@@ -112,7 +111,7 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
     func testInstallKeepsLegitimateGeckoIDInsideExtensionsRoot() async throws {
         let container = try makeTestContainer()
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: Profile(name: "Legitimate ID Profile")
         )
         let manager = fixture.manager
@@ -146,7 +145,7 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
     func testSafariAppexInstallPrefersBundleIdentifierOverManifestGeckoID() async throws {
         let container = try makeTestContainer()
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: Profile(name: "Safari Bundle ID Profile")
         )
         let manager = fixture.manager
@@ -191,7 +190,7 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Optional Native Messaging Profile")
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let manager = fixture.manager
@@ -230,7 +229,7 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Optional Permissions Profile")
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let manager = fixture.manager
@@ -268,7 +267,7 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Required Native Messaging Profile")
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let manager = fixture.manager
@@ -305,7 +304,7 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
     func testFailedReinstallRestoresPackageAndPersistedRecord() async throws {
         let container = try makeTestContainer()
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: Profile(name: "Rollback Profile")
         )
         let manager = fixture.manager
@@ -363,7 +362,7 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
             original.name
         )
         let persisted = try XCTUnwrap(
-            fixture.inspection.installation.metadata.extensionEntity(
+            fixture.inspection.installation.metadata.extensionMetadata(
                 for: extensionID
             )
         )
@@ -373,7 +372,7 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
     func testEnableWithoutRuntimeProfileRollsBackEnabledState() async throws {
         let container = try makeTestContainer()
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: nil
         )
         let manager = fixture.manager
@@ -403,7 +402,7 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
         }
 
         let entity = try XCTUnwrap(
-            fixture.inspection.installation.metadata.extensionEntity(
+            fixture.inspection.installation.metadata.extensionMetadata(
                 for: installed.id
             )
         )
@@ -444,11 +443,8 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
         XCTAssertTrue(unsupportedAPIs.contains("browser.contentScripts.register"))
     }
 
-    private func makeTestContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+    private func makeTestContainer() throws -> SumiDatabase {
+        try SumiDatabase.inMemory()
     }
 
     private func makeUnpackedExtension(

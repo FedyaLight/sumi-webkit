@@ -1,6 +1,5 @@
 import Combine
 import SumiWebRuntime
-import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -23,7 +22,7 @@ final class TabStartupRestoreLifecycleTests: XCTestCase {
                         index: 0,
                         workspaceThemeData: nil,
                         profileId: blockedProfileID
-                    )
+                    ),
                 ],
                 tabs: [
                     TabRestoreTabRecord(
@@ -57,7 +56,7 @@ final class TabStartupRestoreLifecycleTests: XCTestCase {
                         currentURLString: nil,
                         canGoBack: false,
                         canGoForward: false
-                    )
+                    ),
                 ],
                 folders: [],
                 states: []
@@ -332,7 +331,7 @@ final class TabStartupRestoreLifecycleTests: XCTestCase {
 
     func testReplacementAttachmentOwnsDeferredRestoreExactlyOnce() async throws {
         let payloadLoader = CountingTabRestorePayloadLoader(
-            container: try makeInMemoryStartupModelContainer()
+            container: try makeInMemoryStartupDatabase()
         )
         let connection = TabRuntimePortConnection()
         let harness = try makeRestoreABAHarness(
@@ -416,7 +415,7 @@ final class TabStartupRestoreLifecycleTests: XCTestCase {
     }
 
     func testDisabledPersistenceDoesNotCreateAttachmentRestoreStarter() throws {
-        let container = try makeInMemoryStartupModelContainer()
+        let container = try makeInMemoryStartupDatabase()
         let connection = TabRuntimePortConnection()
         let harness = try makeRestoreABAHarness(
             payloadLoader: CountingTabRestorePayloadLoader(
@@ -437,7 +436,7 @@ final class TabStartupRestoreLifecycleTests: XCTestCase {
     }
 
     func testShellDeferredRestoreStaysLazyUntilManualStart() async throws {
-        let container = try makeInMemoryStartupModelContainer()
+        let container = try makeInMemoryStartupDatabase()
         let connection = TabRuntimePortConnection()
         let harness = try makeRestoreABAHarness(
             payloadLoader: CountingTabRestorePayloadLoader(
@@ -528,11 +527,14 @@ private func makeRestoreABAHarness(
         requestedStructuralRevision: 0
     )
 ) throws -> RestoreABAHarness {
-    let container = try makeInMemoryStartupModelContainer()
+    let container = try makeInMemoryStartupDatabase()
     let eventBus = TabStructureEventBus()
     let manager = TabManager(
-        context: container.mainContext,
+        database: container,
         webViewSessions: WebViewSessionRepository(),
+        profileReferenceAdmission: try ProfileReferenceAdmissionLedger(
+            database: container
+        ),
         loadPersistedState: false,
         tabStructureEventBus: eventBus,
         faviconService: faviconService
@@ -775,8 +777,8 @@ private actor CountingTabRestorePayloadLoader: TabRestorePayloadLoading {
     private var count = 0
     let loaded = AsyncTestReceipt()
 
-    init(container: ModelContainer) {
-        loader = TabRestoreLoader(container: container)
+    init(container: SumiDatabase) {
+        loader = TabRestoreLoader(database: container)
     }
 
     func load(defaultProfileId: UUID?) async throws -> TabRestorePayload {

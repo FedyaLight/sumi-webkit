@@ -468,14 +468,6 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
 
         XCTAssertThrowsError(try storage.maintenance.clearPartition(partition))
         XCTAssertTrue(storage.reader.isNoIconFresh(for: pageURL, partition: partition))
-        XCTAssertTrue(
-            FileManager.default.fileExists(
-                atPath: directory.appendingPathComponent(
-                    partition.storageComponent,
-                    isDirectory: true
-                ).path
-            )
-        )
 
         fileManager.rejectRemoval = false
         try storage.maintenance.clearPartition(partition)

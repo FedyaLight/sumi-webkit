@@ -1,7 +1,7 @@
 import Foundation
 
 /// Coalesces per-window persistence requests into one timer and one write to
-/// the legacy primary snapshot key. It still counts accepted window requests
+/// the unified window snapshot key. It still counts accepted window requests
 /// so shutdown and tests can verify that no pending work was lost.
 @MainActor
 final class WindowSessionPersistenceScheduler {
@@ -60,9 +60,8 @@ final class WindowSessionPersistenceScheduler {
                 trace
             )
         }
-        // Every write targets the same legacy primary store. Committing all of
-        // them only rewrites the same key; the previous implementation's final
-        // value was the last UUID-sorted write, so preserve that result once.
+        // Every write targets the same unified snapshot key. Commit the
+        // deterministic final window once for the whole batch.
         pending.last?.commit()
         return pending.count
     }

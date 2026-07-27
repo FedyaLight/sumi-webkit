@@ -1,6 +1,5 @@
 import Foundation
 import SumiWebRuntime
-import SwiftData
 
 @testable import Sumi
 
@@ -93,8 +92,7 @@ extension BrowserManager {
     private static func makeIsolatedTestStartupPersistence()
         -> BrowserManagerStartupPersistence {
         do {
-            return BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupModelContainer()
+            return BrowserManagerStartupPersistence(database: try makeInMemoryStartupDatabase()
             )
         } catch {
             preconditionFailure(
@@ -105,10 +103,8 @@ extension BrowserManager {
 
     private static func makeIsolatedTestWindowSessionSnapshotStore()
         -> WindowSessionSnapshotStore {
-        let userDefaults = TestOwnedWindowSessionUserDefaults()
-        return WindowSessionSnapshotStore(
+        WindowSessionSnapshotStore(
             key: "SumiTests.window-session.\(UUID().uuidString)",
-            userDefaults: userDefaults,
             environment: { [:] }
         )
     }
@@ -131,7 +127,7 @@ final class TestOwnedWindowSessionUserDefaults: UserDefaults {
 extension TabManager {
     convenience init(
         runtimePorts: RuntimePortRegistry? = nil,
-        context: ModelContext,
+        context: SumiDatabase,
         webViewSessions: WebViewSessionRepository,
         loadPersistedState: Bool = true,
         automaticallyStartPersistedStateLoad: Bool = false,
@@ -141,7 +137,7 @@ extension TabManager {
         visitedLinkStore: any BrowserVisitedLinkStoreManaging = TabDependencyIsolationDefaults.visitedLinkStore
     ) {
         self.init(
-            context: context,
+            database: context,
             webViewSessions: webViewSessions,
             profileReferenceAdmission: .testingAllowingReferences(),
             initialRuntimePorts: runtimePorts,
@@ -156,7 +152,7 @@ extension TabManager {
 
     convenience init(
         runtimePorts: RuntimePortRegistry? = nil,
-        context: ModelContext,
+        context: SumiDatabase,
         loadPersistedState: Bool = true,
         automaticallyStartPersistedStateLoad: Bool = false,
         tabStructureEventBus: TabStructureEventBus? = nil,

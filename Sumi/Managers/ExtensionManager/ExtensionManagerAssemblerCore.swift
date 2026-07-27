@@ -57,7 +57,11 @@ enum ExtensionManagerAssembler {
     private static func assembleCore(
         _ f: ExtensionManagerAssemblyFoundation
     ) -> ExtensionManagerCoreAssembly {
-        let bootstrapChromeAdmission = ExtensionBootstrapChromeAdmission()
+        let bootstrapChromeAdmission = ExtensionBootstrapChromeAdmission(
+            ledger: ExtensionGlobalInstallLedger(
+                database: f.installation.database
+            )
+        )
         let callbackAdmission = ExtensionControllerCallbackAdmission(
             profileRuntime: f.runtime.profileRuntime,
             extensionLoadRevisions: f.runtime.loadRevisions

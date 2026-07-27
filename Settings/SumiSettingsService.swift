@@ -4,8 +4,8 @@
 //
 //
 
-import SwiftUI
 import SumiDomain
+import SwiftUI
 
 @MainActor
 @Observable
@@ -23,9 +23,7 @@ class SumiSettingsService {
             userDefaults: defaults,
             energySaverSystemMonitor: SumiUnavailableEnergySaverSystemMonitor(),
             nowPlayingController: SumiUnavailableNowPlayingController(),
-            downloadApplicationsStore: SumiDownloadApplicationsStore(
-                fileURL: URL(fileURLWithPath: "/dev/null")
-            ),
+            downloadApplicationsStore: SumiDownloadApplicationsStore(),
             availability: .unavailable
         )
     }()
@@ -309,7 +307,8 @@ class SumiSettingsService {
             SumiEnergySaverSystemMonitor(),
         nowPlayingController: any SumiNativeNowPlayingFeatureControlling =
             SumiNativeNowPlayingController(),
-        downloadApplicationsStore: SumiDownloadApplicationsStore = SumiDownloadApplicationsStore(),
+        downloadApplicationsStore: SumiDownloadApplicationsStore =
+            SumiDownloadApplicationsStore(),
         availability: Availability = .available
     ) {
         self.availability = availability
@@ -422,7 +421,6 @@ class SumiSettingsService {
         navigation.settingsSurfaceURLForCurrentNavigation()
     }
 }
-
 
 // MARK: - Notification Names
 extension Notification.Name {

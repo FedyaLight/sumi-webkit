@@ -1,4 +1,3 @@
-import SwiftData
 import WebKit
 import XCTest
 
@@ -286,13 +285,10 @@ final class ExtensionNativeMessagingSendCallbackAdmissionTests:
     // MARK: - 20. Unbound/disabled runtime path stays zero-cost
 
     func testUnboundRuntimeSendPathStaysZeroCost() async throws {
-        let container = try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+        let container = try SumiDatabase.inMemory()
         let inspection = ExtensionManagerInspectionCapture()
         let manager = ExtensionManager(
-            context: container.mainContext,
+            database: container,
             initialProfile: Profile(name: "ZeroCost"),
             testInspectionDidAssemble: inspection.install
         )

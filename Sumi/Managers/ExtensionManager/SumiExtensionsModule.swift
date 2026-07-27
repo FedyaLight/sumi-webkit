@@ -1,6 +1,5 @@
 import Combine
 import Foundation
-import SwiftData
 
 /// Public extension-subsystem boundary.
 ///
@@ -21,15 +20,48 @@ final class SumiExtensionsModule {
         managerLifetime.surfaceStore
     }
 
-    init(
+    #if DEBUG
+    convenience init(
         moduleRegistry: SumiModuleRegistry = .unavailable(),
-        context: ModelContext? = nil,
+        database: SumiDatabase? = nil,
         browserConfiguration: BrowserConfiguration? = nil,
         initialProfileProvider: @escaping @MainActor () -> Profile? = { nil },
         profileReferenceAdmission: ProfileReferenceAdmissionLedger = .failClosed(),
-        safariExtensionImportStore: any SafariExtensionImportStoring & SafariExtensionImportRecordProviding = SafariExtensionImportStore.process,
+        safariExtensionImportStore:
+            (any SafariExtensionImportStoring & SafariExtensionImportRecordProviding)? = nil,
         managerFactory: (@MainActor (
-            ModelContext,
+            SumiDatabase,
+            Profile?,
+            BrowserConfiguration,
+            SumiModuleRegistry
+        ) -> ExtensionManager)? = nil,
+        surfaceStore: BrowserExtensionSurfaceStore? = nil
+    ) {
+        self.init(
+            moduleRegistry: moduleRegistry,
+            database: database,
+            browserConfiguration: browserConfiguration,
+            initialProfileProvider: initialProfileProvider,
+            profileReferenceAdmission: profileReferenceAdmission,
+            compiledRuleListCatalog: SumiCompiledContentRuleListCatalog(),
+            safariExtensionImportStore: safariExtensionImportStore,
+            managerFactory: managerFactory,
+            surfaceStore: surfaceStore
+        )
+    }
+    #endif
+
+    init(
+        moduleRegistry: SumiModuleRegistry = .unavailable(),
+        database: SumiDatabase? = nil,
+        browserConfiguration: BrowserConfiguration? = nil,
+        initialProfileProvider: @escaping @MainActor () -> Profile? = { nil },
+        profileReferenceAdmission: ProfileReferenceAdmissionLedger = .failClosed(),
+        compiledRuleListCatalog: SumiCompiledContentRuleListCataloging,
+        safariExtensionImportStore:
+            (any SafariExtensionImportStoring & SafariExtensionImportRecordProviding)? = nil,
+        managerFactory: (@MainActor (
+            SumiDatabase,
             Profile?,
             BrowserConfiguration,
             SumiModuleRegistry
@@ -39,9 +71,18 @@ final class SumiExtensionsModule {
         let resolvedSurfaceStore = surfaceStore ?? BrowserExtensionSurfaceStore(
             binding: nil
         )
+        let resolvedImportStore:
+            any SafariExtensionImportStoring & SafariExtensionImportRecordProviding
+        if let safariExtensionImportStore {
+            resolvedImportStore = safariExtensionImportStore
+        } else if let database {
+            resolvedImportStore = SafariExtensionImportStore(database: database)
+        } else {
+            resolvedImportStore = SafariExtensionImportStore.transient
+        }
         let resolvedManagerFactory = managerFactory ?? {
             ExtensionManager(
-                context: $0,
+                database: $0,
                 initialProfile: $1,
                 profileReferenceAdmission: profileReferenceAdmission,
                 browserConfiguration: $2,
@@ -51,14 +92,15 @@ final class SumiExtensionsModule {
         }
         let managerLifetime = SumiExtensionManagerLifetime(
             moduleRegistry: moduleRegistry,
-            context: context,
+            database: database,
             browserConfiguration: browserConfiguration ?? .shared,
             initialProfileProvider: initialProfileProvider,
             managerFactory: resolvedManagerFactory,
             surfaceStore: resolvedSurfaceStore
         )
         let contentBlocking = SumiExtensionContentBlockingSurface(
-            context: context,
+            database: database,
+            compiledRuleListCatalog: compiledRuleListCatalog,
             moduleRegistry: moduleRegistry,
             lifetime: managerLifetime
         )
@@ -68,7 +110,7 @@ final class SumiExtensionsModule {
         )
         let settingsCatalog = SumiExtensionSettingsCatalogSurface(
             lifetime: managerLifetime,
-            importStore: safariExtensionImportStore
+            importStore: resolvedImportStore
         )
 
         self.managerLifetime = managerLifetime

@@ -58,7 +58,7 @@ final class SumiCompanionAppResolverTests: XCTestCase {
             appexBundleID: "com.example.containing.extension"
         )
         let installed = makeInstalledExtension(id: "ext-containing", sourceBundlePath: appexPath)
-        let importStore = SafariExtensionImportStore(defaults: makeDefaults())
+        let importStore = SafariExtensionImportStore(database: try! SumiDatabase.inMemory())
 
         let identity = SumiCompanionAppResolver.resolveIdentity(
             requestedApplicationIdentifier: nil,
@@ -78,7 +78,7 @@ final class SumiCompanionAppResolverTests: XCTestCase {
             appexBundleID: "com.bitwarden.desktop.safari"
         )
         let installed = makeInstalledExtension(id: "ext-bw", sourceBundlePath: appexPath)
-        let importStore = SafariExtensionImportStore(defaults: makeDefaults())
+        let importStore = SafariExtensionImportStore(database: try! SumiDatabase.inMemory())
 
         let identity = SumiCompanionAppResolver.resolveIdentity(
             requestedApplicationIdentifier: "com.8bit.bitwarden",
@@ -106,7 +106,7 @@ final class SumiCompanionAppResolverTests: XCTestCase {
                 UserscriptsNativeMessagingIdentifiers.applicationIdentifier,
             extensionId: installed.id,
             installedExtensions: [installed],
-            importStore: SafariExtensionImportStore(defaults: makeDefaults())
+            importStore: SafariExtensionImportStore(database: try! SumiDatabase.inMemory())
         )
 
         XCTAssertEqual(
@@ -127,7 +127,7 @@ final class SumiCompanionAppResolverTests: XCTestCase {
             requestedApplicationIdentifier: "app",
             extensionId: unrelated.id,
             installedExtensions: [unrelated],
-            importStore: SafariExtensionImportStore(defaults: makeDefaults())
+            importStore: SafariExtensionImportStore(database: try! SumiDatabase.inMemory())
         )
         XCTAssertEqual(unrelatedIdentity?.resolvedBundleIdentifier, "app")
         XCTAssertEqual(unrelatedIdentity?.isContainingApp, false)
@@ -288,7 +288,7 @@ final class SumiCompanionAppResolverTests: XCTestCase {
         )
         let installedA = makeInstalledExtension(id: "ext-a", sourceBundlePath: appexA)
         let installedB = makeInstalledExtension(id: "ext-b", sourceBundlePath: appexB)
-        let importStore = SafariExtensionImportStore(defaults: makeDefaults())
+        let importStore = SafariExtensionImportStore(database: try! SumiDatabase.inMemory())
 
         let identityA = SumiCompanionAppResolver.resolveIdentity(
             requestedApplicationIdentifier:
@@ -324,7 +324,7 @@ final class SumiCompanionAppResolverTests: XCTestCase {
             fileURLWithPath: "/Applications/Example.app"
         )
         let relay = SumiNativeMessagingRelay(
-            importStore: SafariExtensionImportStore(defaults: makeDefaults()),
+            importStore: SafariExtensionImportStore(database: try! SumiDatabase.inMemory()),
             launcher: launcher,
             adapterRegistry: SumiNativeMessagingAdapterRegistry(),
             companionApplicationRouter: CompanionApplicationMessageRouter(
@@ -368,7 +368,7 @@ final class SumiCompanionAppResolverTests: XCTestCase {
         let launchPolicy = SumiCompanionAppLaunchPolicy()
         let loopGuard = SumiNativeMessagingRelayLoopGuard()
         let relay = SumiNativeMessagingRelay(
-            importStore: SafariExtensionImportStore(defaults: makeDefaults()),
+            importStore: SafariExtensionImportStore(database: try! SumiDatabase.inMemory()),
             launcher: launcher,
             adapterRegistry: SumiNativeMessagingAdapterRegistry(),
             launchPolicy: launchPolicy,
@@ -426,7 +426,7 @@ final class SumiCompanionAppResolverTests: XCTestCase {
             requestedApplicationIdentifier: "com.example.missing",
             extensionId: installed.id,
             installedExtensions: [installed],
-            importStore: SafariExtensionImportStore(defaults: makeDefaults()),
+            importStore: SafariExtensionImportStore(database: try! SumiDatabase.inMemory()),
             launcher: launcher
         )
         if case .appNotFound = evaluation {
@@ -452,7 +452,7 @@ final class SumiCompanionAppResolverTests: XCTestCase {
             requestedApplicationIdentifier: "com.example.host",
             extensionId: "ext",
             installedExtensions: [],
-            importStore: SafariExtensionImportStore(defaults: makeDefaults()),
+            importStore: SafariExtensionImportStore(database: try! SumiDatabase.inMemory()),
             launcher: launcher,
             adapterRegistry: registry,
             launchPolicy: launchPolicy
@@ -468,7 +468,7 @@ final class SumiCompanionAppResolverTests: XCTestCase {
             requestedApplicationIdentifier: "com.example.host",
             extensionId: "ext",
             installedExtensions: [],
-            importStore: SafariExtensionImportStore(defaults: makeDefaults()),
+            importStore: SafariExtensionImportStore(database: try! SumiDatabase.inMemory()),
             launcher: launcher,
             adapterRegistry: registry,
             launchPolicy: launchPolicy

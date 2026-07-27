@@ -12,11 +12,15 @@ final class SumiFaviconRuntime: @unchecked Sendable {
     private let persistenceLifecycle: SumiFaviconPersistenceLifecycle
 
     init(
+        database: SumiDatabase,
         rootDirectory: URL,
         fetcher: any SumiFaviconNetworkFetching,
         notificationCenter: NotificationCenter = .default
     ) {
-        let blobStorage = SumiFaviconBlobStorage(rootDirectory: rootDirectory)
+        let blobStorage = SumiFaviconBlobStorage(
+            database: database,
+            rootDirectory: rootDirectory
+        )
         let preparedPipeline = SumiPreparedFaviconPipeline(
             blobReader: blobStorage.reader,
             preparedCache: SumiPreparedFaviconCache()

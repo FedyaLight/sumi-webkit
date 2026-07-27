@@ -1,6 +1,5 @@
 import AppKit
 import SumiDomain
-import SwiftData
 import WebKit
 import XCTest
 
@@ -180,12 +179,7 @@ final class ShortcutPhysicalSourceRoutingTests: XCTestCase {
         let browser = BrowserManager(
             windowRegistry: registry,
             startupPersistence: BrowserManagerStartupPersistence(
-                container: try ModelContainer(
-                    for: SumiStartupPersistence.schema,
-                    configurations: [ModelConfiguration(
-                        isStoredInMemoryOnly: true
-                    )]
-                )
+                database: try SumiDatabase.inMemory()
             )
         )
         let settings = SumiSettingsService(

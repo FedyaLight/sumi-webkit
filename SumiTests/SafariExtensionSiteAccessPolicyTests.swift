@@ -1,4 +1,3 @@
-import SwiftData
 import WebKit
 import XCTest
 
@@ -7,31 +6,11 @@ import XCTest
 @available(macOS 15.5, *)
 @MainActor
 final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
-    override func setUp() {
-        super.setUp()
-        UserDefaults.standard.removeObject(
-            forKey: SafariExtensionSiteAccessPolicyStore.siteAccessStorageKey
-        )
-        UserDefaults.standard.removeObject(
-            forKey: SafariExtensionSiteAccessPolicyStore.legacyPermissionDecisionsStorageKey
-        )
-    }
-
-    override func tearDown() {
-        UserDefaults.standard.removeObject(
-            forKey: SafariExtensionSiteAccessPolicyStore.siteAccessStorageKey
-        )
-        UserDefaults.standard.removeObject(
-            forKey: SafariExtensionSiteAccessPolicyStore.legacyPermissionDecisionsStorageKey
-        )
-        super.tearDown()
-    }
-
     func testDefaultAskDoesNotGrantOptionalHostPatterns() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Site Access")
         let fixture = makeManager(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let manager = fixture.manager
@@ -64,7 +43,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Explicit Default Allow Site Access")
         let fixture = makeManager(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let manager = fixture.manager
@@ -96,7 +75,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Default Deny Site Access")
         let fixture = makeManager(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let manager = fixture.manager
@@ -128,7 +107,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Persistent Site Access")
         let firstFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let firstManager = firstFixture.manager
@@ -146,7 +125,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         )
 
         let reloadedFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let reloadedManager = reloadedFixture.manager
@@ -184,7 +163,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Surface Snapshot")
         let fixture = makeManager(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let manager = fixture.manager
@@ -229,7 +208,9 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
 
     func testSafariAppExtensionDefaultAccessSeedCreatesDefaultAllowPolicy() {
         let profile = Profile(name: "Safari App Extension Seed")
-        let store = SafariExtensionSiteAccessPolicyStore(preferences: .standard)
+        let store = SafariExtensionSiteAccessPolicyStore(
+            database: try! SumiDatabase.inMemory()
+        )
         let extensionId = "safari-app-extension-seed"
 
         let result = store.seedSafariAppExtensionDefaultAccessIfNeeded(
@@ -247,10 +228,12 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         )
     }
 
-    func testSafariAppExtensionDefaultAccessSeedMigratesEmptyAskPolicy() {
-        let profile = Profile(name: "Safari App Extension Ask Migration")
-        let store = SafariExtensionSiteAccessPolicyStore(preferences: .standard)
-        let extensionId = "safari-app-extension-ask-migration"
+    func testSafariAppExtensionDefaultAccessSeedUpdatesEmptyAskPolicy() {
+        let profile = Profile(name: "Safari App Extension Ask Update")
+        let store = SafariExtensionSiteAccessPolicyStore(
+            database: try! SumiDatabase.inMemory()
+        )
+        let extensionId = "safari-app-extension-ask-update"
 
         XCTAssertEqual(
             store.policy(extensionId: extensionId, profileId: profile.id)
@@ -270,7 +253,9 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
 
     func testSafariAppExtensionDefaultAccessSeedAppliesAllowAndPreservesConfiguredRules() {
         let profile = Profile(name: "Safari App Extension Configured Rule")
-        let store = SafariExtensionSiteAccessPolicyStore(preferences: .standard)
+        let store = SafariExtensionSiteAccessPolicyStore(
+            database: try! SumiDatabase.inMemory()
+        )
         let extensionId = "safari-app-extension-configured-rule"
         let pattern = "https://account.example.test/*"
 
@@ -305,7 +290,9 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
     /// `permissions.contains({origins:["*://*/*"]})` false in the extension.
     func testSafariAppExtensionDefaultAccessSeedRepairsPromptDirtiedAskPolicy() {
         let profile = Profile(name: "Safari App Extension Dirty Ask Repair")
-        let store = SafariExtensionSiteAccessPolicyStore(preferences: .standard)
+        let store = SafariExtensionSiteAccessPolicyStore(
+            database: try! SumiDatabase.inMemory()
+        )
         let extensionId = "safari-app-extension-dirty-ask-repair"
         let pattern = "https://*.proton.me/*"
 
@@ -337,7 +324,9 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
 
     func testSafariAppExtensionDefaultAccessSeedKeepsUserConfiguredAskDefault() {
         let profile = Profile(name: "Safari App Extension User Ask")
-        let store = SafariExtensionSiteAccessPolicyStore(preferences: .standard)
+        let store = SafariExtensionSiteAccessPolicyStore(
+            database: try! SumiDatabase.inMemory()
+        )
         let extensionId = "safari-app-extension-user-ask"
 
         store.updatePolicy(
@@ -362,7 +351,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         let profileA = Profile(name: "Profile A")
         let profileB = Profile(name: "Profile B")
         let fixture = makeManager(
-            context: container.mainContext,
+            context: container,
             initialProfile: profileA
         )
         let manager = fixture.manager
@@ -408,7 +397,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         let profileA = Profile(name: "Profile A")
         let profileB = Profile(name: "Profile B")
         let fixture = makeManager(
-            context: container.mainContext,
+            context: container,
             initialProfile: profileA
         )
         let manager = fixture.manager
@@ -451,7 +440,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Configured Ask")
         let fixture = makeManager(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let manager = fixture.manager
@@ -502,7 +491,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Default Current Site Access")
         let fixture = makeManager(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let manager = fixture.manager
@@ -541,7 +530,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Specific Site Access")
         let fixture = makeManager(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let manager = fixture.manager
@@ -615,7 +604,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Private Access")
         let fixture = makeManager(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let manager = fixture.manager
@@ -662,7 +651,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Legacy Prompt Override")
         let fixture = makeManager(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let manager = fixture.manager
@@ -724,7 +713,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Broad Host API Visibility")
         let fixture = makeManager(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let manager = fixture.manager
@@ -753,7 +742,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Configured Broad Host API Visibility")
         let fixture = makeManager(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let manager = fixture.manager
@@ -798,7 +787,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Idempotent Policy Application")
         let fixture = makeManager(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let manager = fixture.manager
@@ -900,7 +889,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Broad Host Request Grant")
         let fixture = makeManager(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let manager = fixture.manager
@@ -958,7 +947,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Broad Host Request Deny")
         let fixture = makeManager(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let manager = fixture.manager
@@ -1026,7 +1015,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "External Connectable Messaging Only")
         let fixture = makeManager(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let manager = fixture.manager
@@ -1090,7 +1079,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Installed Proton Site Access")
         let fixture = makeManager(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let manager = fixture.manager
@@ -1159,7 +1148,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
     }
 
     private func makeManager(
-        context: ModelContext,
+        context: SumiDatabase,
         initialProfile: Profile
     ) -> (
         manager: ExtensionManager,
@@ -1167,18 +1156,15 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
     ) {
         let inspection = ExtensionManagerInspectionCapture()
         let manager = ExtensionManager(
-            context: context,
+            database: context,
             initialProfile: initialProfile,
             testInspectionDidAssemble: inspection.install
         )
         return (manager, inspection.inspection)
     }
 
-    private func makeTestContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+    private func makeTestContainer() throws -> SumiDatabase {
+        try SumiDatabase.inMemory()
     }
 
     private func waitForSurfaceStoreDefaultAccess(

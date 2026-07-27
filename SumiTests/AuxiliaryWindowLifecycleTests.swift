@@ -5,7 +5,6 @@
 
 import AppKit
 @testable import Sumi
-import SwiftData
 import WebKit
 import XCTest
 
@@ -39,7 +38,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
     }
 
     struct ExtensionHarness {
-        let container: ModelContainer
+        let container: SumiDatabase
         let browserManager: BrowserManager
         let windowRegistry: WindowRegistry
         let extensionManager: ExtensionManager
@@ -1700,7 +1699,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         let attachedRuntime = ExtensionAttachedRuntimeCapture()
         let inspection = ExtensionManagerInspectionCapture()
         let extensionManager = makeSafariExtensionTestExtensionManager(
-            context: container.mainContext,
+            database: container,
             initialProfile: profile,
             browserConfiguration: BrowserConfiguration(),
             moduleRegistry: registry,
@@ -1709,7 +1708,7 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         )
         let extensionsModule = SumiExtensionsModule(
             moduleRegistry: registry,
-            context: container.mainContext,
+            database: container,
             browserConfiguration: BrowserConfiguration(),
             initialProfileProvider: { profile },
             managerFactory: { _, _, _, _ in extensionManager }
@@ -2047,11 +2046,8 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         ).navigationAction
     }
 
-    private func makeTestContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+    private func makeTestContainer() throws -> SumiDatabase {
+        try SumiDatabase.inMemory()
     }
 }
 

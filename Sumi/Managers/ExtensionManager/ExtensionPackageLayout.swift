@@ -1,7 +1,7 @@
 import Foundation
 
 /// Canonical filesystem layout for browser-owned extension packages.
-/// SwiftData's `packagePath` is the only durable pointer to a generation.
+/// The extension database record's `packagePath` is the durable pointer to a generation.
 struct ExtensionPackageLayout: Sendable {
     enum PackageRootKind: Equatable, Sendable {
         case managedGeneration

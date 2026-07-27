@@ -1,6 +1,5 @@
 @testable import Sumi
 import SumiDomain
-import SwiftData
 import SwiftUI
 import XCTest
 
@@ -186,64 +185,6 @@ final class WorkspaceThemePersistenceTests: XCTestCase {
 
         XCTAssertTrue(theme.normalizedColors.isEmpty)
         XCTAssertTrue(theme.renderGradient.stops.isEmpty)
-    }
-
-    func testStartupWorkspaceThemeResolverUsesPersistedActiveSpaceTheme() throws {
-        let container = try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
-        let context = container.mainContext
-        let harness = TestDefaultsHarness()
-        defer { harness.reset() }
-
-        let spaceId = UUID()
-        let expectedTheme = try XCTUnwrap(
-            WorkspaceTheme.decode(Self.currentThemeFixture)
-        )
-        let space = SpaceEntity(
-            id: spaceId,
-            name: "Startup",
-            icon: "sparkles",
-            index: 0,
-            workspaceThemeData: Self.currentThemeFixture
-        )
-        context.insert(space)
-        try context.save()
-
-        let sessionKey = "SumiTests.windowSession.\(UUID().uuidString)"
-        let snapshot = WindowSessionSnapshot(
-            currentTabId: nil,
-            currentSpaceId: spaceId,
-            currentProfileId: nil,
-            activeShortcutPinId: nil,
-            activeShortcutPinRole: nil,
-            isShowingEmptyState: false,
-            commandPaletteReason: nil,
-            activeTabsBySpace: [],
-            activeShortcutsBySpace: [],
-            sidebarWidth: Double(BrowserWindowState.sidebarDefaultWidth),
-            savedSidebarWidth: Double(BrowserWindowState.sidebarDefaultWidth),
-            sidebarContentWidth: Double(BrowserWindowState.sidebarContentWidth(
-                for: BrowserWindowState.sidebarDefaultWidth
-            )),
-            isSidebarVisible: true,
-            commandPaletteDraft: CommandPaletteDraftState(text: "", navigateCurrentTab: false)
-        )
-        harness.defaults.set(try JSONEncoder().encode(snapshot), forKey: sessionKey)
-
-        let resolvedTheme = try XCTUnwrap(
-            StartupWorkspaceThemeResolver.resolve(
-                windowSessionSnapshotStore: WindowSessionSnapshotStore(
-                    key: sessionKey,
-                    userDefaults: harness.defaults
-                ),
-                modelContext: context
-            )
-        )
-
-        XCTAssertEqual(resolvedTheme, expectedTheme)
-        XCTAssertFalse(resolvedTheme.visuallyEquals(.default))
     }
 
     private func makeThemeColors() -> [WorkspaceThemeColor] {

@@ -461,7 +461,7 @@ final class SumiLiveFolderManager: ObservableObject {
         }
         refreshTasksBySourceId.removeAll()
         do {
-            try await store.normalizeLegacyProfileReferences()
+            try await store.verifyDurableState()
             return true
         } catch {
             RuntimeDiagnostics.emit(

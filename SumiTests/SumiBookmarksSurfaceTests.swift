@@ -1,4 +1,3 @@
-import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -90,22 +89,18 @@ final class SumiBookmarksSurfaceTests: XCTestCase {
         windowState: BrowserWindowState,
         space: Space
     ) {
-        let container = try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
-        let context = ModelContext(container)
+        let container = try SumiDatabase.inMemory()
+        let context = container
         let windowRegistry = WindowRegistry()
         let browserManager = BrowserManager(windowRegistry: windowRegistry)
         let profile = Profile(name: "Primary")
         let space = Space(name: "Primary", profileId: profile.id)
         let windowState = BrowserWindowState()
 
-        browserManager.modelContext = context
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
         browserManager.historyManager = HistoryManager(
-            context: context,
+            database: context,
             profileId: profile.id,
             faviconCleaner: TabDependencyIsolationDefaults.historyFaviconCleaner,
             visitedLinkStore: TabDependencyIsolationDefaults.historyVisitedLinkStore
@@ -128,11 +123,8 @@ final class SumiBookmarksSurfaceTests: XCTestCase {
     }
 
     private func makeBookmarkManager() -> SumiBookmarkManager {
-        let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-            .appendingPathComponent("SumiBookmarksSurfaceTests-\(UUID().uuidString)", isDirectory: true)
-        temporaryDirectories.append(directory)
-        return SumiBookmarkManager(
-            database: SumiBookmarkDatabase(directory: directory),
+        SumiBookmarkManager(
+            database: try! SumiDatabase.inMemory(),
             syncFavicons: false
         )
     }

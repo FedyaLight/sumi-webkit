@@ -40,7 +40,7 @@ enum ProfileApplicationDataCleanupComposition {
         zoomManager: ZoomManager,
         boostsModule: SumiBoostsModule,
         adblockZapperStore: SumiAdblockZapperStore,
-        extensionPreferences: UserDefaults
+        database: SumiDatabase
     ) -> ProfileApplicationDataCleanupService {
         ProfileApplicationDataCleanupService(
             operations: .init(
@@ -70,7 +70,7 @@ enum ProfileApplicationDataCleanupComposition {
                 },
                 clearExtensionPrivateData: { profileID in
                     try ExtensionProfilePrivateDataCleaner(
-                        preferences: extensionPreferences
+                        database: database
                     ).deleteProfileData(profileID: profileID)
                 }
             )

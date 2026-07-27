@@ -96,12 +96,11 @@ final class RegularTabShortcutConversionServiceTests: XCTestCase {
             webViewLifecycle: lifecycle,
             persistWindowSession: { persistedWindowIDs.append($0.id) }
         )
-        let container = try makeInMemoryStartupModelContainer()
+        let container = try makeInMemoryStartupDatabase()
         let tabManager = BrowserManager(
             webViewSessions: repository,
             windowRegistry: WindowRegistry(),
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: container
+            startupPersistence: BrowserManagerStartupPersistence(database: container
             ),
             dataServices: .unavailable(),
             initialTabRuntimePorts: runtimeA
@@ -196,10 +195,9 @@ final class RegularTabShortcutConversionServiceTests: XCTestCase {
             ),
             notifyTabClosedIfLoaded: { _ in order.record("physical") }
         )
-        let container = try makeInMemoryStartupModelContainer()
+        let container = try makeInMemoryStartupDatabase()
         let tabManager = BrowserManager(
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: container
+            startupPersistence: BrowserManagerStartupPersistence(database: container
             ),
             runtimePorts: runtime
         )
@@ -285,12 +283,11 @@ final class RegularTabShortcutConversionServiceTests: XCTestCase {
             notifyTabClosedIfLoaded: { _ in order.record("extension") },
             persistWindowSession: { persistedWindowIDs.append($0.id) }
         )
-        let container = try makeInMemoryStartupModelContainer()
+        let container = try makeInMemoryStartupDatabase()
         let tabManager = BrowserManager(
             webViewSessions: repository,
             windowRegistry: WindowRegistry(),
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: container
+            startupPersistence: BrowserManagerStartupPersistence(database: container
             ),
             dataServices: .unavailable(),
             initialTabRuntimePorts: runtime
@@ -728,10 +725,9 @@ final class RegularTabShortcutConversionServiceTests: XCTestCase {
             windows: { states.map { ($0.key, $0.value) } },
             webViewLifecycle: lifecycle
         )
-        let container = try makeInMemoryStartupModelContainer()
+        let container = try makeInMemoryStartupDatabase()
         tabManager = BrowserManager(
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: container
+            startupPersistence: BrowserManagerStartupPersistence(database: container
             ),
             runtimePorts: runtime
         )

@@ -1,6 +1,6 @@
 import Foundation
-import SumiDomain
 import OSLog
+import SumiDomain
 
 /// Pure structural-validity policy for a full snapshot or incremental delta.
 /// It throws `TabPersistenceError.invalidModelState` when the shape
@@ -8,7 +8,7 @@ import OSLog
 /// both pinned and space-pinned, orphaned or cyclic folder hierarchies, split groups that
 /// don't survive sanitization, …).
 ///
-/// This is deliberately free of persistence mechanism: no `ModelContext`, actor state,
+/// This is deliberately free of persistence mechanism: no database connection, actor state,
 /// or error classification. The invariants stay unit-testable without a store.
 enum TabSnapshotValidator {
     private static let log = Logger.sumi(category: "TabPersistence")

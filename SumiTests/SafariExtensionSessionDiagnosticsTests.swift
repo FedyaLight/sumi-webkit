@@ -1,4 +1,3 @@
-import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -39,14 +38,11 @@ final class SafariExtensionSessionDiagnosticsTests: XCTestCase {
 
     @MainActor
     func testBuildUsesInjectedRuntimeWithoutBrowserManager() async throws {
-        let container = try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+        let container = try SumiDatabase.inMemory()
         let profile = Profile(name: "Diagnostics Runtime")
         let inspection = ExtensionManagerInspectionCapture()
         let manager = ExtensionManager(
-            context: container.mainContext,
+            database: container,
             initialProfile: nil,
             testInspectionDidAssemble: inspection.install
         )

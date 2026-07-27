@@ -1,7 +1,6 @@
 import AppKit
 import Foundation
 import SumiWebRuntime
-import SwiftData
 
 /// Composition root for browser kernel assembly (architecture plan A1).
 /// Owns construction of always-on managers and optional module shells so
@@ -37,29 +36,35 @@ enum BrowserCompositionRoot {
     /// (except extensions, which need an initial profile snapshot).
     static func assembleModules(
         moduleRegistry: SumiModuleRegistry,
-        modelContext: ModelContext,
+        database: SumiDatabase,
         profileReferenceAdmission: ProfileReferenceAdmissionLedger,
+        compiledRuleListCatalog: SumiCompiledContentRuleListCataloging,
         adBlockingModule: SumiAdBlockingModule? = nil,
         protectionCoordinator: SumiProtectionCoordinator? = nil,
         adblockZapperStore: SumiAdblockZapperStore? = nil,
         boostsModule: SumiBoostsModule? = nil
     ) -> AssembledModules {
         let resolvedAdBlocking = adBlockingModule
-            ?? SumiAdBlockingModule(moduleRegistry: moduleRegistry)
+            ?? SumiAdBlockingModule(
+                moduleRegistry: moduleRegistry,
+                database: database,
+                compiledRuleListCatalog: compiledRuleListCatalog
+            )
         let resolvedProtection = protectionCoordinator
             ?? SumiProtectionCoordinator(
                 settings: SumiProtectionSettings(userDefaults: moduleRegistry.userDefaults),
                 adBlockingModule: resolvedAdBlocking,
                 bundleUpdateStatusStore: SumiProtectionBundleUpdateStatusStore(
                     userDefaults: moduleRegistry.userDefaults
-                )
+                ),
+                compiledRuleListCatalog: compiledRuleListCatalog
             )
         return AssembledModules(
             adBlockingModule: resolvedAdBlocking,
             protectionCoordinator: resolvedProtection,
             adblockZapperStore: adblockZapperStore
                 ?? SumiAdblockZapperStore(
-                    userDefaults: moduleRegistry.userDefaults,
+                    database: database,
                     profileReferenceAdmission: profileReferenceAdmission
                 ),
             boostsModule: boostsModule ?? SumiBoostsModule(
@@ -75,27 +80,33 @@ enum BrowserCompositionRoot {
 
     static func makeExtensionsModule(
         moduleRegistry: SumiModuleRegistry,
-        modelContext: ModelContext,
+        database: SumiDatabase,
         browserConfiguration: BrowserConfiguration,
         initialProfileProvider: @escaping @MainActor () -> Profile?,
         profileReferenceAdmission: ProfileReferenceAdmissionLedger,
+        compiledRuleListCatalog: SumiCompiledContentRuleListCataloging,
         extensionsModule: SumiExtensionsModule? = nil
     ) -> SumiExtensionsModule {
         extensionsModule
             ?? SumiExtensionsModule(
                 moduleRegistry: moduleRegistry,
-                context: modelContext,
+                database: database,
                 browserConfiguration: browserConfiguration,
                 initialProfileProvider: initialProfileProvider,
-                profileReferenceAdmission: profileReferenceAdmission
+                profileReferenceAdmission: profileReferenceAdmission,
+                compiledRuleListCatalog: compiledRuleListCatalog
             )
     }
 
     static func makeBookmarkManager(
+        database: SumiDatabase,
         faviconService: any BrowserFaviconServicing,
         initialProfile: Profile?
     ) -> SumiBookmarkManager {
-        let bookmarkManager = SumiBookmarkManager(faviconService: faviconService)
+        let bookmarkManager = SumiBookmarkManager(
+            database: database,
+            faviconService: faviconService
+        )
         if let initialProfile {
             bookmarkManager.setFaviconPrefetchPartition(
                 faviconService.partition(profile: initialProfile)
@@ -105,12 +116,12 @@ enum BrowserCompositionRoot {
     }
 
     static func makeProfileManager(
-        modelContext: ModelContext,
+        database: SumiDatabase,
         dataServices: BrowserManagerDataServices,
         profileReferenceAdmission: ProfileReferenceAdmissionLedger
     ) -> ProfileManager {
         ProfileManager(
-            context: modelContext,
+            database: database,
             profileReferenceAdmission: profileReferenceAdmission,
             faviconService: dataServices.faviconService,
             visitedLinkStore: dataServices.visitedLinkStore
@@ -142,6 +153,7 @@ enum BrowserCompositionRoot {
     }
 
     static func makePermissionRuntimeBootstrap(
+        database: SumiDatabase,
         browserConfiguration: BrowserConfiguration,
         systemPermissionService: (any SumiSystemPermissionService)?,
         permissionCoordinator: (any SumiPermissionCoordinating)?,
@@ -170,7 +182,9 @@ enum BrowserCompositionRoot {
             permissionRecentActivityStore: permissionRecentActivityStore,
             permissionSiteActivityStore: permissionSiteActivityStore
                 ?? SumiPermissionSiteActivityStore(
-                    persistenceAuthority: SumiPermissionPersistenceAuthority()
+                    persistenceAuthority: SumiPermissionPersistenceAuthority(
+                        database: database
+                    )
                 ),
             permissionCleanupService: permissionCleanupService,
             blockedPopupStore: blockedPopupStore,
@@ -217,7 +231,7 @@ enum BrowserCompositionRoot {
         let resolvedDataServices = browsingDataCleanupService.map {
             dataServices.replacing(browsingDataCleanupService: $0)
         } ?? dataServices
-        let startupModelContext = startupPersistence.mainContext
+        let startupDatabase = startupPersistence.database
         let windowSessionPersistence = WindowSessionPersistenceRuntime(
             snapshotStore: windowSessionSnapshotStore
         )
@@ -225,7 +239,7 @@ enum BrowserCompositionRoot {
         let profileRetirementStartupPreflight: ProfileRetirementStartupPreflightStatus
         do {
             let admission = try ProfileReferenceAdmissionLedger(
-                context: startupModelContext
+                database: startupDatabase
             )
             try ProfileRetirementStartupRecovery.cancelReservedReservations(
                 in: admission
@@ -245,23 +259,28 @@ enum BrowserCompositionRoot {
             moduleRegistry: moduleRegistry
         )
         let tabStructureEventBus = TabStructureEventBus()
+        let compiledRuleListCatalog =
+            SumiCompiledContentRuleListCatalog(database: startupDatabase)
         let modules = assembleModules(
             moduleRegistry: moduleRegistry,
-            modelContext: startupModelContext,
+            database: startupDatabase,
             profileReferenceAdmission: profileReferenceAdmission,
+            compiledRuleListCatalog: compiledRuleListCatalog,
             adBlockingModule: adBlockingModule,
             protectionCoordinator: protectionCoordinator,
             adblockZapperStore: adblockZapperStore,
             boostsModule: boostsModule
         )
         let profileManager = makeProfileManager(
-            modelContext: startupModelContext,
+            database: startupDatabase,
             dataServices: resolvedDataServices,
             profileReferenceAdmission: profileReferenceAdmission
         )
         profileManager.ensureDefaultProfile()
         let initialProfile = profileManager.profiles.first
-        let lastSessionWindowsStore = LastSessionWindowsStore()
+        let lastSessionWindowsStore = LastSessionWindowsStore(
+            database: startupDatabase
+        )
         let downloadFileManager = FileManager.default
         let downloadOrphanCleaner = SumiDownloadOrphanCleaner(
             fileManager: downloadFileManager
@@ -293,14 +312,15 @@ enum BrowserCompositionRoot {
         )
         let resolvedExtensionsModule = makeExtensionsModule(
             moduleRegistry: moduleRegistry,
-            modelContext: startupModelContext,
+            database: startupDatabase,
             browserConfiguration: browserConfiguration,
             initialProfileProvider: { initialProfile },
             profileReferenceAdmission: profileReferenceAdmission,
+            compiledRuleListCatalog: compiledRuleListCatalog,
             extensionsModule: extensionsModule
         )
         return makeKernelWithTabSession(
-            modelContext: startupModelContext,
+            database: startupDatabase,
             windowRegistry: windowRegistry,
             moduleRegistry: moduleRegistry,
             sidebarHostRecoveryCoordinator: sidebarHostRecoveryCoordinator,
@@ -324,12 +344,13 @@ enum BrowserCompositionRoot {
             downloadTransportFactory: SumiWebKitDownloadTransportFactory(),
             authenticationManager: AuthenticationManager(),
             historyManager: HistoryManager(
-                context: startupModelContext,
+                database: startupDatabase,
                 profileId: initialProfile?.id,
                 faviconCleaner: resolvedDataServices.historyFaviconCleaner,
                 visitedLinkStore: resolvedDataServices.historyVisitedLinkStore
             ),
             bookmarkManager: makeBookmarkManager(
+                database: startupDatabase,
                 faviconService: resolvedDataServices.faviconService,
                 initialProfile: initialProfile
             ),
@@ -351,6 +372,7 @@ enum BrowserCompositionRoot {
             nativeNowPlayingController: nowPlayingController,
             permissionRuntime: makePermissionRuntime(
                 makePermissionRuntimeBootstrap(
+                    database: startupDatabase,
                     browserConfiguration: browserConfiguration,
                     systemPermissionService: systemPermissionService,
                     permissionCoordinator: permissionCoordinator,

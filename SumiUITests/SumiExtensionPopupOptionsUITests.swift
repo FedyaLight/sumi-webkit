@@ -162,10 +162,6 @@ final class SumiExtensionPopupOptionsUITests: SumiLaunchSmokeUITestCase {
         packageURL: URL,
         manifestData: Data
     ) throws {
-        let entity = try nextPrimaryKeyInfo(
-            entityName: "ExtensionEntity",
-            storeURL: storeURL
-        )
         let activationSummary: [String: Any] = [
             "matchPatternStrings": [],
             "broadScope": false,
@@ -186,32 +182,27 @@ final class SumiExtensionPopupOptionsUITests: SumiLaunchSmokeUITestCase {
 
         try executeSQLite(
             sql: """
-            INSERT INTO ZEXTENSIONENTITY (
-                Z_PK, Z_ENT, Z_OPT, ZBROADSCOPE, ZHASACTION, ZHASBACKGROUND,
-                ZHASCONTENTSCRIPTS, ZHASEXTENSIONPAGES, ZHASOPTIONSPAGE,
-                ZISENABLED, ZMANIFESTVERSION, ZINSTALLDATE, ZLASTUPDATEDATE,
-                ZACTIVATIONSUMMARYJSON, ZBACKGROUNDMODELRAWVALUE,
-                ZDEFAULTPOPUPPATH, ZEXTENSIONDESCRIPTION, ZICONPATH, ZID,
-                ZINCOGNITOMODERAWVALUE, ZMANIFESTROOTFINGERPRINT,
-                ZMANIFESTSNAPSHOTJSON, ZNAME, ZOPTIONSPAGEPATH, ZPACKAGEPATH,
-                ZSOURCEBUNDLEPATH, ZSOURCEKINDRAWVALUE,
-                ZSOURCEPATHFINGERPRINT, ZVERSION
+            INSERT INTO extensions (
+                id, name, version, manifest_version, description, is_enabled,
+                installed_at, updated_at, package_path, icon_path, source_kind,
+                background_model, incognito_mode, source_path_fingerprint,
+                manifest_root_fingerprint, source_bundle_path,
+                safari_runtime_identity, options_page_path, default_popup_path,
+                has_background, has_action, has_options_page,
+                has_content_scripts, has_extension_pages, broad_scope,
+                activation_summary, manifest_snapshot
             ) VALUES (
-                \(entity.primaryKey), \(entity.entity), 1, 0, 1, 0,
-                0, 1, 1, 1, 3, 0, 0,
-                \(sqlString(activationJSON)), \(sqlString("none")),
-                \(sqlString("popup.html")),
-                \(sqlString("Hermetic Sumi UI presentation oracle")), NULL,
-                \(sqlString(Self.extensionID)), \(sqlString("spanning")),
-                \(sqlString(manifestFingerprint)), \(sqlString(manifestJSON)),
-                \(sqlString(Self.extensionName)), \(sqlString("options.html")),
-                \(sqlString(packagePath)), \(sqlString(packagePath)),
-                \(sqlString("directory")), \(sqlString(sourceFingerprint)),
-                \(sqlString("1.0.0"))
+                \(sqlString(Self.extensionID)), \(sqlString(Self.extensionName)),
+                \(sqlString("1.0.0")), 3,
+                \(sqlString("Hermetic Sumi UI presentation oracle")), 1,
+                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, \(sqlString(packagePath)),
+                NULL, \(sqlString("directory")), \(sqlString("none")),
+                \(sqlString("spanning")), \(sqlString(sourceFingerprint)),
+                \(sqlString(manifestFingerprint)), \(sqlString(packagePath)),
+                NULL, \(sqlString("options.html")), \(sqlString("popup.html")),
+                0, 1, 1, 0, 1, 0,
+                \(sqlString(activationJSON)), \(sqlString(manifestJSON))
             );
-            UPDATE Z_PRIMARYKEY
-            SET Z_MAX = MAX(Z_MAX, \(entity.primaryKey))
-            WHERE Z_NAME = 'ExtensionEntity';
             """,
             storeURL: storeURL
         )

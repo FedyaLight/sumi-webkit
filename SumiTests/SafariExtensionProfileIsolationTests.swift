@@ -1,4 +1,3 @@
-import SwiftData
 import WebKit
 import XCTest
 
@@ -56,14 +55,11 @@ final class SafariExtensionProfileIsolationTests: XCTestCase {
     }
 
     func testExtensionControllersAreDistinctPerProfile() throws {
-        let container = try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+        let container = try SumiDatabase.inMemory()
         let profileA = Profile(name: "Profile A")
         let profileB = Profile(name: "Profile B")
         let fixture = makeManager(
-            context: container.mainContext,
+            context: container,
             initialProfile: profileA
         )
         let manager = fixture.manager
@@ -96,14 +92,11 @@ final class SafariExtensionProfileIsolationTests: XCTestCase {
     }
 
     func testSwitchProfileActivatesDistinctControllerAndStore() throws {
-        let container = try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+        let container = try SumiDatabase.inMemory()
         let profileA = Profile(name: "Profile A")
         let profileB = Profile(name: "Profile B")
         let fixture = makeManager(
-            context: container.mainContext,
+            context: container,
             initialProfile: profileA
         )
         let manager = fixture.manager
@@ -130,14 +123,11 @@ final class SafariExtensionProfileIsolationTests: XCTestCase {
     }
 
     func testPrepareWebViewConfigurationUsesTabProfileStore() throws {
-        let container = try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+        let container = try SumiDatabase.inMemory()
         let profileA = Profile(name: "Profile A")
         let profileB = Profile(name: "Profile B")
         let fixture = makeManager(
-            context: container.mainContext,
+            context: container,
             initialProfile: profileA
         )
         let manager = fixture.manager
@@ -168,13 +158,10 @@ final class SafariExtensionProfileIsolationTests: XCTestCase {
     }
 
     func testExtensionControllerIdentifierDiffersFromProfileDataStoreIdentifier() throws {
-        let container = try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+        let container = try SumiDatabase.inMemory()
         let profile = Profile(name: "Profile")
         let fixture = makeManager(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let manager = fixture.manager
@@ -187,7 +174,7 @@ final class SafariExtensionProfileIsolationTests: XCTestCase {
     }
 
     private func makeManager(
-        context: ModelContext,
+        context: SumiDatabase,
         initialProfile: Profile
     ) -> (
         manager: ExtensionManager,
@@ -195,7 +182,7 @@ final class SafariExtensionProfileIsolationTests: XCTestCase {
     ) {
         let inspection = ExtensionManagerInspectionCapture()
         let manager = ExtensionManager(
-            context: context,
+            database: context,
             initialProfile: initialProfile,
             testInspectionDidAssemble: inspection.install
         )

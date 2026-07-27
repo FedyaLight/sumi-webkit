@@ -48,8 +48,7 @@ protocol BrowserEssentialBackdropReading: AnyObject, Sendable {
 
 private final class UnavailableEssentialBackdropReader:
     BrowserEssentialBackdropReading,
-    @unchecked Sendable
-{
+    @unchecked Sendable {
     nonisolated static let shared = UnavailableEssentialBackdropReader()
 
     func cachedBackdrop(
@@ -312,8 +311,12 @@ struct BrowserManagerDataServices {
         SharedVisitedLinkStoreComposition.provider
     }
 
-    static func production(faviconSystem: SumiFaviconSystem) -> Self {
+    static func production(
+        database: SumiDatabase,
+        faviconSystem: SumiFaviconSystem
+    ) -> Self {
         make(
+            database: database,
             faviconService: faviconSystem,
             faviconCapabilities: faviconSystem.capabilities,
             historyFaviconCleaner: faviconSystem,
@@ -323,6 +326,7 @@ struct BrowserManagerDataServices {
 
     static func unavailable() -> Self {
         make(
+            database: nil,
             faviconService: TabDependencyIsolationDefaults.faviconService,
             faviconCapabilities: TabDependencyIsolationDefaults.faviconCapabilities,
             historyFaviconCleaner: TabDependencyIsolationDefaults.historyFaviconCleaner,
@@ -331,13 +335,14 @@ struct BrowserManagerDataServices {
     }
 
     private static func make(
+        database: SumiDatabase?,
         faviconService: any BrowserFaviconServicing,
         faviconCapabilities: BrowserFaviconCapabilities,
         historyFaviconCleaner: any HistoryFaviconCleaning,
         browsingDataFaviconCleaner: any SumiBrowsingDataFaviconCleaning
     ) -> Self {
         let websiteDataCleanupService = SumiWebsiteDataCleanupService()
-        let siteDataPolicyStore = SumiSiteDataPolicyStore()
+        let siteDataPolicyStore = SumiSiteDataPolicyStore(database: database)
         let visitedLinkStore = SharedVisitedLinkStoreComposition.provider
         let basicAuthCredentialStore = BasicAuthCredentialStore()
         return BrowserManagerDataServices(

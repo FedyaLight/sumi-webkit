@@ -1,7 +1,6 @@
 import AppKit
 import Combine
 import Network
-import SwiftData
 import WebKit
 import XCTest
 
@@ -237,11 +236,10 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
     // MARK: - Harness
 
     private struct ForkProbeHarness {
-        /// Keeps the in-memory SwiftData container alive for the whole test:
+        /// Keeps the in-memory database alive for the whole test:
         /// extension-requested tab opening reads persisted extension entities
-        /// (installed-catalog publication), which traps if the container
-        /// backing the manager's ModelContext has been deallocated.
-        let container: ModelContainer
+        /// through the installed-catalog publication.
+        let container: SumiDatabase
         let inspection: ExtensionManagerTestInspection
         let attachedRuntime: ExtensionAttachedBrowserRuntimeInspection
         let webView: WKWebView
@@ -392,7 +390,7 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
         )
         moduleRegistry.enable(.extensions)
         let managerFixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile,
             browserConfiguration: browserConfiguration,
             moduleRegistry: moduleRegistry
@@ -402,7 +400,7 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
         let attachedRuntime = managerFixture.attachedRuntime
         let extensionsModule = SumiExtensionsModule(
             moduleRegistry: moduleRegistry,
-            context: container.mainContext,
+            database: container,
             browserConfiguration: browserConfiguration,
             initialProfileProvider: { profile },
             managerFactory: { _, _, _, _ in manager }
@@ -1238,11 +1236,8 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
 
     // MARK: - Test infrastructure
 
-    private func makeTestContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+    private func makeTestContainer() throws -> SumiDatabase {
+        try SumiDatabase.inMemory()
     }
 
     private func makeScratchDirectory() throws -> URL {

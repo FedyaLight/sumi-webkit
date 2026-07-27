@@ -1,7 +1,6 @@
 import CoreGraphics
 @testable import Sumi
 import SumiDomain
-import SwiftData
 import XCTest
 
 @MainActor
@@ -904,13 +903,9 @@ private final class TestSidebarBrowserContextHarness {
     let sidebar: TransitionSidebarFixture
 
     init(spaces: [Space]) throws {
-        let container = try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+        let container = try SumiDatabase.inMemory()
         let browserManager = BrowserManager(
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: container
+            startupPersistence: BrowserManagerStartupPersistence(database: container
             )
         )
         self.browserManager = browserManager

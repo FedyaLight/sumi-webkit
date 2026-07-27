@@ -7,7 +7,6 @@
 
 import Foundation
 import OSLog
-import SwiftData
 import WebKit
 
 @available(macOS 15.5, *)
@@ -39,7 +38,7 @@ final class ExtensionManager: NSObject {
     #endif
 
     convenience init(
-        context: ModelContext,
+        database: SumiDatabase,
         initialProfile: Profile?,
         profileReferenceAdmission: ProfileReferenceAdmissionLedger,
         browserConfiguration: BrowserConfiguration? = nil,
@@ -47,7 +46,7 @@ final class ExtensionManager: NSObject {
         extensionPreferences: UserDefaults = .standard
     ) {
         self.init(
-            context: context,
+            database: database,
             initialProfile: initialProfile,
             profileReferenceAdmission: profileReferenceAdmission,
             browserConfiguration: browserConfiguration,
@@ -59,14 +58,14 @@ final class ExtensionManager: NSObject {
 
     #if DEBUG
         convenience init(
-            context: ModelContext,
+            database: SumiDatabase,
             initialProfile: Profile?,
             browserConfiguration: BrowserConfiguration? = nil,
             moduleRegistry: SumiModuleRegistry = .unavailable(),
             extensionPreferences: UserDefaults = .standard
         ) {
             self.init(
-                context: context,
+                database: database,
                 initialProfile: initialProfile,
                 profileReferenceAdmission: .testingAllowingReferences(),
                 browserConfiguration: browserConfiguration,
@@ -77,7 +76,7 @@ final class ExtensionManager: NSObject {
         }
 
         convenience init(
-            context: ModelContext,
+            database: SumiDatabase,
             initialProfile: Profile?,
             browserConfiguration: BrowserConfiguration? = nil,
             moduleRegistry: SumiModuleRegistry = .unavailable(),
@@ -90,7 +89,7 @@ final class ExtensionManager: NSObject {
                 ExtensionManagerTestAssemblyOverrides? = nil
         ) {
             self.init(
-                context: context,
+                database: database,
                 initialProfile: initialProfile,
                 profileReferenceAdmission: .testingAllowingReferences(),
                 browserConfiguration: browserConfiguration,
@@ -105,7 +104,7 @@ final class ExtensionManager: NSObject {
         }
 
         convenience init(
-            context: ModelContext,
+            database: SumiDatabase,
             initialProfile: Profile?,
             browserConfiguration: BrowserConfiguration? = nil,
             moduleRegistry: SumiModuleRegistry = .unavailable(),
@@ -116,7 +115,7 @@ final class ExtensionManager: NSObject {
                 ExtensionManagerTestAssemblyOverrides? = nil
         ) {
             self.init(
-                context: context,
+                database: database,
                 initialProfile: initialProfile,
                 profileReferenceAdmission: .testingAllowingReferences(),
                 browserConfiguration: browserConfiguration,
@@ -131,7 +130,7 @@ final class ExtensionManager: NSObject {
         }
 
         convenience init(
-            context: ModelContext,
+            database: SumiDatabase,
             initialProfile: Profile?,
             browserConfiguration: BrowserConfiguration? = nil,
             moduleRegistry: SumiModuleRegistry = .unavailable(),
@@ -140,7 +139,7 @@ final class ExtensionManager: NSObject {
                 ExtensionManagerTestAssemblyOverrides
         ) {
             self.init(
-                context: context,
+                database: database,
                 initialProfile: initialProfile,
                 profileReferenceAdmission: .testingAllowingReferences(),
                 browserConfiguration: browserConfiguration,
@@ -156,7 +155,7 @@ final class ExtensionManager: NSObject {
     #endif
 
     private init(
-        context: ModelContext,
+        database: SumiDatabase,
         initialProfile: Profile?,
         profileReferenceAdmission: ProfileReferenceAdmissionLedger,
         browserConfiguration: BrowserConfiguration?,
@@ -183,7 +182,7 @@ final class ExtensionManager: NSObject {
         #endif
 
         let graphs = ExtensionManagerRootAssembler.assemble(
-            context: context,
+            database: database,
             initialProfile: initialProfile,
             browserConfiguration: browserConfiguration ?? .shared,
             moduleRegistry: moduleRegistry,

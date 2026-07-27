@@ -194,6 +194,9 @@ enum WebsiteViewContextFactory {
                             bookmarkManager: browserManager.bookmarkManager
                         ),
                         backupWriter: SumiBackupService(),
+                        journal: SumiImportTransactionDatabaseJournal(
+                            database: browserManager.database
+                        ),
                         profileRetirement: browserManager.profileLifecycleBundle
                             .importRetirement
                     ).commit(
@@ -386,7 +389,7 @@ enum WebsiteViewContextFactory {
             )
             var warnings = [
                 "Browsing data could not be imported: \(error.localizedDescription). "
-                    + "Spaces, tabs, and bookmarks were imported successfully."
+                    + "Spaces, tabs, and bookmarks were imported successfully.",
             ]
             if rollbackErrors.isEmpty == false {
                 warnings.append("Some partially imported browsing data could not be removed.")

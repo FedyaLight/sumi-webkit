@@ -28,10 +28,10 @@ fixture_dir = pathlib.Path(sys.argv[1])
 manifest_path = pathlib.Path(sys.argv[2])
 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
-expected_names = ["default.store", "default.store-shm", "default.store-wal"]
+expected_names = ["Sumi.sqlite"]
 if manifest.get("version") != 1:
     raise SystemExit("error: UI smoke fixture manifest version must be 1")
-if manifest.get("family") != "sumi-ui-smoke-startup-swiftdata":
+if manifest.get("family") != "sumi-ui-smoke-unified-database":
     raise SystemExit("error: UI smoke fixture manifest family is not the pinned UI family")
 if [entry.get("name") for entry in manifest.get("files", [])] != expected_names:
     raise SystemExit(f"error: UI smoke fixture manifest must list exact ordered family {expected_names}")
@@ -80,7 +80,7 @@ runtime_files=(
   "$fixture_resolver"
   "$test_case"
 )
-forbidden_runtime_pattern='getpwuid|homeDirectoryForCurrentUser|NSHomeDirectory|Library/Application Support/com\.sumi\.browser/default\.store|SumiTests/Fixtures|#filePath'
+forbidden_runtime_pattern='getpwuid|homeDirectoryForCurrentUser|NSHomeDirectory|Library/Application Support/com\.sumi\.browser/Sumi\.sqlite|SumiTests/Fixtures|#filePath|default\.store|SwiftData'
 forbidden_runtime_hits="$(guard_capture_matches "$forbidden_runtime_pattern" "${runtime_files[@]}")"
 if [[ -n "$forbidden_runtime_hits" ]]; then
   printf '%s\n' "$forbidden_runtime_hits"

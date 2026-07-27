@@ -1,5 +1,4 @@
 @testable import Sumi
-import SwiftData
 import XCTest
 
 @MainActor
@@ -8,8 +7,7 @@ final class SumiProfileRoutingTests: XCTestCase {
         let registry = WindowRegistry()
         let browserManager = BrowserManager(
             windowRegistry: registry,
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()
             )
         )
         let currentProfile = try XCTUnwrap(browserManager.currentProfile)
@@ -31,8 +29,7 @@ final class SumiProfileRoutingTests: XCTestCase {
         let registry = WindowRegistry()
         let browserManager = BrowserManager(
             windowRegistry: registry,
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()
             )
         )
         let currentProfile = try XCTUnwrap(browserManager.currentProfile)
@@ -69,8 +66,7 @@ final class SumiProfileRoutingTests: XCTestCase {
         let registry = WindowRegistry()
         let browserManager = BrowserManager(
             windowRegistry: registry,
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()
             )
         )
         let currentProfile = try XCTUnwrap(browserManager.currentProfile)
@@ -106,8 +102,7 @@ final class SumiProfileRoutingTests: XCTestCase {
         let registry = WindowRegistry()
         let browserManager = BrowserManager(
             windowRegistry: registry,
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()
             )
         )
         let currentProfile = try XCTUnwrap(browserManager.currentProfile)
@@ -133,10 +128,7 @@ final class SumiProfileRoutingTests: XCTestCase {
         XCTAssertEqual(window.currentProfileId, currentProfile.id)
     }
 
-    private func makeInMemoryStartupContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+    private func makeInMemoryStartupContainer() throws -> SumiDatabase {
+        try SumiDatabase.inMemory()
     }
 }

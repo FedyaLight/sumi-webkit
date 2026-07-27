@@ -1,4 +1,3 @@
-import SwiftData
 import WebKit
 import XCTest
 
@@ -257,12 +256,7 @@ final class PhysicalWebViewSourceResolverTests: XCTestCase {
         BrowserManager(
             windowRegistry: windowRegistry,
             startupPersistence: BrowserManagerStartupPersistence(
-                container: try ModelContainer(
-                    for: SumiStartupPersistence.schema,
-                    configurations: [
-                        ModelConfiguration(isStoredInMemoryOnly: true),
-                    ]
-                )
+                database: try SumiDatabase.inMemory()
             )
         )
     }

@@ -99,9 +99,9 @@ final class SumiFaviconRuntimeArchitectureTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: partitionDirectory.path))
     }
 
-    func testFailedMetadataCommitRestoresOldMappingAndRemovesNewBlob() throws {
-        let directory = temporaryDirectory(named: "CommitRollback")
-        defer { removeTestDirectory(directory, context: "commit rollback") }
+    func testMetadataPersistsAcrossRuntimeRecreation() throws {
+        let directory = temporaryDirectory(named: "MetadataPersistence")
+        defer { removeTestDirectory(directory, context: "metadata persistence") }
         let runtime = SumiFaviconRuntime(
             rootDirectory: directory,
             fetcher: RuntimeRoutingFaviconFetcher(responses: [:])
@@ -119,42 +119,49 @@ final class SumiFaviconRuntimeArchitectureTests: XCTestCase {
         let oldSelection = try XCTUnwrap(
             runtime.images.cachedSelection(for: oldPageURL, partition: partition)
         )
+        try runtime.payloadIngestion.storeExternalPayload(
+            SumiFaviconTestImages.pngData(width: 32, height: 32),
+            faviconURL: newPageURL.appendingPathComponent("new.png"),
+            documentURL: newPageURL,
+            partition: partition
+        )
+        let newSelection = try XCTUnwrap(
+            runtime.images.cachedSelection(for: newPageURL, partition: partition)
+        )
+
+        let reopenedRuntime = SumiFaviconRuntime(
+            rootDirectory: directory,
+            fetcher: RuntimeRoutingFaviconFetcher(responses: [:])
+        )
+        XCTAssertEqual(
+            reopenedRuntime.images.cachedSelection(
+                for: oldPageURL,
+                partition: partition
+            )?.blobID,
+            oldSelection.blobID
+        )
+        XCTAssertEqual(
+            reopenedRuntime.images.cachedSelection(
+                for: newPageURL,
+                partition: partition
+            )?.blobID,
+            newSelection.blobID
+        )
         let partitionDirectory = directory.appendingPathComponent(
             partition.storageComponent,
             isDirectory: true
         )
-        let metadataURL = partitionDirectory.appendingPathComponent("metadata.json")
-        let durableOldMetadata = try Data(contentsOf: metadataURL)
-        try FileManager.default.removeItem(at: metadataURL)
-        try FileManager.default.createDirectory(
-            at: metadataURL,
-            withIntermediateDirectories: false
-        )
-
-        XCTAssertThrowsError(
-            try runtime.payloadIngestion.storeExternalPayload(
-                SumiFaviconTestImages.pngData(width: 32, height: 32),
-                faviconURL: newPageURL.appendingPathComponent("new.png"),
-                documentURL: newPageURL,
-                partition: partition
-            )
-        )
-
-        let restoredSelection = try XCTUnwrap(
-            runtime.images.cachedSelection(for: oldPageURL, partition: partition)
-        )
-        XCTAssertEqual(restoredSelection.blobID, oldSelection.blobID)
-        XCTAssertEqual(restoredSelection.revision, oldSelection.revision)
-        XCTAssertNil(runtime.images.cachedSelection(for: newPageURL, partition: partition))
         let blobFiles = try FileManager.default.contentsOfDirectory(
             at: partitionDirectory.appendingPathComponent("blobs", isDirectory: true),
             includingPropertiesForKeys: nil
         )
-        XCTAssertEqual(blobFiles.map(\.lastPathComponent), ["\(oldSelection.blobID).png"])
-        XCTAssertFalse(durableOldMetadata.isEmpty)
+        XCTAssertEqual(
+            Set(blobFiles.map(\.lastPathComponent)),
+            Set(["\(oldSelection.blobID).png", "\(newSelection.blobID).png"])
+        )
     }
 
-    func testLifecycleNotificationFlushesCoalescedMetadata() async throws {
+    func testLifecycleNotificationFlushesCoalescedMetadataToDatabase() async throws {
         let directory = temporaryDirectory(named: "LifecycleFlush")
         defer { removeTestDirectory(directory, context: "lifecycle flush") }
         let notificationCenter = NotificationCenter()
@@ -174,11 +181,16 @@ final class SumiFaviconRuntimeArchitectureTests: XCTestCase {
         await runtime.coldFetches.drainForTests(cancel: false)
         notificationCenter.post(name: NSApplication.willResignActiveNotification, object: nil)
 
-        let metadataURL = directory
-            .appendingPathComponent(partition.storageComponent, isDirectory: true)
-            .appendingPathComponent("metadata.json")
-        let metadata = try String(contentsOf: metadataURL, encoding: .utf8)
-        XCTAssertTrue(metadata.contains("flush.example"))
+        let reopenedStorage = SumiFaviconBlobStorage(
+            rootDirectory: directory,
+            persistCoalesceInterval: 0
+        )
+        XCTAssertTrue(
+            reopenedStorage.reader.isNoIconFresh(
+                for: pageURL,
+                partition: partition
+            )
+        )
     }
 
     private func temporaryDirectory(named name: String) -> URL {

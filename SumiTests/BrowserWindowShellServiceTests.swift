@@ -1,5 +1,4 @@
 import AppKit
-import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -638,8 +637,7 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         let windowRegistry = WindowRegistry()
         let browserManager = BrowserManager(
             windowRegistry: windowRegistry,
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: startupContainer
+            startupPersistence: BrowserManagerStartupPersistence(database: startupContainer
             )
         )
         let permissionCoordinator = RecordingPermissionCoordinator()
@@ -659,11 +657,8 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         )
     }
 
-    private func makeInMemoryStartupContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+    private func makeInMemoryStartupContainer() throws -> SumiDatabase {
+        try SumiDatabase.inMemory()
     }
 
     private func makePresentationRecordingWindow()

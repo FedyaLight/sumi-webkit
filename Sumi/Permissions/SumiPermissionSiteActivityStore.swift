@@ -58,16 +58,6 @@ final class SumiPermissionSiteActivityStore: ObservableObject {
         self.domainCache = SumiPermissionDomainCache(registrableDomainResolver: registrableDomainResolver)
     }
 
-    init(
-        storageDirectory: URL? = nil,
-        registrableDomainResolver: any SumiRegistrableDomainResolving = SumiRegistrableDomainResolver()
-    ) {
-        persistenceAuthority = SumiPermissionPersistenceAuthority(
-            storageDirectory: storageDirectory
-        )
-        self.domainCache = SumiPermissionDomainCache(registrableDomainResolver: registrableDomainResolver)
-    }
-
     func records(
         forSiteOf origin: SumiPermissionOrigin,
         profilePartitionId: String,

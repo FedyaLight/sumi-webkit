@@ -7,7 +7,6 @@
 
 import Foundation
 import OSLog
-import SwiftData
 
 @available(macOS 15.5, *)
 @MainActor
@@ -17,7 +16,7 @@ final class ExtensionInstallationMetadataStore {
     struct MetadataLoadResult {
         var didFetchPersistedMetadata: Bool
         var records: [InstalledExtension]
-        var enabledEntities: [ExtensionEntity]
+        var enabledEntities: [InstalledExtensionMetadata]
     }
 
     nonisolated private static let orphanedExtensionCleanupDefaultsKey =
@@ -25,19 +24,19 @@ final class ExtensionInstallationMetadataStore {
     nonisolated private static let orphanedExtensionCleanupInterval: TimeInterval =
         24 * 60 * 60
 
-    private let context: ModelContext
+    private let database: SumiDatabase
     private let packageLayout: ExtensionPackageLayout
     private let packageMaintenance: ExtensionPackageMaintenance
 
     init(
-        context: ModelContext,
+        database: SumiDatabase,
         activePackageGenerations: ExtensionPackageGenerationRegistry = .init(),
         extensionsDirectory: URL = ExtensionPathSafety.extensionsDirectory()
     ) {
         let packageLayout = ExtensionPackageLayout(
             extensionsRoot: extensionsDirectory
         )
-        self.context = context
+        self.database = database
         self.packageLayout = packageLayout
         self.packageMaintenance = ExtensionPackageMaintenance(
             layout: packageLayout,
@@ -46,17 +45,29 @@ final class ExtensionInstallationMetadataStore {
     }
 
     func persist(record: InstalledExtension) throws {
-        if let existing = try extensionEntity(for: record.id) {
-            update(existing, from: record)
-        } else {
-            context.insert(ExtensionEntity(record: record))
+        let metadata = try extensionMetadata(for: record.id)
+            ?? InstalledExtensionMetadata(record: record)
+        update(metadata, from: record)
+        try database.transaction {
+            try $0.extensions.save(metadata)
         }
-        try context.save()
+    }
+
+    func save(_ metadata: InstalledExtensionMetadata) throws {
+        try database.transaction {
+            try $0.extensions.save(metadata)
+        }
+    }
+
+    func delete(extensionID: String) throws {
+        try database.transaction {
+            try $0.extensions.delete(id: extensionID)
+        }
     }
 
     func persistedInstallationIdentities() throws
         -> [ExtensionInstallationPersistedIdentity] {
-        try context.fetch(FetchDescriptor<ExtensionEntity>()).map {
+        try database.read { try $0.extensions.all() }.map {
             ExtensionInstallationPersistedIdentity(
                 extensionID: $0.id,
                 sourceBundlePath: $0.sourceBundlePath,
@@ -78,20 +89,30 @@ final class ExtensionInstallationMetadataStore {
         originalRecord: InstalledExtension?,
         extensionID: String
     ) throws {
-        if let entity = try extensionEntity(for: extensionID) {
+        if let entity = try extensionMetadata(for: extensionID) {
             if let originalRecord {
                 update(entity, from: originalRecord)
+                try database.transaction {
+                    try $0.extensions.save(entity)
+                }
             } else {
-                context.delete(entity)
+                try database.transaction {
+                    try $0.extensions.delete(id: extensionID)
+                }
             }
         } else if let originalRecord {
-            context.insert(ExtensionEntity(record: originalRecord))
+            try database.transaction {
+                try $0.extensions.save(
+                    InstalledExtensionMetadata(record: originalRecord)
+                )
+            }
         }
-        try context.save()
     }
 
-    func extensionEntity(for id: String) throws -> ExtensionEntity? {
-        try context.fetch(FetchDescriptor<ExtensionEntity>()).first(where: { $0.id == id })
+    func extensionMetadata(
+        for id: String
+    ) throws -> InstalledExtensionMetadata? {
+        try database.read { try $0.extensions.find(id: id) }
     }
 
     func extensionResourcesRoot(
@@ -133,7 +154,7 @@ final class ExtensionInstallationMetadataStore {
         }
     }
 
-    func extensionResourcesRoot(for entity: ExtensionEntity) throws -> URL {
+    func extensionResourcesRoot(for entity: InstalledExtensionMetadata) throws -> URL {
         let sourceKind = WebExtensionSourceKind(rawValue: entity.sourceKindRawValue) ?? .directory
         return try extensionResourcesRoot(
             sourceKind: sourceKind,
@@ -145,9 +166,9 @@ final class ExtensionInstallationMetadataStore {
     func loadInstalledExtensionMetadata(
         trace: (String) -> Void
     ) -> MetadataLoadResult {
-        let entities: [ExtensionEntity]
+        let entities: [InstalledExtensionMetadata]
         do {
-            entities = try context.fetch(FetchDescriptor<ExtensionEntity>())
+            entities = try database.read { try $0.extensions.all() }
         } catch {
             Self.logger.error("Failed to fetch extensions: \(error.localizedDescription, privacy: .public)")
             return MetadataLoadResult(
@@ -158,7 +179,7 @@ final class ExtensionInstallationMetadataStore {
         }
 
         var loadedRecords: [InstalledExtension] = []
-        var enabledEntitiesToLoad: [ExtensionEntity] = []
+        var enabledEntitiesToLoad: [InstalledExtensionMetadata] = []
         var didMutatePersistence = false
 
         for entity in entities {
@@ -171,7 +192,9 @@ final class ExtensionInstallationMetadataStore {
                     sourceBundlePath: entity.sourceBundlePath
                 )
             } catch {
-                context.delete(entity)
+                try? database.transaction {
+                    try $0.extensions.delete(id: entity.id)
+                }
                 didMutatePersistence = true
                 Self.logger.error(
                     "Dropped invalid persisted extension record for \(entity.name, privacy: .public)"
@@ -179,7 +202,9 @@ final class ExtensionInstallationMetadataStore {
                 continue
             }
             guard FileManager.default.fileExists(atPath: packageURL.path) else {
-                context.delete(entity)
+                try? database.transaction {
+                    try $0.extensions.delete(id: entity.id)
+                }
                 didMutatePersistence = true
                 Self.logger.error(
                     "Dropped invalid persisted extension record for \(entity.name, privacy: .public)"
@@ -197,7 +222,9 @@ final class ExtensionInstallationMetadataStore {
             )
 
             guard let record else {
-                context.delete(entity)
+                try? database.transaction {
+                    try $0.extensions.delete(id: entity.id)
+                }
                 didMutatePersistence = true
                 Self.logger.error(
                     "Dropped invalid persisted extension record for \(entity.name, privacy: .public)"
@@ -217,7 +244,13 @@ final class ExtensionInstallationMetadataStore {
 
         if didMutatePersistence {
             do {
-                try context.save()
+                try database.transaction { connection in
+                    for entity in entities {
+                        if loadedRecords.contains(where: { $0.id == entity.id }) {
+                            try connection.extensions.save(entity)
+                        }
+                    }
+                }
             } catch {
                 Self.logger.error("Failed to persist refreshed extension metadata: \(error.localizedDescription, privacy: .public)")
             }
@@ -233,7 +266,7 @@ final class ExtensionInstallationMetadataStore {
     }
 
     func update(
-        _ entity: ExtensionEntity,
+        _ entity: InstalledExtensionMetadata,
         from record: InstalledExtension
     ) {
         entity.name = record.name
@@ -268,12 +301,14 @@ final class ExtensionInstallationMetadataStore {
 
     func setEnabled(
         _ isEnabled: Bool,
-        for entity: ExtensionEntity,
+        for entity: InstalledExtensionMetadata,
         lastUpdateDate: Date = Date()
     ) throws {
         entity.isEnabled = isEnabled
         entity.lastUpdateDate = lastUpdateDate
-        try context.save()
+        try database.transaction {
+            try $0.extensions.save(entity)
+        }
     }
 
     func record(
@@ -312,7 +347,7 @@ final class ExtensionInstallationMetadataStore {
     }
 
     func refreshedRecord(
-        for entity: ExtensionEntity,
+        for entity: InstalledExtensionMetadata,
         manifest: [String: Any]
     ) throws -> InstalledExtension {
         let sourceKind = WebExtensionSourceKind(rawValue: entity.sourceKindRawValue) ?? .directory
@@ -342,7 +377,7 @@ final class ExtensionInstallationMetadataStore {
         sourceBundlePath: String,
         sourceFingerprintURL: URL,
         manifestRootFingerprint: String? = nil,
-        existingEntity: ExtensionEntity?
+        existingEntity: InstalledExtensionMetadata?
     ) throws -> InstalledExtension {
         let installDate = existingEntity?.installDate ?? Date()
         let lastUpdateDate = Date()
@@ -410,7 +445,7 @@ final class ExtensionInstallationMetadataStore {
     }
 
     func extensionMetadataNeedsRefresh(
-        _ entity: ExtensionEntity,
+        _ entity: InstalledExtensionMetadata,
         refreshedRecord: InstalledExtension
     ) -> Bool {
         entity.name != refreshedRecord.name
@@ -439,7 +474,7 @@ final class ExtensionInstallationMetadataStore {
     }
 
     private func refreshPersistedMetadataIfNeeded(
-        entity: ExtensionEntity,
+        entity: InstalledExtensionMetadata,
         packageURL: URL,
         trace: (String) -> Void,
         record: inout InstalledExtensionRecord?,

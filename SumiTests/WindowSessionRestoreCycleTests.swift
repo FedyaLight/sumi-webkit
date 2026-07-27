@@ -6,7 +6,6 @@ import XCTest
 final class WindowSessionRestoreCycleTests: XCTestCase {
     func testSnapshotCanBeClaimedOnlyOnceUntilCycleReset() throws {
         let fixture = try makeFixture()
-        defer { fixture.defaults.removePersistentDomain(forName: fixture.suite) }
         let cycle = WindowSessionRestoreCycle()
 
         let first = try XCTUnwrap(
@@ -36,7 +35,6 @@ final class WindowSessionRestoreCycleTests: XCTestCase {
 
     func testIncognitoWindowDoesNotConsumeGlobalSnapshotClaim() throws {
         let fixture = try makeFixture()
-        defer { fixture.defaults.removePersistentDomain(forName: fixture.suite) }
         let cycle = WindowSessionRestoreCycle()
         let incognitoWindow = BrowserWindowState()
         incognitoWindow.isIncognito = true
@@ -56,11 +54,9 @@ final class WindowSessionRestoreCycleTests: XCTestCase {
     }
 
     func testMissingSnapshotDoesNotConsumeFutureClaim() throws {
-        let suite = "WindowSessionRestoreCycleTests-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let database = try SumiDatabase.inMemory()
         let key = "session"
-        let store = WindowSessionSnapshotStore(key: key, userDefaults: defaults)
+        let store = WindowSessionSnapshotStore(database: database, key: key)
         let cycle = WindowSessionRestoreCycle()
 
         XCTAssertNil(
@@ -68,30 +64,32 @@ final class WindowSessionRestoreCycleTests: XCTestCase {
         )
 
         let snapshot = makeSnapshot(spaceId: UUID())
-        defaults.set(try JSONEncoder().encode(snapshot), forKey: key)
+        try database.transaction {
+            try $0.documents.save(
+                try JSONEncoder().encode(snapshot),
+                forKey: key
+            )
+        }
         XCTAssertNotNil(
             cycle.claimSnapshot(from: store, for: BrowserWindowState())
         )
     }
 
     private func makeFixture() throws -> (
-        suite: String,
-        defaults: UserDefaults,
         store: WindowSessionSnapshotStore,
         spaceId: UUID
     ) {
-        let suite = "WindowSessionRestoreCycleTests-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let database = try SumiDatabase.inMemory()
         let key = "session"
         let spaceId = UUID()
-        defaults.set(
-            try JSONEncoder().encode(makeSnapshot(spaceId: spaceId)),
-            forKey: key
-        )
+        try database.transaction {
+            try $0.documents.save(
+                try JSONEncoder().encode(makeSnapshot(spaceId: spaceId)),
+                forKey: key
+            )
+        }
         return (
-            suite,
-            defaults,
-            WindowSessionSnapshotStore(key: key, userDefaults: defaults),
+            WindowSessionSnapshotStore(database: database, key: key),
             spaceId
         )
     }

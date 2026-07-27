@@ -9,47 +9,36 @@ final class LastSessionWindowsStoreTests: XCTestCase {
         let tabSnapshot: TabPersistenceSnapshot?
     }
 
-    func testStorePersistsSnapshotsToUserDefaults() throws {
-        let suiteName = "SumiTests.LastSessionWindowsStore.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defaults.removePersistentDomain(forName: suiteName)
-
-        let store = LastSessionWindowsStore(userDefaults: defaults)
+    func testStorePersistsSnapshotsToBrowserDatabase() throws {
+        let database = try SumiDatabase.inMemory()
+        let store = LastSessionWindowsStore(database: database)
         let snapshot = makeWindowSnapshot()
 
         store.updateSnapshots([snapshot])
 
-        let reloaded = LastSessionWindowsStore(userDefaults: defaults)
+        let reloaded = LastSessionWindowsStore(database: database)
         XCTAssertEqual(reloaded.snapshots, [snapshot])
         XCTAssertNil(reloaded.tabSnapshot)
-        defaults.removePersistentDomain(forName: suiteName)
     }
 
     func testStorePersistsStartupArchiveWithTabSnapshot() throws {
-        let suiteName = "SumiTests.LastSessionWindowsStore.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defaults.removePersistentDomain(forName: suiteName)
-
-        let store = LastSessionWindowsStore(userDefaults: defaults)
+        let database = try SumiDatabase.inMemory()
+        let store = LastSessionWindowsStore(database: database)
         let windowSnapshot = makeWindowSnapshot()
         let tabSnapshot = makeTabSnapshot()
 
         store.updateSnapshots([windowSnapshot], tabSnapshot: tabSnapshot)
 
-        let reloaded = LastSessionWindowsStore(userDefaults: defaults)
+        let reloaded = LastSessionWindowsStore(database: database)
         XCTAssertEqual(reloaded.snapshots, [windowSnapshot])
         XCTAssertEqual(reloaded.tabSnapshot?.spaces.map(\.id), tabSnapshot.spaces.map(\.id))
         XCTAssertEqual(reloaded.tabSnapshot?.tabs.map(\.id), tabSnapshot.tabs.map(\.id))
         XCTAssertEqual(reloaded.tabSnapshot?.state.currentSpaceID, tabSnapshot.state.currentSpaceID)
-        defaults.removePersistentDomain(forName: suiteName)
     }
 
     func testStoreKeepsDistinctWindowIdentitiesWithIdenticalSessions() throws {
-        let suiteName = "SumiTests.LastSessionWindowsStore.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defaults.removePersistentDomain(forName: suiteName)
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let store = LastSessionWindowsStore(userDefaults: defaults)
+        let database = try SumiDatabase.inMemory()
+        let store = LastSessionWindowsStore(database: database)
         let sharedSession = makeSession()
         let first = LastSessionWindowSnapshot(id: UUID(), session: sharedSession)
         let second = LastSessionWindowSnapshot(id: UUID(), session: sharedSession)
@@ -58,7 +47,7 @@ final class LastSessionWindowsStoreTests: XCTestCase {
 
         XCTAssertEqual(store.snapshots, [first, second])
         XCTAssertEqual(
-            LastSessionWindowsStore(userDefaults: defaults).snapshots,
+            LastSessionWindowsStore(database: database).snapshots,
             [first, second]
         )
     }
@@ -112,7 +101,7 @@ final class LastSessionWindowsStoreTests: XCTestCase {
         XCTAssertEqual(Set([forward, reversed]).count, 1)
     }
 
-    func testDecoderCanonicalizesLegacySelectionArrayOrder() throws {
+    func testDecoderCanonicalizesSelectionArrayOrder() throws {
         let firstSpaceID = try XCTUnwrap(
             UUID(uuidString: "00000000-0000-0000-0000-000000000001")
         )
@@ -214,9 +203,7 @@ final class LastSessionWindowsStoreTests: XCTestCase {
     }
 
     func testLoadCollapsesDuplicateArchivedWindowIdentities() throws {
-        let suiteName = "SumiTests.LastSessionWindowsStore.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let database = try SumiDatabase.inMemory()
         let sharedID = UUID()
         let first = LastSessionWindowSnapshot(id: sharedID, session: makeSession())
         let duplicate = LastSessionWindowSnapshot(
@@ -227,25 +214,26 @@ final class LastSessionWindowsStoreTests: XCTestCase {
             snapshots: [first, duplicate],
             tabSnapshot: nil
         )
-        defaults.set(
-            try JSONEncoder().encode(archive),
-            forKey: "\(SumiAppIdentity.runtimeBundleIdentifier).history.lastSessionWindows"
-        )
-
-        let store = LastSessionWindowsStore(userDefaults: defaults)
+        try database.transaction {
+            try $0.documents.save(
+                try JSONEncoder().encode(archive),
+                forKey: "session.last-windows"
+            )
+        }
+        let store = LastSessionWindowsStore(database: database)
 
         XCTAssertEqual(store.snapshots, [first])
     }
 
     func testCorruptArchiveBlocksProfileMigrationWithoutOverwritingPayload()
         throws {
-        let suiteName = "SumiTests.LastSessionWindowsStore.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let key = "\(SumiAppIdentity.runtimeBundleIdentifier).history.lastSessionWindows"
+        let database = try SumiDatabase.inMemory()
+        let key = "session.last-windows"
         let corruptPayload = Data("not-an-archive".utf8)
-        defaults.set(corruptPayload, forKey: key)
-        let store = LastSessionWindowsStore(userDefaults: defaults)
+        try database.transaction {
+            try $0.documents.save(corruptPayload, forKey: key)
+        }
+        let store = LastSessionWindowsStore(database: database)
 
         XCTAssertEqual(store.archiveLoadState, .failed)
         XCTAssertFalse(
@@ -255,7 +243,10 @@ final class LastSessionWindowsStoreTests: XCTestCase {
             )
         )
         XCTAssertTrue(store.containsProfileReference(to: UUID()))
-        XCTAssertEqual(defaults.data(forKey: key), corruptPayload)
+        XCTAssertEqual(
+            try database.read { try $0.documents.data(forKey: key) },
+            corruptPayload
+        )
         XCTAssertEqual(store.archiveLoadState, .failed)
     }
 

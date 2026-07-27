@@ -15,13 +15,3 @@ extension SumiBoostStore {
         )
     }
 }
-
-@MainActor
-extension SumiAdblockZapperStore {
-    convenience init(userDefaults: UserDefaults = .standard) {
-        self.init(
-            userDefaults: userDefaults,
-            profileReferenceAdmission: .testingAllowingReferences()
-        )
-    }
-}

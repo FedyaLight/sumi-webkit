@@ -568,7 +568,7 @@ final class TabStructuralCollectionMutationOwnerTests: XCTestCase {
         private let lookup: TabStructuralLookupCoordinator
         private let persistence: TabStructuralPersistenceService
         private let owner: TabStructuralCollectionMutationOwner
-        private let retainedModelContainer: AnyObject
+        private let retainedDatabase: SumiDatabase
         private var cancellables = Set<AnyCancellable>()
         private(set) var announceCount = 0
         private(set) var tabsSnapshotPublishCount = 0
@@ -577,8 +577,8 @@ final class TabStructuralCollectionMutationOwnerTests: XCTestCase {
         init(
             faviconService: (any BrowserFaviconServicing)? = nil
         ) throws {
-            let container = try makeInMemoryStartupModelContainer()
-            retainedModelContainer = container
+            let container = try makeInMemoryStartupDatabase()
+            retainedDatabase = container
             let state = TabStateStore()
             self.state = state
             let eventBus = TabStructureEventBus()
@@ -587,7 +587,7 @@ final class TabStructuralCollectionMutationOwnerTests: XCTestCase {
                 stateStore: state
             )
             self.lookup = lookup
-            let writes = TabStoreWriteExecutor(container: container)
+            let writes = TabStoreWriteExecutor(database: container)
             let persistence = TabStructuralPersistenceService(
                 structuralStore: TabStructuralSnapshotStore(writes: writes),
                 selectionStore: TabSelectionStore(writes: writes),
@@ -854,8 +854,8 @@ final class TabStructuralInstallOwnerTests: XCTestCase {
     }
 
     private func makeAdmissionLedger() throws -> ProfileReferenceAdmissionLedger {
-        let container = try makeInMemoryStartupModelContainer()
-        return try ProfileReferenceAdmissionLedger(context: container.mainContext)
+        let container = try makeInMemoryStartupDatabase()
+        return try ProfileReferenceAdmissionLedger(database: container)
     }
 
     private static func makeTab(index: Int, spaceId: UUID) -> Tab {
@@ -900,7 +900,7 @@ final class TabStructuralInstallOwnerTests: XCTestCase {
         private(set) var expansionChanges: [TabFolderExpansionChange] = []
 
         init(profileReferenceAdmission: ProfileReferenceAdmissionLedger) throws {
-            let container = try makeInMemoryStartupModelContainer()
+            let container = try makeInMemoryStartupDatabase()
             self.container = container
             self.profileReferenceAdmission = profileReferenceAdmission
             let favicon = StructuralMutationFaviconOracle()
@@ -915,7 +915,7 @@ final class TabStructuralInstallOwnerTests: XCTestCase {
                 stateStore: state
             )
             self.lookup = lookup
-            let writes = TabStoreWriteExecutor(container: container)
+            let writes = TabStoreWriteExecutor(database: container)
             let persistence = TabStructuralPersistenceService(
                 structuralStore: TabStructuralSnapshotStore(writes: writes),
                 selectionStore: TabSelectionStore(writes: writes),

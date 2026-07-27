@@ -1,5 +1,4 @@
 import AppKit
-import SwiftData
 import WebKit
 import XCTest
 
@@ -17,7 +16,7 @@ final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Command Dispatch Profile")
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let manager = fixture.manager
@@ -89,7 +88,7 @@ final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
         let profile = Profile(name: "Context Menu Profile")
         let browserConfiguration = BrowserConfiguration()
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile,
             browserConfiguration: browserConfiguration
         )
@@ -387,11 +386,8 @@ final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
         return directory
     }
 
-    private func makeTestContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+    private func makeTestContainer() throws -> SumiDatabase {
+        try SumiDatabase.inMemory()
     }
 
     private final class NavigationDelegateBox: NSObject, WKNavigationDelegate {

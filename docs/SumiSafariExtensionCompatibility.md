@@ -379,9 +379,9 @@ prefixes, and which selector prefix the final error response corresponds to.
 
 ### Test-harness facts learned (Cycle 22)
 
-- Keep the in-memory SwiftData `ModelContainer` alive in the harness struct:
+- Keep the in-memory `SumiDatabase` alive in the harness struct:
   `tabs.create` → `openNewTabUsing` → `enabledPersistedExtensionEntities()`
-  traps inside SwiftData if the container was deallocated.
+  needs the database for installed-catalog publication.
 - In the windowless test environment, an extension-created normal tab
   materializes its web view but the deferred initial-document handoff never
   issues the navigation (no window coordinator). The e2e drives

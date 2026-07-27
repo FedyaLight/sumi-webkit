@@ -1,4 +1,3 @@
-import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -125,7 +124,7 @@ final class ExtensionInstallationRecordTransactionTests: XCTestCase {
     func testRealMetadataReplacementIsRestoredAfterPostSaveFailure() throws {
         let container = try makeContainer()
         let store = ExtensionInstallationMetadataStore(
-            context: container.mainContext
+                database: container
         )
         let original = makeRecord(name: "Original")
         try store.persist(record: original)
@@ -148,7 +147,7 @@ final class ExtensionInstallationRecordTransactionTests: XCTestCase {
         )
 
         let persisted = try XCTUnwrap(
-            store.extensionEntity(for: original.id)
+            store.extensionMetadata(for: original.id)
         )
         XCTAssertEqual(persisted.name, "Original")
         XCTAssertEqual(persisted.manifestRootFingerprint, "Original")
@@ -158,7 +157,7 @@ final class ExtensionInstallationRecordTransactionTests: XCTestCase {
     func testRealMetadataFreshEntityIsDeletedAfterPostSaveFailure() throws {
         let container = try makeContainer()
         let store = ExtensionInstallationMetadataStore(
-            context: container.mainContext
+                database: container
         )
         let collection = InstalledExtensionCollection()
         collection.connectRecordChanges {}
@@ -178,7 +177,7 @@ final class ExtensionInstallationRecordTransactionTests: XCTestCase {
             )
         )
 
-        XCTAssertNil(try store.extensionEntity(for: candidate.id))
+        XCTAssertNil(try store.extensionMetadata(for: candidate.id))
         XCTAssertTrue(collection.records.isEmpty)
     }
 
@@ -278,11 +277,8 @@ final class ExtensionInstallationRecordTransactionTests: XCTestCase {
         )
     }
 
-    private func makeContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+    private func makeContainer() throws -> SumiDatabase {
+        try SumiDatabase.inMemory()
     }
 }
 

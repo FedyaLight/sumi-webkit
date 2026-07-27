@@ -250,7 +250,7 @@ final class BrowserWindowShellService {
     }
 
     func closeWindow(_ windowState: BrowserWindowState, in windowRegistry: WindowRegistry? = nil) {
-        windowRegistry?.appKitWindow(for: windowState)?.performClose(nil)
+        windowRegistry?.appKitWindow(for: windowState)?.close()
     }
 
     func toggleFullScreenForActiveWindow(in windowRegistry: WindowRegistry) {

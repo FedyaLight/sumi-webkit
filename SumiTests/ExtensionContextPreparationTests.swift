@@ -9,18 +9,14 @@ final class ExtensionContextPreparationTests: XCTestCase {
     func testStoredDecisionOverridesManifestGrantDuringPreparation()
         async throws {
         _ = ExtensionManager.registerSafariWebExtensionURLScheme
-        let suiteName = "ExtensionContextPreparationTests-\(UUID().uuidString)"
-        let preferences = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        addTeardownBlock {
-            preferences.removePersistentDomain(forName: suiteName)
-        }
+        let database = try SumiDatabase.inMemory()
         let profileID = UUID()
         let extensionID = "prepared-extension"
         let profileRuntime = ExtensionProfileRuntime(
             initialProfileId: profileID
         )
         let decisions = ExtensionPermissionDecisionStore(
-            preferences: preferences,
+            database: database,
             profileRuntime: profileRuntime
         )
         let tabsPermission = WKWebExtension.Permission(rawValue: "tabs")
@@ -34,7 +30,7 @@ final class ExtensionContextPreparationTests: XCTestCase {
         )
         var policyPersistenceCount = 0
         let preparation = ExtensionContextPreparation(
-            siteAccessPolicyStore: .init(preferences: preferences),
+            siteAccessPolicyStore: .init(database: database),
             installedExtensions: .init(),
             permissionDecisions: decisions,
             siteAccessPolicyDidPersist: {
@@ -92,16 +88,12 @@ final class ExtensionContextPreparationTests: XCTestCase {
 
     func testPermissionDedupeRequiresExactCurrentContextIdentity()
         async throws {
-        let suiteName = "ExtensionPermissionDecisionStoreTests-\(UUID().uuidString)"
-        let preferences = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        addTeardownBlock {
-            preferences.removePersistentDomain(forName: suiteName)
-        }
+        let database = try SumiDatabase.inMemory()
         let profileID = UUID()
         let extensionID = "dedupe-extension"
         let runtime = ExtensionProfileRuntime(initialProfileId: profileID)
         let store = ExtensionPermissionDecisionStore(
-            preferences: preferences,
+            database: database,
             profileRuntime: runtime
         )
         let fixture = try await makeWebExtension(named: "Dedupe Extension")

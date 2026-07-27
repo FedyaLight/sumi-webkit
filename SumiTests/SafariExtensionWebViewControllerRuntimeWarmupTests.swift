@@ -1,5 +1,4 @@
 import AppKit
-import SwiftData
 import WebKit
 import XCTest
 
@@ -12,7 +11,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile
         )
         let manager = managerFixture.manager
@@ -90,7 +89,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile
         )
         let manager = managerFixture.manager
@@ -110,9 +109,9 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             manager: manager,
             scratchDirectory: scratchDirectory
         )
-        let entity = try XCTUnwrap(try inspection.installation.metadata.extensionEntity(for: installed.id))
+        let entity = try XCTUnwrap(try inspection.installation.metadata.extensionMetadata(for: installed.id))
         entity.isEnabled = true
-        try container.mainContext.save()
+        try inspection.installation.metadata.save(entity)
         _ = inspection.installation.catalog.load()
 
         await inspection.normalTabs.deferredRuntime
@@ -195,7 +194,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile
         )
         let manager = managerFixture.manager
@@ -262,7 +261,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile
         )
         let manager = managerFixture.manager
@@ -342,7 +341,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile
         )
         let manager = managerFixture.manager
@@ -454,7 +453,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile
         )
         let manager = managerFixture.manager
@@ -499,9 +498,9 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             manager: manager,
             scratchDirectory: scratchDirectory
         )
-        let entity = try XCTUnwrap(try inspection.installation.metadata.extensionEntity(for: installed.id))
+        let entity = try XCTUnwrap(try inspection.installation.metadata.extensionMetadata(for: installed.id))
         entity.isEnabled = true
-        try container.mainContext.save()
+        try inspection.installation.metadata.save(entity)
         _ = inspection.installation.catalog.load()
 
         var backgroundWakeCount = 0
@@ -574,7 +573,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile
         )
         let manager = managerFixture.manager
@@ -594,7 +593,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         registry.enable(.extensions)
         let extensionsModule = SumiExtensionsModule(
             moduleRegistry: registry,
-            context: container.mainContext,
+            database: container,
             initialProfileProvider: { profile },
             managerFactory: { _, _, _, _ in manager }
         )
@@ -708,7 +707,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile
         )
         let manager = managerFixture.manager
@@ -723,9 +722,9 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             scratchDirectory: scratchDirectory
         )
 
-        let entity = try XCTUnwrap(try inspection.installation.metadata.extensionEntity(for: installed.id))
+        let entity = try XCTUnwrap(try inspection.installation.metadata.extensionMetadata(for: installed.id))
         entity.isEnabled = true
-        try container.mainContext.save()
+        try inspection.installation.metadata.save(entity)
         _ = inspection.installation.catalog.load()
 
         var backgroundWakeCount = 0
@@ -792,7 +791,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile
         )
         let manager = managerFixture.manager
@@ -807,9 +806,9 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             scratchDirectory: scratchDirectory
         )
 
-        let entity = try XCTUnwrap(try inspection.installation.metadata.extensionEntity(for: installed.id))
+        let entity = try XCTUnwrap(try inspection.installation.metadata.extensionMetadata(for: installed.id))
         entity.isEnabled = true
-        try container.mainContext.save()
+        try inspection.installation.metadata.save(entity)
         _ = inspection.installation.catalog.load()
 
         var backgroundWakeCount = 0
@@ -894,7 +893,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile
         )
         let manager = managerFixture.manager
@@ -907,9 +906,9 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             scratchDirectory: scratchDirectory
         )
 
-        let entity = try XCTUnwrap(try inspection.installation.metadata.extensionEntity(for: installed.id))
+        let entity = try XCTUnwrap(try inspection.installation.metadata.extensionMetadata(for: installed.id))
         entity.isEnabled = true
-        try container.mainContext.save()
+        try inspection.installation.metadata.save(entity)
         _ = inspection.installation.catalog.load()
 
         var backgroundWakeCount = 0
@@ -941,7 +940,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile
         )
         let manager = managerFixture.manager
@@ -954,9 +953,9 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             scratchDirectory: scratchDirectory
         )
 
-        let entity = try XCTUnwrap(try inspection.installation.metadata.extensionEntity(for: installed.id))
+        let entity = try XCTUnwrap(try inspection.installation.metadata.extensionMetadata(for: installed.id))
         entity.isEnabled = true
-        try container.mainContext.save()
+        try inspection.installation.metadata.save(entity)
         _ = inspection.installation.catalog.load()
 
         var backgroundWakeCount = 0
@@ -1022,7 +1021,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile
         )
         let manager = managerFixture.manager
@@ -1034,9 +1033,9 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             scratchDirectory: scratchDirectory,
             name: "TeardownRaceProbe"
         )
-        let entity = try XCTUnwrap(try inspection.installation.metadata.extensionEntity(for: installed.id))
+        let entity = try XCTUnwrap(try inspection.installation.metadata.extensionMetadata(for: installed.id))
         entity.isEnabled = true
-        try container.mainContext.save()
+        try inspection.installation.metadata.save(entity)
         let controller = inspection.controller.provisioning.ensureExtensionController(for: profile.id)
 
         manager.testHooks.beforeControllerLoad = { _, _ in
@@ -1061,7 +1060,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile
         )
         let manager = managerFixture.manager
@@ -1093,7 +1092,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let profile = Profile(name: "Profile A")
         let browserConfiguration = BrowserConfiguration()
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile,
             browserConfiguration: browserConfiguration
         )
@@ -1175,7 +1174,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile
         )
         let manager = managerFixture.manager
@@ -1267,7 +1266,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile
         )
         let manager = managerFixture.manager
@@ -1338,7 +1337,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let profileB = Profile(name: "Profile B")
         let browserConfiguration = BrowserConfiguration()
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profileA,
             browserConfiguration: browserConfiguration
         )
@@ -1408,7 +1407,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile
         )
         let manager = managerFixture.manager
@@ -1480,7 +1479,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         let profile = Profile(name: "Profile A")
         let browserConfiguration = BrowserConfiguration()
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile,
             browserConfiguration: browserConfiguration
         )

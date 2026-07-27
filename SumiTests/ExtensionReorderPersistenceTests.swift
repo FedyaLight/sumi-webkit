@@ -4,22 +4,19 @@ import XCTest
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionReorderPersistenceTests: XCTestCase {
-    private func makeDefaults() -> UserDefaults {
-        let suite = "reorder-tests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defaults.removePersistentDomain(forName: suite)
-        return defaults
+    private func makeDatabase() -> SumiDatabase {
+        try! SumiDatabase.inMemory()
     }
 
     // MARK: - Pinned toolbar order
 
     func testMovePinnedToolbarSlotReordersAndPublishes() {
-        let defaults = makeDefaults()
+        let database = makeDatabase()
         final class Published { var ids: [String] = [] }
         let published = Published()
 
         let owner = ExtensionToolbarPinningOwner(
-            preferences: defaults,
+            database: database,
             currentProfileId: { nil },
             installedExtensionIDs: { ["a", "b", "c"] },
             publishedPinnedIDs: { published.ids },
@@ -39,13 +36,13 @@ final class ExtensionReorderPersistenceTests: XCTestCase {
     }
 
     func testPinnedToolbarOrderSurvivesReload() {
-        let defaults = makeDefaults()
+        let database = makeDatabase()
         final class Published { var ids: [String] = [] }
         let published = Published()
 
         func makeOwner() -> ExtensionToolbarPinningOwner {
             ExtensionToolbarPinningOwner(
-                preferences: defaults,
+                database: database,
                 currentProfileId: { nil },
                 installedExtensionIDs: { ["a", "b", "c"] },
                 publishedPinnedIDs: { published.ids },
@@ -60,7 +57,7 @@ final class ExtensionReorderPersistenceTests: XCTestCase {
         owner.movePinnedToolbarSlot(id: "c", to: 0, profileId: nil)
         XCTAssertEqual(published.ids, ["c", "a", "b"])
 
-        // A fresh owner reading the same preferences reloads the moved order.
+        // A fresh owner reading the same database reloads the moved order.
         let reloaded = makeOwner()
         reloaded.reloadPinnedToolbarExtensionsForCurrentProfile()
         XCTAssertEqual(published.ids, ["c", "a", "b"])
@@ -69,10 +66,10 @@ final class ExtensionReorderPersistenceTests: XCTestCase {
     // MARK: - Hub (unpinned) order
 
     func testMoveUnpinnedExtensionReordersAndPersists() {
-        let defaults = makeDefaults()
+        let database = makeDatabase()
 
         func makeOwner() -> ExtensionHubOrderingOwner {
-            ExtensionHubOrderingOwner(preferences: defaults)
+            ExtensionHubOrderingOwner(database: database)
         }
 
         let owner = makeOwner()

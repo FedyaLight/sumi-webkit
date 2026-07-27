@@ -1,4 +1,4 @@
-import SwiftData
+import WebKit
 import XCTest
 
 @testable import Sumi
@@ -25,11 +25,20 @@ final class HistoryManagerDependencyInjectionTests: XCTestCase {
             profileID: harness.profileID,
             store: harness.store
         )
+        let otherProfileID = UUID()
+        try installTestProfile(
+            Profile(
+                id: otherProfileID,
+                name: "Other",
+                dataStore: .nonPersistent()
+            ),
+            in: harness.container
+        )
         try await recordVisit(
             url: try XCTUnwrap(URL(string: "https://drop.example/other-profile")),
             title: "Other Profile",
             at: referenceDate.addingTimeInterval(2),
-            profileID: UUID(),
+            profileID: otherProfileID,
             store: harness.store
         )
 
@@ -70,7 +79,7 @@ final class HistoryManagerDependencyInjectionTests: XCTestCase {
     }
 
     private struct HistoryDependencyHarness {
-        let container: ModelContainer
+        let container: SumiDatabase
         let store: HistoryStore
         let historyManager: HistoryManager
         let profileID: UUID
@@ -79,16 +88,17 @@ final class HistoryManagerDependencyInjectionTests: XCTestCase {
     }
 
     private func makeHarness() throws -> HistoryDependencyHarness {
-        let container = try ModelContainer(
-            for: Schema([HistoryEntryEntity.self, HistoryVisitEntity.self]),
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
-        let store = HistoryStore(container: container)
+        let container = try SumiDatabase.inMemory()
+        let store = HistoryStore(database: container)
         let profileID = UUID()
+        try container.transaction {
+            try $0.profiles.save(
+                ProfileRecord(id: profileID, name: "History", index: 0)
+            )
+        }
         let faviconCleaner = FakeHistoryFaviconCleaner()
         let visitedLinkStore = FakeHistoryVisitedLinkStore()
-        let historyManager = HistoryManager(
-            context: ModelContext(container),
+        let historyManager = HistoryManager(database: container,
             profileId: profileID,
             faviconCleaner: faviconCleaner,
             visitedLinkStore: visitedLinkStore

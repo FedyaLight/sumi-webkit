@@ -61,7 +61,6 @@ extension ExtensionManagerAssembler {
         finalization: ExtensionContextFinalizationPhaseProduct
     ) -> ExtensionRuntimeLoader {
         ExtensionRuntimeLoader(
-            modelContext: installation.context,
             metadataStore: installation.metadataStore,
             installedRecords: contexts.installedExtensions,
             runtimeAccess: controller.runtimeAccess,

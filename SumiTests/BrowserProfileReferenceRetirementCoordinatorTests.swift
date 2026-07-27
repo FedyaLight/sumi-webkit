@@ -1,7 +1,6 @@
 import Combine
 import Observation
 import SumiDomain
-import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -19,10 +18,9 @@ final class BrowserProfileReferenceRetirementCoordinatorTests: XCTestCase {
         secondWindow.currentProfileId = deleted.id
         unaffectedWindow.currentProfileId = fallback.id
 
-        let primaryDefaults = try makeDefaults(prefix: "primary")
         let primaryStore = WindowSessionSnapshotStore(
-            key: "window",
-            userDefaults: primaryDefaults
+            database: try! SumiDatabase.inMemory(),
+            key: "window"
         )
         var primarySnapshot = makeSessionRecoveryWindowSession(
             currentTabId: UUID(),
@@ -31,8 +29,7 @@ final class BrowserProfileReferenceRetirementCoordinatorTests: XCTestCase {
         primarySnapshot.currentProfileId = deleted.id
         XCTAssertTrue(primaryStore.persist(primarySnapshot))
 
-        let archiveDefaults = try makeDefaults(prefix: "archive")
-        let archiveStore = LastSessionWindowsStore(userDefaults: archiveDefaults)
+        let archiveStore = LastSessionWindowsStore(database: try! SumiDatabase.inMemory())
         var archivedSession = makeSessionRecoveryWindowSession(currentTabId: UUID())
         archivedSession.currentProfileId = deleted.id
         let archivedWindow = LastSessionWindowSnapshot(
@@ -147,12 +144,10 @@ final class BrowserProfileReferenceRetirementCoordinatorTests: XCTestCase {
         let deleted = Profile(name: "Deleted")
         let fallback = Profile(name: "Fallback")
         let primaryStore = WindowSessionSnapshotStore(
-            key: "window",
-            userDefaults: try makeDefaults(prefix: "switch-primary")
+            database: try! SumiDatabase.inMemory(),
+            key: "window"
         )
-        let archiveStore = LastSessionWindowsStore(
-            userDefaults: try makeDefaults(prefix: "switch-archive")
-        )
+        let archiveStore = LastSessionWindowsStore(database: try! SumiDatabase.inMemory())
         let startupRestore = BrowserStartupSessionRestoreOwner(
             lastSessionWindowsStore: archiveStore
         )
@@ -192,12 +187,10 @@ final class BrowserProfileReferenceRetirementCoordinatorTests: XCTestCase {
         let deleted = Profile(name: "Deleted")
         let fallback = Profile(name: "Fallback")
         let primaryStore = WindowSessionSnapshotStore(
-            key: "window",
-            userDefaults: try makeDefaults(prefix: "unavailable-primary")
+            database: try! SumiDatabase.inMemory(),
+            key: "window"
         )
-        let archiveStore = LastSessionWindowsStore(
-            userDefaults: try makeDefaults(prefix: "unavailable-archive")
-        )
+        let archiveStore = LastSessionWindowsStore(database: try! SumiDatabase.inMemory())
         let startupRestore = BrowserStartupSessionRestoreOwner(
             lastSessionWindowsStore: archiveStore
         )
@@ -240,7 +233,6 @@ final class BrowserProfileReferenceRetirementCoordinatorTests: XCTestCase {
     func testOverrideSessionIsNeverRewrittenByRetirementMigration() throws {
         let deletedID = UUID()
         let fallbackID = UUID()
-        let defaults = try makeDefaults(prefix: "override-primary")
         var durableSnapshot = makeSessionRecoveryWindowSession()
         durableSnapshot.currentProfileId = deletedID
         let overrideURL = FileManager.default.temporaryDirectory
@@ -255,8 +247,8 @@ final class BrowserProfileReferenceRetirementCoordinatorTests: XCTestCase {
         try overrideData.write(to: overrideURL, options: .atomic)
         addTeardownBlock { try? FileManager.default.removeItem(at: overrideURL) }
         let store = WindowSessionSnapshotStore(
+            database: try! SumiDatabase.inMemory(),
             key: "window",
-            userDefaults: defaults,
             environment: {
                 [WindowSessionSnapshotStore.overridePathEnvironmentKey: overrideURL.path]
             }
@@ -282,12 +274,10 @@ final class BrowserProfileReferenceRetirementCoordinatorTests: XCTestCase {
         let deleted = Profile(name: "Deleted")
         let fallback = Profile(name: "Fallback")
         let primaryStore = WindowSessionSnapshotStore(
-            key: "window",
-            userDefaults: try makeDefaults(prefix: "tab-primary")
+            database: try! SumiDatabase.inMemory(),
+            key: "window"
         )
-        let archiveStore = LastSessionWindowsStore(
-            userDefaults: try makeDefaults(prefix: "tab-archive")
-        )
+        let archiveStore = LastSessionWindowsStore(database: try! SumiDatabase.inMemory())
         let startupRestore = BrowserStartupSessionRestoreOwner(
             lastSessionWindowsStore: archiveStore
         )
@@ -325,12 +315,10 @@ final class BrowserProfileReferenceRetirementCoordinatorTests: XCTestCase {
         let deleted = Profile(name: "Deleted")
         let fallback = Profile(name: "Fallback")
         let primaryStore = WindowSessionSnapshotStore(
-            key: "window",
-            userDefaults: try makeDefaults(prefix: "extension-primary")
+            database: try! SumiDatabase.inMemory(),
+            key: "window"
         )
-        let archiveStore = LastSessionWindowsStore(
-            userDefaults: try makeDefaults(prefix: "extension-archive")
-        )
+        let archiveStore = LastSessionWindowsStore(database: try! SumiDatabase.inMemory())
         let startupRestore = BrowserStartupSessionRestoreOwner(
             lastSessionWindowsStore: archiveStore
         )
@@ -463,12 +451,10 @@ final class BrowserProfileReferenceRetirementCoordinatorTests: XCTestCase {
         XCTAssertEqual(previewTab.profileId, deleted.id)
 
         let primaryStore = WindowSessionSnapshotStore(
-            key: "window",
-            userDefaults: try makeDefaults(prefix: "glance-primary")
+            database: try! SumiDatabase.inMemory(),
+            key: "window"
         )
-        let archiveStore = LastSessionWindowsStore(
-            userDefaults: try makeDefaults(prefix: "glance-archive")
-        )
+        let archiveStore = LastSessionWindowsStore(database: try! SumiDatabase.inMemory())
         let startupRestore = BrowserStartupSessionRestoreOwner(
             lastSessionWindowsStore: archiveStore
         )
@@ -599,14 +585,6 @@ final class BrowserProfileReferenceRetirementCoordinatorTests: XCTestCase {
         )
     }
 
-    private func makeDefaults(prefix: String) throws -> UserDefaults {
-        let suite = "BrowserProfileReferenceRetirementCoordinatorTests-\(prefix)-\(UUID())"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defaults.removePersistentDomain(forName: suite)
-        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
-        return defaults
-    }
-
     private func makeTabSnapshot(
         deletedProfileID: UUID,
         fallbackProfileID: UUID
@@ -671,24 +649,24 @@ final class BrowserProfileReferenceRetirementCoordinatorTests: XCTestCase {
         deleted: Profile,
         fallback: Profile
     ) throws -> ProfileReferenceAdmissionLedger {
-        let container = try makeInMemoryStartupModelContainer()
-        let context = container.mainContext
-        context.insert(
-            ProfileEntity(
+        let database = try makeInMemoryStartupDatabase()
+        try database.transaction {
+            try $0.profiles.save(
+                ProfileRecord(
                 id: deleted.id,
                 name: deleted.name,
                 index: 0
+                )
             )
-        )
-        context.insert(
-            ProfileEntity(
+            try $0.profiles.save(
+                ProfileRecord(
                 id: fallback.id,
                 name: fallback.name,
                 index: 1
+                )
             )
-        )
-        try context.save()
-        let admission = try ProfileReferenceAdmissionLedger(context: context)
+        }
+        let admission = try ProfileReferenceAdmissionLedger(database: database)
         let token = try admission.reserve(
             profile: deleted,
             fallbackID: fallback.id

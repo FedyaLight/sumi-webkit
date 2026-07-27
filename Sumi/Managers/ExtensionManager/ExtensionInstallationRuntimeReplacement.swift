@@ -1,5 +1,4 @@
 import Foundation
-import SwiftData
 
 /// Retires and, when compensation is safe, restores the runtime that existed
 /// before an installation candidate.
@@ -7,7 +6,7 @@ import SwiftData
 @MainActor
 final class ExtensionInstallationRuntimeReplacement {
     struct PreviousRuntime {
-        let entity: ExtensionEntity
+        let entity: InstalledExtensionMetadata
         let profileIDs: Set<UUID>
         let shouldRecover: Bool
     }
@@ -24,7 +23,7 @@ final class ExtensionInstallationRuntimeReplacement {
     }
 
     func retire(
-        _ entity: ExtensionEntity,
+        _ entity: InstalledExtensionMetadata,
         mutationLease: ExtensionRuntimeMutationLease
     ) async throws -> PreviousRuntime {
         let result = retirement.retire(

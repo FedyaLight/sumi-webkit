@@ -15,9 +15,7 @@ extension BrowserManager {
         windowRegistry: WindowRegistry,
         moduleRegistry: SumiModuleRegistry = .unavailable(),
         startupPersistence: BrowserManagerStartupPersistence = .production,
-        windowSessionSnapshotStore: WindowSessionSnapshotStore = WindowSessionSnapshotStore(
-            key: BrowserManager.lastWindowSessionKey
-        ),
+        windowSessionSnapshotStore: WindowSessionSnapshotStore? = nil,
         browserConfiguration: BrowserConfiguration? = nil,
         adBlockingModule: SumiAdBlockingModule? = nil,
         protectionCoordinator: SumiProtectionCoordinator? = nil,
@@ -51,13 +49,18 @@ extension BrowserManager {
             ?? BrowserConfiguration(
                 autoplayPolicyStore: startupPersistence.autoplayPolicyStore
             )
+        let resolvedWindowSessionSnapshotStore =
+            windowSessionSnapshotStore ?? WindowSessionSnapshotStore(
+                database: startupPersistence.database,
+                key: BrowserManager.lastWindowSessionKey
+            )
         self.init(
             kernel: BrowserCompositionRoot.makeKernel(
                 webViewSessions: webViewSessions,
                 windowRegistry: windowRegistry,
                 moduleRegistry: moduleRegistry,
                 startupPersistence: startupPersistence,
-                windowSessionSnapshotStore: windowSessionSnapshotStore,
+                windowSessionSnapshotStore: resolvedWindowSessionSnapshotStore,
                 browserConfiguration: resolvedBrowserConfiguration,
                 adBlockingModule: adBlockingModule,
                 protectionCoordinator: protectionCoordinator,

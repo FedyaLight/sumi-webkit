@@ -1,10 +1,9 @@
 import Foundation
-import SwiftData
 
 @MainActor
 enum BrowserTabStoreRestoreFactory {
     static func make(
-        modelContext: ModelContext,
+        database: SumiDatabase,
         blockedProfileIDs: Set<UUID>,
         runtimeConnection: TabRuntimePortConnection,
         loadLifecycle: TabStartupRestoreLifecycle,
@@ -22,7 +21,7 @@ enum BrowserTabStoreRestoreFactory {
             loadLifecycle: loadLifecycle,
             executor: TabStoreRestoreAttemptExecutor(
                 payloadLoader: TabRestoreLoader(
-                    container: modelContext.container,
+                    database: database,
                     blockedProfileIDs: blockedProfileIDs
                 ),
                 structuralStore: structuralStore,

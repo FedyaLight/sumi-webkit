@@ -1,4 +1,3 @@
-import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -9,6 +8,7 @@ final class SumiAutoplayPermissionStoreTests: XCTestCase {
     func testSetAllowStoresCanonicalAutoplayDecision() async throws {
         let harness = try makeHarness()
         let profile = makeProfile("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+        try installTestProfile(profile, in: harness.container)
         let url = URL(string: "https://example.com/video")!
 
         try await harness.adapter.setPolicy(.allowAll, for: url, profile: profile)
@@ -28,6 +28,7 @@ final class SumiAutoplayPermissionStoreTests: XCTestCase {
     func testSetBlockAudibleStoresCanonicalDenyWithMetadata() async throws {
         let harness = try makeHarness()
         let profile = makeProfile("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+        try installTestProfile(profile, in: harness.container)
         let url = URL(string: "https://media.example/path")!
 
         try await harness.adapter.setPolicy(.blockAudible, for: url, profile: profile)
@@ -43,6 +44,7 @@ final class SumiAutoplayPermissionStoreTests: XCTestCase {
     func testSetBlockAllStoresCanonicalDenyWithMetadata() async throws {
         let harness = try makeHarness()
         let profile = makeProfile("cccccccc-cccc-cccc-cccc-cccccccccccc")
+        try installTestProfile(profile, in: harness.container)
         let url = URL(string: "https://media.example/path")!
 
         try await harness.adapter.setPolicy(.blockAll, for: url, profile: profile)
@@ -58,6 +60,7 @@ final class SumiAutoplayPermissionStoreTests: XCTestCase {
     func testResetRemovesCanonicalDecision() async throws {
         let harness = try makeHarness()
         let profile = makeProfile("dddddddd-dddd-dddd-dddd-dddddddddddd")
+        try installTestProfile(profile, in: harness.container)
         let url = URL(string: "https://example.com/video")!
 
         try await harness.adapter.setPolicy(.blockAll, for: url, profile: profile)
@@ -75,7 +78,9 @@ final class SumiAutoplayPermissionStoreTests: XCTestCase {
     func testDecisionsAreProfilePartitioned() async throws {
         let harness = try makeHarness()
         let profileA = makeProfile("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee")
+        try installTestProfile(profileA, in: harness.container)
         let profileB = makeProfile("ffffffff-ffff-ffff-ffff-ffffffffffff")
+        try installTestProfile(profileB, in: harness.container)
         let url = URL(string: "https://example.com/video")!
 
         try await harness.adapter.setPolicy(.blockAll, for: url, profile: profileA)
@@ -88,6 +93,7 @@ final class SumiAutoplayPermissionStoreTests: XCTestCase {
         let firstHarness = try makeHarness()
         let secondHarness = try makeHarness()
         let profile = makeProfile("99999999-9999-9999-9999-999999999999")
+        try installTestProfile(profile, in: firstHarness.container)
         let url = URL(string: "https://example.com/video")!
 
         try await firstHarness.adapter.setPolicy(.blockAll, for: url, profile: profile)
@@ -96,18 +102,19 @@ final class SumiAutoplayPermissionStoreTests: XCTestCase {
         XCTAssertEqual(secondHarness.adapter.effectivePolicy(for: url, profile: profile), .default)
     }
 
-    func testAdapterDoesNotOpenModelContextForSyncReads() async throws {
+    func testAdapterDoesNotOpenDatabaseForSyncReads() async throws {
         let harness = try makeHarness()
         let profile = makeProfile("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+        try installTestProfile(profile, in: harness.container)
         let url = URL(string: "https://example.com/video")!
 
         try await harness.adapter.setPolicy(.blockAudible, for: url, profile: profile)
 
-        // Sync path must hit the in-memory cache seeded by setPolicy, not a ModelContext fetch.
+        // Sync path must hit the in-memory cache seeded by setPolicy, not a SumiDatabase fetch.
         XCTAssertEqual(harness.adapter.effectivePolicy(for: url, profile: profile), .blockAudible)
         XCTAssertTrue(
             String(describing: type(of: harness.adapter.permissionStore))
-                .contains("SwiftDataPermissionStore")
+                .contains("DatabasePermissionStore")
         )
     }
 
@@ -152,6 +159,7 @@ final class SumiAutoplayPermissionStoreTests: XCTestCase {
     func testOldUserDefaultsAutoplayValueIsIgnored() async throws {
         let harness = try makeHarness()
         let profile = makeProfile("11111111-2222-3333-4444-555555555555")
+        try installTestProfile(profile, in: harness.container)
         let url = URL(string: "https://legacy.example/video")!
         UserDefaults.standard.set(
             Data(#"{"11111111-2222-3333-4444-555555555555":{"legacy.example":"block"}}"#.utf8),
@@ -223,15 +231,12 @@ final class SumiAutoplayPermissionStoreTests: XCTestCase {
     }
 
     private func makeHarness() throws -> (
-        container: ModelContainer,
-        store: SwiftDataPermissionStore,
+        container: SumiDatabase,
+        store: DatabasePermissionStore,
         adapter: SumiAutoplayPolicyStoreAdapter
     ) {
-        let container = try ModelContainer(
-            for: Schema([PermissionDecisionEntity.self]),
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
-        let store = SwiftDataPermissionStore(container: container)
+        let container = try SumiDatabase.inMemory()
+        let store = DatabasePermissionStore(database: container)
         let adapter = SumiAutoplayPolicyStoreAdapter(persistentStore: store)
         return (container, store, adapter)
     }

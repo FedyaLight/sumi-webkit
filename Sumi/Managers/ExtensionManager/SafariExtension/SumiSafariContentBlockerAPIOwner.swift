@@ -1,5 +1,4 @@
 import Foundation
-import SwiftData
 import WebKit
 
 /// Thin façade over `SafariContentBlockerRuntimeOwner` that also marks live tabs
@@ -20,15 +19,15 @@ final class SumiSafariContentBlockerAPIOwner {
     }
 
     convenience init(
-        context: ModelContext?,
-        defaults: UserDefaults,
+        database: SumiDatabase?,
+        compiledRuleListCatalog: SumiCompiledContentRuleListCataloging,
         isModuleEnabled: @escaping @MainActor () -> Bool,
         liveTabs: @escaping LiveTabsProvider
     ) {
         self.init(
             runtimeOwner: SafariContentBlockerRuntimeOwner(
-                context: context,
-                defaults: defaults,
+                database: database,
+                compiledRuleListCatalog: compiledRuleListCatalog,
                 isModuleEnabled: isModuleEnabled
             ),
             liveTabs: liveTabs

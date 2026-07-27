@@ -27,6 +27,7 @@ final class SumiProtectionCoordinator {
         siteNormalizer: SumiProtectionSiteNormalizer = SumiProtectionSiteNormalizer(),
         bundleRemoteUpdater: any SumiProtectionBundleRemoteUpdating = SumiProtectionBundleRemoteUpdater(),
         bundleUpdateStatusStore: SumiProtectionBundleUpdateStatusStore,
+        compiledRuleListCatalog: SumiCompiledContentRuleListCataloging,
         startupDiagnostics: (any SumiProtectionStartupRestoreDiagnosticsRecording)? = nil
     ) {
         self.settings = settings
@@ -41,12 +42,14 @@ final class SumiProtectionCoordinator {
         self.attachmentService = ProtectionAttachmentService(
             ruleProvider: adBlockingModule,
             siteNormalizer: siteNormalizer,
-            startupDiagnostics: startupDiagnostics
+            startupDiagnostics: startupDiagnostics,
+            compiledRuleListCatalog: compiledRuleListCatalog
         )
         #else
         self.attachmentService = ProtectionAttachmentService(
             ruleProvider: adBlockingModule,
-            siteNormalizer: siteNormalizer
+            siteNormalizer: siteNormalizer,
+            compiledRuleListCatalog: compiledRuleListCatalog
         )
         #endif
         self.bundleLifecycle = SumiProtectionBundleLifecycle(

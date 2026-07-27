@@ -1,6 +1,5 @@
 import SumiDomain
 import SumiWebRuntime
-import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -24,7 +23,7 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
         let tabManager = fixture.browser
         try persistProfiles(
             [deletedProfile, fallbackProfile],
-            in: tabManager.modelContext
+            in: tabManager.database
         )
 
         let deletedPin = makeEssentialPin(
@@ -142,7 +141,7 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
         let tabManager = fixture.browser
         try persistProfiles(
             [deletedProfile, fallbackProfile],
-            in: tabManager.modelContext
+            in: tabManager.database
         )
         let pins = [
             makeEssentialPin(
@@ -530,7 +529,7 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
         profile: @escaping (UUID) -> Profile?,
         webViewLifecycle: TabManagerWebViewLifecycleService? = nil
     ) throws -> ProfileDeletionFixture {
-        let container = try makeInMemoryStartupModelContainer()
+        let container = try makeInMemoryStartupDatabase()
         let runtime = TestRuntimePorts.make(
             currentProfileId: currentProfileId,
             defaultProfileId: defaultProfileId,
@@ -542,8 +541,7 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
                 )
         )
         let browser = BrowserManager(
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: container
+            startupPersistence: BrowserManagerStartupPersistence(database: container
             ),
             runtimePorts: runtime
         )
@@ -569,18 +567,19 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
 
     private func persistProfiles(
         _ profiles: [Profile],
-        in context: ModelContext
+        in database: SumiDatabase
     ) throws {
-        for (index, profile) in profiles.enumerated() {
-            context.insert(
-                ProfileEntity(
+        try database.transaction {
+            for (index, profile) in profiles.enumerated() {
+                try $0.profiles.save(
+                    ProfileRecord(
                     id: profile.id,
                     name: profile.name,
                     index: index
+                    )
                 )
-            )
+            }
         }
-        try context.save()
     }
 
     private func makeEssentialPin(

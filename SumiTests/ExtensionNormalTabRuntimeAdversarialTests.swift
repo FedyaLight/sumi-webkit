@@ -375,7 +375,7 @@ extension ExtensionRequestedTabServicesTests {
         let attachedRuntime = ExtensionAttachedRuntimeCapture()
         let inspection = ExtensionManagerInspectionCapture()
         _ = makeSafariExtensionTestExtensionManager(
-            context: container.mainContext,
+            database: container,
             initialProfile: Profile(name: "Cold normal Tab runtime"),
             attachedRuntimeCapture: attachedRuntime,
             inspectionCapture: inspection
@@ -394,7 +394,7 @@ extension ExtensionRequestedTabServicesTests {
         let attachedRuntime = ExtensionAttachedRuntimeCapture()
         let inspection = ExtensionManagerInspectionCapture()
         var manager: ExtensionManager? = ExtensionManager(
-            context: container.mainContext,
+            database: container,
             initialProfile: profile,
             browserConfiguration: BrowserConfiguration(),
             extensionPreferences: UserDefaults(

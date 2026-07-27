@@ -1,4 +1,3 @@
-import SwiftData
 import WebKit
 import XCTest
 
@@ -171,53 +170,6 @@ final class HistoryBoundedQueryTests: XCTestCase {
         XCTAssertEqual(secondPage.sites.map(\.domain), ["example.org"])
     }
 
-    func testSitePagePaginationMergesLegacySiteDomainFallbacks() async throws {
-        let harness = try makeHarness()
-        let ctx = ModelContext(harness.container)
-        ctx.autosaveEnabled = false
-        insertEntry(
-            urlString: "https://legacy.example/one",
-            title: "Legacy One",
-            domain: "legacy.example",
-            siteDomain: nil,
-            visitCount: 1,
-            lastVisit: date("2026-04-23T09:00:00Z"),
-            profileID: harness.profileID,
-            in: ctx
-        )
-        insertEntry(
-            urlString: "https://www.legacy.example/two",
-            title: "Legacy Two",
-            domain: "www.legacy.example",
-            siteDomain: "legacy.example",
-            visitCount: 2,
-            lastVisit: date("2026-04-23T10:00:00Z"),
-            profileID: harness.profileID,
-            in: ctx
-        )
-        insertEntry(
-            urlString: "https://aaa.example/other",
-            title: "Other Profile",
-            domain: "aaa.example",
-            siteDomain: "aaa.example",
-            visitCount: 5,
-            lastVisit: date("2026-04-23T11:00:00Z"),
-            profileID: UUID(),
-            in: ctx
-        )
-        try ctx.save()
-
-        let page = try await harness.store.fetchSitePage(
-            profileId: harness.profileID,
-            searchTerm: nil,
-            limit: 10,
-            offset: 0
-        )
-
-        XCTAssertEqual(page.sites.map(\.domain), ["legacy.example"])
-        XCTAssertEqual(page.sites.first?.visitCount, 3)
-    }
-
     func testClearAllRemainsExplicitAndSeparateFromBoundedPages() async throws {
         let harness = try makeHarness()
         for index in 0..<3 {
@@ -269,7 +221,7 @@ final class HistoryBoundedQueryTests: XCTestCase {
         let harness = try makeHarness()
         let provider = SharedVisitedLinkStoreComposition.provider
         let historyManager = HistoryManager(
-            context: ModelContext(harness.container),
+            database: harness.container,
             profileId: harness.profileID,
             faviconCleaner: TabDependencyIsolationDefaults.historyFaviconCleaner,
             visitedLinkStore: provider
@@ -277,6 +229,10 @@ final class HistoryBoundedQueryTests: XCTestCase {
         let currentStore = FakeVisitedLinkStore()
         let otherStore = FakeVisitedLinkStore()
         let otherProfileID = UUID()
+        try installTestProfile(
+            Profile(id: otherProfileID, name: "Other", dataStore: .nonPersistent()),
+            in: harness.container
+        )
 
         provider.seedStoreForTesting(currentStore, profileId: harness.profileID)
         provider.seedStoreForTesting(otherStore, profileId: otherProfileID)
@@ -375,17 +331,19 @@ final class HistoryBoundedQueryTests: XCTestCase {
     }
 
     private func makeHarness() throws -> (
-        container: ModelContainer,
+        container: SumiDatabase,
         store: HistoryStore,
         profileID: UUID,
         calendar: Calendar
     ) {
-        let container = try ModelContainer(
-            for: Schema([HistoryEntryEntity.self, HistoryVisitEntity.self]),
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
-        let store = HistoryStore(container: container)
+        let container = try SumiDatabase.inMemory()
+        let store = HistoryStore(database: container)
         let profileID = UUID()
+        try container.transaction {
+            try $0.profiles.save(
+                ProfileRecord(id: profileID, name: "History", index: 0)
+            )
+        }
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
         return (container, store, profileID, calendar)
@@ -396,7 +354,7 @@ final class HistoryBoundedQueryTests: XCTestCase {
         title: String,
         at timestamp: Date,
         harness: (
-            container: ModelContainer,
+            container: SumiDatabase,
             store: HistoryStore,
             profileID: UUID,
             calendar: Calendar
@@ -407,30 +365,6 @@ final class HistoryBoundedQueryTests: XCTestCase {
             title: title,
             visitedAt: timestamp,
             profileId: harness.profileID
-        )
-    }
-
-    private func insertEntry(
-        urlString: String,
-        title: String,
-        domain: String,
-        siteDomain: String?,
-        visitCount: Int,
-        lastVisit: Date,
-        profileID: UUID,
-        in ctx: ModelContext
-    ) {
-        ctx.insert(
-            HistoryEntryEntity(
-                urlKey: "\(profileID.uuidString.lowercased())|\(urlString)",
-                urlString: urlString,
-                title: title,
-                domain: domain,
-                siteDomain: siteDomain,
-                numberOfTotalVisits: visitCount,
-                lastVisit: lastVisit,
-                profileId: profileID
-            )
         )
     }
 

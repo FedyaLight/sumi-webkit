@@ -30,7 +30,6 @@ protocol SumiBookmarkRepository: AnyObject, Sendable {
     ) throws -> SumiBookmarksImportSummary
     func restoreSnapshot(_ snapshot: SumiBookmarksSnapshot) throws
     func exportBookmarksHTML(to destination: URL) throws
-    nonisolated func mergeChanges(fromContextDidSave notification: Notification) -> Bool
 }
 
 final class SumiUnavailableBookmarkRepository: SumiBookmarkRepository {
@@ -125,10 +124,6 @@ final class SumiUnavailableBookmarkRepository: SumiBookmarkRepository {
 
     func exportBookmarksHTML(to destination: URL) throws {
         throw unavailableError
-    }
-
-    nonisolated func mergeChanges(fromContextDidSave notification: Notification) -> Bool {
-        false
     }
 
     private var unavailableError: SumiBookmarkError {

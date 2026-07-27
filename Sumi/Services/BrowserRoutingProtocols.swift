@@ -1,5 +1,4 @@
 import AppKit
-import SwiftData
 
 @MainActor
 protocol BrowserMouseButtonCommandRouting: AnyObject {

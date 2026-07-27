@@ -309,7 +309,7 @@ class RepositoryContractTests(unittest.TestCase):
         unit = self.inventories["SumiTests"]
         role_suites = {
             "pure-policy": "app-pure-policy",
-            "persistence-migration": "app-persistence-migration",
+            "persistence": "app-persistence",
             "ui-free-app-services": "app-ui-free-services",
             "webkit-heavy-app": "app-webkit-heavy",
         }

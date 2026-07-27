@@ -1,4 +1,3 @@
-import SwiftData
 import WebKit
 import XCTest
 
@@ -148,7 +147,7 @@ final class ExtensionRuntimeTransactionFailureTests:
         let container = try makeTestContainer()
         let profile = Profile(name: "Policy Reentrancy")
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile
         )
         let manager = managerFixture.manager
@@ -376,7 +375,7 @@ final class ExtensionRuntimeTransactionFailureTests:
         let container = try makeTestContainer()
         let profile = Profile(name: name)
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile
         )
         let manager = managerFixture.manager
@@ -387,7 +386,7 @@ final class ExtensionRuntimeTransactionFailureTests:
             name: name
         )
         let entity = try XCTUnwrap(
-            try inspection.installation.metadata.extensionEntity(
+            try inspection.installation.metadata.extensionMetadata(
                 for: installed.id
             )
         )
@@ -430,12 +429,12 @@ final class ExtensionRuntimeTransactionFailureTests:
 @available(macOS 15.5, *)
 @MainActor
 private struct LoadFixture {
-    let container: ModelContainer
+    let container: SumiDatabase
     let manager: ExtensionManager
     let inspection: ExtensionManagerTestInspection
     let profile: Profile
     let installed: InstalledExtension
-    let entity: ExtensionEntity
+    let entity: InstalledExtensionMetadata
 
     func cleanUp() {
         manager.testHooks.beforeControllerLoad = nil

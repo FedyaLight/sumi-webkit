@@ -43,8 +43,7 @@ final class DetachedTabRuntimeRetirementRecoveryTests: XCTestCase {
         let tabManager = BrowserManager(
             webViewSessions: repository,
             windowRegistry: WindowRegistry(),
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupModelContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupDatabase()
             ),
             dataServices: .unavailable(),
             initialTabRuntimePorts: runtime
@@ -209,8 +208,7 @@ final class DetachedTabRuntimeRetirementRecoveryTests: XCTestCase {
         let tabManager = BrowserManager(
             webViewSessions: repository,
             windowRegistry: WindowRegistry(),
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupModelContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupDatabase()
             ),
             dataServices: .unavailable(),
             initialTabRuntimePorts: runtime

@@ -147,7 +147,7 @@ extension BrowserManager {
             zoomManager: zoomManager,
             boostsModule: optionalModules.boosts,
             adblockZapperStore: adblockZapperStore,
-            extensionPreferences: moduleRegistry.userDefaults
+            database: database
         )
         let cleanupDependencies = ProfileRetirementCleanupDependencies(
             browsingDataCleanupService: browsingDataCleanupService,

@@ -2,13 +2,13 @@ import Foundation
 import OSLog
 
 enum WindowSessionSnapshotSource: Equatable, Sendable {
-    case userDefaultsKey(String)
+    case databaseKey(String)
     case overrideFile(URL)
 
     var description: String {
         switch self {
-        case .userDefaultsKey(let key):
-            return "UserDefaults(\(key))"
+        case .databaseKey(let key):
+            return "Sumi.sqlite(\(key))"
         case .overrideFile(let url):
             return url.path
         }
@@ -72,7 +72,7 @@ final class WindowSessionSnapshotStore {
     private static let log = Logger.sumi(category: "WindowSessionSnapshotStore")
 
     private let key: String
-    private let userDefaults: UserDefaults
+    private let database: SumiDatabase
     private let environment: () -> [String: String]
     private let codec: WindowSessionSnapshotCodec
     private var cachedPersistedData: Data?
@@ -81,15 +81,15 @@ final class WindowSessionSnapshotStore {
     private(set) var lastPersistFailure: String?
 
     init(
+        database: SumiDatabase,
         key: String,
-        userDefaults: UserDefaults = .standard,
         environment: @escaping () -> [String: String] = {
             ProcessInfo.processInfo.environment
         },
         codec: WindowSessionSnapshotCodec = WindowSessionSnapshotCodec()
     ) {
         self.key = key
-        self.userDefaults = userDefaults
+        self.database = database
         self.environment = environment
         self.codec = codec
     }
@@ -105,10 +105,8 @@ final class WindowSessionSnapshotStore {
         let result: WindowSessionSnapshotLoadResult
         if let overrideResult = loadOverrideResult() {
             result = overrideResult
-        } else if let data = userDefaults.data(forKey: key) {
-            result = codec.decode(data, source: .userDefaultsKey(key))
         } else {
-            result = .missing
+            result = loadDatabaseResult()
         }
 
         switch result {
@@ -140,20 +138,32 @@ final class WindowSessionSnapshotStore {
             return false
         }
 
-        let previous = cachedPersistedData ?? userDefaults.data(forKey: key)
+        let previous = cachedPersistedData ?? (try? database.read {
+            try $0.documents.data(forKey: key)
+        })
         guard previous != data else { return false }
-        userDefaults.set(data, forKey: key)
+        do {
+            try database.transaction {
+                try $0.documents.save(data, forKey: key)
+            }
+        } catch {
+            lastPersistFailure = error.localizedDescription
+            Self.log.error(
+                "Failed to persist window session snapshot: \(error.localizedDescription, privacy: .public)"
+            )
+            return false
+        }
         cachedPersistedData = data
         return true
     }
 
-    /// Migrates the browser-owned UserDefaults snapshot. An override file is
+    /// Migrates the browser-owned database snapshot. An override file is
     /// external test input and remains immutable; restore admission validates it.
     func migrateDurableWindowProfileReference(
         from deletedProfileID: UUID,
         to fallbackProfileID: UUID
     ) -> Bool {
-        switch loadUserDefaultsResult() {
+        switch loadDatabaseResult() {
         case .missing:
             return true
         case .failed:
@@ -168,7 +178,7 @@ final class WindowSessionSnapshotStore {
     }
 
     func containsDurableWindowProfileReference(to profileID: UUID) -> Bool {
-        switch loadUserDefaultsResult() {
+        switch loadDatabaseResult() {
         case .missing:
             return false
         case .failed:
@@ -183,11 +193,25 @@ final class WindowSessionSnapshotStore {
         cachedPersistedData = nil
     }
 
-    private func loadUserDefaultsResult() -> WindowSessionSnapshotLoadResult {
-        guard let data = userDefaults.data(forKey: key) else {
+    private func loadDatabaseResult() -> WindowSessionSnapshotLoadResult {
+        let data: Data?
+        do {
+            data = try database.read {
+                try $0.documents.data(forKey: key)
+            }
+        } catch {
+            return .failed(
+                WindowSessionSnapshotLoadFailure(
+                    source: .databaseKey(key),
+                    reason: .readFailed,
+                    message: error.localizedDescription
+                )
+            )
+        }
+        guard let data else {
             return .missing
         }
-        return codec.decode(data, source: .userDefaultsKey(key))
+        return codec.decode(data, source: .databaseKey(key))
     }
 
     private func persistAndVerify(_ snapshot: WindowSessionSnapshot) -> Bool {
@@ -198,9 +222,12 @@ final class WindowSessionSnapshotStore {
             lastPersistFailure = error.localizedDescription
             return false
         }
-        userDefaults.set(data, forKey: key)
-        guard userDefaults.data(forKey: key) == data else {
-            lastPersistFailure = "UserDefaults rejected the window session write"
+        do {
+            try database.transaction {
+                try $0.documents.save(data, forKey: key)
+            }
+        } catch {
+            lastPersistFailure = error.localizedDescription
             return false
         }
         cachedPersistedData = data

@@ -1,4 +1,3 @@
-import SwiftData
 import WebKit
 import XCTest
 
@@ -26,7 +25,7 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let manager = fixture.manager
@@ -57,7 +56,7 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let manager = fixture.manager
@@ -95,7 +94,7 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile.createEphemeral()
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let manager = fixture.manager
@@ -126,7 +125,7 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
         let profile = Profile(name: "Profile A")
         let browserConfiguration = BrowserConfiguration()
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile,
             browserConfiguration: browserConfiguration
         )
@@ -226,7 +225,7 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
         let profile = Profile(name: "Profile A")
         let browserConfiguration = BrowserConfiguration()
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile,
             browserConfiguration: browserConfiguration
         )
@@ -379,11 +378,8 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
         return directory
     }
 
-    private func makeTestContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+    private func makeTestContainer() throws -> SumiDatabase {
+        try SumiDatabase.inMemory()
     }
 }
 

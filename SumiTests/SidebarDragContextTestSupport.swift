@@ -1,11 +1,9 @@
 import AppKit
 import Combine
 import SumiDomain
-import SwiftData
 import XCTest
 
 @testable import Sumi
-
 
 /// Shared fixtures and assertions for the sidebar drag/drop context tests.
 /// The suites are split by concern but exercise one drag pipeline, so their
@@ -17,14 +15,12 @@ struct LiveWindowHarness {
     let windowState: BrowserWindowState
 }
 
-
 @MainActor
 class SidebarDragContextTestCase: XCTestCase {
     func makeLiveWindowHarness() throws -> LiveWindowHarness {
-        let container = try makeInMemoryStartupModelContainer()
+        let container = try makeInMemoryStartupDatabase()
         let browserManager = BrowserManager(
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: container
+            startupPersistence: BrowserManagerStartupPersistence(database: container
             )
         )
         let windowRegistry = browserManager.windowRegistry

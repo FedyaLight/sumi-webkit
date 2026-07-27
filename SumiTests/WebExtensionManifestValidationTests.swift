@@ -1,4 +1,3 @@
-import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -330,15 +329,13 @@ final class WebExtensionManifestValidationTests: XCTestCase {
             manifest: manifest
         )
 
-        let container = try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+        let container = try SumiDatabase.inMemory()
+        try ExtensionInstallationMetadataStore(database: container).save(
+            InstalledExtensionMetadata(record: staleRecord)
         )
-        container.mainContext.insert(ExtensionEntity(record: staleRecord))
-        try container.mainContext.save()
 
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: Profile(name: "Metadata Refresh Profile"),
             browserConfiguration: BrowserConfiguration()
         )
@@ -354,7 +351,7 @@ final class WebExtensionManifestValidationTests: XCTestCase {
         XCTAssertTrue(refreshed.hasBackground)
 
         let entity = try XCTUnwrap(
-            try fixture.inspection.installation.metadata.extensionEntity(
+            try fixture.inspection.installation.metadata.extensionMetadata(
                 for: staleRecord.id
             )
         )
@@ -385,14 +382,9 @@ final class WebExtensionManifestValidationTests: XCTestCase {
             packagePath: directory.path,
             manifest: manifest
         )
-        let container = try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
-        container.mainContext.insert(ExtensionEntity(record: staleRecord))
-        try container.mainContext.save()
-
-        let store = ExtensionInstallationMetadataStore(context: container.mainContext)
+        let container = try SumiDatabase.inMemory()
+        let store = ExtensionInstallationMetadataStore(database: container)
+        try store.save(InstalledExtensionMetadata(record: staleRecord))
         var traces: [String] = []
         let result = store.loadInstalledExtensionMetadata { traces.append($0) }
 
@@ -405,7 +397,7 @@ final class WebExtensionManifestValidationTests: XCTestCase {
             traces.contains { $0.contains("Refreshed extension metadata") }
         )
 
-        let entity = try XCTUnwrap(try store.extensionEntity(for: staleRecord.id))
+        let entity = try XCTUnwrap(try store.extensionMetadata(for: staleRecord.id))
         XCTAssertEqual(entity.backgroundModelRawValue, "persistent_page")
         XCTAssertTrue(entity.hasBackground)
     }

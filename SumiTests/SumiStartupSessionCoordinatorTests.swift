@@ -1,6 +1,5 @@
 import SumiDomain
 import SumiWebRuntime
-import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -412,14 +411,13 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         let browserManager = BrowserManager(
             webViewSessions: webViewSessions,
             windowRegistry: windowRegistry,
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupModelContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupDatabase()
             ),
             dataServices: .unavailable()
         )
         let tabManager = browserManager
         browserManager.sumiSettings = settings
-        browserManager.lastSessionWindowsStore = LastSessionWindowsStore(userDefaults: defaults.defaults)
+        browserManager.lastSessionWindowsStore = LastSessionWindowsStore()
 
         let space = Space(name: "Primary")
         tabManager.spaceStateOwner.replaceSpaces([space])

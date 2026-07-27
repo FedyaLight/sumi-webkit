@@ -77,13 +77,10 @@ struct SumiAdblockSurfaceEligibility: Equatable, Sendable {
 @MainActor
 final class AdblockSitePolicyStore: ObservableObject {
     private static let log = Logger.sumi(category: "ContentBlocking")
-
-    private enum DefaultsKey {
-        static let siteOverrides = "settings.adblock.siteOverrides"
-    }
+    private static let documentKey = "adblock.site-overrides"
 
     @Published private(set) var siteOverrides: [String: SumiAdblockSiteOverride]
-    private let userDefaults: UserDefaults
+    private let database: SumiDatabase?
     private let siteNormalizer: SumiProtectionSiteNormalizer
     private let changesSubject = PassthroughSubject<Void, Never>()
 
@@ -92,15 +89,15 @@ final class AdblockSitePolicyStore: ObservableObject {
     }
 
     init(
-        userDefaults: UserDefaults = .standard,
+        database: SumiDatabase? = nil,
         registrableDomainResolver: any SumiRegistrableDomainResolving =
             SumiRegistrableDomainResolver()
     ) {
-        self.userDefaults = userDefaults
+        self.database = database
         siteNormalizer = SumiProtectionSiteNormalizer(
             registrableDomainResolver: registrableDomainResolver
         )
-        siteOverrides = Self.loadSiteOverrides(from: userDefaults)
+        siteOverrides = Self.loadSiteOverrides(from: database)
     }
 
     func effectivePolicy(
@@ -149,27 +146,41 @@ final class AdblockSitePolicyStore: ObservableObject {
             updated[host] = override
         }
         guard updated != siteOverrides else { return }
-        siteOverrides = updated
         do {
-            let data = try JSONEncoder().encode(updated.mapValues(\.rawValue))
-            userDefaults.set(data, forKey: DefaultsKey.siteOverrides)
+            try database?.transaction {
+                if updated.isEmpty {
+                    try $0.documents.delete(key: Self.documentKey)
+                } else {
+                    try $0.documents.save(
+                        updated.mapValues(\.rawValue),
+                        forKey: Self.documentKey
+                    )
+                }
+            }
         } catch {
             Self.log.error(
                 "Failed to persist adblock site overrides: \(error.localizedDescription, privacy: .public)"
             )
+            return
         }
+        siteOverrides = updated
         changesSubject.send(())
     }
 
     private static func loadSiteOverrides(
-        from userDefaults: UserDefaults
+        from database: SumiDatabase?
     ) -> [String: SumiAdblockSiteOverride] {
-        guard let data = userDefaults.data(forKey: DefaultsKey.siteOverrides) else {
+        guard let database else {
             return [:]
         }
         let decoded: [String: String]
         do {
-            decoded = try JSONDecoder().decode([String: String].self, from: data)
+            decoded = try database.read {
+                try $0.documents.value(
+                    [String: String].self,
+                    forKey: documentKey
+                )
+            } ?? [:]
         } catch {
             log.error(
                 "Failed to load adblock site overrides: \(error.localizedDescription, privacy: .public)"

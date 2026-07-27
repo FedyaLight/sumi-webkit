@@ -1,6 +1,5 @@
 import Foundation
 import SumiDomain
-import SwiftData
 import WebKit
 import XCTest
 
@@ -354,14 +353,6 @@ final class SumiPermissionIntegrationAutoplayStore: SumiCurrentSiteAutoplayPolic
             isEphemeralProfile: profile.isEphemeral
         )
     }
-}
-
-@MainActor
-func sumiPermissionIntegrationModelContainer() throws -> ModelContainer {
-    try ModelContainer(
-        for: Schema([PermissionDecisionEntity.self]),
-        configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-    )
 }
 
 @MainActor

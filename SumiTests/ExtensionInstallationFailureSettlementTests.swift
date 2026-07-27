@@ -8,7 +8,7 @@ final class ExtensionInstallationFailureSettlementTests: XCTestCase {
     func testCopiedRollbackRestoresPackageBeforePreviousRuntime() async throws {
         let harness = makeHarness(packageOwnership: .copiedDirectory)
         let previous = ExtensionInstallationRuntimeReplacement.PreviousRuntime(
-            entity: ExtensionEntity(record: harness.original),
+            entity: InstalledExtensionMetadata(record: harness.original),
             profileIDs: [UUID()],
             shouldRecover: true
         )
@@ -34,7 +34,7 @@ final class ExtensionInstallationFailureSettlementTests: XCTestCase {
         let harness = makeHarness(packageOwnership: .copiedDirectory)
         harness.package.rollbackError = SettlementError.packageRollback
         let previous = ExtensionInstallationRuntimeReplacement.PreviousRuntime(
-            entity: ExtensionEntity(record: harness.original),
+            entity: InstalledExtensionMetadata(record: harness.original),
             profileIDs: [UUID()],
             shouldRecover: true
         )
@@ -58,7 +58,7 @@ final class ExtensionInstallationFailureSettlementTests: XCTestCase {
         async throws {
         let harness = makeHarness(packageOwnership: .externalSafariBundle)
         let previous = ExtensionInstallationRuntimeReplacement.PreviousRuntime(
-            entity: ExtensionEntity(record: harness.original),
+            entity: InstalledExtensionMetadata(record: harness.original),
             profileIDs: [UUID()],
             shouldRecover: true
         )

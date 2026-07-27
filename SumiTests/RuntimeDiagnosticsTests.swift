@@ -1,4 +1,3 @@
-import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -60,13 +59,10 @@ final class RuntimeDiagnosticsTests: XCTestCase {
             "This assertion only holds when verbose runtime logging is disabled."
         )
 
-        let container = try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+        let container = try SumiDatabase.inMemory()
         let inspection = ExtensionManagerInspectionCapture()
         _ = ExtensionManager(
-            context: container.mainContext,
+            database: container,
             initialProfile: Profile(name: "Tests"),
             testInspectionDidAssemble: inspection.install
         )

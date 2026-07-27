@@ -86,22 +86,23 @@ final class RecentlyClosedManagerTests: XCTestCase {
 
     func testRetirementPurgesEveryProfileBackedItemAndRejectsLateCapture()
         throws {
-        let container = try makeInMemoryStartupModelContainer()
+        let container = try makeInMemoryStartupDatabase()
+        let deleted = Profile(name: "Deleted")
+        let fallback = Profile(name: "Fallback")
+        try container.transaction {
+            try $0.profiles.save(
+                ProfileRecord(id: deleted.id, name: deleted.name, index: 0)
+            )
+            try $0.profiles.save(
+                ProfileRecord(id: fallback.id, name: fallback.name, index: 1)
+            )
+        }
         let admission = try ProfileReferenceAdmissionLedger(
-            context: container.mainContext
+            database: container
         )
         let manager = RecentlyClosedManager(
             profileReferenceAdmission: admission
         )
-        let deleted = Profile(name: "Deleted")
-        let fallback = Profile(name: "Fallback")
-        container.mainContext.insert(
-            ProfileEntity(id: deleted.id, name: deleted.name, index: 0)
-        )
-        container.mainContext.insert(
-            ProfileEntity(id: fallback.id, name: fallback.name, index: 1)
-        )
-        try container.mainContext.save()
         let tab = Tab(
             url: URL(string: "https://private-tab.example")!,
             name: "Private Tab",

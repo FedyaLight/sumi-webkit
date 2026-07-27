@@ -1,5 +1,4 @@
 @testable import Sumi
-import SwiftData
 import XCTest
 
 @available(macOS 15.5, *)
@@ -97,7 +96,7 @@ final class InstalledExtensionCatalogTests: XCTestCase {
         let enabled = makeRecord(id: "enabled-extension")
         let disabled = makeRecord(id: "disabled-extension", isEnabled: false)
         harness.setPinnedToolbarExtensionIDs([disabled.id])
-        let enabledEntity = ExtensionEntity(record: enabled)
+        let enabledEntity = InstalledExtensionMetadata(record: enabled)
 
         let entitiesToLoad = harness.inspection.installation.catalog.publish(
             .init(
@@ -228,13 +227,10 @@ final class InstalledExtensionCatalogTests: XCTestCase {
         addTeardownBlock {
             preferences.removePersistentDomain(forName: suiteName)
         }
-        let container = try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+        let container = try SumiDatabase.inMemory()
         let inspection = ExtensionManagerInspectionCapture()
         let manager = ExtensionManager(
-            context: container.mainContext,
+            database: container,
             initialProfile: profile,
             browserConfiguration: BrowserConfiguration(),
             extensionPreferences: preferences,

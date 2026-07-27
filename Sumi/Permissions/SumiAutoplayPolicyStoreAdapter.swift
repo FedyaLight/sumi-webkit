@@ -1,12 +1,11 @@
 import Foundation
 import SumiDomain
-import SwiftData
 
 /// Sync-readable autoplay policy façade over the canonical `SumiPermissionStore`.
 ///
 /// Persistent reads use an in-memory cache seeded at composition / after writes.
-/// The adapter never opens its own `ModelContext` — that would bypass the store actor
-/// and duplicate the SwiftData predicate.
+/// The adapter never opens its own database transaction — that would bypass
+/// the store actor and duplicate its query.
 @MainActor
 final class SumiAutoplayPolicyStoreAdapter {
     private let persistentStore: any SumiPermissionStore
@@ -228,22 +227,18 @@ final class SumiAutoplayPolicyStoreAdapter {
     }
 }
 
-/// Composition-root helper: one-shot ModelContext read to seed the autoplay sync cache.
-/// Lives outside the adapter so the adapter never opens SwiftData directly.
+/// Composition-root helper: one-shot database read to seed the autoplay cache.
 @MainActor
 enum SumiAutoplayPolicyCacheBootstrap {
-    static func loadAutoplayRecords(from container: ModelContainer) -> [SumiPermissionStoreRecord] {
-        let context = ModelContext(container)
-        context.autosaveEnabled = false
-        let autoplayIdentity = SumiPermissionType.autoplay.identity
-        let predicate = #Predicate<PermissionDecisionEntity> { entity in
-            entity.permissionTypeIdentity == autoplayIdentity
-        }
-        let descriptor = FetchDescriptor<PermissionDecisionEntity>(predicate: predicate)
+    static func loadAutoplayRecords(from database: SumiDatabase) -> [SumiPermissionStoreRecord] {
         do {
-            return try context.fetch(descriptor).compactMap { entity in
+            return try database.read {
+                try $0.permissions.all(
+                    permissionType: SumiPermissionType.autoplay.identity
+                )
+            }.compactMap { row in
                 do {
-                    return try entity.record()
+                    return try row.record()
                 } catch {
                     return nil
                 }

@@ -9,6 +9,7 @@ guard_initialize "$repo_root"
 
 profile_manager="Sumi/Managers/ProfileManager/ProfileManager.swift"
 startup_persistence="Sumi/Services/SumiStartupPersistence.swift"
+database_schema="Sumi/Persistence/SumiDatabase.swift"
 profile_transition="Sumi/Managers/WebViewRuntime/ProfileTransitionService.swift"
 batch_transition="Sumi/Managers/WebViewRuntime/PreparedProfileAssignmentBatchTransitionService.swift"
 retirement_store="Sumi/Services/ProfileRetirementStore.swift"
@@ -25,6 +26,7 @@ production_roots=(App Sumi Settings SidebarChrome CommandPalette UI Packages)
 for source in \
   "$profile_manager" \
   "$startup_persistence" \
+  "$database_schema" \
   "$profile_transition" \
   "$batch_transition" \
   "$retirement_store" \
@@ -82,26 +84,19 @@ guard_expect_no_matches \
   '\bBrowserProfileSwitchTransitionHost\b|host:[[:space:]]*browserManager' \
   --glob '*.swift' "${production_roots[@]}"
 
-schema_v4="$({
-  sed -n \
-    '/^enum SumiStartupSchemaV4: VersionedSchema {$/,/^enum SumiStartupMigrationPlan: SchemaMigrationPlan {$/p' \
-    "$startup_persistence"
-} || true)"
-if [[ -z "$schema_v4" ]]; then
-  guard_record_failure 'SumiStartupSchemaV4 declaration is missing'
-else
-  schema_version_count="$({
-    guard_count_matches \
-      'static let versionIdentifier = Schema\.Version\(4, 0, 0\)' \
-      - <<< "$schema_v4"
-  })"
-  guard_exact 'startup schema V4 version declaration' "$schema_version_count" 1
+schema_version_count="$({
+  guard_count_matches \
+    'PRAGMA user_version = 1' \
+    "$database_schema"
+})"
+guard_exact 'unified database schema version declaration' "$schema_version_count" 1
 
-  retirement_model_count="$({
-    guard_count_matches 'ProfileRetirementEntity\.self' - <<< "$schema_v4"
-  })"
-  guard_exact 'retirement journal model in startup schema V4' "$retirement_model_count" 1
-fi
+retirement_table_count="$({
+  guard_count_matches \
+    'database\.create\(table: "profile_retirements"\)' \
+    "$database_schema"
+})"
+guard_exact 'retirement journal table in unified database schema' "$retirement_table_count" 1
 
 transition_entry_count="$({
   guard_count_matches '^    func transition[[:space:]]*\(' "$profile_transition"

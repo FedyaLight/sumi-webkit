@@ -145,7 +145,7 @@ require_matches -F 'isRetired = true' "$extension_bridge"
 require_matches -F 'stateTransitions.invalidateActiveTransition()' "$extension_bridge"
 require_matches -U 'isRetired = true[[:space:]]+stateTransitions\.invalidateActiveTransition\(\)[[:space:]]+auxiliaryWindows\.closeAuxiliaryWindowSession\(sessionReceipt\)' \
   "$extension_bridge"
-require_matches -F 'if window.isZoomed { return .maximized }' "$extension_bridge"
+require_matches -U 'case \.zoomed:[[:space:]]+return \.maximized' "$extension_bridge"
 require_matches -F 'previous.ownsWindow(with: windowIdentity)' "$state_coordinator"
 require_matches -F 'admissionGeneration == requestGeneration' "$state_coordinator"
 require_matches -F 'ObjectIdentifier(window) == windowIdentity' "$state_coordinator"

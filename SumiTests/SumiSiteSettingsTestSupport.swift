@@ -1,6 +1,5 @@
 import Foundation
 import SumiDomain
-import SwiftData
 import WebKit
 import XCTest
 
@@ -285,8 +284,8 @@ struct SiteSettingsRepositoryHarness {
     let websiteDataService: SiteSettingsFakeWebsiteDataService
     let autoplayStore: SumiAutoplayPolicyStoreAdapter
     let repository: SumiPermissionSettingsRepository
-    let modelContainer: ModelContainer
-    let permissionStore: SwiftDataPermissionStore
+    let modelContainer: SumiDatabase
+    let permissionStore: DatabasePermissionStore
     let permissionCleanupService: SumiPermissionCleanupService
     let userDefaults: UserDefaults
 
@@ -309,18 +308,18 @@ struct SiteSettingsRepositoryHarness {
         self.indicatorStore = SumiPermissionIndicatorEventStore()
         self.websiteDataService = SiteSettingsFakeWebsiteDataService()
         self.userDefaults = userDefaults
-        let container = try ModelContainer(
-            for: Schema([PermissionDecisionEntity.self]),
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+        let container = try SumiDatabase.inMemory()
         self.modelContainer = container
-        let store = SwiftDataPermissionStore(container: container)
+        try installTestProfile(self.profile, in: container)
+        let store = DatabasePermissionStore(database: container)
         self.permissionStore = store
         self.autoplayStore = SumiAutoplayPolicyStoreAdapter(persistentStore: store)
         let cleanupService = SumiPermissionCleanupService(
             store: store,
             recentActivityStore: recentStore,
-            antiAbuseStore: SumiPermissionAntiAbuseStore(),
+            antiAbuseStore: SumiPermissionAntiAbuseStore(
+                persistenceAuthority: siteActivityStore.persistenceAuthority
+            ),
             siteActivityStore: siteActivityStore,
             userDefaults: userDefaults,
             now: { Date(timeIntervalSince1970: 1_800_000_000) }

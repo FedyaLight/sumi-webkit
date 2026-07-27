@@ -15,11 +15,8 @@ final class SumiBookmarkManager: ObservableObject {
     private var foldersCacheNeedsReload = false
     private var pendingFaviconBookmarksByID: [String: SumiBookmark] = [:]
     private var publicationTask: Task<Void, Never>?
-    private var didInstallSaveObserver = false
-    private var saveObserver: NSObjectProtocol?
-
     convenience init(
-        database: SumiBookmarkDatabase = SumiBookmarkDatabase(),
+        database: SumiDatabase,
         faviconService: any BrowserFaviconServicing
     ) {
         self.init(
@@ -30,7 +27,7 @@ final class SumiBookmarkManager: ObservableObject {
     }
 
     convenience init(
-        database: SumiBookmarkDatabase = SumiBookmarkDatabase(),
+        database: SumiDatabase,
         syncFavicons: Bool
     ) {
         self.init(
@@ -41,26 +38,18 @@ final class SumiBookmarkManager: ObservableObject {
     }
 
     private init(
-        database: SumiBookmarkDatabase,
+        database: SumiDatabase,
         syncFavicons: Bool,
         faviconService: (any BrowserFaviconServicing)?
     ) {
-        if let unavailableReason = database.unavailableReason {
-            self.repository = SumiUnavailableBookmarkRepository(reason: unavailableReason.description)
-        } else {
-            self.repository = SumiCoreDataBookmarkRepository(database: database)
-        }
+        self.repository = SumiDatabaseBookmarkRepository(database: database)
         self.syncFavicons = syncFavicons
         self.faviconService = faviconService
         reload(notify: false)
-        installSaveObserver()
     }
 
     isolated deinit {
         publicationTask?.cancel()
-        if let saveObserver {
-            NotificationCenter.default.removeObserver(saveObserver)
-        }
     }
 
     func canBookmark(_ tab: Tab?) -> Bool {
@@ -324,24 +313,6 @@ final class SumiBookmarkManager: ObservableObject {
 
     func exportBookmarksHTML(to destination: URL) throws {
         try repository.exportBookmarksHTML(to: destination)
-    }
-
-    private func installSaveObserver() {
-        guard !didInstallSaveObserver else { return }
-        didInstallSaveObserver = true
-        let repository = repository
-        saveObserver = NotificationCenter.default.addObserver(
-            forName: .NSManagedObjectContextDidSave,
-            object: nil,
-            queue: .main
-        ) { [weak self, repository] notification in
-            guard repository.mergeChanges(fromContextDidSave: notification) else {
-                return
-            }
-            Task { @MainActor [weak self] in
-                self?.reload()
-            }
-        }
     }
 
     private func reload(notify: Bool = true) {

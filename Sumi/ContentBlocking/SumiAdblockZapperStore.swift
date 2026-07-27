@@ -6,16 +6,13 @@ import WebKit
 @MainActor
 final class SumiAdblockZapperStore {
     private static let log = Logger.sumi(category: "ContentBlocking")
+    private static let documentKey = "adblock.zapper-states"
 
     struct State: Codable, Equatable {
         var rules: [String]
         var disabled: Bool
 
         static let empty = State(rules: [], disabled: false)
-    }
-
-    private enum DefaultsKey {
-        static let statesByPersistentProfileAndHost = "settings.adblock.zapper.statesByPersistentProfileAndHost.v1"
     }
 
     private struct Scope {
@@ -37,19 +34,20 @@ final class SumiAdblockZapperStore {
         }
     }
 
-    private let userDefaults: UserDefaults
+    private let database: SumiDatabase?
     private let profileReferenceAdmission: ProfileReferenceAdmissionLedger
     private var statesByScopeAndHost: [String: [String: State]]
     private let persistentStateWasReadable: Bool
     private var retiredPersistentProfileIDs: Set<String> = []
 
     init(
-        userDefaults: UserDefaults = .standard,
-        profileReferenceAdmission: ProfileReferenceAdmissionLedger
+        database: SumiDatabase? = nil,
+        profileReferenceAdmission: ProfileReferenceAdmissionLedger =
+            .failClosed()
     ) {
-        self.userDefaults = userDefaults
+        self.database = database
         self.profileReferenceAdmission = profileReferenceAdmission
-        let loaded = Self.loadPersistentStates(from: userDefaults)
+        let loaded = Self.loadPersistentStates(from: database)
         self.statesByScopeAndHost = loaded.states
         self.persistentStateWasReadable = loaded.wasReadable
     }
@@ -168,7 +166,8 @@ final class SumiAdblockZapperStore {
         let normalizedHost = normalizedHost(host)
         guard !normalizedHost.isEmpty else { return }
 
-        var hostStates = statesByScopeAndHost[scope.storageKey] ?? [:]
+        var candidate = statesByScopeAndHost
+        var hostStates = candidate[scope.storageKey] ?? [:]
         var state = hostStates[normalizedHost] ?? .empty
         mutate(&state)
         if state == .empty {
@@ -177,13 +176,21 @@ final class SumiAdblockZapperStore {
             hostStates[normalizedHost] = state
         }
         if hostStates.isEmpty {
-            statesByScopeAndHost.removeValue(forKey: scope.storageKey)
+            candidate.removeValue(forKey: scope.storageKey)
         } else {
-            statesByScopeAndHost[scope.storageKey] = hostStates
+            candidate[scope.storageKey] = hostStates
         }
         if !scope.isEphemeral {
-            savePersistentStates()
+            do {
+                try persistPersistentStates(candidate)
+            } catch {
+                Self.log.error(
+                    "Failed to persist adblock zapper state: \(error.localizedDescription, privacy: .public)"
+                )
+                return
+            }
         }
+        statesByScopeAndHost = candidate
     }
 
     private func normalizedHost(_ host: String) -> String {
@@ -207,22 +214,22 @@ final class SumiAdblockZapperStore {
         return profileReferenceAdmission.isReferenceAllowed(uuid)
     }
 
-    private func savePersistentStates() {
-        let persistentStates = statesByScopeAndHost.filter { scopeKey, _ in
+    private func persistPersistentStates(
+        _ candidate: [String: [String: State]]
+    ) throws {
+        let persistentStates = candidate.filter { scopeKey, _ in
             scopeKey.hasPrefix(Scope.persistentPrefix)
         }
-        guard !persistentStates.isEmpty else {
-            userDefaults.removeObject(forKey: DefaultsKey.statesByPersistentProfileAndHost)
-            return
+        try database?.transaction {
+            if persistentStates.isEmpty {
+                try $0.documents.delete(key: Self.documentKey)
+            } else {
+                try $0.documents.save(
+                    persistentStates,
+                    forKey: Self.documentKey
+                )
+            }
         }
-        let data: Data
-        do {
-            data = try JSONEncoder().encode(persistentStates)
-        } catch {
-            Self.log.error("Failed to encode adblock zapper state: \(error.localizedDescription, privacy: .public)")
-            return
-        }
-        userDefaults.set(data, forKey: DefaultsKey.statesByPersistentProfileAndHost)
     }
 
     private func persistForProfileCleanup(
@@ -231,38 +238,37 @@ final class SumiAdblockZapperStore {
         let persistentStates = candidate.filter { scopeKey, _ in
             scopeKey.hasPrefix(Scope.persistentPrefix)
         }
-        if persistentStates.isEmpty {
-            userDefaults.removeObject(
-                forKey: DefaultsKey.statesByPersistentProfileAndHost
-            )
-            guard userDefaults.data(
-                forKey: DefaultsKey.statesByPersistentProfileAndHost
-            ) == nil else {
-                throw SumiAdblockZapperStoreError.persistenceVerificationFailed
+        guard let database else { return }
+        do {
+            try database.transaction {
+                if persistentStates.isEmpty {
+                    try $0.documents.delete(key: Self.documentKey)
+                } else {
+                    try $0.documents.save(
+                        persistentStates,
+                        forKey: Self.documentKey
+                    )
+                }
             }
-            return
-        }
-        let data = try JSONEncoder().encode(persistentStates)
-        userDefaults.set(
-            data,
-            forKey: DefaultsKey.statesByPersistentProfileAndHost
-        )
-        guard userDefaults.data(
-            forKey: DefaultsKey.statesByPersistentProfileAndHost
-        ) == data else {
+        } catch {
             throw SumiAdblockZapperStoreError.persistenceVerificationFailed
         }
     }
 
     private static func loadPersistentStates(
-        from userDefaults: UserDefaults
+        from database: SumiDatabase?
     ) -> (states: [String: [String: State]], wasReadable: Bool) {
-        guard let data = userDefaults.data(forKey: DefaultsKey.statesByPersistentProfileAndHost) else {
+        guard let database else {
             return ([:], true)
         }
         let decoded: [String: [String: State]]
         do {
-            decoded = try JSONDecoder().decode([String: [String: State]].self, from: data)
+            decoded = try database.read {
+                try $0.documents.value(
+                    [String: [String: State]].self,
+                    forKey: documentKey
+                )
+            } ?? [:]
         } catch {
             log.error("Failed to decode adblock zapper state: \(error.localizedDescription, privacy: .public)")
             return ([:], false)

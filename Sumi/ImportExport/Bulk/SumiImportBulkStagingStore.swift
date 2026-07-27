@@ -77,7 +77,7 @@ struct SumiImportBulkStagingStore {
     /// Streams `fileURL` as chunks of decoded records, produced on a background
     /// task so a hundred-thousand-line file never decodes on the main thread.
     ///
-    /// The consumer is asynchronous — it writes to SwiftData and WebKit — so a
+    /// The consumer is asynchronous — it writes to SQLite and WebKit — so a
     /// stream is the right shape here: a synchronous callback would have to
     /// block a thread waiting on the installer, and blocking the main actor
     /// while awaiting main-actor work deadlocks.

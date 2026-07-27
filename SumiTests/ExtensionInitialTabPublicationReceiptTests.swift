@@ -211,7 +211,7 @@ final class ExtensionInitialTabPublicationReceiptTests:
         let attachedRuntime = ExtensionAttachedRuntimeCapture()
         let inspection = ExtensionManagerInspectionCapture()
         let manager = makeSafariExtensionTestExtensionManager(
-            context: container.mainContext,
+            database: container,
             initialProfile: profile,
             browserConfiguration: browserConfiguration,
             moduleRegistry: moduleRegistry,
@@ -220,7 +220,7 @@ final class ExtensionInitialTabPublicationReceiptTests:
         )
         let extensionsModule = SumiExtensionsModule(
             moduleRegistry: moduleRegistry,
-            context: container.mainContext,
+            database: container,
             browserConfiguration: browserConfiguration,
             initialProfileProvider: { profile },
             managerFactory: { _, _, _, _ in manager }

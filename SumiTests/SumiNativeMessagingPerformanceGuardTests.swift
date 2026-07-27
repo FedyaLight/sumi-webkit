@@ -36,7 +36,7 @@ final class SumiNativeMessagingPerformanceGuardTests: XCTestCase {
         launcher.bundleURLs["com.example.host"] = URL(fileURLWithPath: "/Applications/Example.app")
         var diagnostics: [SafariExtensionNativeMessagingDiagnostic] = []
         let relay = SumiNativeMessagingRelay(
-            importStore: SafariExtensionImportStore(defaults: makeDefaults()),
+            importStore: SafariExtensionImportStore(database: try! SumiDatabase.inMemory()),
             launcher: launcher,
             adapterRegistry: SumiNativeMessagingAdapterRegistry(adapters: []),
             extensionsModuleEnabled: { true },
@@ -136,7 +136,7 @@ final class SumiNativeMessagingPerformanceGuardTests: XCTestCase {
             shouldLaunchOnConnect: true
         )
         let relay = SumiNativeMessagingRelay(
-            importStore: SafariExtensionImportStore(defaults: makeDefaults()),
+            importStore: SafariExtensionImportStore(database: try! SumiDatabase.inMemory()),
             launcher: launcher,
             adapterRegistry: SumiNativeMessagingAdapterRegistry(adapters: [adapter]),
             launchPolicy: SumiCompanionAppLaunchPolicy(),

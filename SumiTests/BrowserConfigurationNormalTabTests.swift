@@ -2,7 +2,6 @@ import Combine
 import CryptoKit
 import Foundation
 import SumiDomain
-import SwiftData
 import WebKit
 import XCTest
 
@@ -138,10 +137,12 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             preparedBundleResourceURL: fixture.resourceRoot,
             preparedBundleRemoteRootURL: fixture.remoteRoot,
             preparedBundleGeneratedRootURL: nil,
+            compiledRuleListCatalog: SumiCompiledContentRuleListCatalog(),
             ruleListRuntimeFactory: { isEnabled in
                 AdblockRuleListRuntime(
                     isRuntimeEnabled: isEnabled,
                     generationArchive: generationArchive,
+                    compiledRuleListCatalog: SumiCompiledContentRuleListCatalog(),
                     embeddedBundleURLProvider: { fixture.bundleURL }
                 )
             }
@@ -149,11 +150,12 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let protectionCoordinator = SumiProtectionCoordinator(
             settings: settings,
             adBlockingModule: adBlockingModule,
-            bundleUpdateStatusStore: SumiProtectionBundleUpdateStatusStore(userDefaults: harness.defaults)
+            bundleUpdateStatusStore: SumiProtectionBundleUpdateStatusStore(userDefaults: harness.defaults),
+            compiledRuleListCatalog: SumiCompiledContentRuleListCatalog()
         )
         let browserManager = BrowserManager(
             moduleRegistry: registry,
-            startupPersistence: BrowserManagerStartupPersistence(container: try Self.makeInMemoryStartupContainer()),
+            startupPersistence: BrowserManagerStartupPersistence(database: try Self.makeInMemoryStartupContainer()),
             adBlockingModule: adBlockingModule,
             protectionCoordinator: protectionCoordinator
         )
@@ -210,7 +212,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let startupContainer = try Self.makeInMemoryStartupContainer()
         let extensionsModule = SumiExtensionsModule(
             moduleRegistry: registry,
-            context: startupContainer.mainContext
+            database: startupContainer
         )
         let installedSafariContentBlocker = try await extensionsModule.enableSafariContentBlocker(
             from: safariContentBlocker.candidate
@@ -222,10 +224,12 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             preparedBundleResourceURL: fixture.resourceRoot,
             preparedBundleRemoteRootURL: fixture.remoteRoot,
             preparedBundleGeneratedRootURL: nil,
+            compiledRuleListCatalog: SumiCompiledContentRuleListCatalog(),
             ruleListRuntimeFactory: { isEnabled in
                 AdblockRuleListRuntime(
                     isRuntimeEnabled: isEnabled,
                     generationArchive: generationArchive,
+                    compiledRuleListCatalog: SumiCompiledContentRuleListCatalog(),
                     embeddedBundleURLProvider: { fixture.bundleURL }
                 )
             }
@@ -233,11 +237,12 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let protectionCoordinator = SumiProtectionCoordinator(
             settings: settings,
             adBlockingModule: adBlockingModule,
-            bundleUpdateStatusStore: SumiProtectionBundleUpdateStatusStore(userDefaults: harness.defaults)
+            bundleUpdateStatusStore: SumiProtectionBundleUpdateStatusStore(userDefaults: harness.defaults),
+            compiledRuleListCatalog: SumiCompiledContentRuleListCatalog()
         )
         let browserManager = BrowserManager(
             moduleRegistry: registry,
-            startupPersistence: BrowserManagerStartupPersistence(container: startupContainer),
+            startupPersistence: BrowserManagerStartupPersistence(database: startupContainer),
             adBlockingModule: adBlockingModule,
             protectionCoordinator: protectionCoordinator,
             extensionsModule: extensionsModule
@@ -761,7 +766,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let module = makeProbeExtensionsModule(
             registry: registry,
             probe: probe,
-            context: container.mainContext
+            context: container
         )
 
         let browserManager = BrowserManager(
@@ -810,7 +815,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let module = makeProbeExtensionsModule(
             registry: registry,
             probe: probe,
-            context: container.mainContext
+            context: container
         )
         let browserManager = BrowserManager(
             moduleRegistry: registry,
@@ -1270,15 +1275,15 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
     private func makeProbeExtensionsModule(
         registry: SumiModuleRegistry,
         probe: NormalTabExtensionsRuntimeProbe,
-        context: ModelContext
+        context: SumiDatabase
     ) -> SumiExtensionsModule {
         SumiExtensionsModule(
             moduleRegistry: registry,
-            context: context,
+            database: context,
             managerFactory: { context, initialProfile, browserConfiguration, moduleRegistry in
                 probe.managerCount += 1
                 return ExtensionManager(
-                    context: context,
+            database: context,
                     initialProfile: initialProfile,
                     browserConfiguration: browserConfiguration,
                     moduleRegistry: moduleRegistry
@@ -1396,7 +1401,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let startupContainer = try Self.makeInMemoryStartupContainer()
         let extensionsModule = SumiExtensionsModule(
             moduleRegistry: registry,
-            context: startupContainer.mainContext
+            database: startupContainer
         )
         let installedContentBlocker = try await extensionsModule.enableSafariContentBlocker(
             from: safariContentBlocker.candidate
@@ -1405,7 +1410,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let browserManager = BrowserManager(
             windowRegistry: windowRegistry,
             moduleRegistry: registry,
-            startupPersistence: BrowserManagerStartupPersistence(container: startupContainer),
+            startupPersistence: BrowserManagerStartupPersistence(database: startupContainer),
             extensionsModule: extensionsModule
         )
         await startAndWaitForStartupProtectionRestore(on: browserManager)
@@ -1557,18 +1562,12 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         browserManager.startupRestoreLifecycle.markLoadFinished()
     }
 
-    private static func makeInMemoryExtensionContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: Schema([ExtensionEntity.self]),
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+    private static func makeInMemoryExtensionContainer() throws -> SumiDatabase {
+        try SumiDatabase.inMemory()
     }
 
-    private static func makeInMemoryStartupContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+    private static func makeInMemoryStartupContainer() throws -> SumiDatabase {
+        try SumiDatabase.inMemory()
     }
 
     private static func validPreparedBundleRuleListData(group: SumiProtectionGroupKind) -> Data {

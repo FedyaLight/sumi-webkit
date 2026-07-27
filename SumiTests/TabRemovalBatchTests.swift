@@ -1,6 +1,5 @@
 import Combine
 import SumiDomain
-import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -100,15 +99,16 @@ final class TabRemovalBatchTests: XCTestCase {
         await scheduledPersistence.value
 
         let didPersistFinalState = try {
-            let context = ModelContext(container)
-            let persistedTabIDs = Set(
-                try context.fetch(FetchDescriptor<TabEntity>()).map(\.id)
-            )
+            let stored = try container.read { connection in
+                (
+                    try connection.workspace.tabs(),
+                    try connection.workspace.state()
+                )
+            }
+            let persistedTabIDs = Set(stored.0.map(\.id))
             guard persistedTabIDs.contains(survivor.id),
                   !persistedTabIDs.contains(closed.id),
-                  let data = try context.fetch(
-                      FetchDescriptor<TabsStateEntity>()
-                  ).first?.splitGroupsData,
+                  let data = stored.1?.splitGroupsData,
                   let archive = try? TabPersistenceCodec()
                     .decodeSplitGroupArchive(from: data) else {
                 return false
@@ -161,11 +161,10 @@ final class TabRemovalBatchTests: XCTestCase {
         withExtendedLifetime(cancellable) {}
     }
 
-    private func makeBrowserManager() throws -> (ModelContainer, BrowserManager) {
-        let container = try makeInMemoryStartupModelContainer()
+    private func makeBrowserManager() throws -> (SumiDatabase, BrowserManager) {
+        let container = try makeInMemoryStartupDatabase()
         let tabManager = BrowserManager(
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: container
+            startupPersistence: BrowserManagerStartupPersistence(database: container
             )
         )
         return (container, tabManager)

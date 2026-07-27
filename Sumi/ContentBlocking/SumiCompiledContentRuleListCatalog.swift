@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 @MainActor
 protocol SumiCompiledContentRuleListCataloging: AnyObject {
@@ -19,15 +20,35 @@ protocol SumiCompiledContentRuleListCataloging: AnyObject {
 final class SumiCompiledContentRuleListCatalog:
     SumiCompiledContentRuleListCataloging
 {
-    private let userDefaults: UserDefaults
-    private let userDefaultsKey = "SumiCompiledContentRuleListIdentifiersByName.v1"
+    private static let log = Logger.sumi(category: "ContentBlocking")
+    private static let documentKey = "content-blocking.compiled-identifiers"
+    private let database: SumiDatabase?
+    private let persistentStateWasReadable: Bool
     private var identifiersByName: [String: Set<String>]
 
-    init(userDefaults: UserDefaults = .standard) {
-        self.userDefaults = userDefaults
-        let persisted = userDefaults.dictionary(forKey: userDefaultsKey)
-            as? [String: [String]] ?? [:]
-        identifiersByName = persisted.mapValues(Set.init)
+    init(database: SumiDatabase? = nil) {
+        self.database = database
+        guard let database else {
+            persistentStateWasReadable = true
+            identifiersByName = [:]
+            return
+        }
+        do {
+            let persisted = try database.read {
+                try $0.documents.value(
+                    [String: [String]].self,
+                    forKey: Self.documentKey
+                )
+            }
+            persistentStateWasReadable = true
+            identifiersByName = (persisted ?? [:]).mapValues(Set.init)
+        } catch {
+            persistentStateWasReadable = false
+            identifiersByName = [:]
+            Self.log.error(
+                "Failed to load compiled content-rule identifiers: \(error.localizedDescription, privacy: .public)"
+            )
+        }
     }
 
     func cachedIdentifiersToForget(
@@ -51,28 +72,30 @@ final class SumiCompiledContentRuleListCatalog:
         let activeIdentifiersByName = Self.identifiersByName(for: activeRules)
         let namesToSweep = Set(identifiersByName.keys)
             .union(activeIdentifiersByName.keys)
+        var candidate = identifiersByName
         for name in namesToSweep {
             let activeIdentifiers = activeIdentifiersByName[name] ?? []
             if activeIdentifiers.isEmpty {
-                identifiersByName.removeValue(forKey: name)
+                candidate.removeValue(forKey: name)
             } else {
-                identifiersByName[name] = activeIdentifiers
+                candidate[name] = activeIdentifiers
             }
         }
-        save()
+        persistAndPublish(candidate)
         return orphanedIdentifiers
     }
 
     func forgetIdentifiers(_ identifiers: [String]) {
         guard !identifiers.isEmpty else { return }
         let identifiersToForget = Set(identifiers)
-        for name in Array(identifiersByName.keys) {
-            identifiersByName[name]?.subtract(identifiersToForget)
-            if identifiersByName[name]?.isEmpty == true {
-                identifiersByName.removeValue(forKey: name)
+        var candidate = identifiersByName
+        for name in Array(candidate.keys) {
+            candidate[name]?.subtract(identifiersToForget)
+            if candidate[name]?.isEmpty == true {
+                candidate.removeValue(forKey: name)
             }
         }
-        save()
+        persistAndPublish(candidate)
     }
 
     private func orphanedIdentifiersWithoutMutating(
@@ -96,11 +119,32 @@ final class SumiCompiledContentRuleListCatalog:
         return Array(orphanedIdentifiers)
     }
 
-    private func save() {
-        userDefaults.set(
-            identifiersByName.mapValues { Array($0).sorted() },
-            forKey: userDefaultsKey
-        )
+    private func persistAndPublish(_ candidate: [String: Set<String>]) {
+        guard candidate != identifiersByName else { return }
+        guard persistentStateWasReadable else {
+            Self.log.error(
+                "Rejected compiled content-rule identifier mutation because the stored baseline is unreadable."
+            )
+            return
+        }
+        do {
+            try database?.transaction {
+                if candidate.isEmpty {
+                    try $0.documents.delete(key: Self.documentKey)
+                } else {
+                    try $0.documents.save(
+                        candidate.mapValues { Array($0).sorted() },
+                        forKey: Self.documentKey
+                    )
+                }
+            }
+        } catch {
+            Self.log.error(
+                "Failed to persist compiled content-rule identifiers: \(error.localizedDescription, privacy: .public)"
+            )
+            return
+        }
+        identifiersByName = candidate
     }
 
     private static func identifiersByName(

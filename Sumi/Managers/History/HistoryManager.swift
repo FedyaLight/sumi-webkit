@@ -4,7 +4,6 @@
 //
 
 import Foundation
-import SwiftData
 
 @MainActor
 protocol HistoryFaviconCleaning: AnyObject {
@@ -60,13 +59,13 @@ final class HistoryManager: ObservableObject {
     var currentProfileId: UUID?
 
     init(
-        context: ModelContext,
+        database: SumiDatabase,
         profileId: UUID? = nil,
         faviconCleaner: any HistoryFaviconCleaning,
         visitedLinkStore: any HistoryVisitedLinkStoring,
         delayedActions: MainActorDelayedActionScheduler = .live
     ) {
-        self.store = HistoryStore(container: context.container)
+        self.store = HistoryStore(database: database)
         self.currentProfileId = profileId
         self.faviconCleaner = faviconCleaner
         self.visitedLinkStore = visitedLinkStore

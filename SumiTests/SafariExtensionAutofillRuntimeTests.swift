@@ -1,4 +1,3 @@
-import SwiftData
 import WebKit
 import XCTest
 
@@ -12,7 +11,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         let profile = Profile(name: "Autofill Profile")
 
         let seedManager = ExtensionManager(
-            context: container.mainContext,
+            database: container,
             initialProfile: profile
         )
         let scratchDirectory = try makeScratchDirectory()
@@ -30,10 +29,10 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
 
         let module = SumiExtensionsModule(
             moduleRegistry: registry,
-            context: container.mainContext,
+            database: container,
             initialProfileProvider: { profile },
             profileReferenceAdmission: try ProfileReferenceAdmissionLedger(
-                context: container.mainContext
+                database: container
             )
         )
         let browserManager = makeSafariExtensionTestBrowserManager(
@@ -70,7 +69,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         let profileB = Profile(name: "Profile B")
         let browserConfiguration = BrowserConfiguration()
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: profileA,
             browserConfiguration: browserConfiguration
         )
@@ -103,7 +102,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         let profile = Profile(name: "Profile A")
         let browserConfiguration = BrowserConfiguration()
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile,
             browserConfiguration: browserConfiguration
         )
@@ -166,7 +165,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let manager = fixture.manager
@@ -260,7 +259,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile.createEphemeral()
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let manager = fixture.manager
@@ -319,7 +318,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let manager = fixture.manager
@@ -474,11 +473,8 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         )
     }
 
-    private func makeTestContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+    private func makeTestContainer() throws -> SumiDatabase {
+        try SumiDatabase.inMemory()
     }
 
     private func makeScratchDirectory() throws -> URL {

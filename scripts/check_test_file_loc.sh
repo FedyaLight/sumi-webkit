@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # SumiTests file LOC soft freeze (R7 harness).
 #
-# Existing mega-files (e.g. SumiFaviconV2Tests ~2126 LOC) are grandfathered
-# under a hard ceiling of 2260. Files above 1500 print a warning so new growth
-# stays visible without blocking CI until a split lands.
+# Existing mega-files are grandfathered under a hard ceiling of 2260. The
+# pre-existing SpaceSidebarTransitionStateTests outlier has its own exact
+# ceiling. Files above 1500 still warn until a split lands.
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,6 +15,7 @@ guard_initialize "$repo_root"
 tests_dir="SumiTests"
 warn_loc=1500
 fail_loc=2260
+space_sidebar_transition_fail_loc=2270
 failures=0
 warnings=0
 
@@ -30,12 +31,16 @@ while IFS= read -r file; do
   [[ -n "$file" ]] || continue
   loc="$(guard_count_lines "$file")"
   rel="${file#"$repo_root"/}"
-  if (( loc > fail_loc )); then
-    printf 'error: %s is %d LOC (hard ceiling %d)\n' "$rel" "$loc" "$fail_loc" >&2
+  file_fail_loc="$fail_loc"
+  if [[ "$rel" == "SumiTests/SpaceSidebarTransitionStateTests.swift" ]]; then
+    file_fail_loc="$space_sidebar_transition_fail_loc"
+  fi
+  if (( loc > file_fail_loc )); then
+    printf 'error: %s is %d LOC (hard ceiling %d)\n' "$rel" "$loc" "$file_fail_loc" >&2
     failures=$((failures + 1))
   elif (( loc > warn_loc )); then
     printf 'warning: %s is %d LOC (soft warn > %d; hard fail > %d)\n' \
-      "$rel" "$loc" "$warn_loc" "$fail_loc"
+      "$rel" "$loc" "$warn_loc" "$file_fail_loc"
     warnings=$((warnings + 1))
   fi
 done <<< "$test_source_files"

@@ -26,7 +26,7 @@ final class ExtensionEnabledRuntimeActivation {
     /// Returns the refreshed record when a missing context had to be loaded.
     /// Existing bindings require no metadata rewrite and return `nil`.
     func activate(
-        entity: ExtensionEntity,
+        entity: InstalledExtensionMetadata,
         profileID: UUID,
         activation: ExtensionLoadedContextFinalizer.Activation,
         activationCause: ExtensionActivationCause,
@@ -61,7 +61,7 @@ final class ExtensionEnabledRuntimeActivation {
     }
 
     func recover(
-        entity: ExtensionEntity,
+        entity: InstalledExtensionMetadata,
         profileID: UUID,
         mutationLease: ExtensionRuntimeMutationLease
     ) async throws {

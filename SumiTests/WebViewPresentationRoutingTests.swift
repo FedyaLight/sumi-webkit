@@ -1,7 +1,6 @@
 import AppKit
 import Combine
 import SumiWebRuntime
-import SwiftData
 import WebKit
 import XCTest
 
@@ -990,10 +989,24 @@ final class WebViewPresentationRoutingTests: XCTestCase {
             "A background WebKit child window must not steal activation."
         )
 
+        let shellClosed = expectation(
+            description: "The dedicated WebKit child shell closes."
+        )
+        let closeObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: targetShell,
+            queue: .main
+        ) { _ in
+            shellClosed.fulfill()
+        }
+        defer {
+            NotificationCenter.default.removeObserver(closeObserver)
+        }
         XCTAssertTrue(
             harness.browserManager.webViewCloseRouter
                 .handleNormalWebViewDidClose(exactChild)
         )
+        wait(for: [shellClosed], timeout: 0.2)
         XCTAssertNil(targetWindow.webKitChildWindowIdentity)
         XCTAssertNil(
             harness.browserManager.tabCollectionMembershipOwner
@@ -1389,11 +1402,7 @@ final class WebViewPresentationRoutingTests: XCTestCase {
     ) throws -> BrowserManager {
         BrowserManager(
             windowRegistry: windowRegistry,
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try ModelContainer(
-                    for: SumiStartupPersistence.schema,
-                    configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-                )
+            startupPersistence: BrowserManagerStartupPersistence(database: try SumiDatabase.inMemory()
             )
         )
     }

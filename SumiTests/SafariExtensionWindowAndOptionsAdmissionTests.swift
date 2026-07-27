@@ -12,7 +12,7 @@ extension SafariExtensionWebViewControllerWiringTests {
         let profile = Profile(name: "Unresolved requested window")
         let browserConfiguration = BrowserConfiguration()
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile,
             browserConfiguration: browserConfiguration
         )
@@ -27,7 +27,7 @@ extension SafariExtensionWebViewControllerWiringTests {
         registry.enable(.extensions)
         let extensionsModule = SumiExtensionsModule(
             moduleRegistry: registry,
-            context: container.mainContext,
+            database: container,
             browserConfiguration: browserConfiguration,
             initialProfileProvider: { profile },
             managerFactory: { _, _, _, _ in manager }
@@ -106,7 +106,7 @@ extension SafariExtensionWebViewControllerWiringTests {
         let profile = Profile(name: "Extension Options Profile")
         let browserConfiguration = BrowserConfiguration()
         let optionsManagerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile,
             browserConfiguration: browserConfiguration
         )
@@ -121,7 +121,7 @@ extension SafariExtensionWebViewControllerWiringTests {
         registry.enable(.extensions)
         let extensionsModule = SumiExtensionsModule(
             moduleRegistry: registry,
-            context: container.mainContext,
+            database: container,
             browserConfiguration: browserConfiguration,
             initialProfileProvider: { profile },
             managerFactory: { _, _, _, _ in manager }

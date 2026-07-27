@@ -21,7 +21,7 @@ final class InstalledExtensionCatalog {
     }
 
     @discardableResult
-    func load() -> [ExtensionEntity] {
+    func load() -> [InstalledExtensionMetadata] {
         let signpostState = PerformanceTrace.beginInterval(
             "ExtensionManager.loadInstalledExtensionMetadata"
         )
@@ -52,7 +52,7 @@ final class InstalledExtensionCatalog {
     @discardableResult
     func publish(
         _ result: ExtensionInstallationMetadataStore.MetadataLoadResult
-    ) -> [ExtensionEntity] {
+    ) -> [InstalledExtensionMetadata] {
         guard result.didFetchPersistedMetadata else {
             trace(
                 "loadInstalledExtensionMetadata failed; preserving authoritative catalog"

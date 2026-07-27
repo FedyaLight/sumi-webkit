@@ -42,11 +42,8 @@ final class SumiBookmarkMenuSnapshotTests: XCTestCase {
     }
 
     private func makeBookmarkManager() -> SumiBookmarkManager {
-        let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-            .appendingPathComponent("SumiBookmarkMenuSnapshotTests-\(UUID().uuidString)", isDirectory: true)
-        temporaryDirectories.append(directory)
-        return SumiBookmarkManager(
-            database: SumiBookmarkDatabase(directory: directory),
+        SumiBookmarkManager(
+            database: try! SumiDatabase.inMemory(),
             syncFavicons: false
         )
     }

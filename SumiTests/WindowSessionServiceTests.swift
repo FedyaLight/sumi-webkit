@@ -1,6 +1,5 @@
 import SumiDomain
 import SumiWebRuntime
-import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -51,15 +50,9 @@ final class WindowSessionServiceTests: XCTestCase {
 
     func testBrowserManagerFlushesPendingWindowSessionWithoutWaitingForDebounce() throws {
         let sessionKey = "SumiTests.windowSession.flush.\(UUID().uuidString)"
-        UserDefaults.standard.removeObject(forKey: sessionKey)
-        defer {
-            UserDefaults.standard.removeObject(forKey: sessionKey)
-        }
-
+        let snapshotStore = WindowSessionSnapshotStore(key: sessionKey)
         let browserManager = BrowserManager(
-            windowSessionSnapshotStore: WindowSessionSnapshotStore(
-                key: sessionKey
-            )
+            windowSessionSnapshotStore: snapshotStore
         )
         let windowState = BrowserWindowState()
         let spaceId = UUID()
@@ -73,12 +66,11 @@ final class WindowSessionServiceTests: XCTestCase {
             delayNanoseconds: 60_000_000_000
         )
 
-        XCTAssertNil(UserDefaults.standard.data(forKey: sessionKey))
+        XCTAssertNil(snapshotStore.loadSnapshot()?.snapshot)
 
         browserManager.windowSessionPersistenceCoordinator.flush()
 
-        let data = try XCTUnwrap(UserDefaults.standard.data(forKey: sessionKey))
-        let snapshot = try JSONDecoder().decode(WindowSessionSnapshot.self, from: data)
+        let snapshot = try XCTUnwrap(snapshotStore.loadSnapshot()?.snapshot)
         XCTAssertEqual(snapshot.currentSpaceId, spaceId)
         XCTAssertEqual(snapshot.sidebarWidth, 312)
     }
@@ -261,22 +253,22 @@ final class WindowSessionServiceTests: XCTestCase {
     }
 
     func testWindowSessionBootstrapClassifiesCorruptStoredSnapshot() throws {
-        let suiteName = "WindowSessionCorruptSnapshotTests-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let database = try SumiDatabase.inMemory()
         let sessionKey = "SumiTests.windowSession.corrupt.\(UUID().uuidString)"
-        defaults.set(Data("not-json".utf8), forKey: sessionKey)
+        try database.transaction {
+            try $0.documents.save(Data("not-json".utf8), forKey: sessionKey)
+        }
 
         let store = WindowSessionSnapshotStore(
-            key: sessionKey,
-            userDefaults: defaults
+            database: database,
+            key: sessionKey
         )
         let result = store.loadResult()
 
         guard case .failed(let failure) = result else {
             return XCTFail("Expected failed decode, got \(result)")
         }
-        XCTAssertEqual(failure.source, .userDefaultsKey(sessionKey))
+        XCTAssertEqual(failure.source, .databaseKey(sessionKey))
         XCTAssertEqual(failure.reason, .decodeFailed)
         XCTAssertFalse(failure.message.isEmpty)
         XCTAssertNil(store.loadSnapshot())
@@ -974,7 +966,7 @@ final class WindowSessionServiceTests: XCTestCase {
             isSidebarVisible: true,
             commandPaletteDraft: commandPaletteDraft
         )
-        UserDefaults.standard.set(try JSONEncoder().encode(snapshot), forKey: sessionKey)
+        WindowSessionSnapshotStore(key: sessionKey).persist(snapshot)
         return sessionKey
     }
 

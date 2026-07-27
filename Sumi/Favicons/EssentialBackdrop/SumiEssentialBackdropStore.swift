@@ -111,10 +111,9 @@ final class SumiEssentialBackdropStore: BrowserEssentialBackdropReading {
                 guard !Task.isCancelled,
                       let documentURL = entries[key]
                 else { return }
-                _ = await bake(
-                    key: key,
-                    documentURL: documentURL,
-                    replacesExisting: false
+                _ = await loadBackdrop(
+                    for: documentURL,
+                    partition: key.partition
                 )
             }
         } catch {

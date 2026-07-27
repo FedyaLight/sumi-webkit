@@ -1,6 +1,5 @@
 import AppKit
 import SumiDomain
-import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -793,8 +792,7 @@ final class BrowserShortcutCommandRoutingTests: XCTestCase {
         let registry = WindowRegistry()
         let browserManager = BrowserManager(
             windowRegistry: registry,
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()
             )
         )
         let profile = Profile(name: "Primary")
@@ -829,11 +827,8 @@ final class BrowserShortcutCommandRoutingTests: XCTestCase {
         )
     }
 
-    private func makeInMemoryStartupContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+    private func makeInMemoryStartupContainer() throws -> SumiDatabase {
+        try SumiDatabase.inMemory()
     }
 }
 

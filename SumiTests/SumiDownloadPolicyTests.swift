@@ -103,11 +103,9 @@ final class SumiDownloadPolicyTests: XCTestCase {
         )
     }
 
-    func testApplicationsStorePersistsRecordsAndRejectsHTML() {
-        let storeURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
-            .appendingPathComponent("DownloadApplications.json")
-        let store = SumiDownloadApplicationsStore(fileURL: storeURL)
+    func testApplicationsStorePersistsRecordsAndRejectsHTML() throws {
+        let database = try SumiDatabase.inMemory()
+        let store = SumiDownloadApplicationsStore(database: database)
 
         store.upsert(SumiContentHandlerRecord(
             contentType: "application/pdf",
@@ -122,7 +120,7 @@ final class SumiDownloadPolicyTests: XCTestCase {
             applicationURL: nil
         ))
 
-        let reloaded = SumiDownloadApplicationsStore(fileURL: storeURL)
+        let reloaded = SumiDownloadApplicationsStore(database: database)
         XCTAssertEqual(reloaded.record(for: "application/pdf")?.handler, .useSystemDefault)
         XCTAssertNil(reloaded.record(for: "text/html"))
     }

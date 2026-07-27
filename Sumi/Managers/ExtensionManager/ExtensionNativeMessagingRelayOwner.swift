@@ -4,14 +4,17 @@ import Foundation
 @MainActor
 final class ExtensionNativeMessagingRelayOwner {
     private let moduleRegistry: SumiModuleRegistry
+    private let importStore: SafariExtensionImportStore
     private let runtimeLifecycle: ExtensionRuntimeLifecycleAuthority
     private var relayStorage: SumiNativeMessagingRelay?
 
     init(
         moduleRegistry: SumiModuleRegistry,
+        importStore: SafariExtensionImportStore,
         runtimeLifecycle: ExtensionRuntimeLifecycleAuthority
     ) {
         self.moduleRegistry = moduleRegistry
+        self.importStore = importStore
         self.runtimeLifecycle = runtimeLifecycle
     }
 
@@ -25,6 +28,7 @@ final class ExtensionNativeMessagingRelayOwner {
         }
 
         let relay = SumiNativeMessagingRelay.production(
+            importStore: importStore,
             extensionsModuleEnabled: { [weak self] in
                 self?.extensionsModuleEnabledForCallbacks ?? false
             },

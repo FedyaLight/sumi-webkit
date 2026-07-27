@@ -1,5 +1,4 @@
 import Foundation
-import SwiftData
 
 /// Applies user-visible enable, disable, and uninstall transitions.
 /// Runtime loading and package installation remain separate capabilities.
@@ -7,7 +6,6 @@ import SwiftData
 @MainActor
 final class InstalledExtensionLifecycleService {
     struct Environment {
-        let modelContext: ModelContext
         let metadataStore: ExtensionInstallationMetadataStore
         let installedRecords: InstalledExtensionCollection
         let volatileRecords: ExtensionVolatileInstallationRecordReconciler
@@ -45,7 +43,7 @@ final class InstalledExtensionLifecycleService {
         environment.loadRegistry.invalidate(extensionId: extensionID)
         try environment.volatileRecords.reconcile(extensionID)
 
-        guard let entity = try environment.metadataStore.extensionEntity(for: extensionID) else {
+        guard let entity = try environment.metadataStore.extensionMetadata(for: extensionID) else {
             throw ExtensionError.installationFailed(
                 "Extension was not found in persistence"
             )
@@ -177,7 +175,7 @@ final class InstalledExtensionLifecycleService {
         releaseRuntimeIfIdle: Bool
     ) async throws -> Bool {
         try environment.volatileRecords.reconcile(extensionID)
-        let entity = try environment.metadataStore.extensionEntity(
+        let entity = try environment.metadataStore.extensionMetadata(
             for: extensionID
         )
         let originalRecord = environment.installedRecords.records.first {
@@ -248,7 +246,7 @@ final class InstalledExtensionLifecycleService {
     }
 
     private func recoverIncompleteDisable(
-        entity: ExtensionEntity?,
+        entity: InstalledExtensionMetadata?,
         originalRecord: InstalledExtension?,
         originalPersistedRecord: InstalledExtension?,
         profileIDs: Set<UUID>,
@@ -326,7 +324,7 @@ final class InstalledExtensionLifecycleService {
             try validate(mutationLease)
 
             var copiedPackageURL: URL?
-            if let entity = try environment.metadataStore.extensionEntity(
+            if let entity = try environment.metadataStore.extensionMetadata(
                 for: extensionID
             ) {
                 let sourceKind =
@@ -338,8 +336,7 @@ final class InstalledExtensionLifecycleService {
                         isDirectory: true
                     )
                 }
-                environment.modelContext.delete(entity)
-                try environment.modelContext.save()
+                try environment.metadataStore.delete(extensionID: entity.id)
             }
 
             publish { $0.remove(id: extensionID) }
@@ -382,10 +379,10 @@ final class InstalledExtensionLifecycleService {
 
     private func restorePersistedRecord(
         _ record: InstalledExtension,
-        entity: ExtensionEntity
+        entity: InstalledExtensionMetadata
     ) throws {
         environment.metadataStore.update(entity, from: record)
-        try environment.modelContext.save()
+        try environment.metadataStore.save(entity)
     }
 
     private func performIdleRuntimeRelease(_ reason: String) {

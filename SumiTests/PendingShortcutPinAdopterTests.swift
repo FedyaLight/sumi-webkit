@@ -1,5 +1,4 @@
 import Combine
-import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -9,7 +8,7 @@ final class PendingShortcutPinAdopterTests: XCTestCase {
     func testDeferredAdoptionRejectsReceiptInvalidatedBeforeAvailability() throws {
         let tabManager = BrowserManager()
         let admission = try ProfileReferenceAdmissionLedger(
-            context: tabManager.modelContext
+            database: tabManager.database
         )
         let adopter = makePendingAdopter(
             for: tabManager,
@@ -17,21 +16,22 @@ final class PendingShortcutPinAdopterTests: XCTestCase {
         )
         let retiringProfile = Profile(name: "Retiring")
         let fallbackProfile = Profile(name: "Fallback")
-        tabManager.modelContext.insert(
-            ProfileEntity(
-                id: retiringProfile.id,
-                name: retiringProfile.name,
-                index: 0
+        try tabManager.database.transaction {
+            try $0.profiles.save(
+                ProfileRecord(
+                    id: retiringProfile.id,
+                    name: retiringProfile.name,
+                    index: 0
+                )
             )
-        )
-        tabManager.modelContext.insert(
-            ProfileEntity(
-                id: fallbackProfile.id,
-                name: fallbackProfile.name,
-                index: 1
+            try $0.profiles.save(
+                ProfileRecord(
+                    id: fallbackProfile.id,
+                    name: fallbackProfile.name,
+                    index: 1
+                )
             )
-        )
-        try tabManager.modelContext.save()
+        }
         let pin = makePendingPin()
         install([pin], in: tabManager)
         let aggregate = try XCTUnwrap(

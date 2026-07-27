@@ -37,18 +37,27 @@ struct SafariExtensionImportedRecord: Codable, Equatable, Sendable {
 
 /// Minimal registry for scanner output vs explicit user imports.
 final class SafariExtensionImportStore: @unchecked Sendable {
-    /// Process-scoped Defaults-backed store constructed at first use.
-    /// Prefer injecting this instance (or a test suite) rather than constructing anew.
-    static let process: SafariExtensionImportStore = SafariExtensionImportStore()
+    /// Non-durable fallback for low-level diagnostics and isolated tests.
+    static let transient = SafariExtensionImportStore()
 
     private static let log = Logger.sumi(category: "Extensions")
+    private static let documentKey = "safari-extension.import-registry"
 
-    private let defaults: UserDefaults
-    private let discoveredKey = "Sumi.SafariExtensionImportStore.discovered"
-    private let importedKey = "Sumi.SafariExtensionImportStore.imported"
+    private struct State: Codable {
+        var discovered: [SafariExtensionImportCandidateRecord] = []
+        var imported: [SafariExtensionImportedRecord] = []
+    }
 
-    init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
+    private let database: SumiDatabase?
+    private let memoryLock = NSLock()
+    private var memoryState = State()
+
+    init(database: SumiDatabase) {
+        self.database = database
+    }
+
+    private init() {
+        database = nil
     }
 
     func refreshDiscoveredCandidates(_ candidates: [DiscoveredSafariExtensionCandidate]) {
@@ -62,7 +71,7 @@ final class SafariExtensionImportStore: @unchecked Sendable {
                 lastDiscoveredAt: now
             )
         }
-        persistDiscovered(records)
+        updateState { $0.discovered = records }
     }
 
     func discoveredCandidates() -> [SafariExtensionImportCandidateRecord] {
@@ -94,32 +103,40 @@ final class SafariExtensionImportStore: @unchecked Sendable {
     }
 
     func removeImportedRecord(forInstalledExtensionId installedExtensionId: String) {
-        var imported = loadImported()
-        imported.removeAll { $0.installedExtensionId == installedExtensionId }
-        persistImported(imported)
+        updateState {
+            $0.imported.removeAll {
+                $0.installedExtensionId == installedExtensionId
+            }
+        }
     }
 
     func removeImportedRecord(extensionBundleIdentifier: String) {
-        var imported = loadImported()
-        imported.removeAll { $0.extensionBundleIdentifier == extensionBundleIdentifier }
-        persistImported(imported)
+        updateState {
+            $0.imported.removeAll {
+                $0.extensionBundleIdentifier == extensionBundleIdentifier
+            }
+        }
     }
 
     func markImported(
         candidate: DiscoveredSafariExtensionCandidate,
         installedExtensionId: String
     ) {
-        var imported = loadImported()
-        imported.removeAll { $0.extensionBundleIdentifier == candidate.extensionBundleIdentifier }
-        imported.append(
-            SafariExtensionImportedRecord(
-                extensionBundleIdentifier: candidate.extensionBundleIdentifier,
-                appexPath: candidate.appexURL.path,
-                installedExtensionId: installedExtensionId,
-                importedAt: Date()
+        updateState {
+            $0.imported.removeAll {
+                $0.extensionBundleIdentifier
+                    == candidate.extensionBundleIdentifier
+            }
+            $0.imported.append(
+                SafariExtensionImportedRecord(
+                    extensionBundleIdentifier:
+                        candidate.extensionBundleIdentifier,
+                    appexPath: candidate.appexURL.path,
+                    installedExtensionId: installedExtensionId,
+                    importedAt: Date()
+                )
             )
-        )
-        persistImported(imported)
+        }
     }
 
     func markImported(
@@ -127,56 +144,74 @@ final class SafariExtensionImportStore: @unchecked Sendable {
         appexPath: String,
         installedExtensionId: String
     ) {
-        var imported = loadImported()
-        imported.removeAll { $0.extensionBundleIdentifier == extensionBundleIdentifier }
-        imported.append(
-            SafariExtensionImportedRecord(
-                extensionBundleIdentifier: extensionBundleIdentifier,
-                appexPath: appexPath,
-                installedExtensionId: installedExtensionId,
-                importedAt: Date()
+        updateState {
+            $0.imported.removeAll {
+                $0.extensionBundleIdentifier == extensionBundleIdentifier
+            }
+            $0.imported.append(
+                SafariExtensionImportedRecord(
+                    extensionBundleIdentifier: extensionBundleIdentifier,
+                    appexPath: appexPath,
+                    installedExtensionId: installedExtensionId,
+                    importedAt: Date()
+                )
             )
-        )
-        persistImported(imported)
+        }
     }
 
     // MARK: - Persistence
 
     private func loadDiscovered() -> [SafariExtensionImportCandidateRecord] {
-        decode([SafariExtensionImportCandidateRecord].self, forKey: discoveredKey) ?? []
-    }
-
-    private func persistDiscovered(_ records: [SafariExtensionImportCandidateRecord]) {
-        encode(records, forKey: discoveredKey)
+        loadState().discovered
     }
 
     private func loadImported() -> [SafariExtensionImportedRecord] {
-        decode([SafariExtensionImportedRecord].self, forKey: importedKey) ?? []
+        loadState().imported
     }
 
-    private func persistImported(_ records: [SafariExtensionImportedRecord]) {
-        encode(records, forKey: importedKey)
-    }
-
-    private func decode<T: Decodable>(_ type: T.Type, forKey key: String) -> T? {
-        guard let data = defaults.data(forKey: key) else { return nil }
+    private func loadState() -> State {
+        guard let database else {
+            return memoryLock.withLock { memoryState }
+        }
         do {
-            return try JSONDecoder().decode(type, from: data)
+            return try database.read { connection in
+                try connection.documents.value(
+                    State.self,
+                    forKey: Self.documentKey
+                ) ?? State()
+            }
         } catch {
-            Self.log.error("Failed to load Safari extension import store value for \(key, privacy: .public): \(error.localizedDescription, privacy: .public)")
-            return nil
+            Self.log.error(
+                "Failed to load Safari extension import registry: \(error.localizedDescription, privacy: .public)"
+            )
+            return State()
         }
     }
 
-    private func encode<T: Encodable>(_ value: T, forKey key: String) {
-        let data: Data
-        do {
-            data = try JSONEncoder().encode(value)
-        } catch {
-            Self.log.error("Failed to persist Safari extension import store value for \(key, privacy: .public): \(error.localizedDescription, privacy: .public)")
+    private func updateState(_ mutation: (inout State) -> Void) {
+        guard let database else {
+            memoryLock.withLock {
+                mutation(&memoryState)
+            }
             return
         }
-        defaults.set(data, forKey: key)
+        do {
+            try database.transaction { connection in
+                var state = try connection.documents.value(
+                    State.self,
+                    forKey: Self.documentKey
+                ) ?? State()
+                mutation(&state)
+                try connection.documents.save(
+                    state,
+                    forKey: Self.documentKey
+                )
+            }
+        } catch {
+            Self.log.error(
+                "Failed to persist Safari extension import registry: \(error.localizedDescription, privacy: .public)"
+            )
+        }
     }
 }
 

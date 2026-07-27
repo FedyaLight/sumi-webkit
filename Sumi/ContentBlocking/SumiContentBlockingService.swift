@@ -58,8 +58,7 @@ final class SumiContentBlockingService {
             compiler: SumiContentRuleListCompiling =
                 SumiWKContentRuleListCompiler(),
             ruleListProvider: SumiContentRuleListSetProviding? = nil,
-            compiledRuleListCatalog: SumiCompiledContentRuleListCataloging =
-                SumiContentBlockingService.defaultCompiledRuleListCatalog
+            compiledRuleListCatalog: SumiCompiledContentRuleListCataloging
         ) {
             let materializer = SumiContentRuleListMaterializer(compiler: compiler)
             self.init(
@@ -108,9 +107,11 @@ final class SumiContentBlockingService {
         }
     }
 
+    #if DEBUG
     private static let defaultCompiledRuleListCatalog:
         SumiCompiledContentRuleListCataloging =
             SumiCompiledContentRuleListCatalog()
+    #endif
 
     isolated deinit {
         taskRegistry.cancelAll()

@@ -38,7 +38,7 @@ final class WindowSessionPersistenceCoordinator {
         }
 
         // An immediate live projection supersedes the whole coalesced batch:
-        // every pending write targets the same legacy primary key.
+        // every pending write targets the same unified snapshot key.
         scheduler.cancelAll()
         let durablePrimary = regularWindowStates.max {
             $0.id.uuidString < $1.id.uuidString

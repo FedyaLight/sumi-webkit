@@ -1,5 +1,4 @@
 import AppKit
-import SwiftData
 import WebKit
 import XCTest
 
@@ -34,7 +33,7 @@ final class SafariExtension1PasswordRuntimeTests: XCTestCase {
         let attachedRuntime = ExtensionAttachedRuntimeCapture()
         let inspection = ExtensionManagerInspectionCapture()
         let manager = makeSafariExtensionTestExtensionManager(
-            context: container.mainContext,
+            database: container,
             initialProfile: profile,
             browserConfiguration: browserConfiguration,
             attachedRuntimeCapture: attachedRuntime,
@@ -243,11 +242,8 @@ final class SafariExtension1PasswordRuntimeTests: XCTestCase {
 
     // MARK: - Helpers
 
-    private func makeTestContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+    private func makeTestContainer() throws -> SumiDatabase {
+        try SumiDatabase.inMemory()
     }
 
     private final class NavigationDelegateBox: NSObject, WKNavigationDelegate {

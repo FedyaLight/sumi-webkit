@@ -5,8 +5,8 @@ import XCTest
 @MainActor
 final class ExtensionBootstrapChromeAdmissionTests: XCTestCase {
     func testLedgerAdmitsOneProfilePerIdentityAndVersion() {
-        let defaults = makeDefaults()
-        let ledger = ExtensionGlobalInstallLedger(userDefaults: defaults)
+        let defaults = makeDatabase()
+        let ledger = ExtensionGlobalInstallLedger(database: defaults)
         let firstProfile = UUID()
         let secondProfile = UUID()
 
@@ -50,7 +50,7 @@ final class ExtensionBootstrapChromeAdmissionTests: XCTestCase {
     }
 
     func testExistingInstallMigrationDoesNotCreateFreshOnboardingOwner() {
-        let ledger = ExtensionGlobalInstallLedger(userDefaults: makeDefaults())
+        let ledger = ExtensionGlobalInstallLedger(database: makeDatabase())
         let firstRestoredProfile = UUID()
         let otherProfile = UUID()
 
@@ -81,7 +81,7 @@ final class ExtensionBootstrapChromeAdmissionTests: XCTestCase {
     }
 
     func testAdmissionSuppressesOnlyBootstrapWithoutUserGesture() {
-        let ledger = ExtensionGlobalInstallLedger(userDefaults: makeDefaults())
+        let ledger = ExtensionGlobalInstallLedger(database: makeDatabase())
         let admission = ExtensionBootstrapChromeAdmission(ledger: ledger)
         let firstProfile = UUID()
         let secondProfile = UUID()
@@ -157,7 +157,7 @@ final class ExtensionBootstrapChromeAdmissionTests: XCTestCase {
     }
 
     func testUninstallClearsLedger() {
-        let ledger = ExtensionGlobalInstallLedger(userDefaults: makeDefaults())
+        let ledger = ExtensionGlobalInstallLedger(database: makeDatabase())
         let admission = ExtensionBootstrapChromeAdmission(ledger: ledger)
         let firstProfile = UUID()
         let secondProfile = UUID()
@@ -188,7 +188,7 @@ final class ExtensionBootstrapChromeAdmissionTests: XCTestCase {
 
     func testProfileAttachmentNeverInheritsGlobalBootstrapGate() {
         let admission = ExtensionBootstrapChromeAdmission(
-            ledger: ExtensionGlobalInstallLedger(userDefaults: makeDefaults())
+            ledger: ExtensionGlobalInstallLedger(database: makeDatabase())
         )
         let ownerProfile = UUID()
         let secondaryProfile = UUID()
@@ -227,7 +227,7 @@ final class ExtensionBootstrapChromeAdmissionTests: XCTestCase {
 
     func testSettlementEndsBootstrapGateForTheLoadedContext() {
         let admission = ExtensionBootstrapChromeAdmission(
-            ledger: ExtensionGlobalInstallLedger(userDefaults: makeDefaults())
+            ledger: ExtensionGlobalInstallLedger(database: makeDatabase())
         )
         let profileID = UUID()
         let scope = admission.begin(
@@ -258,9 +258,7 @@ final class ExtensionBootstrapChromeAdmissionTests: XCTestCase {
         )
     }
 
-    private func makeDefaults() -> UserDefaults {
-        UserDefaults(
-            suiteName: "ExtensionBootstrapChromeAdmissionTests.\(UUID().uuidString)"
-        )!
+    private func makeDatabase() -> SumiDatabase {
+        try! SumiDatabase.inMemory()
     }
 }

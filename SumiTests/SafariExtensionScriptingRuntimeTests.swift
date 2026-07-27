@@ -1,4 +1,3 @@
-import SwiftData
 import WebKit
 import XCTest
 
@@ -25,7 +24,7 @@ final class SafariExtensionScriptingRuntimeTests: XCTestCase {
         let attachedRuntime = ExtensionAttachedRuntimeCapture()
         let inspection = ExtensionManagerInspectionCapture()
         let manager = makeSafariExtensionTestExtensionManager(
-            context: container.mainContext,
+            database: container,
             initialProfile: profile,
             browserConfiguration: browserConfiguration,
             attachedRuntimeCapture: attachedRuntime,
@@ -446,11 +445,8 @@ final class SafariExtensionScriptingRuntimeTests: XCTestCase {
             .write(to: url, options: [.atomic])
     }
 
-    private func makeTestContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+    private func makeTestContainer() throws -> SumiDatabase {
+        try SumiDatabase.inMemory()
     }
 
     private func makeScratchDirectory() throws -> URL {

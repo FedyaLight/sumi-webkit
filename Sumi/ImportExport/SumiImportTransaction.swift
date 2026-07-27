@@ -16,7 +16,7 @@ final class SumiImportTransaction {
         runtime: any SumiImportRuntimeMutating,
         bookmarks: any SumiImportBookmarkMutating,
         backupWriter: any SumiImportBackupWriting,
-        journal: any SumiImportTransactionJournal = SumiImportTransactionFileJournal(),
+        journal: any SumiImportTransactionJournal,
         profileRetirement: any SumiImportProfileRetiring = SumiImportNoopProfileRetirement(),
         executionGate: SumiImportTransactionExecutionGate = .shared,
         shouldInterrupt: @escaping (SumiImportTransactionFaultPoint) -> Bool = { _ in false }

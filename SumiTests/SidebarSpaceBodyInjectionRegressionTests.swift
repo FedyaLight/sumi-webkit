@@ -373,11 +373,11 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
             settingsStore: SumiModuleSettingsStore(userDefaults: defaults)
         )
         registry.enable(.extensions)
-        let container = try makeInMemoryStartupModelContainer()
+        let container = try makeInMemoryStartupDatabase()
         let surfaceStore = BrowserExtensionSurfaceStore(binding: nil)
         let module = SumiExtensionsModule(
             moduleRegistry: registry,
-            context: container.mainContext,
+            database: container,
             surfaceStore: surfaceStore
         )
         let browserRuntime = attachBrowserRuntime(to: module)
@@ -432,16 +432,16 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         registry.enable(.extensions)
         let profileA = Profile(name: "Current A")
         let profileB = Profile(name: "Rendered B")
-        let container = try makeInMemoryStartupModelContainer()
+        let container = try makeInMemoryStartupDatabase()
         let surfaceStore = BrowserExtensionSurfaceStore(binding: nil)
         var inspection: ExtensionManagerTestInspection?
         let module = SumiExtensionsModule(
             moduleRegistry: registry,
-            context: container.mainContext,
+            database: container,
             initialProfileProvider: { profileA },
             managerFactory: { context, profile, configuration, registry in
                 ExtensionManager(
-                    context: context,
+            database: context,
                     initialProfile: profile,
                     browserConfiguration: configuration,
                     moduleRegistry: registry,
@@ -495,7 +495,7 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
             ["one"]
         )
         let reopenedPins = ExtensionToolbarPinningOwner(
-            preferences: preferences,
+            database: container,
             currentProfileId: { profileA.id },
             installedExtensionIDs: { [] },
             publishedPinnedIDs: { [] },
@@ -503,7 +503,7 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         )
         XCTAssertEqual(reopenedPins.pinnedToolbarExtensionIDs(profileId: profileA.id), [])
         XCTAssertEqual(reopenedPins.pinnedToolbarExtensionIDs(profileId: profileB.id), ["one"])
-        let reopenedHub = ExtensionHubOrderingOwner(preferences: preferences)
+        let reopenedHub = ExtensionHubOrderingOwner(database: container)
         XCTAssertEqual(
             reopenedHub.orderedUnpinnedExtensionIDs(
                 candidateIDs: ["hub-one", "hub-two"],
@@ -549,15 +549,15 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
             settingsStore: SumiModuleSettingsStore(userDefaults: defaults)
         )
         registry.enable(.extensions)
-        let container = try makeInMemoryStartupModelContainer()
+        let container = try makeInMemoryStartupDatabase()
         let surfaceStore = BrowserExtensionSurfaceStore(binding: nil)
         var inspection: ExtensionManagerTestInspection?
         let module = SumiExtensionsModule(
             moduleRegistry: registry,
-            context: container.mainContext,
+            database: container,
             managerFactory: { context, profile, configuration, registry in
                 ExtensionManager(
-                    context: context,
+            database: context,
                     initialProfile: profile,
                     browserConfiguration: configuration,
                     moduleRegistry: registry,
@@ -605,15 +605,15 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
             settingsStore: SumiModuleSettingsStore(userDefaults: defaults)
         )
         registry.enable(.extensions)
-        let container = try makeInMemoryStartupModelContainer()
+        let container = try makeInMemoryStartupDatabase()
         let surfaceStore = BrowserExtensionSurfaceStore(binding: nil)
         var inspection: ExtensionManagerTestInspection?
         let module = SumiExtensionsModule(
             moduleRegistry: registry,
-            context: container.mainContext,
+            database: container,
             managerFactory: { context, profile, configuration, registry in
                 ExtensionManager(
-                    context: context,
+            database: context,
                     initialProfile: profile,
                     browserConfiguration: configuration,
                     moduleRegistry: registry,
@@ -765,15 +765,15 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
             settingsStore: SumiModuleSettingsStore(userDefaults: defaults)
         )
         registry.enable(.extensions)
-        let container = try makeInMemoryStartupModelContainer()
+        let container = try makeInMemoryStartupDatabase()
         let surfaceStore = BrowserExtensionSurfaceStore(binding: nil)
         var inspection: ExtensionManagerTestInspection?
         let module = SumiExtensionsModule(
             moduleRegistry: registry,
-            context: container.mainContext,
+            database: container,
             managerFactory: { context, profile, configuration, registry in
                 ExtensionManager(
-                    context: context,
+            database: context,
                     initialProfile: profile,
                     browserConfiguration: configuration,
                     moduleRegistry: registry,

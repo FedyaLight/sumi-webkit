@@ -16,10 +16,7 @@ final class LastSessionWindowsStore: ObservableObject {
 
     private static let log = Logger.sumi(category: "LastSessionWindowsStore")
 
-    private enum Const {
-        static let defaultsKey =
-            "\(SumiAppIdentity.runtimeBundleIdentifier).history.lastSessionWindows"
-    }
+    private static let documentKey = "session.last-windows"
 
     private struct Archive: Codable {
         var snapshots: [LastSessionWindowSnapshot]
@@ -30,9 +27,9 @@ final class LastSessionWindowsStore: ObservableObject {
     private(set) var tabSnapshot: TabPersistenceSnapshot?
     private(set) var archiveLoadState: ArchiveLoadState
 
-    init(userDefaults: UserDefaults = .standard) {
-        self.userDefaults = userDefaults
-        switch Self.loadArchive(from: userDefaults) {
+    init(database: SumiDatabase) {
+        self.database = database
+        switch Self.loadArchive(from: database) {
         case .missing:
             self.snapshots = []
             self.tabSnapshot = nil
@@ -117,7 +114,7 @@ final class LastSessionWindowsStore: ObservableObject {
             } == true
     }
 
-    private let userDefaults: UserDefaults
+    private let database: SumiDatabase
 
     private func save(_ archive: Archive) -> Bool {
         let data: Data
@@ -129,8 +126,17 @@ final class LastSessionWindowsStore: ObservableObject {
             )
             return false
         }
-        userDefaults.set(data, forKey: Const.defaultsKey)
-        return true
+        do {
+            try database.transaction {
+                try $0.documents.save(data, forKey: Self.documentKey)
+            }
+            return true
+        } catch {
+            Self.log.error(
+                "Failed to persist last-session windows: \(error.localizedDescription, privacy: .public)"
+            )
+            return false
+        }
     }
 
     private enum ArchiveLoadResult {
@@ -140,9 +146,20 @@ final class LastSessionWindowsStore: ObservableObject {
     }
 
     private static func loadArchive(
-        from userDefaults: UserDefaults
+        from database: SumiDatabase
     ) -> ArchiveLoadResult {
-        guard let data = userDefaults.data(forKey: Const.defaultsKey) else {
+        let data: Data?
+        do {
+            data = try database.read {
+                try $0.documents.data(forKey: documentKey)
+            }
+        } catch {
+            log.error(
+                "Failed to read last-session archive: \(error.localizedDescription, privacy: .public)"
+            )
+            return .failed
+        }
+        guard let data else {
             return .missing
         }
         do {

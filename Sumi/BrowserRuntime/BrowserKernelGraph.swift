@@ -2,7 +2,6 @@ import Combine
 import Foundation
 import SumiDomain
 import SumiWebRuntime
-import SwiftData
 
 /// Always-on managers assembled by `BrowserCompositionRoot.makeKernel` so
 /// `BrowserManager` init can assign from a single graph instead of inline construction.
@@ -11,7 +10,7 @@ struct BrowserKernelGraph {
     let objectWillChange: ObservableObjectPublisher
     let webViewSessions: WebViewSessionRepository
     let windowRegistry: WindowRegistry
-    let modelContext: ModelContext
+    let database: SumiDatabase
     let moduleRegistry: SumiModuleRegistry
     let sidebarHostRecoveryCoordinator: SidebarHostRecoveryHandling
     let adBlockingModule: SumiAdBlockingModule

@@ -14,17 +14,16 @@ import OSLog
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionHubOrderingOwner {
-    static let unpinnedOrderStorageKey =
-        "\(SumiAppIdentity.bundleIdentifier).extensions.hubUnpinnedOrderByProfile"
+    private static let documentKey = "extensions.hub-order"
     private static let globalProfileKey = "__global__"
     private static let logger = Logger.sumi(category: "Extensions")
 
-    private let preferences: UserDefaults
+    private let database: SumiDatabase
     private var idsByProfile: [String: [String]]
 
-    init(preferences: UserDefaults) {
-        self.preferences = preferences
-        self.idsByProfile = Self.loadUnpinnedOrderByProfile(from: preferences)
+    init(database: SumiDatabase) {
+        self.database = database
+        self.idsByProfile = Self.loadUnpinnedOrderByProfile(from: database)
     }
 
     /// The unpinned tiles in their persisted display order. `candidateIDs` are
@@ -71,8 +70,12 @@ final class ExtensionHubOrderingOwner {
 
     private func persist() {
         do {
-            let data = try JSONEncoder().encode(idsByProfile)
-            preferences.set(data, forKey: Self.unpinnedOrderStorageKey)
+            try database.transaction {
+                try $0.documents.save(
+                    idsByProfile,
+                    forKey: Self.documentKey
+                )
+            }
         } catch {
             Self.logger.error(
                 "Failed to encode hub unpinned order: \(String(describing: error), privacy: .public)"
@@ -81,14 +84,15 @@ final class ExtensionHubOrderingOwner {
     }
 
     static func loadUnpinnedOrderByProfile(
-        from userDefaults: UserDefaults = .standard
+        from database: SumiDatabase
     ) -> [String: [String]] {
-        guard let data = userDefaults.data(forKey: unpinnedOrderStorageKey) else {
-            return [:]
-        }
-
         do {
-            let decoded = try JSONDecoder().decode([String: [String]].self, from: data)
+            let decoded = try database.read {
+                try $0.documents.value(
+                    [String: [String]].self,
+                    forKey: documentKey
+                ) ?? [:]
+            }
             return decoded.mapValues(Self.normalized)
         } catch {
             Self.logger.error(

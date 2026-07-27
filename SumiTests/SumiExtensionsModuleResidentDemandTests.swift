@@ -1,4 +1,3 @@
-import SwiftData
 import WebKit
 import XCTest
 
@@ -9,10 +8,7 @@ import XCTest
 final class SumiExtensionsModuleResidentDemandTests: XCTestCase {
     func testEnabledModuleFailsClosedUntilExactRuntimeActivatesOnce()
         throws {
-        let container = try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+        let container = try SumiDatabase.inMemory()
         let defaults = try XCTUnwrap(
             UserDefaults(suiteName: UUID().uuidString)
         )
@@ -32,13 +28,13 @@ final class SumiExtensionsModuleResidentDemandTests: XCTestCase {
         var createdManager: ExtensionManager?
         let module = SumiExtensionsModule(
             moduleRegistry: registry,
-            context: container.mainContext,
+            database: container,
             browserConfiguration: configuration,
             initialProfileProvider: { profile },
             managerFactory: { _, _, _, _ in
                 managerFactoryAdmissions += 1
                 let manager = self.makeSafariExtensionTestExtensionManager(
-                    context: container.mainContext,
+            database: container,
                     initialProfile: profile,
                     browserConfiguration: configuration,
                     moduleRegistry: registry
@@ -204,17 +200,14 @@ final class SumiExtensionsModuleResidentDemandTests: XCTestCase {
     }
 
     private func makeFixture(hasEnabledExtension: Bool) throws -> (
-        container: ModelContainer,
+        container: SumiDatabase,
         module: SumiExtensionsModule,
         manager: ExtensionManager,
         inspection: ExtensionManagerTestInspection,
         profile: Profile,
         browserAttachment: ExtensionManagerBrowserAttachment
     ) {
-        let container = try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+        let container = try SumiDatabase.inMemory()
         let defaults = try XCTUnwrap(
             UserDefaults(suiteName: UUID().uuidString)
         )
@@ -226,7 +219,7 @@ final class SumiExtensionsModuleResidentDemandTests: XCTestCase {
         let configuration = BrowserConfiguration()
         let inspectionCapture = ExtensionManagerInspectionCapture()
         let manager = makeSafariExtensionTestExtensionManager(
-            context: container.mainContext,
+            database: container,
             initialProfile: profile,
             browserConfiguration: configuration,
             moduleRegistry: registry,
@@ -240,7 +233,7 @@ final class SumiExtensionsModuleResidentDemandTests: XCTestCase {
         )
         let module = SumiExtensionsModule(
             moduleRegistry: registry,
-            context: container.mainContext,
+            database: container,
             browserConfiguration: configuration,
             initialProfileProvider: { profile },
             managerFactory: { _, _, _, _ in manager }

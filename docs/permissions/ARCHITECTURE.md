@@ -33,7 +33,7 @@ Glance and MiniWindow surfaces are fail-closed for permission prompt UI (`canPre
 
 `SumiPermissionCoordinator` owns permission decision flow. It runs security policy gates, checks one-time/session memory, reads persistent profile storage, exposes active authorization queries, queues duplicate or later requests, records prompt and anti-abuse events, and resolves all waiters exactly once.
 
-`SwiftDataPermissionStore` stores persistent decisions for persistent profiles only. It rejects ephemeral profile keys, one-time/session decisions, `filePicker`, and the grouping helper `cameraAndMicrophone`.
+`DatabasePermissionStore` stores persistent decisions in `Sumi.sqlite` for persistent profiles only. It rejects ephemeral profile keys, one-time/session decisions, `filePicker`, and the grouping helper `cameraAndMicrophone`.
 
 `InMemoryPermissionStore` stores one-time and session decisions. One-time identities include the transient page id, while persistent identities exclude it. Session decisions are profile/session scoped and memory-only.
 
@@ -67,7 +67,7 @@ Bridges are callback adapters. They build `SumiPermissionSecurityContext`, call 
 | File picker | `SumiFilePickerPermissionBridge`, `SumiFilePickerPanelPresenter` | Normal-tab `runOpenPanel` gates through the bridge before the presenter creates `NSOpenPanel`. File picker decisions are one-time only and never persist. |
 | Storage access | `SumiStorageAccessPermissionBridge` | Private WebKit storage-access selectors map to `.storageAccess` coordinator decisions and fail closed when unavailable. |
 
-Bridges must not write SwiftData directly, call macOS system authorization APIs directly, mutate SwiftUI state directly, use display domains as security keys, persist raw URL query/fragment when a redacted representation is sufficient, or persist site deny decisions for system-blocked, suppressed, cancelled, stale-page, unavailable-private-API, or background default-block outcomes.
+Bridges must not write the database directly, call macOS system authorization APIs directly, mutate SwiftUI state directly, use display domains as security keys, persist raw URL query/fragment when a redacted representation is sufficient, or persist site deny decisions for system-blocked, suppressed, cancelled, stale-page, unavailable-private-API, or background default-block outcomes.
 
 Active visible normal-tab promptable requests use prompt-settlement defaults. Fail-closed fallback strategies remain only for headless tests, no-window/no-presenter states, background requests where prompting is unsafe, stale page/tab/WebView cases, and unavailable private WebKit symbols:
 
@@ -85,7 +85,7 @@ Permission UI is split by scope:
 - URL hub current-site Permissions submenu: current-tab/site decisions, current-page runtime controls, and current-session event summaries.
 - Privacy Settings -> Site Settings: profile-scoped persistent exceptions, recent activity, category pages, site detail pages, unsupported-content note, cleanup status/toggle, and site permission reset.
 
-SwiftUI views do not write SwiftData directly, call WebKit permission APIs, or request macOS authorization directly. URL hub reset and Privacy Site Settings reset remove permission decisions only; site data deletion remains a separate explicit data-delete action.
+SwiftUI views do not write `Sumi.sqlite` directly, call WebKit permission APIs, or request macOS authorization directly. URL hub reset and Privacy Site Settings reset remove permission decisions only; site data deletion remains a separate explicit data-delete action.
 
 Unsupported content settings for JavaScript, images, automatic downloads, ads, background sync, and sound remain note-only. They are not exposed as fake permission controls.
 

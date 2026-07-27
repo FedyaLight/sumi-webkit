@@ -1,5 +1,4 @@
 import Combine
-import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -174,25 +173,26 @@ final class HistoryTabRecorderTests: XCTestCase {
     }
 
     private func makeHarness() throws -> (
-        container: ModelContainer,
+        container: SumiDatabase,
         browserManager: BrowserManager,
         store: HistoryStore,
         profile: Profile,
         tab: Tab,
         delayedActions: ManualMainActorDelayedActionScheduler
     ) {
-        let container = try ModelContainer(
-            for: Schema([HistoryEntryEntity.self, HistoryVisitEntity.self]),
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
-        let context = ModelContext(container)
+        let container = try SumiDatabase.inMemory()
+        let context = container
         let browserManager = BrowserManager(
             notificationService: FakeSumiNotificationService()
         )
         let delayedActions = ManualMainActorDelayedActionScheduler()
         let profile = Profile(name: "Primary")
-        let historyManager = HistoryManager(
-            context: context,
+        try container.transaction {
+            try $0.profiles.save(
+                ProfileRecord(id: profile.id, name: profile.name, index: 0)
+            )
+        }
+        let historyManager = HistoryManager(database: context,
             profileId: profile.id,
             faviconCleaner: TabDependencyIsolationDefaults.historyFaviconCleaner,
             visitedLinkStore: TabDependencyIsolationDefaults.historyVisitedLinkStore,
@@ -203,7 +203,6 @@ final class HistoryTabRecorderTests: XCTestCase {
             name: "Example"
         )
 
-        browserManager.modelContext = context
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
         browserManager.historyManager = historyManager

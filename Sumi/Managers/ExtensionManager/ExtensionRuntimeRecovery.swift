@@ -15,7 +15,7 @@ final class ExtensionRuntimeRecovery {
     }
 
     func recoverEnabledRuntime(
-        from entity: ExtensionEntity,
+        from entity: InstalledExtensionMetadata,
         profileIDs: Set<UUID>,
         mutationLease: ExtensionRuntimeMutationLease
     ) async throws {
@@ -42,5 +42,4 @@ final class ExtensionRuntimeRecovery {
             )
         }
     }
-
 }

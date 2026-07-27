@@ -1,11 +1,9 @@
 import AppKit
 import Combine
 import SumiDomain
-import SwiftData
 import XCTest
 
 @testable import Sumi
-
 
 /// Canonical-instance rejection, folder structure operations, ownership moves between containers, and drag-scope rejection.
 @MainActor
@@ -858,5 +856,4 @@ final class SidebarDragOwnershipTransferTests: SidebarDragContextTestCase {
         XCTAssertEqual(tabManager.regularTabCollectionOwner.tabs(in: otherSpace.id).map(\.id), [otherTab.id])
         XCTAssertTrue(tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: sourceSpace.id).isEmpty)
     }
-
 }

@@ -68,14 +68,16 @@ final class BrowserStartupProtectionRuntimeTests: XCTestCase {
         let adBlockingModule = SumiAdBlockingModule(
             moduleRegistry: moduleRegistry,
             preparedBundleResourceURL: nil,
-            preparedBundleRemoteRootURL: nil
+            preparedBundleRemoteRootURL: nil,
+            compiledRuleListCatalog: SumiCompiledContentRuleListCatalog()
         )
         let protectionCoordinator = SumiProtectionCoordinator(
             settings: settings,
             adBlockingModule: adBlockingModule,
             bundleUpdateStatusStore: SumiProtectionBundleUpdateStatusStore(
                 userDefaults: defaults
-            )
+            ),
+            compiledRuleListCatalog: SumiCompiledContentRuleListCatalog()
         )
         let browser = BrowserManager(
             windowRegistry: WindowRegistry(),

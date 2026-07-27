@@ -14,6 +14,7 @@ final class SumiFaviconBlobTransaction: @unchecked Sendable {
     private let queue = DispatchQueue(label: "SumiFaviconBlobTransaction", qos: .utility)
     private let queueKey = DispatchSpecificKey<UInt8>()
     private let cache: SumiFaviconBlobCache
+    private let database: SumiDatabase
     private let diskStorage: SumiFaviconBlobDiskStorage
     private let codec: SumiFaviconMetadataCodec
     private let persistCoalesceInterval: TimeInterval
@@ -24,11 +25,13 @@ final class SumiFaviconBlobTransaction: @unchecked Sendable {
 
     init(
         cache: SumiFaviconBlobCache,
+        database: SumiDatabase,
         diskStorage: SumiFaviconBlobDiskStorage,
         codec: SumiFaviconMetadataCodec,
         persistCoalesceInterval: TimeInterval
     ) {
         self.cache = cache
+        self.database = database
         self.diskStorage = diskStorage
         self.codec = codec
         self.persistCoalesceInterval = max(0, persistCoalesceInterval)
@@ -133,6 +136,11 @@ final class SumiFaviconBlobTransaction: @unchecked Sendable {
         try sync {
             if !partition.isPrivate {
                 try diskStorage.removePartition(partition)
+                try database.transaction {
+                    try $0.documents.delete(
+                        key: metadataKey(for: partition)
+                    )
+                }
             }
             cache.clear(partition)
             pendingPersistPartitions.remove(partition)
@@ -165,7 +173,9 @@ final class SumiFaviconBlobTransaction: @unchecked Sendable {
 
         let loadedData: Data
         do {
-            guard let data = try diskStorage.readMetadata(for: partition) else {
+            guard let data = try database.read({
+                try $0.documents.data(forKey: metadataKey(for: partition))
+            }) else {
                 let metadata = SumiFaviconBlobMetadata()
                 cache.storeMetadata(metadata, for: partition)
                 return metadata
@@ -185,7 +195,6 @@ final class SumiFaviconBlobTransaction: @unchecked Sendable {
             cache.storeMetadata(metadata, for: partition)
             return metadata
         } catch let error as SumiFaviconMetadataCodec.DecodingError {
-            preserveUnreadableMetadata(loadedData, partition: partition)
             switch error {
             case .unsupportedSchemaVersion(let version):
                 Self.log.error(
@@ -193,7 +202,6 @@ final class SumiFaviconBlobTransaction: @unchecked Sendable {
                 )
             }
         } catch {
-            preserveUnreadableMetadata(loadedData, partition: partition)
             Self.log.error(
                 "Failed to decode favicon metadata for partition \(partition.storageComponent, privacy: .public): \(String(describing: error), privacy: .public)"
             )
@@ -209,7 +217,10 @@ final class SumiFaviconBlobTransaction: @unchecked Sendable {
         partition: SumiFaviconPartition
     ) throws {
         guard !partition.isPrivate else { return }
-        try diskStorage.writeMetadata(try codec.encode(metadata), for: partition)
+        let data = try codec.encode(metadata)
+        try database.transaction {
+            try $0.documents.save(data, forKey: metadataKey(for: partition))
+        }
     }
 
     private func schedulePersistLocked(
@@ -262,20 +273,6 @@ final class SumiFaviconBlobTransaction: @unchecked Sendable {
         }
     }
 
-    private func preserveUnreadableMetadata(
-        _ data: Data,
-        partition: SumiFaviconPartition
-    ) {
-        do {
-            try diskStorage.preserveUnreadableMetadata(data, for: partition)
-        } catch {
-            let path = diskStorage.unreadableMetadataURL(for: partition).path
-            Self.log.error(
-                "Failed to preserve unreadable favicon metadata at \(path, privacy: .public): \(String(describing: error), privacy: .public)"
-            )
-        }
-    }
-
     private func partitions(
         for scope: SumiFaviconPartitionMutationScope
     ) -> Set<SumiFaviconPartition> {
@@ -284,7 +281,23 @@ final class SumiFaviconBlobTransaction: @unchecked Sendable {
             return [partition]
         case .allKnown:
             do {
-                return cache.loadedPartitions.union(try diskStorage.discoverRegularPartitions())
+                let persisted = try database.read {
+                    try $0.documents.keys(withPrefix: "favicon.metadata.")
+                }.compactMap { key -> SumiFaviconPartition? in
+                    let component = String(
+                        key.dropFirst("favicon.metadata.".count)
+                    )
+                    guard component.hasPrefix("profile-") else { return nil }
+                    return SumiFaviconPartition(
+                        profileIdentifier: String(
+                            component.dropFirst("profile-".count)
+                        ),
+                        isPrivate: false
+                    )
+                }
+                return cache.loadedPartitions
+                    .union(persisted)
+                    .union(try diskStorage.discoverRegularPartitions())
             } catch {
                 Self.log.error(
                     "Failed to discover favicon partitions under \(self.diskStorage.rootDirectory.path, privacy: .public): \(String(describing: error), privacy: .public)"
@@ -292,5 +305,9 @@ final class SumiFaviconBlobTransaction: @unchecked Sendable {
                 return cache.loadedPartitions
             }
         }
+    }
+
+    private func metadataKey(for partition: SumiFaviconPartition) -> String {
+        "favicon.metadata.\(partition.storageComponent)"
     }
 }

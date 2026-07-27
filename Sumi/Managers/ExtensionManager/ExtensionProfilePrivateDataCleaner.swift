@@ -9,15 +9,17 @@ enum ExtensionProfilePrivateDataCleanupError: Error, Equatable {
 @MainActor
 final class ExtensionProfilePrivateDataCleaner {
     private static let siteAccessStorageKey =
-        "\(SumiAppIdentity.bundleIdentifier).extensions.siteAccess.v1"
+        "extensions.site-access"
     private static let permissionDecisionsStorageKey =
-        "\(SumiAppIdentity.bundleIdentifier).extensions.permissionDecisions.v1"
-    private let preferences: UserDefaults
+        "extensions.permission-decisions"
+    private static let toolbarPinsStorageKey = "extensions.toolbar-pins"
+    private static let hubOrderStorageKey = "extensions.hub-order"
+    private let database: SumiDatabase
     private let deleteControllerStorage: @MainActor (UUID) throws -> Void
     private let deleteProtonPassState: @MainActor (UUID) throws -> Void
 
     init(
-        preferences: UserDefaults,
+        database: SumiDatabase,
         deleteControllerStorage: @escaping @MainActor (UUID) throws -> Void = {
             profileID in
             try WebExtensionStorageCleanupStore(
@@ -32,7 +34,7 @@ final class ExtensionProfilePrivateDataCleaner {
                 .deleteProfileData(profileID: profileID)
         }
     ) {
-        self.preferences = preferences
+        self.database = database
         self.deleteControllerStorage = deleteControllerStorage
         self.deleteProtonPassState = deleteProtonPassState
     }
@@ -42,15 +44,14 @@ final class ExtensionProfilePrivateDataCleaner {
         try deleteSiteAccessPolicies(profileKey: profileKey)
         try deletePermissionDecisions(profileKey: profileKey)
         try deleteProfileArrayMap(
-            storageKey: ExtensionToolbarPinningOwner
-                .pinnedToolbarExtensionIDsStorageKey,
+            storageKey: Self.toolbarPinsStorageKey,
             profileKey: ExtensionToolbarPinningOwner
                 .pinnedToolbarProfileKey(for: profileID),
             globalProfileKey: ExtensionToolbarPinningOwner
                 .pinnedToolbarProfileKey(for: nil)
         )
         try deleteProfileArrayMap(
-            storageKey: ExtensionHubOrderingOwner.unpinnedOrderStorageKey,
+            storageKey: Self.hubOrderStorageKey,
             profileKey: ExtensionHubOrderingOwner.profileKey(for: profileID),
             globalProfileKey: ExtensionHubOrderingOwner.profileKey(for: nil)
         )
@@ -60,7 +61,7 @@ final class ExtensionProfilePrivateDataCleaner {
 
     private func deleteSiteAccessPolicies(profileKey: String) throws {
         let storageKey = Self.siteAccessStorageKey
-        guard let data = preferences.data(forKey: storageKey) else { return }
+        guard let data = try documentData(forKey: storageKey) else { return }
         var records = try jsonDictionary(data, storageKey: storageKey)
         guard records.keys.allSatisfy({ $0.contains("|") }) else {
             throw ExtensionProfilePrivateDataCleanupError
@@ -74,7 +75,7 @@ final class ExtensionProfilePrivateDataCleaner {
 
     private func deletePermissionDecisions(profileKey: String) throws {
         let storageKey = Self.permissionDecisionsStorageKey
-        guard let data = preferences.data(forKey: storageKey) else { return }
+        guard let data = try documentData(forKey: storageKey) else { return }
         var records = try jsonDictionary(data, storageKey: storageKey)
         let typedRecords = try records.mapValues { value -> (record: [String: Any], profileKey: String) in
             guard let record = value as? [String: Any],
@@ -122,10 +123,8 @@ final class ExtensionProfilePrivateDataCleaner {
             throw ExtensionProfilePrivateDataCleanupError
                 .unreadablePayload(storageKey)
         }
-        preferences.set(data, forKey: storageKey)
-        guard preferences.data(forKey: storageKey) == data else {
-            throw ExtensionProfilePrivateDataCleanupError
-                .persistenceVerificationFailed(storageKey)
+        try database.transaction {
+            try $0.documents.save(data, forKey: storageKey)
         }
     }
 
@@ -134,7 +133,7 @@ final class ExtensionProfilePrivateDataCleaner {
         profileKey: String,
         globalProfileKey: String
     ) throws {
-        guard let existingData = preferences.data(forKey: storageKey) else {
+        guard let existingData = try documentData(forKey: storageKey) else {
             return
         }
         let records: [String: [String]]
@@ -168,10 +167,8 @@ final class ExtensionProfilePrivateDataCleaner {
             throw ExtensionProfilePrivateDataCleanupError
                 .unreadablePayload(storageKey)
         }
-        preferences.set(data, forKey: storageKey)
-        guard preferences.data(forKey: storageKey) == data else {
-            throw ExtensionProfilePrivateDataCleanupError
-                .persistenceVerificationFailed(storageKey)
+        try database.transaction {
+            try $0.documents.save(data, forKey: storageKey)
         }
     }
 
@@ -182,5 +179,9 @@ final class ExtensionProfilePrivateDataCleaner {
         if key == globalProfileKey { return true }
         guard let profileID = UUID(uuidString: key) else { return false }
         return profileID.uuidString.lowercased() == key
+    }
+
+    private func documentData(forKey key: String) throws -> Data? {
+        try database.read { try $0.documents.data(forKey: key) }
     }
 }

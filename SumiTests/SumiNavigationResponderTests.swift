@@ -1,5 +1,4 @@
 import AppKit
-import SwiftData
 import WebKit
 import XCTest
 
@@ -9,7 +8,6 @@ import SumiDomain
 
 @MainActor
 final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
-
     func testAssignWebViewInstallsSumiNavigationDelegateAdapter() {
         let tab = Tab(url: URL(string: "https://example.com")!)
         let webView = WKWebView(frame: .zero)
@@ -922,6 +920,7 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
     func testAutoplayPolicyResponderMapsStoredPoliciesToWebPagePreferences() async throws {
         let harness = try makeAutoplayHarness()
         let profile = makeProfile("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+        try installTestProfile(profile, in: harness.container)
         let url = URL(string: "https://video.example/watch")!
         let cases: [(SumiAutoplayPolicy, _WKWebsiteAutoplayPolicy)] = [
             (.allowAll, .allow),
@@ -1012,6 +1011,8 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         let harness = try makeAutoplayHarness()
         let profileA = makeProfile("dddddddd-bbbb-cccc-dddd-eeeeeeeeeeee")
         let profileB = makeProfile("eeeeeeee-bbbb-cccc-dddd-eeeeeeeeeeee")
+        try installTestProfile(profileA, in: harness.container)
+        try installTestProfile(profileB, in: harness.container)
         let url = URL(string: "https://video.example/watch")!
         try await harness.adapter.setPolicy(.blockAll, for: url, profile: profileA)
         let responder = makeAutoplayResponder(
@@ -2141,5 +2142,4 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         XCTAssertEqual(scriptsProvider.scriptsRevision, 1)
         XCTAssertEqual(observer.observedScriptRevisions, [1])
     }
-
 }

@@ -1,12 +1,11 @@
 import Foundation
 import SumiDomain
 import SumiWebRuntime
-import SwiftData
 
 @MainActor
 extension BrowserCompositionRoot {
     static func makeKernelWithTabSession(
-        modelContext: ModelContext,
+        database: SumiDatabase,
         windowRegistry: WindowRegistry,
         moduleRegistry: SumiModuleRegistry,
         sidebarHostRecoveryCoordinator: SidebarHostRecoveryHandling,
@@ -43,7 +42,7 @@ extension BrowserCompositionRoot {
         automaticallyStartPersistedStateLoad: Bool
     ) -> BrowserKernelGraph {
         let tabManager = TabManager(
-            context: modelContext,
+            database: database,
             webViewSessions: webViewSessions,
             profileReferenceAdmission: profileReferenceAdmission,
             initialRuntimePorts: initialTabRuntimePorts,
@@ -964,7 +963,7 @@ extension BrowserCompositionRoot {
             presentation: shortcutPresentationOwner
         )
         let storeRestore = BrowserTabStoreRestoreFactory.make(
-            modelContext: modelContext,
+            database: database,
             blockedProfileIDs: profileReferenceAdmission.blockedProfileIDs,
             runtimeConnection: runtimeConnection,
             loadLifecycle: tabManager.startupRestoreLifecycle,
@@ -1036,7 +1035,7 @@ extension BrowserCompositionRoot {
             objectWillChange: tabManager.objectWillChange,
             webViewSessions: webViewSessions,
             windowRegistry: windowRegistry,
-            modelContext: modelContext,
+            database: database,
             moduleRegistry: moduleRegistry,
             sidebarHostRecoveryCoordinator: sidebarHostRecoveryCoordinator,
             adBlockingModule: adBlockingModule,

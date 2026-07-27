@@ -1,5 +1,4 @@
 import Foundation
-import SwiftData
 
 /// Loads one persisted extension into one profile runtime and commits the
 /// manifest-derived metadata only after the exact WebKit binding is fully
@@ -13,7 +12,6 @@ final class ExtensionRuntimeLoader {
         case preservePersistedRecord
     }
 
-    private let modelContext: ModelContext
     private let metadataStore: ExtensionInstallationMetadataStore
     private let installedRecords: InstalledExtensionCollection
     private let runtimeAccess: ExtensionRuntimeAccess
@@ -26,7 +24,6 @@ final class ExtensionRuntimeLoader {
     private let diagnostics: ExtensionRuntimeDiagnostics
 
     init(
-        modelContext: ModelContext,
         metadataStore: ExtensionInstallationMetadataStore,
         installedRecords: InstalledExtensionCollection,
         runtimeAccess: ExtensionRuntimeAccess,
@@ -38,7 +35,6 @@ final class ExtensionRuntimeLoader {
         finalizer: ExtensionLoadedContextFinalizer,
         diagnostics: ExtensionRuntimeDiagnostics
     ) {
-        self.modelContext = modelContext
         self.metadataStore = metadataStore
         self.installedRecords = installedRecords
         self.runtimeAccess = runtimeAccess
@@ -52,7 +48,7 @@ final class ExtensionRuntimeLoader {
     }
 
     func loadEnabled(
-        from entity: ExtensionEntity,
+        from entity: InstalledExtensionMetadata,
         profileID: UUID? = nil,
         postLoadBackgroundWakeReason:
             ExtensionManager.ExtensionBackgroundWakeReason? = nil,
@@ -69,7 +65,7 @@ final class ExtensionRuntimeLoader {
     }
 
     func loadEnabled(
-        from entity: ExtensionEntity,
+        from entity: InstalledExtensionMetadata,
         profileID: UUID? = nil,
         activation: ExtensionLoadedContextFinalizer.Activation,
         activationCause: ExtensionActivationCause = .profileAttachment,
@@ -92,7 +88,7 @@ final class ExtensionRuntimeLoader {
     /// Restores a missing context after a failed lifecycle transaction while
     /// preserving the exact metadata record already restored by that caller.
     func restoreEnabledRuntime(
-        from entity: ExtensionEntity,
+        from entity: InstalledExtensionMetadata,
         profileID: UUID,
         mutationLease: ExtensionRuntimeMutationLease
     ) async throws {
@@ -107,7 +103,7 @@ final class ExtensionRuntimeLoader {
     }
 
     private func activate(
-        _ entity: ExtensionEntity,
+        _ entity: InstalledExtensionMetadata,
         profileID: UUID?,
         activation: ExtensionLoadedContextFinalizer.Activation,
         activationCause: ExtensionActivationCause,
@@ -209,7 +205,7 @@ final class ExtensionRuntimeLoader {
                 refreshedRecord: refreshed
             ) {
                 metadataStore.update(entity, from: refreshed)
-                try modelContext.save()
+                try metadataStore.save(entity)
                 installedRecords.upsert(refreshed)
                 publishedRecord = refreshed
             } else if let current = installedRecords.records.first(where: {

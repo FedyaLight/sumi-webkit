@@ -2,15 +2,13 @@
 //  ProfileEntity.swift
 //  Sumi
 //
-//  SwiftData model for persisting Profiles.
+//  Runtime profile model.
 //
 
 import Foundation
-import SwiftData
 
-@Model
 final class ProfileEntity {
-    @Attribute(.unique) var id: UUID
+    var id: UUID
     var name: String
     var index: Int
 

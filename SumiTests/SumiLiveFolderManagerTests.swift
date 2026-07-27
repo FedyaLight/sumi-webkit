@@ -5,21 +5,6 @@ import XCTest
 
 @MainActor
 final class SumiLiveFolderManagerTests: XCTestCase {
-    private var temporaryDirectories: [URL] = []
-
-    override func setUp() async throws {
-        try await super.setUp()
-        temporaryDirectories.removeAll()
-    }
-
-    override func tearDown() async throws {
-        for directory in temporaryDirectories {
-            try? FileManager.default.removeItem(at: directory)
-        }
-        temporaryDirectories.removeAll()
-        try await super.tearDown()
-    }
-
     func testCreateGitHubFolderUsesInjectedRuntime() throws {
         let spy = LiveFolderRuntimeSpy()
         let manager = makeManager(runtime: spy.runtime())
@@ -138,7 +123,9 @@ final class SumiLiveFolderManagerTests: XCTestCase {
 
     private func makeManager(runtime: SumiLiveFolderRuntime) -> SumiLiveFolderManager {
         let manager = SumiLiveFolderManager(
-            store: SumiLiveFolderStore(fileURL: temporaryStoreURL()),
+            store: SumiLiveFolderStore(
+                database: try! SumiDatabase.inMemory()
+            ),
             networkClient: stubNetworkClient()
         )
         manager.attach(runtime: runtime)
@@ -151,16 +138,6 @@ final class SumiLiveFolderManagerTests: XCTestCase {
         return SumiLiveFolderNetworkClient(
             session: URLSession(configuration: configuration)
         )
-    }
-
-    private func temporaryStoreURL() -> URL {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent(
-                "SumiLiveFolderManagerTests-\(UUID().uuidString)",
-                isDirectory: true
-            )
-        temporaryDirectories.append(directory)
-        return directory.appendingPathComponent("live-folders.json", isDirectory: false)
     }
 }
 

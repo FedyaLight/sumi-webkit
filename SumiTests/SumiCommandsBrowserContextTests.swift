@@ -1,4 +1,3 @@
-import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -106,23 +105,17 @@ final class SumiCommandsBrowserContextTests: XCTestCase {
     }
 
     private func makeHistoryManager() throws -> HistoryManager {
-        let container = try ModelContainer(
-            for: Schema([HistoryEntryEntity.self, HistoryVisitEntity.self]),
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+        let container = try SumiDatabase.inMemory()
         return HistoryManager(
-            context: ModelContext(container),
+            database: container,
             faviconCleaner: FakeCommandHistoryFaviconCleaner(),
             visitedLinkStore: FakeCommandHistoryVisitedLinkStore()
         )
     }
 
     private func makeBookmarkManager() -> SumiBookmarkManager {
-        let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-            .appendingPathComponent("SumiCommandsBrowserContextTests-\(UUID().uuidString)", isDirectory: true)
-        temporaryDirectories.append(directory)
-        return SumiBookmarkManager(
-            database: SumiBookmarkDatabase(directory: directory),
+        SumiBookmarkManager(
+            database: try! SumiDatabase.inMemory(),
             syncFavicons: false
         )
     }

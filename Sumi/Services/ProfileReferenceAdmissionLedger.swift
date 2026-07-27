@@ -4,7 +4,6 @@
 //
 
 import Foundation
-import SwiftData
 
 struct ProfileReferenceAdmissionReceipt: Equatable, Hashable, Sendable {
     let profileID: UUID
@@ -67,8 +66,8 @@ final class ProfileReferenceAdmissionLedger {
         )
     }
 
-    convenience init(context: ModelContext) throws {
-        try self.init(store: ProfileRetirementStore(context: context))
+    convenience init(database: SumiDatabase) throws {
+        try self.init(store: ProfileRetirementStore(database: database))
     }
 
     private init() {

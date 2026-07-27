@@ -1,4 +1,3 @@
-import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -129,11 +128,8 @@ final class SumiSystemPermissionServiceTests: XCTestCase {
 
     @MainActor
     func testSystemPermissionServiceDoesNotPersistBrowserPermissionDecisions() async throws {
-        let container = try ModelContainer(
-            for: Schema([PermissionDecisionEntity.self]),
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
-        let store = SwiftDataPermissionStore(container: container)
+        let container = try SumiDatabase.inMemory()
+        let store = DatabasePermissionStore(database: container)
         let service = FakeSumiSystemPermissionService(
             states: [.camera: .notDetermined],
             requestResults: [.camera: .authorized]

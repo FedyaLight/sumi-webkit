@@ -1,5 +1,4 @@
 import SumiWebRuntime
-import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -7,8 +6,8 @@ import XCTest
 @MainActor
 final class SumiImportRuntimeStoreAdmissionTests: XCTestCase {
     func testImportProfileSnapshotCanAddButNotRemoveIdentities() throws {
-        let container = try makeInMemoryStartupModelContainer()
-        let profileManager = ProfileManager(context: container.mainContext)
+        let container = try makeInMemoryStartupDatabase()
+        let profileManager = ProfileManager(database: container)
         let original = try profileManager.createProfile(name: "Original")
         let imported = Profile(name: "Imported")
         let lease = try profileManager.profileReferenceAdmission
@@ -40,8 +39,8 @@ final class SumiImportRuntimeStoreAdmissionTests: XCTestCase {
     }
 
     func testProfileSnapshotReplacementCannotBypassDurableRetirement() throws {
-        let container = try makeInMemoryStartupModelContainer()
-        let profileManager = ProfileManager(context: container.mainContext)
+        let container = try makeInMemoryStartupDatabase()
+        let profileManager = ProfileManager(database: container)
         let original = try profileManager.createProfile(name: "Original")
 
         XCTAssertThrowsError(
@@ -53,21 +52,19 @@ final class SumiImportRuntimeStoreAdmissionTests: XCTestCase {
             )
         }
         XCTAssertEqual(profileManager.profiles.map(\.id), [original.id])
-        let entities = try container.mainContext.fetch(
-            FetchDescriptor<ProfileEntity>()
-        )
+        let entities = try container.read { try $0.profiles.all() }
         XCTAssertEqual(entities.map(\.id), [original.id])
     }
 
     func testUnavailableAdmissionRejectsImportBeforeAnyRuntimeMutation() async throws {
-        let container = try makeInMemoryStartupModelContainer()
+        let container = try makeInMemoryStartupDatabase()
         let admission = ProfileReferenceAdmissionLedger.failClosed()
         let profileManager = ProfileManager(
-            context: container.mainContext,
+            database: container,
             profileReferenceAdmission: admission
         )
         let tabManager = TabManager(
-            context: container.mainContext,
+            database: container,
             webViewSessions: WebViewSessionRepository(),
             profileReferenceAdmission: admission,
             loadPersistedState: false

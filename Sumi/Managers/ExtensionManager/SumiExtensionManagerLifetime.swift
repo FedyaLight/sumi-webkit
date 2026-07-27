@@ -1,5 +1,4 @@
 import Foundation
-import SwiftData
 
 @available(macOS 15.5, *)
 @MainActor
@@ -51,11 +50,11 @@ final class SumiExtensionManagerLifetime {
     }
 
     private let moduleRegistry: SumiModuleRegistry
-    private let context: ModelContext?
+    private let database: SumiDatabase?
     private let browserConfiguration: BrowserConfiguration
     private let initialProfileProvider: @MainActor () -> Profile?
     private let managerFactory: @MainActor (
-        ModelContext,
+        SumiDatabase,
         Profile?,
         BrowserConfiguration,
         SumiModuleRegistry
@@ -70,11 +69,11 @@ final class SumiExtensionManagerLifetime {
 
     init(
         moduleRegistry: SumiModuleRegistry,
-        context: ModelContext?,
+        database: SumiDatabase?,
         browserConfiguration: BrowserConfiguration,
         initialProfileProvider: @escaping @MainActor () -> Profile?,
         managerFactory: @escaping @MainActor (
-            ModelContext,
+            SumiDatabase,
             Profile?,
             BrowserConfiguration,
             SumiModuleRegistry
@@ -82,7 +81,7 @@ final class SumiExtensionManagerLifetime {
         surfaceStore: BrowserExtensionSurfaceStore
     ) {
         self.moduleRegistry = moduleRegistry
-        self.context = context
+        self.database = database
         self.browserConfiguration = browserConfiguration
         self.initialProfileProvider = initialProfileProvider
         self.managerFactory = managerFactory
@@ -156,10 +155,10 @@ final class SumiExtensionManagerLifetime {
             surfaceStore.activate(resident.module.surfaceBinding)
             return resident.module
         }
-        guard let context else { return nil }
+        guard let database else { return nil }
 
         let manager = managerFactory(
-            context,
+            database,
             runtime.currentProfile() ?? initialProfileProvider(),
             browserConfiguration,
             moduleRegistry
@@ -207,12 +206,11 @@ final class SumiExtensionManagerLifetime {
     }
 
     func hasEnabledPersistedExtensions() -> Bool {
-        guard let context else { return false }
-        let descriptor = FetchDescriptor<ExtensionEntity>(
-            predicate: #Predicate { $0.isEnabled }
-        )
+        guard let database else { return false }
         do {
-            return try context.fetchCount(descriptor) > 0
+            return try database.read {
+                try $0.extensions.containsEnabledExtension()
+            }
         } catch {
             RuntimeDiagnostics.debug(category: "Extensions") {
                 "Could not count enabled persisted extensions: \(error.localizedDescription)"

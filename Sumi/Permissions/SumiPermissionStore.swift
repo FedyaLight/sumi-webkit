@@ -27,6 +27,7 @@ enum SumiPermissionStoreError: Error, Equatable, LocalizedError {
     case unsupportedPersistentPermission(String)
     case oneTimeDecisionRequiresPageId
     case invalidStoredPermissionType(String)
+    case invalidPersistentProfilePartition(String)
     case invalidMetadata
 
     var errorDescription: String? {
@@ -41,6 +42,8 @@ enum SumiPermissionStoreError: Error, Equatable, LocalizedError {
             return "One-time permission decisions require a transient page id."
         case .invalidStoredPermissionType(let identity):
             return "Stored permission type is invalid: \(identity)."
+        case .invalidPersistentProfilePartition(let identity):
+            return "Persistent permission profile partition is not a profile UUID: \(identity)."
         case .invalidMetadata:
             return "Permission decision metadata could not be encoded or decoded."
         }

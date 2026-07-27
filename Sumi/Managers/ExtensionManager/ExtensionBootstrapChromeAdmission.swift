@@ -20,13 +20,13 @@ final class ExtensionGlobalInstallLedger {
         let ownerProfileID: UUID
     }
 
-    private static let storageKey =
-        "\(SumiAppIdentity.bundleIdentifier).extensions.globalInstallLedger.v1"
+    private static let documentKey = "extensions.install-ledger"
 
-    private let userDefaults: UserDefaults
+    private let database: SumiDatabase?
+    private var memoryEntries: [String: Entry] = [:]
 
-    init(userDefaults: UserDefaults = .standard) {
-        self.userDefaults = userDefaults
+    init(database: SumiDatabase? = nil) {
+        self.database = database
     }
 
     func claim(
@@ -62,22 +62,35 @@ final class ExtensionGlobalInstallLedger {
     }
 
     private func readEntries() -> [String: Entry] {
-        guard let data = userDefaults.data(forKey: Self.storageKey) else { return [:] }
+        guard let database else { return memoryEntries }
         do {
-            return try JSONDecoder().decode([String: Entry].self, from: data)
+            return try database.read {
+                try $0.documents.value(
+                    [String: Entry].self,
+                    forKey: Self.documentKey
+                ) ?? [:]
+            }
         } catch {
             return [:]
         }
     }
 
     private func writeEntries(_ entries: [String: Entry]) {
-        guard entries.isEmpty == false else {
-            userDefaults.removeObject(forKey: Self.storageKey)
+        guard let database else {
+            memoryEntries = entries
             return
         }
         do {
-            let data = try JSONEncoder().encode(entries)
-            userDefaults.set(data, forKey: Self.storageKey)
+            try database.transaction {
+                if entries.isEmpty {
+                    try $0.documents.delete(key: Self.documentKey)
+                } else {
+                    try $0.documents.save(
+                        entries,
+                        forKey: Self.documentKey
+                    )
+                }
+            }
         } catch {
             return
         }
@@ -98,7 +111,9 @@ final class ExtensionBootstrapChromeAdmission {
     private let ledger: ExtensionGlobalInstallLedger
     private var activeScopes: [String: Scope] = [:]
 
-    init(ledger: ExtensionGlobalInstallLedger = ExtensionGlobalInstallLedger()) {
+    init(
+        ledger: ExtensionGlobalInstallLedger = ExtensionGlobalInstallLedger()
+    ) {
         self.ledger = ledger
     }
 

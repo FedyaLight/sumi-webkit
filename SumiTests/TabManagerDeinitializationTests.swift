@@ -1,5 +1,4 @@
 import SumiWebRuntime
-import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -9,10 +8,10 @@ final class TabManagerDeinitializationTests: XCTestCase {
     func testConstructionShellDeinitDoesNotClearExternallyOwnedSessionState() throws {
         let container = try makeContainer()
         var tabManager: TabManager? = TabManager(
-            context: container.mainContext,
+            database: container,
             webViewSessions: WebViewSessionRepository(),
             profileReferenceAdmission: try ProfileReferenceAdmissionLedger(
-                context: container.mainContext
+                database: container
             ),
             loadPersistedState: false
         )
@@ -48,8 +47,7 @@ final class TabManagerDeinitializationTests: XCTestCase {
 
     func testBrowserManagerDeinitTerminatesRuntimeAndClearsSessionState() throws {
         var browserManager: BrowserManager? = BrowserManager(
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeContainer()
             )
         )
         let connection = try XCTUnwrap(browserManager?.runtimePortConnection)
@@ -100,10 +98,7 @@ final class TabManagerDeinitializationTests: XCTestCase {
         XCTAssertNil(stateStore.selection.currentTab, file: file, line: line)
     }
 
-    private func makeContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+    private func makeContainer() throws -> SumiDatabase {
+        try SumiDatabase.inMemory()
     }
 }

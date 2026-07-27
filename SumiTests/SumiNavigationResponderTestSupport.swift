@@ -1,12 +1,10 @@
 import AppKit
-import SwiftData
 import WebKit
 import XCTest
 
 @testable import Navigation
 @testable import Sumi
 import SumiDomain
-
 
 @MainActor
 class SumiNavigationResponderTestCase: XCTestCase {
@@ -135,14 +133,11 @@ class SumiNavigationResponderTestCase: XCTestCase {
     }
 
     func makeAutoplayHarness() throws -> (
-        container: ModelContainer,
+        container: SumiDatabase,
         adapter: SumiAutoplayPolicyStoreAdapter
     ) {
-        let container = try ModelContainer(
-            for: Schema([PermissionDecisionEntity.self]),
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
-        let store = SwiftDataPermissionStore(container: container)
+        let container = try SumiDatabase.inMemory()
+        let store = DatabasePermissionStore(database: container)
         return (
             container,
             SumiAutoplayPolicyStoreAdapter(persistentStore: store)

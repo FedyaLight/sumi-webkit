@@ -1,18 +1,17 @@
 import Foundation
-import SwiftData
 
-/// SwiftData adapter for the pure restore planner.
+/// Database adapter for the pure restore planner.
 struct TabRestoreLoader: TabRestorePayloadLoading {
     private let reader: TabRestoreStoreReader
     private let planner: TabRestorePlanner
     private let blockedProfileIDs: Set<UUID>
 
     init(
-        container: ModelContainer,
+        database: SumiDatabase,
         blockedProfileIDs: Set<UUID> = [],
         planner: TabRestorePlanner = TabRestorePlanner()
     ) {
-        self.reader = TabRestoreStoreReader(container: container)
+        self.reader = TabRestoreStoreReader(database: database)
         self.blockedProfileIDs = blockedProfileIDs
         self.planner = planner
     }

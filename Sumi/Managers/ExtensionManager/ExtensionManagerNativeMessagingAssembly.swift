@@ -18,6 +18,7 @@ extension ExtensionManagerAssembler {
     ) -> ExtensionNativeMessagingAssemblyProduct {
         let owners = ExtensionDemandScopedNativeMessagingOwners(
             moduleRegistry: f.contexts.moduleRegistry,
+            importStore: f.contexts.safariExtensionImportStore,
             runtimeLifecycle: f.runtime.lifecycle
         )
         let backgroundWakes = makeBackgroundWakes(

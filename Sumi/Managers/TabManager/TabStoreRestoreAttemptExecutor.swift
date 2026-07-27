@@ -89,7 +89,7 @@ final class TabStoreRestoreAttemptExecutor {
         } catch {
             guard loadIsCurrent(attempt) else { return .abandoned }
             RuntimeDiagnostics.debug(
-                "SwiftData load error: \(String(describing: error))",
+                "Browser database load error: \(String(describing: error))",
                 category: "TabManager"
             )
             return .settledWithoutInstall

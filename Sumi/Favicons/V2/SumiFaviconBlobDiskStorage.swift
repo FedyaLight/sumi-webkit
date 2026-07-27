@@ -21,34 +21,6 @@ final class SumiFaviconBlobDiskStorage {
         }
     }
 
-    func readMetadata(for partition: SumiFaviconPartition) throws -> Data? {
-        precondition(!partition.isPrivate)
-        do {
-            return try Data(contentsOf: metadataURL(for: partition))
-        } catch where Self.isMissingFileError(error) {
-            return nil
-        }
-    }
-
-    func writeMetadata(_ data: Data, for partition: SumiFaviconPartition) throws {
-        precondition(!partition.isPrivate)
-        try fileManager.createDirectory(
-            at: partitionDirectory(for: partition),
-            withIntermediateDirectories: true
-        )
-        try data.write(to: metadataURL(for: partition), options: [.atomic])
-    }
-
-    func preserveUnreadableMetadata(
-        _ data: Data,
-        for partition: SumiFaviconPartition
-    ) throws {
-        precondition(!partition.isPrivate)
-        let backupURL = unreadableMetadataURL(for: partition)
-        guard !fileManager.fileExists(atPath: backupURL.path) else { return }
-        try data.write(to: backupURL, options: [.atomic])
-    }
-
     @discardableResult
     func writeBlobIfMissing(
         _ data: Data,
@@ -110,14 +82,6 @@ final class SumiFaviconBlobDiskStorage {
                 isPrivate: false
             )
         })
-    }
-
-    func metadataURL(for partition: SumiFaviconPartition) -> URL {
-        partitionDirectory(for: partition).appendingPathComponent("metadata.json")
-    }
-
-    func unreadableMetadataURL(for partition: SumiFaviconPartition) -> URL {
-        metadataURL(for: partition).appendingPathExtension("unreadable")
     }
 
     private func partitionDirectory(for partition: SumiFaviconPartition) -> URL {

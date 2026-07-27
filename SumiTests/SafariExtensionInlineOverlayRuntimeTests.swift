@@ -1,4 +1,3 @@
-import SwiftData
 import WebKit
 import XCTest
 
@@ -17,7 +16,7 @@ final class SafariExtensionInlineOverlayRuntimeTests: XCTestCase {
         let profile = Profile(name: "Inline Overlay Runtime Profile")
         let browserConfiguration = BrowserConfiguration()
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile,
             browserConfiguration: browserConfiguration
         )
@@ -710,11 +709,8 @@ final class SafariExtensionInlineOverlayRuntimeTests: XCTestCase {
             .write(to: url, options: [.atomic])
     }
 
-    private func makeTestContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+    private func makeTestContainer() throws -> SumiDatabase {
+        try SumiDatabase.inMemory()
     }
 
     private func makeScratchDirectory() throws -> URL {

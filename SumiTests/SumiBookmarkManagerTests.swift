@@ -1,6 +1,5 @@
 import Combine
-import CoreData
-import Synchronization
+import Foundation
 import XCTest
 
 @testable import Sumi
@@ -33,9 +32,8 @@ final class SumiBookmarkManagerTests: XCTestCase {
 
     func testBookmarkFaviconSyncUsesInjectedService() async throws {
         let faviconService = FakeBookmarkFaviconService()
-        let directory = try temporaryDirectory(named: "SumiBookmarkInjectedFavicon")
         let manager = SumiBookmarkManager(
-            database: SumiBookmarkDatabase(directory: directory),
+            database: try SumiDatabase.inMemory(),
             faviconService: faviconService
         )
         let partition = SumiFaviconPartition(
@@ -217,9 +215,8 @@ final class SumiBookmarkManagerTests: XCTestCase {
 
     func testIndividualCreatesCoalescePublicationAndFaviconSync() async throws {
         let faviconService = FakeBookmarkFaviconService()
-        let directory = try temporaryDirectory(named: "SumiBookmarkCreateCoalescing")
         let manager = SumiBookmarkManager(
-            database: SumiBookmarkDatabase(directory: directory),
+            database: try SumiDatabase.inMemory(),
             faviconService: faviconService
         )
         let urls = try [
@@ -256,9 +253,8 @@ final class SumiBookmarkManagerTests: XCTestCase {
 
     func testRepeatedUpdatePublishesAndSyncsOnlyFinalURL() async throws {
         let faviconService = FakeBookmarkFaviconService()
-        let directory = try temporaryDirectory(named: "SumiBookmarkUpdateCoalescing")
         let manager = SumiBookmarkManager(
-            database: SumiBookmarkDatabase(directory: directory),
+            database: try SumiDatabase.inMemory(),
             faviconService: faviconService
         )
         let firstURL = try XCTUnwrap(URL(string: "https://update-one.example"))
@@ -296,9 +292,8 @@ final class SumiBookmarkManagerTests: XCTestCase {
 
     func testCreateThenRemoveBeforePublicationSkipsFaviconWork() async throws {
         let faviconService = FakeBookmarkFaviconService()
-        let directory = try temporaryDirectory(named: "SumiBookmarkRemovalCoalescing")
         let manager = SumiBookmarkManager(
-            database: SumiBookmarkDatabase(directory: directory),
+            database: try SumiDatabase.inMemory(),
             faviconService: faviconService
         )
         let url = try XCTUnwrap(URL(string: "https://removed-before-publish.example"))
@@ -317,9 +312,8 @@ final class SumiBookmarkManagerTests: XCTestCase {
 
     func testFolderOnlyMutationsCoalesceWithoutFaviconWork() async throws {
         let faviconService = FakeBookmarkFaviconService()
-        let directory = try temporaryDirectory(named: "SumiBookmarkFolderCoalescing")
         let manager = SumiBookmarkManager(
-            database: SumiBookmarkDatabase(directory: directory),
+            database: try SumiDatabase.inMemory(),
             faviconService: faviconService
         )
         let initialSyncCount = faviconService.syncedBookmarkURLs.count
@@ -345,12 +339,7 @@ final class SumiBookmarkManagerTests: XCTestCase {
         let nestedBookmarkIDs: [String]
 
         do {
-            let database = SumiBookmarkDatabase(directory: directory)
-            XCTAssertEqual(
-                try bootstrapFolderIDs(in: database),
-                BookmarkEntity.Constants.favoriteFoldersIDs.union([BookmarkEntity.Constants.rootFolderID])
-            )
-
+            let database = try SumiDatabase.open(at: databaseURL(in: directory))
             let manager = SumiBookmarkManager(database: database, syncFavicons: false)
             let folder = try manager.createFolder(title: "Engineering")
             let nested = try manager.createFolder(title: "Specs", parentID: folder.id)
@@ -380,117 +369,17 @@ final class SumiBookmarkManagerTests: XCTestCase {
             XCTAssertEqual(snapshot.entitiesByID[nestedFolderID]?.parentID, firstFolderID)
         }
 
-        let reopenedDatabase = SumiBookmarkDatabase(directory: directory)
+        let reopenedDatabase = try SumiDatabase.open(at: databaseURL(in: directory))
         let reopenedManager = SumiBookmarkManager(database: reopenedDatabase, syncFavicons: false)
         let reopenedSnapshot = reopenedManager.snapshot()
 
-        XCTAssertTrue(
-            try bootstrapFolderIDs(in: reopenedDatabase)
-                .isSuperset(of: BookmarkEntity.Constants.favoriteFoldersIDs.union([BookmarkEntity.Constants.rootFolderID]))
-        )
-        XCTAssertEqual(reopenedSnapshot.root.id, BookmarkEntity.Constants.rootFolderID)
+        XCTAssertEqual(reopenedSnapshot.root.id, SumiBookmarkConstants.rootFolderID)
         XCTAssertEqual(reopenedSnapshot.root.children.map(\.id), [firstFolderID, rootBookmarkID])
         XCTAssertEqual(reopenedSnapshot.entitiesByID[firstFolderID]?.title, "Engineering")
         XCTAssertEqual(reopenedSnapshot.entitiesByID[nestedFolderID]?.parentID, firstFolderID)
         XCTAssertEqual(reopenedSnapshot.entitiesByID[nestedFolderID]?.children.map(\.id), nestedBookmarkIDs)
         XCTAssertEqual(reopenedManager.bookmark(for: try XCTUnwrap(URL(string: "http://root.example/")))?.id, rootBookmarkID)
         XCTAssertEqual(reopenedSnapshot.root.childBookmarkCount, 3)
-    }
-
-    func testBookmarkDatabaseContextsShareCoordinatorAndTemporaryStoreURL() throws {
-        let directory = try temporaryDirectory(named: "SumiBookmarkCoordinatorParity")
-        let database = SumiBookmarkDatabase(directory: directory)
-
-        let firstContext = database.makeContext(
-            concurrencyType: .privateQueueConcurrencyType,
-            name: "SumiBookmarkCoordinatorParityFirst"
-        )
-        let secondContext = database.makeContext(
-            concurrencyType: .privateQueueConcurrencyType,
-            name: "SumiBookmarkCoordinatorParitySecond"
-        )
-
-        let firstCoordinator = try XCTUnwrap(firstContext.persistentStoreCoordinator)
-        let secondCoordinator = try XCTUnwrap(secondContext.persistentStoreCoordinator)
-        let storeURL = try XCTUnwrap(firstCoordinator.persistentStores.first?.url)
-
-        XCTAssertIdentical(firstCoordinator, secondCoordinator)
-        XCTAssertEqual(firstContext.name, "SumiBookmarkCoordinatorParityFirst")
-        XCTAssertEqual(secondContext.name, "SumiBookmarkCoordinatorParitySecond")
-        XCTAssertEqual(storeURL.standardizedFileURL, directory.appendingPathComponent("SumiBookmarks.sqlite").standardizedFileURL)
-        XCTAssertTrue(storeURL.path.hasPrefix(directory.path))
-        let appSupportDirectory = try applicationSupportDirectory()
-        XCTAssertFalse(storeURL.path.hasPrefix(appSupportDirectory.path))
-    }
-
-    func testBookmarkContextSavePostsSynchronousDidSaveNotificationFromSavingContext() throws {
-        let directory = try temporaryDirectory(named: "SumiBookmarkSaveNotificationParity")
-        let database = SumiBookmarkDatabase(directory: directory)
-        let context = database.makeContext(
-            concurrencyType: .privateQueueConcurrencyType,
-            name: "SumiBookmarkSaveNotificationParityWriter"
-        )
-        let observer = Mutex(BookmarkSaveNotificationSnapshot())
-        let token = NotificationCenter.default.addObserver(
-            forName: .NSManagedObjectContextDidSave,
-            object: context,
-            queue: nil
-        ) { notification in
-            let insertedObjects = notification.userInfo?[NSInsertedObjectsKey] as? Set<NSManagedObject> ?? []
-            observer.withLock {
-                $0 = BookmarkSaveNotificationSnapshot(
-                    contextName: (notification.object as? NSManagedObjectContext)?.name,
-                    insertedBookmarkUUIDs: Set(insertedObjects.compactMap { ($0 as? BookmarkEntity)?.uuid }),
-                    isMainThread: Thread.isMainThread
-                )
-            }
-        }
-        defer {
-            NotificationCenter.default.removeObserver(token)
-        }
-
-        try context.performAndWait {
-            let rootFolder = try XCTUnwrap(BookmarkUtils.fetchRootFolder(context))
-            let bookmark = BookmarkEntity.makeBookmark(
-                title: "Save Observer",
-                url: "https://save-observer.example",
-                parent: rootFolder,
-                context: context
-            )
-            bookmark.uuid = "sumi-save-observer-parity"
-            try context.save()
-        }
-
-        let observed = observer.withLock { $0 }
-        XCTAssertEqual(observed.contextName, "SumiBookmarkSaveNotificationParityWriter")
-        XCTAssertEqual(observed.insertedBookmarkUUIDs, ["sumi-save-observer-parity"])
-        XCTAssertTrue(try XCTUnwrap(observed.isMainThread))
-    }
-
-    func testUnavailableBookmarkDatabaseUsesManagerBoundaryFallbackRepository() throws {
-        let reason = SumiBookmarkDatabaseUnavailableReason.missingModel("BookmarksModel")
-        let database = SumiBookmarkDatabase(unavailableReason: reason)
-
-        XCTAssertFalse(database.isAvailable)
-        XCTAssertEqual(database.unavailableReason, reason)
-
-        let manager = SumiBookmarkManager(database: database, syncFavicons: false)
-        let snapshot = manager.snapshot()
-
-        XCTAssertEqual(manager.allBookmarks(), [])
-        XCTAssertEqual(manager.folders(), [.init(id: SumiBookmarkConstants.rootFolderID, title: "Bookmarks", depth: 0)])
-        XCTAssertEqual(snapshot.root.id, SumiBookmarkConstants.rootFolderID)
-        XCTAssertEqual(snapshot.root.childBookmarkCount, 0)
-        XCTAssertEqual(snapshot.entitiesByID.keys.sorted(), [SumiBookmarkConstants.rootFolderID])
-
-        XCTAssertThrowsError(
-            try manager.createBookmark(
-                url: try XCTUnwrap(URL(string: "https://unavailable.example")),
-                title: "Unavailable"
-            )
-        ) { error in
-            XCTAssertEqual(error as? SumiBookmarkError, .storageUnavailable(reason.description))
-        }
     }
 
     func testMoveOrderingAndDeletionSurviveStoreReopen() throws {
@@ -579,11 +468,8 @@ final class SumiBookmarkManagerTests: XCTestCase {
     }
 
     private func makeManager() -> SumiBookmarkManager {
-        let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-            .appendingPathComponent("SumiBookmarkManagerTests-\(UUID().uuidString)", isDirectory: true)
-        temporaryDirectories.append(directory)
-        return SumiBookmarkManager(
-            database: SumiBookmarkDatabase(directory: directory),
+        SumiBookmarkManager(
+            database: try! SumiDatabase.inMemory(),
             syncFavicons: false
         )
     }
@@ -600,7 +486,7 @@ final class SumiBookmarkManagerTests: XCTestCase {
 
     private func makeManager(directory: URL) -> SumiBookmarkManager {
         SumiBookmarkManager(
-            database: SumiBookmarkDatabase(directory: directory),
+            database: try! SumiDatabase.open(at: databaseURL(in: directory)),
             syncFavicons: false
         )
     }
@@ -613,31 +499,9 @@ final class SumiBookmarkManagerTests: XCTestCase {
         return directory
     }
 
-    private func bootstrapFolderIDs(in database: SumiBookmarkDatabase) throws -> Set<String> {
-        let context = database.makeContext(
-            concurrencyType: .privateQueueConcurrencyType,
-            name: "SumiBookmarkBootstrapParityRead"
-        )
-        return try context.performAndWait {
-            let request = BookmarkEntity.fetchRequest()
-            request.predicate = NSPredicate(format: "%K == YES", #keyPath(BookmarkEntity.isFolder))
-            request.returnsObjectsAsFaults = false
-            let folders = try context.fetch(request)
-            return Set(folders.compactMap(\.uuid))
-        }
+    private func databaseURL(in directory: URL) -> URL {
+        directory.appendingPathComponent("Sumi.sqlite", isDirectory: false)
     }
-
-    private func applicationSupportDirectory() throws -> URL {
-        try XCTUnwrap(
-            FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-        )
-    }
-}
-
-private struct BookmarkSaveNotificationSnapshot: Sendable {
-    var contextName: String?
-    var insertedBookmarkUUIDs = Set<String>()
-    var isMainThread: Bool?
 }
 
 @MainActor

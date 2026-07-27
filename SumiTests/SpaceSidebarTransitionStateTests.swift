@@ -1313,10 +1313,11 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
 
         let minY = try XCTUnwrap(redPixelRows.min())
         let maxY = try XCTUnwrap(redPixelRows.max())
+        let backingScale = CGFloat(image.pixelsHigh) / image.size.height
         XCTAssertEqual(
             CGFloat(minY + maxY) / 2,
-            SidebarRowLayout.rowHeight / 2,
-            accuracy: 0.5,
+            SidebarRowLayout.rowHeight * backingScale / 2,
+            accuracy: backingScale / 2,
             "Snapshot split favicons and titles must not jump above live rows"
         )
     }
@@ -1349,16 +1350,17 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         let maxX = try XCTUnwrap(redPixelColumns.max())
         let minY = try XCTUnwrap(redPixelRows.min())
         let maxY = try XCTUnwrap(redPixelRows.max())
+        let backingScale = CGFloat(image.pixelsWide) / image.size.width
         XCTAssertEqual(
             maxX - minX + 1,
-            Int(SplitGroupSidebarVisualLayout.iconWidth),
-            accuracy: 1,
+            Int(SplitGroupSidebarVisualLayout.iconWidth * backingScale),
+            accuracy: Int(backingScale),
             "Snapshot bitmaps must scale down to the live split favicon width"
         )
         XCTAssertEqual(
             maxY - minY + 1,
-            Int(SplitGroupSidebarVisualLayout.iconWidth),
-            accuracy: 1,
+            Int(SplitGroupSidebarVisualLayout.iconWidth * backingScale),
+            accuracy: Int(backingScale),
             "Snapshot bitmaps must scale down to the live split favicon height"
         )
     }
@@ -1391,16 +1393,17 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         let maxX = try XCTUnwrap(redPixelColumns.max())
         let minY = try XCTUnwrap(redPixelRows.min())
         let maxY = try XCTUnwrap(redPixelRows.max())
+        let backingScale = CGFloat(image.pixelsWide) / image.size.width
         XCTAssertEqual(
             maxX - minX + 1,
-            Int(sourceIconSize),
-            accuracy: 1,
+            Int(sourceIconSize * backingScale),
+            accuracy: Int(backingScale),
             "Snapshot launchers must preserve the same intrinsic bitmap presentation as live rows"
         )
         XCTAssertEqual(
             maxY - minY + 1,
-            Int(sourceIconSize),
-            accuracy: 1,
+            Int(sourceIconSize * backingScale),
+            accuracy: Int(backingScale),
             "Snapshot launchers must preserve the same intrinsic bitmap presentation as live rows"
         )
     }

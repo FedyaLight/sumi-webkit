@@ -349,13 +349,13 @@ private final class LastSessionFixture {
     init(
         profileReferenceAdmission: ProfileReferenceAdmissionLedger? = nil
     ) throws {
-        let container = try makeInMemoryStartupModelContainer()
+        let container = try makeInMemoryStartupDatabase()
         let eventBus = TabStructureEventBus()
         let manager = TabManager(
-            context: container.mainContext,
+            database: container,
             webViewSessions: WebViewSessionRepository(),
             profileReferenceAdmission: try profileReferenceAdmission
-                ?? ProfileReferenceAdmissionLedger(context: container.mainContext),
+                ?? ProfileReferenceAdmissionLedger(database: container),
             loadPersistedState: false,
             tabStructureEventBus: eventBus
         )

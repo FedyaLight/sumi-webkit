@@ -1,11 +1,10 @@
 import Foundation
-import SwiftData
 
 /// Factory-only persistence roots for installation transactions.
 @available(macOS 15.5, *)
 @MainActor
 struct ExtensionInstallationGraphFoundation {
-    let context: ModelContext
+    let database: SumiDatabase
     let activePackageGenerations: ExtensionPackageGenerationRegistry
     let metadataStore: ExtensionInstallationMetadataStore
 }
@@ -32,6 +31,7 @@ struct ExtensionRuntimeAuthorityFoundation {
 @MainActor
 struct ExtensionContextGraphFoundation {
     let moduleRegistry: SumiModuleRegistry
+    let safariExtensionImportStore: SafariExtensionImportStore
     let installedExtensions: InstalledExtensionCollection
     let recentTabRequests: ExtensionRecentTabRequestHistory
     let requestedTabLoadResolver: ExtensionRequestedTabLoadResolver

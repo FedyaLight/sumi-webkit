@@ -1,7 +1,5 @@
-import CoreData
 import Foundation
 import SumiDomain
-import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -26,54 +24,6 @@ final class PersistenceFixtureTests: XCTestCase {
         }
         temporaryDirectories.removeAll()
         super.tearDown()
-    }
-
-    func testPermissionCanonicalFixtureLoadsAndFutureAndMalformedFailClosed()
-        async throws {
-        let loadedDirectory = try makeTemporaryDirectory()
-        try copyFixture(
-            "permissions/canonical-v1.json",
-            to: loadedDirectory.appendingPathComponent(
-                SumiPermissionPersistenceAuthority.canonicalFileName
-            )
-        )
-        let loaded = SumiPermissionPersistenceAuthority(
-            storageDirectory: loadedDirectory
-        )
-        XCTAssertEqual(loaded.persistenceDiagnostics.loadOutcome, .loadedFile)
-
-        for fixtureName in [
-            "permissions/unsupported-future-v2.json",
-            "permissions/malformed.json",
-        ] {
-            let directory = try makeTemporaryDirectory()
-            let canonicalURL = directory.appendingPathComponent(
-                SumiPermissionPersistenceAuthority.canonicalFileName
-            )
-            try copyFixture(fixtureName, to: canonicalURL)
-            let original = try Data(contentsOf: canonicalURL)
-
-            let authority = SumiPermissionPersistenceAuthority(
-                storageDirectory: directory
-            )
-            switch authority.persistenceDiagnostics.loadOutcome {
-            case .unsupportedFileVersion, .failedFileDecode:
-                break
-            default:
-                XCTFail(
-                    "Expected fail-closed classification for \(fixtureName), got \(authority.persistenceDiagnostics.loadOutcome)"
-                )
-            }
-            XCTAssertEqual(try Data(contentsOf: canonicalURL), original)
-            XCTAssertEqual(
-                try Data(
-                    contentsOf: canonicalURL.appendingPathExtension(
-                        "unreadable"
-                    )
-                ),
-                original
-            )
-        }
     }
 
     func testSplitArchiveRejectsFutureVersion() throws {
@@ -101,43 +51,6 @@ final class PersistenceFixtureTests: XCTestCase {
                 try service.readBackup(from: fixtureData(fixtureName))
             ) { error in
                 XCTAssertTrue(error is SumiImportExportError)
-            }
-        }
-    }
-
-    func testImportJournalFixturesReadV1AndV2AndRejectFutureAndMalformed()
-        async throws {
-        let directory = try makeTemporaryDirectory()
-        let journalURL = directory.appendingPathComponent(
-            "ImportTransaction.json"
-        )
-        let journal = SumiImportTransactionFileJournal(fileURL: journalURL)
-
-        try copyFixture("import/import-journal-v1.json", to: journalURL)
-        let loaded = try await journal.load()
-        XCTAssertEqual(loaded?.version, 1)
-        XCTAssertEqual(loaded?.phase, .prepared)
-
-        try FileManager.default.removeItem(at: journalURL)
-        try copyFixture("import/import-journal-v2.json", to: journalURL)
-        let current = try await journal.load()
-        XCTAssertEqual(current?.version, 2)
-        XCTAssertEqual(
-            current?.profileTransition,
-            SumiImportProfileTransition.none
-        )
-
-        for fixtureName in [
-            "import/import-journal-unsupported-v3.json",
-            "import/import-journal-malformed.json",
-        ] {
-            try FileManager.default.removeItem(at: journalURL)
-            try copyFixture(fixtureName, to: journalURL)
-            do {
-                _ = try await journal.load()
-                XCTFail("Expected \(fixtureName) to fail closed")
-            } catch {
-                XCTAssertEqual(try Data(contentsOf: journalURL), try fixtureData(fixtureName))
             }
         }
     }
@@ -210,72 +123,6 @@ final class PersistenceFixtureTests: XCTestCase {
             ),
             original
         )
-    }
-
-    func testLiveFolderFixturesReadShippedStoreAndFailClosedMalformed()
-        async throws {
-        let directory = try makeTemporaryDirectory()
-        let storeURL = directory.appendingPathComponent("live-folders.json")
-        try copyFixture(
-            "live-folders/live-folders-shipped-unversioned.json",
-            to: storeURL
-        )
-        let store = SumiLiveFolderStore(fileURL: storeURL)
-        let loaded = try await store.load()
-        XCTAssertEqual(
-            loaded.sources.map(\.id),
-            [UUID(uuidString: "00000000-0000-0000-0000-000000000700")!]
-        )
-        let source = try XCTUnwrap(loaded.sources.first)
-        XCTAssertEqual(source.title, "Fixture Feed")
-        XCTAssertEqual(source.urlString, "https://fixture.example/feed.xml")
-
-        try FileManager.default.removeItem(at: storeURL)
-        try copyFixture(
-            "live-folders/live-folders-malformed.json",
-            to: storeURL
-        )
-        let malformed = try Data(contentsOf: storeURL)
-        do {
-            _ = try await store.load()
-            XCTFail("Malformed Live Folder state must fail closed")
-        } catch {}
-        do {
-            try await store.normalizeLegacyProfileReferences()
-            XCTFail("Retirement normalization must reject malformed state")
-        } catch {}
-        XCTAssertEqual(try Data(contentsOf: storeURL), malformed)
-    }
-
-    func testLiveFolderRetirementNormalizationRemovesLegacyProfileIdentity()
-        async throws {
-        let directory = try makeTemporaryDirectory()
-        let storeURL = directory.appendingPathComponent("live-folders.json")
-        try copyFixture(
-            "live-folders/live-folders-shipped-unversioned.json",
-            to: storeURL
-        )
-        let legacyProfileID = UUID()
-        let data = try Data(contentsOf: storeURL)
-        var object = try XCTUnwrap(
-            JSONSerialization.jsonObject(with: data) as? [String: Any]
-        )
-        var sources = try XCTUnwrap(object["sources"] as? [[String: Any]])
-        sources[0]["profileId"] = legacyProfileID.uuidString
-        object["sources"] = sources
-        try JSONSerialization.data(withJSONObject: object)
-            .write(to: storeURL, options: [.atomic])
-        let store = SumiLiveFolderStore(fileURL: storeURL)
-
-        try await store.normalizeLegacyProfileReferences()
-
-        let normalized = try Data(contentsOf: storeURL)
-        XCTAssertFalse(
-            String(decoding: normalized, as: UTF8.self)
-                .contains(legacyProfileID.uuidString)
-        )
-        let normalizedState = try await store.load()
-        XCTAssertEqual(normalizedState.sources.count, 1)
     }
 
     func testAdblockManifestFixturesReadCurrentAndRejectFutureAndTamper()

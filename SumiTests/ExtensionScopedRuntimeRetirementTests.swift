@@ -1162,6 +1162,7 @@ final class ExtensionScopedRuntimeRetirementTests: XCTestCase {
             nativeMessagingOwners:
                 ExtensionDemandScopedNativeMessagingOwners(
                     moduleRegistry: .unavailable(),
+                    importStore: .transient,
                     runtimeLifecycle: ExtensionRuntimeLifecycleAuthority()
                 )
         )

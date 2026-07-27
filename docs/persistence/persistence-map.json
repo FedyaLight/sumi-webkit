@@ -1,764 +1,174 @@
 {
-  "formatVersion": 1,
-  "logicalBackupV1Scope": {
-    "versionOwner": "SumiBackupV1Scope",
-    "includedCategories": [
-      "profiles",
-      "spaces",
-      "themes",
-      "bookmarks",
-      "essentials",
-      "pinnedLaunchers",
-      "folders",
-      "regularTabs"
-    ],
-    "excludedDataFamilies": [
-      "history",
-      "permissionDecisions",
-      "extensionMetadataAndPayloads",
-      "cookies",
-      "passwords",
-      "webKitWebsiteData",
-      "caches",
-      "downloads",
-      "preferencesAndSessionSettings"
-    ]
+  "formatVersion": 2,
+  "canonicalDatabase": {
+    "fileName": "Sumi.sqlite",
+    "schemaVersion": 1,
+    "engine": "SQLite via GRDB",
+    "owner": "SumiDatabase",
+    "compatibilityPolicy": "Only an empty database or schema version 1 is accepted. There is no shipped conversion or migration path."
   },
-  "durableFamilies": [
+  "families": [
     {
-      "id": "startup-swiftdata",
-      "name": "Startup browser state",
+      "id": "unified-database",
       "classification": "authoritative",
-      "technology": "SwiftData backed by a SQLite store family",
-      "versionOwner": "SumiStartupSchemaV4 4.0.0; recovery manifest format 2 and transition marker format 1 are owned by SumiStartupStoreRecovery",
-      "locationPolicy": "<Application Support>/<runtime bundle identifier>/default.store plus SQLite companions; recovery artifacts remain under the sibling StartupPersistenceQuarantine root",
-      "backupRestorePolicy": "Backup v1 includes only the startup records represented by SumiBackupV1Scope portable categories: profiles, spaces and themes, folders, essentials, pinned launchers, and regular tabs. History, permission decisions, and extension metadata and payloads remain local. Recovery quarantine separately preserves byte-for-byte SQLite family members before replacement.",
-      "corruptionRecoveryPolicy": "Only structured SQLite corruption evidence authorizes quarantine and fresh-store preparation. Schema mismatch, lock failure, migration failure, or unclassified open failure fails closed without destructive replacement. Interrupted filesystem transitions resume from fsynced markers.",
-      "legacySources": "No legacy sources; only the current V4 schema is accepted",
-      "productionTypes": [
-        "SumiStartupPersistence",
-        "SumiStartupSchemaV4",
-        "SumiStartupStoreRecovery",
-        "SumiStartupStoreIO"
+      "contents": [
+        "profiles",
+        "spaces",
+        "folders",
+        "tabs and split state",
+        "bookmarks",
+        "history entries and visits",
+        "permissions and permission activity",
+        "profile retirement state",
+        "extension and content-blocker metadata",
+        "window and last-session snapshots",
+        "site policies",
+        "live folders",
+        "download content-handler registry",
+        "favicon metadata",
+        "adblock site overrides and zapper rules",
+        "compiled content-rule identifier metadata",
+        "import journal"
       ],
-      "semanticSources": [
-        "Sumi/Services/SumiStartupPersistence.swift",
-        "Sumi/Services/SumiStartupStoreIO.swift",
-        "Sumi/Services/SumiStartupStorePreservation.swift",
-        "Sumi/Services/SumiStartupStoreRecovery.swift"
-      ],
-      "swiftDataModels": [
-        {"path": "Sumi/Managers/ExtensionManager/SafariExtension/SafariContentBlockerModels.swift", "type": "SafariContentBlockerEntity"},
-        {"path": "Sumi/Models/Extension/ExtensionModels.swift", "type": "ExtensionEntity"},
-        {"path": "Sumi/Models/History/HistoryVisitEntity.swift", "type": "HistoryEntryEntity"},
-        {"path": "Sumi/Models/History/HistoryVisitEntity.swift", "type": "HistoryVisitEntity"},
-        {"path": "Sumi/Models/Profile/ProfileEntity.swift", "type": "ProfileEntity"},
-        {"path": "Sumi/Models/Profile/ProfileRetirementEntity.swift", "type": "ProfileRetirementEntity"},
-        {"path": "Sumi/Models/Space/SpaceModels.swift", "type": "SpaceEntity"},
-        {"path": "Sumi/Models/Tab/TabsModel.swift", "type": "FolderEntity"},
-        {"path": "Sumi/Models/Tab/TabsModel.swift", "type": "TabEntity"},
-        {"path": "Sumi/Models/Tab/TabsModel.swift", "type": "TabsStateEntity"},
-        {"path": "Sumi/Permissions/PermissionDecisionEntity.swift", "type": "PermissionDecisionEntity"}
-      ],
-      "fixtures": []
+      "location": "<Application Support>/<runtime bundle identifier>/Sumi.sqlite",
+      "transactionBoundary": "All Sumi-owned structured browser records share one SQLite transaction.",
+      "corruptionPolicy": "Confirmed SQLite corruption is preserved before a fresh schema is created. Schema, permission, disk, lock, and unclassified failures fail closed."
     },
     {
-      "id": "bookmarks-coredata",
-      "name": "Bookmarks",
+      "id": "scalar-preferences",
       "classification": "authoritative",
-      "technology": "Core Data NSPersistentContainer with SQLite",
-      "versionOwner": "BookmarksModel.xcdatamodeld; BookmarksModel 6 is the only current model",
-      "locationPolicy": "<Application Support>/<runtime bundle identifier>/Bookmarks/SumiBookmarks.sqlite plus Core Data SQLite companions",
-      "backupRestorePolicy": "Logical backup/import snapshots bookmark entities and uses a bookmark checkpoint for compensation; raw SQLite files are not copied into logical backups",
-      "corruptionRecoveryPolicy": "Persistent-store load errors make the database unavailable; the app does not silently delete or recreate a failed bookmark store. Core Data performs inferred lightweight migration where compatible.",
-      "legacySources": "No legacy sources; only BookmarksModel 6 is bundled",
-      "productionTypes": ["SumiBookmarkDatabase", "SumiPersistentContainerDatabase"],
-      "semanticSources": ["Sumi/Common/Database/SumiPersistentContainerDatabase.swift"],
-      "fixtures": []
+      "contents": [
+        "feature toggles",
+        "appearance choices",
+        "search settings",
+        "download directory bookmark",
+        "small scalar UI preferences"
+      ],
+      "location": "Runtime UserDefaults domain",
+      "transactionBoundary": "Each owning settings type controls its own keys.",
+      "corruptionPolicy": "Invalid values resolve to the owner's default."
     },
     {
-      "id": "preferences-userdefaults",
-      "name": "Preference domain and small session records",
+      "id": "platform-stores",
       "classification": "authoritative",
-      "technology": "UserDefaults values owned independently by settings, feature, extension, and session types",
-      "versionOwner": "There is intentionally no domain-wide schema owner. Each key owner owns its primitive or Codable payload; TabPersistenceCodec owns split archive v2 and WindowSessionSnapshotCodec owns its envelope.",
-      "locationPolicy": "The standard preference domain for the runtime bundle identifier; tests use isolated suites. No code may assume a physical plist path.",
-      "backupRestorePolicy": "Backup v1 includes no UserDefaults preferences or session settings; those values remain local and are reset by their owning feature.",
-      "corruptionRecoveryPolicy": "Primitive keys fall back to owner defaults. Codable owners fail closed to an empty/default snapshot. There is no cross-key transaction.",
-      "legacySources": "No legacy migration sources; current owner formats only",
-      "productionTypes": [
-        "Persisted",
-        "SumiSettingsService",
-        "WindowSessionSnapshotStore",
-        "LastSessionWindowsStore",
-        "KeyboardShortcutStore",
-        "ZoomManager",
-        "TabPersistenceCodec"
+      "contents": [
+        "cookies and website data owned by WKWebsiteDataStore",
+        "WebExtension website storage",
+        "credentials owned by Keychain"
       ],
-      "semanticSources": [
-        "Settings/ChromeLayoutSettingsStore.swift",
-        "Settings/DownloadSettingsStore.swift",
-        "Settings/PerformanceSettingsStore.swift",
-        "Settings/Persisted.swift",
-        "Settings/SearchSettingsStore.swift",
-        "Settings/SettingsNavigationOwner.swift",
-        "Settings/StartupPrivacySettingsStore.swift",
-        "Settings/SumiDownloadsDirectoryStore.swift",
-        "Settings/SumiSettingsService.swift",
-        "Settings/ThemeSettingsStore.swift",
-        "Sumi/Components/Sidebar/URLBarHubPopover.swift",
-        "Sumi/Components/Sidebar/URLBarHubScreenshotSettingsPresenter.swift",
-        "Sumi/ContentBlocking/AdblockSitePolicy.swift",
-        "Sumi/ContentBlocking/SumiAdblockZapperStore.swift",
-        "Sumi/ContentBlocking/SumiCompiledContentRuleListCatalog.swift",
-        "Sumi/ContentBlocking/SumiProtectionBundleUpdateStatusStore.swift",
-        "Sumi/ContentBlocking/SumiProtectionSettings.swift",
-        "Sumi/Managers/ExtensionManager/ExtensionHubOrderingOwner.swift",
-        "Sumi/Managers/ExtensionManager/ExtensionBootstrapChromeAdmission.swift",
-        "Sumi/Managers/ExtensionManager/ExtensionInstallationMetadataStore.swift",
-        "Sumi/Managers/ExtensionManager/ExtensionManager.swift",
-        "Sumi/Managers/ExtensionManager/ExtensionManagerRootAssembler.swift",
-        "Sumi/Managers/ExtensionManager/ExtensionPermissionDecisionStore.swift",
-        "Sumi/Managers/ExtensionManager/ExtensionProfilePrivateDataCleaner.swift",
-        "Sumi/Managers/ExtensionManager/ExtensionRuntimeControllerIdentifierOwner.swift",
-        "Sumi/Managers/ExtensionManager/ExtensionToolbarPinningOwner.swift",
-        "Sumi/Managers/ExtensionManager/SafariExtension/SafariContentBlockerRuntimeOwner.swift",
-        "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionImportStore.swift",
-        "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionSiteAccessPolicyStore.swift",
-        "Sumi/Managers/ExtensionManager/SafariExtension/SumiSafariContentBlockerAPIOwner.swift",
-        "Sumi/Managers/ExtensionManager/SumiExtensionContentBlockingSurface.swift",
-        "Sumi/Managers/History/HistoryManager.swift",
-        "Sumi/Managers/History/LastSessionWindowsStore.swift",
-        "Sumi/Managers/KeyboardShortcutManager/KeyboardShortcutManager.swift",
-        "Sumi/Managers/KeyboardShortcutManager/KeyboardShortcutStore.swift",
-        "Sumi/Managers/ZoomManager/ZoomManager.swift",
-        "Sumi/Permissions/SumiPermissionCleanupService.swift",
-        "Sumi/Permissions/SumiPermissionCleanupSettingsOwner.swift",
-        "Sumi/Permissions/SumiPermissionSettingsRepository.swift",
-        "Sumi/Services/RuntimeDiagnostics.swift",
-        "Sumi/Services/ProfileApplicationDataCleanupService.swift",
-        "Sumi/Services/SumiBrowsingDataCleanupService.swift",
-        "Sumi/Services/SumiModuleRegistry.swift",
-        "Sumi/Services/SumiSiteDataPolicyStore.swift",
-        "Sumi/Services/WindowSessionSnapshotStore.swift",
-        "Sumi/Updates/SumiUpdaterService.swift"
-      ],
-      "fixtures": [
-        "SumiTests/Fixtures/Persistence/tabs/split-groups-unsupported-v3.json"
-      ]
+      "location": "Locations selected and managed by macOS and WebKit",
+      "transactionBoundary": "Outside the Sumi database transaction.",
+      "corruptionPolicy": "Handled by the owning platform API."
     },
     {
-      "id": "permissions-json",
-      "name": "Canonical permission activity",
+      "id": "specialized-app-files",
       "classification": "authoritative",
-      "technology": "Versioned JSON snapshot with atomic publication and diagnostic unreadable copies",
-      "versionOwner": "SumiPermissionPersistenceAuthority.storageVersion = 1",
-      "locationPolicy": "<Application Support>/<runtime bundle identifier>/Permissions/permission-state.v1.json; diagnostic copies use the adjacent unreadable suffix",
-      "backupRestorePolicy": "Backup v1 excludes permission decisions, activity, and anti-abuse state; all permission persistence remains local operational state.",
-      "corruptionRecoveryPolicy": "Unsupported or malformed canonical data fails closed, leaves the original bytes in place, and preserves an adjacent unreadable copy.",
-      "legacySources": "No legacy sources; permission-state.v1.json is the only accepted snapshot",
-      "productionTypes": [
-        "SumiPermissionPersistenceAuthority",
-        "SumiPermissionSnapshotLoader",
-        "SumiPermissionCanonicalSnapshotPublisher"
+      "contents": [
+        "extension packages",
+        "boost CSS and definitions",
+        "userscript libraries"
       ],
-      "semanticSources": [
-        "Sumi/Permissions/SumiPermissionCanonicalSnapshotPublisher.swift",
-        "Sumi/Permissions/SumiPermissionSnapshotLoader.swift"
-      ],
-      "fixtures": [
-        "SumiTests/Fixtures/Persistence/permissions/canonical-v1.json",
-        "SumiTests/Fixtures/Persistence/permissions/malformed.json",
-        "SumiTests/Fixtures/Persistence/permissions/unsupported-future-v2.json"
-      ]
+      "location": "Feature-owned Application Support directories",
+      "transactionBoundary": "Each feature publishes files atomically and records structured registry state in Sumi.sqlite where applicable.",
+      "corruptionPolicy": "Invalid packages or documents fail closed and are preserved or quarantined by the owning feature."
     },
     {
-      "id": "credential-keychain",
-      "name": "Browser and companion credentials",
-      "classification": "authoritative",
-      "technology": "macOS Keychain generic-password items with separate service/account namespaces",
-      "versionOwner": "BasicAuthCredentialStore owns service com.sumi.basicAuth and account prefix v2; BitwardenSafariBiometricHandler and ProtonPassSafariCompanionStore own their independent companion namespaces",
-      "locationPolicy": "The login Keychain selected by Security.framework; Sumi does not know or persist a filesystem path",
-      "backupRestorePolicy": "Excluded from Sumi logical backup/restore. Keychain/iCloud Keychain policy belongs to macOS and the companion applications.",
-      "corruptionRecoveryPolicy": "Unexpected status or undecodable data is treated as unavailable; scoped deletion uses the exact owning service/account query and does not clear unrelated Keychain items.",
-      "legacySources": "Basic-auth account identifiers before the v2 prefix may be read only by explicit owner logic; companion schemas are external",
-      "productionTypes": [
-        "BasicAuthCredentialStore",
-        "BitwardenSafariBiometricHandler",
-        "ProtonPassSafariCompanionStore"
-      ],
-      "semanticSources": [
-        "Sumi/Managers/AuthenticationManager/BasicAuthCredentialStore.swift",
-        "Sumi/Managers/ExtensionManager/SafariExtension/BitwardenSafariBiometricHandler.swift",
-        "Sumi/Managers/ExtensionManager/SafariExtension/ProtonPassSafariCompanionStore.swift"
-      ],
-      "fixtures": []
-    },
-    {
-      "id": "boosts-files",
-      "name": "Boost definitions and CSS",
-      "classification": "authoritative",
-      "technology": "Unversioned Codable JSON index plus CSS resource files",
-      "versionOwner": "SumiBoostDiskWorker.DiskState is the shipped unversioned schema owner",
-      "locationPolicy": "<Application Support>/Sumi/Boosts/boosts.json with sibling CSS resources",
-      "backupRestorePolicy": "Boost import/export is per boost; the global logical browser backup does not promise a raw Boosts directory copy",
-      "corruptionRecoveryPolicy": "Malformed JSON loads no boosts, retains the source bytes, and writes an adjacent unreadable diagnostic copy. It is not silently overwritten during load.",
-      "legacySources": "The current unversioned shipped DiskState shape",
-      "productionTypes": ["SumiBoostStore", "SumiBoostDiskWorker"],
-      "semanticSources": [
-        "Sumi/Boosts/SumiBoostStore.swift",
-        "Sumi/Boosts/SumiBoostDiskWorker.swift"
-      ],
-      "fixtures": [
-        "SumiTests/Fixtures/Persistence/boosts/boosts-malformed.json",
-        "SumiTests/Fixtures/Persistence/boosts/boosts-shipped-unversioned.json"
-      ]
-    },
-    {
-      "id": "live-folders-json",
-      "name": "Live folder subscriptions",
-      "classification": "authoritative",
-      "technology": "Unversioned Codable JSON",
-      "versionOwner": "SumiLiveFolderDiskState as encoded by SumiLiveFolderStore",
-      "locationPolicy": "<Application Support>/<runtime bundle identifier>/live-folders.json",
-      "backupRestorePolicy": "Not currently included in SumiPortableData; restore leaves it local",
-      "corruptionRecoveryPolicy": "Read/decode/write/verification failures are surfaced to callers and never interpreted as an empty state. Profile retirement fails closed without overwriting unreadable bytes.",
-      "legacySources": "The shipped unversioned SumiLiveFolderDiskState shape; legacy per-source profileId fields are ignored and removed by verified normalization because profile ownership derives from the owning Space",
-      "productionTypes": ["SumiLiveFolderStore", "SumiLiveFolderDiskState"],
-      "semanticSources": ["Sumi/LiveFolders/SumiLiveFolderStore.swift"],
-      "fixtures": [
-        "SumiTests/Fixtures/Persistence/live-folders/live-folders-malformed.json",
-        "SumiTests/Fixtures/Persistence/live-folders/live-folders-shipped-unversioned.json"
-      ]
-    },
-    {
-      "id": "userscripts-library",
-      "name": "Userscripts file library",
-      "classification": "authoritative",
-      "technology": "Atomic userscript/userstyle files plus an app-owned JSON manifest and downloaded require-resource cache; an optional security-scoped bookmark selects an external scripts directory",
-      "versionOwner": "UserscriptsLibraryProtocolService owns the upstream-compatible manifest shape; UserscriptsLibraryLocationStore owns bookmark key v1",
-      "locationPolicy": "By default <Application Support>/<runtime bundle identifier>/Userscripts contains scripts, manifest.json, and require resources. A user-selected external directory replaces only the scripts directory and may be shared with Safari Userscripts.",
-      "backupRestorePolicy": "Not included in Sumi Backup v1. Scripts in an external directory remain user-owned; the default library, manifest, and downloaded resources remain local application data.",
-      "corruptionRecoveryPolicy": "Script files are scanned independently and never replaced because another file or manifest is unreadable. Invalid manifest data falls back to defaults and is rebuilt from valid files; writes are atomic, paths are validated, and orphaned downloaded resources are removed.",
-      "legacySources": "A security-scoped folder chosen through Change Save Location, including an existing Safari Userscripts directory",
-      "productionTypes": [
-        "UserscriptsLibraryLocationStore",
-        "UserscriptsLibraryProtocolService"
-      ],
-      "semanticSources": [
-        "Sumi/Managers/ExtensionManager/SafariExtension/UserscriptsLibraryLocationStore.swift",
-        "Sumi/Managers/ExtensionManager/SafariExtension/UserscriptsLibraryProtocolService.swift"
-      ],
-      "fixtures": []
-    },
-    {
-      "id": "extension-packages",
-      "name": "Installed extension packages",
-      "classification": "authoritative",
-      "technology": "Application Support package directories coordinated with SwiftData ExtensionEntity metadata",
-      "versionOwner": "ExtensionPackageInstallTransaction owns staging/publication; ExtensionEntity in SumiStartupSchemaV4 owns installed metadata",
-      "locationPolicy": "Extension package roots under <Application Support>/<runtime bundle identifier>; staging and quarantine names are siblings controlled by the package transaction",
-      "backupRestorePolicy": "Backup v1 excludes extension metadata, configuration, and package payloads. Installation independently stages package bytes before metadata publication and rolls staged filesystem state back on failure.",
-      "corruptionRecoveryPolicy": "Invalid packages are quarantined or removed by explicit maintenance. There is no transaction spanning filesystem, SwiftData, and WebKit activation.",
-      "legacySources": "No legacy package layouts; only staged installation generations are supported",
-      "productionTypes": [
-        "ExtensionPackageInstallTransaction",
-        "ExtensionPackageMaintenance",
-        "ExtensionEntity"
-      ],
-      "semanticSources": [
-        "Sumi/Managers/ExtensionManager/ExtensionPackageInstallTransaction.swift",
-        "Sumi/Managers/ExtensionManager/ExtensionPackageMaintenance.swift"
-      ],
-      "fixtures": []
-    },
-    {
-      "id": "webkit-website-data",
-      "name": "Website data by browser profile",
-      "classification": "authoritative",
-      "technology": "WebKit WKWebsiteDataStore persistent stores",
-      "versionOwner": "WebKit owns the on-disk schema; Profile owns the stable persistent store identifier and uses nonPersistent() for ephemeral profiles",
-      "locationPolicy": "WebKit-selected container locations for the default store and stores identified by profile UUID; Sumi never derives their physical paths",
-      "backupRestorePolicy": "Not copied by Sumi logical backup/restore. Browsing-data cleanup uses WebKit APIs per profile.",
-      "corruptionRecoveryPolicy": "Delegated to WebKit. Sumi may evict in-memory WKWebsiteDataStore handles or request data removal, but does not edit WebKit database files.",
-      "legacySources": "The default WKWebsiteDataStore and existing profile UUID stores",
-      "productionTypes": ["Profile", "BrowserConfig", "ExtensionProfileWebsiteDataStoreCache"],
-      "semanticSources": [
-        "Sumi/Managers/BrowserManager/BrowserPagePrivacyCommandOwner.swift",
-        "Sumi/Managers/ExtensionManager/ExtensionProfileWebsiteDataStoreCache.swift",
-        "Sumi/Models/BrowserConfig/BrowserConfig.swift",
-        "Sumi/Models/Profile/Profile.swift"
-      ],
-      "fixtures": []
-    },
-    {
-      "id": "webkit-extension-storage",
-      "name": "Web extension local storage",
-      "classification": "authoritative",
-      "technology": "WKWebExtensionController storage owned by WebKit, with app-owned scoped cleanup",
-      "versionOwner": "WebKit owns active storage schema; ExtensionRuntimeControllerIdentifierOwner owns controller identifiers",
-      "locationPolicy": "WebKit-selected extension storage under the runtime container",
-      "backupRestorePolicy": "Not included in logical backup. Extension uninstall/profile cleanup removes only the scoped controller storage and directory.",
-      "corruptionRecoveryPolicy": "WebKit handles active store corruption. Scoped cleanup never treats extension package metadata as a database transaction.",
-      "legacySources": "No legacy directory adoption; only the resolved current storage identifier is used",
-      "productionTypes": [
-        "ExtensionControllerProvisioningOwner",
-        "ExtensionRuntimeControllerIdentifierOwner",
-        "WebExtensionStorageCleanupStore"
-      ],
-      "semanticSources": [
-        "Sumi/Managers/ExtensionManager/ExtensionControllerProvisioningOwner.swift",
-        "Sumi/Managers/ExtensionManager/ExtensionRuntimeControllerIdentifierOwner.swift",
-        "Sumi/Managers/ExtensionManager/WebExtensionStorageCleanupStore.swift"
-      ],
-      "fixtures": []
-    },
-    {
-      "id": "import-journal",
-      "name": "Import and restore transaction journal",
-      "classification": "recovery",
-      "technology": "Versioned JSON published with POSIX write, fsync, rename, and directory sync",
-      "versionOwner": "SumiImportTransactionJournalRecord.currentVersion = 2",
-      "locationPolicy": "<Application Support>/<runtime bundle identifier>/ImportTransaction.json with an adjacent completed tombstone during durable retirement",
-      "backupRestorePolicy": "The journal records baseline, target, runtime checkpoint, bookmark checkpoint, and optional pre-restore backup URL; it is recovery metadata rather than user-exported backup content",
-      "corruptionRecoveryPolicy": "Malformed or unsupported journal data fails startup recovery closed. Phase transitions are validated and durably published; completed retirement is also fsynced.",
-      "legacySources": "Journal v1 remains readable; v2 adds durable profile reconciliation state. Bulk browsing data is deliberately not journaled: it is applied after the structural commit and reverted from an in-memory receipt.",
-      "productionTypes": ["SumiImportTransactionFileJournal", "SumiImportTransactionJournalRecord"],
-      "semanticSources": ["Sumi/ImportExport/SumiImportTransactionFileJournal.swift"],
-      "fixtures": [
-        "SumiTests/Fixtures/Persistence/import/import-journal-malformed.json",
-        "SumiTests/Fixtures/Persistence/import/import-journal-unsupported-v3.json",
-        "SumiTests/Fixtures/Persistence/import/import-journal-v1.json",
-        "SumiTests/Fixtures/Persistence/import/import-journal-v2.json"
-      ]
-    },
-    {
-      "id": "import-staging",
-      "name": "Staged source-browser browsing data",
-      "classification": "recovery",
-      "technology": "Newline-delimited JSON payload files plus a versioned JSON manifest and an icon blob directory",
-      "versionOwner": "SumiImportBulkStagingManifest.currentVersion = 1",
-      "locationPolicy": "<Application Support>/<runtime bundle identifier>/ImportStaging/<staging identifier> holding per-kind NDJSON files and an icons blob directory",
-      "backupRestorePolicy": "Never included in logical backups. History, cookies, and favicons are staged here only for the duration of a single import and are deleted when it completes, fails, or is abandoned.",
-      "corruptionRecoveryPolicy": "An unreadable staged record is skipped rather than failing the import; a manifest declaring an unsupported version is rejected. Staging directories left by an interrupted import are swept on the next launch.",
-      "legacySources": "No legacy sources; staging is created and deleted within one import and is never read from an earlier build",
-      "productionTypes": ["SumiImportBulkStagingStore", "SumiImportBulkStagingManifest", "SumiImportBulkStagingCoordinator"],
-      "semanticSources": [
-        "Sumi/ImportExport/Bulk/SumiImportBulkStagingStore.swift",
-        "Sumi/ImportExport/Bulk/SumiImportFaviconExtractor.swift"
-      ],
-      "fixtures": []
-    },
-    {
-      "id": "logical-backups",
-      "name": "Logical browser backup archives",
-      "classification": "backup",
-      "technology": "Versioned JSON .sumibackup archives",
-      "versionOwner": "SumiBackupArchive.currentVersion = 1",
-      "locationPolicy": "User-selected export URL, or automatic pre-restore files under <Application Support>/<runtime bundle identifier>/Backups",
-      "backupRestorePolicy": "This is the Backup v1 logical boundary defined by SumiBackupV1Scope: profiles, spaces/themes, bookmarks, essentials, pinned launchers, folders, and regular tabs only. Automatic pre-restore backups are created before mutation and retained by policy; imported data is applied through the import journal.",
-      "corruptionRecoveryPolicy": "Malformed and unsupported future archives are rejected before mutation. Archive decoding never falls back to current production defaults.",
-      "legacySources": "Logical backup v1 is the first shipped archive version",
-      "productionTypes": ["SumiBackupService", "SumiBackupArchive", "SumiDataRecoverySettingsPane"],
-      "semanticSources": [
-        "Sumi/Components/Settings/SumiDataRecoverySettingsPane.swift",
-        "Sumi/ImportExport/SumiBackupService.swift"
-      ],
-      "fixtures": [
-        "SumiTests/Fixtures/Persistence/backups/logical-backup-malformed.sumibackup",
-        "SumiTests/Fixtures/Persistence/backups/logical-backup-unsupported-v2.sumibackup",
-        "SumiTests/Fixtures/Persistence/backups/logical-backup-v1.sumibackup"
-      ]
-    },
-    {
-      "id": "favicon-cache",
-      "name": "Favicon blob cache",
+      "id": "rebuildable-caches",
       "classification": "cache",
-      "technology": "Blob files plus versioned JSON metadata",
-      "versionOwner": "SumiFaviconBlobMetadata.currentSchemaVersion = 2",
-      "locationPolicy": "<Application Support>/<runtime bundle identifier>/Favicons/v2 partition directories",
-      "backupRestorePolicy": "Excluded from logical backup/restore and safe to rebuild from page/network sources",
-      "corruptionRecoveryPolicy": "Metadata decode, unsupported schema, hash, or blob failure invalidates the cache entry/partition; cache bytes are never authoritative browser state",
-      "legacySources": "Metadata schema v2 is current; older cache roots are not imported as authoritative data",
-      "productionTypes": ["SumiFaviconBlobDiskStorage", "SumiFaviconMetadataCodec"],
-      "semanticSources": ["Sumi/Favicons/V2/SumiFaviconBlobDiskStorage.swift"],
-      "fixtures": [
-        "SumiTests/Fixtures/Persistence/favicons/metadata-malformed.json",
-        "SumiTests/Fixtures/Persistence/favicons/metadata-unsupported-v3.json",
-        "SumiTests/Fixtures/Persistence/favicons/metadata-v2.json"
-      ]
-    },
-    {
-      "id": "essential-backdrop-cache",
-      "name": "Essential tile backdrop cache",
-      "classification": "cache",
-      "technology": "Baked PNG backdrop files in per-partition directories",
-      "versionOwner": "essential-backdrops-v1 root directory component",
-      "locationPolicy": "<Application Support>/<runtime bundle identifier>/Favicons/essential-backdrops-v1 partition directories",
-      "backupRestorePolicy": "Excluded from logical backup/restore and safe to rebuild by re-baking from the favicon cache",
-      "corruptionRecoveryPolicy": "An unreadable or missing backdrop file is treated as a cache miss and re-baked from the current favicon; backdrop bytes are never authoritative browser state",
-      "legacySources": "No legacy roots; a superseded backdrop generation is discarded rather than imported",
-      "productionTypes": ["SumiEssentialBackdropDiskStorage", "SumiEssentialBackdropRenderer"],
-      "semanticSources": ["Sumi/Favicons/EssentialBackdrop/SumiEssentialBackdropDiskStorage.swift"],
-      "fixtures": []
-    },
-    {
-      "id": "adblock-generation-cache",
-      "name": "Generated adblock archives",
-      "classification": "cache",
-      "technology": "Versioned JSON generation manifest plus shard/index files",
-      "versionOwner": "AdblockCompiledGenerationManifest.currentSchemaVersion = 6; activeManifest accepts only schema 6",
-      "locationPolicy": "<Application Support>/Sumi/Adblock generation directories and active-generation.json",
-      "backupRestorePolicy": "Excluded from logical backup; regenerated from bundled or approved remote rule sources",
-      "corruptionRecoveryPolicy": "Manifest version, topology, relative path, size, and SHA-256 validation fail closed. Publication stages a generation before atomic directory/manifest replacement and retention removes only inactive cache generations.",
-      "legacySources": "No legacy schemas; the cache is regenerated unless it is schema 6",
-      "productionTypes": ["AdblockGenerationArchive", "AdblockCompiledGenerationManifest"],
-      "semanticSources": ["Sumi/ContentBlocking/AdblockGenerationArchive.swift"],
-      "fixtures": [
-        "SumiTests/Fixtures/Persistence/adblock/manifest-tampered-index.json",
-        "SumiTests/Fixtures/Persistence/adblock/manifest-unsupported-v7.json",
-        "SumiTests/Fixtures/Persistence/adblock/manifest-v6.json"
-      ]
-    },
-    {
-      "id": "adblock-remote-cache",
-      "name": "Approved remote protection bundles",
-      "classification": "cache",
-      "technology": "Signed release JSON, native bundle directories, transactional cache staging, quarantine, and unavailable markers",
-      "versionOwner": "SumiProtectionBundleRemoteUpdateConstants release manifest schema 1 and browser expectation 1; native bundle manifest schema 1; signature envelope schema 1",
-      "locationPolicy": "<Application Support>/Sumi/AdblockRemoteBundles profile directories with transaction staging and quarantine siblings",
-      "backupRestorePolicy": "Excluded from logical backup and re-downloadable from approved signed releases",
-      "corruptionRecoveryPolicy": "Signature, pinned key, release schema, downgrade, path, size, and hash checks precede cache publication. Failed commit rolls back; unrecoverable artifacts are quarantined and an unavailable marker prevents false activation.",
-      "legacySources": "Native bundle schema 1 and signed release manifest schema 1 are the first shipped formats",
-      "productionTypes": [
-        "SumiProtectionBundleCacheTransaction",
-        "SumiProtectionBundleQuarantine",
-        "SumiRemoteAdblockBundleCache",
-        "SumiProtectionBundleSignatureVerifier"
+      "contents": [
+        "favicon and preview blobs",
+        "compiled content rules",
+        "downloaded protection bundles",
+        "prepared visual artifacts"
       ],
-      "semanticSources": [
-        "Sumi/ContentBlocking/SumiProtectionBundleCacheTransaction.swift",
-        "Sumi/ContentBlocking/SumiProtectionBundleQuarantine.swift"
-      ],
-      "fixtures": []
+      "location": "Feature-owned Application Support or Caches directories",
+      "transactionBoundary": "Blob publication is coordinated with Sumi.sqlite metadata where needed; cache loss is recoverable.",
+      "corruptionPolicy": "Discard or rebuild invalid cache artifacts."
     },
     {
-      "id": "download-applications-json",
-      "name": "Download application choices",
+      "id": "user-authored-files",
       "classification": "authoritative",
-      "technology": "Unversioned Codable JSON",
-      "versionOwner": "SumiDownloadApplicationsStore record array",
-      "locationPolicy": "<Application Support>/Sumi/DownloadApplications.json",
-      "backupRestorePolicy": "Not included in logical backup; it is a local OS-application preference",
-      "corruptionRecoveryPolicy": "Decode failure falls back to no custom handlers; subsequent explicit user changes replace the file atomically",
-      "legacySources": "The current unversioned SumiContentHandlerRecord array",
-      "productionTypes": ["SumiDownloadApplicationsStore"],
-      "semanticSources": ["Sumi/Managers/DownloadManager/SumiDownloadPreferences.swift"],
-      "fixtures": []
+      "contents": [
+        "downloads",
+        "bookmark HTML exports",
+        "logical Sumi backup archives",
+        "files selected through save panels"
+      ],
+      "location": "User-selected URLs",
+      "transactionBoundary": "Never part of the application database.",
+      "corruptionPolicy": "Validation errors are reported without replacing the user's file."
     },
     {
-      "id": "webkit-content-rule-lists",
-      "name": "Compiled WebKit content rule lists",
-      "classification": "cache",
-      "technology": "WKContentRuleListStore compiled artifacts with UserDefaults catalog/status keys",
-      "versionOwner": "WebKit owns compiled bytecode; SumiCompiledContentRuleListCatalog owns Sumi's installed identifier catalog",
-      "locationPolicy": "WebKit-selected content-rule-list store; Sumi persists only identifiers and status keys in its preference domain",
-      "backupRestorePolicy": "Excluded from logical backup and rebuilt from validated adblock generations",
-      "corruptionRecoveryPolicy": "Missing or failed compiled lists are removed/recompiled through WebKit APIs; Sumi never edits WebKit bytecode files",
-      "legacySources": "Previously compiled WebKit rule-list identifiers tracked by the catalog",
-      "productionTypes": ["SumiWKContentRuleListCompiler", "SumiCompiledContentRuleListCatalog"],
-      "semanticSources": ["Sumi/ContentBlocking/SumiWKContentRuleListCompiler.swift"],
-      "fixtures": []
+      "id": "memory-only",
+      "classification": "ephemeral",
+      "contents": [
+        "incognito browser state",
+        "recently closed items",
+        "live WKWebView objects",
+        "in-flight import staging receipts"
+      ],
+      "location": "Process memory and non-persistent WebKit stores",
+      "transactionBoundary": "Deliberately absent from durable Sumi storage.",
+      "corruptionPolicy": "Discarded when its owning runtime ends."
     }
   ],
   "crossStoreOperations": [
     {
-      "operation": "Logical import or restore",
-      "stores": ["logical-backups", "import-journal", "import-staging", "startup-swiftdata", "bookmarks-coredata", "favicon-cache", "webkit-website-data"],
-      "ordering": ["Stage source browsing data during preview", "Decode and validate archive", "Create automatic pre-restore backup", "Publish prepared journal", "Commit SwiftData/runtime state", "Commit Core Data bookmarks", "Mark completed and retire journal", "Apply staged history, then favicon cache, then cookies", "Discard staging"],
-      "compensation": "The journal carries runtime and bookmark checkpoints. Failure after either commit enters compensating, restores the committed checkpoint(s), then completes or leaves the durable journal for next-launch recovery. Bulk browsing data is applied only after the structural commit and is reverted in decreasing order of reversibility: history exactly from its receipt, cookies best effort, and the favicon cache not at all because it is a rebuildable cache. A bulk failure is reported as a warning and never rolls back the structure the user already has.",
-      "atomicity": "Intentionally not atomic across JSON files, SwiftData, and Core Data. Durable phase ordering and compensation provide recovery, not a distributed transaction. Bulk browsing data sits outside the transaction entirely."
+      "operation": "browser import",
+      "ordering": [
+        "parse source browser data read-only",
+        "validate and stage external website data",
+        "record the durable import journal and commit structural records through canonical Sumi.sqlite transactions",
+        "write bulk history in bounded Sumi.sqlite batches",
+        "apply WebKit data through platform APIs",
+        "complete or compensate using the database journal"
+      ]
     },
     {
-      "operation": "Extension install or update",
-      "stores": ["extension-packages", "startup-swiftdata", "webkit-extension-storage", "preferences-userdefaults"],
-      "ordering": ["Validate and stage package", "Publish package directory", "Persist ExtensionEntity metadata", "Provision WebKit controller/storage", "Persist owner-specific UI and permission keys"],
-      "compensation": "The package transaction removes or restores staged filesystem state when publication fails; metadata/runtime reconciliation repairs mismatches on later load.",
-      "atomicity": "No atomic transaction exists across filesystem, SwiftData, UserDefaults, and WebKit. Runtime activation occurs only after package publication."
+      "operation": "profile retirement",
+      "ordering": [
+        "seal new profile writes",
+        "remove database-owned profile state transactionally",
+        "clean WebKit, Keychain, extension, and blob stores",
+        "complete the retirement record"
+      ]
     },
     {
-      "operation": "Profile or browsing-data deletion",
-      "stores": ["startup-swiftdata", "webkit-website-data", "webkit-extension-storage", "permissions-json", "credential-keychain", "favicon-cache", "preferences-userdefaults"],
-      "ordering": ["Resolve the profile scope", "Remove WebKit website and extension data through WebKit", "Remove scoped Keychain/permission/cache/defaults state", "Commit authoritative profile state"],
-      "compensation": "Deletion is idempotent and retries remaining scoped cleanup. Deleted website/cache bytes are not recreated if a later store fails.",
-      "atomicity": "Intentionally best-effort across OS stores. There is no rollback transaction for privacy deletion."
-    },
-    {
-      "operation": "Adblock remote update and activation",
-      "stores": ["adblock-remote-cache", "adblock-generation-cache", "webkit-content-rule-lists", "preferences-userdefaults"],
-      "ordering": ["Verify signed release and assets", "Commit remote bundle cache", "Generate and validate archive", "Compile WebKit lists", "Publish active generation/catalog/status"],
-      "compensation": "Cache transaction rollback restores the previous bundle; generation publication retains the previous active manifest; failed WebKit compilation leaves the old catalog active.",
-      "atomicity": "No transaction spans filesystem caches, WebKit's rule-list store, and UserDefaults. Activation markers are published last."
-    },
-    {
-      "operation": "Window and tab-session checkpoint",
-      "stores": ["startup-swiftdata", "preferences-userdefaults"],
-      "ordering": ["Serialize structural/runtime tab writes", "Publish window/session snapshots to their owned preference keys"],
-      "compensation": "Restore planners validate IDs and repair or discard stale session references against the authoritative SwiftData snapshot.",
-      "atomicity": "No atomic transaction spans SwiftData and UserDefaults; a session snapshot is explicitly a recoverable hint."
+      "operation": "startup corruption recovery",
+      "ordering": [
+        "classify the open failure",
+        "preserve the complete Sumi.sqlite family",
+        "verify the preserved bytes",
+        "create a fresh schema only for confirmed corruption"
+      ]
     }
   ],
-  "ephemeralState": [
-    {
-      "name": "Private profile website and extension data",
-      "owner": "Profile and ExtensionProfileWebsiteDataStoreCache",
-      "lifetime": "WKWebsiteDataStore.nonPersistent() for the private runtime",
-      "durableBoundary": "Must never be inventoried as a durable WebKit store"
-    },
-    {
-      "name": "In-memory SwiftData test/runtime containers",
-      "owner": "Explicit ModelConfiguration(isStoredInMemoryOnly: true) call sites",
-      "lifetime": "Owning container",
-      "durableBoundary": "No Application Support path and no migration fixture"
-    },
-    {
-      "name": "Runtime caches and pending UI/session work",
-      "owner": "Web view session repositories, favicon memory cache, extension store handle cache, pending debounce tasks, and observable view state",
-      "lifetime": "Process, window, profile, or active feature use",
-      "durableBoundary": "Only an owning durable type may publish selected state to a family above"
-    },
-    {
-      "name": "Downloads, bookmark HTML exports, Boost exports, and native-host save-panel files",
-      "owner": "DownloadDestinationAllocating/SumiDownloadDestinationAllocator reserves names in memory; DownloadFileFinalizing/SumiDownloadFileFinalizer publishes bytes; DownloadOrphanCleaning/SumiDownloadOrphanCleaner removes incomplete .sumiload files; other exporters write through their user-selected URL owners",
-      "lifetime": "User controlled",
-      "durableBoundary": "Download reservations are process-ephemeral. Temporary .sumiload files and published downloads are durable user-owned filesystem content, not Sumi-owned stores or migration surfaces"
-    }
-  ],
-  "semanticSignalOwnership": [
-    {
-      "owner": "preferences-userdefaults",
-      "kind": "user_defaults",
-      "paths": [
-        "Settings/ChromeLayoutSettingsStore.swift",
-        "Settings/DownloadSettingsStore.swift",
-        "Settings/PerformanceSettingsStore.swift",
-        "Settings/Persisted.swift",
-        "Settings/SearchSettingsStore.swift",
-        "Settings/SettingsNavigationOwner.swift",
-        "Settings/StartupPrivacySettingsStore.swift",
-        "Settings/SumiDownloadsDirectoryStore.swift",
-        "Settings/SumiSettingsService.swift",
-        "Settings/ThemeSettingsStore.swift",
-        "Sumi/Components/Sidebar/URLBarHubPopover.swift",
-        "Sumi/Components/Sidebar/URLBarHubScreenshotSettingsPresenter.swift",
-        "Sumi/ContentBlocking/AdblockSitePolicy.swift",
-        "Sumi/ContentBlocking/SumiAdblockZapperStore.swift",
-        "Sumi/ContentBlocking/SumiCompiledContentRuleListCatalog.swift",
-        "Sumi/ContentBlocking/SumiProtectionBundleUpdateStatusStore.swift",
-        "Sumi/ContentBlocking/SumiProtectionSettings.swift",
-        "Sumi/Managers/ExtensionManager/ExtensionHubOrderingOwner.swift",
-        "Sumi/Managers/ExtensionManager/ExtensionBootstrapChromeAdmission.swift",
-        "Sumi/Managers/ExtensionManager/ExtensionInstallationMetadataStore.swift",
-        "Sumi/Managers/ExtensionManager/ExtensionManager.swift",
-        "Sumi/Managers/ExtensionManager/ExtensionManagerRootAssembler.swift",
-        "Sumi/Managers/ExtensionManager/ExtensionPermissionDecisionStore.swift",
-        "Sumi/Managers/ExtensionManager/ExtensionProfilePrivateDataCleaner.swift",
-        "Sumi/Managers/ExtensionManager/ExtensionRuntimeControllerIdentifierOwner.swift",
-        "Sumi/Managers/ExtensionManager/ExtensionToolbarPinningOwner.swift",
-        "Sumi/Managers/ExtensionManager/SafariExtension/SafariContentBlockerRuntimeOwner.swift",
-        "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionImportStore.swift",
-        "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionSiteAccessPolicyStore.swift",
-        "Sumi/Managers/ExtensionManager/SafariExtension/SumiSafariContentBlockerAPIOwner.swift",
-        "Sumi/Managers/ExtensionManager/SumiExtensionContentBlockingSurface.swift",
-        "Sumi/Managers/History/HistoryManager.swift",
-        "Sumi/Managers/History/LastSessionWindowsStore.swift",
-        "Sumi/Managers/KeyboardShortcutManager/KeyboardShortcutManager.swift",
-        "Sumi/Managers/KeyboardShortcutManager/KeyboardShortcutStore.swift",
-        "Sumi/Managers/ZoomManager/ZoomManager.swift",
-        "Sumi/Permissions/SumiPermissionCleanupService.swift",
-        "Sumi/Permissions/SumiPermissionCleanupSettingsOwner.swift",
-        "Sumi/Permissions/SumiPermissionSettingsRepository.swift",
-        "Sumi/Services/RuntimeDiagnostics.swift",
-        "Sumi/Services/ProfileApplicationDataCleanupService.swift",
-        "Sumi/Services/SumiBrowsingDataCleanupService.swift",
-        "Sumi/Services/SumiModuleRegistry.swift",
-        "Sumi/Services/SumiSiteDataPolicyStore.swift",
-        "Sumi/Services/WindowSessionSnapshotStore.swift",
-        "Sumi/Updates/SumiUpdaterService.swift"
-      ]
-    },
-    {
-      "owner": "userscripts-library",
-      "kind": "user_defaults",
-      "paths": [
-        "Sumi/Managers/ExtensionManager/SafariExtension/UserscriptsLibraryLocationStore.swift"
-      ]
-    },
-    {
-      "owner": "userscripts-library",
-      "kind": "file_write",
-      "paths": [
-        "Sumi/Managers/ExtensionManager/SafariExtension/UserscriptsLibraryProtocolService.swift"
-      ]
-    },
-    {
-      "owner": "startup-swiftdata",
-      "kind": "swiftdata_schema",
-      "paths": ["Sumi/Services/SumiStartupPersistence.swift"]
-    },
-    {
-      "owner": "startup-swiftdata",
-      "kind": "file_write",
-      "paths": [
-        "Sumi/Services/SumiStartupStoreIO.swift",
-        "Sumi/Services/SumiStartupStorePreservation.swift",
-        "Sumi/Services/SumiStartupStoreRecovery.swift"
-      ]
-    },
-    {
-      "owner": "bookmarks-coredata",
-      "kind": "core_data",
-      "paths": ["Sumi/Common/Database/SumiPersistentContainerDatabase.swift"]
-    },
-    {
-      "owner": "permissions-json",
-      "kind": "file_write",
-      "paths": [
-        "Sumi/Permissions/SumiPermissionCanonicalSnapshotPublisher.swift",
-        "Sumi/Permissions/SumiPermissionSnapshotLoader.swift"
-      ]
-    },
-    {
-      "owner": "credential-keychain",
-      "kind": "keychain",
-      "paths": [
-        "Sumi/Managers/AuthenticationManager/BasicAuthCredentialStore.swift",
-        "Sumi/Managers/ExtensionManager/SafariExtension/BitwardenSafariBiometricHandler.swift",
-        "Sumi/Managers/ExtensionManager/SafariExtension/ProtonPassSafariCompanionStore.swift"
-      ]
-    },
-    {
-      "owner": "boosts-files",
-      "kind": "file_write",
-      "paths": ["Sumi/Boosts/SumiBoostDiskWorker.swift"]
-    },
-    {
-      "owner": "live-folders-json",
-      "kind": "file_write",
-      "paths": ["Sumi/LiveFolders/SumiLiveFolderStore.swift"]
-    },
-    {
-      "owner": "extension-packages",
-      "kind": "file_write",
-      "paths": [
-        "Sumi/Managers/ExtensionManager/ExtensionPackageInstallTransaction.swift",
-        "Sumi/Managers/ExtensionManager/ExtensionPackageMaintenance.swift"
-      ]
-    },
-    {
-      "owner": "webkit-website-data",
-      "kind": "webkit_persistent",
-      "paths": [
-        "Sumi/Managers/BrowserManager/BrowserPagePrivacyCommandOwner.swift",
-        "Sumi/Managers/ExtensionManager/ExtensionProfileWebsiteDataStoreCache.swift",
-        "Sumi/Models/BrowserConfig/BrowserConfig.swift",
-        "Sumi/Models/Profile/Profile.swift"
-      ]
-    },
-    {
-      "owner": "webkit-extension-storage",
-      "kind": "webkit_persistent",
-      "paths": ["Sumi/Managers/ExtensionManager/ExtensionControllerProvisioningOwner.swift"]
-    },
-    {
-      "owner": "import-journal",
-      "kind": "file_write",
-      "paths": ["Sumi/ImportExport/SumiImportTransactionFileJournal.swift"]
-    },
-    {
-      "owner": "import-staging",
-      "kind": "file_write",
-      "paths": [
-        "Sumi/ImportExport/Bulk/SumiImportBulkStagingStore.swift",
-        "Sumi/ImportExport/Bulk/SumiImportFaviconExtractor.swift"
-      ]
-    },
-    {
-      "owner": "logical-backups",
-      "kind": "file_write",
-      "paths": [
-        "Sumi/Components/Settings/SumiDataRecoverySettingsPane.swift",
-        "Sumi/ImportExport/SumiBackupService.swift"
-      ]
-    },
-    {
-      "owner": "favicon-cache",
-      "kind": "file_write",
-      "paths": ["Sumi/Favicons/V2/SumiFaviconBlobDiskStorage.swift"]
-    },
-    {
-      "owner": "essential-backdrop-cache",
-      "kind": "file_write",
-      "paths": ["Sumi/Favicons/EssentialBackdrop/SumiEssentialBackdropDiskStorage.swift"]
-    },
-    {
-      "owner": "adblock-generation-cache",
-      "kind": "file_write",
-      "paths": ["Sumi/ContentBlocking/AdblockGenerationArchive.swift"]
-    },
-    {
-      "owner": "adblock-remote-cache",
-      "kind": "file_write",
-      "paths": [
-        "Sumi/ContentBlocking/SumiProtectionBundleCacheTransaction.swift",
-        "Sumi/ContentBlocking/SumiProtectionBundleQuarantine.swift"
-      ]
-    },
-    {
-      "owner": "download-applications-json",
-      "kind": "file_write",
-      "paths": ["Sumi/Managers/DownloadManager/SumiDownloadPreferences.swift"]
-    },
-    {
-      "owner": "webkit-content-rule-lists",
-      "kind": "webkit_persistent",
-      "paths": ["Sumi/ContentBlocking/SumiWKContentRuleListCompiler.swift"]
-    }
-  ],
-  "semanticExclusions": [
-    {"kind": "file_write", "path": "Sumi/Bookmarks/Store/BookmarkHTMLExporter.swift", "reason": "Writes a user-selected HTML export, not an app-owned store"},
-    {"kind": "file_write", "path": "Sumi/ImportExport/Sources/SumiImportSQLiteSnapshotReader.swift", "reason": "Copies a source browser's database and its write-ahead log into a discarded temporary snapshot so the original is never opened"},
-    {"kind": "keychain", "path": "Sumi/ImportExport/Bulk/SumiChromiumSafeStorageDecryptor.swift", "reason": "Reads another browser's own keychain item to decrypt its cookies during import, subject to the user's authorization; Sumi stores nothing there"},
-    {"kind": "file_write", "path": "Sumi/Boosts/SumiBoostEditorSessionActions.swift", "reason": "Writes a user-selected per-Boost export"},
-    {"kind": "file_write", "path": "Sumi/Managers/DownloadManager/SumiDownloadFileFinalizer.swift", "reason": "Writes and publishes downloaded content to the destination reserved by the download filesystem port; the file is user-owned, not a Sumi store"},
-    {"kind": "file_write", "path": "Sumi/Managers/ExtensionManager/SafariExtension/BitwardenNativeMessagingAdapter.swift", "reason": "Writes native-host data to a user-selected save-panel URL"}
-  ],
-  "versionOwnerSignals": [
-    {"path": "Packages/SumiWebRuntime/Sources/SumiWebRuntime/Utils/SumiUserAgent.swift", "declaration": "private static let fallbackSafariVersion = \"26.5\"", "owner": "excluded", "reason": "Network user-agent fallback, not a persisted format"},
-    {"path": "Packages/SumiWebRuntime/Sources/SumiWebRuntime/Utils/SumiUserAgent.swift", "declaration": "private static let fallbackWebKitVersion = \"605.1.15\"", "owner": "excluded", "reason": "Network user-agent fallback, not a persisted format"},
-    {"path": "Sumi/Components/DragDrop/SumiDragItem.swift", "declaration": "static let currentSchemaVersion = 2", "owner": "excluded", "reason": "Transient drag/pasteboard payload"},
-    {"path": "Sumi/ContentBlocking/AdblockGenerationModels.swift", "declaration": "static let currentSchemaVersion = 6", "owner": "adblock-generation-cache"},
-    {"path": "Sumi/ContentBlocking/SumiAdblockNativeBundleReader.swift", "declaration": "guard manifest.schemaVersion == 1 else {", "owner": "adblock-remote-cache"},
-    {"path": "Sumi/ContentBlocking/SumiAdblockNativeRuleBundle.swift", "declaration": "static let requiredNativeCSSSafetyPolicyVersion = \"sumi-native-css-safety/0.4\"", "owner": "adblock-remote-cache"},
-    {"path": "Sumi/ContentBlocking/SumiProtectionBundleRemoteModels.swift", "declaration": "static let releaseManifestSchemaVersion = 1", "owner": "adblock-remote-cache"},
-    {"path": "Sumi/ContentBlocking/SumiProtectionBundleRemoteModels.swift", "declaration": "static let browserBundleExpectationVersion = 1", "owner": "adblock-remote-cache"},
-    {"path": "Sumi/ContentBlocking/SumiProtectionBundleTrust.swift", "declaration": "guard envelope.schemaVersion == 1 else {", "owner": "adblock-remote-cache"},
-    {"path": "Sumi/ContentBlocking/SumiProtectionBundleUpdateStatusStore.swift", "declaration": "static let lastReleaseVersion = \"settings.protection.bundleUpdate.lastReleaseVersion\"", "owner": "excluded", "reason": "UserDefaults key name, not a schema version"},
-    {"path": "Sumi/ContentBlocking/SumiProtectionBundleUpdateStatusStore.swift", "declaration": "static let lastSigningKeyVersion = \"settings.protection.bundleUpdate.lastSigningKeyVersion\"", "owner": "excluded", "reason": "UserDefaults key name, not a schema version"},
-    {"path": "Sumi/Favicons/V2/SumiFaviconBlobModels.swift", "declaration": "static let currentSchemaVersion = 2", "owner": "favicon-cache"},
-    {"path": "Sumi/ImportExport/Bulk/SumiImportBulkModels.swift", "declaration": "static let currentVersion = 1", "owner": "import-staging"},
-    {"path": "Sumi/ImportExport/SumiImportExportModels.swift", "declaration": "static let currentVersion = 1", "owner": "logical-backups"},
-    {"path": "Sumi/ImportExport/SumiImportTransactionJournal.swift", "declaration": "static let currentVersion = 2", "owner": "import-journal"},
-    {"path": "Sumi/Managers/TabManager/TabPersistenceCodec.swift", "declaration": "static let schemaVersion = 2", "owner": "preferences-userdefaults"},
-    {"path": "Sumi/Permissions/SumiPermissionPersistenceAuthority.swift", "declaration": "static let storageVersion = 1", "owner": "permissions-json"},
-    {"path": "Sumi/Services/SumiStartupPersistence.swift", "declaration": "static let versionIdentifier = Schema.Version(4, 0, 0)", "owner": "startup-swiftdata"},
-    {"path": "Sumi/Services/SumiStartupStoreRecovery.swift", "declaration": "guard marker.formatVersion == 1, marker.storeFileName == storeURL.lastPathComponent else {", "owner": "startup-swiftdata"},
-    {"path": "Sumi/Services/SumiStartupStoreRecovery.swift", "declaration": "guard manifest.formatVersion == 2,", "owner": "startup-swiftdata"}
-  ],
-  "coreDataModels": [
-    {"path": "Sumi/Bookmarks/Store/BookmarksModel.xcdatamodeld/BookmarksModel 6.xcdatamodel/contents", "entities": ["BookmarkEntity"]}
-      ],
-  "coreDataCurrentVersions": [
-    {"path": "Sumi/Bookmarks/Store/BookmarksModel.xcdatamodeld/.xccurrentversion", "current": "BookmarksModel 6.xcdatamodel"}
+  "logicalBackupV1Scope": {
+    "included": [
+      "profiles",
+      "spaces and themes",
+      "bookmarks",
+      "essentials",
+      "pinned launchers",
+      "folders",
+      "regular tabs"
+    ],
+    "excluded": [
+      "history",
+      "permission decisions",
+      "extension metadata and payloads",
+      "cookies and website data",
+      "credentials",
+      "caches",
+      "downloads",
+      "preferences and session settings"
+    ]
+  },
+  "forbiddenProductionPersistence": [
+    "SwiftData",
+    "Core Data",
+    "structured browser-state JSON files",
+    "structured browser-state UserDefaults payloads",
+    "additional Sumi-owned SQLite databases"
   ]
 }

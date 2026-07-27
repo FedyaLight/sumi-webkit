@@ -8,10 +8,10 @@ source "$script_dir/lib/architecture_guard.sh"
 guard_initialize "$repo_root"
 
 runtime_paths=(App Sumi Settings SidebarChrome CommandPalette UI)
-allowed_file="Sumi/Services/SumiStartupPersistence.swift"
+startup_file="Sumi/Services/SumiStartupPersistence.swift"
 permission_composition_file="Sumi/Managers/BrowserManager/BrowserManagerStartupPersistence.swift"
 
-check_pattern() {
+check_absent_pattern() {
   local label="$1"
   local pattern="$2"
   local matches
@@ -19,13 +19,7 @@ check_pattern() {
   matches="$(guard_capture_matches "$pattern" -g '*.swift' "${runtime_paths[@]}")" || return
   [[ -z "$matches" ]] && return
 
-  while IFS= read -r match; do
-    [[ -z "$match" ]] && continue
-    local relative_path="${match%%:*}"
-    if [[ "$relative_path" != "$allowed_file" ]]; then
-      guard_record_failure "$label outside $allowed_file: $match"
-    fi
-  done <<< "$matches"
+  guard_record_failure "$label returned: $matches"
 }
 
 check_pattern_allowed_only_in() {
@@ -46,12 +40,17 @@ check_pattern_allowed_only_in() {
   done <<< "$matches"
 }
 
-check_pattern "SwiftData model container construction" 'ModelContainer\s*\('
-check_pattern "SwiftData model configuration construction" 'ModelConfiguration\s*\('
-check_pattern "SwiftData schema construction" 'Schema\s*\('
+check_absent_pattern "SwiftData model container construction" 'ModelContainer[[:space:]]*\('
+check_absent_pattern "SwiftData model configuration construction" 'ModelConfiguration[[:space:]]*\('
+check_absent_pattern "SwiftData schema construction" '(^|[^[:alnum:]_])Schema[[:space:]]*\('
+check_absent_pattern "CoreData persistent container construction" 'NSPersistent(Container|CloudKitContainer)[[:space:]]*\('
+check_pattern_allowed_only_in \
+  "unified database opening" \
+  'SumiDatabase\.open[[:space:]]*\(' \
+  "$startup_file"
 check_pattern_allowed_only_in \
   "persistent permission-store construction" \
-  'SwiftDataPermissionStore\s*\(' \
+  'DatabasePermissionStore[[:space:]]*\(' \
   "$permission_composition_file"
 check_pattern_allowed_only_in \
   "autoplay permission-adapter construction" \

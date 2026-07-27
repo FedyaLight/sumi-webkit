@@ -27,7 +27,7 @@ struct SumiSmokeStoreFixtureFamily {
     let manifest: SumiSmokeStoreFixtureManifest
 
     var primaryStoreURL: URL {
-        resourceDirectoryURL.appendingPathComponent("default.store", isDirectory: false)
+        resourceDirectoryURL.appendingPathComponent("Sumi.sqlite", isDirectory: false)
     }
 
     var fileURLs: [URL] {
@@ -47,7 +47,7 @@ struct SumiSmokeStoreFixtureFamily {
 
         let existingNames = try Set(
             fileManager.contentsOfDirectory(atPath: directoryURL.path)
-                .filter { $0.hasPrefix("default.store") }
+                .filter { $0.hasPrefix("Sumi.sqlite") }
         )
         guard existingNames.isEmpty else {
             throw SumiSmokeStoreFixtureError.copyDestinationNotEmpty(directoryURL.path)
@@ -60,7 +60,7 @@ struct SumiSmokeStoreFixtureFamily {
         }
 
         try verifyIntegrity(in: directoryURL)
-        return directoryURL.appendingPathComponent("default.store", isDirectory: false)
+        return directoryURL.appendingPathComponent("Sumi.sqlite", isDirectory: false)
     }
 
     func hashes(in directoryURL: URL? = nil) throws -> [String: String] {
@@ -75,7 +75,7 @@ struct SumiSmokeStoreFixtureFamily {
         let fileManager = FileManager.default
         let actualNames = try Set(
             fileManager.contentsOfDirectory(atPath: directoryURL.path)
-                .filter { $0.hasPrefix("default.store") }
+                .filter { $0.hasPrefix("Sumi.sqlite") }
         )
         let expectedNames = Set(manifest.files.map(\.name))
         guard actualNames == expectedNames else {
@@ -125,12 +125,8 @@ struct SumiSmokeStoreFixtureFamily {
 
 enum SumiSmokeStoreFixture {
     static let manifestFileName = "sumi-ui-smoke-store-manifest.json"
-    static let expectedFamily = "sumi-ui-smoke-startup-swiftdata"
-    static let expectedFileNames = [
-        "default.store",
-        "default.store-shm",
-        "default.store-wal",
-    ]
+    static let expectedFamily = "sumi-ui-smoke-unified-database"
+    static let expectedFileNames = ["Sumi.sqlite"]
 
     static func resolveBundledFamily(
         bundle: Bundle = Bundle(for: SumiLaunchSmokeUITestCase.self)
@@ -227,7 +223,7 @@ enum SumiSmokeStoreFixtureError: LocalizedError {
         case .hashMismatch(let file, let expected, let actual, let directory):
             "UI smoke fixture \(file) in \(directory) has SHA-256 \(actual); expected \(expected)"
         case .copyDestinationNotEmpty(let path):
-            "UI smoke scratch destination already contains a default.store family: \(path)"
+            "UI smoke scratch destination already contains a Sumi.sqlite family: \(path)"
         }
     }
 }

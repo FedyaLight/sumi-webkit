@@ -402,7 +402,6 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
         return WindowSessionPersistenceCoordinator(
             snapshotStore: WindowSessionSnapshotStore(
                 key: "window-session",
-                userDefaults: defaults,
                 environment: { [:] }
             ),
             snapshotFactory: snapshotFactory,

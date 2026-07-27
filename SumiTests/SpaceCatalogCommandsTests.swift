@@ -170,9 +170,9 @@ private final class SpaceCatalogFixture {
         notifications: (any BrowserNotificationPresenting)? = nil,
         spy: Spy
     ) throws {
-        let container = try makeInMemoryStartupModelContainer()
+        let container = try makeInMemoryStartupDatabase()
         let tabManager = TabManager(
-            context: container.mainContext,
+            database: container,
             webViewSessions: WebViewSessionRepository(),
             profileReferenceAdmission: profileReferenceAdmission,
             loadPersistedState: false,

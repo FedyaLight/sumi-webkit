@@ -5,15 +5,9 @@
 //
 
 import Foundation
-import SwiftData
 
-// Stores Space persistence, including workspace theme configuration.
-
-@Model
 final class SpaceEntity {
-    #Index<SpaceEntity>([\.profileId])
-
-    @Attribute(.unique) var id: UUID
+    var id: UUID
     var name: String
     var icon: String
     var index: Int

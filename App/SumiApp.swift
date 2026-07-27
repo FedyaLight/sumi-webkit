@@ -56,13 +56,13 @@ struct SumiApp: App {
             settingsStore: SumiModuleSettingsStore(userDefaults: .standard)
         )
         let permissionPersistenceAuthority = SumiPermissionPersistenceAuthority(
-            storageDirectory: SumiApplicationSupportDirectory.appRootURL()
-                .appendingPathComponent("Permissions", isDirectory: true)
+            database: SumiStartupPersistenceComposition.database
         )
         let permissionSiteActivityStore = SumiPermissionSiteActivityStore(
             persistenceAuthority: permissionPersistenceAuthority
         )
         let faviconSystem = SumiFaviconSystem(
+            database: SumiStartupPersistenceComposition.database,
             rootDirectory: SumiApplicationSupportDirectory.appRootURL()
                 .appendingPathComponent("Favicons/v2", isDirectory: true),
             fetcher: SumiFaviconNetworkClient()
@@ -74,6 +74,7 @@ struct SumiApp: App {
             startupPersistence: SumiStartupPersistenceComposition.browserManagerStartupPersistence,
             browserConfiguration: BrowserConfiguration.shared,
             dataServices: BrowserManagerDataServices.production(
+                database: SumiStartupPersistenceComposition.database,
                 faviconSystem: faviconSystem
             ),
             nowPlayingController: nowPlayingController,
@@ -91,7 +92,14 @@ struct SumiApp: App {
         self.defaultBrowserService = defaultBrowserService
         _windowRegistry = State(initialValue: windowRegistry)
         _nowPlayingController = StateObject(wrappedValue: nowPlayingController)
-        _settingsManager = State(initialValue: SumiSettingsService(nowPlayingController: nowPlayingController))
+        _settingsManager = State(
+            initialValue: SumiSettingsService(
+                nowPlayingController: nowPlayingController,
+                downloadApplicationsStore: SumiDownloadApplicationsStore(
+                    database: SumiStartupPersistenceComposition.database
+                )
+            )
+        )
         _keyboardShortcutManager = State(
             initialValue: keyboardShortcutManager
         )
@@ -185,6 +193,9 @@ struct SumiApp: App {
                         bookmarkManager: browserManager.bookmarkManager
                     ),
                     backupWriter: SumiBackupService(),
+                    journal: SumiImportTransactionDatabaseJournal(
+                        database: browserManager.database
+                    ),
                     profileRetirement: browserManager.profileLifecycleBundle
                         .importRetirement
                 )
@@ -267,7 +278,7 @@ struct SumiApp: App {
                 keyboardShortcutManager: keyboardShortcutManager,
                 nowPlayingController: nowPlayingController,
                 windowShellContentViewFactory: makeWindowShellContentViewFactory(),
-                fallbackPersistenceSave: SumiStartupPersistenceComposition.saveMainContext,
+                fallbackPersistenceSave: SumiStartupPersistenceComposition.flushDatabase,
                 startUpdater: { updaterService.start() }
             )
         )

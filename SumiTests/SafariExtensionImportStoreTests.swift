@@ -3,20 +3,16 @@ import XCTest
 @testable import Sumi
 
 final class SafariExtensionImportStoreTests: XCTestCase {
-    private var suiteName: String!
-    private var defaults: UserDefaults!
+    private var database: SumiDatabase!
     private var store: SafariExtensionImportStore!
 
     override func setUp() {
-        suiteName = "SafariExtensionImportStoreTests.\(UUID().uuidString)"
-        defaults = UserDefaults(suiteName: suiteName)!
-        store = SafariExtensionImportStore(defaults: defaults)
+        database = try! SumiDatabase.inMemory()
+        store = SafariExtensionImportStore(database: database)
     }
 
     override func tearDown() {
-        defaults.removePersistentDomain(forName: suiteName)
-        suiteName = nil
-        defaults = nil
+        database = nil
         store = nil
     }
 

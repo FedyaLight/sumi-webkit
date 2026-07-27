@@ -26,7 +26,7 @@ final class SumiCompanionAppLaunchPolicyTests: XCTestCase {
         let launchPolicy = SumiCompanionAppLaunchPolicy()
         let loopGuard = SumiNativeMessagingRelayLoopGuard()
         let relay = SumiNativeMessagingRelay(
-            importStore: SafariExtensionImportStore(defaults: makeDefaults()),
+            importStore: SafariExtensionImportStore(database: try! SumiDatabase.inMemory()),
             launcher: launcher,
             adapterRegistry: SumiNativeMessagingAdapterRegistry(adapters: [adapter]),
             launchPolicy: launchPolicy,
@@ -143,7 +143,7 @@ final class SumiCompanionAppLaunchPolicyTests: XCTestCase {
         let launcher = MockHostLauncher()
         launcher.bundleURLs["com.example.host"] = URL(fileURLWithPath: "/Applications/Example.app")
         let relay = SumiNativeMessagingRelay(
-            importStore: SafariExtensionImportStore(defaults: makeDefaults()),
+            importStore: SafariExtensionImportStore(database: try! SumiDatabase.inMemory()),
             launcher: launcher,
             extensionsModuleEnabled: { true }
         )

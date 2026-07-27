@@ -1235,11 +1235,14 @@ private final class AttachmentFixture {
     private let availability: SpaceProfileTransitionPublication
 
     init() throws {
-        let container = try makeInMemoryStartupModelContainer()
+        let container = try makeInMemoryStartupDatabase()
         let eventBus = TabStructureEventBus()
         let manager = TabManager(
-            context: container.mainContext,
+            database: container,
             webViewSessions: WebViewSessionRepository(),
+            profileReferenceAdmission: try ProfileReferenceAdmissionLedger(
+                database: container
+            ),
             loadPersistedState: false,
             tabStructureEventBus: eventBus
         )

@@ -21,6 +21,7 @@ final class SumiAdBlockingModule {
 
     init(
         moduleRegistry: SumiModuleRegistry,
+        database: SumiDatabase? = nil,
         sitePolicyFactory: (@MainActor () -> AdblockSitePolicyStore)? = nil,
         preparedBundleResourceURL: URL? = Bundle.main.resourceURL,
         preparedBundleRemoteRootURL: URL? =
@@ -28,16 +29,19 @@ final class SumiAdBlockingModule {
         preparedBundleGeneratedRootURL: URL? = nil,
         preparedBundleResolver: SumiPreparedAdblockBundleResolver =
             SumiPreparedAdblockBundleResolver(),
-        ruleListRuntimeFactory: @escaping @MainActor (
+        compiledRuleListCatalog: SumiCompiledContentRuleListCataloging,
+        ruleListRuntimeFactory: (@MainActor (
             @escaping @Sendable () async -> Bool
-        ) -> AdblockRuleListRuntime = {
-            AdblockRuleListRuntime(isRuntimeEnabled: $0)
-        }
+        ) -> AdblockRuleListRuntime)? = nil
     ) {
-        let userDefaults = moduleRegistry.userDefaults
         self.sitePolicyFactory = sitePolicyFactory
-            ?? { AdblockSitePolicyStore(userDefaults: userDefaults) }
-        self.ruleListRuntimeFactory = ruleListRuntimeFactory
+            ?? { AdblockSitePolicyStore(database: database) }
+        self.ruleListRuntimeFactory = ruleListRuntimeFactory ?? {
+            AdblockRuleListRuntime(
+                isRuntimeEnabled: $0,
+                compiledRuleListCatalog: compiledRuleListCatalog
+            )
+        }
         self.preparedBundleResourceURL = preparedBundleResourceURL
         self.preparedBundleRemoteRootURL = preparedBundleRemoteRootURL
         self.preparedBundleGeneratedRootURL = preparedBundleGeneratedRootURL

@@ -10,8 +10,7 @@ final class ActivePageBrowserManagerIntegrationTests: XCTestCase {
         let registry = WindowRegistry()
         let browserManager = BrowserManager(
             windowRegistry: registry,
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupModelContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupDatabase()
             )
         )
         let webViewRuntime = browserManager.testWebViewRuntime()
@@ -49,8 +48,7 @@ final class ActivePageBrowserManagerIntegrationTests: XCTestCase {
         let registry = WindowRegistry()
         let browserManager = BrowserManager(
             windowRegistry: registry,
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupModelContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupDatabase()
             )
         )
         let firstSpace = installTestSpace(

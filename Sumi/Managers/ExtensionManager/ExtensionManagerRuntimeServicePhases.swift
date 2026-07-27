@@ -107,7 +107,6 @@ extension ExtensionManagerAssembler {
     ) -> InstalledExtensionLifecycleService {
         InstalledExtensionLifecycleService(
             environment: .init(
-                    modelContext: installation.context,
                     metadataStore: installation.metadataStore,
                     installedRecords: contexts.installedExtensions,
                     volatileRecords: makeVolatileRecordReconciler(

@@ -2,14 +2,14 @@
   "formatVersion": 1,
   "provenance": [
     {
-      "id": "shipped-codable-format",
-      "description": "Static payload authored against the field names and enum values in a checked-in shipped Codable format at baseline 0fc8454d6; it is decoded only from disk by tests.",
+      "id": "current-codable-format",
+      "description": "Static payload authored against the current checked-in Codable format.",
       "limitations": "Synthetic minimal data; it proves wire compatibility, not every optional field combination."
     },
     {
       "id": "adversarial-format-mutation",
-      "description": "Static unsupported-version, malformed, or hash-tampered mutation of a shipped-format fixture.",
-      "limitations": "Designed to prove fail-closed or quarantine behavior, not successful migration."
+      "description": "Static unsupported-version, malformed, or hash-tampered mutation of a current-format fixture.",
+      "limitations": "Designed to prove fail-closed behavior, not migration."
     }
   ],
   "fixtures": [
@@ -17,7 +17,7 @@
       "path": "SumiTests/Fixtures/Persistence/adblock/manifest-tampered-index.json",
       "sha256": "b479b318abd4e2ae2e8babfda7b889d38ebe75ce9a2e2d0c973c5c6fbe47253b",
       "bytes": 402,
-      "family": "adblock-generation-cache",
+      "family": "rebuildable-caches",
       "role": "tampered manifest",
       "provenance": "adversarial-format-mutation",
       "test": "testAdblockManifestFixturesReadCurrentAndRejectFutureAndTamper"
@@ -26,7 +26,7 @@
       "path": "SumiTests/Fixtures/Persistence/adblock/manifest-unsupported-v7.json",
       "sha256": "d1a2fe2c1414e69803cb20d67599ebd1f305082fd8ac59c6cd9a027490c84c09",
       "bytes": 353,
-      "family": "adblock-generation-cache",
+      "family": "rebuildable-caches",
       "role": "unsupported future manifest",
       "provenance": "adversarial-format-mutation",
       "test": "testAdblockManifestFixturesReadCurrentAndRejectFutureAndTamper"
@@ -35,16 +35,16 @@
       "path": "SumiTests/Fixtures/Persistence/adblock/manifest-v6.json",
       "sha256": "ca0879d5aa51cec1d17167f484c321aba6a429abbfa2627f40fae08cbd2f1961",
       "bytes": 352,
-      "family": "adblock-generation-cache",
+      "family": "rebuildable-caches",
       "role": "current generation manifest v6",
-      "provenance": "shipped-codable-format",
+      "provenance": "current-codable-format",
       "test": "testAdblockManifestFixturesReadCurrentAndRejectFutureAndTamper"
     },
     {
       "path": "SumiTests/Fixtures/Persistence/backups/logical-backup-malformed.sumibackup",
       "sha256": "736f100249eae3ba2e7d5bf56cc4373f99824dbe0fe6a1594220937f995ef17c",
       "bytes": 56,
-      "family": "logical-backups",
+      "family": "user-authored-files",
       "role": "malformed logical backup",
       "provenance": "adversarial-format-mutation",
       "test": "testLogicalBackupFixturesReadV1AndRejectFutureAndMalformed"
@@ -53,7 +53,7 @@
       "path": "SumiTests/Fixtures/Persistence/backups/logical-backup-unsupported-v2.sumibackup",
       "sha256": "afd13bd2040a9caefd9d390f968e8745a82c6729bbe293ddca1afec2078f967c",
       "bytes": 398,
-      "family": "logical-backups",
+      "family": "user-authored-files",
       "role": "unsupported future logical backup",
       "provenance": "adversarial-format-mutation",
       "test": "testLogicalBackupFixturesReadV1AndRejectFutureAndMalformed"
@@ -62,16 +62,16 @@
       "path": "SumiTests/Fixtures/Persistence/backups/logical-backup-v1.sumibackup",
       "sha256": "8d8036abb462fea49d79eca397aab97180fe9fffb493a2519e1264cb6f1f7618",
       "bytes": 644,
-      "family": "logical-backups",
-      "role": "shipped logical backup v1",
-      "provenance": "shipped-codable-format",
+      "family": "user-authored-files",
+      "role": "current logical backup v1",
+      "provenance": "current-codable-format",
       "test": "testLogicalBackupFixturesReadV1AndRejectFutureAndMalformed"
     },
     {
       "path": "SumiTests/Fixtures/Persistence/boosts/boosts-malformed.json",
       "sha256": "8969fd62d4493027376c3292d8790f2050e49314d661dafb36b94c8104bc8005",
       "bytes": 37,
-      "family": "boosts-files",
+      "family": "specialized-app-files",
       "role": "malformed boosts store",
       "provenance": "adversarial-format-mutation",
       "test": "testBoostFixturesReadShippedStoreAndPreserveMalformedBytes"
@@ -80,17 +80,17 @@
       "path": "SumiTests/Fixtures/Persistence/boosts/boosts-shipped-unversioned.json",
       "sha256": "6c5d299952b0685c1095d9ee9b3f8e584b9ceb6d8377141143f19c417733e3aa",
       "bytes": 1250,
-      "family": "boosts-files",
-      "role": "shipped unversioned boosts store",
-      "provenance": "shipped-codable-format",
+      "family": "specialized-app-files",
+      "role": "current boosts store",
+      "provenance": "current-codable-format",
       "test": "testBoostFixturesReadShippedStoreAndPreserveMalformedBytes"
     },
     {
       "path": "SumiTests/Fixtures/Persistence/favicons/metadata-malformed.json",
       "sha256": "6f52ddc333ef29e01c49f91a5a7bc0a4347ade7ac66df6bcfdd6be345092aa60",
       "bytes": 30,
-      "family": "favicon-cache",
-      "role": "malformed favicon metadata",
+      "family": "unified-database",
+      "role": "malformed favicon metadata document",
       "provenance": "adversarial-format-mutation",
       "test": "testFaviconMetadataFixturesReadV2AndRejectFutureAndMalformed"
     },
@@ -98,8 +98,8 @@
       "path": "SumiTests/Fixtures/Persistence/favicons/metadata-unsupported-v3.json",
       "sha256": "3fe8dac5a49e832586a6acdf123d3732d994dcd337b1027673ef460650ae9b1f",
       "bytes": 140,
-      "family": "favicon-cache",
-      "role": "unsupported future favicon metadata",
+      "family": "unified-database",
+      "role": "unsupported future favicon metadata document",
       "provenance": "adversarial-format-mutation",
       "test": "testFaviconMetadataFixturesReadV2AndRejectFutureAndMalformed"
     },
@@ -107,98 +107,17 @@
       "path": "SumiTests/Fixtures/Persistence/favicons/metadata-v2.json",
       "sha256": "f691e7a18cffbb52062c64e56cd6930a272031cc79450b7043528db0fb89cbcd",
       "bytes": 140,
-      "family": "favicon-cache",
-      "role": "shipped favicon metadata v2",
-      "provenance": "shipped-codable-format",
+      "family": "unified-database",
+      "role": "current favicon metadata document v2",
+      "provenance": "current-codable-format",
       "test": "testFaviconMetadataFixturesReadV2AndRejectFutureAndMalformed"
-    },
-    {
-      "path": "SumiTests/Fixtures/Persistence/import/import-journal-malformed.json",
-      "sha256": "cf846ea7aa8c647dccf6ffdef9d7529ffa7473d8536fc85f6f9db06507cc28fc",
-      "bytes": 45,
-      "family": "import-journal",
-      "role": "malformed import journal",
-      "provenance": "adversarial-format-mutation",
-      "test": "testImportJournalFixturesReadV1AndV2AndRejectFutureAndMalformed"
-    },
-    {
-      "path": "SumiTests/Fixtures/Persistence/import/import-journal-unsupported-v3.json",
-      "sha256": "2f7658ec5aded6782d6892ad2f097c0930c07a4da8ce0f90e80b70d657622726",
-      "bytes": 391,
-      "family": "import-journal",
-      "role": "unsupported future import journal",
-      "provenance": "adversarial-format-mutation",
-      "test": "testImportJournalFixturesReadV1AndV2AndRejectFutureAndMalformed"
-    },
-    {
-      "path": "SumiTests/Fixtures/Persistence/import/import-journal-v1.json",
-      "sha256": "e4bea1179562d709e263fc54b1dfc240fbf00cb0bf4f914ffbadf24f6270153b",
-      "bytes": 391,
-      "family": "import-journal",
-      "role": "shipped import journal v1",
-      "provenance": "shipped-codable-format",
-      "test": "testImportJournalFixturesReadV1AndV2AndRejectFutureAndMalformed"
-    },
-    {
-      "path": "SumiTests/Fixtures/Persistence/import/import-journal-v2.json",
-      "sha256": "8661dbf7b276031bce1a00537607ccc7a7bc89a8b8e08f8397163bf034b7973a",
-      "bytes": 514,
-      "family": "import-journal",
-      "role": "current import journal v2",
-      "provenance": "shipped-codable-format",
-      "test": "testImportJournalFixturesReadV1AndV2AndRejectFutureAndMalformed"
-    },
-    {
-      "path": "SumiTests/Fixtures/Persistence/live-folders/live-folders-malformed.json",
-      "sha256": "5fd0f55eb5dc5115624d6f6c5f5e4568ceaccfb90b77a667f9902ce1558397c1",
-      "bytes": 38,
-      "family": "live-folders-json",
-      "role": "malformed live-folders store",
-      "provenance": "adversarial-format-mutation",
-      "test": "testLiveFolderFixturesReadShippedStoreAndFailClosedMalformed"
-    },
-    {
-      "path": "SumiTests/Fixtures/Persistence/live-folders/live-folders-shipped-unversioned.json",
-      "sha256": "b5d4b24803f0caadbee42a43ade0decb5c2affb78c9e0b5ccdadefa93b11dcb5",
-      "bytes": 653,
-      "family": "live-folders-json",
-      "role": "shipped unversioned live-folders store",
-      "provenance": "shipped-codable-format",
-      "test": "testLiveFolderFixturesReadShippedStoreAndFailClosedMalformed"
-    },
-    {
-      "path": "SumiTests/Fixtures/Persistence/permissions/canonical-v1.json",
-      "sha256": "465f028eefcd611bedb11d02cf56c0851cb69ce9e353b01eca8511cd4991bb83",
-      "bytes": 92,
-      "family": "permissions-json",
-      "role": "canonical permission snapshot v1",
-      "provenance": "shipped-codable-format",
-      "test": "testPermissionCanonicalFixtureLoadsAndFutureAndMalformedFailClosed"
-    },
-    {
-      "path": "SumiTests/Fixtures/Persistence/permissions/malformed.json",
-      "sha256": "56cf4a2d26b5844e1d501aaff17473a012742cc5f87c6860c6b255f1c2b58746",
-      "bytes": 57,
-      "family": "permissions-json",
-      "role": "malformed canonical permission snapshot",
-      "provenance": "adversarial-format-mutation",
-      "test": "testPermissionCanonicalFixtureLoadsAndFutureAndMalformedFailClosed"
-    },
-    {
-      "path": "SumiTests/Fixtures/Persistence/permissions/unsupported-future-v2.json",
-      "sha256": "5cdd351a09fd32d8ec59f67cac80614e0a7506d335c59a059be660eb9685661a",
-      "bytes": 92,
-      "family": "permissions-json",
-      "role": "unsupported future permission snapshot",
-      "provenance": "adversarial-format-mutation",
-      "test": "testPermissionCanonicalFixtureLoadsAndFutureAndMalformedFailClosed"
     },
     {
       "path": "SumiTests/Fixtures/Persistence/tabs/split-groups-unsupported-v3.json",
       "sha256": "fd7e486abd0bed1aa608840be40336f905610079c5e1b7ba04467ff2ad2694d2",
       "bytes": 41,
-      "family": "preferences-userdefaults",
-      "role": "unsupported future split-group archive",
+      "family": "unified-database",
+      "role": "unsupported future split-group document",
       "provenance": "adversarial-format-mutation",
       "test": "testSplitArchiveRejectsFutureVersion"
     }

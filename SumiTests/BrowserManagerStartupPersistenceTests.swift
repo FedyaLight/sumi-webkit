@@ -1,4 +1,3 @@
-import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -66,18 +65,17 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
     func testInjectedStartupPersistenceSuppliesManagerContexts() throws {
         let container = try makeInMemoryStartupContainer()
         let browserManager = BrowserManager(
-            startupPersistence: BrowserManagerStartupPersistence(container: container)
+            startupPersistence: BrowserManagerStartupPersistence(database: container)
         )
 
-        XCTAssertIdentical(browserManager.modelContext.container, container)
-        XCTAssertIdentical(browserManager.profileManager.context.container, container)
-        XCTAssertIdentical(browserManager.modelContext.container, container)
+        XCTAssertIdentical(browserManager.database, container)
+        XCTAssertIdentical(browserManager.profileManager.database, container)
         XCTAssertNotNil(browserManager.currentProfile)
     }
 
     func testInjectedStartupPersistenceSuppliesDefaultPermissionStore() async throws {
         let container = try makeInMemoryStartupContainer()
-        let startupPersistence = BrowserManagerStartupPersistence(container: container)
+        let startupPersistence = BrowserManagerStartupPersistence(database: container)
         let browserManager = BrowserManager(
             startupPersistence: startupPersistence
         )
@@ -90,7 +88,7 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
             reason: "startup-persistence-test"
         )
 
-        let records = try await SwiftDataPermissionStore(container: container)
+        let records = try await DatabasePermissionStore(database: container)
             .listDecisions(profilePartitionId: key.profilePartitionId)
         XCTAssertEqual(records.count, 1)
         XCTAssertEqual(records.first?.key, key)
@@ -100,7 +98,7 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
 
     func testInjectedStartupPersistenceSharesOnePermissionStoreWithBrowserConfiguration() throws {
         let container = try makeInMemoryStartupContainer()
-        let startupPersistence = BrowserManagerStartupPersistence(container: container)
+        let startupPersistence = BrowserManagerStartupPersistence(database: container)
         let browserManager = BrowserManager(startupPersistence: startupPersistence)
 
         XCTAssertIdentical(
@@ -120,7 +118,7 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
     func testInjectedStartupPersistenceSuppliesAutoplayConfigurationStore() async throws {
         let container = try makeInMemoryStartupContainer()
         let browserManager = BrowserManager(
-            startupPersistence: BrowserManagerStartupPersistence(container: container)
+            startupPersistence: BrowserManagerStartupPersistence(database: container)
         )
         let profile = try XCTUnwrap(browserManager.currentProfile)
         let url = try XCTUnwrap(URL(string: "https://video.example"))
@@ -131,7 +129,7 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
             profile: profile
         )
 
-        let records = try await SwiftDataPermissionStore(container: container)
+        let records = try await DatabasePermissionStore(database: container)
             .listDecisions(profilePartitionId: profile.id.uuidString)
         XCTAssertEqual(records.count, 1)
         XCTAssertEqual(records.first?.key.permissionType, .autoplay)
@@ -162,7 +160,7 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
         )
 
         let browserManager = BrowserManager(
-            startupPersistence: BrowserManagerStartupPersistence(container: container),
+            startupPersistence: BrowserManagerStartupPersistence(database: container),
             notificationService: FakeSumiNotificationService()
         )
 
@@ -240,7 +238,7 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
             in: container
         )
         let browserManager = BrowserManager(
-            startupPersistence: BrowserManagerStartupPersistence(container: container),
+            startupPersistence: BrowserManagerStartupPersistence(database: container),
             notificationService: FailingRetirementNotificationService()
         )
 
@@ -399,7 +397,7 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
                     kind: .cleanup,
                     reason: "Deferred test cleanup",
                     requiresReferenceSanitization: false
-                )
+                ),
             ]
         )
 
@@ -457,7 +455,7 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
     func testExplicitBrowserConfigurationRemainsTheCanonicalPermissionOverride() async throws {
         let startupContainer = try makeInMemoryStartupContainer()
         let overrideContainer = try makeInMemoryStartupContainer()
-        let overrideStore = SwiftDataPermissionStore(container: overrideContainer)
+        let overrideStore = DatabasePermissionStore(database: overrideContainer)
         let overrideAutoplayStore = SumiAutoplayPolicyStoreAdapter(
             persistentStore: overrideStore
         )
@@ -465,13 +463,17 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
             autoplayPolicyStore: overrideAutoplayStore
         )
         let browserManager = BrowserManager(
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: startupContainer
+            startupPersistence: BrowserManagerStartupPersistence(database: startupContainer
             ),
             browserConfiguration: browserConfiguration
         )
         let profile = try XCTUnwrap(browserManager.currentProfile)
         let url = try XCTUnwrap(URL(string: "https://override.example"))
+        try overrideContainer.transaction {
+            try $0.profiles.save(
+                ProfileRecord(id: profile.id, name: profile.name, index: 0)
+            )
+        }
 
         XCTAssertIdentical(browserManager.browserConfiguration, browserConfiguration)
         XCTAssertIdentical(browserManager.permissionRuntime.autoplayStore, overrideAutoplayStore)
@@ -485,44 +487,39 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
         let overrideRecords = try await overrideStore.listDecisions(
             profilePartitionId: profile.id.uuidString
         )
-        let startupRecords = try await SwiftDataPermissionStore(container: startupContainer)
+        let startupRecords = try await DatabasePermissionStore(database: startupContainer)
             .listDecisions(profilePartitionId: profile.id.uuidString)
         XCTAssertEqual(overrideRecords.count, 1)
         XCTAssertTrue(startupRecords.isEmpty)
     }
 
-    private func makeInMemoryStartupContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+    private func makeInMemoryStartupContainer() throws -> SumiDatabase {
+        try SumiDatabase.inMemory()
     }
 
     private func persistProfiles(
         _ profiles: [Profile],
-        in container: ModelContainer
+        in container: SumiDatabase
     ) throws {
-        let context = ModelContext(container)
-        for (index, profile) in profiles.enumerated() {
-            context.insert(
-                ProfileEntity(
+        try container.transaction {
+            for (index, profile) in profiles.enumerated() {
+                try $0.profiles.save(
+                    ProfileRecord(
                     id: profile.id,
                     name: profile.name,
                     index: index
+                    )
                 )
-            )
+            }
         }
-        try context.save()
     }
 
     private func persistRetiredTombstone(
         for profile: Profile,
         fallbackID: UUID,
-        in container: ModelContainer
+        in container: SumiDatabase
     ) throws {
-        let ledger = try ProfileReferenceAdmissionLedger(
-            context: ModelContext(container)
-        )
+        let ledger = try ProfileReferenceAdmissionLedger(database: container)
         let token = try ledger.reserve(
             profile: profile,
             fallbackID: fallbackID

@@ -1,7 +1,6 @@
 import Combine
 import SumiDomain
 import SumiWebRuntime
-import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -689,21 +688,22 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         let browser = try makeIsolatedBrowser()
         let retiringProfile = Profile(name: "Retiring")
         let fallbackProfile = Profile(name: "Fallback")
-        browser.modelContext.insert(
-            ProfileEntity(
+        try browser.database.transaction {
+            try $0.profiles.save(
+                ProfileRecord(
                 id: retiringProfile.id,
                 name: retiringProfile.name,
                 index: 0
+                )
             )
-        )
-        browser.modelContext.insert(
-            ProfileEntity(
+            try $0.profiles.save(
+                ProfileRecord(
                 id: fallbackProfile.id,
                 name: fallbackProfile.name,
                 index: 1
+                )
             )
-        )
-        try browser.modelContext.save()
+        }
         return RetirementFixture(
             store: browser.shortcutPinStoreOwner,
             pins: browser.shortcutPinCollectionStateOwner,
@@ -732,8 +732,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
 
     private func makeIsolatedBrowser() throws -> BrowserManager {
         let browser = BrowserManager(
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupModelContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupDatabase()
             )
         )
         browser.startupRestoreLifecycle.markLoadFinished()
@@ -753,12 +752,15 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         _ profile: Profile,
         in browser: BrowserManager
     ) throws {
-        browser.modelContext.insert(ProfileEntity(
-            id: profile.id,
-            name: profile.name,
-            index: browser.profileManager.profiles.count
-        ))
-        try browser.modelContext.save()
+        try browser.database.transaction {
+            try $0.profiles.save(
+                ProfileRecord(
+                    id: profile.id,
+                    name: profile.name,
+                    index: browser.profileManager.profiles.count
+                )
+            )
+        }
         browser.profileManager.loadProfiles()
         browser.currentProfile = try XCTUnwrap(
             browser.profileManager.profiles.first { $0.id == profile.id }

@@ -150,12 +150,12 @@ final class ShortcutSplitLauncherMoveTransactionTests: XCTestCase {
     }
 
     private func makeFolderOpenState() throws -> TabFolderOpenStateService {
-        let container = try makeInMemoryStartupModelContainer()
+        let container = try makeInMemoryStartupDatabase()
         let manager = TabManager(
-            context: container.mainContext,
+            database: container,
             webViewSessions: WebViewSessionRepository(),
             profileReferenceAdmission: try ProfileReferenceAdmissionLedger(
-                context: container.mainContext
+                database: container
             ),
             loadPersistedState: false
         )

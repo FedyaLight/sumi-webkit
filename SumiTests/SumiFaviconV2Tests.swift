@@ -575,20 +575,24 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
         XCTAssertEqual(imageByReference?.size, imageByDocumentURL?.size)
     }
 
-    func testCorruptMetadataIsPreservedWhenLocalServiceLoadsPartition() throws {
+    func testCorruptDatabaseMetadataIsPreservedWhenLocalServiceLoadsPartition() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("SumiFaviconV2CorruptMetadata-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let partition = SumiFaviconPartition.regular(nil)
-        let partitionDirectory = directory.appendingPathComponent(partition.storageComponent, isDirectory: true)
-        try FileManager.default.createDirectory(at: partitionDirectory, withIntermediateDirectories: true)
-        let metadataURL = partitionDirectory.appendingPathComponent("metadata.json")
-        let unreadableURL = metadataURL.appendingPathExtension("unreadable")
+        let database = try SumiDatabase.inMemory()
+        let metadataKey = "favicon.metadata.\(partition.storageComponent)"
         let corruptPayload = Data("{ not valid favicon metadata".utf8)
-        try corruptPayload.write(to: metadataURL, options: [.atomic])
+        try database.transaction {
+            try $0.documents.save(corruptPayload, forKey: metadataKey)
+        }
 
-        let runtime = SumiFaviconRuntime(rootDirectory: directory, fetcher: RoutingFaviconNetworkFetcher(responses: [:]))
+        let runtime = SumiFaviconRuntime(
+            database: database,
+            rootDirectory: directory,
+            fetcher: RoutingFaviconNetworkFetcher(responses: [:])
+        )
         XCTAssertNil(
             runtime.images.cachedSelection(
                 for: try XCTUnwrap(URL(string: "https://example.com/")),
@@ -596,8 +600,12 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(try Data(contentsOf: metadataURL), corruptPayload)
-        XCTAssertEqual(try Data(contentsOf: unreadableURL), corruptPayload)
+        XCTAssertEqual(
+            try database.read {
+                try $0.documents.data(forKey: metadataKey)
+            },
+            corruptPayload
+        )
     }
 
     func testSpeedometerRelativeDocumentIconPersistsForColdCacheBackedLookup() async throws {
@@ -814,14 +822,13 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
             "Expected explicit document icon to upgrade cached root fallback. Requests: \(requestedURLs)"
         )
 
-        let metadataURL = directory
-            .appendingPathComponent(partition.storageComponent, isDirectory: true)
-            .appendingPathComponent("metadata.json")
-        let metadata = try String(contentsOf: metadataURL, encoding: .utf8)
-            .replacingOccurrences(of: "\\/", with: "/")
-        XCTAssertTrue(
-            metadata.contains(documentIconURL.absoluteString),
-            "Expected page mapping to point at upgraded document icon. Metadata: \(metadata)"
+        XCTAssertEqual(
+            runtime.images.cachedSelection(
+                for: pageURL,
+                partition: partition
+            )?.sourceURL,
+            documentIconURL,
+            "Expected the durable page mapping to point at the upgraded document icon."
         )
     }
 

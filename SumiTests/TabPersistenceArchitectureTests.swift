@@ -1,4 +1,3 @@
-import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -7,10 +6,15 @@ import XCTest
 final class TabPersistenceArchitectureTests: XCTestCase {
     func testStructuralStoreRejectsStaleGenerationWithoutOverwritingNewerSnapshot() async throws {
         let container = try makeContainer()
-        let writes = TabStoreWriteExecutor(container: container)
+        let writes = TabStoreWriteExecutor(database: container)
         let store = TabStructuralSnapshotStore(writes: writes)
         let spaceId = UUID()
         let profileId = UUID()
+        try container.transaction {
+            try $0.profiles.save(
+                ProfileRecord(id: profileId, name: "Profile", index: 0)
+            )
+        }
 
         let didPersistNewer = await store.persistFullReconcile(
             snapshot: snapshot(spaceId: spaceId, profileId: profileId, name: "newer"),
@@ -23,20 +27,25 @@ final class TabPersistenceArchitectureTests: XCTestCase {
         XCTAssertTrue(didPersistNewer)
         XCTAssertFalse(didPersistStale)
 
-        let spaces = try ModelContext(container).fetch(FetchDescriptor<SpaceEntity>())
+        let spaces = try container.read { try $0.workspace.spaces() }
         XCTAssertEqual(spaces.count, 1)
         XCTAssertEqual(spaces.first?.name, "newer")
     }
 
     func testSelectionAndRuntimeStateShareSerializedWritesWithoutChangingStructure() async throws {
         let container = try makeContainer()
-        let writes = TabStoreWriteExecutor(container: container)
+        let writes = TabStoreWriteExecutor(database: container)
         let structural = TabStructuralSnapshotStore(writes: writes)
         let selection = TabSelectionStore(writes: writes)
         let runtime = TabRuntimeStateStore(writes: writes)
         let spaceId = UUID()
         let tabId = UUID()
         let profileId = UUID()
+        try container.transaction {
+            try $0.profiles.save(
+                ProfileRecord(id: profileId, name: "Profile", index: 0)
+            )
+        }
 
         let initial = snapshot(
             spaceId: spaceId,
@@ -60,21 +69,26 @@ final class TabPersistenceArchitectureTests: XCTestCase {
                     name: "Updated",
                     canGoBack: true,
                     canGoForward: false
-                )
+                ),
             ]
         )
         _ = await (selectionWrite, runtimeWrite)
 
-        let context = ModelContext(container)
-        let tabs = try context.fetch(FetchDescriptor<TabEntity>())
-        let states = try context.fetch(FetchDescriptor<TabsStateEntity>())
-        XCTAssertEqual(try context.fetch(FetchDescriptor<SpaceEntity>()).count, 1)
+        let stored = try container.read { connection in
+            (
+                try connection.workspace.tabs(),
+                try connection.workspace.state(),
+                try connection.workspace.spaces()
+            )
+        }
+        let tabs = stored.0
+        let state = stored.1
+        XCTAssertEqual(stored.2.count, 1)
         XCTAssertEqual(tabs.count, 1)
         XCTAssertEqual(tabs.first?.name, "Updated")
         XCTAssertEqual(tabs.first?.currentURLString, "https://example.com/updated")
-        XCTAssertEqual(states.count, 1)
-        XCTAssertEqual(states.first?.currentTabID, tabId)
-        XCTAssertEqual(states.first?.currentSpaceID, spaceId)
+        XCTAssertEqual(state?.currentTabID, tabId)
+        XCTAssertEqual(state?.currentSpaceID, spaceId)
     }
 
     func testRestorePlannerRepairsCorruptRecordsAndBuildsMatchingSnapshot() throws {
@@ -101,7 +115,7 @@ final class TabPersistenceArchitectureTests: XCTestCase {
                     index: 0,
                     workspaceThemeData: nil,
                     profileId: nil
-                )
+                ),
             ],
             tabs: [
                 regularRecord(id: regularTabId, spaceId: spaceId, index: 2),
@@ -110,7 +124,7 @@ final class TabPersistenceArchitectureTests: XCTestCase {
                     spaceId: spaceId,
                     index: 1,
                     url: "webkit-extension://extension/page.html"
-                )
+                ),
             ],
             folders: [
                 TabRestoreFolderRecord(
@@ -122,7 +136,7 @@ final class TabPersistenceArchitectureTests: XCTestCase {
                     parentFolderId: UUID(),
                     isOpen: true,
                     index: 0
-                )
+                ),
             ],
             states: [
                 TabRestoreStateRecord(
@@ -134,7 +148,7 @@ final class TabPersistenceArchitectureTests: XCTestCase {
                     currentTabID: nil,
                     currentSpaceID: nil,
                     splitGroupsData: nil
-                )
+                ),
             ]
         )
 
@@ -158,11 +172,8 @@ final class TabPersistenceArchitectureTests: XCTestCase {
         XCTAssertTrue(payload.repairReasons.contains("assigned default profile to space"))
     }
 
-    private func makeContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+    private func makeContainer() throws -> SumiDatabase {
+        try SumiDatabase.inMemory()
     }
 
     private func snapshot(
@@ -180,7 +191,7 @@ final class TabPersistenceArchitectureTests: XCTestCase {
                     index: 0,
                     workspaceThemeData: nil,
                     profileId: profileId
-                )
+                ),
             ],
             tabs: tabId.map { id in
                 [
@@ -199,7 +210,7 @@ final class TabPersistenceArchitectureTests: XCTestCase {
                         currentURLString: "https://example.com",
                         canGoBack: false,
                         canGoForward: false
-                    )
+                    ),
                 ]
             } ?? [],
             folders: [],

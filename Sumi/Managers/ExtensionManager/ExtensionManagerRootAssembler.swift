@@ -1,5 +1,4 @@
 import Foundation
-import SwiftData
 
 /// Ephemeral root-assembly result. It exists only between the stateless
 /// assembler and `ExtensionManager.init`; consumers never receive it.
@@ -21,7 +20,7 @@ struct ExtensionManagerRootGraphs {
 @MainActor
 enum ExtensionManagerRootAssembler {
     static func assemble(
-        context: ModelContext,
+        database: SumiDatabase,
         initialProfile: Profile?,
         browserConfiguration: BrowserConfiguration,
         moduleRegistry: SumiModuleRegistry,
@@ -35,11 +34,11 @@ enum ExtensionManagerRootAssembler {
         )
         let packageGenerations = ExtensionPackageGenerationRegistry()
         let metadataStore = ExtensionInstallationMetadataStore(
-            context: context,
+            database: database,
             activePackageGenerations: packageGenerations
         )
         let siteAccessStore = SafariExtensionSiteAccessPolicyStore(
-            preferences: extensionPreferences
+            database: database
         )
         let profileRuntime = ExtensionProfileRuntime(
             initialProfileId: initialProfile?.id,
@@ -77,7 +76,7 @@ enum ExtensionManagerRootAssembler {
         let requestedTabLoadResolver = ExtensionRequestedTabLoadResolver()
         let installedExtensions = InstalledExtensionCollection()
         let toolbarPinning = ExtensionToolbarPinningOwner(
-            preferences: extensionPreferences,
+            database: database,
             currentProfileId: { [profileRuntime] in
                 profileRuntime.currentProfileId
             },
@@ -92,10 +91,10 @@ enum ExtensionManagerRootAssembler {
             }
         )
         let hubOrdering = ExtensionHubOrderingOwner(
-            preferences: extensionPreferences
+            database: database
         )
         let permissionDecisions = ExtensionPermissionDecisionStore(
-            preferences: extensionPreferences,
+            database: database,
             profileRuntime: profileRuntime
         )
         let mutationRegistry = ExtensionRuntimeMutationRegistry()
@@ -130,7 +129,7 @@ enum ExtensionManagerRootAssembler {
         )
         let foundation = ExtensionManagerAssemblyFoundation(
                 installation: ExtensionInstallationGraphFoundation(
-                    context: context,
+                    database: database,
                     activePackageGenerations: packageGenerations,
                     metadataStore: metadataStore
                 ),
@@ -148,6 +147,9 @@ enum ExtensionManagerRootAssembler {
                 ),
                 contexts: ExtensionContextGraphFoundation(
                     moduleRegistry: moduleRegistry,
+                    safariExtensionImportStore: SafariExtensionImportStore(
+                        database: database
+                    ),
                     installedExtensions: installedExtensions,
                     recentTabRequests: recentTabRequests,
                     requestedTabLoadResolver: requestedTabLoadResolver,

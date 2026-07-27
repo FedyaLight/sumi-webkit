@@ -1,5 +1,4 @@
 import AppKit
-import SwiftData
 import WebKit
 import XCTest
 
@@ -76,14 +75,11 @@ final class ExtensionRuntimeShutdownTests: XCTestCase {
 
     func testRetainedPublicationCollaboratorsDoNotRetainExtensionManager()
         throws {
-        let container = try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+        let container = try SumiDatabase.inMemory()
         let profile = Profile(name: "Publication Lifetime Profile")
         let attachedRuntime = ExtensionAttachedRuntimeCapture()
         var manager: ExtensionManager? = ExtensionManager(
-            context: container.mainContext,
+            database: container,
             initialProfile: profile,
             browserConfiguration: BrowserConfiguration(),
             extensionPreferences: UserDefaults(
@@ -516,21 +512,18 @@ final class ExtensionRuntimeShutdownTests: XCTestCase {
         profile: Profile,
         browserConfiguration: BrowserConfiguration
     ) throws -> (
-        container: ModelContainer,
+        container: SumiDatabase,
         manager: ExtensionManager,
         inspection: ExtensionManagerTestInspection,
         attachedRuntime: ExtensionAttachedRuntimeCapture,
         unloadBehavior: ShutdownUnloadBehavior
     ) {
-        let container = try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+        let container = try SumiDatabase.inMemory()
         let inspection = ExtensionManagerInspectionCapture()
         let attachedRuntime = ExtensionAttachedRuntimeCapture()
         let unloadBehavior = ShutdownUnloadBehavior()
         let manager = ExtensionManager(
-            context: container.mainContext,
+            database: container,
             initialProfile: profile,
             browserConfiguration: browserConfiguration,
             extensionPreferences: UserDefaults(suiteName: UUID().uuidString)!,

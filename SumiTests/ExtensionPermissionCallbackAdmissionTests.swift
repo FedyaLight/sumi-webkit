@@ -1,5 +1,4 @@
 import Combine
-import SwiftData
 import WebKit
 import XCTest
 
@@ -11,25 +10,6 @@ import XCTest
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
-    override func setUp() {
-        super.setUp()
-        removePersistedPolicyState()
-    }
-
-    override func tearDown() {
-        removePersistedPolicyState()
-        super.tearDown()
-    }
-
-    nonisolated private func removePersistedPolicyState() {
-        UserDefaults.standard.removeObject(
-            forKey: SafariExtensionSiteAccessPolicyStore.siteAccessStorageKey
-        )
-        UserDefaults.standard.removeObject(
-            forKey: SafariExtensionSiteAccessPolicyStore.legacyPermissionDecisionsStorageKey
-        )
-    }
-
     // MARK: - Exact current pair admits the callback
 
     func testExactCurrentControllerAndContextAdmitsPermissionPrompt() async throws {
@@ -604,7 +584,7 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
         let profile = Profile(name: name)
         let inspection = ExtensionManagerInspectionCapture()
         let manager = ExtensionManager(
-            context: container.mainContext,
+            database: container,
             initialProfile: profile,
             testInspectionDidAssemble: inspection.install
         )
@@ -732,11 +712,8 @@ final class ExtensionPermissionCallbackAdmissionTests: XCTestCase {
         }
     }
 
-    private func makeTestContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+    private func makeTestContainer() throws -> SumiDatabase {
+        try SumiDatabase.inMemory()
     }
 
     private func installExtension(

@@ -8,15 +8,16 @@ import WebKit
 @MainActor
 final class ExtensionPermissionDecisionStore {
     private static let log = Logger.sumi(category: "Extensions")
+    private static let documentKey = "extensions.permission-decisions"
 
-    private let preferences: UserDefaults
+    private let database: SumiDatabase
     private let profileRuntime: ExtensionProfileRuntime
 
     init(
-        preferences: UserDefaults,
+        database: SumiDatabase,
         profileRuntime: ExtensionProfileRuntime
     ) {
-        self.preferences = preferences
+        self.database = database
         self.profileRuntime = profileRuntime
     }
 
@@ -199,16 +200,14 @@ final class ExtensionPermissionDecisionStore {
 
     private func loadStoredExtensionPermissionDecisions()
         -> [String: ExtensionManager.ExtensionStoredPermissionDecision] {
-        guard let data = preferences.data(
-            forKey: SafariExtensionSiteAccessPolicyStore.legacyPermissionDecisionsStorageKey
-        ) else {
-            return [:]
-        }
         do {
-            return try JSONDecoder().decode(
-                [String: ExtensionManager.ExtensionStoredPermissionDecision].self,
-                from: data
-            )
+            return try database.read {
+                try $0.documents.value(
+                    [String: ExtensionManager.ExtensionStoredPermissionDecision]
+                        .self,
+                    forKey: Self.documentKey
+                ) ?? [:]
+            }
         } catch {
             Self.log.error("Failed to load persisted extension permission decisions: \(error.localizedDescription, privacy: .public)")
             return [:]
@@ -218,16 +217,16 @@ final class ExtensionPermissionDecisionStore {
     private func saveStoredExtensionPermissionDecisions(
         _ decisions: [String: ExtensionManager.ExtensionStoredPermissionDecision]
     ) {
-        let data: Data
         do {
-            data = try JSONEncoder().encode(decisions)
+            try database.transaction {
+                try $0.documents.save(
+                    decisions,
+                    forKey: Self.documentKey
+                )
+            }
         } catch {
             Self.log.error("Failed to persist extension permission decisions: \(error.localizedDescription, privacy: .public)")
             return
         }
-        preferences.set(
-            data,
-            forKey: SafariExtensionSiteAccessPolicyStore.legacyPermissionDecisionsStorageKey
-        )
     }
 }

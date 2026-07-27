@@ -1,5 +1,4 @@
 import AppKit
-import SwiftData
 import WebKit
 import XCTest
 
@@ -862,8 +861,7 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         return BrowserManager(
             windowRegistry: windowRegistry,
             moduleRegistry: moduleRegistry,
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try Self.makeInMemoryStartupContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try Self.makeInMemoryStartupContainer()
             ),
             automaticallyStartPersistedStateLoad: false
         )
@@ -911,11 +909,8 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         )
     }
 
-    private static func makeInMemoryStartupContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+    private static func makeInMemoryStartupContainer() throws -> SumiDatabase {
+        try SumiDatabase.inMemory()
     }
 
     private struct PopupFocusHarness {

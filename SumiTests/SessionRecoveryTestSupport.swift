@@ -86,12 +86,7 @@ extension XCTestCase {
     func makeIsolatedLastSessionWindowsStore(
         suitePrefix: String
     ) throws -> LastSessionWindowsStore {
-        let suiteName = "\(suitePrefix)-\(UUID().uuidString)"
-        let userDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        userDefaults.removePersistentDomain(forName: suiteName)
-        addTeardownBlock {
-            userDefaults.removePersistentDomain(forName: suiteName)
-        }
-        return LastSessionWindowsStore(userDefaults: userDefaults)
+        _ = suitePrefix
+        return LastSessionWindowsStore()
     }
 }

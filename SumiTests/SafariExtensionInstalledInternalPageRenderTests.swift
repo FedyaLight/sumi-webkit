@@ -1,6 +1,5 @@
 import AppKit
 import Combine
-import SwiftData
 import WebKit
 import XCTest
 
@@ -96,7 +95,7 @@ final class SafariExtensionInstalledInternalPageRenderTests: XCTestCase {
         let profile = Profile(name: "Installed 1Password Profile")
         let browserConfiguration = BrowserConfiguration()
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile,
             browserConfiguration: browserConfiguration
         )
@@ -111,7 +110,7 @@ final class SafariExtensionInstalledInternalPageRenderTests: XCTestCase {
         registry.enable(.extensions)
         let extensionsModule = SumiExtensionsModule(
             moduleRegistry: registry,
-            context: container.mainContext,
+            database: container,
             browserConfiguration: browserConfiguration,
             initialProfileProvider: { profile },
             managerFactory: { _, _, _, _ in manager }
@@ -238,11 +237,8 @@ final class SafariExtensionInstalledInternalPageRenderTests: XCTestCase {
         return candidate
     }
 
-    private func makeTestContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+    private func makeTestContainer() throws -> SumiDatabase {
+        try SumiDatabase.inMemory()
     }
 
     private func resolvedInstalledExtensionPageURL(

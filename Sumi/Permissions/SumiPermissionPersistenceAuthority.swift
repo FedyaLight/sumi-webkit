@@ -5,11 +5,8 @@ import SumiDomain
 struct SumiPermissionPersistenceDiagnostics: Equatable, Sendable {
     enum LoadOutcome: Equatable, Sendable {
         case notLoaded
-        case missing
-        case loadedFile
-        case failedFileRead(String)
-        case failedFileDecode(String)
-        case unsupportedFileVersion(Int)
+        case loadedDatabase
+        case failedDatabaseRead(String)
     }
 
     var loadOutcome: LoadOutcome = .notLoaded
@@ -17,121 +14,55 @@ struct SumiPermissionPersistenceDiagnostics: Equatable, Sendable {
     var successfulWriteCount = 0
 }
 
-struct SumiPermissionPersistenceEnvelope: Codable, Sendable {
-    var version: Int
-    var generation: UInt64
-    var antiAbuseEvents: [SumiPermissionAntiAbuseEvent]
-    var siteActivityRecords: [SumiPermissionSiteActivityRecord]
-}
-
 enum SumiPermissionProfileDataCleanupError: Error, Equatable {
     case persistenceStateUnreadable
     case publicationFailed
 }
 
-private final class SumiPermissionLoadedStateBox: @unchecked Sendable {
-    var value: SumiPermissionPersistenceLoadedState?
-}
-
-/// The single state and generation authority for permission persistence.
-///
-/// Feature stores mutate their domain collections through this type. A
-/// mutation advances the logical generation immediately, while one delayed
-/// utility-QoS publication writes the newest complete generation atomically.
+/// Owns the document-shaped permission activity state stored inside the
+/// browser database. Mutations advance a logical generation immediately and
+/// coalesce durable writes away from the main thread.
 final class SumiPermissionPersistenceAuthority: @unchecked Sendable {
-    static let canonicalFileName = "permission-state.v1.json"
-    static let storageVersion = 1
-
     private static let log = Logger.sumi(category: "PermissionPersistence")
     private static let coalescingDelay: DispatchTimeInterval = .milliseconds(200)
-    private static let bootstrapLoadingQueue = DispatchQueue(
-        label: "com.sumi.permissions.persistence.bootstrap-load",
-        qos: .userInitiated
-    )
 
-    private struct WriteCandidate {
-        var envelope: SumiPermissionPersistenceEnvelope
-    }
-
+    private let database: SumiDatabase
     private let ioQueue = DispatchQueue(
         label: "com.sumi.permissions.persistence",
         qos: .utility
     )
     private let stateLock = NSLock()
-    private let publisher: SumiPermissionCanonicalSnapshotPublisher?
     private var generation: UInt64
     private var antiAbuseEvents: [SumiPermissionAntiAbuseEvent]
     private var siteActivityRecordsById: [String: SumiPermissionSiteActivityRecord]
-    private var retiredProfileIDs: Set<String>
+    private var retiredProfileIDs: Set<String> = []
     private var diagnostics: SumiPermissionPersistenceDiagnostics
-    private var isDirty: Bool
+    private var isDirty = false
     private var pendingWrite: DispatchWorkItem?
     private var pendingWriteToken: UInt64?
-    private var nextWriteToken: UInt64
+    private var nextWriteToken: UInt64 = 0
 
-    init(
-        storageDirectory: URL? = nil,
-        bootstrapLoadObserver: (@Sendable () -> Void)? = nil,
-        publishingFaultInjector: SumiPermissionCanonicalSnapshotPublisher.FaultInjector? = nil
-    ) {
-        let fileURL = storageDirectory?.appendingPathComponent(
-            Self.canonicalFileName,
-            isDirectory: false
-        )
-        publisher = fileURL.map {
-            SumiPermissionCanonicalSnapshotPublisher(
-                fileURL: $0,
-                faultInjector: publishingFaultInjector
-            )
-        }
-        let loaded = if fileURL == nil {
-            SumiPermissionPersistenceLoadedState(
-                generation: 0,
-                antiAbuseEvents: [],
-                siteActivityRecordsById: [:],
-                outcome: .missing
-            )
-        } else {
-            Self.loadBootstrapState(
-                fileURL: fileURL,
-                observer: bootstrapLoadObserver
-            )
-        }
-        generation = loaded.generation
-        antiAbuseEvents = loaded.antiAbuseEvents
-        siteActivityRecordsById = loaded.siteActivityRecordsById
-        retiredProfileIDs = []
-        diagnostics = SumiPermissionPersistenceDiagnostics(loadOutcome: loaded.outcome)
-        isDirty = false
-        pendingWrite = nil
-        pendingWriteToken = nil
-        nextWriteToken = 0
-
-        if isDirty {
-            withStateLock {
-                scheduleWriteLocked()
+    init(database: SumiDatabase) {
+        self.database = database
+        do {
+            let loaded = try database.read {
+                try $0.permissionAuxiliary.load()
             }
+            generation = loaded.generation
+            antiAbuseEvents = loaded.antiAbuseEvents
+            siteActivityRecordsById = Dictionary(
+                loaded.siteActivityRecords.map { ($0.id, $0) },
+                uniquingKeysWith: { _, newest in newest }
+            )
+            diagnostics = .init(loadOutcome: .loadedDatabase)
+        } catch {
+            generation = 0
+            antiAbuseEvents = []
+            siteActivityRecordsById = [:]
+            diagnostics = .init(
+                loadOutcome: .failedDatabaseRead(error.localizedDescription)
+            )
         }
-    }
-
-    /// The stores expose synchronous initial snapshots, so startup waits for
-    /// this directly submitted work item. Unlike a semaphore, waiting on the
-    /// item lets libdispatch donate priority while all load I/O stays off main.
-    private static func loadBootstrapState(
-        fileURL: URL?,
-        observer: (@Sendable () -> Void)?
-    ) -> SumiPermissionPersistenceLoadedState {
-        let loadedStateBox = SumiPermissionLoadedStateBox()
-        let work = DispatchWorkItem(qos: .userInitiated, flags: .enforceQoS) {
-            observer?()
-            loadedStateBox.value = SumiPermissionSnapshotLoader.load(fileURL: fileURL)
-        }
-        bootstrapLoadingQueue.async(execute: work)
-        work.wait()
-        guard let loaded = loadedStateBox.value else {
-            preconditionFailure("Permission persistence loading did not produce a snapshot")
-        }
-        return loaded
     }
 
     var persistenceDiagnostics: SumiPermissionPersistenceDiagnostics {
@@ -164,7 +95,7 @@ final class SumiPermissionPersistenceAuthority: @unchecked Sendable {
         withStateLock {
             let before = persistentSiteActivityRecords()
             siteActivityRecordsById = records.filter {
-                retiredProfileIDs.contains($0.value.profilePartitionId) == false
+                !retiredProfileIDs.contains($0.value.profilePartitionId)
             }
             if persistentSiteActivityRecords() != before {
                 markDirtyLocked()
@@ -176,39 +107,33 @@ final class SumiPermissionPersistenceAuthority: @unchecked Sendable {
         let profileID = SumiPermissionKey.normalizedProfilePartitionId(
             profilePartitionId
         )
-        _ = withStateLock {
-            retiredProfileIDs.insert(profileID)
-        }
+        _ = withStateLock { retiredProfileIDs.insert(profileID) }
     }
 
     func deleteProfileData(profilePartitionId: String) async throws {
-        let normalizedProfileID = SumiPermissionKey
-            .normalizedProfilePartitionId(profilePartitionId)
-        let accepted = withStateLock { () -> Bool in
-            retiredProfileIDs.insert(normalizedProfileID)
-            switch diagnostics.loadOutcome {
-            case .missing, .loadedFile:
-                break
-            case .notLoaded, .failedFileRead, .failedFileDecode,
-                 .unsupportedFileVersion:
+        let profileID = SumiPermissionKey.normalizedProfilePartitionId(
+            profilePartitionId
+        )
+        let readable = withStateLock {
+            retiredProfileIDs.insert(profileID)
+            guard case .loadedDatabase = diagnostics.loadOutcome else {
                 return false
             }
-
-            let previousAntiAbuseEvents = persistentAntiAbuseEvents()
-            let previousSiteActivityRecords = persistentSiteActivityRecords()
+            let oldEvents = persistentAntiAbuseEvents()
+            let oldActivity = persistentSiteActivityRecords()
             antiAbuseEvents.removeAll {
-                $0.key.profilePartitionId == normalizedProfileID
+                $0.key.profilePartitionId == profileID
             }
             siteActivityRecordsById = siteActivityRecordsById.filter {
-                $0.value.profilePartitionId != normalizedProfileID
+                $0.value.profilePartitionId != profileID
             }
-            if persistentAntiAbuseEvents() != previousAntiAbuseEvents
-                || persistentSiteActivityRecords() != previousSiteActivityRecords {
+            if oldEvents != persistentAntiAbuseEvents()
+                || oldActivity != persistentSiteActivityRecords() {
                 markDirtyLocked()
             }
             return true
         }
-        guard accepted else {
+        guard readable else {
             throw SumiPermissionProfileDataCleanupError
                 .persistenceStateUnreadable
         }
@@ -217,13 +142,8 @@ final class SumiPermissionPersistenceAuthority: @unchecked Sendable {
         }
     }
 
-    /// Awaits publication of the generation captured when this flush reaches
-    /// the serial utility queue. Failed writes remain dirty for a later retry.
     @discardableResult
     func flushPendingWrites() async -> Bool {
-        // Cancel before enqueueing so an eligible delayed block cannot publish
-        // ahead of this flush. A mutation racing after this boundary may install
-        // a newer delayed block; the immediate writer must not clear that block.
         withStateLock {
             pendingWrite?.cancel()
             pendingWrite = nil
@@ -231,21 +151,22 @@ final class SumiPermissionPersistenceAuthority: @unchecked Sendable {
         }
         return await withCheckedContinuation { continuation in
             ioQueue.async { [self] in
-                continuation.resume(returning: writeDirtyGeneration(scheduledToken: nil))
+                continuation.resume(
+                    returning: writeDirtyGeneration(scheduledToken: nil)
+                )
             }
         }
     }
 
     private func markDirtyLocked() {
-        precondition(generation < UInt64.max, "Permission persistence generation exhausted")
+        precondition(generation < UInt64.max)
         generation += 1
-        isDirty = publisher != nil
+        isDirty = true
         scheduleWriteLocked()
     }
 
     private func scheduleWriteLocked() {
         guard isDirty, pendingWrite == nil else { return }
-        precondition(nextWriteToken < UInt64.max, "Permission persistence write token exhausted")
         nextWriteToken += 1
         let token = nextWriteToken
         let work = DispatchWorkItem { [weak self] in
@@ -253,38 +174,39 @@ final class SumiPermissionPersistenceAuthority: @unchecked Sendable {
         }
         pendingWrite = work
         pendingWriteToken = token
-        ioQueue.asyncAfter(deadline: .now() + Self.coalescingDelay, execute: work)
+        ioQueue.asyncAfter(
+            deadline: .now() + Self.coalescingDelay,
+            execute: work
+        )
     }
 
     private func writeDirtyGeneration(scheduledToken: UInt64?) -> Bool {
-        var ignoredCancelledScheduledWrite = false
-        let candidate: WriteCandidate? = withStateLock {
+        var cancelled = false
+        let state: PermissionAuxiliaryState? = withStateLock {
             if let scheduledToken {
                 guard pendingWriteToken == scheduledToken else {
-                    ignoredCancelledScheduledWrite = true
+                    cancelled = true
                     return nil
                 }
                 pendingWrite = nil
                 pendingWriteToken = nil
             }
             guard isDirty else { return nil }
-            return WriteCandidate(
-                envelope: SumiPermissionPersistenceEnvelope(
-                    version: Self.storageVersion,
-                    generation: generation,
-                    antiAbuseEvents: persistentAntiAbuseEvents(),
-                    siteActivityRecords: persistentSiteActivityRecords().values.sorted { $0.id < $1.id }
-                )
+            return .init(
+                generation: generation,
+                antiAbuseEvents: persistentAntiAbuseEvents(),
+                siteActivityRecords: persistentSiteActivityRecords()
+                    .values.sorted { $0.id < $1.id }
             )
         }
-        if ignoredCancelledScheduledWrite { return true }
-
-        guard let candidate, let publisher else { return true }
-
+        if cancelled || state == nil { return true }
+        guard let state else { return true }
         do {
-            try publisher.publish(candidate.envelope)
+            try database.transaction {
+                try $0.permissionAuxiliary.save(state)
+            }
             withStateLock {
-                if generation == candidate.envelope.generation {
+                if generation == state.generation {
                     isDirty = false
                 }
                 diagnostics.lastWriteFailure = nil
@@ -296,17 +218,19 @@ final class SumiPermissionPersistenceAuthority: @unchecked Sendable {
                 diagnostics.lastWriteFailure = error.localizedDescription
             }
             Self.log.error(
-                "Failed to publish permission snapshot generation \(candidate.envelope.generation, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                "Failed to persist permission generation \(state.generation, privacy: .public): \(error.localizedDescription, privacy: .public)"
             )
             return false
         }
     }
 
-    private func persistentAntiAbuseEvents() -> [SumiPermissionAntiAbuseEvent] {
+    private func persistentAntiAbuseEvents()
+        -> [SumiPermissionAntiAbuseEvent] {
         antiAbuseEvents.filter { !$0.key.isEphemeralProfile }
     }
 
-    private func persistentSiteActivityRecords() -> [String: SumiPermissionSiteActivityRecord] {
+    private func persistentSiteActivityRecords()
+        -> [String: SumiPermissionSiteActivityRecord] {
         siteActivityRecordsById.filter { !$0.value.isEphemeralProfile }
     }
 

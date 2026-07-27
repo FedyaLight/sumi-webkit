@@ -47,7 +47,7 @@
           ]
         },
         {
-          "suite": "app-persistence-migration",
+          "suite": "app-persistence",
           "selection": [
             "SumiTests/BrowserManagerLifecycleWiringTests",
             "SumiTests/BrowserManagerStartupPersistenceTests/testStartupRecoveryTransactionRunsStagesInOrder",
@@ -101,7 +101,7 @@
           "selection": "all"
         },
         {
-          "suite": "app-persistence-migration",
+          "suite": "app-persistence",
           "selection": "all"
         },
         {
@@ -170,33 +170,9 @@
             "SumiTests/TabManagerStructuralBatchingTests/testTogglingFolderOpenStatePublishesOnlyExpansionRevision",
             "SumiTests/TabManagerStructuralBatchingTests/testTransientExtensionTabWithoutTargetSpaceUsesCurrentProfileSpaceBeforeFirstSpace",
             "SumiTests/TabManagerStructuralBatchingTests/testTransientShortcutLookupRefreshFlushesImmediatelyInsideTransaction",
-            "SumiTests/TabManagerStructuralPersistenceTests/testActiveTabStatePathsPersistSelectionWithoutSchedulingStructuralPersistence",
-            "SumiTests/TabManagerStructuralPersistenceTests/testCommittedInFlightFollowerReloadsAsSpaceInherited",
-            "SumiTests/TabManagerStructuralPersistenceTests/testDeleteFolderRemovesFolderChildrenPersistence",
-            "SumiTests/TabManagerStructuralPersistenceTests/testFolderOpenStatePersistence",
-            "SumiTests/TabManagerStructuralPersistenceTests/testFullReconcileDeletesStaleEntitiesAndPreservesFolders",
-            "SumiTests/TabManagerStructuralPersistenceTests/testFullReconcileDoesNotPersistExtensionOwnedRegularTabs",
-            "SumiTests/TabManagerStructuralPersistenceTests/testIncrementalAddAndRemoveRegularTabPersistence",
-            "SumiTests/TabManagerStructuralPersistenceTests/testIncrementalFolderRelationshipPersistence",
-            "SumiTests/TabManagerStructuralPersistenceTests/testIncrementalPersistenceDeletesRegularTabThatBecomesExtensionOwned",
-            "SumiTests/TabManagerStructuralPersistenceTests/testIncrementalSpaceMembershipAndOrderPersistence",
-            "SumiTests/TabManagerStructuralPersistenceTests/testPostRestoreStructuralMutationPersistsOnceWithoutDuplicatingRestoredGraph",
-            "SumiTests/TabManagerStructuralPersistenceTests/testReorderSpaceClampsInvalidTargetIndices",
-            "SumiTests/TabManagerStructuralPersistenceTests/testReorderSpacePersistsThroughRestore",
-            "SumiTests/TabManagerStructuralPersistenceTests/testReorderSpaceUpdatesPersistedIndicesAndPreservesCurrentSpace",
-            "SumiTests/TabManagerStructuralPersistenceTests/testRuntimeStateBatchFlushUpdatesStoredTabFields",
-            "SumiTests/TabManagerStructuralPersistenceTests/testSelectionOnlyPersistenceCreatesAndUpdatesState",
-            "SumiTests/TabManagerStructuralPersistenceTests/testShortcutBackedSplitGroupPersistsThroughStoreReload",
-            "SumiTests/TabManagerStructuralPersistenceTests/testSplitGroupLayoutPersistsThroughStoreReload",
-            "SumiTests/TabManagerStructuralPersistenceTests/testStartupRestoreCurrentFormatDoesNotDuplicateAcrossRepeatedLoads",
-            "SumiTests/TabManagerStructuralPersistenceTests/testStartupRestoreDoesNotOverwriteTabCreatedWhileSnapshotLoadIsSuspended",
-            "SumiTests/TabManagerStructuralPersistenceTests/testStartupRestoreNormalizesLauncherIconAssetsAndPersistsRepair",
-            "SumiTests/TabManagerStructuralPersistenceTests/testStartupRestorePreservesOrderingSelectionAndDoesNotScheduleStructuralPersistence",
-            "SumiTests/TabManagerStructuralPersistenceTests/testStartupRestoreRemovesPersistedExtensionOwnedRegularTabs",
-            "SumiTests/TabManagerStructuralPersistenceTests/testStartupRestoreRepairsMalformedPersistedStateAfterMainApply",
-            "SumiTests/TabManagerStructuralPersistenceTests/testStartupRestoreRequestedAtConstructionCannotOverwritePreReadinessMutation",
-            "SumiTests/TabManagerStructuralPersistenceTests/testStructuralTransactionPersistsFinalOrderOnce",
-            "SumiTests/TabManagerStructuralPersistenceTests/testTopLevelFolderPositionPersistsAfterSpacePinnedShortcuts"
+            "SumiTests/TabManagerStructuralPersistenceTests/testExtensionOwnedRegularTabIsNeverPersisted",
+            "SumiTests/TabManagerStructuralPersistenceTests/testFullReconcilePersistsAndReloadsBrowserStructure",
+            "SumiTests/TabManagerStructuralPersistenceTests/testIncrementalRemovalDeletesThePersistedTab"
           ]
         }
       ]
@@ -225,6 +201,7 @@
       "selectors": [
         "SumiTests/AuxiliaryWindowLifecyclePolicyTests",
         "SumiTests/DockedSidebarLayoutStateTests",
+        "SumiTests/DownloadFlyAnimationTests",
         "SumiTests/EssentialSplitCompactLayoutTests",
         "SumiTests/ExtensionActionPlacementTests",
         "SumiTests/ExtensionContentScriptBindingPolicyTests",
@@ -293,12 +270,12 @@
       ]
     },
     {
-      "id": "app-persistence-migration",
-      "name": "Persistence and migration fixture tests",
+      "id": "app-persistence",
+      "name": "Persistence tests",
       "kind": "xcode-test",
       "scheme": "Sumi",
       "configuration": "Debug",
-      "role": "persistence-migration",
+      "role": "persistence",
       "selectors": [
         "SumiTests/BasicAuthCredentialStoreTests",
         "SumiTests/BrowserBookmarkCommandOwnerTests",
@@ -314,6 +291,7 @@
         "SumiTests/ClosedShortcutRestoreServiceTests",
         "SumiTests/ClosedTabRestoreServiceTests",
         "SumiTests/ClosedWindowHistoryRecorderTests",
+        "SumiTests/DatabasePermissionStoreTests",
         "SumiTests/DownloadListCoordinatorTests",
         "SumiTests/DownloadManagerTests",
         "SumiTests/DownloadProgressTests",
@@ -327,7 +305,6 @@
         "SumiTests/HistorySuggestionMatcherTests",
         "SumiTests/HistorySwipeWindowMutationQueueTests",
         "SumiTests/HistoryTabRecorderTests",
-        "SumiTests/HistoryVisitDeletionOwnerTests",
         "SumiTests/InMemoryPermissionStoreTests",
         "SumiTests/InstalledExtensionCatalogTests",
         "SumiTests/KeyboardShortcutStoreTests",
@@ -338,11 +315,8 @@
         "SumiTests/PreparedProfileAssignmentBatchModelTransactionTests",
         "SumiTests/ProfileDeletionFinalizationTests",
         "SumiTests/ProfileDeletionMigrationTests",
-        "SumiTests/ProfileFreshReferenceAdmissionTests",
-        "SumiTests/ProfileReferenceAdmittedModelTransactionTests",
         "SumiTests/ProfileReferenceInventoryTests",
-        "SumiTests/ProfileRetirementPersistenceTests",
-        "SumiTests/ProfileRetirementStartupRecoveryTests",
+        "SumiTests/ProfileRetirementDatabaseTests",
         "SumiTests/RuntimeDiagnosticsTests",
         "SumiTests/SafariExtensionImportAutoEnableTests",
         "SumiTests/SafariExtensionImportStoreTests",
@@ -371,7 +345,8 @@
         "SumiTests/SumiBrowserSourceCatalogTests",
         "SumiTests/SumiChromiumImportParserTests",
         "SumiTests/SumiCommandsBrowserContextTests",
-        "SumiTests/SumiCoreDataBookmarkRepositoryCacheTests",
+        "SumiTests/SumiDatabaseBookmarkRepositoryTests",
+        "SumiTests/SumiDatabaseTests",
         "SumiTests/SumiDownloadFileFinalizerTests",
         "SumiTests/SumiDownloadPolicyTests",
         "SumiTests/SumiEssentialBackdropStoreTests",
@@ -381,10 +356,10 @@
         "SumiTests/SumiImportExportTests",
         "SumiTests/SumiImportHistoryExtractorTests",
         "SumiTests/SumiImportRuntimeStoreAdmissionTests",
+        "SumiTests/SumiImportTransactionDatabaseJournalTests",
         "SumiTests/SumiImportTransactionTests",
         "SumiTests/SumiPermissionAntiAbuseStoreTests",
         "SumiTests/SumiPermissionDomainCacheTests",
-        "SumiTests/SumiPermissionPersistenceExecutionTests",
         "SumiTests/SumiPermissionSiteActivityStoreTests",
         "SumiTests/SumiPermissionSourceRegressionTests",
         "SumiTests/SumiProfileRoutingTests",
@@ -393,7 +368,6 @@
         "SumiTests/SumiStartupSessionCoordinatorTests",
         "SumiTests/SumiSystemPermissionServiceTests",
         "SumiTests/SumiURLClassifierMemoTests",
-        "SumiTests/SwiftDataPermissionStoreTests",
         "SumiTests/TabClosureServiceCompositionTests",
         "SumiTests/TabLastSessionMergeTests",
         "SumiTests/TabLazyRestoreCoordinatorTests",

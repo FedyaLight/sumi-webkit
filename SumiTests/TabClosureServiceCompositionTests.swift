@@ -1,6 +1,5 @@
 import Combine
 import SumiWebRuntime
-import SwiftData
 import XCTest
 
 @testable import Sumi

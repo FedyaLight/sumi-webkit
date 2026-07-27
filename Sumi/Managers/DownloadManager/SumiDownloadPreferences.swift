@@ -183,12 +183,13 @@ enum SumiDownloadDestinationResolver {
 
 @MainActor
 final class SumiDownloadApplicationsStore {
-    private let fileURL: URL
+    private static let documentKey = "download.content-handlers"
+
+    private let database: SumiDatabase?
     private(set) var records: [SumiContentHandlerRecord] = []
 
-    init(fileURL: URL? = nil) {
-        let fileURL = fileURL ?? SumiDownloadApplicationsStore.defaultStoreURL()
-        self.fileURL = fileURL
+    init(database: SumiDatabase? = nil) {
+        self.database = database
         load()
     }
 
@@ -216,59 +217,42 @@ final class SumiDownloadApplicationsStore {
     }
 
     func load() {
-        let data: Data
+        guard let database else { return }
         do {
-            data = try Data(contentsOf: fileURL)
-        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
-            records = []
-            return
+            records = try database.read { connection in
+                try connection.documents.value(
+                    [SumiContentHandlerRecord].self,
+                    forKey: Self.documentKey
+                ) ?? []
+            }.filter {
+                !SumiDownloadContentIdentity.isCoreWebDocument(
+                    mimeType: $0.contentType.lowercased(),
+                    type: UTType($0.contentType)
+                )
+            }
         } catch {
             RuntimeDiagnostics.debug(
-                "Failed to read download applications store: \(String(describing: error))",
+                "Failed to load download applications store: \(String(describing: error))",
                 category: "DownloadManager"
             )
             records = []
-            return
-        }
-
-        let decoded: [SumiContentHandlerRecord]
-        do {
-            decoded = try JSONDecoder().decode([SumiContentHandlerRecord].self, from: data)
-        } catch {
-            RuntimeDiagnostics.debug(
-                "Failed to decode download applications store: \(String(describing: error))",
-                category: "DownloadManager"
-            )
-            records = []
-            return
-        }
-        records = decoded.filter {
-            !SumiDownloadContentIdentity.isCoreWebDocument(mimeType: $0.contentType.lowercased(), type: UTType($0.contentType))
         }
     }
 
     private func save() {
+        guard let database else { return }
         do {
-            try FileManager.default.createDirectory(
-                at: fileURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            let data = try JSONEncoder().encode(records)
-            try data.write(to: fileURL, options: .atomic)
+            try database.transaction { connection in
+                try connection.documents.save(
+                    records,
+                    forKey: Self.documentKey
+                )
+            }
         } catch {
             RuntimeDiagnostics.debug(
                 "Failed to save download applications store: \(String(describing: error))",
                 category: "DownloadManager"
             )
         }
-    }
-
-    static func defaultStoreURL() -> URL {
-        let base = ProcessInfo.processInfo.environment["SUMI_APP_SUPPORT_OVERRIDE"].flatMap {
-            $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true)
-        } ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
-            .appendingPathComponent("Sumi", isDirectory: true)
-            ?? FileManager.default.temporaryDirectory.appendingPathComponent("Sumi", isDirectory: true)
-        return base.appendingPathComponent("DownloadApplications.json")
     }
 }

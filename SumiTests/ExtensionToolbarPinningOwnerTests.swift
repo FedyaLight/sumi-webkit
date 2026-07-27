@@ -6,9 +6,7 @@ import XCTest
 @MainActor
 final class ExtensionToolbarPinningOwnerTests: XCTestCase {
     func testPinsAreOwnedPerProfileAndPersisted() throws {
-        let suiteName = "SumiTests.ExtensionToolbarPinningOwner.\(UUID().uuidString)"
-        let preferences = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { preferences.removePersistentDomain(forName: suiteName) }
+        let database = try SumiDatabase.inMemory()
 
         let firstProfileId = UUID()
         let secondProfileId = UUID()
@@ -18,7 +16,7 @@ final class ExtensionToolbarPinningOwnerTests: XCTestCase {
 
         func makeOwner() -> ExtensionToolbarPinningOwner {
             ExtensionToolbarPinningOwner(
-                preferences: preferences,
+                database: database,
                 currentProfileId: { currentProfileId },
                 installedExtensionIDs: { installedIDs },
                 publishedPinnedIDs: { publishedPinnedIDs },
@@ -58,9 +56,7 @@ final class ExtensionToolbarPinningOwnerTests: XCTestCase {
     }
 
     func testReplacingProfileStateNormalizesPublishesAndPersists() throws {
-        let suiteName = "SumiTests.ExtensionToolbarPinningOwner.\(UUID().uuidString)"
-        let preferences = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { preferences.removePersistentDomain(forName: suiteName) }
+        let database = try SumiDatabase.inMemory()
 
         let profileId = UUID()
         let profileKey = ExtensionToolbarPinningOwner.pinnedToolbarProfileKey(for: profileId)
@@ -68,7 +64,7 @@ final class ExtensionToolbarPinningOwnerTests: XCTestCase {
 
         func makeOwner() -> ExtensionToolbarPinningOwner {
             ExtensionToolbarPinningOwner(
-                preferences: preferences,
+                database: database,
                 currentProfileId: { profileId },
                 installedExtensionIDs: { [] },
                 publishedPinnedIDs: { publishedPinnedIDs },

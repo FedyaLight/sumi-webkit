@@ -1,16 +1,20 @@
 import Foundation
-import SwiftData
 
 @MainActor
 final class SumiExtensionContentBlockingSurface {
-    private let context: ModelContext?
-    private let defaults: UserDefaults
+    private let database: SumiDatabase?
+    private let compiledRuleListCatalog: SumiCompiledContentRuleListCataloging
     private let lifetime: SumiExtensionManagerLifetime
     private var owner: SumiSafariContentBlockerAPIOwner?
 
-    init(context: ModelContext?, moduleRegistry: SumiModuleRegistry, lifetime: SumiExtensionManagerLifetime) {
-        self.context = context
-        defaults = moduleRegistry.userDefaults
+    init(
+        database: SumiDatabase?,
+        compiledRuleListCatalog: SumiCompiledContentRuleListCataloging,
+        moduleRegistry: SumiModuleRegistry,
+        lifetime: SumiExtensionManagerLifetime
+    ) {
+        self.database = database
+        self.compiledRuleListCatalog = compiledRuleListCatalog
         self.lifetime = lifetime
     }
 
@@ -66,8 +70,8 @@ final class SumiExtensionContentBlockingSurface {
     private func resolvedOwner() -> SumiSafariContentBlockerAPIOwner {
         if let owner { return owner }
         let owner = SumiSafariContentBlockerAPIOwner(
-            context: context,
-            defaults: defaults,
+            database: database,
+            compiledRuleListCatalog: compiledRuleListCatalog,
             isModuleEnabled: { [weak lifetime] in lifetime?.isEnabled ?? false },
             liveTabs: { [weak lifetime] in lifetime?.liveTabs ?? [] }
         )

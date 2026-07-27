@@ -1,4 +1,3 @@
-import SwiftData
 import WebKit
 import XCTest
 
@@ -149,33 +148,27 @@ final class ExtensionProfileReferenceAdmissionTests: XCTestCase {
     }
 
     private func makeFixture() throws -> AdmissionFixture {
-        let container = try makeInMemoryStartupModelContainer()
-        let context = container.mainContext
+        let container = try makeInMemoryStartupDatabase()
         let retiring = Profile(name: "Retiring")
         let fallback = Profile(name: "Fallback")
         let third = Profile(name: "Third")
-        context.insert(ProfileEntity(
-            id: retiring.id,
-            name: retiring.name,
-            index: 0
-        ))
-        context.insert(ProfileEntity(
-            id: fallback.id,
-            name: fallback.name,
-            index: 1
-        ))
-        context.insert(ProfileEntity(
-            id: third.id,
-            name: third.name,
-            index: 2
-        ))
-        try context.save()
+        try container.transaction {
+            try $0.profiles.save(
+                ProfileRecord(id: retiring.id, name: retiring.name, index: 0)
+            )
+            try $0.profiles.save(
+                ProfileRecord(id: fallback.id, name: fallback.name, index: 1)
+            )
+            try $0.profiles.save(
+                ProfileRecord(id: third.id, name: third.name, index: 2)
+            )
+        }
         return AdmissionFixture(
             container: container,
             retiring: retiring,
             fallback: fallback,
             third: third,
-            ledger: try ProfileReferenceAdmissionLedger(context: context)
+            ledger: try ProfileReferenceAdmissionLedger(database: container)
         )
     }
 
@@ -205,7 +198,7 @@ final class ExtensionProfileReferenceAdmissionTests: XCTestCase {
 
 @MainActor
 private struct AdmissionFixture {
-    let container: ModelContainer
+    let container: SumiDatabase
     let retiring: Profile
     let fallback: Profile
     let third: Profile

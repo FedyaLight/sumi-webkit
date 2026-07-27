@@ -1,5 +1,4 @@
 import Combine
-import SwiftData
 import WebKit
 import XCTest
 
@@ -9,7 +8,7 @@ import XCTest
 @MainActor
 class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
     func makeManager(
-        context: ModelContext,
+        context: SumiDatabase,
         profile: Profile,
         browserConfiguration: BrowserConfiguration = BrowserConfiguration(),
         moduleRegistry: SumiModuleRegistry = .unavailable(),
@@ -208,11 +207,8 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
         )
     }
 
-    func makeTestContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+    func makeTestContainer() throws -> SumiDatabase {
+        try SumiDatabase.inMemory()
     }
 
     func replacingPackageRoot(

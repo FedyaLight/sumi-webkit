@@ -49,10 +49,12 @@ final class SumiFaviconSystem {
     private var bookmarkHosts: Set<String> = []
 
     init(
+        database: SumiDatabase,
         rootDirectory: URL,
         fetcher: any SumiFaviconNetworkFetching
     ) {
         let runtime = SumiFaviconRuntime(
+            database: database,
             rootDirectory: rootDirectory,
             fetcher: fetcher
         )

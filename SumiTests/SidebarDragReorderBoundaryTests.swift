@@ -1,11 +1,9 @@
 import AppKit
 import Combine
 import SumiDomain
-import SwiftData
 import XCTest
 
 @testable import Sumi
-
 
 /// Reordering within a container, and the visual boundary a drop commits to when split groups sit among the siblings.
 @MainActor
@@ -582,5 +580,4 @@ final class SidebarDragReorderBoundaryTests: SidebarDragContextTestCase {
             [.shortcut(pins[0].id), .shortcut(pins[3].id), .splitGroup(group.id)]
         )
     }
-
 }

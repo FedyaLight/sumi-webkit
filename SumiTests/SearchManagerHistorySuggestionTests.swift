@@ -1,4 +1,3 @@
-import SwiftData
 import Observation
 import XCTest
 
@@ -313,19 +312,20 @@ final class SearchManagerHistorySuggestionTests: XCTestCase {
     private func makeHarness(
         suggestionPayload: String = "[]"
     ) throws -> (
-        container: ModelContainer,
+        container: SumiDatabase,
         historyManager: HistoryManager,
         searchManager: SearchManager,
         profileID: UUID
     ) {
-        let container = try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
-        let context = ModelContext(container)
+        let container = try SumiDatabase.inMemory()
+        let context = container
         let profileID = UUID()
-        let historyManager = HistoryManager(
-            context: context,
+        try container.transaction {
+            try $0.profiles.save(
+                ProfileRecord(id: profileID, name: "History", index: 0)
+            )
+        }
+        let historyManager = HistoryManager(database: context,
             profileId: profileID,
             faviconCleaner: TabDependencyIsolationDefaults.historyFaviconCleaner,
             visitedLinkStore: TabDependencyIsolationDefaults.historyVisitedLinkStore
@@ -338,11 +338,8 @@ final class SearchManagerHistorySuggestionTests: XCTestCase {
     }
 
     private func makeBookmarkManager() -> SumiBookmarkManager {
-        let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-            .appendingPathComponent("SearchManagerBookmarkTests-\(UUID().uuidString)", isDirectory: true)
-        temporaryDirectories.append(directory)
-        return SumiBookmarkManager(
-            database: SumiBookmarkDatabase(directory: directory),
+        SumiBookmarkManager(
+            database: try! SumiDatabase.inMemory(),
             syncFavicons: false
         )
     }
@@ -352,7 +349,7 @@ final class SearchManagerHistorySuggestionTests: XCTestCase {
         title: String,
         at timestamp: Date,
         harness: (
-            container: ModelContainer,
+            container: SumiDatabase,
             historyManager: HistoryManager,
             searchManager: SearchManager,
             profileID: UUID

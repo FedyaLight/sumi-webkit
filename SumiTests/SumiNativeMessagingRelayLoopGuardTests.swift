@@ -12,7 +12,7 @@ final class SumiNativeMessagingRelayLoopGuardTests: XCTestCase {
             appBundleID: "com.example.host",
             appexBundleID: "com.example.host.extension"
         )
-        let importStore = SafariExtensionImportStore(defaults: makeDefaults())
+        let importStore = SafariExtensionImportStore(database: try! SumiDatabase.inMemory())
         let installed = try makeInstalledExtension(id: "ext-loop", sourceBundlePath: appexPath)
         let launcher = MockHostLauncher()
         launcher.bundleURLs["com.example.host"] = URL(fileURLWithPath: "/Applications/Example.app")
@@ -55,7 +55,7 @@ final class SumiNativeMessagingRelayLoopGuardTests: XCTestCase {
         let launcher = MockHostLauncher()
         launcher.bundleURLs["com.example.host"] = URL(fileURLWithPath: "/tmp/Example.app")
         let relay = SumiNativeMessagingRelay(
-            importStore: SafariExtensionImportStore(defaults: makeDefaults()),
+            importStore: SafariExtensionImportStore(database: try! SumiDatabase.inMemory()),
             launcher: launcher,
             logDiagnostic: { diagnostics.append($0) }
         )
@@ -101,7 +101,7 @@ final class SumiNativeMessagingRelayLoopGuardTests: XCTestCase {
         let launcher = MockHostLauncher()
         launcher.bundleURLs["com.example.host"] = URL(fileURLWithPath: "/tmp/Example.app")
         let relay = SumiNativeMessagingRelay(
-            importStore: SafariExtensionImportStore(defaults: makeDefaults()),
+            importStore: SafariExtensionImportStore(database: try! SumiDatabase.inMemory()),
             launcher: launcher
         )
         let installed = try makeInstalledExtension(id: "ext-1", sourceBundlePath: appexPath)
@@ -258,7 +258,7 @@ final class SumiNativeMessagingRelayLoopGuardTests: XCTestCase {
         launcher.bundleURLs["com.example.host"] = URL(fileURLWithPath: "/Applications/Example.app")
         var diagnostics: [SafariExtensionNativeMessagingDiagnostic] = []
         let relay = SumiNativeMessagingRelay(
-            importStore: SafariExtensionImportStore(defaults: makeDefaults()),
+            importStore: SafariExtensionImportStore(database: try! SumiDatabase.inMemory()),
             launcher: launcher,
             logDiagnostic: { diagnostics.append($0) }
         )
@@ -297,7 +297,7 @@ final class SumiNativeMessagingRelayLoopGuardTests: XCTestCase {
         let loopGuard = SumiNativeMessagingRelayLoopGuard()
         var diagnostics: [SafariExtensionNativeMessagingDiagnostic] = []
         let relay = SumiNativeMessagingRelay(
-            importStore: SafariExtensionImportStore(defaults: makeDefaults()),
+            importStore: SafariExtensionImportStore(database: try! SumiDatabase.inMemory()),
             launcher: launcher,
             loopGuard: loopGuard,
             logDiagnostic: { diagnostics.append($0) }
@@ -343,7 +343,7 @@ final class SumiNativeMessagingRelayLoopGuardTests: XCTestCase {
         launcher.bundleURLs["com.example.host"] = URL(fileURLWithPath: "/Applications/Example.app")
         var diagnostics: [SafariExtensionNativeMessagingDiagnostic] = []
         let relay = SumiNativeMessagingRelay(
-            importStore: SafariExtensionImportStore(defaults: makeDefaults()),
+            importStore: SafariExtensionImportStore(database: try! SumiDatabase.inMemory()),
             launcher: launcher,
             logDiagnostic: { diagnostics.append($0) }
         )

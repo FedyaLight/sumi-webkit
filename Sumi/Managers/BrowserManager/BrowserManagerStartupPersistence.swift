@@ -1,15 +1,12 @@
-import SwiftData
-
 @MainActor
 final class BrowserManagerStartupPersistence {
-    let container: ModelContainer
+    let database: SumiDatabase
 
     /// The permission store and its synchronous autoplay view are one lazy
     /// persistence domain. Keeping them lazy is important for explicit
-    /// `BrowserConfiguration` overrides: an override must not open a second
-    /// SwiftData path against the startup container.
-    private(set) lazy var permissionStore: any SumiPermissionStore = SwiftDataPermissionStore(
-        container: container
+    /// `BrowserConfiguration` overrides: an override must not open a second path.
+    private(set) lazy var permissionStore: any SumiPermissionStore = DatabasePermissionStore(
+        database: database
     )
 
     private(set) lazy var autoplayPolicyStore: SumiAutoplayPolicyStoreAdapter = {
@@ -18,17 +15,13 @@ final class BrowserManagerStartupPersistence {
         )
         adapter.seedCache(
             with: SumiAutoplayPolicyCacheBootstrap.loadAutoplayRecords(
-                from: container
+                from: database
             )
         )
         return adapter
     }()
 
-    init(container: ModelContainer) {
-        self.container = container
-    }
-
-    var mainContext: ModelContext {
-        container.mainContext
+    init(database: SumiDatabase) {
+        self.database = database
     }
 }

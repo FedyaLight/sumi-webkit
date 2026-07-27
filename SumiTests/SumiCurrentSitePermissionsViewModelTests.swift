@@ -97,9 +97,11 @@ final class SumiCurrentSitePermissionsViewModelTests: XCTestCase {
             withIntermediateDirectories: true
         )
         defer { try? FileManager.default.removeItem(at: storageDirectory) }
-        let defaults = UserDefaults(suiteName: "SumiAutoplaySiteActivity-\(UUID().uuidString)")!
+        let database = try SumiDatabase.inMemory()
         let siteActivityStore = SumiPermissionSiteActivityStore(
-            storageDirectory: storageDirectory
+            persistenceAuthority: SumiPermissionPersistenceAuthority(
+                database: database
+            )
         )
         let deps = dependencies(siteActivityStore: siteActivityStore)
         let mediaContext = context(
@@ -124,7 +126,9 @@ final class SumiCurrentSitePermissionsViewModelTests: XCTestCase {
         XCTAssertTrue(didFlush)
 
         let reloadedStore = SumiPermissionSiteActivityStore(
-            storageDirectory: storageDirectory
+            persistenceAuthority: SumiPermissionPersistenceAuthority(
+                database: database
+            )
         )
         let rootViewModel = SumiCurrentSitePermissionsViewModel()
         await rootViewModel.load(

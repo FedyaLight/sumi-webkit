@@ -1,5 +1,4 @@
 import OSLog
-import SwiftData
 
 /// Strong, single-quit lease over the live browser runtime. AppDelegate creates
 /// it synchronously after confirmation, and the finalizer releases it only
@@ -9,7 +8,6 @@ final class BrowserTerminationRuntimeLease: BrowserTerminationFinalizing {
     private static let log = Logger.sumi(category: "AppTermination")
 
     private let browserRuntime: BrowserManager
-    private let modelContext: ModelContext
     private let tabPersistence: TabStructuralPersistenceService
     private let windowPersistence: WindowSessionPersistenceCoordinator
     private let backgroundMediaOptimization: SumiBackgroundMediaOptimizationService
@@ -20,7 +18,6 @@ final class BrowserTerminationRuntimeLease: BrowserTerminationFinalizing {
     convenience init(browserRuntime: BrowserManager) {
         self.init(
             browserRuntime: browserRuntime,
-            modelContext: browserRuntime.modelContext,
             tabPersistence: browserRuntime.structuralPersistence,
             windowPersistence: browserRuntime.windowSessionPersistenceCoordinator,
             backgroundMediaOptimization: browserRuntime.backgroundMediaOptimizationService,
@@ -32,7 +29,6 @@ final class BrowserTerminationRuntimeLease: BrowserTerminationFinalizing {
 
     init(
         browserRuntime: BrowserManager,
-        modelContext: ModelContext,
         tabPersistence: TabStructuralPersistenceService,
         windowPersistence: WindowSessionPersistenceCoordinator,
         backgroundMediaOptimization: SumiBackgroundMediaOptimizationService,
@@ -41,7 +37,6 @@ final class BrowserTerminationRuntimeLease: BrowserTerminationFinalizing {
         profiles: ProfileManager
     ) {
         self.browserRuntime = browserRuntime
-        self.modelContext = modelContext
         self.tabPersistence = tabPersistence
         self.windowPersistence = windowPersistence
         self.backgroundMediaOptimization = backgroundMediaOptimization
@@ -76,7 +71,6 @@ final class BrowserTerminationRuntimeLease: BrowserTerminationFinalizing {
             "Full reconcile persistence \(didReconcile ? "succeeded" : "failed") in \(String(format: "%.3f", reconcileDuration))s"
         )
 
-        saveModelContext()
         let profileSnapshot = profiles.profiles
         await siteDataPolicy.performAllWindowsClosedCleanup(
             profiles: profileSnapshot
@@ -84,21 +78,5 @@ final class BrowserTerminationRuntimeLease: BrowserTerminationFinalizing {
         cleanup.cleanupAllTabs()
         withExtendedLifetime(browserRuntime) {}
         Self.log.info("Termination cleanup completed; WebKit resources released")
-    }
-
-    private func saveModelContext() {
-        let start = CFAbsoluteTimeGetCurrent()
-        do {
-            try modelContext.save()
-            let duration = CFAbsoluteTimeGetCurrent() - start
-            Self.log.info(
-                "Model context save completed in \(String(format: "%.3f", duration))s"
-            )
-        } catch {
-            let duration = CFAbsoluteTimeGetCurrent() - start
-            Self.log.error(
-                "Model context save failed in \(String(format: "%.3f", duration))s: \(String(describing: error))"
-            )
-        }
     }
 }

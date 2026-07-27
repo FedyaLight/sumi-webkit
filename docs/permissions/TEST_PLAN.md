@@ -20,7 +20,7 @@
 | Area | Representative tests | Expected result |
 | --- | --- | --- |
 | Origins and keys | `SumiPermissionOriginTests`, `SumiPermissionKeyTests`, `SumiPermissionTypeTests` | Origins normalize consistently; top-origin/profile/type partitions are distinct; grouping helpers and external scheme identities are stable. |
-| Stores | `SwiftDataPermissionStoreTests`, `InMemoryPermissionStoreTests` | Persistent, one-time, and session lifetimes behave correctly; ephemeral and non-persistable writes are rejected or downgraded. |
+| Stores | `DatabasePermissionStoreTests`, `InMemoryPermissionStoreTests` | Persistent, one-time, and session lifetimes behave correctly; ephemeral and non-persistable writes are rejected or downgraded. |
 | Queueing | `SumiPermissionQueueTests`, `SumiPermissionCoordinatorTests` | One active query per page, FIFO promotion, duplicate coalescing, and cancellation resolve waiters exactly once. |
 | System permissions | `SumiSystemPermissionServiceTests`, `SumiSystemPermissionMappingTests`, `SumiSystemPermissionSnapshotTests`, `SumiSystemPermissionServiceScreenCaptureTests` | Camera, microphone, geolocation, notifications, and screen capture snapshots map deterministically without requesting real TCC authorization in tests. |
 | Security policy | `SumiPermissionSecurityContextTests`, `SumiPermissionPolicyResolverTests`, `SumiStorageAccessPolicyTests` | Sensitive permissions require trustworthy origins and allowed browser surfaces; activation requirements and system blockers are deterministic. |

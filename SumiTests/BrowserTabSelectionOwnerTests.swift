@@ -318,7 +318,6 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
     private func makeHarness() throws -> Harness {
         let snapshotStore = WindowSessionSnapshotStore(
             key: "SumiTests.tab-selection.\(UUID().uuidString)",
-            userDefaults: TestOwnedWindowSessionUserDefaults(),
             environment: { [:] }
         )
         let windowRegistry = WindowRegistry()

@@ -1,6 +1,5 @@
 import AppKit
 import SumiWebRuntime
-import SwiftData
 import WebKit
 import XCTest
 
@@ -14,7 +13,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let profile = Profile(name: "Profile A")
         let browserConfiguration = BrowserConfiguration()
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile,
             browserConfiguration: browserConfiguration
         )
@@ -63,7 +62,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile
         )
         let manager = managerFixture.manager
@@ -119,7 +118,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let profile = Profile(name: "Profile A")
         let browserConfiguration = BrowserConfiguration()
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile,
             browserConfiguration: browserConfiguration
         )
@@ -154,7 +153,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let profile = Profile(name: "Profile A")
         let browserConfiguration = BrowserConfiguration()
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile,
             browserConfiguration: browserConfiguration
         )
@@ -189,7 +188,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let container = try makeTestContainer()
         let profile = Profile(name: "Cold install activation")
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile
         )
         let manager = managerFixture.manager
@@ -262,7 +261,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let profile = Profile(name: "Profile A")
         let browserConfiguration = BrowserConfiguration()
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile,
             browserConfiguration: browserConfiguration
         )
@@ -318,7 +317,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let profileB = Profile(name: "Profile B")
         let browserConfiguration = BrowserConfiguration()
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profileA,
             browserConfiguration: browserConfiguration
         )
@@ -362,7 +361,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let container = try makeTestContainer()
         let ephemeralProfile = Profile.createEphemeral()
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: ephemeralProfile
         )
         let manager = managerFixture.manager
@@ -391,7 +390,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let container = try makeTestContainer()
         let ephemeralProfile = Profile.createEphemeral()
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: ephemeralProfile
         )
         let manager = managerFixture.manager
@@ -429,7 +428,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let profile = Profile(name: "Profile A")
         let browserConfiguration = BrowserConfiguration()
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile,
             browserConfiguration: browserConfiguration
         )
@@ -483,7 +482,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         )
         registry.enable(.extensions)
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile,
             moduleRegistry: registry
         )
@@ -492,7 +491,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let attachedRuntime = managerFixture.attachedRuntime
         let extensionsModule = SumiExtensionsModule(
             moduleRegistry: registry,
-            context: container.mainContext,
+            database: container,
             initialProfileProvider: { profile },
             managerFactory: { _, _, _, _ in manager }
         )
@@ -537,7 +536,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         )
         registry.enable(.extensions)
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile,
             moduleRegistry: registry
         )
@@ -546,7 +545,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let attachedRuntime = managerFixture.attachedRuntime
         let extensionsModule = SumiExtensionsModule(
             moduleRegistry: registry,
-            context: container.mainContext,
+            database: container,
             initialProfileProvider: { profile },
             managerFactory: { _, _, _, _ in manager }
         )
@@ -652,7 +651,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         )
         registry.enable(.extensions)
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile,
             moduleRegistry: registry
         )
@@ -661,7 +660,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let attachedRuntime = managerFixture.attachedRuntime
         let extensionsModule = SumiExtensionsModule(
             moduleRegistry: registry,
-            context: container.mainContext,
+            database: container,
             initialProfileProvider: { profile },
             managerFactory: { _, _, _, _ in manager }
         )
@@ -763,7 +762,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let profile = Profile(name: "Extension Page Profile")
         let browserConfiguration = BrowserConfiguration()
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile,
             browserConfiguration: browserConfiguration
         )
@@ -778,7 +777,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         registry.enable(.extensions)
         let extensionsModule = SumiExtensionsModule(
             moduleRegistry: registry,
-            context: container.mainContext,
+            database: container,
             browserConfiguration: browserConfiguration,
             initialProfileProvider: { profile },
             managerFactory: { _, _, _, _ in manager }
@@ -857,7 +856,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let profile = Profile(name: "Background Extension Page Profile")
         let browserConfiguration = BrowserConfiguration()
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile,
             browserConfiguration: browserConfiguration
         )
@@ -872,7 +871,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         registry.enable(.extensions)
         let extensionsModule = SumiExtensionsModule(
             moduleRegistry: registry,
-            context: container.mainContext,
+            database: container,
             browserConfiguration: browserConfiguration,
             initialProfileProvider: { profile },
             managerFactory: { _, _, _, _ in manager }
@@ -966,7 +965,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let profile = Profile(name: "Activation Error Profile")
         let browserConfiguration = BrowserConfiguration()
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile,
             browserConfiguration: browserConfiguration
         )
@@ -1049,7 +1048,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let profile = Profile(name: "Extension Reload Profile")
         let browserConfiguration = BrowserConfiguration()
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile,
             browserConfiguration: browserConfiguration
         )
@@ -1064,7 +1063,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         registry.enable(.extensions)
         let extensionsModule = SumiExtensionsModule(
             moduleRegistry: registry,
-            context: container.mainContext,
+            database: container,
             browserConfiguration: browserConfiguration,
             initialProfileProvider: { profile },
             managerFactory: { _, _, _, _ in manager }
@@ -1146,7 +1145,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let profile = Profile(name: "Extension Page Profile")
         let browserConfiguration = BrowserConfiguration()
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile,
             browserConfiguration: browserConfiguration
         )
@@ -1161,7 +1160,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         registry.enable(.extensions)
         let extensionsModule = SumiExtensionsModule(
             moduleRegistry: registry,
-            context: container.mainContext,
+            database: container,
             browserConfiguration: browserConfiguration,
             initialProfileProvider: { profile },
             managerFactory: { _, _, _, _ in manager }
@@ -1238,7 +1237,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let profile = Profile(name: "Extension Window Profile")
         let browserConfiguration = BrowserConfiguration()
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile,
             browserConfiguration: browserConfiguration
         )
@@ -1253,7 +1252,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         registry.enable(.extensions)
         let extensionsModule = SumiExtensionsModule(
             moduleRegistry: registry,
-            context: container.mainContext,
+            database: container,
             browserConfiguration: browserConfiguration,
             initialProfileProvider: { profile },
             managerFactory: { _, _, _, _ in manager }
@@ -1439,7 +1438,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let profile = Profile(name: "Requested Window Rollback")
         let browserConfiguration = BrowserConfiguration()
         let requestedWindowManagerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile,
             browserConfiguration: browserConfiguration
         )
@@ -1454,7 +1453,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         registry.enable(.extensions)
         let extensionsModule = SumiExtensionsModule(
             moduleRegistry: registry,
-            context: container.mainContext,
+            database: container,
             browserConfiguration: browserConfiguration,
             initialProfileProvider: { profile },
             managerFactory: { _, _, _, _ in manager }
@@ -1529,7 +1528,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let container = try makeTestContainer()
         let profile = Profile(name: "Cold requested window")
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile
         )
         let manager = managerFixture.manager
@@ -1564,7 +1563,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let container = try makeTestContainer()
         let profile = Profile(name: "Released browser attachment")
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile
         )
         let manager = managerFixture.manager
@@ -1612,7 +1611,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let profile = Profile(name: "Extension Render Profile")
         let browserConfiguration = BrowserConfiguration()
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile,
             browserConfiguration: browserConfiguration
         )
@@ -1627,7 +1626,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         registry.enable(.extensions)
         let extensionsModule = SumiExtensionsModule(
             moduleRegistry: registry,
-            context: container.mainContext,
+            database: container,
             browserConfiguration: browserConfiguration,
             initialProfileProvider: { profile },
             managerFactory: { _, _, _, _ in manager }
@@ -1710,7 +1709,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let profile = Profile(name: "Extension Page Profile")
         let browserConfiguration = BrowserConfiguration()
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile,
             browserConfiguration: browserConfiguration
         )
@@ -1725,7 +1724,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         registry.enable(.extensions)
         let extensionsModule = SumiExtensionsModule(
             moduleRegistry: registry,
-            context: container.mainContext,
+            database: container,
             browserConfiguration: browserConfiguration,
             initialProfileProvider: { profile },
             managerFactory: { _, _, _, _ in manager }
@@ -1824,7 +1823,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile
         )
         let manager = managerFixture.manager
@@ -1888,7 +1887,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile
         )
         let manager = managerFixture.manager
@@ -1958,7 +1957,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         let profile = Profile(name: "Profile A")
         let browserConfiguration = BrowserConfiguration()
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profile,
             browserConfiguration: browserConfiguration
         )

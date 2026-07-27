@@ -4,7 +4,6 @@
 //
 
 import Foundation
-import SwiftData
 
 enum SafariExtensionBundleKind: String, Codable, CaseIterable, Sendable {
     case webExtension
@@ -202,7 +201,7 @@ struct InstalledSafariContentBlockerRecord: Identifiable, Equatable, Sendable {
         self.ignoredEmptyRuleListCount = ignoredEmptyRuleListCount
     }
 
-    init(entity: SafariContentBlockerEntity) {
+    init(entity: SafariContentBlockerMetadata) {
         self.id = entity.id
         self.extensionBundleIdentifier = entity.extensionBundleIdentifier
         self.displayName = entity.displayName
@@ -224,9 +223,8 @@ struct InstalledSafariContentBlockerRecord: Identifiable, Equatable, Sendable {
     }
 }
 
-@Model
-final class SafariContentBlockerEntity {
-    @Attribute(.unique) var id: String
+final class SafariContentBlockerMetadata {
+    var id: String
     var extensionBundleIdentifier: String
     var displayName: String
     var version: String?

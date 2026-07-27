@@ -1,6 +1,5 @@
 import Darwin
 import Foundation
-import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -69,7 +68,7 @@ struct SafariExtensionManagerTestFixture {
 @MainActor
 extension XCTestCase {
     func makeSafariExtensionManagerTestFixture(
-        context: ModelContext,
+        context database: SumiDatabase,
         initialProfile: Profile?,
         browserConfiguration: BrowserConfiguration? = nil,
         moduleRegistry: SumiModuleRegistry = .unavailable(),
@@ -79,7 +78,7 @@ extension XCTestCase {
         let attachedRuntime = ExtensionAttachedRuntimeCapture()
         let inspection = ExtensionManagerInspectionCapture()
         let manager = makeSafariExtensionTestExtensionManager(
-            context: context,
+            database: database,
             initialProfile: initialProfile,
             browserConfiguration: browserConfiguration,
             moduleRegistry: moduleRegistry,
@@ -96,7 +95,7 @@ extension XCTestCase {
     }
 
     func makeSafariExtensionTestExtensionManager(
-        context: ModelContext,
+        database: SumiDatabase,
         initialProfile: Profile?,
         browserConfiguration: BrowserConfiguration? = nil,
         moduleRegistry: SumiModuleRegistry = .unavailable(),
@@ -110,7 +109,7 @@ extension XCTestCase {
         let manager: ExtensionManager
         if let attachedRuntimeCapture {
             manager = ExtensionManager(
-                context: context,
+                database: database,
                 initialProfile: initialProfile,
                 browserConfiguration: browserConfiguration,
                 moduleRegistry: moduleRegistry,
@@ -121,7 +120,7 @@ extension XCTestCase {
             )
         } else if let inspectionCapture {
             manager = ExtensionManager(
-                context: context,
+                database: database,
                 initialProfile: initialProfile,
                 browserConfiguration: browserConfiguration,
                 moduleRegistry: moduleRegistry,
@@ -131,7 +130,7 @@ extension XCTestCase {
             )
         } else if let assemblyOverrides {
             manager = ExtensionManager(
-                context: context,
+                database: database,
                 initialProfile: initialProfile,
                 browserConfiguration: browserConfiguration,
                 moduleRegistry: moduleRegistry,
@@ -140,7 +139,7 @@ extension XCTestCase {
             )
         } else {
             manager = ExtensionManager(
-                context: context,
+                database: database,
                 initialProfile: initialProfile,
                 browserConfiguration: browserConfiguration,
                 moduleRegistry: moduleRegistry,
@@ -170,11 +169,8 @@ extension XCTestCase {
     ) -> BrowserManager {
         let startupPersistence: BrowserManagerStartupPersistence
         do {
-            let startupContainer = try ModelContainer(
-                for: SumiStartupPersistence.schema,
-                configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-            )
-            startupPersistence = BrowserManagerStartupPersistence(container: startupContainer)
+            let startupContainer = try SumiDatabase.inMemory()
+            startupPersistence = BrowserManagerStartupPersistence(database: startupContainer)
         } catch {
             XCTFail("Failed to create in-memory browser startup persistence: \(error)")
             startupPersistence = .production
@@ -196,7 +192,8 @@ extension XCTestCase {
         let adBlockingModule = SumiAdBlockingModule(
             moduleRegistry: moduleRegistry,
             preparedBundleResourceURL: nil,
-            preparedBundleRemoteRootURL: nil
+            preparedBundleRemoteRootURL: nil,
+            compiledRuleListCatalog: SumiCompiledContentRuleListCatalog()
         )
         let protectionDefaults = UserDefaults(suiteName: UUID().uuidString)!
         let protectionCoordinator = SumiProtectionCoordinator(
@@ -206,7 +203,8 @@ extension XCTestCase {
             adBlockingModule: adBlockingModule,
             bundleUpdateStatusStore: SumiProtectionBundleUpdateStatusStore(
                 userDefaults: protectionDefaults
-            )
+            ),
+            compiledRuleListCatalog: SumiCompiledContentRuleListCatalog()
         )
         let browserManager = BrowserManager(
             windowRegistry: windowRegistry ?? WindowRegistry(),

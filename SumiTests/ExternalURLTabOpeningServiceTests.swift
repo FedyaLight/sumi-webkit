@@ -70,8 +70,7 @@ final class ExternalURLTabOpeningServiceTests: XCTestCase {
         var registry: WindowRegistry? = WindowRegistry()
         var browserManager: BrowserManager? = BrowserManager(
             windowRegistry: try XCTUnwrap(registry),
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupModelContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupDatabase()
             )
         )
         let retainedService: ExternalURLTabOpeningService

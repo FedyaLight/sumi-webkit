@@ -23,40 +23,11 @@ final class SafariExtensionSiteAccessPolicyStore {
         let didPersistChanges: Bool
     }
 
-    nonisolated static let legacyPermissionDecisionsStorageKey =
-        "\(SumiAppIdentity.bundleIdentifier).extensions.permissionDecisions.v1"
-    nonisolated static let siteAccessStorageKey =
-        "\(SumiAppIdentity.bundleIdentifier).extensions.siteAccess.v1"
+    private static let documentKey = "extensions.site-access"
+    private let database: SumiDatabase
 
-    private enum LegacyPermissionTargetKind: String, Codable {
-        case permission
-        case matchPattern
-    }
-
-    private enum LegacyStoredPermissionState: String, Codable {
-        case allowed
-        case denied
-    }
-
-    private struct LegacyStoredPermissionDecision: Codable, Equatable {
-        var profileId: String
-        var extensionId: String
-        var targetKind: LegacyPermissionTargetKind
-        var target: String
-        var state: LegacyStoredPermissionState
-        var expiresAt: Date?
-        var updatedAt: Date
-
-        func isExpired(now: Date = Date()) -> Bool {
-            guard let expiresAt else { return false }
-            return expiresAt <= now
-        }
-    }
-
-    private let preferences: UserDefaults
-
-    init(preferences: UserDefaults = .standard) {
-        self.preferences = preferences
+    init(database: SumiDatabase) {
+        self.database = database
     }
 
     func policy(
@@ -107,10 +78,7 @@ final class SafariExtensionSiteAccessPolicyStore {
             let policy = SafariExtensionSiteAccessPolicy.defaultPolicy(
                 extensionId: extensionId,
                 profileId: profileId,
-                seededRules: migratedRules(
-                    extensionId: extensionId,
-                    profileId: profileId
-                )
+                seededRules: []
             )
             policies[key] = policy
             snapshot[extensionId] = policy
@@ -149,10 +117,7 @@ final class SafariExtensionSiteAccessPolicyStore {
             policy = SafariExtensionSiteAccessPolicy.defaultPolicy(
                 extensionId: extensionId,
                 profileId: profileId,
-                seededRules: migratedRules(
-                    extensionId: extensionId,
-                    profileId: profileId
-                ),
+                seededRules: [],
                 defaultAccess: .allow
             )
             shouldSave = true
@@ -176,36 +141,11 @@ final class SafariExtensionSiteAccessPolicyStore {
         var policy = policies[key] ?? SafariExtensionSiteAccessPolicy.defaultPolicy(
             extensionId: extensionId,
             profileId: profileId,
-            seededRules: migratedRules(
-                extensionId: extensionId,
-                profileId: profileId
-            )
+            seededRules: []
         )
         update(&policy)
         policies[key] = policy.normalized()
         return savePolicies(policies)
-    }
-
-    private func migratedRules(
-        extensionId: String,
-        profileId: UUID
-    ) -> [SafariExtensionSiteAccessRule] {
-        let profileKey = profileId.uuidString.lowercased()
-        return loadLegacyPermissionDecisions().values.compactMap { record in
-            guard record.profileId == profileKey,
-                  record.extensionId == extensionId,
-                  record.targetKind == .matchPattern,
-                  record.isExpired() == false
-            else {
-                return nil
-            }
-            return SafariExtensionSiteAccessRule(
-                matchPattern: record.target,
-                access: record.state == .allowed ? .allow : .deny,
-                expiresAt: record.expiresAt,
-                updatedAt: record.updatedAt
-            )
-        }
     }
 
     private func shouldSeedSafariAppExtensionDefaultAccess(
@@ -229,14 +169,13 @@ final class SafariExtensionSiteAccessPolicyStore {
     }
 
     private func loadPolicies() -> [String: SafariExtensionSiteAccessPolicy] {
-        guard let data = preferences.data(forKey: Self.siteAccessStorageKey) else {
-            return [:]
-        }
         do {
-            return try JSONDecoder().decode(
-                [String: SafariExtensionSiteAccessPolicy].self,
-                from: data
-            )
+            return try database.read {
+                try $0.documents.value(
+                    [String: SafariExtensionSiteAccessPolicy].self,
+                    forKey: Self.documentKey
+                ) ?? [:]
+            }
         } catch {
             Self.log.error("Failed to load Safari extension site-access policies: \(error.localizedDescription, privacy: .public)")
             return [:]
@@ -246,32 +185,14 @@ final class SafariExtensionSiteAccessPolicyStore {
     private func savePolicies(
         _ policies: [String: SafariExtensionSiteAccessPolicy]
     ) -> Bool {
-        let data: Data
         do {
-            data = try JSONEncoder().encode(policies)
+            try database.transaction {
+                try $0.documents.save(policies, forKey: Self.documentKey)
+            }
         } catch {
             Self.log.error("Failed to persist Safari extension site-access policies: \(error.localizedDescription, privacy: .public)")
             return false
         }
-        preferences.set(data, forKey: Self.siteAccessStorageKey)
         return true
-    }
-
-    private func loadLegacyPermissionDecisions()
-        -> [String: LegacyStoredPermissionDecision] {
-        guard let data = preferences.data(
-            forKey: Self.legacyPermissionDecisionsStorageKey
-        ) else {
-            return [:]
-        }
-        do {
-            return try JSONDecoder().decode(
-                [String: LegacyStoredPermissionDecision].self,
-                from: data
-            )
-        } catch {
-            Self.log.error("Failed to load legacy extension permission decisions for site-access migration: \(error.localizedDescription, privacy: .public)")
-            return [:]
-        }
     }
 }

@@ -280,7 +280,7 @@ final class SumiFilePickerPermissionBridgeTests: XCTestCase {
         XCTAssertTrue(presentation.allowsDirectories)
     }
 
-    func testNoSwiftDataWriteOccursForFilePicker() async {
+    func testNoPersistedPermissionWriteOccursForFilePicker() async {
         let store = FilePickerPermissionStore()
         let presenter = FilePickerFakePanelPresenter(nextResult: .cancelled)
         let bridge = makeBridge(store: store, presenter: presenter)

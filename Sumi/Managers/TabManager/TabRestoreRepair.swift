@@ -6,7 +6,7 @@ import SumiDomain
 /// objects and records human-readable reasons into `repairReasons` (used for diagnostics).
 ///
 /// These functions are the "what is a safe repair" policy, deliberately free of the loader's
-/// fetch/build *mechanism* (SwiftData reads, `Raw*` decoding, categorization). Keeping them
+/// fetch/build *mechanism* (database reads, `Raw*` decoding, categorization). Keeping them
 /// here isolates the repair rules and — because they are pure — lets them be unit-tested
 /// directly, which matters for restore paths where a bad repair silently drops user data.
 enum TabRestoreRepair {

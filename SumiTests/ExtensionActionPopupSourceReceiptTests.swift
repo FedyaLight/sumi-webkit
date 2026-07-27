@@ -1,5 +1,4 @@
 import AppKit
-import SwiftData
 import WebKit
 import XCTest
 
@@ -9,7 +8,7 @@ import XCTest
 @MainActor
 final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
     private struct Harness {
-        let container: ModelContainer
+        let container: SumiDatabase
         let browserManager: BrowserManager
         let windowRegistry: WindowRegistry
         let extensionManager: ExtensionManager
@@ -1078,10 +1077,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
     }
 
     private func makeHarness(extensionID: String) async throws -> Harness {
-        let container = try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+        let container = try SumiDatabase.inMemory()
         let profile = Profile(name: "Action Popup Source")
         let registry = SumiModuleRegistry(
             settingsStore: SumiModuleSettingsStore(
@@ -1092,7 +1088,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         let attachedRuntime = ExtensionAttachedRuntimeCapture()
         let inspectionCapture = ExtensionManagerInspectionCapture()
         let extensionManager = makeSafariExtensionTestExtensionManager(
-            context: container.mainContext,
+            database: container,
             initialProfile: profile,
             browserConfiguration: BrowserConfiguration(),
             moduleRegistry: registry,
@@ -1102,7 +1098,7 @@ final class ExtensionActionPopupSourceReceiptTests: XCTestCase {
         let inspection = inspectionCapture.inspection
         let extensionsModule = SumiExtensionsModule(
             moduleRegistry: registry,
-            context: container.mainContext,
+            database: container,
             browserConfiguration: BrowserConfiguration(),
             initialProfileProvider: { profile },
             managerFactory: { _, _, _, _ in extensionManager }

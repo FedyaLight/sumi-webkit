@@ -1,4 +1,3 @@
-import CoreData
 import Foundation
 
 extension SumiStartupStoreRecovery {
@@ -190,7 +189,11 @@ extension SumiStartupStoreRecovery {
                 )
             )
 
-            for key in [NSUnderlyingErrorKey, NSMultipleUnderlyingErrorsKey, NSDetailedErrorsKey] {
+            for key in [
+                NSUnderlyingErrorKey,
+                NSMultipleUnderlyingErrorsKey,
+                "NSDetailedErrors",
+            ] {
                 guard let value = ns.userInfo[key] else { continue }
                 if let nested = value as? Error {
                     append(nested)

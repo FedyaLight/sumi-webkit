@@ -11,10 +11,10 @@ enum HistoryStoreRecordAssembly {
         let entryID: UUID
         let visitedAt: Date
 
-        init(_ visit: HistoryVisitEntity) {
-            id = visit.id
-            entryID = visit.entryID
-            visitedAt = visit.visitedAt
+        init(id: UUID, entryID: UUID, visitedAt: Date) {
+            self.id = id
+            self.entryID = entryID
+            self.visitedAt = visitedAt
         }
     }
 
@@ -27,14 +27,22 @@ enum HistoryStoreRecordAssembly {
         let numberOfTotalVisits: Int
         let lastVisit: Date
 
-        init(_ entry: HistoryEntryEntity) {
-            id = entry.id
-            urlString = entry.urlString
-            title = entry.title
-            domain = entry.domain
-            siteDomain = entry.siteDomain
-            numberOfTotalVisits = entry.numberOfTotalVisits
-            lastVisit = entry.lastVisit
+        init(
+            id: UUID,
+            urlString: String,
+            title: String,
+            domain: String,
+            siteDomain: String?,
+            numberOfTotalVisits: Int,
+            lastVisit: Date
+        ) {
+            self.id = id
+            self.urlString = urlString
+            self.title = title
+            self.domain = domain
+            self.siteDomain = siteDomain
+            self.numberOfTotalVisits = numberOfTotalVisits
+            self.lastVisit = lastVisit
         }
     }
 

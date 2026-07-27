@@ -51,11 +51,14 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
     }
 
     func testMissingRuntimeLeavesLiveRegistryUnchanged() throws {
-        let container = try makeInMemoryStartupModelContainer()
+        let container = try makeInMemoryStartupDatabase()
         let webViewSessions = WebViewSessionRepository()
         let tabManager = TabManager(
-            context: container.mainContext,
+            database: container,
             webViewSessions: webViewSessions,
+            profileReferenceAdmission: try ProfileReferenceAdmissionLedger(
+                database: container
+            ),
             loadPersistedState: false
         )
         let state = tabManager.stateStore
@@ -599,12 +602,15 @@ private final class RetirementFixture {
     }
 
     init(runtime: RuntimePortRegistry) throws {
-        let container = try makeInMemoryStartupModelContainer()
+        let container = try makeInMemoryStartupDatabase()
         let webViewSessions = WebViewSessionRepository()
         tabManager = TabManager(
-            runtimePorts: runtime,
-            context: container.mainContext,
+            database: container,
             webViewSessions: webViewSessions,
+            profileReferenceAdmission: try ProfileReferenceAdmissionLedger(
+                database: container
+            ),
+            initialRuntimePorts: runtime,
             loadPersistedState: false
         )
         let state = tabManager.stateStore

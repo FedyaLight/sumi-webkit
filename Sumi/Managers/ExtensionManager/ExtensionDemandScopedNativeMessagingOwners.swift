@@ -8,15 +8,18 @@ import Foundation
 @MainActor
 final class ExtensionDemandScopedNativeMessagingOwners {
     private let moduleRegistry: SumiModuleRegistry
+    private let importStore: SafariExtensionImportStore
     private let runtimeLifecycle: ExtensionRuntimeLifecycleAuthority
     private var wakeOwnerStorage: ExtensionNativeMessagingBackgroundWakeOwner?
     private var relayOwnerStorage: ExtensionNativeMessagingRelayOwner?
 
     init(
         moduleRegistry: SumiModuleRegistry,
+        importStore: SafariExtensionImportStore,
         runtimeLifecycle: ExtensionRuntimeLifecycleAuthority
     ) {
         self.moduleRegistry = moduleRegistry
+        self.importStore = importStore
         self.runtimeLifecycle = runtimeLifecycle
     }
 
@@ -31,6 +34,7 @@ final class ExtensionDemandScopedNativeMessagingOwners {
         if let relayOwnerStorage { return relayOwnerStorage }
         let owner = ExtensionNativeMessagingRelayOwner(
             moduleRegistry: moduleRegistry,
+            importStore: importStore,
             runtimeLifecycle: runtimeLifecycle
         )
         relayOwnerStorage = owner

@@ -1,4 +1,3 @@
-import SwiftData
 import WebKit
 import XCTest
 
@@ -9,6 +8,7 @@ final class SumiAutoplayBrowserConfigTests: XCTestCase {
     func testNoDecisionUsesCurrentDefaultAllowAllFallbackConfiguration() throws {
         let harness = try makeHarness()
         let profile = makeProfile("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+        try installTestProfile(profile, in: harness.container)
         let configuration = harness.browserConfiguration.normalTabWebViewConfiguration(
             for: profile,
             url: URL(string: "https://example.com")
@@ -20,6 +20,7 @@ final class SumiAutoplayBrowserConfigTests: XCTestCase {
     func testOldUserDefaultsValueDoesNotAffectBrowserFallbackConfiguration() throws {
         let harness = try makeHarness()
         let profile = makeProfile("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+        try installTestProfile(profile, in: harness.container)
         UserDefaults.standard.set(
             Data(#"{"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee":{"example.com":"block"}}"#.utf8),
             forKey: "settings.sitePermissionOverrides.autoplay"
@@ -39,6 +40,7 @@ final class SumiAutoplayBrowserConfigTests: XCTestCase {
     func testStoredAllowAllAppliesAllowAllFallbackConfiguration() async throws {
         let harness = try makeHarness()
         let profile = makeProfile("11111111-1111-1111-1111-111111111111")
+        try installTestProfile(profile, in: harness.container)
         let url = URL(string: "https://example.com")!
         try await harness.adapter.setPolicy(.allowAll, for: url, profile: profile)
 
@@ -53,6 +55,7 @@ final class SumiAutoplayBrowserConfigTests: XCTestCase {
     func testStoredBlockAudibleAppliesAudioFallbackConfiguration() async throws {
         let harness = try makeHarness()
         let profile = makeProfile("22222222-2222-2222-2222-222222222222")
+        try installTestProfile(profile, in: harness.container)
         let url = URL(string: "https://example.com")!
         try await harness.adapter.setPolicy(.blockAudible, for: url, profile: profile)
 
@@ -67,6 +70,7 @@ final class SumiAutoplayBrowserConfigTests: XCTestCase {
     func testStoredBlockAllAppliesAllFallbackConfiguration() async throws {
         let harness = try makeHarness()
         let profile = makeProfile("33333333-3333-3333-3333-333333333333")
+        try installTestProfile(profile, in: harness.container)
         let url = URL(string: "https://example.com")!
         try await harness.adapter.setPolicy(.blockAll, for: url, profile: profile)
 
@@ -81,7 +85,9 @@ final class SumiAutoplayBrowserConfigTests: XCTestCase {
     func testProfileDecisionDoesNotAffectOtherProfile() async throws {
         let harness = try makeHarness()
         let profileA = makeProfile("44444444-4444-4444-4444-444444444444")
+        try installTestProfile(profileA, in: harness.container)
         let profileB = makeProfile("55555555-5555-5555-5555-555555555555")
+        try installTestProfile(profileB, in: harness.container)
         let url = URL(string: "https://example.com")!
         try await harness.adapter.setPolicy(.blockAll, for: url, profile: profileA)
 
@@ -101,6 +107,7 @@ final class SumiAutoplayBrowserConfigTests: XCTestCase {
     func testUnknownOriginUsesDefaultFallbackConfiguration() async throws {
         let harness = try makeHarness()
         let profile = makeProfile("66666666-6666-6666-6666-666666666666")
+        try installTestProfile(profile, in: harness.container)
         try await harness.adapter.setPolicy(
             .blockAll,
             for: URL(string: "https://example.com"),
@@ -119,6 +126,7 @@ final class SumiAutoplayBrowserConfigTests: XCTestCase {
         async throws {
         let harness = try makeHarness()
         let profile = makeProfile("77777777-7777-7777-7777-777777777777")
+        try installTestProfile(profile, in: harness.container)
         let url = URL(string: "https://example.com/parked-autoplay")!
         let tabID = UUID()
         let scripts = SumiNormalTabUserScripts(
@@ -189,15 +197,12 @@ final class SumiAutoplayBrowserConfigTests: XCTestCase {
     }
 
     private func makeHarness() throws -> (
-        container: ModelContainer,
+        container: SumiDatabase,
         adapter: SumiAutoplayPolicyStoreAdapter,
         browserConfiguration: BrowserConfiguration
     ) {
-        let container = try ModelContainer(
-            for: Schema([PermissionDecisionEntity.self]),
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
-        let store = SwiftDataPermissionStore(container: container)
+        let container = try SumiDatabase.inMemory()
+        let store = DatabasePermissionStore(database: container)
         let adapter = SumiAutoplayPolicyStoreAdapter(persistentStore: store)
         return (container, adapter, BrowserConfiguration(autoplayPolicyStore: adapter))
     }

@@ -1,5 +1,4 @@
 import Combine
-import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -55,8 +54,7 @@ final class SumiPermissionSourceRegressionTests: XCTestCase {
             sessionOwnerId: "browser-permission-source-regression"
         )
         let browserManager = BrowserManager(
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()
             ),
             systemPermissionService: systemPermissionService,
             permissionCoordinator: permissionCoordinator,
@@ -101,11 +99,8 @@ final class SumiPermissionSourceRegressionTests: XCTestCase {
     }
 
     @MainActor
-    private func makeInMemoryStartupContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+    private func makeInMemoryStartupContainer() throws -> SumiDatabase {
+        try SumiDatabase.inMemory()
     }
 }
 

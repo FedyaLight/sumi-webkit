@@ -1,4 +1,3 @@
-import SwiftData
 import WebKit
 import XCTest
 
@@ -340,11 +339,10 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         XCTAssertEqual(cookieStore.deletedCookies.map(\.domain), ["preserved.example"])
     }
 
-    func testSiteDataPolicyStoreScopesRulesByProfileAndHost() {
-        let suiteName = "SumiSiteDataPolicyStoreTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let store = SumiSiteDataPolicyStore(userDefaults: defaults)
+    func testSiteDataPolicyStoreScopesRulesByProfileAndHost() throws {
+        let store = SumiSiteDataPolicyStore(
+            database: try SumiDatabase.inMemory()
+        )
         let profileA = UUID()
         let profileB = UUID()
 
@@ -357,33 +355,10 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         XCTAssertEqual(store.hostsDeletingWhenAllWindowsClosed(profileId: profileB), ["accounts.youtube.com"])
     }
 
-    func testSiteDataPolicyStoreClassifiesUnreadablePayload() {
-        let suiteName = "SumiSiteDataPolicyUnreadableTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let storageKey = "settings.siteDataPolicies.\(UUID().uuidString)"
-        let unreadablePayload = Data("not-json".utf8)
-        defaults.set(unreadablePayload, forKey: storageKey)
-
+    func testSiteDataBlockStoragePolicyDeletesExactHostImmediately() async throws {
         let store = SumiSiteDataPolicyStore(
-            userDefaults: defaults,
-            storageKey: storageKey
+            database: try SumiDatabase.inMemory()
         )
-
-        XCTAssertFalse(store.state(forHost: "example.com", profileId: UUID()).blockStorage)
-        XCTAssertEqual(defaults.data(forKey: "\(storageKey).unreadable"), unreadablePayload)
-        if case .failedDecode = store.diagnostics.loadOutcome {
-            // Expected classification.
-        } else {
-            XCTFail("Expected failed decode, got \(store.diagnostics.loadOutcome)")
-        }
-    }
-
-    func testSiteDataBlockStoragePolicyDeletesExactHostImmediately() async {
-        let suiteName = "SumiSiteDataBlockStorageTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let store = SumiSiteDataPolicyStore(userDefaults: defaults)
         let cleanupService = FakeCleanupService()
         let service = SumiSiteDataPolicyEnforcementService(
             policyStore: store,
@@ -407,11 +382,10 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         )
     }
 
-    func testSiteDataDeleteWhenAllWindowsClosePolicyRunsDeferredCleanup() async {
-        let suiteName = "SumiSiteDataDeleteOnCloseTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let store = SumiSiteDataPolicyStore(userDefaults: defaults)
+    func testSiteDataDeleteWhenAllWindowsClosePolicyRunsDeferredCleanup() async throws {
+        let store = SumiSiteDataPolicyStore(
+            database: try SumiDatabase.inMemory()
+        )
         let cleanupService = FakeCleanupService()
         let service = SumiSiteDataPolicyEnforcementService(
             policyStore: store,
@@ -448,11 +422,10 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         )
     }
 
-    func testURLBarSiteDataDeleteUsesManualFullExactHostCleanup() async {
-        let suiteName = "URLBarSiteDataDeleteTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let policyStore = SumiSiteDataPolicyStore(userDefaults: defaults)
+    func testURLBarSiteDataDeleteUsesManualFullExactHostCleanup() async throws {
+        let policyStore = SumiSiteDataPolicyStore(
+            database: try SumiDatabase.inMemory()
+        )
         let cleanupService = FakeCleanupService()
         let enforcementService = SumiSiteDataPolicyEnforcementService(
             policyStore: policyStore,
@@ -503,11 +476,10 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         )
     }
 
-    func testURLBarSiteDataDeleteFailsClosedWithoutPreparedMutationBoundary() async {
-        let suiteName = "URLBarSiteDataDeleteFailClosedTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let policyStore = SumiSiteDataPolicyStore(userDefaults: defaults)
+    func testURLBarSiteDataDeleteFailsClosedWithoutPreparedMutationBoundary() async throws {
+        let policyStore = SumiSiteDataPolicyStore(
+            database: try SumiDatabase.inMemory()
+        )
         let cleanupService = FakeCleanupService()
         let profileWebsiteDataMutationService =
             SumiProfileWebsiteDataMutationService(
@@ -619,6 +591,10 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
             referenceDateProvider: { historyTestDate("2026-04-23T12:00:00Z") }
         )
         let otherProfileID = UUID()
+        try installHistoryTestProfile(
+            id: otherProfileID,
+            in: harness.container
+        )
 
         try await harness.historyManager.store.recordVisit(
             url: URL(string: "https://current.example")!,
@@ -826,6 +802,10 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         let destructiveCleanupPreparer = FakeDestructiveCleanupPreparer()
         let visitedLinkStore = FakeVisitedLinkStore()
         let otherProfileID = UUID()
+        try installHistoryTestProfile(
+            id: otherProfileID,
+            in: harness.container
+        )
         let service = makeBrowsingDataCleanupService(
             websiteDataCleanupService: cleanupService,
             appResidueCleaner: appResidueCleaner,
@@ -1189,23 +1169,32 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
 
 @MainActor
 private func makeHistoryHarness() throws -> (
-    container: ModelContainer,
+    container: SumiDatabase,
     historyManager: HistoryManager,
     profileID: UUID
 ) {
-    let container = try ModelContainer(
-        for: Schema([HistoryEntryEntity.self, HistoryVisitEntity.self]),
-        configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-    )
-    let context = ModelContext(container)
+    let container = try SumiDatabase.inMemory()
+    let context = container
     let profileID = UUID()
-    let historyManager = HistoryManager(
-        context: context,
+    try installHistoryTestProfile(id: profileID, in: container)
+    let historyManager = HistoryManager(database: context,
         profileId: profileID,
         faviconCleaner: FakeFaviconCleaner(),
         visitedLinkStore: FakeVisitedLinkStore()
     )
     return (container, historyManager, profileID)
+}
+
+private func installHistoryTestProfile(
+    id: UUID,
+    in database: SumiDatabase
+) throws {
+    try database.transaction { connection in
+        let nextIndex = try connection.profiles.all().count
+        try connection.profiles.save(
+            ProfileRecord(id: id, name: "History", index: nextIndex)
+        )
+    }
 }
 
 private func historyTestDate(_ value: String) -> Date {

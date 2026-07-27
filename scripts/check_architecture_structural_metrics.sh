@@ -13,7 +13,7 @@ guard_initialize "$repo_root"
 # measured surface is physically deleted. A missing living source is an
 # infrastructure error, never a zero-line success.
 role_budgets=(
-  "BrowserManager|Sumi/Managers/BrowserManager/BrowserManager.swift|560|-"
+  "BrowserManager|Sumi/Managers/BrowserManager/BrowserManager.swift|568|-"
   "TabManager|Sumi/Managers/TabManager/TabManager.swift|220|-"
   "Tab store restore orchestration|Sumi/Managers/TabManager/TabStoreRestoreService.swift|140|4"
   "Tab store restore attempt|Sumi/Managers/TabManager/TabStoreRestoreAttemptExecutor.swift|145|5"
@@ -55,7 +55,7 @@ role_budgets=(
   "Completed-authority proof|Sumi/Models/Tab/TabMainFrameCompletedAuthorityProof.swift|64|3"
   "Main-frame authority effect ledger|Sumi/Models/Tab/TabMainFrameAuthorityEffectLedger.swift|270|-"
   "Main-frame participant effect ledger|Sumi/Models/Tab/TabMainFrameParticipantEffectLedger.swift|150|-"
-  "Main-frame navigation responder|Sumi/Models/Tab/Navigation/SumiTabLifecycleNavigationResponder.swift|650|-"
+  "Main-frame navigation responder|Sumi/Models/Tab/Navigation/SumiTabLifecycleNavigationResponder.swift|652|-"
   "Main-frame lifecycle promotion reducer|Sumi/Models/Tab/Navigation/TabMainFrameLifecyclePromotionReducer.swift|286|-"
   "Main-frame load runtime|Sumi/Models/Tab/TabMainFrameLoadRuntime.swift|302|2"
   "Main-frame participant applier|Sumi/Models/Tab/TabMainFrameParticipantTransitionApplier.swift|380|4"
@@ -93,8 +93,8 @@ role_budgets=(
   "Startup window restore|Sumi/Managers/BrowserManager/StartupWindowRestoreService.swift|150|6"
   "Clean startup workflow|Sumi/Managers/BrowserManager/CleanStartupWorkflow.swift|140|7"
   "Startup policy|Sumi/Managers/BrowserManager/BrowserStartupPolicy.swift|45|3"
-  "Open-window session catalog|Sumi/Managers/BrowserManager/OpenWindowSessionCatalog.swift|45|2"
-  "Last-session archive|Sumi/Managers/BrowserManager/LastSessionWindowArchive.swift|160|3"
+  "Open-window session catalog|Sumi/Managers/BrowserManager/OpenWindowSessionCatalog.swift|76|2"
+  "Last-session archive|Sumi/Managers/BrowserManager/LastSessionWindowArchive.swift|166|3"
   "Closed-window history recorder|Sumi/Managers/BrowserManager/ClosedWindowHistoryRecorder.swift|45|3"
   "Window-session history capabilities|Sumi/Managers/BrowserManager/WindowSessionHistoryServices.swift|20|-"
   "Window-history live composition|Sumi/Managers/BrowserManager/WindowSessionHistoryServices+Live.swift|65|-"

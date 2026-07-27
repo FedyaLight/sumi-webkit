@@ -19,12 +19,11 @@ enum PinnedToolbarSlot: Identifiable {
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionToolbarPinningOwner {
-    static let pinnedToolbarExtensionIDsStorageKey =
-        "\(SumiAppIdentity.bundleIdentifier).extensions.toolbarPinnedIDsByProfile"
+    private static let documentKey = "extensions.toolbar-pins"
     private static let globalPinnedToolbarProfileKey = "__global__"
     private static let logger = Logger.sumi(category: "Extensions")
 
-    private let preferences: UserDefaults
+    private let database: SumiDatabase
     private let currentProfileId: @MainActor () -> UUID?
     private let installedExtensionIDs: @MainActor () -> Set<String>
     private let publishedPinnedIDs: @MainActor () -> [String]
@@ -32,19 +31,19 @@ final class ExtensionToolbarPinningOwner {
     private var idsByProfile: [String: [String]]
 
     init(
-        preferences: UserDefaults,
+        database: SumiDatabase,
         currentProfileId: @escaping @MainActor () -> UUID?,
         installedExtensionIDs: @escaping @MainActor () -> Set<String>,
         publishedPinnedIDs: @escaping @MainActor () -> [String],
         setPublishedPinnedIDs: @escaping @MainActor ([String]) -> Void
     ) {
-        self.preferences = preferences
+        self.database = database
         self.currentProfileId = currentProfileId
         self.installedExtensionIDs = installedExtensionIDs
         self.publishedPinnedIDs = publishedPinnedIDs
         self.setPublishedPinnedIDs = setPublishedPinnedIDs
         self.idsByProfile =
-            Self.loadPinnedToolbarExtensionIDsByProfile(from: preferences)
+            Self.loadPinnedToolbarExtensionIDsByProfile(from: database)
     }
 
     var pinnedToolbarExtensionIDsByProfile: [String: [String]] {
@@ -160,44 +159,38 @@ final class ExtensionToolbarPinningOwner {
     }
 
     private func persistPinnedToolbarExtensionIDsByProfile() {
-        let data: Data
         do {
-            data = try JSONEncoder().encode(idsByProfile)
+            try database.transaction {
+                try $0.documents.save(
+                    idsByProfile,
+                    forKey: Self.documentKey
+                )
+            }
         } catch {
             Self.logger.error(
                 "Failed to encode pinned toolbar extension IDs: \(String(describing: error), privacy: .public)"
             )
             return
         }
-
-        preferences.set(
-            data,
-            forKey: Self.pinnedToolbarExtensionIDsStorageKey
-        )
     }
 
     static func loadPinnedToolbarExtensionIDsByProfile(
-        from userDefaults: UserDefaults = .standard
+        from database: SumiDatabase
     ) -> [String: [String]] {
-        guard
-            let data = userDefaults.data(
-                forKey: pinnedToolbarExtensionIDsStorageKey
-            )
-        else {
-            return [:]
-        }
-
-        let decoded: [String: [String]]
         do {
-            decoded = try JSONDecoder().decode([String: [String]].self, from: data)
+            let decoded = try database.read {
+                try $0.documents.value(
+                    [String: [String]].self,
+                    forKey: documentKey
+                ) ?? [:]
+            }
+            return decoded.mapValues(normalizedPinnedToolbarExtensionIDs)
         } catch {
             Self.logger.error(
                 "Failed to decode pinned toolbar extension IDs: \(String(describing: error), privacy: .public)"
             )
             return [:]
         }
-
-        return decoded.mapValues(Self.normalizedPinnedToolbarExtensionIDs)
     }
 
     static func pinnedToolbarProfileKey(for profileId: UUID?) -> String {

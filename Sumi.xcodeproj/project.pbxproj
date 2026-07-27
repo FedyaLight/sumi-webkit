@@ -13,6 +13,7 @@
 		B11DD021B11D000100000005 /* SumiDomain in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD020B11D000100000012 /* SumiDomain */; };
 		B11DD030B11D000100000005 /* SumiWebRuntime in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD030B11D000100000011 /* SumiWebRuntime */; };
 		B11DD031B11D000100000005 /* SumiWebRuntime in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD030B11D000100000012 /* SumiWebRuntime */; };
+		C0DE0001B11D000100000001 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = C0DE0001B11D000100000002 /* GRDB */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -174,6 +175,7 @@
 				B11DD020B11D000100000005 /* SumiDomain in Frameworks */,
 				B11DD030B11D000100000005 /* SumiWebRuntime in Frameworks */,
 				3ABB06E087FC4AB7B21B2B6B /* Sparkle in Frameworks */,
+				C0DE0001B11D000100000001 /* GRDB in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -278,6 +280,7 @@
 				A11DD020B11D000100000011 /* SumiDomain */,
 				A11DD030B11D000100000011 /* SumiWebRuntime */,
 				3E692AE1701C49119B0EB052 /* Sparkle */,
+				C0DE0001B11D000100000002 /* GRDB */,
 			);
 			productName = Sumi;
 			productReference = 7F8340FC2E37F39400674A5D /* Sumi.app */;
@@ -320,6 +323,7 @@
 				A11DD020B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiDomain" */,
 				A11DD030B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiWebRuntime" */,
 				9AD90DB4528040A5950C146D /* XCRemoteSwiftPackageReference "Sparkle" */,
+				C0DE0001B11D000100000003 /* XCRemoteSwiftPackageReference "GRDB.swift" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 7F8340FD2E37F39400674A5D /* Products */;
@@ -782,6 +786,14 @@
 				minimumVersion = 2.9.3;
 			};
 		};
+		C0DE0001B11D000100000003 /* XCRemoteSwiftPackageReference "GRDB.swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/groue/GRDB.swift.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 7.10.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -814,6 +826,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A11DD030B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiWebRuntime" */;
 			productName = SumiWebRuntime;
+		};
+		C0DE0001B11D000100000002 /* GRDB */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C0DE0001B11D000100000003 /* XCRemoteSwiftPackageReference "GRDB.swift" */;
+			productName = GRDB;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

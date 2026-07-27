@@ -37,12 +37,6 @@ final class SumiPermissionCleanupServiceTests: XCTestCase {
         let defaultsSuite = "SumiPermissionCleanupProfileTests-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: defaultsSuite))
         defer { defaults.removePersistentDomain(forName: defaultsSuite) }
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-            "SumiPermissionCleanupProfileTests-\(UUID().uuidString)",
-            isDirectory: true
-        )
-        defer { try? FileManager.default.removeItem(at: directory) }
-
         let permissionStore = InMemoryPermissionCleanupStore()
         let targetKey = makePermissionKey(profileID: targetProfileID, host: "target.example")
         let retainedKey = makePermissionKey(profileID: retainedProfileID, host: "retained.example")
@@ -67,7 +61,7 @@ final class SumiPermissionCleanupServiceTests: XCTestCase {
         )
 
         let authority = SumiPermissionPersistenceAuthority(
-            storageDirectory: directory
+            database: try SumiDatabase.inMemory()
         )
         let siteActivityStore = SumiPermissionSiteActivityStore(
             persistenceAuthority: authority
@@ -172,42 +166,6 @@ final class SumiPermissionCleanupServiceTests: XCTestCase {
                 forKey: "permissions.cleanup.last-run.v1.\(retainedProfileID)"
             )
         )
-    }
-
-    func testCorruptCanonicalPermissionStateBlocksProfileCleanup() async throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-            "SumiPermissionCleanupCorruptTests-\(UUID().uuidString)",
-            isDirectory: true
-        )
-        try FileManager.default.createDirectory(
-            at: directory,
-            withIntermediateDirectories: true
-        )
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let canonicalURL = directory.appendingPathComponent(
-            SumiPermissionPersistenceAuthority.canonicalFileName
-        )
-        let corruptData = Data("not-json".utf8)
-        try corruptData.write(to: canonicalURL)
-        let siteActivityStore = SumiPermissionSiteActivityStore(
-            persistenceAuthority: SumiPermissionPersistenceAuthority(
-                storageDirectory: directory
-            )
-        )
-        let service = SumiPermissionCleanupService(
-            store: InMemoryPermissionCleanupStore(),
-            recentActivityStore: SumiPermissionRecentActivityStore(),
-            siteActivityStore: siteActivityStore
-        )
-
-        do {
-            try await service.deleteAllDecisions(profilePartitionId: "target")
-            XCTFail("Expected corrupt canonical state to fail closed")
-        } catch SumiPermissionProfileDataCleanupError.persistenceStateUnreadable {
-            // Expected.
-        }
-
-        XCTAssertEqual(try Data(contentsOf: canonicalURL), corruptData)
     }
 
     private func makePermissionKey(

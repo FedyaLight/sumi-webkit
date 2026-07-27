@@ -32,8 +32,8 @@ enum SumiSiteDataPolicyStoreError: Error, Equatable {
 final class SumiSiteDataPolicyStore {
     private static let log = Logger.sumi(category: "SiteDataPolicyStore")
 
-    private let userDefaults: UserDefaults
-    private let storageKey: String
+    private static let documentKey = "site-data.policies"
+    private let database: SumiDatabase?
     private var policies: [String: [String: SumiSiteDataPolicyState]]
     private let changesSubject = PassthroughSubject<Void, Never>()
     private(set) var diagnostics = SumiSiteDataPolicyStoreDiagnostics()
@@ -43,15 +43,10 @@ final class SumiSiteDataPolicyStore {
     }
 
     init(
-        userDefaults: UserDefaults = .standard,
-        storageKey: String = "settings.siteDataPolicies"
+        database: SumiDatabase? = nil
     ) {
-        self.userDefaults = userDefaults
-        self.storageKey = storageKey
-        let loadResult = Self.loadPolicies(
-            key: storageKey,
-            userDefaults: userDefaults
-        )
+        self.database = database
+        let loadResult = Self.loadPolicies(database: database)
         self.policies = loadResult.policies
         self.diagnostics.loadOutcome = loadResult.outcome
     }
@@ -117,10 +112,13 @@ final class SumiSiteDataPolicyStore {
 
             var candidate = policies
             candidate.removeValue(forKey: profileKey)
-            let data = try JSONEncoder().encode(candidate)
-            userDefaults.set(data, forKey: storageKey)
-            guard userDefaults.data(forKey: storageKey) == data else {
-                throw SumiSiteDataPolicyStoreError.persistenceVerificationFailed
+            if let database {
+                try database.transaction {
+                    try $0.documents.save(
+                        candidate,
+                        forKey: Self.documentKey
+                    )
+                }
             }
             policies = candidate
             diagnostics.lastPersistFailure = nil
@@ -142,7 +140,8 @@ final class SumiSiteDataPolicyStore {
             return
         }
 
-        var profilePolicies = policies[profileKey] ?? [:]
+        var candidate = policies
+        var profilePolicies = candidate[profileKey] ?? [:]
         var state = profilePolicies[hostKey] ?? SumiSiteDataPolicyState()
         mutate(&state)
 
@@ -153,25 +152,34 @@ final class SumiSiteDataPolicyStore {
         }
 
         if profilePolicies.isEmpty {
-            policies.removeValue(forKey: profileKey)
+            candidate.removeValue(forKey: profileKey)
         } else {
-            policies[profileKey] = profilePolicies
+            candidate[profileKey] = profilePolicies
         }
 
-        persist()
+        guard candidate != policies, persist(candidate) else { return }
+        policies = candidate
         changesSubject.send(())
     }
 
-    private func persist() {
+    private func persist(
+        _ candidate: [String: [String: SumiSiteDataPolicyState]]
+    ) -> Bool {
         do {
-            let data = try JSONEncoder().encode(policies)
-            userDefaults.set(data, forKey: storageKey)
+            try database?.transaction {
+                try $0.documents.save(
+                    candidate,
+                    forKey: Self.documentKey
+                )
+            }
             diagnostics.lastPersistFailure = nil
+            return true
         } catch {
             diagnostics.lastPersistFailure = error.localizedDescription
             Self.log.error(
                 "Failed to persist site data policies: \(error.localizedDescription, privacy: .public)"
             )
+            return false
         }
     }
 
@@ -185,38 +193,28 @@ final class SumiSiteDataPolicyStore {
     }
 
     private static func loadPolicies(
-        key: String,
-        userDefaults: UserDefaults
+        database: SumiDatabase?
     ) -> (
         policies: [String: [String: SumiSiteDataPolicyState]],
         outcome: SumiSiteDataPolicyStoreDiagnostics.LoadOutcome
     ) {
-        guard let data = userDefaults.data(forKey: key) else {
+        guard let database else {
             return ([:], .missing)
         }
-
         do {
-            let decoded = try JSONDecoder().decode(
-                [String: [String: SumiSiteDataPolicyState]].self,
-                from: data
-            )
+            let decoded = try database.read {
+                try $0.documents.value(
+                    [String: [String: SumiSiteDataPolicyState]].self,
+                    forKey: Self.documentKey
+                )
+            }
+            guard let decoded else { return ([:], .missing) }
             return (decoded, .loaded)
         } catch {
-            preserveUnreadablePayload(data, in: userDefaults, storageKey: key)
             log.error(
                 "Failed to decode site data policies: \(error.localizedDescription, privacy: .public)"
             )
             return ([:], .failedDecode(error.localizedDescription))
         }
-    }
-
-    private static func preserveUnreadablePayload(
-        _ data: Data,
-        in userDefaults: UserDefaults,
-        storageKey: String
-    ) {
-        let backupKey = "\(storageKey).unreadable"
-        guard userDefaults.data(forKey: backupKey) == nil else { return }
-        userDefaults.set(data, forKey: backupKey)
     }
 }

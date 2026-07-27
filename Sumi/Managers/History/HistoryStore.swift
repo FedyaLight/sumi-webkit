@@ -1,35 +1,15 @@
-//
-//  HistoryStore.swift
-//  Sumi
-//
-
 import Foundation
-import SwiftData
 
 actor HistoryStore {
     static let defaultHistoryPageLimit = 100
     static let defaultSuggestionLimit = 20
     static let defaultRecentMenuLimit = 12
 
-    private let container: ModelContainer
-    private let recorder: HistoryVisitRecorder
-    private let importWriter: HistoryImportedVisitWriter
-    private let visitReader: HistoryVisitRecordReader
-    private let siteReader: HistorySiteRecordReader
-    private let deletionOwner: HistoryVisitDeletionOwner
+    private static let scanChunkSize = 256
+    private let database: SumiDatabase
 
-    init(container: ModelContainer) {
-        self.container = container
-        let planner = HistoryEntityFetchPlanner()
-        let visitReader = HistoryVisitRecordReader(planner: planner)
-        self.recorder = HistoryVisitRecorder(planner: planner)
-        self.importWriter = HistoryImportedVisitWriter(planner: planner)
-        self.visitReader = visitReader
-        self.siteReader = HistorySiteRecordReader(planner: planner)
-        self.deletionOwner = HistoryVisitDeletionOwner(
-            planner: planner,
-            visitReader: visitReader
-        )
+    init(database: SumiDatabase) {
+        self.database = database
     }
 
     @discardableResult
@@ -41,28 +21,36 @@ actor HistoryStore {
         profileId: UUID?,
         tabId: UUID? = nil
     ) throws -> UUID {
-        try recorder.recordVisit(
-            in: makeContext(),
-            id: id,
-            url: url,
-            title: title,
-            visitedAt: visitedAt,
-            profileId: profileId,
-            tabId: tabId
-        )
+        let profileID = try requiredProfileID(profileId)
+        try database.transaction {
+            try $0.history.recordVisit(
+                id: id,
+                url: url,
+                title: title,
+                visitedAt: visitedAt,
+                profileID: profileID,
+                tabID: tabId
+            )
+        }
+        return id
     }
 
-    /// Writes a chunk of visits imported from another browser and reports what
-    /// it changed, so an aborted import can be undone exactly.
     func installImportedVisits(
         _ visits: [HistoryImportedVisit],
         profileId: UUID?
     ) throws -> HistoryImportedVisitWriter.Receipt {
-        try importWriter.insert(visits, profileId: profileId, in: makeContext())
+        let profileID = try requiredProfileID(profileId)
+        return try database.transaction {
+            try $0.history.installImportedVisits(visits, profileID: profileID)
+        }
     }
 
-    func rollbackImportedVisits(_ receipt: HistoryImportedVisitWriter.Receipt) throws {
-        try importWriter.rollback(receipt, in: makeContext())
+    func rollbackImportedVisits(
+        _ receipt: HistoryImportedVisitWriter.Receipt
+    ) throws {
+        try database.transaction {
+            try $0.history.rollbackImportedVisits(receipt)
+        }
     }
 
     func updateTitleIfNeeded(
@@ -70,12 +58,10 @@ actor HistoryStore {
         url: URL,
         profileId: UUID?
     ) throws {
-        try recorder.updateTitleIfNeeded(
-            in: makeContext(),
-            title: title,
-            url: url,
-            profileId: profileId
-        )
+        let profileID = try requiredProfileID(profileId)
+        try database.transaction {
+            try $0.history.updateTitle(title, url: url, profileID: profileID)
+        }
     }
 
     func fetchRecentHistory(
@@ -84,16 +70,14 @@ actor HistoryStore {
         referenceDate: Date,
         calendar: Calendar
     ) throws -> [HistoryVisitRecord] {
-        guard limit > 0 else { return [] }
-        let page = try fetchHistoryPage(
+        try fetchHistoryPage(
             query: .rangeFilter(.today),
             profileId: profileId,
             limit: limit,
             offset: 0,
             referenceDate: referenceDate,
             calendar: calendar
-        )
-        return page.records
+        ).records
     }
 
     func searchHistory(
@@ -103,8 +87,7 @@ actor HistoryStore {
         referenceDate: Date,
         calendar: Calendar
     ) throws -> [HistoryVisitRecord] {
-        guard limit > 0 else { return [] }
-        return try fetchHistoryPage(
+        try fetchHistoryPage(
             query: .searchTerm(query),
             profileId: profileId,
             limit: limit,
@@ -122,15 +105,71 @@ actor HistoryStore {
         referenceDate: Date,
         calendar: Calendar
     ) throws -> HistoryVisitPage {
-        try visitReader.fetchHistoryPage(
-            in: makeContext(),
-            query: query,
-            profileId: profileId,
-            limit: limit,
-            offset: offset,
+        guard limit > 0 else {
+            return HistoryVisitPage(
+                records: [],
+                nextOffset: max(0, offset),
+                hasMore: false
+            )
+        }
+        let normalizedQuery = query.normalizingDomainFilter
+        let dateRange = HistoryStoreRecordAssembly.dateRange(
+            for: normalizedQuery,
             referenceDate: referenceDate,
             calendar: calendar
         )
+        let startOffset = max(0, offset)
+        var rawOffset = 0
+        var visibleOffset = 0
+        var records: [HistoryVisitRecord] = []
+        var seenVisibleKeys = Set<String>()
+
+        while true {
+            let chunk = try database.read {
+                try $0.history.fetchVisitChunk(
+                    query: normalizedQuery,
+                    profileID: profileId,
+                    dateRange: dateRange,
+                    limit: Self.scanChunkSize,
+                    offset: rawOffset
+                )
+            }
+            guard !chunk.isEmpty else {
+                return HistoryVisitPage(
+                    records: records,
+                    nextOffset: startOffset + records.count,
+                    hasMore: false
+                )
+            }
+            rawOffset += chunk.count
+
+            for record in chunk where HistoryStoreRecordAssembly.visit(
+                record,
+                matches: normalizedQuery,
+                referenceDate: referenceDate,
+                calendar: calendar
+            ) {
+                let key = HistoryStoreRecordAssembly.visibleKey(
+                    for: record,
+                    calendar: calendar
+                )
+                guard seenVisibleKeys.insert(key).inserted else { continue }
+                guard visibleOffset >= startOffset else {
+                    visibleOffset += 1
+                    continue
+                }
+                if records.count < limit {
+                    records.append(record)
+                    visibleOffset += 1
+                } else {
+                    return HistoryVisitPage(
+                        records: records,
+                        nextOffset: startOffset + records.count,
+                        hasMore: true
+                    )
+                }
+            }
+        }
     }
 
     func fetchVisitRecordsForExplicitAction(
@@ -139,13 +178,35 @@ actor HistoryStore {
         referenceDate: Date,
         calendar: Calendar
     ) throws -> [HistoryVisitRecord] {
-        try visitReader.fetchVisitRecordsForExplicitAction(
-            in: makeContext(),
-            matching: query,
-            profileId: profileId,
+        let normalizedQuery = query.normalizingDomainFilter
+        let dateRange = HistoryStoreRecordAssembly.dateRange(
+            for: normalizedQuery,
             referenceDate: referenceDate,
             calendar: calendar
         )
+        var offset = 0
+        var records: [HistoryVisitRecord] = []
+        while true {
+            let chunk = try database.read {
+                try $0.history.fetchVisitChunk(
+                    query: normalizedQuery,
+                    profileID: profileId,
+                    dateRange: dateRange,
+                    limit: Self.scanChunkSize,
+                    offset: offset
+                )
+            }
+            guard !chunk.isEmpty else { return records }
+            offset += chunk.count
+            records.append(contentsOf: chunk.filter {
+                HistoryStoreRecordAssembly.visit(
+                    $0,
+                    matches: normalizedQuery,
+                    referenceDate: referenceDate,
+                    calendar: calendar
+                )
+            })
+        }
     }
 
     func countVisits(
@@ -154,17 +215,19 @@ actor HistoryStore {
         referenceDate: Date,
         calendar: Calendar
     ) throws -> Int {
-        try visitReader.countVisits(
-            in: makeContext(),
+        try fetchVisitRecordsForExplicitAction(
             matching: query,
             profileId: profileId,
             referenceDate: referenceDate,
             calendar: calendar
-        )
+        ).count
     }
 
     func hasVisits(profileId: UUID?) throws -> Bool {
-        try visitReader.hasVisits(in: makeContext(), profileId: profileId)
+        let profileID = try requiredProfileID(profileId)
+        return try database.read {
+            try $0.history.hasVisits(profileID: profileID)
+        }
     }
 
     func domains(
@@ -176,18 +239,22 @@ actor HistoryStore {
         if case .domainFilter(let domains) = query {
             return HistoryDomainResolver.siteDomains(for: domains)
         }
-
-        let records = try fetchVisitRecordsForExplicitAction(
-            matching: query,
-            profileId: profileId,
-            referenceDate: referenceDate,
-            calendar: calendar
+        return Set(
+            try fetchVisitRecordsForExplicitAction(
+                matching: query,
+                profileId: profileId,
+                referenceDate: referenceDate,
+                calendar: calendar
+            ).map { $0.siteDomain ?? $0.domain }
         )
-        return Set(records.map { $0.siteDomain ?? $0.domain })
     }
 
     func fetchVisitedURLs(profileId: UUID?) throws -> [URL] {
-        try siteReader.fetchVisitedURLs(in: makeContext(), profileId: profileId)
+        let profileID = try requiredProfileID(profileId)
+        return try database.read {
+            try $0.history.entries(profileID: profileID)
+                .compactMap { URL(string: $0.urlString) }
+        }
     }
 
     func fetchSitePage(
@@ -196,12 +263,28 @@ actor HistoryStore {
         limit: Int,
         offset: Int
     ) throws -> HistorySitePage {
-        try siteReader.fetchSitePage(
-            in: makeContext(),
-            profileId: profileId,
-            searchTerm: searchTerm,
-            limit: limit,
-            offset: offset
+        guard limit > 0 else {
+            return HistorySitePage(
+                sites: [],
+                nextOffset: max(0, offset),
+                hasMore: false
+            )
+        }
+        let query = searchTerm.map(SearchTextQuery.init)
+        let sites = try siteRecords(profileId: profileId)
+            .filter { site in
+                guard let query, !query.isEmpty else { return true }
+                return HistoryStoreRecordAssembly.siteMatches(site, query: query)
+            }
+            .sorted {
+                $0.domain.localizedStandardCompare($1.domain) == .orderedAscending
+            }
+        let start = max(0, offset)
+        let page = Array(sites.dropFirst(start).prefix(limit))
+        return HistorySitePage(
+            sites: page,
+            nextOffset: start + page.count,
+            hasMore: sites.count > start + page.count
         )
     }
 
@@ -209,18 +292,41 @@ actor HistoryStore {
         profileId: UUID?,
         limit: Int
     ) throws -> [HistorySiteRecord] {
-        try siteReader.fetchTopSites(in: makeContext(), profileId: profileId, limit: limit)
+        guard limit > 0 else { return [] }
+        return Array(
+            try siteRecords(profileId: profileId)
+                .sorted {
+                    if $0.visitCount != $1.visitCount {
+                        return $0.visitCount > $1.visitCount
+                    }
+                    return $0.domain < $1.domain
+                }
+                .prefix(limit)
+        )
     }
 
     func remainingHistoryHosts(
         forSiteDomains siteDomains: Set<String>,
         profileId: UUID?
     ) throws -> Set<String> {
-        try siteReader.remainingHistoryHosts(
-            in: makeContext(),
-            forSiteDomains: siteDomains,
-            profileId: profileId
-        )
+        let targets = HistoryDomainResolver.siteDomains(for: siteDomains)
+        guard !targets.isEmpty else { return [] }
+        let profileID = try requiredProfileID(profileId)
+        return try database.read {
+            Set(
+                try $0.history.entries(profileID: profileID).compactMap { entry in
+                    let site = entry.siteDomain
+                        ?? HistoryDomainResolver.siteDomain(forDomain: entry.domain)
+                        ?? entry.domain
+                    guard targets.contains(site),
+                          let url = URL(string: entry.urlString) else {
+                        return nil
+                    }
+                    let host = HistoryDomainResolver.normalizedDomain(for: url)
+                    return host.isEmpty ? nil : host
+                }
+            )
+        }
     }
 
     @discardableResult
@@ -230,13 +336,21 @@ actor HistoryStore {
         referenceDate: Date,
         calendar: Calendar
     ) throws -> Int {
-        try deletionOwner.deleteVisits(
-            in: makeContext(),
-            matching: query,
-            profileId: profileId,
-            referenceDate: referenceDate,
-            calendar: calendar
-        )
+        switch query {
+        case .rangeFilter(.all), .rangeFilter(.allSites):
+            return try clearAllExplicit(profileId: profileId)
+        default:
+            let records = try fetchVisitRecordsForExplicitAction(
+                matching: query,
+                profileId: profileId,
+                referenceDate: referenceDate,
+                calendar: calendar
+            )
+            return try deleteVisits(
+                withIDs: Set(records.map(\.id)),
+                profileId: profileId
+            )
+        }
     }
 
     @discardableResult
@@ -244,17 +358,64 @@ actor HistoryStore {
         withIDs ids: Set<UUID>,
         profileId: UUID?
     ) throws -> Int {
-        try deletionOwner.deleteVisits(in: makeContext(), withIDs: ids, profileId: profileId)
+        try database.transaction {
+            try $0.history.deleteVisits(ids: ids, profileID: profileId)
+        }
     }
 
     @discardableResult
     func clearAllExplicit(profileId: UUID?) throws -> Int {
-        try deletionOwner.clearAllExplicit(in: makeContext(), profileId: profileId)
+        try database.transaction {
+            try $0.history.clear(profileID: profileId)
+        }
     }
 
-    private func makeContext() -> ModelContext {
-        let ctx = ModelContext(container)
-        ctx.autosaveEnabled = false
-        return ctx
+    private func siteRecords(profileId: UUID?) throws -> [HistorySiteRecord] {
+        let profileID = try requiredProfileID(profileId)
+        let entries = try database.read {
+            try $0.history.entries(profileID: profileID)
+        }
+        var accumulators: [String: HistoryStoreRecordAssembly.SiteAccumulator] = [:]
+        for entry in entries {
+            let snapshot = HistoryStoreRecordAssembly.EntrySnapshot(
+                id: entry.id,
+                urlString: entry.urlString,
+                title: entry.title,
+                domain: entry.domain,
+                siteDomain: entry.siteDomain,
+                numberOfTotalVisits: entry.numberOfTotalVisits,
+                lastVisit: entry.lastVisit
+            )
+            let domain = HistoryStoreRecordAssembly.effectiveSiteDomain(for: snapshot)
+            if var accumulator = accumulators[domain] {
+                accumulator.visitCount += snapshot.numberOfTotalVisits
+                if HistoryStoreRecordAssembly.comparePreferredEntries(
+                    snapshot,
+                    accumulator.bestEntry,
+                    for: domain
+                ) {
+                    accumulator.bestEntry = snapshot
+                }
+                accumulators[domain] = accumulator
+            } else {
+                accumulators[domain] = .init(
+                    bestEntry: snapshot,
+                    visitCount: snapshot.numberOfTotalVisits
+                )
+            }
+        }
+        return accumulators.compactMap {
+            HistoryStoreRecordAssembly.siteRecord(
+                domain: $0.key,
+                accumulator: $0.value
+            )
+        }
+    }
+
+    private func requiredProfileID(_ profileID: UUID?) throws -> UUID {
+        guard let profileID else {
+            throw SumiDatabaseError.historyRequiresProfile
+        }
+        return profileID
     }
 }

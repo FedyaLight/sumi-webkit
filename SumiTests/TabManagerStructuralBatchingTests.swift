@@ -1,6 +1,5 @@
 import Combine
 import SumiDomain
-import SwiftData
 import WebKit
 import XCTest
 

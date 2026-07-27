@@ -22,18 +22,6 @@ actor SumiPermissionAntiAbuseStore: SumiPermissionAntiAbuseStoring {
         self.maximumEventsPerProfile = max(1, maximumEventsPerProfile)
     }
 
-    init(
-        storageDirectory: URL? = nil,
-        retentionInterval: TimeInterval = SumiPermissionPromptCooldown.eventRetention,
-        maximumEventsPerProfile: Int = SumiPermissionPromptCooldown.maximumEventsPerProfile
-    ) {
-        persistenceAuthority = SumiPermissionPersistenceAuthority(
-            storageDirectory: storageDirectory
-        )
-        self.retentionInterval = retentionInterval
-        self.maximumEventsPerProfile = max(1, maximumEventsPerProfile)
-    }
-
     func record(_ event: SumiPermissionAntiAbuseEvent) async {
         persistenceAuthority.mutateAntiAbuseEvents { records in
             records.append(event)

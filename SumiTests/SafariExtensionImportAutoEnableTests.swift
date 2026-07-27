@@ -1,4 +1,3 @@
-import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -70,7 +69,7 @@ final class SafariExtensionImportAutoEnableTests: XCTestCase {
         let importStore = RecordingSafariExtensionImportStore()
         let container = try makeTestContainer()
         let fixture = makeEnabledModule(
-            context: container.mainContext,
+            context: container,
             importStore: importStore,
             defaults: harness.defaults
         )
@@ -97,7 +96,7 @@ final class SafariExtensionImportAutoEnableTests: XCTestCase {
         let importStore = RecordingSafariExtensionImportStore()
         let container = try makeTestContainer()
         let fixture = makeEnabledModule(
-            context: container.mainContext,
+            context: container,
             importStore: importStore,
             defaults: harness.defaults
         )
@@ -108,7 +107,7 @@ final class SafariExtensionImportAutoEnableTests: XCTestCase {
         let firstResult = await module.syncDiscoveredSafariWebExtensions([candidate])
         let installed = try XCTUnwrap(firstResult.addedExtensions.first)
         let entity = try XCTUnwrap(
-            try fixture.inspection.installation.metadata.extensionEntity(
+            try fixture.inspection.installation.metadata.extensionMetadata(
                 for: installed.id
             )
         )
@@ -137,7 +136,7 @@ final class SafariExtensionImportAutoEnableTests: XCTestCase {
         let importStore = RecordingSafariExtensionImportStore()
         let container = try makeTestContainer()
         let fixture = makeEnabledModule(
-            context: container.mainContext,
+            context: container,
             importStore: importStore,
             defaults: harness.defaults
         )
@@ -184,7 +183,7 @@ final class SafariExtensionImportAutoEnableTests: XCTestCase {
     @available(macOS 15.5, *)
     @available(macOS 15.5, *)
     private func makeEnabledModule(
-        context: ModelContext,
+        context: SumiDatabase,
         importStore: RecordingSafariExtensionImportStore,
         defaults: UserDefaults
     ) -> EnabledModuleFixture {
@@ -204,7 +203,7 @@ final class SafariExtensionImportAutoEnableTests: XCTestCase {
         )
         let module = SumiExtensionsModule(
             moduleRegistry: registry,
-            context: context,
+            database: context,
             initialProfileProvider: { profile },
             safariExtensionImportStore: importStore,
             managerFactory: { _, _, _, _ in managerFixture.manager }
@@ -221,11 +220,8 @@ final class SafariExtensionImportAutoEnableTests: XCTestCase {
         )
     }
 
-    private func makeTestContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+    private func makeTestContainer() throws -> SumiDatabase {
+        try SumiDatabase.inMemory()
     }
 
     private func makeSafariWebExtensionCandidate(

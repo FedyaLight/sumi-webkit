@@ -1,4 +1,3 @@
-import SwiftData
 import WebKit
 import XCTest
 
@@ -129,7 +128,7 @@ class ExtensionNativeMessagingAdmissionTestCase: XCTestCase {
         }
     }
 
-    private var modelContainers: [ModelContainer] = []
+    private var modelContainers: [SumiDatabase] = []
 
     override func tearDown() {
         modelContainers = []
@@ -142,15 +141,12 @@ class ExtensionNativeMessagingAdmissionTestCase: XCTestCase {
         name: String,
         withBackgroundContent: Bool = false
     ) async throws -> Harness {
-        let container = try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+        let container = try SumiDatabase.inMemory()
         modelContainers.append(container)
         let profile = Profile(name: name)
         let inspection = ExtensionManagerInspectionCapture()
         let manager = ExtensionManager(
-            context: container.mainContext,
+            database: container,
             initialProfile: profile,
             testInspectionDidAssemble: inspection.install
         )

@@ -1,71 +1,68 @@
-import SwiftData
-
 actor TabRestoreStoreReader {
-    private let container: ModelContainer
+    private let database: SumiDatabase
 
-    init(container: ModelContainer) {
-        self.container = container
+    init(database: SumiDatabase) {
+        self.database = database
     }
 
     func read() throws -> TabRestoreStoreRecords {
-        let context = ModelContext(container)
-        context.autosaveEnabled = false
-
-        let spaces = try context.fetch(FetchDescriptor<SpaceEntity>()).map { entity in
-            TabRestoreSpaceRecord(
-                id: entity.id,
-                name: entity.name,
-                icon: entity.icon,
-                index: entity.index,
-                workspaceThemeData: entity.workspaceThemeData,
-                profileId: entity.profileId
+        try database.read { connection in
+            let spaces = try connection.workspace.spaces().map { record in
+                TabRestoreSpaceRecord(
+                    id: record.id,
+                    name: record.name,
+                    icon: record.icon,
+                    index: record.index,
+                    workspaceThemeData: record.workspaceThemeData,
+                    profileId: record.profileID
+                )
+            }
+            let tabs = try connection.workspace.tabs().map { record in
+                TabRestoreTabRecord(
+                    id: record.id,
+                    urlString: record.urlString,
+                    name: record.name,
+                    isPinned: record.isPinned,
+                    isSpacePinned: record.isSpacePinned,
+                    index: record.index,
+                    spaceId: record.spaceID,
+                    profileId: record.profileID,
+                    executionProfileId: record.executionProfileID,
+                    folderId: record.folderID,
+                    iconAsset: record.iconAsset,
+                    titleIsCustom: record.titleIsCustom,
+                    currentURLString: record.currentURLString,
+                    canGoBack: record.canGoBack,
+                    canGoForward: record.canGoForward
+                )
+            }
+            let folders = try connection.workspace.folders().map { record in
+                TabRestoreFolderRecord(
+                    id: record.id,
+                    name: record.name,
+                    icon: record.icon,
+                    color: record.color,
+                    spaceId: record.spaceID,
+                    parentFolderId: record.parentFolderID,
+                    isOpen: record.isOpen,
+                    index: record.index
+                )
+            }
+            let states = try connection.workspace.state().map { record in
+                [
+                    TabRestoreStateRecord(
+                        currentTabID: record.currentTabID,
+                        currentSpaceID: record.currentSpaceID,
+                        splitGroupsData: record.splitGroupsData
+                    ),
+                ]
+            } ?? []
+            return TabRestoreStoreRecords(
+                spaces: spaces,
+                tabs: tabs,
+                folders: folders,
+                states: states
             )
         }
-        let tabs = try context.fetch(FetchDescriptor<TabEntity>()).map { entity in
-            TabRestoreTabRecord(
-                id: entity.id,
-                urlString: entity.urlString,
-                name: entity.name,
-                isPinned: entity.isPinned,
-                isSpacePinned: entity.isSpacePinned,
-                index: entity.index,
-                spaceId: entity.spaceId,
-                profileId: entity.profileId,
-                executionProfileId: entity.executionProfileId,
-                folderId: entity.folderId,
-                iconAsset: entity.iconAsset,
-                // Legacy launchers have no marker. Preserve their saved names
-                // instead of risking a user-authored title being overwritten.
-                titleIsCustom: entity.titleIsCustom ?? true,
-                currentURLString: entity.currentURLString,
-                canGoBack: entity.canGoBack,
-                canGoForward: entity.canGoForward
-            )
-        }
-        let folders = try context.fetch(FetchDescriptor<FolderEntity>()).map { entity in
-            TabRestoreFolderRecord(
-                id: entity.id,
-                name: entity.name,
-                icon: entity.icon,
-                color: entity.color,
-                spaceId: entity.spaceId,
-                parentFolderId: entity.parentFolderId,
-                isOpen: entity.isOpen,
-                index: entity.index
-            )
-        }
-        let states = try context.fetch(FetchDescriptor<TabsStateEntity>()).map { entity in
-            TabRestoreStateRecord(
-                currentTabID: entity.currentTabID,
-                currentSpaceID: entity.currentSpaceID,
-                splitGroupsData: entity.splitGroupsData
-            )
-        }
-        return TabRestoreStoreRecords(
-            spaces: spaces,
-            tabs: tabs,
-            folders: folders,
-            states: states
-        )
     }
 }

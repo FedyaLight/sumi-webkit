@@ -1,4 +1,3 @@
-import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -21,7 +20,7 @@ final class ExtensionPackagePathValidationTests: XCTestCase {
 
         XCTAssertTrue(loaded.records.isEmpty)
         XCTAssertTrue(loaded.enabledEntities.isEmpty)
-        XCTAssertNil(try fixture.store.extensionEntity(for: record.id))
+        XCTAssertNil(try fixture.store.extensionMetadata(for: record.id))
         XCTAssertTrue(FileManager.default.fileExists(atPath: outside.path))
     }
 
@@ -47,14 +46,14 @@ final class ExtensionPackagePathValidationTests: XCTestCase {
         let loaded = fixture.store.loadInstalledExtensionMetadata { _ in }
 
         XCTAssertTrue(loaded.records.isEmpty)
-        XCTAssertNil(try fixture.store.extensionEntity(for: record.id))
+        XCTAssertNil(try fixture.store.extensionMetadata(for: record.id))
         XCTAssertTrue(FileManager.default.fileExists(atPath: outside.path))
     }
 
     private func makeFixture() throws -> (
         root: URL,
         extensions: URL,
-        container: ModelContainer,
+        container: SumiDatabase,
         store: ExtensionInstallationMetadataStore
     ) {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -69,16 +68,13 @@ final class ExtensionPackagePathValidationTests: XCTestCase {
             at: extensions,
             withIntermediateDirectories: true
         )
-        let container = try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+        let container = try SumiDatabase.inMemory()
         return (
             root,
             extensions,
             container,
             ExtensionInstallationMetadataStore(
-                context: container.mainContext,
+                database: container,
                 extensionsDirectory: extensions
             )
         )

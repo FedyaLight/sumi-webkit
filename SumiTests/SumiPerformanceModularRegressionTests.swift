@@ -1,5 +1,4 @@
 import Foundation
-import SwiftData
 import WebKit
 import XCTest
 
@@ -286,20 +285,17 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         registry: SumiModuleRegistry,
         probe: ExtensionsRuntimeProbe
     ) throws -> SumiExtensionsModule {
-        let container = try ModelContainer(
-            for: Schema([ExtensionEntity.self]),
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+        let container = try SumiDatabase.inMemory()
         let initialProfile = Profile(name: "Prompt 20 Extensions")
         return SumiExtensionsModule(
             moduleRegistry: registry,
-            context: container.mainContext,
+            database: container,
             browserConfiguration: BrowserConfiguration(),
             initialProfileProvider: { initialProfile },
             managerFactory: { context, initialProfile, browserConfiguration, moduleRegistry in
                 probe.managerCount += 1
                 return ExtensionManager(
-                    context: context,
+            database: context,
                     initialProfile: initialProfile,
                     browserConfiguration: browserConfiguration,
                     moduleRegistry: moduleRegistry

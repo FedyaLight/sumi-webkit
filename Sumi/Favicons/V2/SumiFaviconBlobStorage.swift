@@ -8,6 +8,7 @@ struct SumiFaviconBlobStorage: Sendable {
     let maintenance: SumiFaviconBlobMaintenance
 
     init(
+        database: SumiDatabase,
         rootDirectory: URL,
         fileManager: FileManager = .default,
         persistCoalesceInterval: TimeInterval = 0.75
@@ -15,6 +16,7 @@ struct SumiFaviconBlobStorage: Sendable {
         let index = SumiFaviconBlobIndex()
         let transaction = SumiFaviconBlobTransaction(
             cache: SumiFaviconBlobCache(),
+            database: database,
             diskStorage: SumiFaviconBlobDiskStorage(
                 rootDirectory: rootDirectory,
                 fileManager: fileManager

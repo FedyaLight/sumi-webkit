@@ -2,13 +2,12 @@ import AppKit
 import Combine
 import Observation
 import SumiWebRuntime
-import SwiftData
 
 @MainActor
 class TabManager: ObservableObject {
     nonisolated(unsafe) let objectWillChange: ObservableObjectPublisher
     let runtimePortConnection: TabRuntimePortConnection
-    let context: ModelContext
+    let database: SumiDatabase
     let profileReferenceAdmission: ProfileReferenceAdmissionLedger
     let structuralSnapshotStore: TabStructuralSnapshotStore
     let selectionStore: TabSelectionStore
@@ -27,7 +26,7 @@ class TabManager: ObservableObject {
     let startupRestoreLifecycle: TabStartupRestoreLifecycle
 
     init(
-        context: ModelContext,
+        database: SumiDatabase,
         webViewSessions: WebViewSessionRepository,
         profileReferenceAdmission: ProfileReferenceAdmissionLedger,
         initialRuntimePorts: RuntimePortRegistry? = nil,
@@ -41,7 +40,7 @@ class TabManager: ObservableObject {
     ) {
         self.objectWillChange = objectWillChange
         self.runtimePortConnection = TabRuntimePortConnection(initialRuntimePorts)
-        self.context = context
+        self.database = database
         self.profileReferenceAdmission = profileReferenceAdmission
         let stateStore = TabStateStore()
         self.stateStore = stateStore
@@ -62,7 +61,7 @@ class TabManager: ObservableObject {
             faviconCapabilities: faviconCapabilities,
             visitedLinkStore: visitedLinkStore
         )
-        let writes = TabStoreWriteExecutor(container: context.container)
+        let writes = TabStoreWriteExecutor(database: database)
         let structuralSnapshotStore = TabStructuralSnapshotStore(writes: writes)
         let selectionStore = TabSelectionStore(writes: writes)
         let runtimeStateStore = TabRuntimeStateStore(writes: writes)

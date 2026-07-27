@@ -1,4 +1,3 @@
-import SwiftData
 import WebKit
 import XCTest
 
@@ -137,19 +136,29 @@ final class SafariContentBlockerRuleLocatorTests: XCTestCase {
         let defaults = UserDefaults(
             suiteName: "SafariContentBlockerRuleLocatorTests.\(UUID().uuidString)"
         )!
+        let database = try SumiDatabase.inMemory()
         let url = try XCTUnwrap(URL(string: "https://example.com/article"))
 
-        let firstModule = try makeModule(defaults: defaults)
+        let firstModule = try makeModule(
+            defaults: defaults,
+            database: database
+        )
         firstModule.setSafariContentBlockerSiteOverride(.disabled, for: url)
 
-        let reloadedModule = try makeModule(defaults: defaults)
+        let reloadedModule = try makeModule(
+            defaults: defaults,
+            database: database
+        )
         XCTAssertFalse(
             reloadedModule.safariContentBlockerSiteState(for: url).isEnabledForSite
         )
 
         reloadedModule.setSafariContentBlockerSiteOverride(.inherit, for: url)
 
-        let clearedModule = try makeModule(defaults: defaults)
+        let clearedModule = try makeModule(
+            defaults: defaults,
+            database: database
+        )
         XCTAssertTrue(
             clearedModule.safariContentBlockerSiteState(for: url).isEnabledForSite
         )
@@ -223,19 +232,17 @@ final class SafariContentBlockerRuleLocatorTests: XCTestCase {
     private func makeModule(
         defaults: UserDefaults = UserDefaults(
             suiteName: "SafariContentBlockerRuleLocatorTests.\(UUID().uuidString)"
-        )!
+        )!,
+        database: SumiDatabase? = nil
     ) throws -> SumiExtensionsModule {
-        let container = try ModelContainer(
-            for: SafariContentBlockerEntity.self,
-            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-        )
+        let container = try database ?? SumiDatabase.inMemory()
         let registry = SumiModuleRegistry(
             settingsStore: SumiModuleSettingsStore(userDefaults: defaults)
         )
         registry.setEnabled(true, for: .extensions)
         return SumiExtensionsModule(
             moduleRegistry: registry,
-            context: ModelContext(container)
+            database: container
         )
     }
 

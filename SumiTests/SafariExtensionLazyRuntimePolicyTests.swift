@@ -1,4 +1,3 @@
-import SwiftData
 import WebKit
 import XCTest
 
@@ -11,7 +10,7 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Lazy Launch")
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let inspection = fixture.inspection
@@ -31,7 +30,7 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
         let profile = Profile(name: "Weak Auxiliary Events")
         let attachedRuntime = ExtensionAttachedRuntimeCapture()
         var manager: ExtensionManager? = ExtensionManager(
-            context: container.mainContext,
+            database: container,
             initialProfile: profile,
             attachedRuntimeDidInstall: attachedRuntime.install
         )
@@ -67,7 +66,7 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
         registry.enable(.extensions)
 
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile,
             moduleRegistry: registry
         )
@@ -86,7 +85,7 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
         registry.enable(.extensions)
         let module = SumiExtensionsModule(
             moduleRegistry: registry,
-            context: container.mainContext,
+            database: container,
             initialProfileProvider: { profile }
         )
         let browserManager = BrowserManager()
@@ -120,12 +119,12 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
         let attachedRuntime = ExtensionAttachedRuntimeCapture()
         let module = SumiExtensionsModule(
             moduleRegistry: registry,
-            context: container.mainContext,
+            database: container,
             initialProfileProvider: { fallbackProfile },
             managerFactory: { context, initialProfile, browserConfiguration, moduleRegistry in
                 initialProfileUsedByFactory = initialProfile
                 let manager = ExtensionManager(
-                    context: context,
+            database: context,
                     initialProfile: initialProfile,
                     browserConfiguration: browserConfiguration,
                     moduleRegistry: moduleRegistry,
@@ -155,7 +154,7 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Disabled Install")
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let manager = fixture.manager
@@ -186,7 +185,7 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
         }
 
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: profiles[0]
         )
         let manager = fixture.manager
@@ -241,7 +240,7 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
         let profileA = Profile(name: "Cache A")
         let profileB = Profile(name: "Cache B")
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: profileA
         )
         let manager = fixture.manager
@@ -285,7 +284,7 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
         let profileA = Profile(name: "Disable A")
         let profileB = Profile(name: "Disable B")
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: profileA
         )
         let manager = fixture.manager
@@ -323,7 +322,7 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Mutation Quiesce")
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let manager = fixture.manager
@@ -362,11 +361,8 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
         )
     }
 
-    private func makeTestContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+    private func makeTestContainer() throws -> SumiDatabase {
+        try SumiDatabase.inMemory()
     }
 
     private func makeScopedModuleRegistry() -> SumiModuleRegistry {

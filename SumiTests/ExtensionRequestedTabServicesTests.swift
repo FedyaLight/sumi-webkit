@@ -249,7 +249,7 @@ final class ExtensionRequestedTabServicesTests:
         let attachedRuntime = ExtensionAttachedRuntimeCapture()
         let inspection = ExtensionManagerInspectionCapture()
         let manager = makeSafariExtensionTestExtensionManager(
-            context: container.mainContext,
+            database: container,
             initialProfile: profile,
             attachedRuntimeCapture: attachedRuntime,
             inspectionCapture: inspection
@@ -1065,7 +1065,7 @@ final class ExtensionRequestedTabServicesTests:
         let attachedRuntime = ExtensionAttachedRuntimeCapture()
         let inspection = ExtensionManagerInspectionCapture()
         let manager = makeSafariExtensionTestExtensionManager(
-            context: container.mainContext,
+            database: container,
             initialProfile: profile,
             browserConfiguration: browserConfiguration,
             moduleRegistry: moduleRegistry,
@@ -1074,7 +1074,7 @@ final class ExtensionRequestedTabServicesTests:
         )
         let extensionsModule = SumiExtensionsModule(
             moduleRegistry: moduleRegistry,
-            context: container.mainContext,
+            database: container,
             browserConfiguration: browserConfiguration,
             initialProfileProvider: { profile },
             managerFactory: { _, _, _, _ in manager }
@@ -1201,7 +1201,7 @@ final class ExtensionRequestedTabServicesTests:
         let attachedRuntime = ExtensionAttachedRuntimeCapture()
         let inspection = ExtensionManagerInspectionCapture()
         let manager = makeSafariExtensionTestExtensionManager(
-            context: container.mainContext,
+            database: container,
             initialProfile: profileA,
             attachedRuntimeCapture: attachedRuntime,
             inspectionCapture: inspection

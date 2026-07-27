@@ -6,43 +6,22 @@
 
 import AppKit
 import Combine
-import CoreData
 import CoreServices
 import Darwin
+import GRDB
 import OSLog
-import SwiftData
 import SwiftUI
 import WebKit
-
-enum SumiStartupSchemaV4: VersionedSchema {
-    static let versionIdentifier = Schema.Version(4, 0, 0)
-
-    static var models: [any PersistentModel.Type] {
-        [
-            SpaceEntity.self,
-            ProfileEntity.self,
-            ProfileRetirementEntity.self,
-            TabEntity.self,
-            FolderEntity.self,
-            TabsStateEntity.self,
-            HistoryEntryEntity.self,
-            HistoryVisitEntity.self,
-            ExtensionEntity.self,
-            SafariContentBlockerEntity.self,
-            PermissionDecisionEntity.self,
-        ]
-    }
-}
 
 @MainActor
 final class SumiStartupPersistence {
     static let shared = SumiStartupPersistence()
     private let lifetimeLock: SumiStartupStoreIO.LifetimeLock?
-    private let containerResult: Result<ModelContainer, Error>
+    private let databaseResult: Result<SumiDatabase, Error>
 
-    var container: ModelContainer {
+    var database: SumiDatabase {
         do {
-            return try modelContainer()
+            return try openDatabase()
         } catch {
             Self.terminateBecauseStartupPersistenceUnavailable(error)
         }
@@ -50,10 +29,8 @@ final class SumiStartupPersistence {
 
     // MARK: - Constants
     nonisolated private static let log = Logger.sumi(category: "StartupPersistence")
-    nonisolated private static let storeFileName = "default.store"
+    nonisolated private static let storeFileName = "Sumi.sqlite"
     nonisolated private static let quarantineDirectoryName = "StartupPersistenceQuarantine"
-
-    static let schema = Schema(versionedSchema: SumiStartupSchemaV4.self)
 
     // MARK: - URLs
     nonisolated private static var appSupportURL: URL {
@@ -73,40 +50,42 @@ final class SumiStartupPersistence {
         do {
             let lifetimeLock = try SumiStartupStoreIO.LifetimeLock(storeURL: Self.storeURL)
             self.lifetimeLock = lifetimeLock
-            self.containerResult = Result {
-                try Self.makePersistentContainerForStartup()
+            self.databaseResult = Result {
+                try Self.makePersistentDatabaseForStartup()
             }
         } catch {
             self.lifetimeLock = nil
-            self.containerResult = .failure(StartupPersistenceError.storeLockUnavailable(error))
+            self.databaseResult = .failure(
+                StartupPersistenceError.storeLockUnavailable(error)
+            )
         }
-        if case .failure(let error) = containerResult {
+        if case .failure(let error) = databaseResult {
             Self.log.fault(
                 "Startup persistence is unavailable. \(Self.startupFailureMessage(for: error), privacy: .public) error=\(String(describing: error), privacy: .public)"
             )
         }
     }
 
-    func modelContainer() throws -> ModelContainer {
-        try containerResult.get()
+    func openDatabase() throws -> SumiDatabase {
+        try databaseResult.get()
     }
 
-    static func makePersistentContainerForStartup() throws -> ModelContainer {
-        try makePersistentContainerForStartup(
+    static func makePersistentDatabaseForStartup() throws -> SumiDatabase {
+        try makePersistentDatabaseForStartup(
             storeURL: Self.storeURL,
             quarantineRootURL: Self.quarantineRootURL,
-            openPersistentContainer: Self.openPersistentContainer
+            openDatabase: SumiDatabase.open
         )
     }
 
-    static func makePersistentContainerForStartup<Container>(
+    static func makePersistentDatabaseForStartup<Database>(
         storeURL: URL,
         quarantineRootURL: URL,
         performRecoveryOperation: SumiStartupStoreRecovery.RecoveryOperationRunner = { _, operation in
             try operation()
         },
-        openPersistentContainer: (URL) throws -> Container
-    ) throws -> Container {
+        openDatabase: (URL) throws -> Database
+    ) throws -> Database {
         do {
             try SumiStartupStoreRecovery.resumeInterruptedTransition(
                 at: storeURL,
@@ -117,29 +96,29 @@ final class SumiStartupPersistence {
         }
 
         do {
-            let resolvedContainer = try openPersistentContainer(storeURL)
-            Self.log.info("SwiftData container initialized successfully.")
-            return resolvedContainer
+            let resolvedDatabase = try openDatabase(storeURL)
+            Self.log.info("Browser database initialized successfully.")
+            return resolvedDatabase
         } catch {
             let diagnostics = Self.classifyStoreOpenFailure(error)
             switch diagnostics.reason {
             case .diskSpace:
                 Self.log.fault(
-                    "SwiftData container initialization failed because disk space is insufficient. Local store files were not removed. error=\(String(describing: error), privacy: .public)"
+                    "Database initialization failed because disk space is insufficient. Local store files were not removed. error=\(String(describing: error), privacy: .public)"
                 )
                 throw StartupPersistenceError.diskSpace(error)
 
             case .permissionDenied:
                 Self.log.fault(
-                    "SwiftData container initialization failed because store access was denied. Local store files were not removed. error=\(String(describing: error), privacy: .public)"
+                    "Database initialization failed because store access was denied. Local store files were not removed. error=\(String(describing: error), privacy: .public)"
                 )
                 throw StartupPersistenceError.permissionDenied(error)
 
-            case .migrationOrSchemaMismatch:
+            case .schemaMismatch:
                 Self.log.fault(
-                    "SwiftData container initialization failed because the local store schema does not match this app version. Local store files were not removed. error=\(String(describing: error), privacy: .public)"
+                    "Database initialization failed because the local schema does not match this app version. Local store files were not removed. error=\(String(describing: error), privacy: .public)"
                 )
-                throw StartupPersistenceError.migrationOrSchemaMismatch(error)
+                throw StartupPersistenceError.schemaMismatch(error)
 
             case .localStoreCorruption:
                 return try recoverCorruptStore(
@@ -147,27 +126,27 @@ final class SumiStartupPersistence {
                     quarantineRootURL: quarantineRootURL,
                     initialError: error,
                     performRecoveryOperation: performRecoveryOperation,
-                    openPersistentContainer: openPersistentContainer
+                    openDatabase: openDatabase
                 )
 
             case .unclassified:
                 Self.log.fault(
-                    "SwiftData container initialization failed for an unclassified reason. Local store files were not removed. error=\(String(describing: error), privacy: .public)"
+                    "Database initialization failed for an unclassified reason. Local store files were not removed. error=\(String(describing: error), privacy: .public)"
                 )
                 throw StartupPersistenceError.unclassified(error)
             }
         }
     }
 
-    private static func recoverCorruptStore<Container>(
+    private static func recoverCorruptStore<Database>(
         at storeURL: URL,
         quarantineRootURL: URL,
         initialError: Error,
         performRecoveryOperation: SumiStartupStoreRecovery.RecoveryOperationRunner,
-        openPersistentContainer: (URL) throws -> Container
-    ) throws -> Container {
+        openDatabase: (URL) throws -> Database
+    ) throws -> Database {
         Self.log.fault(
-            "SwiftData reported structured SQLite corruption. Preserving the store family before recovery. error=\(String(describing: initialError), privacy: .public)"
+            "SQLite reported structured database corruption. Preserving the store family before recovery. error=\(String(describing: initialError), privacy: .public)"
         )
 
         let quarantine: SumiStartupStoreRecovery.Quarantine
@@ -199,9 +178,9 @@ final class SumiStartupPersistence {
         }
 
         do {
-            let recoveredContainer = try openPersistentContainer(storeURL)
-            Self.log.notice("Opened SwiftData from the preserved store-family copy.")
-            return recoveredContainer
+            let recoveredDatabase = try openDatabase(storeURL)
+            Self.log.notice("Opened the database from the preserved store-family copy.")
+            return recoveredDatabase
         } catch let recoveryError {
             let recoveryDiagnostics = Self.classifyStoreOpenFailure(recoveryError)
             guard recoveryDiagnostics.authorizesStoreReplacement else {
@@ -225,11 +204,11 @@ final class SumiStartupPersistence {
             }
 
             do {
-                let freshContainer = try openPersistentContainer(storeURL)
+                let freshDatabase = try openDatabase(storeURL)
                 Self.log.notice(
-                    "Created a fresh SwiftData store after preserving the corrupt store family at \(quarantine.directoryURL.path, privacy: .public)."
+                    "Created a fresh database after preserving the corrupt store family at \(quarantine.directoryURL.path, privacy: .public)."
                 )
-                return freshContainer
+                return freshDatabase
             } catch let freshStoreError {
                 throw StartupPersistenceError.freshStoreOpenFailed(
                     initialError: initialError,
@@ -239,23 +218,11 @@ final class SumiStartupPersistence {
         }
     }
 
-    static func makeContainer(configuration: ModelConfiguration) throws -> ModelContainer {
-        try ModelContainer(
-            for: Self.schema,
-            configurations: [configuration]
-        )
-    }
-
-    private static func openPersistentContainer(at storeURL: URL) throws -> ModelContainer {
-        let config = ModelConfiguration(url: storeURL)
-        return try makeContainer(configuration: config)
-    }
-
     // MARK: - Error Classification
     enum StoreOpenFailureReason: Equatable {
         case diskSpace
         case permissionDenied
-        case migrationOrSchemaMismatch
+        case schemaMismatch
         case localStoreCorruption
         case unclassified
     }
@@ -271,7 +238,7 @@ final class SumiStartupPersistence {
     private enum StartupPersistenceError: Error {
         case diskSpace(Error)
         case permissionDenied(Error)
-        case migrationOrSchemaMismatch(Error)
+        case schemaMismatch(Error)
         case unclassified(Error)
         case preservationFailed(initialError: Error, preservationError: Error)
         case recoveryPreparationFailed(initialError: Error, preparationError: Error)
@@ -283,6 +250,23 @@ final class SumiStartupPersistence {
     }
 
     nonisolated static func classifyStoreOpenFailure(_ error: Error) -> StoreOpenFailureDiagnostics {
+        if let databaseError = error as? SumiDatabaseError,
+           case .unsupportedSchemaVersion = databaseError {
+            return StoreOpenFailureDiagnostics(reason: .schemaMismatch)
+        }
+        if let databaseError = error as? DatabaseError {
+            switch databaseError.resultCode {
+            case .SQLITE_FULL:
+                return StoreOpenFailureDiagnostics(reason: .diskSpace)
+            case .SQLITE_PERM, .SQLITE_READONLY, .SQLITE_AUTH:
+                return StoreOpenFailureDiagnostics(reason: .permissionDenied)
+            case .SQLITE_CORRUPT, .SQLITE_NOTADB:
+                return StoreOpenFailureDiagnostics(reason: .localStoreCorruption)
+            default:
+                break
+            }
+        }
+
         let errors = Self.errorTree(error)
         let lower = errors
             .flatMap { [$0.localizedDescription, $0.domain] }
@@ -303,9 +287,8 @@ final class SumiStartupPersistence {
             return StoreOpenFailureDiagnostics(reason: .permissionDenied)
         }
 
-        if errors.contains(where: Self.isMigrationOrSchemaMismatch)
-            || Self.descriptionIndicatesMigrationOrSchemaMismatch(lower) {
-            return StoreOpenFailureDiagnostics(reason: .migrationOrSchemaMismatch)
+        if Self.descriptionIndicatesSchemaMismatch(lower) {
+            return StoreOpenFailureDiagnostics(reason: .schemaMismatch)
         }
 
         if errors.contains(where: Self.isSQLiteCorruption) {
@@ -322,7 +305,7 @@ final class SumiStartupPersistence {
         if error.domain == NSCocoaErrorDomain && error.code == NSFileWriteOutOfSpaceError {
             return true
         }
-        return error.domain == NSSQLiteErrorDomain && Self.primarySQLiteCode(error.code) == 13
+        return false
     }
 
     nonisolated private static func isPermissionError(_ error: NSError) -> Bool {
@@ -333,39 +316,21 @@ final class SumiStartupPersistence {
             && (error.code == NSFileReadNoPermissionError || error.code == NSFileWriteNoPermissionError) {
             return true
         }
-        guard error.domain == NSSQLiteErrorDomain else { return false }
-        return [3, 8].contains(Self.primarySQLiteCode(error.code))
+        return false
     }
 
-    nonisolated private static func isMigrationOrSchemaMismatch(_ error: NSError) -> Bool {
-        let migrationRelatedCocoaCodes: Set<Int> = [
-            134100,
-            134110,
-            134120,
-            134130,
-            134140,
-            134150,
-            134160,
-            134170,
-        ]
-        return error.domain == NSCocoaErrorDomain && migrationRelatedCocoaCodes.contains(error.code)
-    }
-
-    nonisolated private static func descriptionIndicatesMigrationOrSchemaMismatch(_ description: String) -> Bool {
-        description.contains("migration")
-            || description.contains("missing mapping model")
-            || description.contains("incompatible version hash")
+    nonisolated private static func descriptionIndicatesSchemaMismatch(
+        _ description: String
+    ) -> Bool {
+        description.contains("unsupported schema version")
             || description.contains("store is incompatible")
             || description.contains("schema does not match")
     }
 
     nonisolated private static func isSQLiteCorruption(_ error: NSError) -> Bool {
-        guard error.domain == NSSQLiteErrorDomain else { return false }
-        return [11, 26].contains(Self.primarySQLiteCode(error.code))
-    }
-
-    nonisolated private static func primarySQLiteCode(_ code: Int) -> Int {
-        code & 0xFF
+        let description = error.localizedDescription.lowercased()
+        return description.contains("database disk image is malformed")
+            || description.contains("file is not a database")
     }
 
     private static func startupFailureMessage(for error: Error) -> String {
@@ -374,7 +339,7 @@ final class SumiStartupPersistence {
             return "Sumi could not open the local browser store because disk space is insufficient."
         case StartupPersistenceError.permissionDenied:
             return "Sumi could not open the local browser store because store file access was denied."
-        case StartupPersistenceError.migrationOrSchemaMismatch:
+        case StartupPersistenceError.schemaMismatch:
             return "Sumi could not open the local browser store because its schema does not match this app version."
         case StartupPersistenceError.unclassified:
             return "Sumi could not safely classify the local browser store failure. Browser data was not removed."
@@ -427,7 +392,11 @@ final class SumiStartupPersistence {
             visited.insert(identity)
             errors.append(ns)
 
-            for key in [NSUnderlyingErrorKey, NSMultipleUnderlyingErrorsKey, NSDetailedErrorsKey] {
+            for key in [
+                NSUnderlyingErrorKey,
+                NSMultipleUnderlyingErrorsKey,
+                "NSDetailedErrors",
+            ] {
                 guard let value = ns.userInfo[key] else { continue }
                 switch value {
                 case let nested as NSError:

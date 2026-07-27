@@ -40,7 +40,7 @@ final class ExtensionContextLoadingOwner {
             retain(extensionID: extensionID, profileID: profileID)
             return context
         }
-        guard let entity = try metadataStore.extensionEntity(for: extensionID),
+        guard let entity = try metadataStore.extensionMetadata(for: extensionID),
               entity.isEnabled
         else { return nil }
         _ = try await loader.loadEnabled(
@@ -65,7 +65,7 @@ final class ExtensionContextLoadingOwner {
             guard runtimeAccess.getExtensionContext(record.id, profileID) == nil
             else { continue }
             do {
-                guard let entity = try metadataStore.extensionEntity(for: record.id),
+                guard let entity = try metadataStore.extensionMetadata(for: record.id),
                       entity.isEnabled
                 else { continue }
                 _ = try await loader.loadEnabled(

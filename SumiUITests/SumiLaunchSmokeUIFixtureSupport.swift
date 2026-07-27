@@ -22,10 +22,10 @@ extension SumiLaunchSmokeUITestCase {
 
         let personalSpaceID = try requiredScalar(
             sql: """
-            SELECT lower(hex(ZID)) AS value
-            FROM ZSPACEENTITY
-            WHERE ZNAME = 'Personal'
-            ORDER BY ZINDEX
+            SELECT lower(hex(id)) AS value
+            FROM spaces
+            WHERE name = 'Personal'
+            ORDER BY position
             LIMIT 1;
             """,
             storeURL: storeURL,
@@ -34,9 +34,9 @@ extension SumiLaunchSmokeUITestCase {
 
         let profileID = try requiredScalar(
             sql: """
-            SELECT lower(hex(ZPROFILEID)) AS value
-            FROM ZSPACEENTITY
-            WHERE lower(hex(ZID)) = '\(personalSpaceID)'
+            SELECT lower(hex(profile_id)) AS value
+            FROM spaces
+            WHERE lower(hex(id)) = '\(personalSpaceID)'
             LIMIT 1;
             """,
             storeURL: storeURL,
@@ -45,9 +45,9 @@ extension SumiLaunchSmokeUITestCase {
 
         let topLevelLauncherID = try requiredScalar(
             sql: """
-            SELECT lower(hex(ZID)) AS value
-            FROM ZTABENTITY
-            WHERE lower(hex(ZID)) = '\(SumiSmokeFixtureIDs.topLevelLauncher)'
+            SELECT lower(hex(id)) AS value
+            FROM tabs
+            WHERE lower(hex(id)) = '\(SumiSmokeFixtureIDs.topLevelLauncher)'
             LIMIT 1;
             """,
             storeURL: storeURL,
@@ -56,9 +56,9 @@ extension SumiLaunchSmokeUITestCase {
 
         let regularTabID = try requiredScalar(
             sql: """
-            SELECT lower(hex(ZID)) AS value
-            FROM ZTABENTITY
-            WHERE lower(hex(ZID)) = '\(SumiSmokeFixtureIDs.regularTab)'
+            SELECT lower(hex(id)) AS value
+            FROM tabs
+            WHERE lower(hex(id)) = '\(SumiSmokeFixtureIDs.regularTab)'
             LIMIT 1;
             """,
             storeURL: storeURL,
@@ -66,9 +66,9 @@ extension SumiLaunchSmokeUITestCase {
         )
         let secondaryRegularTabID = try requiredScalar(
             sql: """
-            SELECT lower(hex(ZID)) AS value
-            FROM ZTABENTITY
-            WHERE lower(hex(ZID)) = '\(SumiSmokeFixtureIDs.secondaryRegularTab)'
+            SELECT lower(hex(id)) AS value
+            FROM tabs
+            WHERE lower(hex(id)) = '\(SumiSmokeFixtureIDs.secondaryRegularTab)'
             LIMIT 1;
             """,
             storeURL: storeURL,
@@ -77,9 +77,9 @@ extension SumiLaunchSmokeUITestCase {
 
         let folderID = try requiredScalar(
             sql: """
-            SELECT lower(hex(ZID)) AS value
-            FROM ZFOLDERENTITY
-            WHERE lower(hex(ZID)) = '\(SumiSmokeFixtureIDs.folder)'
+            SELECT lower(hex(id)) AS value
+            FROM folders
+            WHERE lower(hex(id)) = '\(SumiSmokeFixtureIDs.folder)'
             LIMIT 1;
             """,
             storeURL: storeURL,
@@ -88,9 +88,9 @@ extension SumiLaunchSmokeUITestCase {
 
         let folderLauncherID = try requiredScalar(
             sql: """
-            SELECT lower(hex(ZID)) AS value
-            FROM ZTABENTITY
-            WHERE lower(hex(ZID)) = '\(SumiSmokeFixtureIDs.folderLauncher)'
+            SELECT lower(hex(id)) AS value
+            FROM tabs
+            WHERE lower(hex(id)) = '\(SumiSmokeFixtureIDs.folderLauncher)'
             LIMIT 1;
             """,
             storeURL: storeURL,
@@ -99,9 +99,9 @@ extension SumiLaunchSmokeUITestCase {
 
         let essentialID = try requiredScalar(
             sql: """
-            SELECT lower(hex(ZID)) AS value
-            FROM ZTABENTITY
-            WHERE lower(hex(ZID)) = '\(SumiSmokeFixtureIDs.essential)'
+            SELECT lower(hex(id)) AS value
+            FROM tabs
+            WHERE lower(hex(id)) = '\(SumiSmokeFixtureIDs.essential)'
             LIMIT 1;
             """,
             storeURL: storeURL,
@@ -146,9 +146,9 @@ extension SumiLaunchSmokeUITestCase {
         let themeData = try startupSmokeWorkspaceThemeData()
         try executeSQLite(
             sql: """
-            UPDATE ZSPACEENTITY
-            SET ZWORKSPACETHEMEDATA = \(sqlBlob(hexString(from: themeData)))
-            WHERE lower(hex(ZID)) = '\(spaceID)';
+            UPDATE spaces
+            SET workspace_theme = \(sqlBlob(hexString(from: themeData)))
+            WHERE lower(hex(id)) = '\(spaceID)';
             """,
             storeURL: storeURL
         )
@@ -182,11 +182,11 @@ extension SumiLaunchSmokeUITestCase {
         let sidebar = try loadPersonalSidebarFixture()
         try executeSQLite(
             sql: """
-            UPDATE ZTABENTITY
-            SET ZNAME = \(sqlString(tabName)),
-                ZURLSTRING = \(sqlString(tabURLString)),
-                ZCURRENTURLSTRING = \(sqlString(tabURLString))
-            WHERE lower(hex(ZID)) = \(sqlString(SumiSmokeFixtureIDs.regularTab));
+            UPDATE tabs
+            SET name = \(sqlString(tabName)),
+                url = \(sqlString(tabURLString)),
+                current_url = \(sqlString(tabURLString))
+            WHERE lower(hex(id)) = \(sqlString(SumiSmokeFixtureIDs.regularTab));
             """,
             storeURL: storeURL
         )
@@ -221,10 +221,10 @@ extension SumiLaunchSmokeUITestCase {
     func preferredSmokeStartupSpaceID(in storeURL: URL) throws -> String {
         try optionalScalar(
             sql: """
-            SELECT lower(hex(ZID)) AS value
-            FROM ZSPACEENTITY
-            WHERE ZNAME = 'Personal'
-            ORDER BY ZINDEX
+            SELECT lower(hex(id)) AS value
+            FROM spaces
+            WHERE name = 'Personal'
+            ORDER BY position
             LIMIT 1;
             """,
             storeURL: storeURL,
@@ -235,9 +235,9 @@ extension SumiLaunchSmokeUITestCase {
     func firstSpaceID(in storeURL: URL) throws -> String {
         try requiredScalar(
             sql: """
-            SELECT lower(hex(ZID)) AS value
-            FROM ZSPACEENTITY
-            ORDER BY ZINDEX
+            SELECT lower(hex(id)) AS value
+            FROM spaces
+            ORDER BY position
             LIMIT 1;
             """,
             storeURL: storeURL,
@@ -320,10 +320,7 @@ extension SumiLaunchSmokeUITestCase {
 
         let preferencesURL = preferencesDirectory
             .appendingPathComponent("com.sumi.browser.plist", isDirectory: false)
-        var plist = additionalPreferences
-        // The explicit window snapshot is the fixture authority and cannot be
-        // replaced through supplemental preference seeding.
-        plist["sumi.windowSession.last.v3"] = windowSessionSnapshotData
+        let plist = additionalPreferences
         let plistData = try PropertyListSerialization.data(
             fromPropertyList: plist,
             format: .binary,
@@ -378,9 +375,9 @@ extension SumiLaunchSmokeUITestCase {
     func seedSmokeStore(at storeURL: URL) throws {
         let profileID = try requiredScalar(
             sql: """
-            SELECT lower(hex(ZID)) AS value
-            FROM ZPROFILEENTITY
-            WHERE lower(hex(ZID)) = '\(SumiSmokeFixtureIDs.profile)'
+            SELECT lower(hex(id)) AS value
+            FROM profiles
+            WHERE lower(hex(id)) = '\(SumiSmokeFixtureIDs.profile)'
             LIMIT 1;
             """,
             storeURL: storeURL,
@@ -403,17 +400,17 @@ extension SumiLaunchSmokeUITestCase {
             profileID: nil,
             folderID: nil,
             indexWhereClause: """
-            ZISSPACEPINNED = 1
-              AND lower(hex(ZSPACEID)) = '\(SumiSmokeFixtureIDs.personalSpace)'
-              AND ZFOLDERID IS NULL
+            is_space_pinned = 1
+              AND lower(hex(space_id)) = '\(SumiSmokeFixtureIDs.personalSpace)'
+              AND folder_id IS NULL
             """
         )
 
         let regularTabWhereClause = """
-        lower(hex(ZSPACEID)) = '\(SumiSmokeFixtureIDs.personalSpace)'
-          AND COALESCE(ZISSPACEPINNED, 0) = 0
-          AND COALESCE(ZISPINNED, 0) = 0
-          AND ZFOLDERID IS NULL
+        lower(hex(space_id)) = '\(SumiSmokeFixtureIDs.personalSpace)'
+          AND is_space_pinned = 0
+          AND is_pinned = 0
+          AND folder_id IS NULL
         """
         try insertSmokeTab(
             storeURL: storeURL,
@@ -463,8 +460,8 @@ extension SumiLaunchSmokeUITestCase {
             profileID: nil,
             folderID: SumiSmokeFixtureIDs.folder,
             indexWhereClause: """
-            ZISSPACEPINNED = 1
-              AND lower(hex(ZFOLDERID)) = '\(SumiSmokeFixtureIDs.folder)'
+            is_space_pinned = 1
+              AND lower(hex(folder_id)) = '\(SumiSmokeFixtureIDs.folder)'
             """
         )
         try insertSmokeTab(
@@ -478,8 +475,8 @@ extension SumiLaunchSmokeUITestCase {
             profileID: profileID,
             folderID: nil,
             indexWhereClause: """
-            ZISPINNED = 1
-              AND lower(hex(ZPROFILEID)) = '\(profileID)'
+            is_pinned = 1
+              AND lower(hex(profile_id)) = '\(profileID)'
             """
         )
     }
@@ -489,19 +486,14 @@ extension SumiLaunchSmokeUITestCase {
         id: String,
         profileID: String
     ) throws {
-        let entity = try nextPrimaryKeyInfo(entityName: "SpaceEntity", storeURL: storeURL)
         try executeSQLite(
             sql: """
-            INSERT INTO ZSPACEENTITY (
-                Z_PK, Z_ENT, Z_OPT, ZINDEX, ZICON, ZNAME, ZID, ZPROFILEID
+            INSERT INTO spaces (
+                id, profile_id, name, icon, position
             ) VALUES (
-                \(entity.primaryKey), \(entity.entity), 1, 0,
-                \(sqlString("house.fill")), \(sqlString("Personal")),
-                \(sqlBlob(id)), \(sqlBlob(profileID))
+                \(sqlBlob(id)), \(sqlBlob(profileID)), \(sqlString("Personal")),
+                \(sqlString("house.fill")), 0
             );
-            UPDATE Z_PRIMARYKEY
-            SET Z_MAX = MAX(Z_MAX, \(entity.primaryKey))
-            WHERE Z_NAME = 'SpaceEntity';
             """,
             storeURL: storeURL
         )
@@ -513,25 +505,20 @@ extension SumiLaunchSmokeUITestCase {
         name: String,
         spaceID: String
     ) throws {
-        let entity = try nextPrimaryKeyInfo(entityName: "FolderEntity", storeURL: storeURL)
         let index = try nextIndex(
             storeURL: storeURL,
-            tableName: "ZFOLDERENTITY",
-            whereClause: "lower(hex(ZSPACEID)) = '\(spaceID)'"
+            tableName: "folders",
+            whereClause: "lower(hex(space_id)) = '\(spaceID)'"
         )
 
         try executeSQLite(
             sql: """
-            INSERT INTO ZFOLDERENTITY (
-                Z_PK, Z_ENT, Z_OPT, ZINDEX, ZISOPEN, ZCOLOR, ZICON, ZNAME, ZID, ZSPACEID
+            INSERT INTO folders (
+                id, space_id, parent_folder_id, name, icon, color, is_open, position
             ) VALUES (
-                \(entity.primaryKey), \(entity.entity), 1, \(index), 1,
-                \(sqlString("#007AFF")), \(sqlString("")), \(sqlString(name)),
-                \(sqlBlob(id)), \(sqlBlob(spaceID))
+                \(sqlBlob(id)), \(sqlBlob(spaceID)), NULL, \(sqlString(name)),
+                \(sqlString("")), \(sqlString("#007AFF")), 1, \(index)
             );
-            UPDATE Z_PRIMARYKEY
-            SET Z_MAX = MAX(Z_MAX, \(entity.primaryKey))
-            WHERE Z_NAME = 'FolderEntity';
             """,
             storeURL: storeURL
         )
@@ -549,29 +536,28 @@ extension SumiLaunchSmokeUITestCase {
         folderID: String?,
         indexWhereClause: String
     ) throws {
-        let entity = try nextPrimaryKeyInfo(entityName: "TabEntity", storeURL: storeURL)
         let index = try nextIndex(
             storeURL: storeURL,
-            tableName: "ZTABENTITY",
+            tableName: "tabs",
             whereClause: indexWhereClause
         )
 
         try executeSQLite(
             sql: """
-            INSERT INTO ZTABENTITY (
-                Z_PK, Z_ENT, Z_OPT, ZCANGOBACK, ZCANGOFORWARD, ZINDEX,
-                ZISPINNED, ZISSPACEPINNED, ZCURRENTURLSTRING, ZICONASSET,
-                ZNAME, ZURLSTRING, ZFOLDERID, ZID, ZPROFILEID, ZSPACEID
+            INSERT INTO tabs (
+                id, profile_id, execution_profile_id, space_id, folder_id,
+                url, name, is_pinned, is_space_pinned, position, icon_asset,
+                title_is_custom, current_url, can_go_back, can_go_forward
             ) VALUES (
-                \(entity.primaryKey), \(entity.entity), 1, 0, 0, \(index),
-                \(isPinned ? 1 : 0), \(isSpacePinned ? 1 : 0),
-                \(sqlString(urlString)), \(sqlString("globe")),
-                \(sqlString(name)), \(sqlString(urlString)),
-                \(sqlBlob(folderID)), \(sqlBlob(id)), \(sqlBlob(profileID)), \(sqlBlob(spaceID))
+                \(sqlBlob(id)), \(sqlBlob(profileID)),
+                COALESCE(
+                    \(sqlBlob(profileID)),
+                    (SELECT profile_id FROM spaces WHERE id = \(sqlBlob(spaceID)))
+                ),
+                \(sqlBlob(spaceID)), \(sqlBlob(folderID)), \(sqlString(urlString)),
+                \(sqlString(name)), \(isPinned ? 1 : 0), \(isSpacePinned ? 1 : 0),
+                \(index), \(sqlString("globe")), 0, \(sqlString(urlString)), 0, 0
             );
-            UPDATE Z_PRIMARYKEY
-            SET Z_MAX = MAX(Z_MAX, \(entity.primaryKey))
-            WHERE Z_NAME = 'TabEntity';
             """,
             storeURL: storeURL
         )
@@ -585,13 +571,13 @@ extension SumiLaunchSmokeUITestCase {
     ) throws {
         let existingMinimum = try requiredScalar(
             sql: """
-            SELECT COALESCE(MIN(ZINDEX), 0) AS value
-            FROM ZTABENTITY
-            WHERE lower(hex(ZSPACEID)) = '\(personalSpaceID)'
-              AND COALESCE(ZISSPACEPINNED, 0) = 0
-              AND COALESCE(ZISPINNED, 0) = 0
-              AND ZFOLDERID IS NULL
-              AND lower(hex(ZID)) NOT IN (\(sqlString(primaryTabID)), \(sqlString(secondaryTabID)));
+            SELECT COALESCE(MIN(position), 0) AS value
+            FROM tabs
+            WHERE lower(hex(space_id)) = '\(personalSpaceID)'
+              AND is_space_pinned = 0
+              AND is_pinned = 0
+              AND folder_id IS NULL
+              AND lower(hex(id)) NOT IN (\(sqlString(primaryTabID)), \(sqlString(secondaryTabID)));
             """,
             storeURL: storeURL,
             description: "Unable to determine regular tab order for Personal space \(personalSpaceID)"
@@ -601,38 +587,16 @@ extension SumiLaunchSmokeUITestCase {
 
         try executeSQLite(
             sql: """
-            UPDATE ZTABENTITY
-            SET ZINDEX = CASE lower(hex(ZID))
+            UPDATE tabs
+            SET position = CASE lower(hex(id))
                 WHEN \(sqlString(primaryTabID)) THEN \(firstIndex)
                 WHEN \(sqlString(secondaryTabID)) THEN \(secondIndex)
-                ELSE ZINDEX
+                ELSE position
             END
-            WHERE lower(hex(ZID)) IN (\(sqlString(primaryTabID)), \(sqlString(secondaryTabID)));
+            WHERE lower(hex(id)) IN (\(sqlString(primaryTabID)), \(sqlString(secondaryTabID)));
             """,
             storeURL: storeURL
         )
-    }
-
-    func nextPrimaryKeyInfo(
-        entityName: String,
-        storeURL: URL
-    ) throws -> (entity: String, primaryKey: String) {
-        let rows = try sqliteRows(
-            sql: """
-            SELECT Z_ENT AS entity, COALESCE(Z_MAX, 0) + 1 AS primaryKey
-            FROM Z_PRIMARYKEY
-            WHERE Z_NAME = \(sqlString(entityName))
-            LIMIT 1;
-            """,
-            storeURL: storeURL
-        )
-        guard let row = rows.first,
-              let entity = row["entity"],
-              let primaryKey = row["primaryKey"]
-        else {
-            throw FixtureError.missingValue("Missing primary key metadata for \(entityName)")
-        }
-        return (entity, primaryKey)
     }
 
     func nextIndex(
@@ -642,7 +606,7 @@ extension SumiLaunchSmokeUITestCase {
     ) throws -> String {
         try requiredScalar(
             sql: """
-            SELECT COALESCE(MAX(ZINDEX), -1) + 1 AS value
+            SELECT COALESCE(MAX(position), -1) + 1 AS value
             FROM \(tableName)
             WHERE \(whereClause);
             """,
@@ -815,13 +779,13 @@ extension SumiLaunchSmokeUITestCase {
         while Date() < deadline {
             let orderedRegularTabIDs = (try? sqliteRows(
                 sql: """
-                SELECT lower(hex(ZID)) AS value
-                FROM ZTABENTITY
-                WHERE lower(hex(ZSPACEID)) = '\(personalSpaceHex)'
-                  AND COALESCE(ZISSPACEPINNED, 0) = 0
-                  AND COALESCE(ZISPINNED, 0) = 0
-                  AND ZFOLDERID IS NULL
-                ORDER BY ZINDEX;
+                SELECT lower(hex(id)) AS value
+                FROM tabs
+                WHERE lower(hex(space_id)) = '\(personalSpaceHex)'
+                  AND is_space_pinned = 0
+                  AND is_pinned = 0
+                  AND folder_id IS NULL
+                ORDER BY position;
                 """,
                 storeURL: storeURL
             ))?.compactMap { $0["value"] } ?? []
@@ -864,20 +828,20 @@ extension SumiLaunchSmokeUITestCase {
 
         return (try? sqliteRows(
             sql: """
-            SELECT lower(hex(ZID)) AS value
-            FROM ZTABENTITY
-            WHERE lower(hex(ZSPACEID)) = '\(personalSpaceHex)'
-              AND COALESCE(ZISSPACEPINNED, 0) = 0
-              AND COALESCE(ZISPINNED, 0) = 0
-              AND ZFOLDERID IS NULL
-            ORDER BY ZINDEX;
+            SELECT lower(hex(id)) AS value
+            FROM tabs
+            WHERE lower(hex(space_id)) = '\(personalSpaceHex)'
+              AND is_space_pinned = 0
+              AND is_pinned = 0
+              AND folder_id IS NULL
+            ORDER BY position;
             """,
             storeURL: storeURL
         ))?.count
     }
 
     var smokeStoreURL: URL? {
-        smokeAppSupportURL?.appendingPathComponent("default.store", isDirectory: false)
+        smokeAppSupportURL?.appendingPathComponent("Sumi.sqlite", isDirectory: false)
     }
 
     func requiredSmokeStoreURL() throws -> URL {

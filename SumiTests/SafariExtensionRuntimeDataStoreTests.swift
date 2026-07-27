@@ -1,4 +1,3 @@
-import SwiftData
 import SumiWebRuntime
 import WebKit
 import XCTest
@@ -39,13 +38,10 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
     }
 
     func testExtensionRuntimeWebsiteDataStoreMatchesProfileStore() throws {
-        let container = try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+        let container = try SumiDatabase.inMemory()
         let profile = Profile(name: "Extension Store Profile")
         let fixture = makeManager(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let inspection = fixture.inspection
@@ -75,13 +71,10 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
     }
 
     func testPrepareWebViewConfigurationAlignsWebsiteDataStoreWithProfile() throws {
-        let container = try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+        let container = try SumiDatabase.inMemory()
         let profile = Profile(name: "Prepared Configuration Profile")
         let fixture = makeManager(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let inspection = fixture.inspection
@@ -107,16 +100,13 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
     }
 
     func testReadyConfigurationDemandDoesNotReenterWebViewReconciliation() throws {
-        let container = try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+        let container = try SumiDatabase.inMemory()
         let profile = Profile(name: "Ready Configuration Demand")
         let browserManager = makeSafariExtensionTestBrowserManager(
             profile: profile
         )
         let fixture = makeManager(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let manager = fixture.manager
@@ -135,16 +125,13 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
     }
 
     func testRepeatedAttachmentToSameBrowserKeepsControllerRuntimeIdentity() throws {
-        let container = try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+        let container = try SumiDatabase.inMemory()
         let profile = Profile(name: "Repeated Attachment")
         let browserManager = makeSafariExtensionTestBrowserManager(
             profile: profile
         )
         let fixture = makeManager(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let manager = fixture.manager
@@ -172,10 +159,7 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
     }
 
     func testPrepareWebViewConfigurationPreservesEphemeralProfileDataStore() throws {
-        let container = try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+        let container = try SumiDatabase.inMemory()
         let persistentProfile = Profile(name: "Regular Profile")
         let ephemeralProfile = Profile.createEphemeral()
         let windowRegistry = WindowRegistry()
@@ -188,7 +172,7 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
         windowRegistry.setActive(privateWindow)
 
         let fixture = makeManager(
-            context: container.mainContext,
+            context: container,
             initialProfile: persistentProfile
         )
         let manager = fixture.manager
@@ -221,10 +205,7 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
     }
 
     func testPrivateRuntimeProfileMarkerSurvivesWindowRegistryLoss() throws {
-        let container = try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+        let container = try SumiDatabase.inMemory()
         let persistentProfile = Profile(name: "Regular Profile")
         let ephemeralProfile = Profile.createEphemeral()
         let windowRegistry = WindowRegistry()
@@ -236,7 +217,7 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
         windowRegistry.register(privateWindow)
 
         let fixture = makeManager(
-            context: container.mainContext,
+            context: container,
             initialProfile: persistentProfile
         )
         let manager = fixture.manager
@@ -319,7 +300,7 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
     }
 
     private func makeManager(
-        context: ModelContext,
+        context: SumiDatabase,
         initialProfile: Profile
     ) -> (
         manager: ExtensionManager,
@@ -329,7 +310,7 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
         let inspection = ExtensionManagerInspectionCapture()
         let attachedRuntime = ExtensionAttachedRuntimeCapture()
         let manager = ExtensionManager(
-            context: context,
+            database: context,
             initialProfile: initialProfile,
             attachedRuntimeDidInstall: attachedRuntime.install,
             testInspectionDidAssemble: inspection.install

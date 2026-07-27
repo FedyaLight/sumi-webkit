@@ -11,7 +11,7 @@ final class SumiLaunchSmokeUIFixtureTests: SumiLaunchSmokeUITestCase {
         XCTAssertEqual(family.manifest.version, 1)
         XCTAssertEqual(family.manifest.family, SumiSmokeStoreFixture.expectedFamily)
         XCTAssertEqual(family.manifest.files.map(\.name), SumiSmokeStoreFixture.expectedFileNames)
-        XCTAssertEqual(family.manifest.provenance.sourceFamily, "startup-swiftdata")
+        XCTAssertEqual(family.manifest.provenance.sourceFamily, "unified-database")
         XCTAssertTrue(
             family.fileURLs.allSatisfy { $0.deletingLastPathComponent() == bundle.resourceURL },
             "UI smoke fixture files must resolve from the built SumiUITests resource bundle"
@@ -24,7 +24,7 @@ final class SumiLaunchSmokeUIFixtureTests: SumiLaunchSmokeUITestCase {
 
         let partialDirectory = try makeMutableFixtureCopy(of: bundledFamily, prefix: "Partial")
         try FileManager.default.removeItem(
-            at: partialDirectory.appendingPathComponent("default.store-wal")
+            at: partialDirectory.appendingPathComponent("Sumi.sqlite")
         )
         XCTAssertThrowsError(
             try SumiSmokeStoreFixture.resolveFamily(resourceDirectoryURL: partialDirectory)
@@ -33,7 +33,7 @@ final class SumiLaunchSmokeUIFixtureTests: SumiLaunchSmokeUITestCase {
         }
 
         let tamperedDirectory = try makeMutableFixtureCopy(of: bundledFamily, prefix: "Tampered")
-        let tamperedStoreURL = tamperedDirectory.appendingPathComponent("default.store")
+        let tamperedStoreURL = tamperedDirectory.appendingPathComponent("Sumi.sqlite")
         var bytes = try Data(contentsOf: tamperedStoreURL)
         bytes[0] ^= 0xff
         try bytes.write(to: tamperedStoreURL)
@@ -51,9 +51,9 @@ final class SumiLaunchSmokeUIFixtureTests: SumiLaunchSmokeUITestCase {
         XCTAssertNotEqual(firstStoreURL.deletingLastPathComponent(), secondStoreURL.deletingLastPathComponent())
         try executeSQLite(
             sql: """
-            UPDATE ZSPACEENTITY
-            SET ZNAME = 'Mutated First Scratch'
-            WHERE lower(hex(ZID)) = '\(SumiSmokeFixtureIDs.personalSpace)';
+            UPDATE spaces
+            SET name = 'Mutated First Scratch'
+            WHERE lower(hex(id)) = '\(SumiSmokeFixtureIDs.personalSpace)';
             """,
             storeURL: firstStoreURL
         )
@@ -69,9 +69,9 @@ final class SumiLaunchSmokeUIFixtureTests: SumiLaunchSmokeUITestCase {
 
         try executeSQLite(
             sql: """
-            UPDATE ZSPACEENTITY
-            SET ZNAME = 'Scratch Only'
-            WHERE lower(hex(ZID)) = '\(SumiSmokeFixtureIDs.personalSpace)';
+            UPDATE spaces
+            SET name = 'Scratch Only'
+            WHERE lower(hex(id)) = '\(SumiSmokeFixtureIDs.personalSpace)';
             """,
             storeURL: storeURL
         )
@@ -85,7 +85,7 @@ final class SumiLaunchSmokeUIFixtureTests: SumiLaunchSmokeUITestCase {
         smokeAppSupportDirectories.append(isolatedHome)
         let decoyStoreURL = isolatedHome
             .appendingPathComponent("Library/Application Support/com.sumi.browser", isDirectory: true)
-            .appendingPathComponent("default.store", isDirectory: false)
+            .appendingPathComponent("Sumi.sqlite", isDirectory: false)
         try FileManager.default.createDirectory(
             at: decoyStoreURL.deletingLastPathComponent(),
             withIntermediateDirectories: true
@@ -129,11 +129,11 @@ final class SumiLaunchSmokeUIFixtureTests: SumiLaunchSmokeUITestCase {
         let storeURL = try prepareSmokeStoreURL()
         let seededIDs = try sqliteRows(
             sql: """
-            SELECT lower(hex(ZID)) AS value FROM ZSPACEENTITY
+            SELECT lower(hex(id)) AS value FROM spaces
             UNION ALL
-            SELECT lower(hex(ZID)) AS value FROM ZFOLDERENTITY
+            SELECT lower(hex(id)) AS value FROM folders
             UNION ALL
-            SELECT lower(hex(ZID)) AS value FROM ZTABENTITY
+            SELECT lower(hex(id)) AS value FROM tabs
             ORDER BY value;
             """,
             storeURL: storeURL
@@ -170,9 +170,9 @@ final class SumiLaunchSmokeUIFixtureTests: SumiLaunchSmokeUITestCase {
     private func smokeSpaceName(in storeURL: URL) throws -> String {
         try requiredScalar(
             sql: """
-            SELECT ZNAME AS value
-            FROM ZSPACEENTITY
-            WHERE lower(hex(ZID)) = '\(SumiSmokeFixtureIDs.personalSpace)'
+            SELECT name AS value
+            FROM spaces
+            WHERE lower(hex(id)) = '\(SumiSmokeFixtureIDs.personalSpace)'
             LIMIT 1;
             """,
             storeURL: storeURL,

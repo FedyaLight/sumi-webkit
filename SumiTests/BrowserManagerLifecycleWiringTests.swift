@@ -1,6 +1,5 @@
 import Foundation
 @testable import Sumi
-import SwiftData
 import XCTest
 
 /// Production-shaped integration coverage: exercises the runtime lifecycle and
@@ -14,8 +13,7 @@ final class BrowserManagerLifecycleWiringTests: XCTestCase {
             .setAppliedLevel(.protection)
         let browserManager = BrowserManager(
             moduleRegistry: moduleRegistry,
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()
             )
         )
         let startupProbe = Tab(
@@ -41,8 +39,7 @@ final class BrowserManagerLifecycleWiringTests: XCTestCase {
 
     func testSettingsAttachmentReconfiguresLiveSubsystemsThroughDidSet() async throws {
         let browserManager = BrowserManager(
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()
             )
         )
         browserManager.startRuntimeAfterStartupRecovery()
@@ -132,17 +129,14 @@ final class BrowserManagerLifecycleWiringTests: XCTestCase {
         let windowRegistry = WindowRegistry()
         let browserManager = BrowserManager(
             windowRegistry: windowRegistry,
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()
             )
         )
         browserManager.startRuntimeAfterStartupRecovery()
         let settings = try makeSettings(suiteName: "startup")
         settings.startupMode = .nothing
         browserManager.sumiSettings = settings
-        browserManager.lastSessionWindowsStore = LastSessionWindowsStore(
-            userDefaults: try makeDefaults(suiteName: "startup-last-session")
-        )
+        browserManager.lastSessionWindowsStore = LastSessionWindowsStore()
 
         let space = browserManager.spaceStateOwner.currentSpace
             ?? installTestSpace(
@@ -198,10 +192,7 @@ final class BrowserManagerLifecycleWiringTests: XCTestCase {
         SumiSettingsService(userDefaults: try makeDefaults(suiteName: suiteName))
     }
 
-    private func makeInMemoryStartupContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+    private func makeInMemoryStartupContainer() throws -> SumiDatabase {
+        try SumiDatabase.inMemory()
     }
 }

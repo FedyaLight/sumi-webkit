@@ -1,5 +1,4 @@
 import Combine
-import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -124,12 +123,12 @@ final class BrowserURLBarPermissionContextOwnerTests: XCTestCase {
         let siteActivityStore = try makeSiteActivityStore()
         let blockedPopupStore = SumiBlockedPopupStore()
         let externalSchemeStore = SumiExternalSchemeSessionStore()
-        let store = SwiftDataPermissionStore(container: container)
+        let store = DatabasePermissionStore(database: container)
         let autoplayStore = SumiAutoplayPolicyStoreAdapter(persistentStore: store)
         let browserConfiguration = BrowserConfiguration(autoplayPolicyStore: autoplayStore)
 
         let browserManager = BrowserManager(
-            startupPersistence: BrowserManagerStartupPersistence(container: container),
+            startupPersistence: BrowserManagerStartupPersistence(database: container),
             browserConfiguration: browserConfiguration,
             systemPermissionService: systemPermissionService,
             permissionCoordinator: permissionCoordinator,
@@ -152,11 +151,8 @@ final class BrowserURLBarPermissionContextOwnerTests: XCTestCase {
         )
     }
 
-    private func makeInMemoryStartupContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+    private func makeInMemoryStartupContainer() throws -> SumiDatabase {
+        try SumiDatabase.inMemory()
     }
 
     private func makeSiteActivityStore() throws -> SumiPermissionSiteActivityStore {

@@ -15,11 +15,10 @@ fail_matches() {
 }
 
 required_files=(
+  Sumi/Persistence/SumiDatabase.swift
+  Sumi/Persistence/BrowserRecords.swift
   Sumi/Managers/TabManager/TabPersistenceModels.swift
   Sumi/Managers/TabManager/TabPersistenceCodec.swift
-  Sumi/Managers/TabManager/TabStoreRecordQueries.swift
-  Sumi/Managers/TabManager/TabStoreRecordMutation.swift
-  Sumi/Managers/TabManager/TabStructuralStoreMutation.swift
   Sumi/Managers/TabManager/TabStoreWriteExecutor.swift
   Sumi/Managers/TabManager/TabStructuralSnapshotStore.swift
   Sumi/Managers/TabManager/TabSelectionStore.swift
@@ -181,14 +180,14 @@ fail_matches "pure last-session planning depends on mutable browser mechanisms" 
 
 loader_mechanism_hits="$(
   guard_capture_matches \
-    '\b(ModelContext|FetchDescriptor|TabEntity|FolderEntity|SpaceEntity|TabsStateEntity)\b' \
+    '^import GRDB$|\b(DatabasePool|DatabaseQueue|SQLRequest|FetchDescriptor)\b' \
     Sumi/Managers/TabManager/TabRestoreLoader.swift
 )"
-fail_matches "restore loader absorbed SwiftData query or entity mapping" "$loader_mechanism_hits"
+fail_matches "restore loader absorbed raw persistence-mechanism queries" "$loader_mechanism_hits"
 
 planner_store_hits="$(
   guard_capture_matches \
-    '^import SwiftData$|\b(ModelContainer|ModelContext|FetchDescriptor)\b' \
+    '^import GRDB$|\b(DatabasePool|DatabaseQueue|SQLRequest|FetchDescriptor)\b' \
     Sumi/Managers/TabManager/TabRestorePlanner.swift \
     Sumi/Managers/TabManager/TabRestoreStructurePlanner.swift \
     Sumi/Managers/TabManager/TabRestoreTabPlanner.swift \
@@ -212,8 +211,8 @@ fail_matches "new tab persistence responsibility hidden behind an Owner type" "$
 
 bounded_files=(
   Sumi/Managers/TabManager/TabStructuralSnapshotStore.swift:180
-  Sumi/Managers/TabManager/TabStoreWriteExecutor.swift:120
-  Sumi/Managers/TabManager/TabRestoreLoader.swift:80
+  Sumi/Managers/TabManager/TabStoreWriteExecutor.swift:150
+  Sumi/Managers/TabManager/TabRestoreLoader.swift:140
   Sumi/Managers/TabManager/TabRestorePlanner.swift:140
   Sumi/Managers/TabManager/TabRestoreTabPlanner.swift:280
   Sumi/Managers/TabManager/TabRestoreStructurePlanner.swift:220

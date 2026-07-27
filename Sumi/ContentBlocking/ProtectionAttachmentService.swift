@@ -17,6 +17,7 @@ final class ProtectionAttachmentService {
             SumiProtectionSiteNormalizer(),
         startupDiagnostics:
             (any SumiProtectionStartupRestoreDiagnosticsRecording)? = nil,
+        compiledRuleListCatalog: SumiCompiledContentRuleListCataloging,
         contentBlockingServiceFactory:
             (@MainActor () -> SumiContentBlockingService)? = nil
     ) {
@@ -32,13 +33,17 @@ final class ProtectionAttachmentService {
             let serviceFactory = contentBlockingServiceFactory ?? {
                 SumiContentBlockingService(
                     policy: .disabled,
+                    compiledRuleListCatalog: compiledRuleListCatalog,
                     startupDiagnostics: diagnostics
                 )
             }
         #else
             let diagnostics = startupDiagnostics
             let serviceFactory = contentBlockingServiceFactory ?? {
-                SumiContentBlockingService(policy: .disabled)
+                SumiContentBlockingService(
+                    policy: .disabled,
+                    compiledRuleListCatalog: compiledRuleListCatalog
+                )
             }
         #endif
 

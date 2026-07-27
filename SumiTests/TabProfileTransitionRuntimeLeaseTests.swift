@@ -1,6 +1,5 @@
 import Combine
 import SumiWebRuntime
-import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -622,11 +621,11 @@ private final class RegularPlacementFailClosedFixture {
     let runtimeConnection: TabRuntimePortConnection
     let membership: TabCollectionMembershipOwner
     let placement: RegularTabPlacementTransaction
-    private let retainedModelContainer: ModelContainer
+    private let retainedDatabase: SumiDatabase
 
     init() throws {
-        let container = try makeInMemoryStartupModelContainer()
-        retainedModelContainer = container
+        let container = try makeInMemoryStartupDatabase()
+        retainedDatabase = container
         let state = TabStateStore()
         self.state = state
         let runtimeConnection = TabRuntimePortConnection()
@@ -635,7 +634,7 @@ private final class RegularPlacementFailClosedFixture {
             eventBus: TabStructureEventBus(),
             stateStore: state
         )
-        let writes = TabStoreWriteExecutor(container: container)
+        let writes = TabStoreWriteExecutor(database: container)
         let persistence = TabStructuralPersistenceService(
             structuralStore: TabStructuralSnapshotStore(writes: writes),
             selectionStore: TabSelectionStore(writes: writes),

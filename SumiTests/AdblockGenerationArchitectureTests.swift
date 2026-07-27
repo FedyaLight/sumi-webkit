@@ -6,6 +6,40 @@ import XCTest
 @testable import Sumi
 
 final class AdblockGenerationArchitectureTests: XCTestCase {
+    @MainActor
+    func testSiteOverridesReloadFromUnifiedDatabase() throws {
+        let database = try SumiDatabase.inMemory()
+        let url = try XCTUnwrap(URL(string: "https://www.example.com/path"))
+        let store = AdblockSitePolicyStore(database: database)
+
+        store.setSiteOverride(.disabled, for: url)
+
+        let reloaded = AdblockSitePolicyStore(database: database)
+        XCTAssertEqual(reloaded.override(for: url), .disabled)
+    }
+
+    @MainActor
+    func testCompiledIdentifierCatalogReloadsAndPersistsThroughUnifiedDatabase() throws {
+        let database = try SumiDatabase.inMemory()
+        try database.transaction {
+            try $0.documents.save(
+                ["network": ["compiled.one", "compiled.two"]],
+                forKey: "content-blocking.compiled-identifiers"
+            )
+        }
+        let catalog = SumiCompiledContentRuleListCatalog(database: database)
+
+        catalog.forgetIdentifiers(["compiled.one"])
+
+        let persisted = try database.read {
+            try $0.documents.value(
+                [String: [String]].self,
+                forKey: "content-blocking.compiled-identifiers"
+            )
+        }
+        XCTAssertEqual(persisted, ["network": ["compiled.two"]])
+    }
+
     func testArchiveRejectsIncompleteShardSetWithoutSwitchingActiveManifest() async throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
@@ -527,17 +561,19 @@ final class AdblockGenerationArchitectureTests: XCTestCase {
             moduleRegistry: registry,
             sitePolicyFactory: {
                 sitePolicyCreationCount += 1
-                return AdblockSitePolicyStore(userDefaults: defaults)
+                return AdblockSitePolicyStore()
             },
             preparedBundleResourceURL: nil,
             preparedBundleRemoteRootURL: nil,
             preparedBundleGeneratedRootURL: nil,
+            compiledRuleListCatalog: SumiCompiledContentRuleListCatalog(),
             ruleListRuntimeFactory: { isEnabled in
                 ruleListRuntimeCreationCount += 1
                 return AdblockRuleListRuntime(
                     isRuntimeEnabled: isEnabled,
                     generationArchive: archive,
                     compiler: compiler,
+                    compiledRuleListCatalog: SumiCompiledContentRuleListCatalog(),
                     embeddedBundleURLProvider: { nil }
                 )
             }

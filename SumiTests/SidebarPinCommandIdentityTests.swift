@@ -288,8 +288,7 @@ final class SidebarPinCommandIdentityTests: XCTestCase {
 
     private func makeBrowser() throws -> BrowserManager {
         let browser = BrowserManager(
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupModelContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupDatabase()
             )
         )
         browser.startupRestoreLifecycle.markLoadFinished()

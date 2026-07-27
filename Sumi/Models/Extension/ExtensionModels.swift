@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import SwiftData
 
 enum IncognitoExtensionMode: String, Codable, CaseIterable {
     case spanning
@@ -55,9 +54,8 @@ struct ExtensionActivationSummary: Codable, Equatable {
     let hasExtensionPages: Bool
 }
 
-@Model
-final class ExtensionEntity {
-    @Attribute(.unique) var id: String
+final class InstalledExtensionMetadata {
+    var id: String
     var name: String
     var version: String
     var manifestVersion: Int
@@ -208,7 +206,7 @@ struct InstalledExtensionRecord {
         self.manifest = manifest
     }
 
-    init?(from entity: ExtensionEntity) {
+    init?(from entity: InstalledExtensionMetadata) {
         guard
             let sourceKind = WebExtensionSourceKind(
                 rawValue: entity.sourceKindRawValue
@@ -288,6 +286,16 @@ struct InstalledExtensionRecord {
             logSnapshotError("decode \(T.self)", error: error)
             return nil
         }
+    }
+
+    static func decodeActivationSummary(
+        _ json: String
+    ) -> ExtensionActivationSummary? {
+        decode(ExtensionActivationSummary.self, from: json)
+    }
+
+    static func decodeManifest(_ json: String) -> [String: Any]? {
+        decodeJSONObject(from: json)
     }
 
     private static func decodeJSONObject(from json: String) -> [String: Any]? {

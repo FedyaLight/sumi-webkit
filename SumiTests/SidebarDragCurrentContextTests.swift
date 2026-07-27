@@ -1,11 +1,9 @@
 import AppKit
 import Combine
 import SumiDomain
-import SwiftData
 import XCTest
 
 @testable import Sumi
-
 
 /// Drag previews, geometry scoping, payload identity resolution, drop-commit cleanup, and regular-tab drops into the shortcut sections.
 @MainActor
@@ -999,5 +997,4 @@ final class SidebarDragCurrentContextTests: SidebarDragContextTestCase {
         try assertNonDisplayedRegularTabConversionCreatesLauncherOnly(target: .folder)
         try assertNonDisplayedRegularTabConversionCreatesLauncherOnly(target: .essentials)
     }
-
 }

@@ -4,7 +4,6 @@
 //
 
 import Foundation
-import SwiftData
 
 enum ProfileRetirementPhase: String, CaseIterable, Sendable {
     case reserved
@@ -94,37 +93,31 @@ enum ProfileRetirementStoreError: Error, Equatable {
 
 @MainActor
 final class ProfileRetirementStore {
-    private let context: ModelContext
+    private let database: SumiDatabase
 
-    init(context: ModelContext) {
-        self.context = context
+    init(database: SumiDatabase) {
+        self.database = database
     }
 
     func records() throws -> [ProfileRetirementRecord] {
-        try context.fetch(
-            FetchDescriptor<ProfileRetirementEntity>(
-                sortBy: [SortDescriptor(\.profileIndex, order: .forward)]
-            )
-        ).map(record(from:))
+        try database.read {
+            try $0.retirements.all().map(record(from:))
+        }
     }
 
     func loadForAdmission() throws -> ProfileRetirementStoreLoadResult {
-        let entities = try context.fetch(
-            FetchDescriptor<ProfileRetirementEntity>(
-                sortBy: [SortDescriptor(\.profileIndex, order: .forward)]
-            )
-        )
+        let rows = try database.read { try $0.retirements.all() }
         var records: [ProfileRetirementRecord] = []
         var quarantined: [ProfileRetirementQuarantine] = []
-        for entity in entities {
+        for row in rows {
             do {
-                records.append(try record(from: entity))
+                records.append(try record(from: row))
             } catch {
                 quarantined.append(
                     ProfileRetirementQuarantine(
-                        profileID: entity.profileID,
-                        fallbackProfileID: entity.fallbackProfileID,
-                        phaseRawValue: entity.phaseRawValue,
+                        profileID: row.profileID,
+                        fallbackProfileID: row.fallbackProfileID,
+                        phaseRawValue: row.phaseRawValue,
                         reason: error.localizedDescription
                     )
                 )
@@ -137,8 +130,12 @@ final class ProfileRetirementStore {
     }
 
     func record(for token: ProfileRetirementToken) throws -> ProfileRetirementRecord? {
-        guard let entity = try exactEntity(for: token) else { return nil }
-        return try record(from: entity)
+        try database.read { connection in
+            guard let row = try exactRow(for: token, in: connection) else {
+                return nil
+            }
+            return try record(from: row)
+        }
     }
 
     func reserve(
@@ -149,58 +146,51 @@ final class ProfileRetirementStore {
         guard profileID != fallbackProfileID else {
             throw ProfileRetirementStoreError.fallbackMatchesRetiringProfile
         }
-        guard let profile = try profileEntity(profileID: profileID) else {
-            throw ProfileRetirementStoreError.profileNotFound(profileID)
-        }
-        guard try profileEntity(profileID: fallbackProfileID) != nil else {
-            throw ProfileRetirementStoreError.fallbackProfileNotFound(fallbackProfileID)
-        }
+        return try database.transaction { connection in
+            let profiles = try connection.profiles.all()
+            guard let profile = profiles.first(where: { $0.id == profileID }) else {
+                throw ProfileRetirementStoreError.profileNotFound(profileID)
+            }
+            guard profiles.contains(where: { $0.id == fallbackProfileID }) else {
+                throw ProfileRetirementStoreError.fallbackProfileNotFound(fallbackProfileID)
+            }
 
-        let retirements = try context.fetch(
-            FetchDescriptor<ProfileRetirementEntity>()
-        )
-        if retirements.contains(where: { $0.profileID == profileID }) {
-            throw ProfileRetirementStoreError.retirementAlreadyExists(profileID)
-        }
-        if retirements.contains(where: { $0.profileID == fallbackProfileID }) {
-            throw ProfileRetirementStoreError.fallbackProfileIsRetiring(fallbackProfileID)
-        }
-        let activeRetirements = retirements.filter {
-            $0.phaseRawValue != ProfileRetirementPhase.retired.rawValue
-        }
-        if let activeRetirement = activeRetirements.first {
-            throw ProfileRetirementStoreError.anotherRetirementInProgress(
-                activeRetirement.profileID
+            let retirements = try connection.retirements.all()
+            if retirements.contains(where: { $0.profileID == profileID }) {
+                throw ProfileRetirementStoreError.retirementAlreadyExists(profileID)
+            }
+            if retirements.contains(where: { $0.profileID == fallbackProfileID }) {
+                throw ProfileRetirementStoreError.fallbackProfileIsRetiring(fallbackProfileID)
+            }
+            if let active = retirements.first(where: {
+                $0.phaseRawValue != ProfileRetirementPhase.retired.rawValue
+            }) {
+                throw ProfileRetirementStoreError.anotherRetirementInProgress(
+                    active.profileID
+                )
+            }
+
+            let row = ProfileRetirementRow(
+                profileID: profile.id,
+                profileName: profile.name,
+                profileIndex: profile.index,
+                fallbackProfileID: fallbackProfileID,
+                generation: generation,
+                phaseRawValue: ProfileRetirementPhase.reserved.rawValue,
+                nextCleanupStepRawValue: ProfileRetirementCleanupStep.websiteData.rawValue
             )
-        }
-
-        let retirement = ProfileRetirementEntity(
-            profileID: profile.id,
-            profileName: profile.name,
-            profileIndex: profile.index,
-            fallbackProfileID: fallbackProfileID,
-            generation: generation,
-            phase: .reserved,
-            nextCleanupStep: .websiteData
-        )
-        context.insert(retirement)
-        do {
-            try context.save()
-            return try record(from: retirement)
-        } catch {
-            context.rollback()
-            throw error
+            try connection.retirements.save(row)
+            return try record(from: row)
         }
     }
 
     func beginReferenceMigration(_ token: ProfileRetirementToken) throws -> Bool {
-        guard let entity = try exactEntity(for: token),
-              entity.phaseRawValue == ProfileRetirementPhase.reserved.rawValue
-        else {
-            return false
-        }
-        return try save {
-            entity.phaseRawValue = ProfileRetirementPhase.migratingReferences.rawValue
+        try update(token) { row in
+            guard row.phaseRawValue == ProfileRetirementPhase.reserved.rawValue else {
+                return false
+            }
+            row.phaseRawValue = ProfileRetirementPhase.migratingReferences.rawValue
+            return true
         }
     }
 
@@ -208,58 +198,57 @@ final class ProfileRetirementStore {
         _ token: ProfileRetirementToken,
         to fallbackProfileID: UUID
     ) throws -> Bool {
-        guard fallbackProfileID != token.profileID,
-              let entity = try exactEntity(for: token),
-              entity.phaseRawValue == ProfileRetirementPhase.migratingReferences.rawValue,
-              try profileEntity(profileID: fallbackProfileID) != nil,
-              try self.entity(profileID: fallbackProfileID) == nil
-        else {
-            return false
-        }
-        return try save {
-            entity.fallbackProfileID = fallbackProfileID
+        guard fallbackProfileID != token.profileID else { return false }
+        return try database.transaction { connection in
+            guard var row = try exactRow(for: token, in: connection),
+                  row.phaseRawValue == ProfileRetirementPhase.migratingReferences.rawValue,
+                  try connection.profiles.all().contains(where: {
+                      $0.id == fallbackProfileID
+                  }),
+                  try connection.retirements.find(profileID: fallbackProfileID) == nil
+            else {
+                return false
+            }
+            row.fallbackProfileID = fallbackProfileID
+            try connection.retirements.save(row)
+            return true
         }
     }
 
-    /// Deletes the migrating profile, normalizes remaining profile indices, and
-    /// records the durable cleanup handoff in one ModelContext save.
+    /// Deletes the profile, cascades its browser records, normalizes positions,
+    /// and records the cleanup handoff in one database transaction.
     func commitLogicalDeletion(_ token: ProfileRetirementToken) throws -> Bool {
-        guard let retirement = try exactEntity(for: token),
-              retirement.phaseRawValue == ProfileRetirementPhase.migratingReferences.rawValue,
-              try profileEntity(profileID: retirement.fallbackProfileID) != nil
-        else {
-            return false
-        }
-
-        do {
-            let remainingProfiles = try context.fetch(
-                FetchDescriptor<ProfileEntity>(
-                    sortBy: [SortDescriptor(\.index, order: .forward)]
-                )
-            ).filter { $0.id != token.profileID }
-            if let profile = try profileEntity(profileID: token.profileID) {
-                context.delete(profile)
+        try database.transaction { connection in
+            guard var retirement = try exactRow(for: token, in: connection),
+                  retirement.phaseRawValue
+                    == ProfileRetirementPhase.migratingReferences.rawValue,
+                  try connection.profiles.all().contains(where: {
+                      $0.id == retirement.fallbackProfileID
+                  })
+            else {
+                return false
             }
-            for (index, remainingProfile) in remainingProfiles.enumerated() {
-                remainingProfile.index = index
+
+            try connection.profiles.delete(id: token.profileID)
+            let remaining = try connection.profiles.all()
+            for (index, var profile) in remaining.enumerated() {
+                profile.index = index
+                try connection.profiles.save(profile)
             }
             retirement.phaseRawValue = ProfileRetirementPhase.logicallyDeleted.rawValue
-            try context.save()
+            try connection.retirements.save(retirement)
             return true
-        } catch {
-            context.rollback()
-            throw error
         }
     }
 
     func beginCleaning(_ token: ProfileRetirementToken) throws -> Bool {
-        guard let entity = try exactEntity(for: token),
-              entity.phaseRawValue == ProfileRetirementPhase.logicallyDeleted.rawValue
-        else {
-            return false
-        }
-        return try save {
-            entity.phaseRawValue = ProfileRetirementPhase.cleaning.rawValue
+        try update(token) { row in
+            guard row.phaseRawValue
+                    == ProfileRetirementPhase.logicallyDeleted.rawValue else {
+                return false
+            }
+            row.phaseRawValue = ProfileRetirementPhase.cleaning.rawValue
+            return true
         }
     }
 
@@ -279,109 +268,91 @@ final class ProfileRetirementStore {
         nextStep: ProfileRetirementCleanupStep,
         using token: ProfileRetirementToken
     ) throws -> Bool {
-        guard let entity = try exactEntity(for: token),
-              entity.phaseRawValue == ProfileRetirementPhase.cleaning.rawValue,
-              let currentStep = ProfileRetirementCleanupStep(
-                  rawValue: entity.nextCleanupStepRawValue
-              ),
-              currentStep.successor == nextStep
-        else {
-            return false
-        }
-        return try save {
-            entity.nextCleanupStepRawValue = nextStep.rawValue
+        try update(token) { row in
+            guard row.phaseRawValue == ProfileRetirementPhase.cleaning.rawValue,
+                  let currentStep = ProfileRetirementCleanupStep(
+                      rawValue: row.nextCleanupStepRawValue
+                  ),
+                  currentStep.successor == nextStep
+            else {
+                return false
+            }
+            row.nextCleanupStepRawValue = nextStep.rawValue
+            return true
         }
     }
 
     /// Retains a durable tombstone so old session archives and backups cannot
     /// silently regain authority for the deleted profile UUID.
     func markRetired(_ token: ProfileRetirementToken) throws -> Bool {
-        guard let entity = try exactEntity(for: token),
-              entity.phaseRawValue == ProfileRetirementPhase.cleaning.rawValue,
-              entity.nextCleanupStepRawValue == ProfileRetirementCleanupStep.completed.rawValue
-        else {
-            return false
-        }
-        return try save {
-            entity.phaseRawValue = ProfileRetirementPhase.retired.rawValue
+        try update(token) { row in
+            guard row.phaseRawValue == ProfileRetirementPhase.cleaning.rawValue,
+                  row.nextCleanupStepRawValue
+                    == ProfileRetirementCleanupStep.completed.rawValue else {
+                return false
+            }
+            row.phaseRawValue = ProfileRetirementPhase.retired.rawValue
+            return true
         }
     }
 
     func cancel(_ token: ProfileRetirementToken) throws -> Bool {
-        guard let entity = try exactEntity(for: token),
-              entity.phaseRawValue == ProfileRetirementPhase.reserved.rawValue
-        else {
-            return false
-        }
-        do {
-            context.delete(entity)
-            try context.save()
+        try database.transaction { connection in
+            guard let row = try exactRow(for: token, in: connection),
+                  row.phaseRawValue == ProfileRetirementPhase.reserved.rawValue
+            else {
+                return false
+            }
+            try connection.retirements.delete(profileID: token.profileID)
             return true
-        } catch {
-            context.rollback()
-            throw error
         }
     }
 
-    private func save(mutation: () -> Void) throws -> Bool {
-        mutation()
-        do {
-            try context.save()
+    private func update(
+        _ token: ProfileRetirementToken,
+        mutation: (inout ProfileRetirementRow) -> Bool
+    ) throws -> Bool {
+        try database.transaction { connection in
+            guard var row = try exactRow(for: token, in: connection),
+                  mutation(&row)
+            else {
+                return false
+            }
+            try connection.retirements.save(row)
             return true
-        } catch {
-            context.rollback()
-            throw error
         }
     }
 
-    private func exactEntity(
-        for token: ProfileRetirementToken
-    ) throws -> ProfileRetirementEntity? {
-        guard let entity = try entity(profileID: token.profileID),
-              entity.generation == token.generation
-        else {
+    private func exactRow(
+        for token: ProfileRetirementToken,
+        in connection: SumiDatabaseConnection
+    ) throws -> ProfileRetirementRow? {
+        guard let row = try connection.retirements.find(profileID: token.profileID),
+              row.generation == token.generation else {
             return nil
         }
-        return entity
+        return row
     }
 
-    private func entity(profileID: UUID) throws -> ProfileRetirementEntity? {
-        let predicate = #Predicate<ProfileRetirementEntity> {
-            $0.profileID == profileID
-        }
-        return try context.fetch(
-            FetchDescriptor<ProfileRetirementEntity>(predicate: predicate)
-        ).first
-    }
-
-    private func profileEntity(profileID: UUID) throws -> ProfileEntity? {
-        let predicate = #Predicate<ProfileEntity> { $0.id == profileID }
-        return try context.fetch(
-            FetchDescriptor<ProfileEntity>(predicate: predicate)
-        ).first
-    }
-
-    private func record(
-        from entity: ProfileRetirementEntity
-    ) throws -> ProfileRetirementRecord {
-        guard let phase = ProfileRetirementPhase(rawValue: entity.phaseRawValue) else {
-            throw ProfileRetirementStoreError.invalidPersistedPhase(entity.profileID)
+    private func record(from row: ProfileRetirementRow) throws -> ProfileRetirementRecord {
+        guard let phase = ProfileRetirementPhase(rawValue: row.phaseRawValue) else {
+            throw ProfileRetirementStoreError.invalidPersistedPhase(row.profileID)
         }
         guard let cleanupStep = ProfileRetirementCleanupStep(
-            rawValue: entity.nextCleanupStepRawValue
+            rawValue: row.nextCleanupStepRawValue
         ) else {
-            throw ProfileRetirementStoreError.invalidPersistedCleanupStep(entity.profileID)
+            throw ProfileRetirementStoreError.invalidPersistedCleanupStep(row.profileID)
         }
         return ProfileRetirementRecord(
             snapshot: ProfileRetirementSnapshot(
-                id: entity.profileID,
-                name: entity.profileName,
-                index: entity.profileIndex
+                id: row.profileID,
+                name: row.profileName,
+                index: row.profileIndex
             ),
-            fallbackProfileID: entity.fallbackProfileID,
+            fallbackProfileID: row.fallbackProfileID,
             token: ProfileRetirementToken(
-                profileID: entity.profileID,
-                generation: entity.generation
+                profileID: row.profileID,
+                generation: row.generation
             ),
             phase: phase,
             nextCleanupStep: cleanupStep

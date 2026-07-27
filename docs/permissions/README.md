@@ -1,6 +1,6 @@
 # Sumi Permissions
 
-Sumi's permission system routes normal-tab website permission requests through browser-owned bridges, a central coordinator, profile-scoped storage, macOS system authorization boundaries, and UI surfaces that settle requests without directly touching WebKit callbacks or SwiftData.
+Sumi's permission system routes normal-tab website permission requests through browser-owned bridges, a central coordinator, profile-scoped `Sumi.sqlite` storage, macOS system authorization boundaries, and UI surfaces that settle requests without directly touching WebKit callbacks or the database.
 
 Implemented normal-tab permission types:
 

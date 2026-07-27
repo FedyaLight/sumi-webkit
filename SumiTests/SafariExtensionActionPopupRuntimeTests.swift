@@ -1,4 +1,3 @@
-import SwiftData
 import WebKit
 import XCTest
 
@@ -11,7 +10,7 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Popup Profile")
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let inspection = fixture.inspection
@@ -34,7 +33,7 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
         let profileA = Profile(name: "Profile A")
         let profileB = Profile(name: "Profile B")
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: profileA
         )
         let manager = fixture.manager
@@ -94,7 +93,7 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Raindrop Profile")
         let fixture = makeAttachedBrowserFixture(
-            context: container.mainContext,
+            context: container,
             profile: profile
         )
         let scratchDirectory = try makeScratchDirectory()
@@ -132,7 +131,7 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Raindrop Iframe Profile")
         let fixture = makeAttachedBrowserFixture(
-            context: container.mainContext,
+            context: container,
             profile: profile
         )
         let inspection = fixture.inspection
@@ -285,7 +284,7 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Raindrop Iframe Resource Profile")
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let inspection = fixture.inspection
@@ -390,7 +389,7 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Reimport Profile")
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let inspection = fixture.inspection
@@ -428,7 +427,7 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "MV2 Profile")
         let fixture = makeSafariExtensionManagerTestFixture(
-            context: container.mainContext,
+            context: container,
             initialProfile: profile
         )
         let inspection = fixture.inspection
@@ -463,11 +462,8 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
         XCTAssertEqual(raindrop?.displayName, "Raindrop")
     }
 
-    private func makeTestContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+    private func makeTestContainer() throws -> SumiDatabase {
+        try SumiDatabase.inMemory()
     }
 
     private struct AttachedBrowserFixture {
@@ -503,7 +499,7 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "ActiveTab Popup Profile")
         let fixture = makeAttachedBrowserFixture(
-            context: container.mainContext,
+            context: container,
             profile: profile
         )
         let scratchDirectory = try makeScratchDirectory()
@@ -549,7 +545,7 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
     }
 
     private func makeAttachedBrowserFixture(
-        context: ModelContext,
+        context: SumiDatabase,
         profile: Profile
     ) -> AttachedBrowserFixture {
         let registry = SumiModuleRegistry(
@@ -568,7 +564,7 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
         let manager = managerFixture.manager
         let extensionsModule = SumiExtensionsModule(
             moduleRegistry: registry,
-            context: context,
+            database: context,
             browserConfiguration: browserConfiguration,
             initialProfileProvider: { profile },
             managerFactory: { _, _, _, _ in manager }

@@ -1,5 +1,4 @@
 import SumiDomain
-import SwiftData
 
 @MainActor
 final class BrowserManagerPermissionRuntime {
@@ -107,7 +106,7 @@ final class BrowserManagerPermissionRuntime {
     private var didPauseGeolocationForApplicationBackground = false
 
     init(dependencies: Dependencies) {
-        // One store instance for coordinator + autoplay adapter (no dual SwiftData path).
+        // One store instance for coordinator and autoplay policy.
         let autoplayStore = dependencies.browserConfiguration.autoplayPolicyStore
         let persistentPermissionStore = autoplayStore.permissionStore
         let antiAbuseStore = SumiPermissionAntiAbuseStore(

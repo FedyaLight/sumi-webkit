@@ -1,6 +1,5 @@
 import Combine
 import Foundation
-import SwiftData
 import WebKit
 import XCTest
 
@@ -17,25 +16,6 @@ import XCTest
 final class ExtensionActionInvocationAdmissionTests: XCTestCase {
     private static let clickedPageURL = URL(string: "https://clicked.example/path")!
     private static let clickedHostPattern = "https://clicked.example/*"
-
-    override func setUp() {
-        super.setUp()
-        removePersistedPolicyState()
-    }
-
-    override func tearDown() {
-        removePersistedPolicyState()
-        super.tearDown()
-    }
-
-    nonisolated private func removePersistedPolicyState() {
-        UserDefaults.standard.removeObject(
-            forKey: SafariExtensionSiteAccessPolicyStore.siteAccessStorageKey
-        )
-        UserDefaults.standard.removeObject(
-            forKey: SafariExtensionSiteAccessPolicyStore.legacyPermissionDecisionsStorageKey
-        )
-    }
 
     // MARK: - 1. Exact current invocation dispatches once
 
@@ -769,7 +749,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         let inspection = ExtensionManagerInspectionCapture()
         let attachedRuntime = ExtensionAttachedRuntimeCapture()
         let manager = ExtensionManager(
-            context: container.mainContext,
+            database: container,
             initialProfile: profile,
             attachedRuntimeDidInstall: attachedRuntime.install,
             testInspectionDidAssemble: inspection.install
@@ -1630,7 +1610,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         let attachedRuntime = ExtensionAttachedRuntimeCapture()
         let inspection = ExtensionManagerInspectionCapture()
         let manager = makeSafariExtensionTestExtensionManager(
-            context: container.mainContext,
+            database: container,
             initialProfile: profile,
             attachedRuntimeCapture: attachedRuntime,
             inspectionCapture: inspection
@@ -1730,11 +1710,8 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         )
     }
 
-    private func makeTestContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+    private func makeTestContainer() throws -> SumiDatabase {
+        try SumiDatabase.inMemory()
     }
 
     /// Gives any stray continuation of the settled invocation a chance to

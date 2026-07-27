@@ -1,5 +1,4 @@
 import Foundation
-import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -292,15 +291,12 @@ final class WindowSessionPersistenceSchedulerTests: XCTestCase {
     }
 
     func testBrowserTeardownFlushesScheduledWindowPersistenceEndToEnd() throws {
-        let defaults = makeUserDefaults()
         let snapshotStore = WindowSessionSnapshotStore(
-            key: "window-session",
-            userDefaults: defaults,
+            key: "window-session.\(UUID().uuidString)",
             environment: { [:] }
         )
         var browserManager: BrowserManager? = BrowserManager(
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()
             ),
             windowSessionSnapshotStore: snapshotStore
         )
@@ -328,12 +324,10 @@ final class WindowSessionPersistenceSchedulerTests: XCTestCase {
     func testLiveShortcutNavigationSchedulesPerWindowResumeSnapshot() throws {
         let snapshotStore = WindowSessionSnapshotStore(
             key: "window-session-live-shortcut",
-            userDefaults: makeUserDefaults(),
             environment: { [:] }
         )
         let browser = BrowserManager(
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()
             ),
             windowSessionSnapshotStore: snapshotStore
         )
@@ -415,10 +409,10 @@ final class WindowSessionPersistenceSchedulerTests: XCTestCase {
     private func makeCoordinatorHarness(
         delayedActions: MainActorDelayedActionScheduler = .live
     ) -> CoordinatorHarness {
-        let defaults = makeUserDefaults()
+        let database = try! SumiDatabase.inMemory()
         let snapshotStore = WindowSessionSnapshotStore(
+            database: database,
             key: "window-session",
-            userDefaults: defaults,
             environment: { [:] }
         )
         let scheduler = WindowSessionPersistenceScheduler(
@@ -427,7 +421,7 @@ final class WindowSessionPersistenceSchedulerTests: XCTestCase {
         let snapshotFactory = WindowSessionSnapshotFactory(
             glanceManager: GlanceManager()
         )
-        let historyStore = LastSessionWindowsStore(userDefaults: defaults)
+        let historyStore = LastSessionWindowsStore(database: database)
         let startupRestore = BrowserStartupSessionRestoreOwner(
             lastSessionWindowsStore: historyStore
         )
@@ -472,10 +466,8 @@ final class WindowSessionPersistenceSchedulerTests: XCTestCase {
     private func makeDurableWrite(
         windowState: BrowserWindowState
     ) -> DurableWriteHarness {
-        let defaults = makeUserDefaults()
         let snapshotStore = WindowSessionSnapshotStore(
-            key: "window-session",
-            userDefaults: defaults,
+            key: "window-session.\(UUID().uuidString)",
             environment: { [:] }
         )
         let snapshotFactory = WindowSessionSnapshotFactory(
@@ -500,10 +492,7 @@ final class WindowSessionPersistenceSchedulerTests: XCTestCase {
         return defaults
     }
 
-    private func makeInMemoryStartupContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+    private func makeInMemoryStartupContainer() throws -> SumiDatabase {
+        try SumiDatabase.inMemory()
     }
 }

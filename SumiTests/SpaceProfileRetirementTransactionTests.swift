@@ -1386,14 +1386,13 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
             targetProfile.id: targetProfile,
         ]
         let repository = WebViewSessionRepository()
-        let container = try makeInMemoryStartupModelContainer()
+        let container = try makeInMemoryStartupDatabase()
         let windowID = UUID()
         let windowState = BrowserWindowState(id: windowID)
         let tabManager = BrowserManager(
             webViewSessions: repository,
             windowRegistry: WindowRegistry(),
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: container
+            startupPersistence: BrowserManagerStartupPersistence(database: container
             ),
             dataServices: .unavailable()
         )
@@ -1484,8 +1483,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
         BrowserManager(
             webViewSessions: webViewSessions,
             windowRegistry: WindowRegistry(),
-            startupPersistence: BrowserManagerStartupPersistence(
-                container: try makeInMemoryStartupModelContainer()
+            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupDatabase()
             ),
             dataServices: .unavailable()
         )

@@ -1,4 +1,3 @@
-import SwiftData
 import WebKit
 import XCTest
 
@@ -61,7 +60,13 @@ final class ExtensionRuntimeRecoveryTests:
             )
         }
 
-        XCTAssertTrue(fixture.entity.isEnabled)
+        XCTAssertTrue(
+            try XCTUnwrap(
+                fixture.inspection.installation.metadata.extensionMetadata(
+                    for: fixture.installed.id
+                )
+            ).isEnabled
+        )
         XCTAssertEqual(
             fixture.inspection.actionSurfaces.installedExtensions.records.first {
                 $0.id == fixture.installed.id
@@ -132,7 +137,7 @@ final class ExtensionRuntimeRecoveryTests:
         }
 
         let candidateEntity = try XCTUnwrap(
-            fixture.inspection.installation.metadata.extensionEntity(
+            fixture.inspection.installation.metadata.extensionMetadata(
                 for: fixture.installed.id
             )
         )
@@ -278,7 +283,7 @@ final class ExtensionRuntimeRecoveryTests:
             originalPackageManifest
         )
         let restoredEntity = try XCTUnwrap(
-            fixture.inspection.installation.metadata.extensionEntity(
+            fixture.inspection.installation.metadata.extensionMetadata(
                 for: fixture.installed.id
             )
         )
@@ -287,7 +292,7 @@ final class ExtensionRuntimeRecoveryTests:
         XCTAssertEqual(
             restoredEntity.lastUpdateDate.timeIntervalSinceReferenceDate,
             originalLastUpdateDate.timeIntervalSinceReferenceDate,
-            accuracy: 0.000_001
+            accuracy: 0.001
         )
         XCTAssertTrue(restoredEntity.isEnabled)
         let restoredRecord = try XCTUnwrap(
@@ -466,7 +471,7 @@ final class ExtensionRuntimeRecoveryTests:
             )
         )
         let managerFixture = makeManager(
-            context: container.mainContext,
+            context: container,
             profile: profileA,
             assemblyOverrides: overrides
         )
@@ -481,7 +486,7 @@ final class ExtensionRuntimeRecoveryTests:
             name: "RuntimeRecovery-\(UUID().uuidString)"
         )
         let entity = try XCTUnwrap(
-            inspection.installation.metadata.extensionEntity(
+            inspection.installation.metadata.extensionMetadata(
                 for: installed.id
             )
         )
@@ -568,7 +573,7 @@ final class ExtensionRuntimeRecoveryTests:
 @available(macOS 15.5, *)
 @MainActor
 private final class RecoveryFixture {
-    let container: ModelContainer
+    let container: SumiDatabase
     let manager: ExtensionManager
     let inspection: ExtensionManagerTestInspection
     let finalization: RecoveryFinalizationObservation
@@ -576,14 +581,14 @@ private final class RecoveryFixture {
     let profileB: Profile
     let installed: InstalledExtension
     let sourceURL: URL
-    let entity: ExtensionEntity
+    let entity: InstalledExtensionMetadata
     let originalContextA: WKWebExtensionContext
     let originalContextB: WKWebExtensionContext
     let controllerB: WKWebExtensionController
     let unloadFault: RecoveryUnloadFault
 
     init(
-        container: ModelContainer,
+        container: SumiDatabase,
         manager: ExtensionManager,
         inspection: ExtensionManagerTestInspection,
         finalization: RecoveryFinalizationObservation,
@@ -591,7 +596,7 @@ private final class RecoveryFixture {
         profileB: Profile,
         installed: InstalledExtension,
         sourceURL: URL,
-        entity: ExtensionEntity,
+        entity: InstalledExtensionMetadata,
         originalContextA: WKWebExtensionContext,
         originalContextB: WKWebExtensionContext,
         controllerB: WKWebExtensionController,

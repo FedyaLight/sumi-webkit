@@ -5,13 +5,9 @@
 //
 
 import Foundation
-import SwiftData
 
-@Model
 final class TabEntity {
-    #Index<TabEntity>([\.spaceId], [\.profileId])
-
-    @Attribute(.unique) var id: UUID
+    var id: UUID
     var urlString: String
     var name: String
     var isPinned: Bool // Global pinned (essentials)
@@ -69,11 +65,8 @@ final class TabEntity {
     }
 }
 
-@Model
 final class FolderEntity {
-    #Index<FolderEntity>([\.spaceId])
-
-    @Attribute(.unique) var id: UUID
+    var id: UUID
     var name: String
     var icon: String
     var color: String
@@ -103,7 +96,6 @@ final class FolderEntity {
     }
 }
 
-@Model
 final class TabsStateEntity {
     var currentTabID: UUID?
     var currentSpaceID: UUID?

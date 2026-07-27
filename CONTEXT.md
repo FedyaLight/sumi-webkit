@@ -2,6 +2,24 @@
 
 Sumi presents pages through regular tabs and saved launchers. Split groups are durable sidebar items whose runtime pages are projected into a window when the group is active.
 
+## Persistence Language
+
+**Local Installation**:
+The complete set of Sumi-owned data for one installed copy of the app on one macOS user account.
+_Avoid_: Local profile, old-user store
+
+**Browser Profile**:
+A durable browsing persona inside a Local Installation. Its browser-owned records are identified by one profile UUID, while its website data remains owned by WebKit under the same UUID.
+_Avoid_: Account, installation profile
+
+**Browser Database**:
+The single transactional SQLite database containing Sumi-owned structured browser data for a Local Installation.
+_Avoid_: Startup store, bookmark database, profile database
+
+**Platform Store**:
+A specialized store whose lifecycle is owned by macOS or WebKit, such as Keychain or `WKWebsiteDataStore`, and which is referenced but never reimplemented by the Browser Database.
+_Avoid_: Legacy store, auxiliary database
+
 ## Split View Language
 
 **Split Group**:

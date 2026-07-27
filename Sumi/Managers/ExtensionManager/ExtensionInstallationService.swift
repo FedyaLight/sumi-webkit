@@ -143,11 +143,11 @@ final class ExtensionInstallationService {
             )
         }
 
-        let existingEntity: ExtensionEntity?
+        let existingEntity: InstalledExtensionMetadata?
         do {
             existingEntity = if let existingExtensionID =
                 identity.existingExtensionID {
-                try metadataStore.extensionEntity(for: existingExtensionID)
+                try metadataStore.extensionMetadata(for: existingExtensionID)
             } else {
                 nil
             }
@@ -350,7 +350,7 @@ final class ExtensionInstallationService {
     }
 
     private func supersededPackageRoot(
-        from entity: ExtensionEntity?
+        from entity: InstalledExtensionMetadata?
     ) -> URL? {
         guard let entity,
               WebExtensionSourceKind(rawValue: entity.sourceKindRawValue)
@@ -360,7 +360,7 @@ final class ExtensionInstallationService {
         return URL(fileURLWithPath: entity.packagePath, isDirectory: true)
     }
 
-    private func retireSupersededPackage(from entity: ExtensionEntity?) {
+    private func retireSupersededPackage(from entity: InstalledExtensionMetadata?) {
         guard let packageRoot = supersededPackageRoot(from: entity),
               FileManager.default.fileExists(atPath: packageRoot.path) else {
             return

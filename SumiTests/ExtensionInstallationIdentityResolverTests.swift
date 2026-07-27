@@ -1,5 +1,4 @@
 import XCTest
-import SwiftData
 
 @testable import Sumi
 
@@ -35,7 +34,7 @@ final class ExtensionInstallationIdentityResolverTests: XCTestCase {
                         sourceBundlePath: "/tmp/old-source",
                         sourceKind: .directory,
                         safariRuntimeIdentity: nil
-                    )
+                    ),
                 ]
             )
         )
@@ -125,7 +124,7 @@ final class ExtensionInstallationIdentityResolverTests: XCTestCase {
                             sourceBundlePath: "/tmp/existing.appex",
                             sourceKind: .safariAppExtension,
                             safariRuntimeIdentity: "com.example.safari (TEAM)"
-                        )
+                        ),
                     ]
                 )
             )
@@ -152,7 +151,7 @@ final class ExtensionInstallationIdentityResolverTests: XCTestCase {
                             sourceBundlePath: "/tmp/old.appex",
                             sourceKind: .safariAppExtension,
                             safariRuntimeIdentity: "com.example.safari (OLDTEAM)"
-                        )
+                        ),
                     ]
                 )
             )
@@ -175,18 +174,14 @@ final class ExtensionInstallationIdentityResolverTests: XCTestCase {
 
     @available(macOS 15.5, *)
     func testPersistedIdentityUsesStoredSafariSigningAnchor() throws {
-        let container = try makeModelContainer()
-        let entity = ExtensionEntity(
-            record: makeRecord(
+        let container = try makeDatabase()
+        let entity = InstalledExtensionMetadata(record: makeRecord(
                 safariRuntimeIdentity: "com.example.safari (ORIGINALTEAM)"
             )
         )
-        container.mainContext.insert(entity)
-        try container.mainContext.save()
-
-        let identities = try ExtensionInstallationMetadataStore(
-            context: container.mainContext
-        ).persistedInstallationIdentities()
+        let store = ExtensionInstallationMetadataStore(database: container)
+        try store.save(entity)
+        let identities = try store.persistedInstallationIdentities()
 
         XCTAssertEqual(identities.count, 1)
         XCTAssertEqual(
@@ -201,9 +196,9 @@ final class ExtensionInstallationIdentityResolverTests: XCTestCase {
 
     @available(macOS 15.5, *)
     func testPersistCannotReplaceStoredSafariSigningAnchor() throws {
-        let container = try makeModelContainer()
+        let container = try makeDatabase()
         let store = ExtensionInstallationMetadataStore(
-            context: container.mainContext
+                database: container
         )
         try store.persist(
             record: makeRecord(
@@ -218,7 +213,7 @@ final class ExtensionInstallationIdentityResolverTests: XCTestCase {
         )
 
         let entity = try XCTUnwrap(
-            try store.extensionEntity(for: "com.example.safari")
+            try store.extensionMetadata(for: "com.example.safari")
         )
         XCTAssertEqual(
             entity.safariRuntimeIdentity,
@@ -232,18 +227,15 @@ final class ExtensionInstallationIdentityResolverTests: XCTestCase {
     }
 
     @available(macOS 15.5, *)
-    func testLegacySafariRecordWithoutStoredAnchorRemainsReadable() throws {
-        let container = try makeModelContainer()
-        let entity = ExtensionEntity(
-            record: makeRecord(safariRuntimeIdentity: nil)
+    func testSafariRecordWithoutStoredAnchorRemainsReadable() throws {
+        let container = try makeDatabase()
+        let entity = InstalledExtensionMetadata(record: makeRecord(safariRuntimeIdentity: nil)
         )
-        container.mainContext.insert(entity)
-        try container.mainContext.save()
+        let store = ExtensionInstallationMetadataStore(database: container)
+        try store.save(entity)
 
         let record = try XCTUnwrap(InstalledExtensionRecord(from: entity))
-        let identities = try ExtensionInstallationMetadataStore(
-            context: container.mainContext
-        ).persistedInstallationIdentities()
+        let identities = try store.persistedInstallationIdentities()
 
         XCTAssertNil(record.safariRuntimeIdentity)
         XCTAssertEqual(identities.first?.extensionID, record.id)
@@ -251,11 +243,8 @@ final class ExtensionInstallationIdentityResolverTests: XCTestCase {
     }
 
     @available(macOS 15.5, *)
-    private func makeModelContainer() throws -> ModelContainer {
-        try ModelContainer(
-            for: Schema([ExtensionEntity.self]),
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+    private func makeDatabase() throws -> SumiDatabase {
+        try SumiDatabase.inMemory()
     }
 
     private func makeRecord(
