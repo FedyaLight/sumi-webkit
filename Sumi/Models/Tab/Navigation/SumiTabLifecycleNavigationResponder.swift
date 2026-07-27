@@ -37,7 +37,8 @@ final class SumiTabLifecycleNavigationResponder:
               context.isMainFrame == true,
               let webView = context.webView
         else { return }
-        (webView as? FocusableWKWebView)?.resetPageInteractionState()
+        (webView as? FocusableWKWebView)?
+            .resetPageInteractionStateForNavigation()
         webView.sumiReaderPresentationHost?.dismissReader()
 
         tab.navigationRuntime.lifecycleNavigationRuntime
@@ -86,7 +87,8 @@ final class SumiTabLifecycleNavigationResponder:
               context.isMainFrame == true,
               let webView = context.webView
         else { return }
-        (webView as? FocusableWKWebView)?.resetPageInteractionState()
+        (webView as? FocusableWKWebView)?
+            .resetPageInteractionStateForNavigation()
         webView.sumiReaderPresentationHost?.dismissReader()
 
         tab.navigationRuntime.lifecycleNavigationRuntime

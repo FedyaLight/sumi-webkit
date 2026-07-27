@@ -113,6 +113,143 @@ final class SumiNavigationDownloadResponderTests: SumiNavigationResponderTestCas
         XCTAssertEqual(policy?.isDownload, true)
     }
 
+    func testDownloadFlyOriginUsesPrimaryMouseDownLocation() throws {
+        let window = makeDownloadOriginWindow()
+        let webView = FocusableWKWebView(
+            frame: NSRect(x: 100, y: 80, width: 600, height: 400)
+        )
+        window.contentView?.addSubview(webView)
+        let clickLocation = NSPoint(x: 215, y: 165)
+        webView.gestures.record(
+            try makeDownloadOriginMouseEvent(at: clickLocation),
+            kind: .primaryMouseDown
+        )
+        let responder = makeDownloadOriginResponder()
+
+        let origin = try XCTUnwrap(
+            responder.fileIconFlyAnimationOrigin(in: webView)
+        )
+
+        XCTAssertEqual(
+            origin.sourceRectInWindow.midX,
+            clickLocation.x,
+            accuracy: 0.5
+        )
+        XCTAssertEqual(
+            origin.sourceRectInWindow.midY,
+            clickLocation.y,
+            accuracy: 0.5
+        )
+    }
+
+    func testDownloadFlyOriginSurvivesMouseUpGestureCleanup() throws {
+        let window = makeDownloadOriginWindow()
+        let webView = FocusableWKWebView(
+            frame: NSRect(x: 100, y: 80, width: 600, height: 400)
+        )
+        window.contentView?.addSubview(webView)
+        let clickLocation = NSPoint(x: 260, y: 190)
+        let receipt = webView.gestures.record(
+            try makeDownloadOriginMouseEvent(at: clickLocation),
+            kind: .primaryMouseDown
+        )
+
+        webView.gestures.clear(ifCurrent: receipt)
+
+        let origin = try XCTUnwrap(
+            makeDownloadOriginResponder()
+                .fileIconFlyAnimationOrigin(in: webView)
+        )
+        XCTAssertEqual(
+            origin.sourceRectInWindow.midX,
+            clickLocation.x,
+            accuracy: 0.5
+        )
+        XCTAssertEqual(
+            origin.sourceRectInWindow.midY,
+            clickLocation.y,
+            accuracy: 0.5
+        )
+    }
+
+    func testDownloadFlyOriginSurvivesNavigationInteractionReset() throws {
+        let window = makeDownloadOriginWindow()
+        let webView = FocusableWKWebView(
+            frame: NSRect(x: 100, y: 80, width: 600, height: 400)
+        )
+        window.contentView?.addSubview(webView)
+        let clickLocation = NSPoint(x: 300, y: 210)
+        webView.gestures.record(
+            try makeDownloadOriginMouseEvent(at: clickLocation),
+            kind: .primaryMouseDown
+        )
+
+        webView.resetPageInteractionStateForNavigation()
+
+        let origin = try XCTUnwrap(
+            makeDownloadOriginResponder()
+                .fileIconFlyAnimationOrigin(in: webView)
+        )
+        XCTAssertEqual(
+            origin.sourceRectInWindow.midX,
+            clickLocation.x,
+            accuracy: 0.5
+        )
+        XCTAssertEqual(
+            origin.sourceRectInWindow.midY,
+            clickLocation.y,
+            accuracy: 0.5
+        )
+    }
+
+    func testDownloadFlyOriginFallsBackToOriginatingWebView() throws {
+        let window = makeDownloadOriginWindow()
+        let originatingWebView = FocusableWKWebView(
+            frame: NSRect(x: 0, y: 0, width: 400, height: 300)
+        )
+        let targetWebView = FocusableWKWebView(
+            frame: NSRect(x: 400, y: 0, width: 400, height: 300)
+        )
+        window.contentView?.addSubview(originatingWebView)
+        window.contentView?.addSubview(targetWebView)
+        let clickLocation = NSPoint(x: 120, y: 90)
+        originatingWebView.gestures.record(
+            try makeDownloadOriginMouseEvent(at: clickLocation),
+            kind: .primaryMouseDown
+        )
+
+        let origin = try XCTUnwrap(
+            makeDownloadOriginResponder().fileIconFlyAnimationOrigin(
+                originatingWebView: originatingWebView,
+                targetWebView: targetWebView
+            )
+        )
+
+        XCTAssertEqual(
+            origin.sourceRectInWindow.midX,
+            clickLocation.x,
+            accuracy: 0.5
+        )
+        XCTAssertEqual(
+            origin.sourceRectInWindow.midY,
+            clickLocation.y,
+            accuracy: 0.5
+        )
+    }
+
+    func testDownloadFlyOriginIsNilWithoutRecentMouseDown() {
+        let window = makeDownloadOriginWindow()
+        let webView = FocusableWKWebView(
+            frame: NSRect(x: 100, y: 80, width: 600, height: 400)
+        )
+        window.contentView?.addSubview(webView)
+
+        XCTAssertNil(
+            makeDownloadOriginResponder()
+                .fileIconFlyAnimationOrigin(in: webView)
+        )
+    }
+
     func testDownloadResponderDoesNotTreatOptionGlanceClickAsDownload() async {
         let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
         let tab = Tab(url: URL(string: "https://example.com")!)
@@ -293,5 +430,39 @@ final class SumiNavigationDownloadResponderTests: SumiNavigationResponderTestCas
         )
 
         XCTAssertEqual(policy, .cancel)
+    }
+
+    private func makeDownloadOriginWindow() -> NSWindow {
+        NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+    }
+
+    private func makeDownloadOriginMouseEvent(
+        at location: NSPoint
+    ) throws -> NSEvent {
+        try XCTUnwrap(NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: location,
+            modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: 0,
+            context: nil,
+            eventNumber: 1,
+            clickCount: 1,
+            pressure: 1
+        ))
+    }
+
+    private func makeDownloadOriginResponder()
+        -> SumiDownloadsNavigationResponder {
+        SumiDownloadsNavigationResponder(
+            tab: Tab(url: URL(string: "https://example.com")!),
+            downloadManager: nil,
+            transportFactory: nil
+        )
     }
 }

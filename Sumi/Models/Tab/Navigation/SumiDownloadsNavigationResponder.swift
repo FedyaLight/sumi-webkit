@@ -179,7 +179,10 @@ final class SumiDownloadsNavigationResponder: SumiNavigationActionSourceWebViewR
             suggestedFilename: suggestedFilename,
             openIntent: openIntent,
             promptRequest: promptRequest,
-            flyAnimationOriginalRect: fileIconFlyAnimationOriginalRect(in: download.targetWebView ?? download.originatingWebView)
+            flyAnimationOrigin: fileIconFlyAnimationOrigin(
+                originatingWebView: download.originatingWebView,
+                targetWebView: download.targetWebView
+            )
         )
     }
 
@@ -287,25 +290,32 @@ final class SumiDownloadsNavigationResponder: SumiNavigationActionSourceWebViewR
         return pendingPromptRequests.removeValue(forKey: key)
     }
 
-    private func fileIconFlyAnimationOriginalRect(in webView: WKWebView?) -> NSRect? {
+    func fileIconFlyAnimationOrigin(
+        in webView: WKWebView?
+    ) -> DownloadFlyAnimationOrigin? {
         dispatchPrecondition(condition: .onQueue(.main))
-        guard let webView,
+        guard let webView = webView as? FocusableWKWebView,
               let window = webView.window,
-              let dockScreen = NSScreen.dockScreen
+              let windowRect = webView.gestures
+                .recentPrimaryMouseDownOriginRect()
         else { return nil }
 
-        let size = webView.bounds.size
-        guard size.width > 0, size.height > 0 else { return nil }
-
-        let sourceRect = NSRect(
-            x: size.width / 2 - 32,
-            y: size.height / 2 - 32,
-            width: 64,
-            height: 64
-        )
-        let windowRect = webView.convert(sourceRect, to: nil)
         let globalRect = window.convertToScreen(windowRect)
-        return dockScreen.convertFromGlobalScreenCoordinates(globalRect)
+        let nativeOriginalRect = NSScreen.dockScreen?
+            .convertFromGlobalScreenCoordinates(globalRect)
+        return DownloadFlyAnimationOrigin(
+            windowNumber: window.windowNumber,
+            sourceRectInWindow: windowRect,
+            nativeOriginalRect: nativeOriginalRect
+        )
+    }
+
+    func fileIconFlyAnimationOrigin(
+        originatingWebView: WKWebView?,
+        targetWebView: WKWebView?
+    ) -> DownloadFlyAnimationOrigin? {
+        fileIconFlyAnimationOrigin(in: originatingWebView)
+            ?? fileIconFlyAnimationOrigin(in: targetWebView)
     }
 }
 

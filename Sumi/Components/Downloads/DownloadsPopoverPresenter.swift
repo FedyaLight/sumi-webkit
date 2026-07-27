@@ -116,6 +116,19 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
         anchors[windowID] = nil
     }
 
+    func downloadAnimationTargetRect(in windowID: UUID) -> NSRect? {
+        guard let anchorView = anchors[windowID]?.view,
+              PopoverPresenterChromeSupport.isAnchorViewReady(
+                  anchorView,
+                  checkHiddenAncestors: true
+              ),
+              !anchorView.bounds.isEmpty
+        else {
+            return nil
+        }
+        return anchorView.convert(anchorView.bounds, to: nil)
+    }
+
     func toggle(in windowState: BrowserWindowState, downloadManager: DownloadManager) {
         if activeSessions[windowState.id]?.popover.isShown == true {
             close(in: windowState)

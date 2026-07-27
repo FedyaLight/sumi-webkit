@@ -78,7 +78,7 @@ protocol DownloadProgressPublication: AnyObject {
         at temporaryURL: URL,
         destinationURL: URL,
         responseMIMEType: String?,
-        flyAnimationOriginalRect: NSRect?
+        flyAnimationOrigin: DownloadFlyAnimationOrigin?
     )
     func markCompleted(byteCount: Int64?)
     func stop()

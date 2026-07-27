@@ -67,7 +67,7 @@ final class DownloadTransaction: DownloadTransportDelegate {
     private let sourceURL: URL
     private let suggestedFilename: String
     private var promptRequest: SumiDownloadPromptRequest?
-    private let flyAnimationOriginalRect: NSRect?
+    private let flyAnimationOrigin: DownloadFlyAnimationOrigin?
     private let destinations: any DownloadDestinationAllocating
     private let finalizer: any DownloadFileFinalizing
     private let progressPublisher: any DownloadProgressPublishing
@@ -86,7 +86,7 @@ final class DownloadTransaction: DownloadTransportDelegate {
         sourceURL: URL,
         suggestedFilename: String,
         promptRequest: SumiDownloadPromptRequest?,
-        flyAnimationOriginalRect: NSRect?,
+        flyAnimationOrigin: DownloadFlyAnimationOrigin?,
         inheritedReservation: DownloadDestinationReservation?,
         destinations: any DownloadDestinationAllocating,
         finalizer: any DownloadFileFinalizing,
@@ -98,7 +98,7 @@ final class DownloadTransaction: DownloadTransportDelegate {
         self.sourceURL = sourceURL
         self.suggestedFilename = suggestedFilename
         self.promptRequest = promptRequest
-        self.flyAnimationOriginalRect = flyAnimationOriginalRect
+        self.flyAnimationOrigin = flyAnimationOrigin
         self.inheritedReservation = inheritedReservation
         self.destinations = destinations
         self.finalizer = finalizer
@@ -287,7 +287,7 @@ final class DownloadTransaction: DownloadTransportDelegate {
             at: nextReservation.tempURL,
             destinationURL: nextReservation.destinationURL,
             responseMIMEType: response.mimeType,
-            flyAnimationOriginalRect: flyAnimationOriginalRect
+            flyAnimationOrigin: flyAnimationOrigin
         )
         return nextReservation.tempURL
     }
@@ -378,7 +378,7 @@ final class DownloadTransaction: DownloadTransportDelegate {
             at: reservation.tempURL,
             destinationURL: reservation.destinationURL,
             responseMIMEType: nil,
-            flyAnimationOriginalRect: nil
+            flyAnimationOrigin: nil
         )
         publication?.markCompleted(byteCount: Int64(data.count))
         do {

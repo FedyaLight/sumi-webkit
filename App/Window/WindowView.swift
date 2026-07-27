@@ -18,6 +18,8 @@ private enum WindowTransientChromeZIndex {
     static let folderPreview: Double = 8_800
     /// Command palette must stay above Glance so URL editing keeps targeting the preview page.
     static let commandPalette: Double = 9_000
+    /// Event-only download flight chrome; it must stay visible over browser and sidebar surfaces.
+    static let downloadFlight: Double = 10_000
     /// Drag ghost only.
     static let sidebarDragPreview: Double = 20_000
 }
@@ -176,6 +178,18 @@ struct WindowView: View {
                         .position(x: contentFrame.midX, y: contentFrame.midY)
                         .zIndex(WindowTransientChromeZIndex.glanceFindInPage)
                     }
+                }
+
+                chromeThemeScope {
+                    DownloadFlyAnimationOverlay(
+                        animationCenter: sidebarContext.browserContext.downloadManager.flyAnimationCenter,
+                        downloadsPopoverPresenter: sidebarContext.browserContext.downloadsPopoverPresenter,
+                        windowState: windowState,
+                        windowRegistry: windowRegistry,
+                        sidebarPosition: sumiSettings.sidebarPosition
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .zIndex(WindowTransientChromeZIndex.downloadFlight)
                 }
 
                 chromeThemeScope {

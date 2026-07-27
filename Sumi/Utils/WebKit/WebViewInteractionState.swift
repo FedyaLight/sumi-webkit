@@ -41,6 +41,11 @@ struct WebViewGestureReceipt: Equatable {
 
 @MainActor
 final class WebViewGestureState {
+    private struct PrimaryMouseDownSnapshot {
+        let eventTimestamp: TimeInterval
+        let originRectInWindow: CGRect
+    }
+
     private static let relevantModifiers: NSEvent.ModifierFlags = [
         .command,
         .option,
@@ -50,21 +55,29 @@ final class WebViewGestureState {
 
     private var nextGeneration: UInt64 = 0
     private var latest: WebViewGestureSnapshot?
+    private var lastPrimaryMouseDown: PrimaryMouseDownSnapshot?
 
     @discardableResult
     func record(_ event: NSEvent, kind: WebViewGestureKind) -> WebViewGestureReceipt {
         nextGeneration &+= 1
         let glanceOriginRectInWindow: CGRect?
         if kind == .primaryMouseDown {
-            let point = event.window?.mouseLocationOutsideOfEventStream ?? event.locationInWindow
+            let point = event.locationInWindow
             glanceOriginRectInWindow = CGRect(
                 x: point.x - 22,
                 y: point.y - 22,
                 width: 44,
                 height: 44
             )
+            lastPrimaryMouseDown = glanceOriginRectInWindow.map {
+                PrimaryMouseDownSnapshot(
+                    eventTimestamp: event.timestamp,
+                    originRectInWindow: $0
+                )
+            }
         } else {
             glanceOriginRectInWindow = nil
+            lastPrimaryMouseDown = nil
         }
 
         latest = WebViewGestureSnapshot(
@@ -78,6 +91,11 @@ final class WebViewGestureState {
     }
 
     func clear() {
+        clearCurrentGesture()
+        lastPrimaryMouseDown = nil
+    }
+
+    func clearCurrentGesture() {
         latest = nil
     }
 
@@ -113,6 +131,16 @@ final class WebViewGestureState {
               snapshot.kind == .primaryMouseDown
         else { return nil }
         return snapshot.glanceOriginRectInWindow
+    }
+
+    func recentPrimaryMouseDownOriginRect(
+        maxAge: TimeInterval = 5
+    ) -> CGRect? {
+        guard let lastPrimaryMouseDown else { return nil }
+        let age = ProcessInfo.processInfo.systemUptime
+            - lastPrimaryMouseDown.eventTimestamp
+        guard age >= 0, age <= maxAge else { return nil }
+        return lastPrimaryMouseDown.originRectInWindow
     }
 
     var hasRecentAuxiliaryMouseDown: Bool {

@@ -11,6 +11,7 @@ final class DownloadManager: ObservableObject, DownloadListCoordinatorEventSink 
     private let coordinator: DownloadListCoordinator?
     private let workspace: (any DownloadWorkspaceOpening)?
     private var retryTransport: (any DownloadRetryTransportStarting)?
+    let flyAnimationCenter: DownloadFlyAnimationCenter
 
     weak var settings: SumiSettingsService? {
         didSet { coordinator?.settings = settings }
@@ -18,10 +19,12 @@ final class DownloadManager: ObservableObject, DownloadListCoordinatorEventSink 
 
     init(
         coordinator: DownloadListCoordinator?,
-        workspace: (any DownloadWorkspaceOpening)?
+        workspace: (any DownloadWorkspaceOpening)?,
+        flyAnimationCenter: DownloadFlyAnimationCenter
     ) {
         self.coordinator = coordinator
         self.workspace = workspace
+        self.flyAnimationCenter = flyAnimationCenter
         self.items = coordinator?.items ?? []
         self.activeDownloadCount = coordinator?.activeCount ?? 0
         self.combinedProgressFraction = coordinator?.combinedProgressFraction
@@ -37,7 +40,8 @@ final class DownloadManager: ObservableObject, DownloadListCoordinatorEventSink 
     static func unavailable() -> DownloadManager {
         DownloadManager(
             coordinator: nil,
-            workspace: nil
+            workspace: nil,
+            flyAnimationCenter: DownloadFlyAnimationCenter()
         )
     }
 
@@ -69,7 +73,7 @@ final class DownloadManager: ObservableObject, DownloadListCoordinatorEventSink 
         suggestedFilename: String,
         openIntent: SumiDownloadOpenIntent? = nil,
         promptRequest: SumiDownloadPromptRequest? = nil,
-        flyAnimationOriginalRect: NSRect? = nil
+        flyAnimationOrigin: DownloadFlyAnimationOrigin? = nil
     ) -> DownloadItem? {
         guard let coordinator else {
             transport.cancel()
@@ -81,7 +85,7 @@ final class DownloadManager: ObservableObject, DownloadListCoordinatorEventSink 
             suggestedFilename: suggestedFilename,
             openIntent: openIntent,
             promptRequest: promptRequest,
-            flyAnimationOriginalRect: flyAnimationOriginalRect
+            flyAnimationOrigin: flyAnimationOrigin
         )
         return item
     }

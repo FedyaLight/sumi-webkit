@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 
 @MainActor
@@ -23,7 +22,7 @@ final class DownloadTransactionFactory {
         sourceURL: URL,
         suggestedFilename: String,
         promptRequest: SumiDownloadPromptRequest?,
-        flyAnimationOriginalRect: NSRect?,
+        flyAnimationOrigin: DownloadFlyAnimationOrigin?,
         inheritedReservation: DownloadDestinationReservation? = nil,
         delegate: any DownloadTransactionDelegate
     ) -> DownloadTransaction {
@@ -33,7 +32,7 @@ final class DownloadTransactionFactory {
             sourceURL: sourceURL,
             suggestedFilename: suggestedFilename,
             promptRequest: promptRequest,
-            flyAnimationOriginalRect: flyAnimationOriginalRect,
+            flyAnimationOrigin: flyAnimationOrigin,
             inheritedReservation: inheritedReservation,
             destinations: destinations,
             finalizer: finalizer,
@@ -55,7 +54,7 @@ final class DownloadTransactionFactory {
             sourceURL: sourceURL,
             suggestedFilename: suggestedFilename,
             promptRequest: nil,
-            flyAnimationOriginalRect: nil,
+            flyAnimationOrigin: nil,
             inheritedReservation: nil,
             destinations: destinations,
             finalizer: finalizer,

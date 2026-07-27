@@ -77,7 +77,7 @@ final class DownloadListCoordinator: DownloadTransactionDelegate {
         suggestedFilename: String,
         openIntent: SumiDownloadOpenIntent?,
         promptRequest: SumiDownloadPromptRequest?,
-        flyAnimationOriginalRect: NSRect?
+        flyAnimationOrigin: DownloadFlyAnimationOrigin?
     ) -> DownloadItem {
         let item = DownloadItem(
             downloadURL: originalURL,
@@ -92,7 +92,7 @@ final class DownloadListCoordinator: DownloadTransactionDelegate {
             sourceURL: originalURL,
             suggestedFilename: suggestedFilename,
             promptRequest: promptRequest,
-            flyAnimationOriginalRect: flyAnimationOriginalRect,
+            flyAnimationOrigin: flyAnimationOrigin,
             delegate: self
         )
         transactions[item.id] = transaction
@@ -159,7 +159,7 @@ final class DownloadListCoordinator: DownloadTransactionDelegate {
             sourceURL: item.downloadURL,
             suggestedFilename: item.fileName,
             promptRequest: nil,
-            flyAnimationOriginalRect: nil,
+            flyAnimationOrigin: nil,
             inheritedReservation: inheritedReservation,
             delegate: self
         )

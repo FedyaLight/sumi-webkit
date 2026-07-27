@@ -272,7 +272,7 @@ final class TestDownloadProgressPublication: DownloadProgressPublication {
         at temporaryURL: URL,
         destinationURL _: URL,
         responseMIMEType _: String?,
-        flyAnimationOriginalRect _: NSRect?
+        flyAnimationOrigin _: DownloadFlyAnimationOrigin?
     ) {
         publishedTemporaryURL = temporaryURL
     }
@@ -433,7 +433,8 @@ struct DownloadTestHarness {
         let workspace = TestDownloadWorkspace()
         self.manager = DownloadManager(
             coordinator: coordinator,
-            workspace: workspace
+            workspace: workspace,
+            flyAnimationCenter: DownloadFlyAnimationCenter()
         )
         self.coordinator = coordinator
         self.destinations = destinations

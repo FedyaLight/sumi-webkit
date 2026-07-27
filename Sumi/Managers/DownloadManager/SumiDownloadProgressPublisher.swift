@@ -5,6 +5,17 @@ import UniformTypeIdentifiers
 
 @MainActor
 final class SumiDownloadProgressPublisher: DownloadProgressPublishing {
+    private let flyAnimationCenter: DownloadFlyAnimationCenter
+    private let dockDestinationChecker: any DockDownloadDestinationChecking
+
+    init(
+        flyAnimationCenter: DownloadFlyAnimationCenter,
+        dockDestinationChecker: any DockDownloadDestinationChecking
+    ) {
+        self.flyAnimationCenter = flyAnimationCenter
+        self.dockDestinationChecker = dockDestinationChecker
+    }
+
     func makePublication(
         source: DownloadProgressSource,
         sourceURL: URL,
@@ -17,7 +28,9 @@ final class SumiDownloadProgressPublisher: DownloadProgressPublishing {
             sourceURL: sourceURL,
             onUpdate: onUpdate,
             onCancel: onCancel,
-            onTemporaryFileRemoved: onTemporaryFileRemoved
+            onTemporaryFileRemoved: onTemporaryFileRemoved,
+            flyAnimationCenter: flyAnimationCenter,
+            dockDestinationChecker: dockDestinationChecker
         )
     }
 }
@@ -29,6 +42,8 @@ private final class SumiDownloadProgressPublication: DownloadProgressPublication
     private let onUpdate: @MainActor (DownloadProgressSnapshot) -> Void
     private let onCancel: @MainActor () -> Void
     private let onTemporaryFileRemoved: @MainActor () -> Void
+    private let flyAnimationCenter: DownloadFlyAnimationCenter
+    private let dockDestinationChecker: any DockDownloadDestinationChecking
     private var progressPresenter: DownloadFileProgressPresenter?
     private var temporaryFilePresenter: DownloadFilePresenter?
     private var cancellable: AnyCancellable?
@@ -39,7 +54,9 @@ private final class SumiDownloadProgressPublication: DownloadProgressPublication
         sourceURL: URL,
         onUpdate: @escaping @MainActor (DownloadProgressSnapshot) -> Void,
         onCancel: @escaping @MainActor () -> Void,
-        onTemporaryFileRemoved: @escaping @MainActor () -> Void
+        onTemporaryFileRemoved: @escaping @MainActor () -> Void,
+        flyAnimationCenter: DownloadFlyAnimationCenter,
+        dockDestinationChecker: any DockDownloadDestinationChecking
     ) {
         switch source {
         case .progress(let sourceProgress):
@@ -54,6 +71,8 @@ private final class SumiDownloadProgressPublication: DownloadProgressPublication
         self.onUpdate = onUpdate
         self.onCancel = onCancel
         self.onTemporaryFileRemoved = onTemporaryFileRemoved
+        self.flyAnimationCenter = flyAnimationCenter
+        self.dockDestinationChecker = dockDestinationChecker
         self.progress.cancellationHandler = { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self, !self.isStopped else { return }
@@ -86,19 +105,28 @@ private final class SumiDownloadProgressPublication: DownloadProgressPublication
         at temporaryURL: URL,
         destinationURL: URL,
         responseMIMEType: String?,
-        flyAnimationOriginalRect: NSRect?
+        flyAnimationOrigin: DownloadFlyAnimationOrigin?
     ) {
         guard !isStopped else { return }
         progress.fileURL = temporaryURL
 
-        if let flyAnimationOriginalRect {
+        if let flyAnimationOrigin {
             let fileType = UTType(filenameExtension: destinationURL.pathExtension)
                 ?? responseMIMEType.flatMap(Self.fileType(forMIMEType:))
                 ?? .data
             let icon = NSWorkspace.shared.icon(for: fileType)
-            progress.flyToImage = icon
             progress.fileIcon = icon
-            progress.fileIconOriginalRect = flyAnimationOriginalRect
+
+            if dockDestinationChecker.containsDestinationFolder(for: destinationURL),
+               let nativeOriginalRect = flyAnimationOrigin.nativeOriginalRect {
+                progress.flyToImage = icon
+                progress.fileIconOriginalRect = nativeOriginalRect
+            } else {
+                flyAnimationCenter.requestFallback(
+                    from: flyAnimationOrigin,
+                    icon: icon
+                )
+            }
         }
 
         let presenter = DownloadFileProgressPresenter(progress: progress)

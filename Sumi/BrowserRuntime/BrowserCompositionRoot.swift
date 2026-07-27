@@ -266,6 +266,7 @@ enum BrowserCompositionRoot {
         let downloadOrphanCleaner = SumiDownloadOrphanCleaner(
             fileManager: downloadFileManager
         )
+        let downloadFlyAnimationCenter = DownloadFlyAnimationCenter()
         let downloadTransactionFactory = DownloadTransactionFactory(
             destinations: SumiDownloadDestinationAllocator(
                 fileManager: downloadFileManager,
@@ -274,7 +275,10 @@ enum BrowserCompositionRoot {
             finalizer: SumiDownloadFileFinalizer(
                 fileManager: downloadFileManager
             ),
-            progressPublisher: SumiDownloadProgressPublisher()
+            progressPublisher: SumiDownloadProgressPublisher(
+                flyAnimationCenter: downloadFlyAnimationCenter,
+                dockDestinationChecker: SystemDockDownloadDestinationChecker()
+            )
         )
         let downloadManager = DownloadManager(
             coordinator: DownloadListCoordinator(
@@ -284,7 +288,8 @@ enum BrowserCompositionRoot {
             workspace: SumiDownloadWorkspace(
                 workspace: .shared,
                 fileManager: downloadFileManager
-            )
+            ),
+            flyAnimationCenter: downloadFlyAnimationCenter
         )
         let resolvedExtensionsModule = makeExtensionsModule(
             moduleRegistry: moduleRegistry,

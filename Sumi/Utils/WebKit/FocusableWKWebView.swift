@@ -332,8 +332,22 @@ final class FocusableWKWebView: WKWebView {
     }
 
     func resetPageInteractionState() {
+        resetPageInteractionState(preservingRecentPrimaryMouseDown: false)
+    }
+
+    func resetPageInteractionStateForNavigation() {
+        resetPageInteractionState(preservingRecentPrimaryMouseDown: true)
+    }
+
+    private func resetPageInteractionState(
+        preservingRecentPrimaryMouseDown: Bool
+    ) {
         primaryMouseDownReceipt = nil
-        gestures.clear()
+        if preservingRecentPrimaryMouseDown {
+            gestures.clearCurrentGesture()
+        } else {
+            gestures.clear()
+        }
         hoveredLink.update(nil)
         contextMenu.clear()
         popupUserActivation.clear()
