@@ -36,14 +36,7 @@ struct TabFolderBodyListView: View {
     let dragSnapshot: SidebarFolderDragSnapshot
 
     @Environment(BrowserWindowState.self) private var windowState
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
-    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
     @Environment(\.sidebarWindowSelectionSnapshot) private var sidebarSelection
-
-    private var tokens: ChromeThemeTokens {
-        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
-    }
 
     var body: some View {
         let selectionSnapshot = sidebarSelection
@@ -161,12 +154,6 @@ struct TabFolderBodyListView: View {
         }
         .clipped()
         .padding(.leading, Self.folderContentLeadingPadding)
-        .background(alignment: .leading) {
-            folderNestingGuide(
-                isVisible: disclosurePresentation.sourceTopPadding > 0
-                    || disclosurePresentation.destinationTopPadding > 0
-            )
-        }
     }
 
     private func scrollTargetID(
@@ -181,18 +168,6 @@ struct TabFolderBodyListView: View {
             return .liveFolderItem(folderID: folder.id, itemID: itemID)
         case .splitGroup(let groupID):
             return .splitGroup(groupID)
-        }
-    }
-
-    @ViewBuilder
-    private func folderNestingGuide(isVisible: Bool) -> some View {
-        if isVisible {
-            Rectangle()
-                .fill(tokens.separator.opacity(0.55))
-                .frame(width: 1)
-                .padding(.vertical, 6)
-                .offset(x: 6)
-                .accessibilityHidden(true)
         }
     }
 
