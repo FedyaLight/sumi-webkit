@@ -62,6 +62,12 @@ final class LastSessionWindowsStore: ObservableObject {
             snapshots: normalized,
             tabSnapshot: tabSnapshot
         )
+        if archiveLoadState == .loaded,
+           normalized == self.snapshots,
+           tabSnapshot == nil,
+           self.tabSnapshot == nil {
+            return false
+        }
         guard save(archive) else { return false }
         self.snapshots = normalized
         self.tabSnapshot = tabSnapshot
@@ -124,7 +130,7 @@ final class LastSessionWindowsStore: ObservableObject {
             return false
         }
         userDefaults.set(data, forKey: Const.defaultsKey)
-        return userDefaults.data(forKey: Const.defaultsKey) == data
+        return true
     }
 
     private enum ArchiveLoadResult {

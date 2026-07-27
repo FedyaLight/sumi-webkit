@@ -366,8 +366,13 @@ final class BrowserWindowChromeTests: XCTestCase {
         assertNativeBrowserControlsHidden(window)
     }
 
-    func testBrowserChromePerformCloseWorksWhileNativeControlsAreHidden() {
+    func testNativePerformCloseWorksWhileStandardButtonIsHostedInBrowserChrome() {
         let window = WindowChromeTestSupport.makeBrowserWindow()
+        let host = makeTrafficLightHost(in: window)
+        window.browserTrafficLightCustodian.attach(
+            host: host,
+            presentation: .interactive
+        )
         let willClose = expectation(description: "Browser chrome close posts will-close notification.")
         let observer = NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification,
@@ -378,14 +383,22 @@ final class BrowserWindowChromeTests: XCTestCase {
         }
         defer { NotificationCenter.default.removeObserver(observer) }
 
-        assertNativeBrowserControlsHidden(window)
-        window.performCloseFromBrowserChrome(nil)
+        XCTAssertIdentical(
+            window.standardWindowButton(.closeButton)?.superview,
+            host
+        )
+        window.performClose(nil)
 
         wait(for: [willClose], timeout: 0.2)
     }
 
-    func testBrowserChromePerformCloseRespectsWindowShouldCloseWhileNativeControlsAreHidden() {
+    func testNativePerformCloseRespectsDelegateWhileStandardButtonIsHostedInBrowserChrome() {
         let window = WindowChromeTestSupport.makeBrowserWindow()
+        let host = makeTrafficLightHost(in: window)
+        window.browserTrafficLightCustodian.attach(
+            host: host,
+            presentation: .interactive
+        )
         let delegate = WindowShouldCloseDelegate(shouldClose: false)
         let willClose = expectation(description: "Browser chrome close should not post will-close notification.")
         willClose.isInverted = true
@@ -400,21 +413,34 @@ final class BrowserWindowChromeTests: XCTestCase {
 
         window.delegate = delegate
 
-        assertNativeBrowserControlsHidden(window)
-        window.performCloseFromBrowserChrome(nil)
+        XCTAssertIdentical(
+            window.standardWindowButton(.closeButton)?.superview,
+            host
+        )
+        window.performClose(nil)
 
         XCTAssertEqual(delegate.windowShouldCloseCount, 1)
         wait(for: [willClose], timeout: 0.1)
     }
 
-    func testContentViewCanBeConstructedWithWindowLifecycleHandlerProtocol() {
-        let handler = FakeWindowLifecycleHandler()
-        let lifecycleHandler: any BrowserWindowLifecycleHandling = handler
+    private func makeTrafficLightHost(in window: NSWindow) -> NSView {
+        let host = NSView(
+            frame: NSRect(
+                x: 0,
+                y: 0,
+                width: BrowserWindowTrafficLightMetrics.sidebarReservedWidth,
+                height: BrowserWindowTrafficLightMetrics.clusterHeight
+            )
+        )
+        window.contentView?.addSubview(host)
+        return host
+    }
+
+    func testContentViewCanBeConstructedWithoutLifecycleForwarding() {
         let browserManager = BrowserManager()
         let updaterService = SumiUpdaterService(backendFactory: { _ in nil })
 
         let contentView = ContentView(
-            windowLifecycleHandler: lifecycleHandler,
             webContentContext: .make(
                 browserManager: browserManager,
                 updaterService: updaterService,
@@ -436,7 +462,6 @@ final class BrowserWindowChromeTests: XCTestCase {
 
         withExtendedLifetime(browserManager) {
             XCTAssertTrue(type(of: contentView) == ContentView.self)
-            XCTAssertTrue(handler.persistedWindowIds.isEmpty)
         }
     }
 
@@ -536,14 +561,5 @@ private final class WindowShouldCloseDelegate: NSObject, NSWindowDelegate {
     func windowShouldClose(_: NSWindow) -> Bool {
         windowShouldCloseCount += 1
         return shouldClose
-    }
-}
-
-@MainActor
-private final class FakeWindowLifecycleHandler: BrowserWindowLifecycleHandling {
-    private(set) var persistedWindowIds: [UUID] = []
-
-    func persistWindowSession(for windowState: BrowserWindowState) {
-        persistedWindowIds.append(windowState.id)
     }
 }

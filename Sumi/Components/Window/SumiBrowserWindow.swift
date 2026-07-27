@@ -68,9 +68,6 @@ extension NSWindow {
         backgroundColor = SumiBrowserWindowShellConfiguration.backgroundColor
         isOpaque = SumiBrowserWindowShellConfiguration.isOpaque
         collectionBehavior.insert(.fullScreenPrimary)
-        contentView?.wantsLayer = true
-        contentView?.layer?.backgroundColor = NSColor.clear.cgColor
-        contentView?.layer?.isOpaque = false
         isReleasedWhenClosed = SumiBrowserWindowShellConfiguration.isReleasedWhenClosed
         isMovable = SumiBrowserWindowShellConfiguration.isMovable
         contentMinSize = SumiBrowserWindowShellConfiguration.minimumContentSize
@@ -212,15 +209,8 @@ extension NSWindow {
         button.isTransparent = false
         button.alphaValue = isVisible ? 1 : 0
         button.isHidden = !isVisible
-        button.isEnabled = isVisible
         button.setAccessibilityElement(isVisible)
         button.setAccessibilityHidden(!isVisible)
-    }
-
-    @objc func performCloseFromBrowserChrome(_ sender: Any?) {
-        guard styleMask.contains(.closable) else { return }
-        guard delegate?.windowShouldClose?(self) != false else { return }
-        close()
     }
 
     private func applyNativeStandardWindowButtonIdentity(

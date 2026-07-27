@@ -21,7 +21,6 @@ private struct SumiAppRootDependencies {
     let defaultBrowserService: SumiDefaultBrowserService
     let windowRegistry: WindowRegistry
     let sidebarMouseButtonCaptureRegistry: SidebarMouseButtonCaptureRegistry
-    let windowLifecycleService: BrowserWindowLifecycleService
 }
 
 @main
@@ -38,14 +37,13 @@ struct SumiApp: App {
     @State private var isPresentingProfileRetirementNotice = false
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
-    // Root runtime facade retained for SwiftUI observation. App lifecycle and platform callbacks
-    // are routed through dedicated controllers and narrow protocols before reaching browser services.
+    // Root runtime facade retained for SwiftUI observation. Platform callbacks
+    // enter through the process-lifetime orchestration owner and narrow adapters.
     @StateObject private var browserManager: BrowserManager
     @StateObject private var nowPlayingController: SumiNativeNowPlayingController
     @StateObject private var menuFaviconInvalidator = SumiMenuFaviconInvalidator()
     private let updaterService: SumiUpdaterService
     private let defaultBrowserService: SumiDefaultBrowserService
-    private let windowLifecycleService: BrowserWindowLifecycleService
 
     init() {
         StartupPerformanceTrace.appLaunchStarted()
@@ -91,9 +89,6 @@ struct SumiApp: App {
         )
         self.updaterService = updaterService
         self.defaultBrowserService = defaultBrowserService
-        self.windowLifecycleService = BrowserWindowLifecycleService(
-            persistence: browserManager.windowSessionPersistenceCoordinator
-        )
         _windowRegistry = State(initialValue: windowRegistry)
         _nowPlayingController = StateObject(wrappedValue: nowPlayingController)
         _settingsManager = State(initialValue: SumiSettingsService(nowPlayingController: nowPlayingController))
@@ -144,6 +139,7 @@ struct SumiApp: App {
             }
         }
         .windowStyle(.hiddenTitleBar)
+        .restorationBehavior(.disabled)
         .commands {
             if case .ready = startupRecovery.state {
                 SumiCommands(
@@ -284,7 +280,6 @@ struct SumiApp: App {
         let updaterService = updaterService
         let defaultBrowserService = defaultBrowserService
         let sidebarMouseButtonCaptureRegistry = appDelegate.sidebarMouseButtonCaptureRegistry
-        let windowLifecycleService = windowLifecycleService
 
         return { [weak browserManager] windowRegistry, windowState in
             guard let browserManager else {
@@ -302,8 +297,8 @@ struct SumiApp: App {
                     updaterService: updaterService,
                     defaultBrowserService: defaultBrowserService,
                     windowRegistry: windowRegistry,
-                    sidebarMouseButtonCaptureRegistry: sidebarMouseButtonCaptureRegistry,
-                    windowLifecycleService: windowLifecycleService
+                    sidebarMouseButtonCaptureRegistry:
+                        sidebarMouseButtonCaptureRegistry
                 ),
                 windowState: windowState
             )
@@ -332,8 +327,7 @@ struct SumiApp: App {
                 updaterService: updaterService,
                 defaultBrowserService: defaultBrowserService,
                 windowRegistry: windowRegistry,
-                sidebarMouseButtonCaptureRegistry: appDelegate.sidebarMouseButtonCaptureRegistry,
-                windowLifecycleService: windowLifecycleService
+                sidebarMouseButtonCaptureRegistry: appDelegate.sidebarMouseButtonCaptureRegistry
             ),
             windowState: windowState,
             initialWorkspaceTheme: initialWorkspaceTheme
@@ -359,7 +353,6 @@ struct SumiApp: App {
         initialWorkspaceTheme: WorkspaceTheme?
     ) -> some View {
         ContentView(
-            windowLifecycleHandler: dependencies.windowLifecycleService,
             webContentContext: .make(
                 browserManager: dependencies.browserManager,
                 updaterService: dependencies.updaterService,

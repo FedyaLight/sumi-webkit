@@ -12,6 +12,23 @@ import WebKit
 
 @available(macOS 15.5, *)
 @MainActor
+private func webExtensionWindowState(
+    of window: NSWindow
+) -> WKWebExtension.WindowState {
+    switch BrowserWindowGeometryPolicy.displayMode(of: window) {
+    case .normal:
+        return .normal
+    case .zoomed:
+        return .maximized
+    case .fullScreen:
+        return .fullscreen
+    case .miniaturized:
+        return .minimized
+    }
+}
+
+@available(macOS 15.5, *)
+@MainActor
 protocol ExtensionTabTargetQuery: AnyObject {
     func extensionWindowState(for windowId: UUID) -> BrowserWindowState?
     var activeExtensionWindowState: BrowserWindowState? { get }
@@ -534,10 +551,7 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
 
     func windowState(for extensionContext: WKWebExtensionContext) -> WKWebExtension.WindowState {
         guard let window = appKitWindow(for: extensionContext) else { return .normal }
-        if window.isMiniaturized { return .minimized }
-        if window.styleMask.contains(.fullScreen) { return .fullscreen }
-        if window.isZoomed { return .maximized }
-        return .normal
+        return webExtensionWindowState(of: window)
     }
 
     func setWindowState(
@@ -745,10 +759,7 @@ final class ExtensionMiniWindowAdapter: NSObject, WKWebExtensionWindow {
         guard currentSession(to: extensionContext) != nil, let window else {
             return .normal
         }
-        if window.isMiniaturized { return .minimized }
-        if window.styleMask.contains(.fullScreen) { return .fullscreen }
-        if window.isZoomed { return .maximized }
-        return .normal
+        return webExtensionWindowState(of: window)
     }
 
     func isPrivate(for extensionContext: WKWebExtensionContext) -> Bool {

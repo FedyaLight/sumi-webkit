@@ -100,9 +100,7 @@ final class LastSessionWindowsRestoreService {
     private func missingSnapshots(
         in sourceSnapshots: [LastSessionWindowSnapshot]
     ) -> [LastSessionWindowSnapshot] {
-        let existingWindowIDs = Set(
-            openWindows.regularWindowSnapshots(excludingWindowID: nil).map(\.id)
-        )
+        let existingWindowIDs = openWindows.regularWindowIDs()
         return sourceSnapshots.filter { existingWindowIDs.contains($0.id) == false }
     }
 }

@@ -396,17 +396,16 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
             preconditionFailure("Failed to create persistence test defaults")
         }
         defaults.removePersistentDomain(forName: suiteName)
+        let snapshotFactory = WindowSessionSnapshotFactory(
+            glanceManager: browserManager.glanceManager
+        )
         return WindowSessionPersistenceCoordinator(
-            persistence: WindowSessionPersistenceService(
-                store: WindowSessionSnapshotStore(
-                    key: "window-session",
-                    userDefaults: defaults,
-                    environment: { [:] }
-                ),
-                snapshotFactory: WindowSessionSnapshotFactory(
-                    glanceManager: browserManager.glanceManager
-                )
+            snapshotStore: WindowSessionSnapshotStore(
+                key: "window-session",
+                userDefaults: defaults,
+                environment: { [:] }
             ),
+            snapshotFactory: snapshotFactory,
             scheduler: WindowSessionPersistenceScheduler(),
             openWindows: catalog,
             archive: archive

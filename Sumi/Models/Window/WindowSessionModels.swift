@@ -52,6 +52,36 @@ struct GlanceSessionSnapshot: Codable, Equatable, Hashable {
     var originRectInWindow: GlanceSessionRectSnapshot?
 }
 
+enum BrowserWindowDisplayMode: String, Codable, Equatable, Hashable {
+    case normal
+    case zoomed
+    case fullScreen
+    case miniaturized
+}
+
+struct BrowserWindowFrameSnapshot: Codable, Equatable, Hashable {
+    var x: Double
+    var y: Double
+    var width: Double
+    var height: Double
+
+    init(_ rect: CGRect) {
+        x = Double(rect.origin.x)
+        y = Double(rect.origin.y)
+        width = Double(rect.size.width)
+        height = Double(rect.size.height)
+    }
+
+    var cgRect: CGRect {
+        CGRect(x: x, y: y, width: width, height: height)
+    }
+}
+
+struct BrowserWindowGeometrySnapshot: Codable, Equatable, Hashable {
+    var frame: BrowserWindowFrameSnapshot
+    var displayMode: BrowserWindowDisplayMode
+}
+
 struct WindowSessionSnapshot: Codable, Equatable, Hashable {
     var currentTabId: UUID?
     var currentSpaceId: UUID?
@@ -76,6 +106,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
     var commandPaletteDraft: CommandPaletteDraftState
     var splitSelection: WindowSplitSelection? = nil
     var glanceSession: GlanceSessionSnapshot? = nil
+    var windowGeometry: BrowserWindowGeometrySnapshot? = nil
 
     private enum CodingKeys: String, CodingKey {
         case currentTabId
@@ -95,6 +126,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         case commandPaletteDraft
         case splitSelection
         case glanceSession
+        case windowGeometry
     }
 
     init(
@@ -114,7 +146,8 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         isSidebarVisible: Bool,
         commandPaletteDraft: CommandPaletteDraftState,
         splitSelection: WindowSplitSelection? = nil,
-        glanceSession: GlanceSessionSnapshot? = nil
+        glanceSession: GlanceSessionSnapshot? = nil,
+        windowGeometry: BrowserWindowGeometrySnapshot? = nil
     ) {
         self.currentTabId = currentTabId
         self.currentSpaceId = currentSpaceId
@@ -133,6 +166,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         self.commandPaletteDraft = commandPaletteDraft
         self.splitSelection = splitSelection
         self.glanceSession = glanceSession
+        self.windowGeometry = windowGeometry
     }
 
     init(from decoder: Decoder) throws {
@@ -172,6 +206,10 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
             forKey: .splitSelection
         )
         glanceSession = try container.decodeIfPresent(GlanceSessionSnapshot.self, forKey: .glanceSession)
+        windowGeometry = try container.decodeIfPresent(
+            BrowserWindowGeometrySnapshot.self,
+            forKey: .windowGeometry
+        )
     }
 
     func encode(to encoder: Encoder) throws {
@@ -193,6 +231,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         try container.encode(commandPaletteDraft, forKey: .commandPaletteDraft)
         try container.encodeIfPresent(splitSelection, forKey: .splitSelection)
         try container.encodeIfPresent(glanceSession, forKey: .glanceSession)
+        try container.encodeIfPresent(windowGeometry, forKey: .windowGeometry)
     }
 
     private static func canonicalized(

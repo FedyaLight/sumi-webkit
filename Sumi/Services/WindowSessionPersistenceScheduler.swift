@@ -1,22 +1,23 @@
 import Foundation
 
-/// Coalesces per-window persistence requests while retaining enough state to
-/// synchronously flush every pending window during app shutdown.
+/// Coalesces per-window persistence requests into one timer and one write to
+/// the legacy primary snapshot key. It still counts accepted window requests
+/// so shutdown and tests can verify that no pending work was lost.
 @MainActor
 final class WindowSessionPersistenceScheduler {
     typealias LiveCommitCallback = @MainActor () -> Void
 
     private let delayedActions: MainActorDelayedActionScheduler
-    private var cancellations: [UUID: MainActorDelayedActionScheduler.Cancellation] = [:]
+    private var cancellation: MainActorDelayedActionScheduler.Cancellation?
     private var writes: [UUID: WindowSessionDurableWrite] = [:]
-    private var liveCommitCallbacks: [UUID: LiveCommitCallback] = [:]
+    private var liveCommitCallback: LiveCommitCallback?
 
     init(delayedActions: MainActorDelayedActionScheduler = .live) {
         self.delayedActions = delayedActions
     }
 
     isolated deinit {
-        cancellations.values.forEach { $0() }
+        cancellation?()
     }
 
     func schedule(
@@ -27,12 +28,12 @@ final class WindowSessionPersistenceScheduler {
         guard write.windowState.isIncognito == false else { return }
 
         let windowID = write.windowID
-        cancel(for: windowID)
         writes[windowID] = write
-        liveCommitCallbacks[windowID] = afterDurableCommit
+        liveCommitCallback = afterDurableCommit
+        cancellation?()
         let delay = TimeInterval(delayNanoseconds) / 1_000_000_000
-        cancellations[windowID] = delayedActions.schedule(after: delay) { [weak self] in
-            self?.execute(windowID)
+        cancellation = delayedActions.schedule(after: delay) { [weak self] in
+            self?.executePendingWrites()
         }
     }
 
@@ -45,10 +46,10 @@ final class WindowSessionPersistenceScheduler {
         let pending = writes.values.sorted {
             $0.windowID.uuidString < $1.windowID.uuidString
         }
-        cancellations.values.forEach { $0() }
-        cancellations.removeAll()
+        cancellation?()
+        cancellation = nil
         writes.removeAll()
-        liveCommitCallbacks.removeAll()
+        liveCommitCallback = nil
 
         let trace = PerformanceTrace.beginInterval(
             "WindowSession.flushPendingPersistence"
@@ -59,7 +60,10 @@ final class WindowSessionPersistenceScheduler {
                 trace
             )
         }
-        pending.forEach { $0.commit() }
+        // Every write targets the same legacy primary store. Committing all of
+        // them only rewrites the same key; the previous implementation's final
+        // value was the last UUID-sorted write, so preserve that result once.
+        pending.last?.commit()
         return pending.count
     }
 
@@ -72,26 +76,33 @@ final class WindowSessionPersistenceScheduler {
     }
 
     func cancel(for windowID: UUID) {
-        cancellations.removeValue(forKey: windowID)?()
         writes.removeValue(forKey: windowID)
-        liveCommitCallbacks.removeValue(forKey: windowID)
+        guard writes.isEmpty else { return }
+        cancellation?()
+        cancellation = nil
+        liveCommitCallback = nil
     }
 
     func cancelAll() {
-        cancellations.values.forEach { $0() }
-        cancellations.removeAll()
+        cancellation?()
+        cancellation = nil
         writes.removeAll()
-        liveCommitCallbacks.removeAll()
+        liveCommitCallback = nil
     }
 
-    private func execute(_ windowID: UUID) {
-        cancellations.removeValue(forKey: windowID)
-        guard let write = writes.removeValue(forKey: windowID) else {
-            liveCommitCallbacks.removeValue(forKey: windowID)
+    private func executePendingWrites() {
+        cancellation = nil
+        guard writes.isEmpty == false else {
+            liveCommitCallback = nil
             return
         }
-        let callback = liveCommitCallbacks.removeValue(forKey: windowID)
-        write.commit()
+        let pending = writes.values.sorted {
+            $0.windowID.uuidString < $1.windowID.uuidString
+        }
+        writes.removeAll()
+        let callback = liveCommitCallback
+        liveCommitCallback = nil
+        pending.last?.commit()
         callback?()
     }
 }

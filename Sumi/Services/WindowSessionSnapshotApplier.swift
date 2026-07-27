@@ -72,5 +72,6 @@ struct WindowSessionSnapshotApplier {
                     preferredMemberID: selection.activeMemberID
                 )
             }
+        windowState.restorationState.stageWindowGeometry(snapshot.windowGeometry)
     }
 }

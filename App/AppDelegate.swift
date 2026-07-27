@@ -29,7 +29,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// Process-lifetime adapter with only a weak browser-root reference. A
     /// strong runtime lease is acquired synchronously after Quit is confirmed.
     var terminationCoordinator: (any BrowserTerminationCoordinating)?
-    weak var appLifecycleHandler: (any BrowserAppLifecycleHandling)?
+    weak var appLifecycleOwner: BrowserAppOrchestrationOwner?
     weak var settingsHandler: SumiSettingsService?
     var shortcutManager: KeyboardShortcutManager?
     var fallbackPersistenceSave: (@MainActor () throws -> Void)?
@@ -92,11 +92,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     func applicationDidBecomeActive(_ _: Notification) {
-        appLifecycleHandler?.handleApplicationDidBecomeActive()
+        appLifecycleOwner?.handleApplicationDidBecomeActive()
     }
 
     func applicationWillResignActive(_ _: Notification) {
-        appLifecycleHandler?.handleApplicationWillResignActive()
+        appLifecycleOwner?.handleApplicationWillResignActive()
+    }
+
+    func applicationShouldHandleReopen(
+        _: NSApplication,
+        hasVisibleWindows flag: Bool
+    ) -> Bool {
+        appLifecycleOwner?.handleApplicationReopen(
+            hasVisibleWindows: flag
+        ) ?? true
     }
 
     nonisolated func userNotificationCenter(

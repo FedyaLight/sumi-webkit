@@ -92,9 +92,18 @@ final class LastSessionWindowArchive {
         refreshNow(excludingWindowID: excludingWindowID)
     }
 
+    func refresh(using snapshots: [LastSessionWindowSnapshot]) {
+        guard activeRestoreAttempt == nil else { return }
+        refreshNow(
+            excludingWindowID: nil,
+            liveSnapshots: snapshots
+        )
+    }
+
     private func refreshNow(
         excludingWindowID: UUID?,
-        preservingWindowOrder: [UUID] = []
+        preservingWindowOrder: [UUID] = [],
+        liveSnapshots: [LastSessionWindowSnapshot]? = nil
     ) {
         if startupRestore.canOfferRestoreShortcut {
             lastSessionWindowsStore.updateSnapshots(
@@ -104,7 +113,7 @@ final class LastSessionWindowArchive {
             return
         }
 
-        var snapshots = openWindows.regularWindowSnapshots(
+        var snapshots = liveSnapshots ?? openWindows.regularWindowSnapshots(
             excludingWindowID: excludingWindowID
         )
         if snapshots.isEmpty,

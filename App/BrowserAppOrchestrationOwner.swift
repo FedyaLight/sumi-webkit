@@ -14,7 +14,8 @@ final class BrowserAppOrchestrationOwner {
         let startUpdater: @MainActor () -> Void
     }
 
-    private var applicationLifecycleController: BrowserApplicationLifecycleController?
+    private weak var browserManager: BrowserManager?
+    private weak var windowRegistry: WindowRegistry?
     private var mouseCommandRouter: BrowserMouseCommandRouter?
     private var externalURLTabOpening: ExternalURLTabOpeningService?
     private var windowRegistryEventSinkReceipt:
@@ -35,20 +36,10 @@ final class BrowserAppOrchestrationOwner {
         let keyboardShortcutManager = dependencies.keyboardShortcutManager
         let nowPlayingController = dependencies.nowPlayingController
 
+        self.browserManager = browserManager
+        self.windowRegistry = windowRegistry
         appDelegate.windowRegistry = windowRegistry
-        let applicationLifecycleController = BrowserApplicationLifecycleController(
-            scheduleBackgroundMediaReconcile: { [weak browserManager] reason in
-                browserManager?.backgroundMediaOptimizationService.scheduleReconcile(reason: reason)
-            },
-            pauseGeolocationOnAppBackgroundIfNeeded: { [weak browserManager] in
-                browserManager?.permissionRuntime.pauseGeolocationOnAppBackgroundIfNeeded()
-            },
-            resumeGeolocationOnAppForegroundIfNeeded: { [weak browserManager] in
-                browserManager?.permissionRuntime.resumeGeolocationOnAppForegroundIfNeeded()
-            }
-        )
-        self.applicationLifecycleController = applicationLifecycleController
-        appDelegate.appLifecycleHandler = applicationLifecycleController
+        appDelegate.appLifecycleOwner = self
         appDelegate.settingsHandler = settingsManager
         appDelegate.shortcutManager = keyboardShortcutManager
         appDelegate.fallbackPersistenceSave = dependencies.fallbackPersistenceSave
@@ -133,5 +124,33 @@ final class BrowserAppOrchestrationOwner {
         }
 
         return true
+    }
+
+    func handleApplicationWillResignActive() {
+        browserManager?.backgroundMediaOptimizationService.scheduleReconcile(
+            reason: "app-will-resign-active"
+        )
+        browserManager?.permissionRuntime
+            .pauseGeolocationOnAppBackgroundIfNeeded()
+    }
+
+    func handleApplicationDidBecomeActive() {
+        browserManager?.backgroundMediaOptimizationService.scheduleReconcile(
+            reason: "app-did-become-active"
+        )
+        browserManager?.permissionRuntime
+            .resumeGeolocationOnAppForegroundIfNeeded()
+    }
+
+    func handleApplicationReopen(hasVisibleWindows: Bool) -> Bool {
+        let shouldCreate = BrowserApplicationReopenPolicy
+            .shouldCreateNewWindow(
+                hasVisibleWindows: hasVisibleWindows,
+                hasOpenBrowserWindows:
+                    windowRegistry?.allWindows.isEmpty == false
+            )
+        guard shouldCreate else { return true }
+        _ = browserManager?.windowCommands.createNewWindow()
+        return false
     }
 }

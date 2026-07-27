@@ -10,7 +10,6 @@ import SwiftUI
 struct ContentView: View {
     @Environment(WindowRegistry.self) private var windowRegistry
 
-    private let windowLifecycleHandler: any BrowserWindowLifecycleHandling
     private let webContentContext: WindowWebContentContext
     private let sidebarContext: WindowSidebarContext
     private let commandPaletteContext: CommandPaletteBrowserContext
@@ -24,7 +23,6 @@ struct ContentView: View {
     @StateObject private var sidebarDragState: SidebarDragState
 
     init(
-        windowLifecycleHandler: any BrowserWindowLifecycleHandling,
         webContentContext: WindowWebContentContext,
         sidebarContext: WindowSidebarContext,
         commandPaletteContext: CommandPaletteBrowserContext,
@@ -35,7 +33,6 @@ struct ContentView: View {
         windowState: BrowserWindowState? = nil,
         initialWorkspaceTheme: WorkspaceTheme? = nil
     ) {
-        self.windowLifecycleHandler = windowLifecycleHandler
         self.webContentContext = webContentContext
         self.sidebarContext = sidebarContext
         self.commandPaletteContext = commandPaletteContext
@@ -82,15 +79,6 @@ struct ContentView: View {
                 StartupPerformanceTrace.firstWindowVisible()
                 guard providedWindowState == nil else { return }
                 windowRegistry.register(windowState)
-            }
-            .onDisappear {
-                guard providedWindowState == nil else { return }
-                guard windowRegistry.windows[windowState.id] != nil else {
-                    return
-                }
-                windowLifecycleHandler.persistWindowSession(for: windowState)
-                // Fallback for lifecycle paths that disappear without a close notification.
-                windowRegistry.unregister(windowState.id)
             }
     }
 }

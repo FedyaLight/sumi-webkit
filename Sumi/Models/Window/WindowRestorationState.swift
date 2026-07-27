@@ -10,8 +10,33 @@ final class WindowRestorationState {
     var restoredSessionWindowID: UUID?
     var isAwaitingInitialResolution: Bool
     var pendingSplitSelection: PendingWindowSplitSelection?
+    private(set) var pendingWindowGeometry: BrowserWindowGeometrySnapshot?
+    private var pendingWindowGeometryFrameShellIdentity: ObjectIdentifier?
 
     init(isAwaitingInitialResolution: Bool = false) {
         self.isAwaitingInitialResolution = isAwaitingInitialResolution
+    }
+
+    func stageWindowGeometry(_ geometry: BrowserWindowGeometrySnapshot?) {
+        pendingWindowGeometry = geometry
+        pendingWindowGeometryFrameShellIdentity = nil
+    }
+
+    func needsPendingWindowGeometryFrame(for shell: AnyObject) -> Bool {
+        pendingWindowGeometry != nil
+            && pendingWindowGeometryFrameShellIdentity != ObjectIdentifier(shell)
+    }
+
+    func markPendingWindowGeometryFrameApplied(to shell: AnyObject) {
+        guard pendingWindowGeometry != nil else { return }
+        pendingWindowGeometryFrameShellIdentity = ObjectIdentifier(shell)
+    }
+
+    func consumePendingWindowGeometry() -> BrowserWindowGeometrySnapshot? {
+        defer {
+            pendingWindowGeometry = nil
+            pendingWindowGeometryFrameShellIdentity = nil
+        }
+        return pendingWindowGeometry
     }
 }

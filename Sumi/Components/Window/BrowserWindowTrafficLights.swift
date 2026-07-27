@@ -103,65 +103,9 @@ enum BrowserWindowTrafficLightAction: CaseIterable, Hashable {
         }
     }
 
-    var accessibilityLabel: String {
-        switch self {
-        case .close:
-            return "Close"
-        case .minimize:
-            return "Minimize"
-        case .zoom:
-            return "Enter Full Screen"
-        }
-    }
-}
-
-@MainActor
-struct BrowserWindowTrafficLightActionProvider {
-    weak var targetWindow: NSWindow?
-
-    init(targetWindow: NSWindow?) {
-        self.targetWindow = targetWindow
-    }
-
-    static func browserWindow(_ window: NSWindow?) -> BrowserWindowTrafficLightActionProvider {
-        BrowserWindowTrafficLightActionProvider(targetWindow: window)
-    }
-
-    func resolvedTargetWindow(preferred preferredWindow: NSWindow? = nil) -> NSWindow? {
-        preferredWindow ?? targetWindow
-    }
-
-    func isEnabled(
-        _ action: BrowserWindowTrafficLightAction,
-        preferred preferredWindow: NSWindow? = nil
-    ) -> Bool {
-        guard let targetWindow = resolvedTargetWindow(preferred: preferredWindow) else { return false }
-
-        switch action {
-        case .close:
-            return targetWindow.styleMask.contains(.closable)
-        case .minimize:
-            return targetWindow.styleMask.contains(.miniaturizable)
-                && targetWindow.isMiniaturized == false
-        case .zoom:
-            return targetWindow.styleMask.contains(.resizable)
-        }
-    }
-
-    func accessibilityLabel(
-        for action: BrowserWindowTrafficLightAction,
-        preferred preferredWindow: NSWindow? = nil
-    ) -> String {
-        let targetWindow = resolvedTargetWindow(preferred: preferredWindow)
-        guard action == .zoom, targetWindow?.styleMask.contains(.fullScreen) == true else {
-            return action.accessibilityLabel
-        }
-        return "Exit Full Screen"
-    }
 }
 
 struct BrowserWindowTrafficLights: View {
-    var actionProvider: BrowserWindowTrafficLightActionProvider
     var presentation: BrowserWindowTrafficLightPresentation
     /// 1 while the sidebar is fully extended, 0 once it has fully travelled away. The collapsed
     /// overlay translates its whole panel and therefore leaves this at 1; the docked column is
@@ -170,18 +114,15 @@ struct BrowserWindowTrafficLights: View {
     var travelProgress: CGFloat = 1
 
     init(
-        actionProvider: BrowserWindowTrafficLightActionProvider,
         presentation: BrowserWindowTrafficLightPresentation,
         travelProgress: CGFloat = 1
     ) {
-        self.actionProvider = actionProvider
         self.presentation = presentation
         self.travelProgress = travelProgress
     }
 
     var body: some View {
         BrowserWindowStandardTrafficLightCluster(
-            actionProvider: actionProvider,
             presentation: presentation
         )
         .frame(
@@ -205,17 +146,16 @@ struct BrowserWindowTrafficLights: View {
 
 @MainActor
 private struct BrowserWindowStandardTrafficLightCluster: NSViewRepresentable {
-    var actionProvider: BrowserWindowTrafficLightActionProvider
     var presentation: BrowserWindowTrafficLightPresentation
 
     func makeNSView(context: Context) -> BrowserWindowStandardTrafficLightClusterView {
         let view = BrowserWindowStandardTrafficLightClusterView()
-        view.update(actionProvider: actionProvider, presentation: presentation)
+        view.update(presentation: presentation)
         return view
     }
 
     func updateNSView(_ nsView: BrowserWindowStandardTrafficLightClusterView, context: Context) {
-        nsView.update(actionProvider: actionProvider, presentation: presentation)
+        nsView.update(presentation: presentation)
     }
 
     static func dismantleNSView(
@@ -237,7 +177,6 @@ private struct BrowserWindowStandardTrafficLightCluster: NSViewRepresentable {
 // releases it, and reports its own layout passes.
 @MainActor
 private final class BrowserWindowStandardTrafficLightClusterView: NSView {
-    private var actionProvider: BrowserWindowTrafficLightActionProvider?
     private var presentation: BrowserWindowTrafficLightPresentation = .hidden
     private var custodian: BrowserWindowTrafficLightCustodian?
 
@@ -274,11 +213,7 @@ private final class BrowserWindowStandardTrafficLightClusterView: NSView {
         custodian?.enforce(host: self)
     }
 
-    func update(
-        actionProvider: BrowserWindowTrafficLightActionProvider,
-        presentation: BrowserWindowTrafficLightPresentation
-    ) {
-        self.actionProvider = actionProvider
+    func update(presentation: BrowserWindowTrafficLightPresentation) {
         self.presentation = presentation
         setAccessibilityElement(presentation.isInteractive)
         syncCustody()
@@ -305,22 +240,8 @@ private final class BrowserWindowStandardTrafficLightClusterView: NSView {
         }
         resolvedCustodian.attach(
             host: self,
-            presentation: presentation,
-            actionProvider: actionProvider
+            presentation: presentation
         )
         needsLayout = true
-    }
-}
-
-extension BrowserWindowTrafficLightAction {
-    var selector: Selector {
-        switch self {
-        case .close:
-            return #selector(NSWindow.performCloseFromBrowserChrome(_:))
-        case .minimize:
-            return #selector(NSWindow.miniaturize(_:))
-        case .zoom:
-            return #selector(NSWindow.toggleFullScreen(_:))
-        }
     }
 }

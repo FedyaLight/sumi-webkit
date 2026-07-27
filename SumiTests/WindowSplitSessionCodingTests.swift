@@ -70,8 +70,54 @@ final class WindowSplitSessionCodingTests: XCTestCase {
         XCTAssertEqual(snapshot.splitSelection, selection)
     }
 
+    func testWindowGeometryRoundTripAndRestoreStaging() throws {
+        let geometry = BrowserWindowGeometrySnapshot(
+            frame: BrowserWindowFrameSnapshot(
+                CGRect(x: 80, y: 120, width: 900, height: 640)
+            ),
+            displayMode: .zoomed
+        )
+        let snapshot = makeSnapshot(windowGeometry: geometry)
+
+        let decoded = try JSONDecoder().decode(
+            WindowSessionSnapshot.self,
+            from: JSONEncoder().encode(snapshot)
+        )
+        let windowState = BrowserWindowState()
+        WindowSessionSnapshotApplier(glanceManager: GlanceManager()).apply(
+            decoded,
+            to: windowState
+        )
+
+        XCTAssertEqual(decoded.windowGeometry, geometry)
+        XCTAssertEqual(
+            windowState.restorationState.pendingWindowGeometry,
+            geometry
+        )
+    }
+
+    func testSnapshotFactoryUsesInjectedNativeWindowGeometryProjection() {
+        let geometry = BrowserWindowGeometrySnapshot(
+            frame: BrowserWindowFrameSnapshot(
+                CGRect(x: 20, y: 40, width: 700, height: 500)
+            ),
+            displayMode: .normal
+        )
+        let windowState = BrowserWindowState()
+        let snapshot = WindowSessionSnapshotFactory(
+            glanceManager: GlanceManager(),
+            windowGeometry: { state in
+                XCTAssertIdentical(state, windowState)
+                return geometry
+            }
+        ).make(for: windowState)
+
+        XCTAssertEqual(snapshot.windowGeometry, geometry)
+    }
+
     private func makeSnapshot(
-        splitSelection: WindowSplitSelection? = nil
+        splitSelection: WindowSplitSelection? = nil,
+        windowGeometry: BrowserWindowGeometrySnapshot? = nil
     ) -> WindowSessionSnapshot {
         WindowSessionSnapshot(
             currentTabId: nil,
@@ -97,7 +143,8 @@ final class WindowSplitSessionCodingTests: XCTestCase {
                 text: "",
                 navigateCurrentTab: false
             ),
-            splitSelection: splitSelection
+            splitSelection: splitSelection,
+            windowGeometry: windowGeometry
         )
     }
 }

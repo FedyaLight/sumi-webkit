@@ -66,52 +66,6 @@ final class BrowserAppCommandServicesTests: XCTestCase {
         XCTAssertEqual(events, ["back", "forward"])
     }
 
-    func testWindowLifecycleServicePersistsExactWindow() throws {
-        let suiteName = "BrowserAppCommandServicesTests.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let snapshotStore = WindowSessionSnapshotStore(
-            key: "window-session",
-            userDefaults: defaults,
-            environment: { [:] }
-        )
-        let currentTabID = UUID()
-        let windowState = BrowserWindowState()
-        windowState.currentTabId = currentTabID
-        let windows = WindowRegistry()
-        windows.register(windowState)
-        let persistence = WindowSessionPersistenceTestComposition(
-            snapshotStore: snapshotStore,
-            scheduler: WindowSessionPersistenceScheduler(),
-            snapshotFactory: WindowSessionSnapshotFactory(
-                glanceManager: GlanceManager()
-            ),
-            windows: windows
-        )
-        let service = BrowserWindowLifecycleService(
-            persistence: persistence.coordinator
-        )
-
-        service.persistWindowSession(for: windowState)
-
-        XCTAssertEqual(
-            snapshotStore.loadSnapshot()?.snapshot.currentTabId,
-            currentTabID
-        )
-    }
-
-    func testWindowLifecycleServiceDoesNotRetainBrowserManagerRoot() {
-        var browserManager: BrowserManager? = BrowserManager()
-        let service = BrowserWindowLifecycleService(
-            persistence: browserManager!.windowSessionPersistenceCoordinator
-        )
-        weak let releasedBrowserManager = browserManager
-
-        browserManager = nil
-
-        XCTAssertNil(releasedBrowserManager)
-        withExtendedLifetime(service) {}
-    }
 }
 
 @MainActor

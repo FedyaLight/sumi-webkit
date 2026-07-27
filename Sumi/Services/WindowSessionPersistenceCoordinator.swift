@@ -5,18 +5,21 @@ import Foundation
 /// last valid archive while flushing only the primary durable snapshot.
 @MainActor
 final class WindowSessionPersistenceCoordinator {
-    private let persistence: WindowSessionPersistenceService
+    private let snapshotStore: WindowSessionSnapshotStore
+    private let snapshotFactory: WindowSessionSnapshotFactory
     private let scheduler: WindowSessionPersistenceScheduler
     private let openWindows: OpenWindowSessionCatalog
     private let archive: LastSessionWindowArchive
 
     init(
-        persistence: WindowSessionPersistenceService,
+        snapshotStore: WindowSessionSnapshotStore,
+        snapshotFactory: WindowSessionSnapshotFactory,
         scheduler: WindowSessionPersistenceScheduler,
         openWindows: OpenWindowSessionCatalog,
         archive: LastSessionWindowArchive
     ) {
-        self.persistence = persistence
+        self.snapshotStore = snapshotStore
+        self.snapshotFactory = snapshotFactory
         self.scheduler = scheduler
         self.openWindows = openWindows
         self.archive = archive
@@ -34,11 +37,16 @@ final class WindowSessionPersistenceCoordinator {
             PerformanceTrace.endInterval("WindowSession.persist", trace)
         }
 
-        for windowState in regularWindowStates {
-            scheduler.cancel(for: windowState.id)
-            persistence.persistDurableSnapshot(windowState)
+        // An immediate live projection supersedes the whole coalesced batch:
+        // every pending write targets the same legacy primary key.
+        scheduler.cancelAll()
+        let durablePrimary = regularWindowStates.max {
+            $0.id.uuidString < $1.id.uuidString
         }
-        archive.refresh(excludingWindowID: nil)
+        commitLiveProjection(
+            durablePrimary: durablePrimary,
+            excludingWindowID: nil
+        )
     }
 
     /// Establishes the durable primary before WindowRegistry removes the
@@ -46,15 +54,21 @@ final class WindowSessionPersistenceCoordinator {
     /// closing write is cancelled synchronously: it can never reappear during
     /// a later scheduler flush.
     func persistBeforeClosing(_ windowState: BrowserWindowState) {
-        scheduler.cancel(for: windowState.id)
-        guard windowState.isIncognito == false else { return }
+        guard windowState.isIncognito == false else {
+            scheduler.cancel(for: windowState.id)
+            return
+        }
+        // Closing commits a complete live projection before registry removal.
+        // No older per-window request may overwrite its chosen survivor later.
+        scheduler.cancelAll()
 
         let durablePrimary = openWindows.deterministicRegularWindow(
             excludingWindowID: windowState.id
         ) ?? windowState
-        scheduler.cancel(for: durablePrimary.id)
-        persistence.persistDurableSnapshot(durablePrimary)
-        archive.refresh(excludingWindowID: windowState.id)
+        commitLiveProjection(
+            durablePrimary: durablePrimary,
+            excludingWindowID: windowState.id
+        )
     }
 
     func schedule(
@@ -62,7 +76,11 @@ final class WindowSessionPersistenceCoordinator {
         delayNanoseconds: UInt64 = 450_000_000
     ) {
         scheduler.schedule(
-            persistence.durableWrite(for: windowState),
+            WindowSessionDurableWrite(
+                windowState: windowState,
+                store: snapshotStore,
+                snapshotFactory: snapshotFactory
+            ),
             delayNanoseconds: delayNanoseconds,
             afterDurableCommit: { [archive] in
                 archive.refresh(excludingWindowID: nil)
@@ -76,5 +94,29 @@ final class WindowSessionPersistenceCoordinator {
         guard committedWriteCount > 0 else { return 0 }
         archive.refresh(excludingWindowID: nil)
         return committedWriteCount
+    }
+
+    private func commitLiveProjection(
+        durablePrimary: BrowserWindowState?,
+        excludingWindowID: UUID?
+    ) {
+        let allProjection = openWindows.regularWindowProjection()
+        var archiveProjection = allProjection.filter {
+            $0.windowState.id != excludingWindowID
+        }
+        if archiveProjection.isEmpty, allProjection.isEmpty == false {
+            archiveProjection = allProjection
+        }
+
+        if let durablePrimary {
+            let durableSnapshot = allProjection.first {
+                $0.windowState === durablePrimary
+            }?.archiveSnapshot.session
+                ?? snapshotFactory.make(for: durablePrimary)
+            _ = snapshotStore.persist(durableSnapshot)
+        }
+        archive.refresh(
+            using: archiveProjection.map(\.archiveSnapshot)
+        )
     }
 }

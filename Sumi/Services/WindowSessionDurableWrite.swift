@@ -27,34 +27,3 @@ struct WindowSessionDurableWrite {
         _ = store.persist(snapshotFactory.make(for: windowState))
     }
 }
-
-/// Builds and durably commits window snapshots. It has no scheduling or live
-/// archive responsibility.
-@MainActor
-final class WindowSessionPersistenceService {
-    private let store: WindowSessionSnapshotStore
-    private let snapshotFactory: WindowSessionSnapshotFactory
-
-    init(
-        store: WindowSessionSnapshotStore,
-        snapshotFactory: WindowSessionSnapshotFactory
-    ) {
-        self.store = store
-        self.snapshotFactory = snapshotFactory
-    }
-
-    func persistDurableSnapshot(_ windowState: BrowserWindowState) {
-        guard windowState.isIncognito == false else { return }
-        _ = store.persist(snapshotFactory.make(for: windowState))
-    }
-
-    func durableWrite(
-        for windowState: BrowserWindowState
-    ) -> WindowSessionDurableWrite {
-        WindowSessionDurableWrite(
-            windowState: windowState,
-            store: store,
-            snapshotFactory: snapshotFactory
-        )
-    }
-}

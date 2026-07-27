@@ -47,8 +47,18 @@ struct BrowserWindowBridge: NSViewRepresentable {
 
             guard let window else { return }
 
-            promoteToSumiBrowserWindowIfNeeded(window)
-            window.applyBrowserWindowShellConfiguration(shouldApplyInitialSize: true)
+            if !(window is SumiBrowserWindow) {
+                promoteToSumiBrowserWindowIfNeeded(window)
+                window.applyBrowserWindowShellConfiguration(
+                    shouldApplyInitialSize: true
+                )
+            }
+            BrowserWindowGeometryPolicy.restorePendingFrame(
+                of: windowState,
+                to: window
+            )
+            BrowserWindowGeometryPolicy.captureRestorableFrame(of: window)
+            refreshNativeWindowState()
             refreshWindowVisibilityState()
 
             addObserver(
@@ -57,8 +67,13 @@ struct BrowserWindowBridge: NSViewRepresentable {
                 object: window
             ) { [weak self] _ in
                 guard let self else { return }
-                Task { @MainActor in
+                MainActor.assumeIsolated {
                     self.windowRegistry.setActive(self.windowState)
+                    BrowserWindowGeometryPolicy.consumePendingRestoration(
+                        of: self.windowState,
+                        in: window
+                    )
+                    self.refreshNativeWindowState()
                     self.refreshWindowVisibilityState()
                 }
             }
@@ -68,8 +83,9 @@ struct BrowserWindowBridge: NSViewRepresentable {
                 forName: NSWindow.didMiniaturizeNotification,
                 object: window
             ) { [weak self] _ in
-                Task { @MainActor [weak self] in
+                MainActor.assumeIsolated {
                     self?.refreshWindowVisibilityState()
+                    self?.refreshNativeWindowState()
                 }
             }
 
@@ -78,8 +94,9 @@ struct BrowserWindowBridge: NSViewRepresentable {
                 forName: NSWindow.didDeminiaturizeNotification,
                 object: window
             ) { [weak self] _ in
-                Task { @MainActor [weak self] in
+                MainActor.assumeIsolated {
                     self?.refreshWindowVisibilityState()
+                    self?.refreshNativeWindowState()
                 }
             }
 
@@ -88,8 +105,63 @@ struct BrowserWindowBridge: NSViewRepresentable {
                 forName: NSWindow.didChangeOcclusionStateNotification,
                 object: window
             ) { [weak self] _ in
-                Task { @MainActor [weak self] in
+                MainActor.assumeIsolated {
                     self?.refreshWindowVisibilityState()
+                }
+            }
+
+            for name in [
+                NSWindow.didResizeNotification,
+                NSWindow.didEndLiveResizeNotification,
+                NSWindow.didEnterFullScreenNotification,
+                NSWindow.didExitFullScreenNotification,
+            ] {
+                addObserver(center: .default, forName: name, object: window) {
+                    [weak self] _ in
+                    MainActor.assumeIsolated {
+                        self?.refreshNativeWindowState()
+                    }
+                }
+            }
+
+            addObserver(
+                center: .default,
+                forName: NSWindow.willEnterFullScreenNotification,
+                object: window
+            ) { _ in
+                MainActor.assumeIsolated {
+                    BrowserWindowGeometryPolicy.captureRestorableFrame(
+                        of: window
+                    )
+                    window
+                        .setNativeStandardWindowButtonsForBrowserFullScreenChromeVisible(
+                            true
+                        )
+                }
+            }
+
+            addObserver(
+                center: .default,
+                forName: NSWindow.willMiniaturizeNotification,
+                object: window
+            ) { _ in
+                MainActor.assumeIsolated {
+                    BrowserWindowGeometryPolicy.captureRestorableFrame(
+                        of: window
+                    )
+                }
+            }
+
+            addObserver(
+                center: .default,
+                forName: NSWindow.willExitFullScreenNotification,
+                object: window
+            ) { _ in
+                MainActor.assumeIsolated {
+                    window
+                        .setNativeStandardWindowButtonsForBrowserFullScreenChromeVisible(
+                            false
+                        )
                 }
             }
 
@@ -117,6 +189,10 @@ struct BrowserWindowBridge: NSViewRepresentable {
 
             if window.isKeyWindow {
                 windowRegistry.setActive(windowState)
+                BrowserWindowGeometryPolicy.consumePendingRestoration(
+                    of: windowState,
+                    in: window
+                )
             }
         }
 
@@ -163,6 +239,20 @@ struct BrowserWindowBridge: NSViewRepresentable {
 
             windowState.presentationState.visibility = newState
             windowRegistry.notifyWindowVisibilityChanged(windowState)
+        }
+
+        private func refreshNativeWindowState() {
+            guard let window else { return }
+            let mode = BrowserWindowGeometryPolicy.displayMode(of: window)
+            if mode == .normal, window.inLiveResize == false {
+                BrowserWindowGeometryPolicy.captureRestorableFrame(of: window)
+            }
+            guard windowState.presentationState.nativeDisplayMode != mode
+            else { return }
+            windowState.presentationState.nativeDisplayMode = mode
+            window.setNativeStandardWindowButtonsForBrowserFullScreenChromeVisible(
+                mode == .fullScreen
+            )
         }
     }
 }

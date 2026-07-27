@@ -19,8 +19,10 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
             harness.appDelegate.externalURLHandler is ExternalURLTabOpeningService
         )
         XCTAssertNotNil(harness.appDelegate.terminationCoordinator)
-        XCTAssertNotNil(harness.appDelegate.appLifecycleHandler)
-        XCTAssertNotIdentical(harness.appDelegate.appLifecycleHandler as AnyObject?, harness.browserManager)
+        XCTAssertIdentical(
+            harness.appDelegate.appLifecycleOwner,
+            harness.owner
+        )
         XCTAssertIdentical(harness.appDelegate.settingsHandler, harness.settingsManager)
         XCTAssertIdentical(harness.appDelegate.shortcutManager, harness.keyboardShortcutManager)
         XCTAssertIdentical(

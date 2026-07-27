@@ -428,8 +428,7 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
 
         custodian.attach(
             host: host,
-            presentation: .interactive,
-            actionProvider: .browserWindow(window)
+            presentation: .interactive
         )
 
         let spacing = BrowserWindowTrafficLightCustodian.resolvedGeometry.centerSpacing
@@ -448,10 +447,8 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         let firstHost = Self.makeCustodyHost(in: window)
         let secondHost = Self.makeCustodyHost(in: window)
         let custodian = window.browserTrafficLightCustodian
-        let provider = BrowserWindowTrafficLightActionProvider.browserWindow(window)
-
-        custodian.attach(host: firstHost, presentation: .interactive, actionProvider: provider)
-        custodian.attach(host: secondHost, presentation: .interactive, actionProvider: provider)
+        custodian.attach(host: firstHost, presentation: .interactive)
+        custodian.attach(host: secondHost, presentation: .interactive)
 
         for action in BrowserWindowTrafficLightAction.allCases {
             XCTAssertIdentical(custodian.hostedButton(for: action)?.superview, secondHost, "\(action)")
@@ -476,8 +473,7 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
 
         custodian.attach(
             host: host,
-            presentation: .interactive,
-            actionProvider: .browserWindow(window)
+            presentation: .interactive
         )
 
         guard let closeButton = custodian.hostedButton(for: .close) else {
@@ -506,8 +502,7 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
 
         custodian.attach(
             host: host,
-            presentation: .interactive,
-            actionProvider: .browserWindow(window)
+            presentation: .interactive
         )
         custodian.detach(host: host)
 
@@ -518,6 +513,51 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
                 "\(type.rawValue)"
             )
         }
+    }
+
+    func testTrafficLightCustodianDoesNotReparentButtonsWhileWindowIsClosing() throws {
+        let window = WindowChromeTestSupport.makeBrowserWindow()
+        WindowChromeTestSupport.retain(window)
+        let host = Self.makeCustodyHost(in: window)
+        let custodian = window.browserTrafficLightCustodian
+
+        custodian.attach(
+            host: host,
+            presentation: .interactive
+        )
+        let closeButton = try XCTUnwrap(custodian.hostedButton(for: .close))
+        XCTAssertIdentical(closeButton.superview, host)
+
+        NotificationCenter.default.post(
+            name: NSWindow.willCloseNotification,
+            object: window
+        )
+        custodian.detach(host: host)
+
+        XCTAssertIdentical(
+            closeButton.superview,
+            host,
+            "Closing must not move a live AppKit control into a titlebar that is being torn down."
+        )
+    }
+
+    func testTrafficLightCustodianPreservesNativeAppKitTargetsAndActions() throws {
+        let window = WindowChromeTestSupport.makeBrowserWindow()
+        WindowChromeTestSupport.retain(window)
+        let host = Self.makeCustodyHost(in: window)
+        let closeButton = try XCTUnwrap(
+            window.standardWindowButton(.closeButton)
+        )
+        let nativeTarget = closeButton.target
+        let nativeAction = closeButton.action
+
+        window.browserTrafficLightCustodian.attach(
+            host: host,
+            presentation: .interactive
+        )
+
+        XCTAssertIdentical(closeButton.target as AnyObject?, nativeTarget as AnyObject?)
+        XCTAssertEqual(closeButton.action, nativeAction)
     }
 
     // MARK: - Presentation policy
@@ -650,39 +690,10 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         return host
     }
 
-    func testTrafficLightActionProviderEnablesAvailableWindowActions() {
-        let window = NSWindow(
-            contentRect: NSRect(origin: .zero, size: NSSize(width: 320, height: 240)),
-            styleMask: SumiBrowserChromeConfiguration.requiredStyleMask,
-            backing: .buffered,
-            defer: false
-        )
-        let provider = BrowserWindowTrafficLightActionProvider.browserWindow(window)
-
-        XCTAssertTrue(provider.isEnabled(.close))
-        XCTAssertTrue(provider.isEnabled(.minimize))
-        XCTAssertTrue(provider.isEnabled(.zoom))
-    }
-
-    func testTrafficLightActionProviderDisablesUnavailableWindowActions() {
-        let window = NSWindow(
-            contentRect: NSRect(origin: .zero, size: NSSize(width: 320, height: 240)),
-            styleMask: [.titled, .closable],
-            backing: .buffered,
-            defer: false
-        )
-        let provider = BrowserWindowTrafficLightActionProvider.browserWindow(window)
-
-        XCTAssertTrue(provider.isEnabled(.close))
-        XCTAssertFalse(provider.isEnabled(.minimize))
-        XCTAssertFalse(provider.isEnabled(.zoom))
-    }
-
     func testBrowserTrafficLightsRetargetToHostingWindowAfterAttach() {
         let window = WindowChromeTestSupport.makeBrowserWindow()
         let host = NSHostingView(
             rootView: BrowserWindowTrafficLights(
-                actionProvider: .browserWindow(nil),
                 presentation: .interactive
             )
         )

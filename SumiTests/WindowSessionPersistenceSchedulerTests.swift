@@ -179,6 +179,31 @@ final class WindowSessionPersistenceSchedulerTests: XCTestCase {
         )
     }
 
+    func testImmediatePersistSupersedesEntireScheduledBatch() {
+        let harness = makeCoordinatorHarness()
+
+        harness.coordinator.schedule(
+            harness.persistedWindow,
+            delayNanoseconds: 60_000_000_000
+        )
+        harness.coordinator.schedule(
+            harness.otherOpenWindow,
+            delayNanoseconds: 60_000_000_000
+        )
+
+        harness.coordinator.persist(harness.persistedWindow)
+
+        XCTAssertEqual(harness.coordinator.flush(), 0)
+        XCTAssertEqual(
+            harness.snapshotStore.loadSnapshot()?.snapshot.currentProfileId,
+            harness.persistedWindow.currentProfileId
+        )
+        XCTAssertEqual(
+            harness.historyStore.snapshots.map(\.id),
+            [harness.persistedWindow.id, harness.otherOpenWindow.id]
+        )
+    }
+
     func testClosingScheduledWindowCancelsItsWriteAndPersistsSurvivor() {
         let harness = makeCoordinatorHarness()
         let closingProfileID = UUID()
@@ -347,10 +372,8 @@ final class WindowSessionPersistenceSchedulerTests: XCTestCase {
         )
         return CoordinatorHarness(
             coordinator: WindowSessionPersistenceCoordinator(
-                persistence: WindowSessionPersistenceService(
-                    store: snapshotStore,
-                    snapshotFactory: snapshotFactory
-                ),
+                snapshotStore: snapshotStore,
+                snapshotFactory: snapshotFactory,
                 scheduler: scheduler,
                 openWindows: catalog,
                 archive: archive

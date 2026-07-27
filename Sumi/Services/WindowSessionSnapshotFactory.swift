@@ -2,7 +2,20 @@ import Foundation
 
 @MainActor
 struct WindowSessionSnapshotFactory {
+    typealias WindowGeometryProvider = @MainActor (
+        BrowserWindowState
+    ) -> BrowserWindowGeometrySnapshot?
+
     let glanceManager: GlanceManager
+    let windowGeometry: WindowGeometryProvider
+
+    init(
+        glanceManager: GlanceManager,
+        windowGeometry: @escaping WindowGeometryProvider = { _ in nil }
+    ) {
+        self.glanceManager = glanceManager
+        self.windowGeometry = windowGeometry
+    }
 
     func make(for windowState: BrowserWindowState) -> WindowSessionSnapshot {
         WindowSessionSnapshot(
@@ -35,7 +48,8 @@ struct WindowSessionSnapshotFactory {
             ),
             splitSelection: windowState.splitSelection,
             glanceSession: glanceManager
-                .makeSessionSnapshot(for: windowState)
+                .makeSessionSnapshot(for: windowState),
+            windowGeometry: windowGeometry(windowState)
         )
     }
 }

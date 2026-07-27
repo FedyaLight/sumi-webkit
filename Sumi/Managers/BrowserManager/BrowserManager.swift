@@ -294,7 +294,19 @@ class BrowserManager: ObservableObject {
         browserManager: self, webViewOwnership: webViewRuntime.ownershipQuery
     )
     lazy var windowSessionSnapshotFactory = WindowSessionSnapshotFactory(
-        glanceManager: glanceManager
+        glanceManager: glanceManager,
+        windowGeometry: { [weak self] windowState in
+            if let pendingGeometry = windowState.restorationState
+                .pendingWindowGeometry {
+                return pendingGeometry
+            }
+            guard let window = self?.windowRegistry.appKitWindow(
+                for: windowState
+            ) else {
+                return nil
+            }
+            return BrowserWindowGeometryPolicy.snapshot(of: window)
+        }
     )
     lazy var windowSessionHistory = composeWindowSessionHistory()
     lazy var windowSessionPersistenceCoordinator =

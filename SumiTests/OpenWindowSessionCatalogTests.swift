@@ -73,6 +73,31 @@ final class OpenWindowSessionCatalogTests: XCTestCase {
         )
     }
 
+    func testRegularWindowIDsDoNotBuildSessionSnapshots() {
+        let restoredID = UUID()
+        let regularWindow = BrowserWindowState()
+        regularWindow.restorationState.restoredSessionWindowID = restoredID
+        let incognitoWindow = BrowserWindowState()
+        incognitoWindow.isIncognito = true
+        let registry = WindowRegistry()
+        registry.register(regularWindow)
+        registry.register(incognitoWindow)
+        var geometryProjectionCount = 0
+        let catalog = OpenWindowSessionCatalog(
+            windows: registry,
+            snapshots: WindowSessionSnapshotFactory(
+                glanceManager: GlanceManager(),
+                windowGeometry: { _ in
+                    geometryProjectionCount += 1
+                    return nil
+                }
+            )
+        )
+
+        XCTAssertEqual(catalog.regularWindowIDs(), [restoredID])
+        XCTAssertEqual(geometryProjectionCount, 0)
+    }
+
     func testDurablePrimarySelectionIsDeterministicAndSkipsIncognito() throws {
         let excludedWindow = BrowserWindowState(
             id: try XCTUnwrap(UUID(uuidString: "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF"))

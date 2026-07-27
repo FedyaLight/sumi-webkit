@@ -155,47 +155,25 @@ final class SumiGeolocationProviderTests: XCTestCase {
         XCTAssertTrue(underlyingProvider?.registeredRequests.isEmpty == true)
     }
 
-    func testApplicationLifecycleControllerPausesActiveGeolocationWhileApplicationInactive() {
+    func testApplicationLifecyclePausesActiveGeolocationWhileApplicationInactive() {
         let provider = FakeSumiGeolocationProvider(currentState: .active)
         let browserManager = BrowserManager(geolocationProvider: provider)
-        let controller = BrowserApplicationLifecycleController(
-            scheduleBackgroundMediaReconcile: { [weak browserManager] reason in
-                browserManager?.backgroundMediaOptimizationService.scheduleReconcile(reason: reason)
-            },
-            pauseGeolocationOnAppBackgroundIfNeeded: { [weak browserManager] in
-                browserManager?.permissionRuntime.pauseGeolocationOnAppBackgroundIfNeeded()
-            },
-            resumeGeolocationOnAppForegroundIfNeeded: { [weak browserManager] in
-                browserManager?.permissionRuntime.resumeGeolocationOnAppForegroundIfNeeded()
-            }
-        )
 
-        controller.handleApplicationWillResignActive()
+        browserManager.permissionRuntime.pauseGeolocationOnAppBackgroundIfNeeded()
         XCTAssertEqual(provider.currentState, .paused)
         XCTAssertEqual(provider.pauseCallCount, 1)
 
-        controller.handleApplicationDidBecomeActive()
+        browserManager.permissionRuntime.resumeGeolocationOnAppForegroundIfNeeded()
         XCTAssertEqual(provider.currentState, .active)
         XCTAssertEqual(provider.resumeCallCount, 1)
     }
 
-    func testApplicationLifecycleControllerDoesNotResumeUserPausedGeolocationOnActivation() {
+    func testApplicationLifecycleDoesNotResumeUserPausedGeolocationOnActivation() {
         let provider = FakeSumiGeolocationProvider(currentState: .paused)
         let browserManager = BrowserManager(geolocationProvider: provider)
-        let controller = BrowserApplicationLifecycleController(
-            scheduleBackgroundMediaReconcile: { [weak browserManager] reason in
-                browserManager?.backgroundMediaOptimizationService.scheduleReconcile(reason: reason)
-            },
-            pauseGeolocationOnAppBackgroundIfNeeded: { [weak browserManager] in
-                browserManager?.permissionRuntime.pauseGeolocationOnAppBackgroundIfNeeded()
-            },
-            resumeGeolocationOnAppForegroundIfNeeded: { [weak browserManager] in
-                browserManager?.permissionRuntime.resumeGeolocationOnAppForegroundIfNeeded()
-            }
-        )
 
-        controller.handleApplicationWillResignActive()
-        controller.handleApplicationDidBecomeActive()
+        browserManager.permissionRuntime.pauseGeolocationOnAppBackgroundIfNeeded()
+        browserManager.permissionRuntime.resumeGeolocationOnAppForegroundIfNeeded()
 
         XCTAssertEqual(provider.currentState, .paused)
         XCTAssertEqual(provider.pauseCallCount, 0)

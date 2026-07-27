@@ -7,6 +7,132 @@ import SumiDomain
 
 @MainActor
 final class BrowserWindowShellServiceTests: XCTestCase {
+    func testNewWindowPlacementCascadesFromSourceWindow() {
+        let source = makeWindow(frame: NSRect(x: 120, y: 220, width: 600, height: 400))
+        let newWindow = makeWindow(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        defer {
+            source.close()
+            newWindow.close()
+        }
+
+        BrowserWindowGeometryPolicy.placeNewWindow(
+            newWindow,
+            relativeTo: source
+        )
+
+        XCTAssertNotEqual(newWindow.frame.origin, source.frame.origin)
+        XCTAssertEqual(newWindow.frame.size, source.frame.size)
+    }
+
+    func testArchivedWindowGeometryRestoresInsideVisibleScreen() throws {
+        let screen = try XCTUnwrap(NSScreen.main)
+        let expectedFrame = NSRect(
+            x: screen.visibleFrame.minX + 80,
+            y: screen.visibleFrame.minY + 80,
+            width: min(700, screen.visibleFrame.width - 160),
+            height: min(500, screen.visibleFrame.height - 160)
+        )
+        let window = makeWindow(
+            frame: NSRect(x: 0, y: 0, width: 320, height: 240)
+        )
+        defer { window.close() }
+        let geometry = BrowserWindowGeometrySnapshot(
+            frame: BrowserWindowFrameSnapshot(expectedFrame),
+            displayMode: .normal
+        )
+
+        BrowserWindowGeometryPolicy.restoreFrame(geometry, to: window)
+
+        XCTAssertEqual(window.frame, expectedFrame)
+    }
+
+    func testPendingGeometryFrameIsAppliedOnlyOncePerNativeShell() throws {
+        let screen = try XCTUnwrap(NSScreen.main)
+        let restoredFrame = NSRect(
+            x: screen.visibleFrame.minX + 40,
+            y: screen.visibleFrame.minY + 40,
+            width: min(640, screen.visibleFrame.width - 80),
+            height: min(480, screen.visibleFrame.height - 80)
+        )
+        let userMovedFrame = restoredFrame.offsetBy(dx: 30, dy: 30)
+        let window = makeWindow(frame: NSRect(x: 0, y: 0, width: 320, height: 240))
+        defer { window.close() }
+        let windowState = BrowserWindowState()
+        windowState.restorationState.stageWindowGeometry(
+            BrowserWindowGeometrySnapshot(
+                frame: BrowserWindowFrameSnapshot(restoredFrame),
+                displayMode: .normal
+            )
+        )
+
+        XCTAssertTrue(
+            BrowserWindowGeometryPolicy.restorePendingFrame(
+                of: windowState,
+                to: window
+            )
+        )
+        XCTAssertEqual(window.frame, restoredFrame)
+
+        window.setFrame(userMovedFrame, display: false)
+
+        XCTAssertFalse(
+            BrowserWindowGeometryPolicy.restorePendingFrame(
+                of: windowState,
+                to: window
+            )
+        )
+        XCTAssertEqual(
+            window.frame,
+            userMovedFrame,
+            "A later bridge update must not overwrite a user's move."
+        )
+        XCTAssertNotNil(windowState.restorationState.pendingWindowGeometry)
+    }
+
+    func testPendingGeometryCanMoveToAReplacementNativeShellBeforeConsumption()
+        throws {
+        let screen = try XCTUnwrap(NSScreen.main)
+        let restoredFrame = NSRect(
+            x: screen.visibleFrame.minX + 60,
+            y: screen.visibleFrame.minY + 60,
+            width: min(600, screen.visibleFrame.width - 120),
+            height: min(440, screen.visibleFrame.height - 120)
+        )
+        let firstWindow = makeWindow(frame: NSRect(x: 0, y: 0, width: 320, height: 240))
+        let replacementWindow = makeWindow(
+            frame: NSRect(x: 20, y: 20, width: 320, height: 240)
+        )
+        defer {
+            firstWindow.close()
+            replacementWindow.close()
+        }
+        let windowState = BrowserWindowState()
+        let geometry = BrowserWindowGeometrySnapshot(
+            frame: BrowserWindowFrameSnapshot(restoredFrame),
+            displayMode: .normal
+        )
+        windowState.restorationState.stageWindowGeometry(geometry)
+
+        XCTAssertTrue(
+            BrowserWindowGeometryPolicy.restorePendingFrame(
+                of: windowState,
+                to: firstWindow
+            )
+        )
+        XCTAssertTrue(
+            BrowserWindowGeometryPolicy.restorePendingFrame(
+                of: windowState,
+                to: replacementWindow
+            )
+        )
+        XCTAssertEqual(replacementWindow.frame, restoredFrame)
+        XCTAssertEqual(
+            windowState.restorationState.consumePendingWindowGeometry(),
+            geometry
+        )
+        XCTAssertNil(windowState.restorationState.pendingWindowGeometry)
+    }
+
     func testPresentRegisteredWindowActivatesAndPresentsExactShell() {
         let service = BrowserWindowShellService()
         let registry = WindowRegistry()
@@ -545,6 +671,17 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         let window = WindowPresentationRecordingWindow(
             contentRect: NSRect(x: 0, y: 0, width: 200, height: 120),
             styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        return window
+    }
+
+    private func makeWindow(frame: NSRect) -> NSWindow {
+        let window = NSWindow(
+            contentRect: frame,
+            styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
         )

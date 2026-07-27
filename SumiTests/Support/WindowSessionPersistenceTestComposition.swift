@@ -43,10 +43,8 @@ final class WindowSessionPersistenceTestComposition {
         self.userDefaultsSuiteName = suiteName
         self.lastSessionWindowsStore = lastSessionWindowsStore
         self.coordinator = WindowSessionPersistenceCoordinator(
-            persistence: WindowSessionPersistenceService(
-                store: snapshotStore,
-                snapshotFactory: snapshotFactory
-            ),
+            snapshotStore: snapshotStore,
+            snapshotFactory: snapshotFactory,
             scheduler: scheduler,
             openWindows: catalog,
             archive: archive

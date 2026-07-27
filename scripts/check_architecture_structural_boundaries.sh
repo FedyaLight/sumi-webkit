@@ -813,10 +813,10 @@ guard_expect_no_matches \
 guard_expect_no_matches \
   'durable window write archive/scheduler reachback' \
   'LastSessionWindowArchive|OpenWindowSessionCatalog|WindowSessionPersistenceScheduler' \
-  Sumi/Services/WindowSessionPersistenceService.swift
+  Sumi/Services/WindowSessionDurableWrite.swift
 guard_expect_no_matches \
   'restore service raw persistence dependency' \
-  'WindowSessionPersistenceService' \
+  'WindowSessionDurableWrite' \
   Sumi/Services/WindowSessionRestoreService.swift
 guard_expect_no_matches \
   'raw durable API outside coordinator' \

@@ -92,9 +92,7 @@ final class StartupWindowRestoreService {
     ) async -> Bool {
         guard Task.isCancelled == false else { return false }
 
-        let existingWindowIDs = Set(
-            openWindows.regularWindowSnapshots(excludingWindowID: nil).map(\.id)
-        )
+        let existingWindowIDs = openWindows.regularWindowIDs()
         let liveLaunchWindow = launchWindow.flatMap {
             openWindows.containsRegularWindow($0) ? $0 : nil
         }
@@ -115,11 +113,15 @@ final class StartupWindowRestoreService {
                 liveLaunchWindow.restorationState.restoredSessionWindowID = nil
                 return false
             }
+            if let window = openWindows.appKitWindow(for: liveLaunchWindow) {
+                BrowserWindowGeometryPolicy.consumePendingRestoration(
+                    of: liveLaunchWindow,
+                    in: window
+                )
+            }
         }
 
-        let refreshedWindowIDs = Set(
-            openWindows.regularWindowSnapshots(excludingWindowID: nil).map(\.id)
-        )
+        let refreshedWindowIDs = openWindows.regularWindowIDs()
         let unresolvedSnapshots = restorationPlan.additionalSnapshots.filter {
             refreshedWindowIDs.contains($0.id) == false
         }

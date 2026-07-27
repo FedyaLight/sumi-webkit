@@ -60,11 +60,9 @@ struct SidebarHeader: View {
 // MARK: - Sidebar Window Controls
 struct SidebarWindowControlsView: View {
     @Environment(BrowserWindowState.self) private var windowState
-    @Environment(WindowRegistry.self) private var windowRegistry
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.sidebarPresentationContext) private var sidebarPresentationContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var isBrowserWindowFullScreen = false
     let toggleSidebar: () -> Void
 
     var body: some View {
@@ -86,28 +84,11 @@ struct SidebarWindowControlsView: View {
                 .sidebarAppKitPrimaryAction(action: toggleSidebar)
             }
         }
-        .onAppear(perform: syncFullScreenWindowControls)
-        .onChange(of: browserWindowIdentity) { _, _ in
-            syncFullScreenWindowControls()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willEnterFullScreenNotification)) {
-            handleFullScreenNotification($0)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEnterFullScreenNotification)) {
-            handleFullScreenNotification($0)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willExitFullScreenNotification)) {
-            handleFullScreenNotification($0)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) {
-            handleFullScreenNotification($0)
-        }
     }
 
     @ViewBuilder
     private var trafficLightCluster: some View {
         BrowserWindowTrafficLights(
-            actionProvider: .browserWindow(windowState.shellWindow(in: windowRegistry)),
             presentation: trafficLightPresentation,
             travelProgress: trafficLightTravelProgress
         )
@@ -122,7 +103,8 @@ struct SidebarWindowControlsView: View {
 
     private var trafficLightPresentation: BrowserWindowTrafficLightPresentation {
         SidebarTrafficLightPresentationPolicy.presentation(
-            isBrowserWindowFullScreen: isBrowserWindowFullScreen,
+            isBrowserWindowFullScreen:
+                windowState.presentationState.nativeDisplayMode == .fullScreen,
             mode: sidebarPresentationContext.mode,
             isSidebarVisible: windowState.isSidebarVisible,
             overlayUsesTravel: SidebarMotionPolicy.overlayUsesTravel(for: sidebarMotionMode)
@@ -144,38 +126,4 @@ struct SidebarWindowControlsView: View {
         )
     }
 
-    private var browserWindowIdentity: ObjectIdentifier? {
-        windowState.shellWindow(in: windowRegistry).map { ObjectIdentifier($0) }
-    }
-
-    private func handleFullScreenNotification(_ notification: Notification) {
-        guard let notificationWindow = notification.object as? NSWindow,
-              notificationWindow === windowState.shellWindow(in: windowRegistry)
-        else { return }
-
-        switch notification.name {
-        case NSWindow.willEnterFullScreenNotification, NSWindow.didEnterFullScreenNotification:
-            isBrowserWindowFullScreen = true
-            syncNativeWindowButtonsForCurrentFullScreenState()
-        case NSWindow.willExitFullScreenNotification:
-            notificationWindow.setNativeStandardWindowButtonsForBrowserFullScreenChromeVisible(false)
-        case NSWindow.didExitFullScreenNotification:
-            isBrowserWindowFullScreen = false
-            syncNativeWindowButtonsForCurrentFullScreenState()
-        default:
-            isBrowserWindowFullScreen = notificationWindow.styleMask.contains(.fullScreen)
-            syncNativeWindowButtonsForCurrentFullScreenState()
-        }
-    }
-
-    private func syncFullScreenWindowControls() {
-        isBrowserWindowFullScreen =
-            windowState.shellWindow(in: windowRegistry)?.styleMask.contains(.fullScreen) == true
-        syncNativeWindowButtonsForCurrentFullScreenState()
-    }
-
-    private func syncNativeWindowButtonsForCurrentFullScreenState() {
-        windowState.shellWindow(in: windowRegistry)?
-            .setNativeStandardWindowButtonsForBrowserFullScreenChromeVisible(isBrowserWindowFullScreen)
-    }
 }

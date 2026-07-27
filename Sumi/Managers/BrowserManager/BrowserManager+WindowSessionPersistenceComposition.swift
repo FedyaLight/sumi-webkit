@@ -13,10 +13,8 @@ extension BrowserManager {
     func composeWindowSessionPersistence()
         -> WindowSessionPersistenceCoordinator {
         WindowSessionPersistenceCoordinator(
-            persistence: WindowSessionPersistenceService(
-                store: windowSessionPersistence.snapshotStore,
-                snapshotFactory: windowSessionSnapshotFactory
-            ),
+            snapshotStore: windowSessionPersistence.snapshotStore,
+            snapshotFactory: windowSessionSnapshotFactory,
             scheduler: windowSessionPersistence.scheduler,
             openWindows: windowSessionHistory.catalog,
             archive: windowSessionHistory.archive

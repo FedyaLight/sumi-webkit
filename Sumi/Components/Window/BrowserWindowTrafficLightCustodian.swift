@@ -72,6 +72,7 @@ final class BrowserWindowTrafficLightCustodian {
     private var titlebarHomesByAction: [BrowserWindowTrafficLightAction: TitlebarHome] = [:]
     private var observedButtons: [NSButton] = []
     private var isEnforcing = false
+    private var isWindowClosing = false
 
     init(window: NSWindow) {
         self.window = window
@@ -91,8 +92,7 @@ final class BrowserWindowTrafficLightCustodian {
     /// update, so it must stay cheap and idempotent when nothing changed.
     func attach(
         host: NSView,
-        presentation: BrowserWindowTrafficLightPresentation,
-        actionProvider: BrowserWindowTrafficLightActionProvider?
+        presentation: BrowserWindowTrafficLightPresentation
     ) {
         guard presentation.isAttached else {
             detach(host: host)
@@ -101,7 +101,7 @@ final class BrowserWindowTrafficLightCustodian {
 
         captureButtonsIfNeeded()
         custodialHost = host
-        applyButtonState(presentation: presentation, actionProvider: actionProvider)
+        applyButtonState(presentation: presentation)
         enforceLayout()
     }
 
@@ -112,6 +112,7 @@ final class BrowserWindowTrafficLightCustodian {
         guard custodialHost === host else { return }
 
         custodialHost = nil
+        guard isWindowClosing == false else { return }
         returnButtonsToTitlebar()
     }
 
@@ -290,42 +291,44 @@ final class BrowserWindowTrafficLightCustodian {
             name: NSApplication.didChangeScreenParametersNotification,
             object: nil
         )
+        center.addObserver(
+            self,
+            selector: #selector(handleWindowWillClose(_:)),
+            name: NSWindow.willCloseNotification,
+            object: window
+        )
     }
 
     @objc private func handleEnforcementTrigger(_ notification: Notification) {
         // `isEnforcing` means this notification is an echo of our own write.
-        guard custodialHost != nil, isEnforcing == false else { return }
+        guard isWindowClosing == false,
+              custodialHost != nil,
+              isEnforcing == false
+        else { return }
         captureButtonsIfNeeded()
         enforceLayout()
+    }
+
+    @objc private func handleWindowWillClose(_ notification: Notification) {
+        _ = notification
+        isWindowClosing = true
     }
 
     // MARK: - Button state
 
     private func applyButtonState(
-        presentation: BrowserWindowTrafficLightPresentation,
-        actionProvider: BrowserWindowTrafficLightActionProvider?
+        presentation: BrowserWindowTrafficLightPresentation
     ) {
-        let targetWindow = actionProvider?.resolvedTargetWindow(preferred: window) ?? window
-
         for action in BrowserWindowTrafficLightAction.allCases {
             guard let button = buttonsByAction[action] else { continue }
 
-            button.target = targetWindow
-            button.action = action.selector
             button.isHidden = false
             button.alphaValue = 1
-            // Enablement tracks what the window can actually do, not whether the sidebar is settled:
-            // AppKit greys a disabled button out, and flashing the cluster grey for the length of
-            // the sidebar's collapse is the kind of glitch this cluster exists to avoid. A panel in
-            // motion is made unclickable by the host view's hit test and by hiding it from
-            // accessibility, both of which leave the buttons drawn exactly as the system draws them.
-            button.isEnabled = actionProvider?.isEnabled(action, preferred: targetWindow) ?? false
+            // These are the window's live standard buttons. AppKit remains the
+            // sole authority for target/action, enablement, localized labels,
+            // active-state dimming, and hover glyphs.
             button.identifier = NSUserInterfaceItemIdentifier(action.accessibilityIdentifier)
             button.setAccessibilityIdentifier(action.accessibilityIdentifier)
-            button.setAccessibilityLabel(
-                actionProvider?.accessibilityLabel(for: action, preferred: targetWindow)
-                    ?? action.accessibilityLabel
-            )
             button.setAccessibilityHidden(!presentation.isInteractive)
         }
     }

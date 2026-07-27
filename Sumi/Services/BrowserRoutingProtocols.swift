@@ -13,11 +13,6 @@ protocol BrowserMouseButtonCommandRouting: AnyObject {
 }
 
 @MainActor
-protocol BrowserWindowLifecycleHandling: AnyObject {
-    func persistWindowSession(for windowState: BrowserWindowState)
-}
-
-@MainActor
 protocol ExternalURLHandling: AnyObject {
     func presentExternalURL(_ url: URL)
 }

@@ -75,7 +75,9 @@ final class BrowserWindowShellService {
             contentView: context.makeContentView(
                 context.windowRegistry,
                 windowState
-            )
+            ),
+            relativeTo: placementSource(in: context.windowRegistry),
+            windowState: windowState
         )
         context.windowRegistry.bindAppKitWindow(newWindow, to: windowState)
         let registration = context.windowRegistry.beginRegistration(windowState)
@@ -137,6 +139,7 @@ final class BrowserWindowShellService {
         } else {
             window.orderFront(nil)
         }
+        restorePendingDisplayMode(for: windowState, in: window)
         return windowRegistry.windows[windowState.id] === windowState
             && windowRegistry.appKitWindow(for: windowState) === window
     }
@@ -171,7 +174,9 @@ final class BrowserWindowShellService {
             contentView: context.makeContentView(
                 context.windowRegistry,
                 windowState
-            )
+            ),
+            relativeTo: placementSource(in: context.windowRegistry),
+            windowState: windowState
         )
         context.windowRegistry.bindAppKitWindow(newWindow, to: windowState)
         context.windowRegistry.register(windowState)
@@ -245,7 +250,7 @@ final class BrowserWindowShellService {
     }
 
     func closeWindow(_ windowState: BrowserWindowState, in windowRegistry: WindowRegistry? = nil) {
-        windowRegistry?.appKitWindow(for: windowState)?.performCloseFromBrowserChrome(nil)
+        windowRegistry?.appKitWindow(for: windowState)?.performClose(nil)
     }
 
     func toggleFullScreenForActiveWindow(in windowRegistry: WindowRegistry) {
@@ -260,7 +265,18 @@ final class BrowserWindowShellService {
         windowRegistry.appKitWindow(for: windowState)?.toggleFullScreen(nil)
     }
 
-    private func makeWindow(title: String, contentView: NSView) -> NSWindow {
+    private func placementSource(in windowRegistry: WindowRegistry) -> NSWindow? {
+        windowRegistry.activeWindow.flatMap {
+            windowRegistry.appKitWindow(for: $0)
+        } ?? NSApp.keyWindow ?? NSApp.mainWindow
+    }
+
+    private func makeWindow(
+        title: String,
+        contentView: NSView,
+        relativeTo sourceWindow: NSWindow?,
+        windowState: BrowserWindowState
+    ) -> NSWindow {
         let window = SumiBrowserWindow(
             contentRect: NSRect(origin: .zero, size: SumiBrowserWindowShellConfiguration.defaultContentSize),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -271,7 +287,25 @@ final class BrowserWindowShellService {
         window.contentView = contentView
         window.title = title
         window.applyBrowserWindowShellConfiguration(shouldApplyInitialSize: false)
-        window.center()
+        if BrowserWindowGeometryPolicy.restorePendingFrame(
+            of: windowState,
+            to: window
+        ) == false {
+            BrowserWindowGeometryPolicy.placeNewWindow(
+                window,
+                relativeTo: sourceWindow
+            )
+        }
         return window
+    }
+
+    private func restorePendingDisplayMode(
+        for windowState: BrowserWindowState,
+        in window: NSWindow
+    ) {
+        BrowserWindowGeometryPolicy.consumePendingRestoration(
+            of: windowState,
+            in: window
+        )
     }
 }

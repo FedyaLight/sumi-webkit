@@ -11,6 +11,41 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
         XCTAssertTrue(app.windows.element(boundBy: 0).waitForExistence(timeout: 5))
     }
 
+    func testClosingNewWindowKeepsOriginalBrowserWindowAlive() throws {
+        let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
+        let originalWindow = app.windows.element(boundBy: 0)
+
+        XCTAssertTrue(originalWindow.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.windows.count, 1)
+        let originalCloseButton = element(
+            withIdentifier: BrowserWindowControlIdentifiers.closeButton,
+            inSearchRoot: originalWindow
+        )
+        XCTAssertTrue(
+            waitForTrafficLightElementToBeVisibleAndEnabled(
+                originalCloseButton,
+                timeout: 5
+            ),
+            "Wait for startup recovery and command routing before sending Cmd+N."
+        )
+
+        originalWindow.typeKey("n", modifierFlags: .command)
+
+        XCTAssertTrue(waitForWindowCount(2, in: app, timeout: 5))
+        let newWindow = app.windows.element(boundBy: 0)
+        let closeButton = element(
+            withIdentifier: BrowserWindowControlIdentifiers.closeButton,
+            inSearchRoot: newWindow
+        )
+        XCTAssertTrue(waitForTrafficLightElementToBeVisibleAndEnabled(closeButton, timeout: 3))
+
+        closeButton.click()
+
+        XCTAssertTrue(waitForWindowCount(1, in: app, timeout: 5))
+        XCTAssertTrue(originalWindow.exists)
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
     func testRendersSpaceSwitcherShell() throws {
         let fixture = try loadPersonalSidebarFixture()
         let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
@@ -160,5 +195,20 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
 
         let blackRatio = try dominantBlackPixelRatio(in: window.screenshot())
         XCTAssertLessThan(blackRatio, 0.35)
+    }
+
+    private func waitForWindowCount(
+        _ expectedCount: Int,
+        in app: XCUIApplication,
+        timeout: TimeInterval
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if app.windows.count == expectedCount {
+                return true
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        } while Date() < deadline
+        return app.windows.count == expectedCount
     }
 }

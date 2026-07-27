@@ -49,6 +49,7 @@ final class WindowPresentationState {
     var isCommandPaletteVisible = false
     var urlBarFrame: CGRect = .zero
     var visibility: SumiWindowVisibilityState = .unknown
+    var nativeDisplayMode: BrowserWindowDisplayMode = .normal
     var pendingSplitGroupFocusRequest: SplitGroupFocusRequest?
     let spaceSwitch = WindowSpaceSwitchPresentationState()
 }
