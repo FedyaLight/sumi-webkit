@@ -9,6 +9,9 @@ final class SumiSparkleUserDriver: NSObject, SPUUserDriver {
     private var shouldInstallNextShownUpdate = false
     private var isInstallingFromSidebar = false
     private var readyToInstallReply: ((SPUUserUpdateChoice) -> Void)?
+    private var expectedDownloadLength: UInt64 = 0
+    private var downloadedLength: UInt64 = 0
+    private var lastReportedDownloadPercentage: Int?
 
     init(service: SumiUpdaterService) {
         self.service = service
@@ -69,6 +72,7 @@ final class SumiSparkleUserDriver: NSObject, SPUUserDriver {
     func showUpdateNotFoundWithError(_ error: any Error, acknowledgement: @escaping () -> Void) {
         shouldInstallNextShownUpdate = false
         isInstallingFromSidebar = false
+        resetDownloadProgress()
         service?.recordNoUpdateAvailable()
         acknowledgement()
     }
@@ -77,6 +81,7 @@ final class SumiSparkleUserDriver: NSObject, SPUUserDriver {
         shouldInstallNextShownUpdate = false
         isInstallingFromSidebar = false
         readyToInstallReply = nil
+        resetDownloadProgress()
         service?.recordUpdateOperation(
             SumiUpdateOperationNotice(
                 stage: .failed,
@@ -89,6 +94,7 @@ final class SumiSparkleUserDriver: NSObject, SPUUserDriver {
     }
 
     func showDownloadInitiated(cancellation: @escaping () -> Void) {
+        resetDownloadProgress()
         service?.recordUpdateOperation(
             SumiUpdateOperationNotice(
                 stage: .downloading,
@@ -99,11 +105,20 @@ final class SumiSparkleUserDriver: NSObject, SPUUserDriver {
         )
     }
 
-    func showDownloadDidReceiveExpectedContentLength(_ expectedContentLength: UInt64) {}
+    func showDownloadDidReceiveExpectedContentLength(_ expectedContentLength: UInt64) {
+        self.expectedDownloadLength = expectedContentLength
+        downloadedLength = 0
+        lastReportedDownloadPercentage = nil
+        publishDownloadProgress()
+    }
 
-    func showDownloadDidReceiveData(ofLength length: UInt64) {}
+    func showDownloadDidReceiveData(ofLength length: UInt64) {
+        downloadedLength += length
+        publishDownloadProgress()
+    }
 
     func showDownloadDidStartExtractingUpdate() {
+        resetDownloadProgress()
         service?.recordUpdateOperation(
             SumiUpdateOperationNotice(
                 stage: .extracting,
@@ -126,6 +141,15 @@ final class SumiSparkleUserDriver: NSObject, SPUUserDriver {
     }
 
     func showReady(toInstallAndRelaunch reply: @escaping (SPUUserUpdateChoice) -> Void) {
+        service?.recordUpdateOperation(
+            SumiUpdateOperationNotice(
+                stage: .readyToInstall,
+                title: "Ready to install",
+                detail: "Ready to install and restart Sumi.",
+                progress: nil
+            )
+        )
+
         guard isInstallingFromSidebar else {
             readyToInstallReply = reply
             return
@@ -137,7 +161,14 @@ final class SumiSparkleUserDriver: NSObject, SPUUserDriver {
         withApplicationTerminated applicationTerminated: Bool,
         retryTerminatingApplication: @escaping () -> Void
     ) {
-        service?.syncStateFromBackend()
+        service?.recordUpdateOperation(
+            SumiUpdateOperationNotice(
+                stage: .installing,
+                title: "Installing update",
+                detail: "Installing update...",
+                progress: nil
+            )
+        )
     }
 
     func showUpdateInstalledAndRelaunched(
@@ -147,6 +178,7 @@ final class SumiSparkleUserDriver: NSObject, SPUUserDriver {
         shouldInstallNextShownUpdate = false
         isInstallingFromSidebar = false
         readyToInstallReply = nil
+        resetDownloadProgress()
         acknowledgement()
     }
 
@@ -154,10 +186,36 @@ final class SumiSparkleUserDriver: NSObject, SPUUserDriver {
         shouldInstallNextShownUpdate = false
         isInstallingFromSidebar = false
         readyToInstallReply = nil
+        resetDownloadProgress()
     }
 
     func showUpdateInFocus() {
         service?.syncStateFromBackend()
+    }
+
+    private func publishDownloadProgress() {
+        guard expectedDownloadLength > 0 else { return }
+
+        let totalLength = max(expectedDownloadLength, downloadedLength)
+        let progress = min(Double(downloadedLength) / Double(totalLength), 1)
+        let percentage = Int((progress * 100).rounded(.down))
+        guard percentage != lastReportedDownloadPercentage else { return }
+
+        lastReportedDownloadPercentage = percentage
+        service?.recordUpdateOperation(
+            SumiUpdateOperationNotice(
+                stage: .downloading,
+                title: "Updating Sumi",
+                detail: "Downloading update...",
+                progress: progress
+            )
+        )
+    }
+
+    private func resetDownloadProgress() {
+        expectedDownloadLength = 0
+        downloadedLength = 0
+        lastReportedDownloadPercentage = nil
     }
 }
 #endif

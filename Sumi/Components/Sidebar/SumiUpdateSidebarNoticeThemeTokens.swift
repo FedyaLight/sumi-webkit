@@ -2,24 +2,37 @@ import SwiftUI
 
 enum SumiUpdateSidebarNoticeThemeTokens {
     enum Typography {
-        static let title = Font.system(size: 13, weight: .semibold)
-        static let detail = Font.system(size: 12)
-        static let statusIcon = Font.system(size: 15, weight: .semibold)
-        static let dismissIcon = Font.system(size: 11, weight: .bold)
+        static let availableTitle = Font.system(size: 12, weight: .regular)
+        static let availableAction = Font.system(size: 12, weight: .medium)
         static let compactIcon = Font.system(size: 17, weight: .semibold)
     }
 
     enum Colors {
-        static func cardBackground(isHovering: Bool) -> Color {
-            Color(nsColor: .controlBackgroundColor).opacity(isHovering ? 0.94 : 0.86)
+        static func availablePillBackground(tokens: ChromeThemeTokens?) -> Color {
+            if let tokens {
+                return tokens.sidebarRowHover.opacity(0.55)
+            }
+            return Color.primary.opacity(0.05)
         }
 
-        static func cardBorder(isHovering: Bool) -> Color {
-            Color.primary.opacity(isHovering ? 0.18 : 0.12)
+        static func availablePillBorder(tokens: ChromeThemeTokens?) -> Color {
+            tokens?.separator ?? Color.primary.opacity(0.10)
         }
 
-        static func cardShadow(isHovering: Bool) -> Color {
-            Color.black.opacity(isHovering ? 0.10 : 0.06)
+        static func availableCardBackground(tokens: ChromeThemeTokens?) -> Color {
+            tokens?.floatingSurfaceBackground ?? Color(nsColor: .controlBackgroundColor)
+        }
+
+        static func availableCardBorder(tokens: ChromeThemeTokens?) -> Color {
+            tokens?.floatingSurfaceBorder ?? Color.primary.opacity(0.14)
+        }
+
+        static func availableActionBackground(tokens: ChromeThemeTokens?) -> Color {
+            tokens?.buttonPrimaryBackground ?? .accentColor
+        }
+
+        static func availableActionForeground(tokens: ChromeThemeTokens?) -> Color {
+            tokens?.buttonPrimaryText ?? .white
         }
 
         static func symbol(for visualStyle: SumiUpdateSidebarNoticeVisualStyle) -> Color {
@@ -33,16 +46,5 @@ enum SumiUpdateSidebarNoticeThemeTokens {
             }
         }
 
-        static func dismissForeground(isHovering: Bool) -> Color {
-            Color.primary.opacity(isHovering ? 0.86 : 0.68)
-        }
-
-        static func dismissBackground(isHovering: Bool) -> Color {
-            Color.primary.opacity(isHovering ? 0.12 : 0.075)
-        }
-
-        static func dismissBorder(isHovering: Bool) -> Color {
-            Color.primary.opacity(isHovering ? 0.16 : 0.10)
-        }
     }
 }

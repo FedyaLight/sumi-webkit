@@ -74,6 +74,49 @@ final class SumiUpdaterServiceTests: XCTestCase {
         XCTAssertEqual(backend.installCount, 1)
     }
 
+    func testSidebarActionTitleTracksUpdateProgressInOneNotice() {
+        let available = SumiUpdateSidebarNotice.available(
+            update(displayVersion: "1.1.0", buildVersion: "110")
+        )
+        XCTAssertEqual(available.title, "New Sumi Version Available")
+        XCTAssertEqual(available.sidebarActionTitle, "Restart and Update")
+        XCTAssertFalse(available.showsPersistentStatus)
+
+        let downloading = SumiUpdateSidebarNotice.operation(
+            SumiUpdateOperationNotice(
+                stage: .downloading,
+                title: "Updating Sumi",
+                detail: "Downloading update...",
+                progress: 0.426
+            )
+        )
+        XCTAssertEqual(downloading.title, available.title)
+        XCTAssertEqual(downloading.sidebarActionTitle, "42%")
+        XCTAssertTrue(downloading.showsPersistentStatus)
+
+        let extracting = SumiUpdateSidebarNotice.operation(
+            SumiUpdateOperationNotice(
+                stage: .extracting,
+                title: "Preparing update",
+                detail: "Extracting update...",
+                progress: 0.5
+            )
+        )
+        XCTAssertEqual(extracting.sidebarActionTitle, "Installing…")
+
+        let installing = SumiUpdateSidebarNotice.operation(
+            SumiUpdateOperationNotice(
+                stage: .installing,
+                title: "Installing update",
+                detail: "Installing update...",
+                progress: nil
+            )
+        )
+        XCTAssertEqual(installing.title, available.title)
+        XCTAssertEqual(installing.sidebarActionTitle, "Installing…")
+        XCTAssertTrue(installing.showsPersistentStatus)
+    }
+
     func testSidebarNoticeVisibilityAndPerVersionDismissalRules() {
         let store = FakeDismissalStore()
         let first = update(displayVersion: "1.0.0", buildVersion: "100")

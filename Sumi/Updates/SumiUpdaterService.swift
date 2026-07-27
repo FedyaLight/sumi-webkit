@@ -151,12 +151,48 @@ enum SumiUpdateSidebarNotice: Equatable, Sendable {
 
     var title: String {
         switch self {
-        case .available:
-            return "Update available"
-        case .operation(let notice):
-            return notice.title
+        case .available, .operation:
+            return "New Sumi Version Available"
         case .installed:
-            return "Update complete"
+            return "Sumi Was Updated"
+        }
+    }
+
+    var sidebarActionTitle: String {
+        switch self {
+        case .available:
+            return "Restart and Update"
+        case .operation(let notice):
+            switch notice.stage {
+            case .checking:
+                return "Checking for Update…"
+            case .downloading:
+                return percentageTitle(progress: notice.progress)
+            case .extracting, .readyToInstall, .installing:
+                return "Installing…"
+            case .failed:
+                return "Update Failed"
+            }
+        case .installed:
+            return "Update Complete"
+        }
+    }
+
+    var sidebarActionAccessibilityLabel: String {
+        switch self {
+        case .operation(let notice) where notice.stage == .failed:
+            return "\(sidebarActionTitle). \(notice.detail)"
+        default:
+            return sidebarActionTitle
+        }
+    }
+
+    var showsPersistentStatus: Bool {
+        switch self {
+        case .available:
+            return false
+        case .operation, .installed:
+            return true
         }
     }
 
@@ -174,7 +210,7 @@ enum SumiUpdateSidebarNotice: Equatable, Sendable {
     var primaryActionTitle: String? {
         switch self {
         case .available:
-            return "Update"
+            return "Restart and Update"
         case .operation, .installed:
             return nil
         }
@@ -224,19 +260,10 @@ enum SumiUpdateSidebarNotice: Equatable, Sendable {
         }
     }
 
-    var progress: Double? {
-        guard case .operation(let notice) = self else { return nil }
-        return notice.progress
-    }
-
-    var availableUpdate: SumiAvailableUpdate? {
-        guard case .available(let update) = self else { return nil }
-        return update
-    }
-
-    var installedUpdate: SumiInstalledUpdate? {
-        guard case .installed(let update) = self else { return nil }
-        return update
+    private func percentageTitle(progress: Double?) -> String {
+        let progress = progress ?? 0
+        let percentage = Int((min(max(progress, 0), 1) * 100).rounded(.down))
+        return "\(percentage)%"
     }
 }
 
@@ -474,6 +501,21 @@ final class SumiUpdaterService: ObservableObject {
         self.state = SumiUpdateState.initial(channel: channel)
         self.sidebarNotice = nil
         syncStateFromBackend()
+
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--sumi-debug-update-notice") {
+            recordAvailableUpdate(
+                SumiAvailableUpdate(
+                    displayVersion: "Debug",
+                    buildVersion: "debug",
+                    title: nil,
+                    subtitle: nil,
+                    releaseNotesURL: nil,
+                    isInformationOnly: false
+                )
+            )
+        }
+        #endif
     }
 
     func start() {
