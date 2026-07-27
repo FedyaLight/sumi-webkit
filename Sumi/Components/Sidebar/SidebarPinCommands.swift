@@ -114,7 +114,7 @@ final class SidebarPinCommands {
             title: title,
             launchURL: launchURL,
             iconAsset: iconAsset,
-            titleIsCustom: pin.titleIsCustom
+            titleIsCustom: title == pin.title ? pin.titleIsCustom : true
         )
     }
 

@@ -174,18 +174,15 @@ private struct ShortcutLinkEditorIconButton: View {
     }
 }
 
-private struct ShortcutLinkEditorIcon: View {
+struct ShortcutLinkEditorIcon: View {
     let pin: ShortcutPin
     let iconAsset: String?
     let faviconImageReader: any BrowserFaviconImageReading
 
     var body: some View {
-        ZStack {
-            icon
-                .frame(width: 18, height: 18)
-        }
-        .frame(width: 26, height: 26)
-        .contentShape(Rectangle())
+        icon
+            .frame(width: 26, height: 26)
+            .contentShape(Rectangle())
     }
 
     @ViewBuilder
@@ -212,6 +209,7 @@ private struct ShortcutLinkEditorIcon: View {
             )
                 .resizable()
                 .scaledToFit()
+                .frame(width: 18, height: 18)
                 .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
         }
     }

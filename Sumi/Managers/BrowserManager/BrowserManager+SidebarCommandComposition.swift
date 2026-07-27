@@ -35,6 +35,7 @@ extension BrowserManager {
         presenter.windowRegistry = windowRegistry
         return SidebarShortcutEditorPresentationService(
             settings: settingsAttachment,
+            pins: shortcutPinCollectionStateOwner,
             pinCommands: sidebarPinCommands,
             faviconImages: dataServices.faviconCapabilities.images,
             presenter: presenter

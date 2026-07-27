@@ -874,7 +874,6 @@ final class ShortcutPinAtomicityTests: XCTestCase {
             commitTransaction: ShortcutPinMetadataCommitTransaction(
                 pins: browser.shortcutPinCollectionStateOwner,
                 structuralMutations: browser.structuralCollectionMutationOwner,
-                spacePinnedStructure: browser.spacePinnedStructureOwner,
                 bindings: bindings
             )
         )

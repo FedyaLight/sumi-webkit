@@ -19,7 +19,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     /// Presentation/persistence URL. Navigation authority is advanced only by
     /// explicit commands or exact WebKit lifecycle identities, never by an
     /// incidental model assignment.
-    public var url: URL
+    @Published public var url: URL
     @Published var name: String
     /// Model-neutral favicon representation; the UI layer maps this to `SwiftUI.Image`
     /// (see `Sumi/Components/TabFaviconPresentation+Image.swift`).

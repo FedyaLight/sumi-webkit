@@ -4,18 +4,15 @@ import Foundation
 final class ShortcutPinMetadataCommitTransaction {
     private let pins: ShortcutPinCollectionStateOwner
     private let structuralMutations: TabStructuralCollectionMutationOwner
-    private let spacePinnedStructure: SpacePinnedStructureOwner
     private let bindings: ShortcutTabBindingSynchronizer
 
     init(
         pins: ShortcutPinCollectionStateOwner,
         structuralMutations: TabStructuralCollectionMutationOwner,
-        spacePinnedStructure: SpacePinnedStructureOwner,
         bindings: ShortcutTabBindingSynchronizer
     ) {
         self.pins = pins
         self.structuralMutations = structuralMutations
-        self.spacePinnedStructure = spacePinnedStructure
         self.bindings = bindings
     }
 
@@ -53,51 +50,29 @@ final class ShortcutPinMetadataCommitTransaction {
         switch source.role {
         case .essential:
             guard let profileID = source.profileId else { return false }
-            var profilePins = pins.essentialPins(for: profileID)
+            var profilePins = pins.pinnedByProfileSnapshot()[profileID] ?? []
             guard let index = profilePins.firstIndex(where: {
                 $0 === source
             }) else { return false }
             profilePins[index] = target.refreshed(index: source.index)
             structuralMutations.setPinnedTabs(
-                ShortcutPin.reindexed(profilePins),
+                profilePins,
                 for: profileID
             )
             return true
 
         case .spacePinned:
             guard let spaceID = source.spaceId else { return false }
-            if source.folderId == nil {
-                var replaced = false
-                let items = spacePinnedStructure
-                    .topLevelSpacePinnedItems(for: spaceID)
-                    .map { item in
-                        guard case .shortcut(let candidate) = item,
-                              candidate === source
-                        else { return item }
-                        replaced = true
-                        return SpacePinnedStructureOwner.SpacePinnedTopLevelItem
-                            .shortcut(target.refreshed(index: source.index))
-                    }
-                guard replaced else { return false }
-                spacePinnedStructure.applyTopLevelSpacePinnedOrder(
-                    items,
-                    for: spaceID
-                )
-                return true
-            }
-
-            var replaced = false
-            spacePinnedStructure.withSpacePinnedShortcutGroup(
-                for: spaceID,
-                folderId: source.folderId
-            ) { folderPins in
-                guard let index = folderPins.firstIndex(where: {
-                    $0 === source
-                }) else { return }
-                folderPins[index] = target.refreshed(index: source.index)
-                replaced = true
-            }
-            return replaced
+            var spacePins = pins.spacePinnedShortcutsSnapshot()[spaceID] ?? []
+            guard let index = spacePins.firstIndex(where: {
+                $0 === source
+            }) else { return false }
+            spacePins[index] = target.refreshed(index: source.index)
+            structuralMutations.setSpacePinnedShortcuts(
+                spacePins,
+                for: spaceID
+            )
+            return true
         }
     }
 

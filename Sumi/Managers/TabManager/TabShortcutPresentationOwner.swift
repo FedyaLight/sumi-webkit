@@ -65,8 +65,7 @@ final class TabShortcutPresentationOwner {
             return false
         }
 
-        return normalizedShortcutComparisonURL(liveTab.url)
-            != normalizedShortcutComparisonURL(pin.launchURL)
+        return pin.hasDrifted(from: liveTab.url)
     }
 
     func shortcutRuntimeAffordanceState(
@@ -255,11 +254,4 @@ final class TabShortcutPresentationOwner {
             }
     }
 
-    private func normalizedShortcutComparisonURL(_ url: URL) -> String {
-        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: true) else {
-            return url.absoluteString
-        }
-        components.fragment = nil
-        return components.string?.lowercased() ?? url.absoluteString.lowercased()
-    }
 }

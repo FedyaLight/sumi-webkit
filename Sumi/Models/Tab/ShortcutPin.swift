@@ -82,6 +82,21 @@ enum SumiLauncherRuntimeAffordanceState {
     var usesResetLeadingAction: Bool {
         showsChangedURLSlash
     }
+
+    func resolvingURLDrift(_ hasDrifted: Bool) -> Self {
+        switch self {
+        case .launcherOnly:
+            return .launcherOnly
+        case .liveBackgrounded, .driftedLiveBackgrounded:
+            return hasDrifted
+                ? .driftedLiveBackgrounded
+                : .liveBackgrounded
+        case .liveSelected, .driftedLiveSelected:
+            return hasDrifted
+                ? .driftedLiveSelected
+                : .liveSelected
+        }
+    }
 }
 
 @MainActor
@@ -301,5 +316,22 @@ final class ShortcutPin: NSObject, ObservableObject, Identifiable {
         }
 
         return preferredDisplayTitle
+    }
+
+    func hasDrifted(from currentURL: URL) -> Bool {
+        Self.normalizedComparisonURL(currentURL)
+            != Self.normalizedComparisonURL(launchURL)
+    }
+
+    private static func normalizedComparisonURL(_ url: URL) -> String {
+        guard var components = URLComponents(
+            url: url,
+            resolvingAgainstBaseURL: true
+        ) else {
+            return url.absoluteString.lowercased()
+        }
+        components.fragment = nil
+        return components.string?.lowercased()
+            ?? url.absoluteString.lowercased()
     }
 }

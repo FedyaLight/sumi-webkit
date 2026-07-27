@@ -6,6 +6,101 @@ import XCTest
 
 @MainActor
 final class SidebarPointerInteractionRegressionTests: XCTestCase {
+    func testUncustomizedShortcutRowTracksLiveInstanceTitle() async throws {
+        let model = ShortcutMaterializationHarness()
+        let liveTab = ShortcutMaterializationHarness.makeLiveTab(
+            pinID: model.pin.id
+        )
+        model.liveTab = liveTab
+        let interactionState = SidebarInteractionState()
+        let windowState = BrowserWindowState(
+            sidebarInteractionState: interactionState
+        )
+        let host = NSHostingView(
+            rootView: ShortcutMaterializationHarnessView(model: model)
+                .environment(windowState)
+                .environment(interactionState)
+                .environmentObject(GlanceManager())
+        )
+        host.frame = NSRect(x: 0, y: 0, width: 280, height: 36)
+        let window = Self.makeWindow(contentView: host)
+        defer {
+            window.contentView = nil
+            window.close()
+        }
+
+        func renderedPNG() throws -> Data {
+            host.layoutSubtreeIfNeeded()
+            let bitmap: NSBitmapImageRep = try XCTUnwrap(
+                host.bitmapImageRepForCachingDisplay(in: host.bounds)
+            )
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            return try XCTUnwrap(
+                bitmap.representation(using: .png, properties: [:])
+            )
+        }
+
+        try await Task.sleep(for: .milliseconds(50))
+        let initial = try renderedPNG()
+        liveTab.name = "Updated Instance Title"
+        try await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertNotEqual(
+            try renderedPNG(),
+            initial,
+            "The mounted shortcut row ignored its live Tab title update"
+        )
+    }
+
+    func testShortcutRowStopsOfferingResetAtPinnedURL() async throws {
+        let model = ShortcutMaterializationHarness()
+        let liveTab = ShortcutMaterializationHarness.makeLiveTab(
+            pinID: model.pin.id
+        )
+        model.liveTab = liveTab
+        let interactionState = SidebarInteractionState()
+        let windowState = BrowserWindowState(
+            sidebarInteractionState: interactionState
+        )
+        let host = NSHostingView(
+            rootView: ShortcutMaterializationHarnessView(
+                model: model,
+                runtimeAffordanceOverride: .driftedLiveSelected
+            )
+                .environment(windowState)
+                .environment(interactionState)
+                .environmentObject(GlanceManager())
+        )
+        host.frame = NSRect(x: 0, y: 0, width: 280, height: 36)
+        let window = Self.makeWindow(contentView: host)
+        defer {
+            window.contentView = nil
+            window.close()
+        }
+
+        func renderedPNG() throws -> Data {
+            host.layoutSubtreeIfNeeded()
+            let bitmap: NSBitmapImageRep = try XCTUnwrap(
+                host.bitmapImageRepForCachingDisplay(in: host.bounds)
+            )
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            return try XCTUnwrap(
+                bitmap.representation(using: .png, properties: [:])
+            )
+        }
+
+        try await Task.sleep(for: .milliseconds(50))
+        let drifted = try renderedPNG()
+        liveTab.url = model.pin.launchURL
+        try await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertNotEqual(
+            try renderedPNG(),
+            drifted,
+            "The reset affordance remained after returning to the pinned URL"
+        )
+    }
+
     func testColdShortcutMaterializationContinuesIntoDragFromSameEventStream() throws {
         let monitor = TestSidebarPointerEventMonitor()
         var nativeDragStartCount = 0
@@ -586,6 +681,7 @@ private struct ShortcutMaterializationHarnessView: View {
     static let sourceID = "space-pinned-shortcut-materialization-test"
 
     let model: ShortcutMaterializationHarness
+    var runtimeAffordanceOverride: SumiLauncherRuntimeAffordanceState? = nil
 
     var body: some View {
         ShortcutSidebarRow(
@@ -595,7 +691,8 @@ private struct ShortcutMaterializationHarnessView: View {
             faviconImageReader:
                 TabDependencyIsolationDefaults.faviconCapabilities.images,
             runtimeAffordance:
-                model.liveTab == nil ? .launcherOnly : .liveSelected,
+                runtimeAffordanceOverride
+                    ?? (model.liveTab == nil ? .launcherOnly : .liveSelected),
             accessibilityID: Self.sourceID,
             action: {
                 guard model.liveTab == nil else { return }

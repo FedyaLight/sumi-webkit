@@ -27,7 +27,9 @@ final class SidebarPinLifecycleCommands {
         in windowState: BrowserWindowState,
         preserveCurrentPage: Bool
     ) -> Bool {
-        guard let pin = current(pin), windows.contains(windowState) else { return false }
+        guard let pin = pins.shortcutPin(by: pin.id),
+              windows.contains(windowState)
+        else { return false }
         return livePages.reset(
             pin,
             in: windowState,
@@ -87,7 +89,7 @@ final class SidebarPinLifecycleCommands {
             title: title,
             launchURL: launchURL,
             iconAsset: iconAsset,
-            titleIsCustom: pin.titleIsCustom
+            titleIsCustom: title == pin.title ? pin.titleIsCustom : true
         )
     }
 

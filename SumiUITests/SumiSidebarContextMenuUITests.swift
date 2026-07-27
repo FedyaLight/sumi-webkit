@@ -139,6 +139,98 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
         }
     }
 
+    func testEditingPinnedLauncherPersistsAfterDone() throws {
+        let fixture = try loadPersonalSidebarFixture()
+        let launcherID = try XCTUnwrap(fixture.topLevelLauncherID)
+        let app = try launchApp()
+        let window = app.windows.element(boundBy: 0)
+        let rowID = "space-pinned-shortcut-\(launcherID)"
+
+        XCTAssertTrue(window.waitForExistence(timeout: 5))
+        activatePersonalSpace(
+            fixture,
+            app: app,
+            window: window,
+            collapsedSidebar: false
+        )
+        let originalLauncherFrame = requireElement(
+            withIdentifier: rowID,
+            in: app,
+            window: window,
+            collapsedSidebar: false
+        ).frame
+
+        func openEditor() {
+            let row = requireElement(
+                withIdentifier: rowID,
+                in: app,
+                window: window,
+                collapsedSidebar: false
+            )
+            openSidebarContextMenu(
+                on: row,
+                expectedMenuItem: "Edit",
+                app: app
+            )
+            chooseContextMenuItem("Edit", app: app)
+            XCTAssertTrue(
+                element(
+                    withIdentifier: "shortcut-link-editor-popover",
+                    in: app
+                ).waitForExistence(timeout: 5)
+            )
+        }
+
+        openEditor()
+        let titleField = app.textFields[
+            "shortcut-link-editor-title-field"
+        ]
+        XCTAssertTrue(titleField.waitForExistence(timeout: 2))
+        app.activate()
+        titleField.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)
+        ).click()
+        let focusExpectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "hasKeyboardFocus == true"),
+            object: titleField
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [focusExpectation], timeout: 2),
+            .completed
+        )
+        app.typeKey(.delete, modifierFlags: .command)
+        app.typeText("x")
+        XCTAssertEqual(titleField.value as? String, "x")
+        app.buttons["Done"].click()
+        XCTAssertTrue(
+            waitForNonExistence(
+                element(
+                    withIdentifier: "shortcut-link-editor-popover",
+                    in: app
+                ),
+                timeout: 5
+            )
+        )
+        let editedLauncherFrame = requireElement(
+            withIdentifier: rowID,
+            in: app,
+            window: window,
+            collapsedSidebar: false
+        ).frame
+        XCTAssertEqual(
+            editedLauncherFrame.minY,
+            originalLauncherFrame.minY,
+            accuracy: 1,
+            "Editing launcher metadata changed its sidebar position"
+        )
+
+        openEditor()
+        XCTAssertEqual(
+            app.textFields["shortcut-link-editor-title-field"].value as? String,
+            "x"
+        )
+    }
+
     func testPersonalCollapsedHoverSidebarContextMenusCanBeReopenedAfterDismiss() throws {
         let fixture = try loadPersonalSidebarFixture()
         let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome(isSidebarVisible: false))

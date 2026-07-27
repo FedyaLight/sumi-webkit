@@ -671,7 +671,6 @@ extension BrowserCompositionRoot {
             commitTransaction: ShortcutPinMetadataCommitTransaction(
                 pins: state.shortcutPins,
                 structuralMutations: structuralCollectionMutationOwner,
-                spacePinnedStructure: spacePinnedStructureOwner,
                 bindings: shortcutTabBindings
             )
         )

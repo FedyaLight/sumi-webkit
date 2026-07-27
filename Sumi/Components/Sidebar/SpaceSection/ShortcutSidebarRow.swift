@@ -23,14 +23,31 @@ struct ShortcutSidebarRow: View {
     let onUnload: () -> Void
     let onRemove: () -> Void
 
+    @ViewBuilder
     var body: some View {
-        ShortcutSidebarRowChrome(
+        if let liveTab {
+            LiveShortcutSidebarRow(
+                row: self,
+                liveTab: liveTab
+            )
+        } else {
+            rowChrome(liveTab: nil)
+        }
+    }
+
+    fileprivate func rowChrome(liveTab: Tab?) -> some View {
+        let resolvedRuntimeAffordance = liveTab.map {
+            runtimeAffordance.resolvingURLDrift(
+                pin.hasDrifted(from: $0.url)
+            )
+        } ?? runtimeAffordance
+        return ShortcutSidebarRowChrome(
             pin: pin,
             liveTab: liveTab,
             faviconPartition: faviconPartition,
             faviconImageReader: faviconImageReader,
             resolvedTitle: pin.resolvedDisplayTitle(liveTab: liveTab),
-            runtimeAffordance: runtimeAffordance,
+            runtimeAffordance: resolvedRuntimeAffordance,
             projectedSplitTarget: projectedSplitTarget,
             accessibilityID: accessibilityID,
             contextMenuEntries: contextMenuEntries,
@@ -42,5 +59,14 @@ struct ShortcutSidebarRow: View {
             onUnload: onUnload,
             onRemove: onRemove
         )
+    }
+}
+
+private struct LiveShortcutSidebarRow: View {
+    let row: ShortcutSidebarRow
+    @ObservedObject var liveTab: Tab
+
+    var body: some View {
+        row.rowChrome(liveTab: liveTab)
     }
 }
