@@ -4,11 +4,17 @@ import Foundation
 @MainActor
 final class SumiDownloadDestinationAllocator: DownloadDestinationAllocating {
     private let reservations: SumiDownloadDestinationReservationStore
+    private let orphanCleaner: (any DownloadOrphanCleaning)?
+    private var deferredMaintenance: Task<Void, Never>?
 
-    init(fileManager: FileManager) {
+    init(
+        fileManager: FileManager,
+        orphanCleaner: (any DownloadOrphanCleaning)? = nil
+    ) {
         reservations = SumiDownloadDestinationReservationStore(
             fileManager: fileManager
         )
+        self.orphanCleaner = orphanCleaner
     }
 
     func reserve(
@@ -20,6 +26,9 @@ final class SumiDownloadDestinationAllocator: DownloadDestinationAllocating {
             fallback: request.suggestedFilename
         )
         let filename = DownloadFileUtilities.sanitizedFilename(responseFilename)
+        await performDeferredMaintenanceIfNeeded(
+            preference: request.preference
+        )
         let defaultDirectory = await allocate { reservations in
             reservations.defaultDirectory(preference: request.preference)
         }
@@ -54,6 +63,23 @@ final class SumiDownloadDestinationAllocator: DownloadDestinationAllocating {
         await allocate { reservations in
             reservations.renewTemporaryDestination(for: reservation)
         }
+    }
+
+    private func performDeferredMaintenanceIfNeeded(
+        preference: SumiDownloadDestinationPreference
+    ) async {
+        guard let orphanCleaner else { return }
+        if let deferredMaintenance {
+            await deferredMaintenance.value
+            return
+        }
+        let maintenance = Task {
+            await orphanCleaner.removeOrphanedDownloads(
+                preference: preference
+            )
+        }
+        deferredMaintenance = maintenance
+        await maintenance.value
     }
 
     private func allocate<T: Sendable>(

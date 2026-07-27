@@ -187,7 +187,7 @@ if (( manager_source_count == 1 )); then
   manager_attached_edges="$(
     guard_count_matches 'private var retryTransport:' "$manager_source"
   )"
-  guard_exact 'DownloadManager constructed edges' "$manager_constructor_edges" 3
+  guard_exact 'DownloadManager constructed edges' "$manager_constructor_edges" 2
   guard_exact 'DownloadManager attached lifecycle edges' "$manager_attached_edges" 1
 
   retry_attachment_region="$(
@@ -259,8 +259,8 @@ guard_require_directory App
 startup_maintenance_count="$(
   guard_count_swift_matches 'performStartupMaintenance\(\)' App
 )"
-if (( startup_maintenance_count == 0 )); then
-  guard_record_failure 'orphan cleanup has no explicit app lifecycle entry point'
+if (( startup_maintenance_count != 0 )); then
+  guard_record_failure 'app startup must not access the downloads directory'
 fi
 
 if (( manager_source_count == 1 )); then
@@ -276,24 +276,30 @@ if (( manager_source_count == 1 )); then
     guard_record_failure 'DownloadManager init performs hidden orphan cleanup'
   fi
 
-  maintenance_region="$(
-    sed -n '/func performStartupMaintenance()/,/^[[:space:]]*}/p' \
-      "$manager_source"
-  )"
-  attached_settings_count="$(
-    guard_count_matches 'let settings,' - <<< "$maintenance_region"
-  )"
+  allocator_source="$download_root/SumiDownloadDestinationAllocator.swift"
+  guard_require_file "$allocator_source"
   cleaner_count="$(
-    guard_count_matches 'let orphanCleaner' - <<< "$maintenance_region"
-  )"
-  fallback_preference_count="$(
     guard_count_matches \
-      '\?\?[[:space:]]*SumiDownloadDestinationPreference' \
-      - <<< "$maintenance_region"
+      'orphanCleaner.removeOrphanedDownloads' \
+      "$allocator_source"
   )"
-  if (( attached_settings_count == 0 || cleaner_count == 0 || fallback_preference_count != 0 )); then
+  exact_preference_count="$(
+    guard_count_matches 'preference:[[:space:]]*preference' \
+      "$allocator_source"
+  )"
+  if (( cleaner_count == 0 || exact_preference_count == 0 )); then
     guard_record_failure \
-      'startup cleanup must wait for attached settings and use its exact preference'
+      'deferred cleanup must use the first destination preference'
+  fi
+
+  download_trigger_count="$(
+    guard_count_matches \
+      'performDeferredMaintenanceIfNeeded\(' \
+      "$allocator_source"
+  )"
+  if (( download_trigger_count != 2 )); then
+    guard_record_failure \
+      'download maintenance must be deferred until destination allocation'
   fi
 fi
 

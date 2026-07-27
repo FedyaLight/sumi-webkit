@@ -229,45 +229,49 @@ final class DownloadManagerTests: XCTestCase {
         XCTAssertEqual(firstRetry.transport.startCount, 1)
     }
 
-    func testOrphanCleanupWaitsForSettingsAndRunsOnceWithExactPreference() async {
-        let destinations = TestDownloadDestinationAllocator()
-        let progress = TestDownloadProgressPublisher()
+    func testOrphanCleanupIsDeferredUntilFirstDestinationAllocationAndRunsOnce() async {
         let cleaner = TestDownloadOrphanCleaner()
-        let coordinator = DownloadListCoordinator(
-            transactionFactory: DownloadTransactionFactory(
-                destinations: destinations,
-                finalizer: TestDownloadFinalizer(),
-                progressPublisher: progress
-            ),
-            promptPresenter: TestDownloadPromptPresenter()
-        )
-        let manager = DownloadManager(
-            coordinator: coordinator,
-            workspace: TestDownloadWorkspace(),
+        let allocator = SumiDownloadDestinationAllocator(
+            fileManager: TestDownloadAllocationFileManager(),
             orphanCleaner: cleaner
         )
+        let preference = SumiDownloadDestinationPreference(
+            alwaysAskWhereToSave: false,
+            customDirectoryURL: URL(
+                fileURLWithPath: "/tmp/deferred-downloads",
+                isDirectory: true
+            )
+        )
+        let firstRequest = DownloadDestinationRequest(
+            suggestedFilename: "first.bin",
+            response: nil,
+            sourceURL: URL(string: "https://example.com/first.bin")!,
+            preference: preference
+        )
+        let secondRequest = DownloadDestinationRequest(
+            suggestedFilename: "second.bin",
+            response: nil,
+            sourceURL: URL(string: "https://example.com/second.bin")!,
+            preference: preference
+        )
 
         XCTAssertEqual(cleaner.callCount, 0)
-        XCTAssertTrue(progress.publications.isEmpty)
-
-        await manager.performStartupMaintenance()
+        await Task.yield()
         XCTAssertEqual(cleaner.callCount, 0)
 
-        let defaultsHarness = TestDefaultsHarness()
-        defer { defaultsHarness.reset() }
-        let settings = SumiSettingsService(userDefaults: defaultsHarness.defaults)
-        let directory = URL(fileURLWithPath: "/tmp/attached-downloads", isDirectory: true)
-        settings.setDownloadsDirectory(directory)
-        manager.settings = settings
-
-        await manager.performStartupMaintenance()
+        let first = await allocator.reserve(firstRequest)
         XCTAssertEqual(cleaner.callCount, 1)
-        XCTAssertEqual(cleaner.preferences, [settings.downloadsDestinationPreference])
+        XCTAssertEqual(cleaner.preferences, [preference])
 
-        await manager.performStartupMaintenance()
+        let second = await allocator.reserve(secondRequest)
 
         XCTAssertEqual(cleaner.callCount, 1)
-        XCTAssertTrue(progress.publications.isEmpty)
+        if let first {
+            allocator.release(first)
+        }
+        if let second {
+            allocator.release(second)
+        }
     }
 
     func testOrphanCleanerRemovesOnlyIncompleteFilesAtLifecycleDirectory() async throws {
@@ -311,7 +315,6 @@ final class DownloadManagerTests: XCTestCase {
             mimeType: nil,
             originatingURL: URL(string: "https://example.com/ignored.bin")!
         )
-        await manager.performStartupMaintenance()
 
         XCTAssertEqual(transport.cancelCount, 1)
         XCTAssertTrue(manager.items.isEmpty)

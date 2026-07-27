@@ -433,8 +433,7 @@ struct DownloadTestHarness {
         let workspace = TestDownloadWorkspace()
         self.manager = DownloadManager(
             coordinator: coordinator,
-            workspace: workspace,
-            orphanCleaner: nil
+            workspace: workspace
         )
         self.coordinator = coordinator
         self.destinations = destinations

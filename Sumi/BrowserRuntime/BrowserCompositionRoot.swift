@@ -263,9 +263,13 @@ enum BrowserCompositionRoot {
         let initialProfile = profileManager.profiles.first
         let lastSessionWindowsStore = LastSessionWindowsStore()
         let downloadFileManager = FileManager.default
+        let downloadOrphanCleaner = SumiDownloadOrphanCleaner(
+            fileManager: downloadFileManager
+        )
         let downloadTransactionFactory = DownloadTransactionFactory(
             destinations: SumiDownloadDestinationAllocator(
-                fileManager: downloadFileManager
+                fileManager: downloadFileManager,
+                orphanCleaner: downloadOrphanCleaner
             ),
             finalizer: SumiDownloadFileFinalizer(
                 fileManager: downloadFileManager
@@ -279,9 +283,6 @@ enum BrowserCompositionRoot {
             ),
             workspace: SumiDownloadWorkspace(
                 workspace: .shared,
-                fileManager: downloadFileManager
-            ),
-            orphanCleaner: SumiDownloadOrphanCleaner(
                 fileManager: downloadFileManager
             )
         )

@@ -10,8 +10,6 @@ final class DownloadManager: ObservableObject, DownloadListCoordinatorEventSink 
 
     private let coordinator: DownloadListCoordinator?
     private let workspace: (any DownloadWorkspaceOpening)?
-    private let orphanCleaner: (any DownloadOrphanCleaning)?
-    private var didPerformStartupMaintenance = false
     private var retryTransport: (any DownloadRetryTransportStarting)?
 
     weak var settings: SumiSettingsService? {
@@ -20,12 +18,10 @@ final class DownloadManager: ObservableObject, DownloadListCoordinatorEventSink 
 
     init(
         coordinator: DownloadListCoordinator?,
-        workspace: (any DownloadWorkspaceOpening)?,
-        orphanCleaner: (any DownloadOrphanCleaning)?
+        workspace: (any DownloadWorkspaceOpening)?
     ) {
         self.coordinator = coordinator
         self.workspace = workspace
-        self.orphanCleaner = orphanCleaner
         self.items = coordinator?.items ?? []
         self.activeDownloadCount = coordinator?.activeCount ?? 0
         self.combinedProgressFraction = coordinator?.combinedProgressFraction
@@ -41,8 +37,7 @@ final class DownloadManager: ObservableObject, DownloadListCoordinatorEventSink 
     static func unavailable() -> DownloadManager {
         DownloadManager(
             coordinator: nil,
-            workspace: nil,
-            orphanCleaner: nil
+            workspace: nil
         )
     }
 
@@ -65,17 +60,6 @@ final class DownloadManager: ObservableObject, DownloadListCoordinatorEventSink 
         guard retryTransport == nil else { return false }
         retryTransport = transport
         return true
-    }
-
-    func performStartupMaintenance() async {
-        guard !didPerformStartupMaintenance,
-              let settings,
-              let orphanCleaner
-        else { return }
-        didPerformStartupMaintenance = true
-        await orphanCleaner.removeOrphanedDownloads(
-            preference: settings.downloadsDestinationPreference
-        )
     }
 
     @discardableResult
