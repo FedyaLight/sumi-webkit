@@ -77,6 +77,7 @@ struct TabRestoreSnapshotBuilder: Sendable {
             executionProfileId: shortcut.executionProfileId,
             folderId: shortcut.folderId,
             iconAsset: shortcut.iconAsset,
+            titleIsCustom: shortcut.titleIsCustom,
             currentURLString: shortcut.launchURL.absoluteString,
             canGoBack: false,
             canGoForward: false

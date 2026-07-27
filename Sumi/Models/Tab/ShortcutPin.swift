@@ -95,6 +95,7 @@ final class ShortcutPin: NSObject, ObservableObject, Identifiable {
     let folderId: UUID?
     let launchURL: URL
     let iconAsset: String?
+    let titleIsCustom: Bool
 
     @Published var title: String
 
@@ -108,7 +109,8 @@ final class ShortcutPin: NSObject, ObservableObject, Identifiable {
         folderId: UUID? = nil,
         launchURL: URL,
         title: String,
-        iconAsset: String? = nil
+        iconAsset: String? = nil,
+        titleIsCustom: Bool = false
     ) {
         self.id = id
         self.role = role
@@ -120,6 +122,7 @@ final class ShortcutPin: NSObject, ObservableObject, Identifiable {
         self.launchURL = launchURL
         self.title = title
         self.iconAsset = Self.normalizedIconAsset(iconAsset)
+        self.titleIsCustom = titleIsCustom
         super.init()
     }
 
@@ -134,7 +137,8 @@ final class ShortcutPin: NSObject, ObservableObject, Identifiable {
             folderId: self.folderId,
             launchURL: launchURL,
             title: title,
-            iconAsset: iconAsset
+            iconAsset: iconAsset,
+            titleIsCustom: titleIsCustom
         )
     }
 
@@ -155,7 +159,8 @@ final class ShortcutPin: NSObject, ObservableObject, Identifiable {
             folderId: folderId,
             launchURL: launchURL,
             title: title,
-            iconAsset: iconAsset
+            iconAsset: iconAsset,
+            titleIsCustom: titleIsCustom
         )
     }
 
@@ -166,7 +171,8 @@ final class ShortcutPin: NSObject, ObservableObject, Identifiable {
         profileId: UUID?? = nil,
         executionProfileId: UUID?? = nil,
         index: Int? = nil,
-        folderId: UUID?? = nil
+        folderId: UUID?? = nil,
+        titleIsCustom: Bool? = nil
     ) -> ShortcutPin {
         let resolvedLaunchURL = launchURL ?? self.launchURL
         let resolvedFolderId = folderId ?? self.folderId
@@ -183,7 +189,8 @@ final class ShortcutPin: NSObject, ObservableObject, Identifiable {
             folderId: resolvedFolderId,
             launchURL: resolvedLaunchURL,
             title: title ?? self.title,
-            iconAsset: iconAsset ?? self.iconAsset
+            iconAsset: iconAsset ?? self.iconAsset,
+            titleIsCustom: titleIsCustom ?? self.titleIsCustom
         )
     }
 
@@ -283,6 +290,9 @@ final class ShortcutPin: NSObject, ObservableObject, Identifiable {
     }
 
     func resolvedDisplayTitle(liveTab: Tab?) -> String {
+        if titleIsCustom {
+            return preferredDisplayTitle
+        }
         if let liveTab {
             let liveTitle = liveTab.name.trimmingCharacters(in: .whitespacesAndNewlines)
             if !liveTitle.isEmpty {

@@ -105,7 +105,9 @@ enum TabBrowserRuntimeFactory {
                 ),
             persistenceRuntimeCallbacks: TabBrowserHostServicesRuntimeFactory
                 .persistenceCallbacks(
-                    persistence: tabs.structuralPersistence
+                    persistence: tabs.structuralPersistence,
+                    shortcutSessions: browserManager
+                        .shortcutLiveSessionPersistence
                 ),
             mediaRuntimeCallbacks: TabBrowserHostServicesRuntimeFactory
                 .mediaCallbacks(

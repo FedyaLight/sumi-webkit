@@ -46,7 +46,8 @@ final class TabLastSessionShortcutMaterializer {
             folderId: descriptor.folderId,
             launchURL: descriptor.launchURL,
             title: descriptor.title,
-            iconAsset: descriptor.iconAsset
+            iconAsset: descriptor.iconAsset,
+            titleIsCustom: descriptor.titleIsCustom
         )
     }
 

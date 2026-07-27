@@ -5,16 +5,22 @@ struct WindowSessionSnapshotFactory {
     typealias WindowGeometryProvider = @MainActor (
         BrowserWindowState
     ) -> BrowserWindowGeometrySnapshot?
+    typealias LiveShortcutProvider = @MainActor (
+        BrowserWindowState
+    ) -> [ShortcutLiveSessionSnapshot]
 
     let glanceManager: GlanceManager
     let windowGeometry: WindowGeometryProvider
+    let liveShortcuts: LiveShortcutProvider
 
     init(
         glanceManager: GlanceManager,
-        windowGeometry: @escaping WindowGeometryProvider = { _ in nil }
+        windowGeometry: @escaping WindowGeometryProvider = { _ in nil },
+        liveShortcuts: @escaping LiveShortcutProvider = { _ in [] }
     ) {
         self.glanceManager = glanceManager
         self.windowGeometry = windowGeometry
+        self.liveShortcuts = liveShortcuts
     }
 
     func make(for windowState: BrowserWindowState) -> WindowSessionSnapshot {
@@ -35,6 +41,7 @@ struct WindowSessionSnapshotFactory {
                     shortcutPinId: $0.value
                 )
             },
+            liveShortcuts: liveShortcuts(windowState),
             collapsedPinnedSpaceIDs: windowState.sidebarSpacePinnedCollapse
                 .persistedCollapsedSpaceIDs,
             sidebarWidth: Double(windowState.sidebarWidth),

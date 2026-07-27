@@ -249,6 +249,7 @@ struct SumiPortableLauncher: Codable, Equatable, Identifiable, Sendable {
     var folderId: String?
     var iconAsset: String?
     var sourceSpaceId: String?
+    var titleIsCustom: Bool? = nil
 }
 
 struct SumiPortableRegularTab: Codable, Equatable, Identifiable, Sendable {

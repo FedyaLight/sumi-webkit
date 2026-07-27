@@ -43,6 +43,7 @@ enum TabPersistenceSnapshotProfileMigration {
                 ),
                 folderId: tab.folderId,
                 iconAsset: tab.iconAsset,
+                titleIsCustom: tab.titleIsCustom,
                 currentURLString: tab.currentURLString,
                 canGoBack: tab.canGoBack,
                 canGoForward: tab.canGoForward

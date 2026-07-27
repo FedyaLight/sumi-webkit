@@ -109,12 +109,29 @@ final class SidebarPinCommands {
         launchURL: URL,
         iconAsset: String?
     ) -> ShortcutPin? {
+        update(
+            pin,
+            title: title,
+            launchURL: launchURL,
+            iconAsset: iconAsset,
+            titleIsCustom: pin.titleIsCustom
+        )
+    }
+
+    func update(
+        _ pin: ShortcutPin,
+        title: String,
+        launchURL: URL,
+        iconAsset: String?,
+        titleIsCustom: Bool
+    ) -> ShortcutPin? {
         guard runtime.current != nil else { return nil }
         return lifecycle.update(
             pin,
             title: title,
             launchURL: launchURL,
-            iconAsset: iconAsset
+            iconAsset: iconAsset,
+            titleIsCustom: titleIsCustom
         )
     }
 }

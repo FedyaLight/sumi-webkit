@@ -5,6 +5,7 @@ struct ShortcutPresentationActivationAdmission {
     let request: ShortcutPresentationActivationService.Request
     let pin: ShortcutPin
     let pinTitle: String
+    let pinTitleIsCustom: Bool
     let targetSpaceID: UUID?
     let page: LiveShortcutPresentationPageReceipt
     let tab: Tab
@@ -129,6 +130,7 @@ final class ShortcutPresentationActivationPlanner {
             request: request,
             pin: pin,
             pinTitle: pin.title,
+            pinTitleIsCustom: pin.titleIsCustom,
             targetSpaceID: targetSpaceID,
             page: page,
             tab: tab,
@@ -203,6 +205,7 @@ final class ShortcutPresentationActivationPlanner {
                   expected: expected.pin
               ) else { return false }
         return currentPin.title == expected.pinTitle
+            && currentPin.titleIsCustom == expected.pinTitleIsCustom
             && resolution.presentationPageReceipt(
                 for: currentPin,
                 windowID: expected.request.windowID,

@@ -325,6 +325,84 @@ final class WindowSessionPersistenceSchedulerTests: XCTestCase {
         )
     }
 
+    func testLiveShortcutNavigationSchedulesPerWindowResumeSnapshot() throws {
+        let snapshotStore = WindowSessionSnapshotStore(
+            key: "window-session-live-shortcut",
+            userDefaults: makeUserDefaults(),
+            environment: { [:] }
+        )
+        let browser = BrowserManager(
+            startupPersistence: BrowserManagerStartupPersistence(
+                container: try makeInMemoryStartupContainer()
+            ),
+            windowSessionSnapshotStore: snapshotStore
+        )
+        let windowState = BrowserWindowState()
+        browser.tabResidenceAuthority.establishResidenceSession(
+            on: windowState
+        )
+        browser.windowRegistry.register(windowState)
+        let space = try XCTUnwrap(
+            browser.sidebarSpaceLifecycle.createSpace(
+                name: "Space",
+                icon: "square",
+                profileID: nil
+            )
+        )
+        windowState.currentSpaceId = space.id
+        let pin = ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            spaceId: space.id,
+            index: 0,
+            launchURL: try XCTUnwrap(
+                URL(string: "https://launcher.example")
+            ),
+            title: "Launcher"
+        )
+        browser.structuralCollectionMutationOwner.setSpacePinnedShortcuts(
+            [pin],
+            for: space.id
+        )
+        windowState.currentShortcutPinId = pin.id
+        XCTAssertTrue(
+            WindowSessionShortcutRestorer(
+                pins: browser.shortcutPinCollectionStateOwner,
+                activation: browser.shortcutPresentationActivation
+            ).materializeSelectionIfNeeded(in: windowState)
+        )
+        let liveTab = try XCTUnwrap(
+            browser.liveShortcutTabs.tab(
+                for: pin.id,
+                in: windowState.id
+            )
+        )
+        let currentURL = try XCTUnwrap(
+            URL(string: "https://launcher.example/continued")
+        )
+        liveTab.url = currentURL
+
+        XCTAssertTrue(
+            liveTab.acceptResolvedDisplayTitle("Continued Work")
+        )
+        XCTAssertEqual(
+            browser.windowSessionPersistenceCoordinator.flush(),
+            1
+        )
+
+        XCTAssertEqual(
+            snapshotStore.loadSnapshot()?.snapshot.liveShortcuts,
+            [
+                ShortcutLiveSessionSnapshot(
+                    shortcutPinId: pin.id,
+                    presentationSpaceId: space.id,
+                    currentURL: currentURL,
+                    title: "Continued Work"
+                ),
+            ]
+        )
+    }
+
     private struct CoordinatorHarness {
         let coordinator: WindowSessionPersistenceCoordinator
         let snapshotStore: WindowSessionSnapshotStore

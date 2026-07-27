@@ -267,6 +267,7 @@ struct RecentlyClosedShortcutPinState: Equatable {
     let launchURL: URL
     let title: String
     let iconAsset: String?
+    let titleIsCustom: Bool
 
     @MainActor
     init(pin: ShortcutPin) {
@@ -280,6 +281,7 @@ struct RecentlyClosedShortcutPinState: Equatable {
         self.launchURL = pin.launchURL
         self.title = pin.title
         self.iconAsset = pin.iconAsset
+        self.titleIsCustom = pin.titleIsCustom
     }
 }
 

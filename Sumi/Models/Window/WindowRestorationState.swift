@@ -10,6 +10,8 @@ final class WindowRestorationState {
     var restoredSessionWindowID: UUID?
     var isAwaitingInitialResolution: Bool
     var pendingSplitSelection: PendingWindowSplitSelection?
+    private(set) var pendingShortcutLiveSessions:
+        [ShortcutLiveSessionSnapshot] = []
     private(set) var pendingWindowGeometry: BrowserWindowGeometrySnapshot?
     private var pendingWindowGeometryFrameShellIdentity: ObjectIdentifier?
 
@@ -20,6 +22,17 @@ final class WindowRestorationState {
     func stageWindowGeometry(_ geometry: BrowserWindowGeometrySnapshot?) {
         pendingWindowGeometry = geometry
         pendingWindowGeometryFrameShellIdentity = nil
+    }
+
+    func stageShortcutLiveSessions(
+        _ sessions: [ShortcutLiveSessionSnapshot]
+    ) {
+        pendingShortcutLiveSessions = sessions
+    }
+
+    func consumeShortcutLiveSessions() -> [ShortcutLiveSessionSnapshot] {
+        defer { pendingShortcutLiveSessions = [] }
+        return pendingShortcutLiveSessions
     }
 
     func needsPendingWindowGeometryFrame(for shell: AnyObject) -> Bool {

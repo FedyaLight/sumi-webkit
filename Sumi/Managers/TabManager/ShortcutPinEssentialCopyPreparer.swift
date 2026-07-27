@@ -50,7 +50,10 @@ final class ShortcutPinEssentialCopyPreparer {
                 index: insertion.index,
                 launchURL: pin.launchURL,
                 title: title,
-                iconAsset: pin.iconAsset
+                iconAsset: pin.iconAsset,
+                titleIsCustom: title == pin.title
+                    ? pin.titleIsCustom
+                    : true
             ),
             insertion: insertion,
             context: context

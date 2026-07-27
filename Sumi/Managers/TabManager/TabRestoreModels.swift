@@ -32,6 +32,7 @@ struct TabRestoreShortcutDTO: Sendable {
     let launchURL: URL
     let title: String
     let iconAsset: String?
+    var titleIsCustom: Bool = false
 }
 
 struct TabRestorePayload: Sendable {
@@ -84,6 +85,7 @@ struct TabRestoreTabRecord: Sendable {
     let executionProfileId: UUID?
     let folderId: UUID?
     let iconAsset: String?
+    var titleIsCustom: Bool = false
     let currentURLString: String?
     let canGoBack: Bool
     let canGoForward: Bool

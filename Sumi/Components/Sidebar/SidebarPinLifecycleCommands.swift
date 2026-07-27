@@ -47,7 +47,9 @@ final class SidebarPinLifecycleCommands {
         )
         return metadata.update(
             pin,
-            title: liveTitle.isEmpty ? pin.title : liveTitle,
+            title: pin.titleIsCustom || liveTitle.isEmpty
+                ? pin.title
+                : liveTitle,
             launchURL: liveTab.url
         ) != nil
     }
@@ -80,12 +82,29 @@ final class SidebarPinLifecycleCommands {
         launchURL: URL,
         iconAsset: String?
     ) -> ShortcutPin? {
+        update(
+            pin,
+            title: title,
+            launchURL: launchURL,
+            iconAsset: iconAsset,
+            titleIsCustom: pin.titleIsCustom
+        )
+    }
+
+    func update(
+        _ pin: ShortcutPin,
+        title: String,
+        launchURL: URL,
+        iconAsset: String?,
+        titleIsCustom: Bool
+    ) -> ShortcutPin? {
         guard let pin = current(pin) else { return nil }
         return metadata.update(
             pin,
             title: title,
             launchURL: launchURL,
-            iconAsset: .some(iconAsset)
+            iconAsset: .some(iconAsset),
+            titleIsCustom: titleIsCustom
         )
     }
 

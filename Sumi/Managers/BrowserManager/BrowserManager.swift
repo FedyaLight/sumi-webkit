@@ -306,11 +306,27 @@ class BrowserManager: ObservableObject {
                 return nil
             }
             return BrowserWindowGeometryPolicy.snapshot(of: window)
+        },
+        liveShortcuts: { [weak self] windowState in
+            self?.liveShortcutTabs.entries(in: windowState.id).map {
+                ShortcutLiveSessionSnapshot(
+                    shortcutPinId: $0.pinId,
+                    presentationSpaceId: $0.presentationPage.page.spaceID,
+                    currentURL: $0.tab.url,
+                    title: $0.tab.name
+                )
+            } ?? []
         }
     )
     lazy var windowSessionHistory = composeWindowSessionHistory()
     lazy var windowSessionPersistenceCoordinator =
         composeWindowSessionPersistence()
+    lazy var shortcutLiveSessionPersistence =
+        ShortcutLiveSessionPersistence(
+            liveTabs: liveShortcutTabs,
+            windows: { [weak self] in self?.windowRegistry },
+            persistence: windowSessionPersistenceCoordinator
+        )
     lazy var windowActivation = composeWindowActivation()
     lazy var windowSessionBundle = BrowserWindowSessionBundle(
         browserManager: self,

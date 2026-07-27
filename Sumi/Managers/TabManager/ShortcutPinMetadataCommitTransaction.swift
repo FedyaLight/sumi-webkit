@@ -115,5 +115,6 @@ final class ShortcutPinMetadataCommitTransaction {
             && lhs.launchURL == rhs.launchURL
             && lhs.title == rhs.title
             && lhs.iconAsset == rhs.iconAsset
+            && lhs.titleIsCustom == rhs.titleIsCustom
     }
 }

@@ -131,7 +131,8 @@ struct TabRestoreRuntimeStateBuilder {
             folderId: dto.folderId,
             launchURL: dto.launchURL,
             title: dto.title,
-            iconAsset: dto.iconAsset
+            iconAsset: dto.iconAsset,
+            titleIsCustom: dto.titleIsCustom
         )
     }
 }

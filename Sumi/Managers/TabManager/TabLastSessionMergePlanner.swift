@@ -236,7 +236,8 @@ private extension TabLastSessionMergePlanner {
             folderId: tab.folderId,
             launchURL: launchURL,
             title: tab.name,
-            iconAsset: tab.iconAsset
+            iconAsset: tab.iconAsset,
+            titleIsCustom: tab.titleIsCustom
         )
     }
 

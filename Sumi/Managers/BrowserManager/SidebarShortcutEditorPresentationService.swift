@@ -47,7 +47,8 @@ final class SidebarShortcutEditorPresentationService {
             session.pin,
             title: session.effectiveTitle,
             launchURL: launchURL,
-            iconAsset: session.iconAsset
+            iconAsset: session.iconAsset,
+            titleIsCustom: session.resolvedTitleIsCustom
         )
     }
 }

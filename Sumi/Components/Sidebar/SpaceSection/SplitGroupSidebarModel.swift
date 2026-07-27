@@ -39,7 +39,9 @@ struct SplitGroupSidebarItem: Identifiable {
 
     @MainActor
     var title: String {
-        tab?.name ?? pin?.preferredDisplayTitle ?? "Split member"
+        pin?.resolvedDisplayTitle(liveTab: tab)
+            ?? tab?.name
+            ?? "Split member"
     }
 
     @MainActor

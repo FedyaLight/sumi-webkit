@@ -34,6 +34,7 @@ final class ShortcutPresentationCatalogIdentityHandoff {
             && sourcePin.launchURL == currentPin.launchURL
             && sourcePin.title == currentPin.title
             && sourcePin.iconAsset == currentPin.iconAsset
+            && sourcePin.titleIsCustom == currentPin.titleIsCustom
     }
 }
 

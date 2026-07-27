@@ -248,7 +248,7 @@ struct EssentialSplitGroupTile: View {
             return EssentialSplitMemberVisual(
                 id: member.memberID,
                 persistentID: pinID,
-                title: liveTab?.name ?? pin.preferredDisplayTitle,
+                title: pin.resolvedDisplayTitle(liveTab: liveTab),
                 url: liveTab?.url ?? pin.launchURL,
                 icon: presentation.image,
                 glyphText: presentation.glyphText,
@@ -467,7 +467,7 @@ struct EssentialSplitGroupTile: View {
                 let liveTab = liveTabsByPinID[pinID]
                 return SplitGroupContextMenuMember(
                     id: memberID,
-                    title: liveTab?.name ?? pin.preferredDisplayTitle,
+                    title: pin.resolvedDisplayTitle(liveTab: liveTab),
                     url: liveTab?.url ?? pin.launchURL
                 )
             },

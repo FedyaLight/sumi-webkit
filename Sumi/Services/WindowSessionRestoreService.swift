@@ -100,6 +100,9 @@ final class WindowSessionRestoreService {
                 )
             }
 
+            shortcutRestorer.materializeRestoredLiveSessions(
+                in: windowState
+            )
             if shortcutRestorer.materializeSelectionIfNeeded(
                 in: windowState
             ) == false {
@@ -388,6 +391,7 @@ final class WindowSessionRestoreService {
         persistsWindowSession: Bool = true
     ) {
         let selection = requiredSelection()
+        shortcutRestorer.materializeRestoredLiveSessions(in: windowState)
         shortcutRestorer.materializeSelectionIfNeeded(in: windowState)
         splitRestorer.restorePendingSelectionIfNeeded(in: windowState)
         glanceManager.restorePendingSessionIfPossible(in: windowState)

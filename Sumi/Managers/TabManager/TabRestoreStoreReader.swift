@@ -34,6 +34,9 @@ actor TabRestoreStoreReader {
                 executionProfileId: entity.executionProfileId,
                 folderId: entity.folderId,
                 iconAsset: entity.iconAsset,
+                // Legacy launchers have no marker. Preserve their saved names
+                // instead of risking a user-authored title being overwritten.
+                titleIsCustom: entity.titleIsCustom ?? true,
                 currentURLString: entity.currentURLString,
                 canGoBack: entity.canGoBack,
                 canGoForward: entity.canGoForward

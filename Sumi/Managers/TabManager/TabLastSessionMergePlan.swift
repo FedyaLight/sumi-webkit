@@ -58,6 +58,7 @@ struct TabLastSessionShortcutDescriptor {
     let launchURL: URL
     let title: String
     let iconAsset: String?
+    var titleIsCustom: Bool = false
 
     func placed(at index: Int) -> Self {
         Self(
@@ -70,7 +71,8 @@ struct TabLastSessionShortcutDescriptor {
             folderId: folderId,
             launchURL: launchURL,
             title: title,
-            iconAsset: iconAsset
+            iconAsset: iconAsset,
+            titleIsCustom: titleIsCustom
         )
     }
 }

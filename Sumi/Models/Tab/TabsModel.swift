@@ -24,6 +24,8 @@ final class TabEntity {
     var executionProfileId: UUID?
     var folderId: UUID? // Folder membership for tabs within spacepinned area
     var iconAsset: String?
+    /// `nil` is reserved for launchers persisted before this marker existed.
+    var titleIsCustom: Bool?
 
     // Navigation state tracking
     var currentURLString: String? // The actual current page URL (may differ from urlString after navigation)
@@ -42,6 +44,7 @@ final class TabEntity {
         executionProfileId: UUID? = nil,
         folderId: UUID? = nil,
         iconAsset: String? = nil,
+        titleIsCustom: Bool = false,
         currentURLString: String? = nil,
         canGoBack: Bool = false,
         canGoForward: Bool = false
@@ -57,6 +60,7 @@ final class TabEntity {
         self.executionProfileId = executionProfileId
         self.folderId = folderId
         self.iconAsset = iconAsset
+        self.titleIsCustom = titleIsCustom
 
         // Default the current URL to the stored launch URL when no navigation state exists yet.
         self.currentURLString = currentURLString ?? urlString

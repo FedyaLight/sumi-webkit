@@ -294,7 +294,8 @@ final class SumiImportRuntimeMaterializer: SumiImportRuntimeMaterializing {
                            folderId: nil,
                            url: url,
                            title: title,
-                           iconAsset: record.iconAsset
+                           iconAsset: record.iconAsset,
+                           titleIsCustom: record.titleIsCustom ?? false
                        ) {
                         return existing
                     }
@@ -306,7 +307,8 @@ final class SumiImportRuntimeMaterializer: SumiImportRuntimeMaterializing {
                         index: record.index,
                         launchURL: url,
                         title: title,
-                        iconAsset: record.iconAsset
+                        iconAsset: record.iconAsset,
+                        titleIsCustom: record.titleIsCustom ?? false
                     )
                 }
             return (profile.id, pins)
@@ -347,7 +349,8 @@ final class SumiImportRuntimeMaterializer: SumiImportRuntimeMaterializing {
                            folderId: folderId,
                            url: url,
                            title: title,
-                           iconAsset: record.iconAsset
+                           iconAsset: record.iconAsset,
+                           titleIsCustom: record.titleIsCustom ?? false
                        ) {
                         return existing
                     }
@@ -360,7 +363,8 @@ final class SumiImportRuntimeMaterializer: SumiImportRuntimeMaterializing {
                         folderId: folderId,
                         launchURL: url,
                         title: title,
-                        iconAsset: record.iconAsset
+                        iconAsset: record.iconAsset,
+                        titleIsCustom: record.titleIsCustom ?? false
                     )
                 }
             return (space.id, pins)
@@ -377,7 +381,8 @@ final class SumiImportRuntimeMaterializer: SumiImportRuntimeMaterializing {
         folderId: UUID?,
         url: URL,
         title: String,
-        iconAsset: String?
+        iconAsset: String?,
+        titleIsCustom: Bool
     ) -> Bool {
         pin.role == role
             && pin.profileId == profileId
@@ -388,6 +393,7 @@ final class SumiImportRuntimeMaterializer: SumiImportRuntimeMaterializing {
             && pin.launchURL == url
             && pin.title == title
             && pin.iconAsset == normalizedLauncherIconAsset(iconAsset)
+            && pin.titleIsCustom == titleIsCustom
     }
 
     private func normalizedLauncherIconAsset(_ iconAsset: String?) -> String? {

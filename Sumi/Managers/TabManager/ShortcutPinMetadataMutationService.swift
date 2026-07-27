@@ -31,7 +31,8 @@ final class ShortcutPinMetadataMutationService {
         title: String? = nil,
         launchURL: URL? = nil,
         iconAsset: String?? = nil,
-        executionProfileId: UUID?? = nil
+        executionProfileId: UUID?? = nil,
+        titleIsCustom: Bool? = nil
     ) -> ShortcutPin? {
         guard let current = pins.shortcutPin(by: source.id),
               current === source
@@ -40,7 +41,8 @@ final class ShortcutPinMetadataMutationService {
             title: title,
             launchURL: launchURL,
             iconAsset: iconAsset,
-            executionProfileId: executionProfileId
+            executionProfileId: executionProfileId,
+            titleIsCustom: titleIsCustom
         )
         let lease: ProfileReferenceMutationLease
         do {

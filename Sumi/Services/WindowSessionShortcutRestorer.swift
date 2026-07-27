@@ -5,6 +5,39 @@ struct WindowSessionShortcutRestorer {
     let pins: ShortcutPinCollectionStateOwner
     let activation: ShortcutPresentationActivationService
 
+    func materializeRestoredLiveSessions(
+        in windowState: BrowserWindowState
+    ) {
+        for session in windowState.restorationState
+            .consumeShortcutLiveSessions() {
+            guard let pin = pins.shortcutPin(by: session.shortcutPinId),
+                  pin.role == .essential
+                    || pin.spaceId == session.presentationSpaceId
+            else { continue }
+            _ = activation.commitActivation(
+                pin,
+                in: windowState.id,
+                presentationSpaceID: session.presentationSpaceId
+            ) { liveTab in
+                let previousURL = liveTab.url
+                liveTab.url = session.currentURL
+                let restoredTitle = session.title.trimmingCharacters(
+                    in: .whitespacesAndNewlines
+                )
+                if restoredTitle.isEmpty == false {
+                    liveTab.name = restoredTitle
+                }
+                _ = liveTab.applyCachedFaviconOrPlaceholder(
+                    for: session.currentURL
+                )
+                if previousURL != session.currentURL,
+                   liveTab.resolvedCurrentWebView() != nil {
+                    liveTab.loadURL(session.currentURL)
+                }
+            }
+        }
+    }
+
     @discardableResult
     func materializeSelectionIfNeeded(
         in windowState: BrowserWindowState

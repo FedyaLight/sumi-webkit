@@ -36,6 +36,11 @@ final class ShortcutLinkEditorSession: ObservableObject, Identifiable {
         trimmedTitle.isEmpty ? pin.preferredDisplayTitle : trimmedTitle
     }
 
+    var resolvedTitleIsCustom: Bool {
+        guard title != pin.title else { return pin.titleIsCustom }
+        return trimmedTitle.isEmpty ? pin.titleIsCustom : true
+    }
+
     var normalizedURL: URL? {
         SumiURLNormalization.normalizedShortcutURL(from: urlText)
     }

@@ -155,6 +155,7 @@ struct SumiImportDurableRuntimeCheckpoint: Codable, Equatable, Sendable {
         let launchURL: URL
         let title: String
         let iconAsset: String?
+        let titleIsCustom: Bool?
 
         @MainActor
         init(_ pin: ShortcutPin) {
@@ -168,6 +169,7 @@ struct SumiImportDurableRuntimeCheckpoint: Codable, Equatable, Sendable {
             launchURL = pin.launchURL
             title = pin.title
             iconAsset = pin.iconAsset
+            titleIsCustom = pin.titleIsCustom
         }
 
         @MainActor
@@ -182,7 +184,8 @@ struct SumiImportDurableRuntimeCheckpoint: Codable, Equatable, Sendable {
                 folderId: folderID,
                 launchURL: launchURL,
                 title: title,
-                iconAsset: iconAsset
+                iconAsset: iconAsset,
+                titleIsCustom: titleIsCustom ?? true
             )
         }
     }

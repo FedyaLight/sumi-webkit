@@ -101,7 +101,8 @@ final class TabLastSessionLiveStateSnapshotter {
             folderId: pin.folderId,
             launchURL: pin.launchURL,
             title: pin.title,
-            iconAsset: pin.iconAsset
+            iconAsset: pin.iconAsset,
+            titleIsCustom: pin.titleIsCustom
         )
     }
 }

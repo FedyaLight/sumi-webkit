@@ -21,6 +21,7 @@ enum TabStoreRecordMutation {
                     executionProfileId: tab.executionProfileId,
                     folderId: tab.folderId,
                     iconAsset: tab.iconAsset,
+                    titleIsCustom: tab.titleIsCustom,
                     currentURLString: tab.currentURLString,
                     canGoBack: tab.canGoBack,
                     canGoForward: tab.canGoForward
@@ -39,6 +40,7 @@ enum TabStoreRecordMutation {
         existing.executionProfileId = tab.executionProfileId
         existing.folderId = tab.folderId
         existing.iconAsset = tab.iconAsset
+        existing.titleIsCustom = tab.titleIsCustom
         existing.currentURLString = tab.currentURLString
         existing.canGoBack = tab.canGoBack
         existing.canGoForward = tab.canGoForward

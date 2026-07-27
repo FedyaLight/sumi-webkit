@@ -72,6 +72,9 @@ struct WindowSessionSnapshotApplier {
                     preferredMemberID: selection.activeMemberID
                 )
             }
+        windowState.restorationState.stageShortcutLiveSessions(
+            snapshot.liveShortcuts
+        )
         windowState.restorationState.stageWindowGeometry(snapshot.windowGeometry)
     }
 }

@@ -54,7 +54,8 @@ final class ClosedShortcutLauncherRestoreTransaction {
                 folderId: nil,
                 launchURL: pinState.launchURL,
                 title: pinState.title,
-                iconAsset: pinState.iconAsset
+                iconAsset: pinState.iconAsset,
+                titleIsCustom: pinState.titleIsCustom
             )
         case .spacePinned:
             guard let spaceID = destinations.spaceID(
@@ -74,7 +75,8 @@ final class ClosedShortcutLauncherRestoreTransaction {
                 ),
                 launchURL: pinState.launchURL,
                 title: pinState.title,
-                iconAsset: pinState.iconAsset
+                iconAsset: pinState.iconAsset,
+                titleIsCustom: pinState.titleIsCustom
             )
         }
     }

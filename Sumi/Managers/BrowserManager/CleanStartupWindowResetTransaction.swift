@@ -39,6 +39,7 @@ final class CleanStartupWindowResetTransaction {
             windowState.selectionHistory.recentSelectionItemsBySpace.removeAll()
             windowState.splitSelection = nil
             windowState.restorationState.pendingSplitSelection = nil
+            windowState.restorationState.stageShortcutLiveSessions([])
             windowState.isShowingEmptyState = windowState === selectedWindow
             windowState.commandPalettePresentationReason = .none
             windowState.presentationState.isCommandPaletteVisible = false

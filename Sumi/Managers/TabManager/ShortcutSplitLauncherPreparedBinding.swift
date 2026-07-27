@@ -12,6 +12,7 @@ struct ShortcutSplitLauncherBindingPinTarget {
     let launchURL: URL
     let title: String
     let iconAsset: String?
+    let titleIsCustom: Bool
 
     init(_ pin: ShortcutPin) {
         id = pin.id
@@ -23,6 +24,7 @@ struct ShortcutSplitLauncherBindingPinTarget {
         launchURL = pin.launchURL
         title = pin.title
         iconAsset = pin.iconAsset
+        titleIsCustom = pin.titleIsCustom
     }
 
     func accepts(_ pin: ShortcutPin) -> Bool {
@@ -35,6 +37,7 @@ struct ShortcutSplitLauncherBindingPinTarget {
             && pin.launchURL == launchURL
             && pin.title == title
             && pin.iconAsset == iconAsset
+            && pin.titleIsCustom == titleIsCustom
     }
 }
 

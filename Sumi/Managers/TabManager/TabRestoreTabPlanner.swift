@@ -121,7 +121,8 @@ struct TabRestoreTabPlanner: Sendable {
                 repairReasons: &repairReasons
             ),
             title: record.name,
-            iconAsset: record.iconAsset
+            iconAsset: record.iconAsset,
+            titleIsCustom: record.titleIsCustom
         )
         if let profileId {
             result.pinnedShortcutsByProfile[profileId, default: []].append(shortcut)
@@ -167,7 +168,8 @@ struct TabRestoreTabPlanner: Sendable {
                     repairReasons: &repairReasons
                 ),
                 title: record.name,
-                iconAsset: record.iconAsset
+                iconAsset: record.iconAsset,
+                titleIsCustom: record.titleIsCustom
             )
         )
         result.spacePinnedCount += 1

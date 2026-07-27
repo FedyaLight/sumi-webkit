@@ -15,6 +15,7 @@ struct ShortcutSplitLauncherCatalogPinReceipt {
     private let launchURL: URL
     private let title: String
     private let iconAsset: String?
+    private let titleIsCustom: Bool
 
     init(_ pin: ShortcutPin) {
         self.pin = pin
@@ -27,6 +28,7 @@ struct ShortcutSplitLauncherCatalogPinReceipt {
         launchURL = pin.launchURL
         title = pin.title
         iconAsset = pin.iconAsset
+        titleIsCustom = pin.titleIsCustom
     }
 
     func accepts(_ current: ShortcutPin) -> Bool {
@@ -40,5 +42,6 @@ struct ShortcutSplitLauncherCatalogPinReceipt {
             && current.launchURL == launchURL
             && current.title == title
             && current.iconAsset == iconAsset
+            && current.titleIsCustom == titleIsCustom
     }
 }

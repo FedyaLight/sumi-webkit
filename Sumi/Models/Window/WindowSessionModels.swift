@@ -24,6 +24,13 @@ struct SpaceShortcutSelectionSnapshot: Codable, Equatable, Hashable {
     var shortcutPinId: UUID
 }
 
+struct ShortcutLiveSessionSnapshot: Codable, Equatable, Hashable {
+    var shortcutPinId: UUID
+    var presentationSpaceId: UUID
+    var currentURL: URL
+    var title: String
+}
+
 struct GlanceSessionRectSnapshot: Codable, Equatable, Hashable {
     var x: Double
     var y: Double
@@ -98,6 +105,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
     /// before any dictionary materialization can trap.
     private(set) var activeTabsBySpace: [SpaceTabSelectionSnapshot]
     private(set) var activeShortcutsBySpace: [SpaceShortcutSelectionSnapshot]
+    private(set) var liveShortcuts: [ShortcutLiveSessionSnapshot]
     private(set) var collapsedPinnedSpaceIDs: [UUID]
     var sidebarWidth: Double
     var savedSidebarWidth: Double
@@ -118,6 +126,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         case commandPaletteReason
         case activeTabsBySpace
         case activeShortcutsBySpace
+        case liveShortcuts
         case collapsedPinnedSpaceIDs
         case sidebarWidth
         case savedSidebarWidth
@@ -139,6 +148,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         commandPaletteReason: CommandPalettePresentationReason?,
         activeTabsBySpace: [SpaceTabSelectionSnapshot],
         activeShortcutsBySpace: [SpaceShortcutSelectionSnapshot],
+        liveShortcuts: [ShortcutLiveSessionSnapshot] = [],
         collapsedPinnedSpaceIDs: [UUID] = [],
         sidebarWidth: Double,
         savedSidebarWidth: Double,
@@ -158,6 +168,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         self.commandPaletteReason = commandPaletteReason
         self.activeTabsBySpace = Self.canonicalized(activeTabsBySpace)
         self.activeShortcutsBySpace = Self.canonicalized(activeShortcutsBySpace)
+        self.liveShortcuts = Self.canonicalized(liveShortcuts)
         self.collapsedPinnedSpaceIDs = Self.canonicalized(collapsedPinnedSpaceIDs)
         self.sidebarWidth = sidebarWidth
         self.savedSidebarWidth = savedSidebarWidth
@@ -188,6 +199,12 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
             try container.decodeIfPresent(
                 [SpaceShortcutSelectionSnapshot].self,
                 forKey: .activeShortcutsBySpace
+            ) ?? []
+        )
+        liveShortcuts = Self.canonicalized(
+            try container.decodeIfPresent(
+                [ShortcutLiveSessionSnapshot].self,
+                forKey: .liveShortcuts
             ) ?? []
         )
         collapsedPinnedSpaceIDs = Self.canonicalized(
@@ -223,6 +240,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         try container.encodeIfPresent(commandPaletteReason, forKey: .commandPaletteReason)
         try container.encode(activeTabsBySpace, forKey: .activeTabsBySpace)
         try container.encode(activeShortcutsBySpace, forKey: .activeShortcutsBySpace)
+        try container.encode(liveShortcuts, forKey: .liveShortcuts)
         try container.encode(collapsedPinnedSpaceIDs, forKey: .collapsedPinnedSpaceIDs)
         try container.encode(sidebarWidth, forKey: .sidebarWidth)
         try container.encode(savedSidebarWidth, forKey: .savedSidebarWidth)
@@ -266,6 +284,19 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         }
         return bySpace.values.sorted {
             $0.spaceId.uuidString < $1.spaceId.uuidString
+        }
+    }
+
+    private static func canonicalized(
+        _ snapshots: [ShortcutLiveSessionSnapshot]
+    ) -> [ShortcutLiveSessionSnapshot] {
+        let byPin = snapshots.reduce(
+            into: [UUID: ShortcutLiveSessionSnapshot]()
+        ) { result, snapshot in
+            result[snapshot.shortcutPinId] = snapshot
+        }
+        return byPin.values.sorted {
+            $0.shortcutPinId.uuidString < $1.shortcutPinId.uuidString
         }
     }
 

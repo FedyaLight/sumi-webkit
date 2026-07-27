@@ -399,7 +399,8 @@ struct SumiImportPlanBuilder {
             spaceId: spaceId,
             folderId: launcher.folderId.flatMap(identity.folderId(_:)),
             iconAsset: launcher.iconAsset,
-            sourceSpaceId: spaceId
+            sourceSpaceId: spaceId,
+            titleIsCustom: launcher.titleIsCustom
         )
     }
 

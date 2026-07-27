@@ -63,7 +63,8 @@ final class TabStructuralSnapshotMaterializerTests: XCTestCase {
             folderId: persistedTab.folderId,
             urlString: "https://example.com/space-pin",
             title: "Space Pin",
-            iconAsset: "zen:book"
+            iconAsset: "zen:book",
+            titleIsCustom: true
         )
 
         let folder = TabFolder(
@@ -119,6 +120,7 @@ final class TabStructuralSnapshotMaterializerTests: XCTestCase {
         XCTAssertEqual(delta.tabs.first?.profileId, profileId)
         XCTAssertEqual(delta.tabs[2].spaceId, secondSpace.id)
         XCTAssertEqual(delta.tabs[2].folderId, persistedTab.folderId)
+        XCTAssertTrue(delta.tabs[2].titleIsCustom)
         XCTAssertEqual(delta.tabs[3].currentURLString, "https://example.com/keep")
         XCTAssertTrue(delta.tabs[3].canGoBack)
         XCTAssertEqual(delta.folders.map(\.id), [folder.id])
@@ -159,7 +161,8 @@ final class TabStructuralSnapshotMaterializerTests: XCTestCase {
         folderId: UUID? = nil,
         urlString: String,
         title: String,
-        iconAsset: String? = nil
+        iconAsset: String? = nil,
+        titleIsCustom: Bool = false
     ) throws -> ShortcutPin {
         ShortcutPin(
             id: id,
@@ -171,7 +174,8 @@ final class TabStructuralSnapshotMaterializerTests: XCTestCase {
             folderId: folderId,
             launchURL: try XCTUnwrap(URL(string: urlString)),
             title: title,
-            iconAsset: iconAsset
+            iconAsset: iconAsset,
+            titleIsCustom: titleIsCustom
         )
     }
 }

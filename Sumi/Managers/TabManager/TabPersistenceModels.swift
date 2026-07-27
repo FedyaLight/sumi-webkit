@@ -13,9 +13,72 @@ struct TabPersistenceTab: Codable, Sendable {
     let executionProfileId: UUID?
     let folderId: UUID?
     let iconAsset: String?
+    let titleIsCustom: Bool
     let currentURLString: String?
     let canGoBack: Bool
     let canGoForward: Bool
+
+    init(
+        id: UUID,
+        urlString: String,
+        name: String,
+        index: Int,
+        spaceId: UUID?,
+        isPinned: Bool,
+        isSpacePinned: Bool,
+        profileId: UUID?,
+        executionProfileId: UUID?,
+        folderId: UUID?,
+        iconAsset: String?,
+        titleIsCustom: Bool = false,
+        currentURLString: String?,
+        canGoBack: Bool,
+        canGoForward: Bool
+    ) {
+        self.id = id
+        self.urlString = urlString
+        self.name = name
+        self.index = index
+        self.spaceId = spaceId
+        self.isPinned = isPinned
+        self.isSpacePinned = isSpacePinned
+        self.profileId = profileId
+        self.executionProfileId = executionProfileId
+        self.folderId = folderId
+        self.iconAsset = iconAsset
+        self.titleIsCustom = titleIsCustom
+        self.currentURLString = currentURLString
+        self.canGoBack = canGoBack
+        self.canGoForward = canGoForward
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        urlString = try container.decode(String.self, forKey: .urlString)
+        name = try container.decode(String.self, forKey: .name)
+        index = try container.decode(Int.self, forKey: .index)
+        spaceId = try container.decodeIfPresent(UUID.self, forKey: .spaceId)
+        isPinned = try container.decode(Bool.self, forKey: .isPinned)
+        isSpacePinned = try container.decode(Bool.self, forKey: .isSpacePinned)
+        profileId = try container.decodeIfPresent(UUID.self, forKey: .profileId)
+        executionProfileId = try container.decodeIfPresent(
+            UUID.self,
+            forKey: .executionProfileId
+        )
+        folderId = try container.decodeIfPresent(UUID.self, forKey: .folderId)
+        iconAsset = try container.decodeIfPresent(String.self, forKey: .iconAsset)
+        titleIsCustom = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .titleIsCustom
+        ) ?? true
+        currentURLString = try container.decodeIfPresent(
+            String.self,
+            forKey: .currentURLString
+        )
+        canGoBack = try container.decode(Bool.self, forKey: .canGoBack)
+        canGoForward = try container.decode(Bool.self, forKey: .canGoForward)
+    }
 }
 
 struct TabPersistenceFolder: Codable, Sendable {

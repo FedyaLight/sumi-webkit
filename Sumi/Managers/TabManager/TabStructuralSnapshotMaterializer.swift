@@ -212,6 +212,7 @@ struct TabStructuralSnapshotMaterializer {
             executionProfileId: pin.executionProfileId,
             folderId: nil,
             iconAsset: pin.iconAsset,
+            titleIsCustom: pin.titleIsCustom,
             currentURLString: pin.launchURL.absoluteString,
             canGoBack: false,
             canGoForward: false
@@ -234,6 +235,7 @@ struct TabStructuralSnapshotMaterializer {
             executionProfileId: pin.executionProfileId,
             folderId: pin.folderId,
             iconAsset: pin.iconAsset,
+            titleIsCustom: pin.titleIsCustom,
             currentURLString: pin.launchURL.absoluteString,
             canGoBack: false,
             canGoForward: false

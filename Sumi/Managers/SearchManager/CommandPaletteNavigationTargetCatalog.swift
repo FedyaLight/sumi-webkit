@@ -252,7 +252,7 @@ final class CommandPaletteNavigationTargetCatalog {
             case .regular(let tab):
                 return tab.name
             case .shortcut(let pin, let liveTab):
-                return liveTab?.name ?? pin.preferredDisplayTitle
+                return pin.resolvedDisplayTitle(liveTab: liveTab)
             }
         }
 

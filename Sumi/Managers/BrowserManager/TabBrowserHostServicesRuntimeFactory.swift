@@ -11,9 +11,13 @@ enum TabBrowserHostServicesRuntimeFactory {
     }
 
     static func persistenceCallbacks(
-        persistence: TabStructuralPersistenceService
+        persistence: TabStructuralPersistenceService,
+        shortcutSessions: ShortcutLiveSessionPersistence
     ) -> TabRuntimePersistenceCallbacks {
-        .make(persistence: persistence)
+        .make(
+            persistence: persistence,
+            shortcutSessions: shortcutSessions
+        )
     }
 
     static func mediaCallbacks(
@@ -220,13 +224,20 @@ extension TabWebViewRoutingRuntime {
 
 @MainActor
 extension TabRuntimePersistenceCallbacks {
-    static func make(persistence: TabStructuralPersistenceService) -> Self {
+    static func make(
+        persistence: TabStructuralPersistenceService,
+        shortcutSessions: ShortcutLiveSessionPersistence
+    ) -> Self {
         Self(
-            updateNavigationState: { [weak persistence] tab in
+            updateNavigationState: {
+                [weak persistence, weak shortcutSessions] tab in
                 persistence?.scheduleRuntimeStatePersistence(for: tab)
+                shortcutSessions?.schedule(for: tab)
             },
-            scheduleRuntimeStatePersistence: { [weak persistence] tab in
+            scheduleRuntimeStatePersistence: {
+                [weak persistence, weak shortcutSessions] tab in
                 persistence?.scheduleRuntimeStatePersistence(for: tab)
+                shortcutSessions?.schedule(for: tab)
             }
         )
     }

@@ -59,7 +59,8 @@ enum SumiImportExportSnapshot {
                         spaceId: nil,
                         folderId: nil,
                         iconAsset: pin.iconAsset,
-                        sourceSpaceId: nil
+                        sourceSpaceId: nil,
+                        titleIsCustom: pin.titleIsCustom
                     )
                 }
             }
@@ -77,7 +78,8 @@ enum SumiImportExportSnapshot {
                         spaceId: space.id.uuidString,
                         folderId: pin.folderId?.uuidString,
                         iconAsset: pin.iconAsset,
-                        sourceSpaceId: space.id.uuidString
+                        sourceSpaceId: space.id.uuidString,
+                        titleIsCustom: pin.titleIsCustom
                     )
                 }
         }

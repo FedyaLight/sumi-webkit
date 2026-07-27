@@ -118,7 +118,14 @@ struct SumiZenImportParser {
                   url.isEmpty == false,
                   url != "about:blank"
             else { continue }
-            let title = SumiImportTextNormalization.nilIfBlank(entry["title"] as? String) ?? url
+            let staticLabel = SumiImportTextNormalization.nilIfBlank(
+                tab["zenStaticLabel"] as? String
+            )
+            let title = staticLabel
+                ?? SumiImportTextNormalization.nilIfBlank(
+                    entry["title"] as? String
+                )
+                ?? url
             let workspaceId = (tab["zenWorkspace"] as? String) ?? spaces.first?.id ?? "zen-default-space"
             let profileId = workspaceProfileId[workspaceId] ?? profilesByContainer[0]?.id
             let syncId = (tab["zenSyncId"] as? String) ?? UUID().uuidString
@@ -141,7 +148,8 @@ struct SumiZenImportParser {
                         spaceId: nil,
                         folderId: nil,
                         iconAsset: nil,
-                        sourceSpaceId: workspaceId
+                        sourceSpaceId: workspaceId,
+                        titleIsCustom: staticLabel != nil
                     )
                 )
             } else if isPinned {
@@ -156,7 +164,8 @@ struct SumiZenImportParser {
                     spaceId: workspaceId,
                     folderId: folderId,
                     iconAsset: nil,
-                    sourceSpaceId: workspaceId
+                    sourceSpaceId: workspaceId,
+                    titleIsCustom: staticLabel != nil
                 )
                 pinned.append(launcher)
                 for siblingId in zenTabSiblingIdentifiers(from: tab, fallbackId: syncId) {
