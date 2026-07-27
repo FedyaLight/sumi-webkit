@@ -1136,6 +1136,62 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         XCTAssertEqual(regularTabs.map(\.isSelected), [false, true])
     }
 
+    func testSelectedSnapshotRowSurfaceKeepsFixedHeightInsideViewportProposal() throws {
+        let viewportSize = CGSize(width: 213, height: 240)
+        let settings = makeIsolatedSettings()
+        let tokens = ResolvedThemeContext.default.tokens(settings: settings)
+        let measurement = expectation(description: "Measure selected row surface")
+        var measuredHeight: CGFloat?
+        let root = VStack(spacing: 0) {
+            Color.clear
+                .frame(height: SidebarRowLayout.rowHeight)
+                .frame(maxWidth: .infinity)
+                .sidebarRowSurface(
+                    background: .red,
+                    cornerRadius: 0,
+                    tokens: tokens,
+                    isVisible: true,
+                    drawsSelectionShadow: true
+                )
+                .overlay {
+                    GeometryReader { geometry in
+                        Color.clear
+                            .onAppear {
+                                measuredHeight = geometry.size.height
+                                measurement.fulfill()
+                            }
+                    }
+                }
+        }
+        .frame(
+            width: viewportSize.width,
+            height: viewportSize.height,
+            alignment: .top
+        )
+        let host = NSHostingView(rootView: root)
+        host.wantsLayer = true
+        host.frame = CGRect(origin: .zero, size: viewportSize)
+        let window = NSWindow(
+            contentRect: host.frame,
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.contentView = host
+        window.layoutIfNeeded()
+        host.layoutSubtreeIfNeeded()
+        wait(for: [measurement], timeout: 1)
+
+        XCTAssertEqual(
+            try XCTUnwrap(measuredHeight),
+            SidebarRowLayout.rowHeight,
+            accuracy: 0.001,
+            "The selected surface must not consume the snapshot viewport's spare height"
+        )
+    }
+
     func testSnapshotBuilderPreservesRegularTabUnloadedIndicator() {
         let browserManager = BrowserManager()
         let windowState = BrowserWindowState()

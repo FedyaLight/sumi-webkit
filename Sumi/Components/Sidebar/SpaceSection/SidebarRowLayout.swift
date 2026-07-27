@@ -148,22 +148,21 @@ private struct SidebarRowSurfaceModifier: ViewModifier {
         shape: RoundedRectangle,
         drawsShadow: Bool
     ) -> some View {
-        ZStack {
-            if isVisible {
-                shape
-                    .fill(background)
-                    .shadow(
-                        color: drawsShadow ? tokens.sidebarSelectionShadow : .clear,
-                        radius: SidebarRowLayout.selectionShadowRadius,
-                        x: 0,
-                        y: SidebarRowLayout.selectionShadowYOffset
-                    )
-                    .allowsHitTesting(false)
+        content
+            .background {
+                if isVisible {
+                    shape
+                        .fill(background)
+                        .shadow(
+                            color: drawsShadow ? tokens.sidebarSelectionShadow : .clear,
+                            radius: SidebarRowLayout.selectionShadowRadius,
+                            x: 0,
+                            y: SidebarRowLayout.selectionShadowYOffset
+                        )
+                        .allowsHitTesting(false)
+                }
             }
-
-            content
-        }
-        .contentShape(shape)
+            .contentShape(shape)
     }
 }
 
