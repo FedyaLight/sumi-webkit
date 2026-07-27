@@ -20,7 +20,10 @@ final class ShortcutPinRetirementCommitter {
         self.structuralMutations = structuralMutations
     }
 
-    func commit(_ pins: [ShortcutPin]) -> Bool {
+    func commit(
+        _ pins: [ShortcutPin],
+        presentNotification: Bool = true
+    ) -> Bool {
         let pinIDs = Set(pins.map(\.id))
         guard pinIDs.count == pins.count,
               let claim = retirement.prepareDeletedPinRetirements(pinIDs)
@@ -31,6 +34,13 @@ final class ShortcutPinRetirementCommitter {
         }
         retirement.finishAfterCurrentBatch(claim)
         structuralMutations.schedulePersistence()
+        if presentNotification, pins.isEmpty == false {
+            runtimeConnection.current?.notifications()?
+                .presentSavedTabDeletionNotification(
+                    tabCount: pins.count,
+                    in: nil
+                )
+        }
         return true
     }
 }

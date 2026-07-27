@@ -34,6 +34,34 @@ final class ShortcutLiveTabUnloadNotificationTests: XCTestCase {
         XCTAssertEqual(closedSplitView.messageKey, "split-view-closed")
         XCTAssertEqual(closedSplitView.title, "4-tab Split View closed")
         XCTAssertEqual(closedSplitView.subtitle, "Press ⇧⌘T to reopen")
+
+        let deletedTab = BrowserNotification.savedTabDeletion(
+            count: 1,
+            undoShortcut: "⇧⌘T",
+            action: nil
+        )
+        XCTAssertEqual(deletedTab.messageKey, "saved-tab-deleted")
+        XCTAssertEqual(deletedTab.title, "1 tab deleted")
+        XCTAssertEqual(deletedTab.subtitle, "Press ⇧⌘T to restore")
+        XCTAssertEqual(deletedTab.duration, 3.0)
+        XCTAssertEqual(deletedTab.icon, "trash")
+        XCTAssertNil(deletedTab.action)
+
+        let deletedSplitView = BrowserNotification.savedSplitViewDeletion(
+            tabCount: 3,
+            undoShortcut: "⇧⌘T",
+            action: nil
+        )
+        XCTAssertEqual(
+            deletedSplitView.messageKey,
+            "saved-split-view-deleted"
+        )
+        XCTAssertEqual(deletedSplitView.title, "3-tab Split View deleted")
+        XCTAssertEqual(
+            deletedSplitView.subtitle,
+            "Press ⇧⌘T to restore one tab at a time"
+        )
+        XCTAssertEqual(deletedSplitView.icon, "rectangle.split.2x1")
     }
 
     func testRuntimeContextForwardsTabUnloadedNotification() {
@@ -48,6 +76,34 @@ final class ShortcutLiveTabUnloadNotificationTests: XCTestCase {
 
         XCTAssertEqual(spy.presentTabUnloadedNotificationCalls.map(\.count), [2])
         XCTAssertEqual(spy.presentTabUnloadedNotificationCalls.map(\.windowState?.id), [windowState.id])
+    }
+
+    func testSavedSplitDeletionUndoRestoresEveryTabSeparately() throws {
+        let windowState = BrowserWindowState()
+        var restoreCount = 0
+        let presenter = BrowserNotificationPresenter(
+            showInAppNotifications: { true },
+            activeWindow: { nil },
+            undoCloseTabShortcut: { "⇧⌘T" },
+            undoCloseTab: { restoreCount += 1 },
+            tabForId: { _ in nil },
+            selectTab: { _, _ in }
+        )
+
+        presenter.presentSavedSplitViewDeletionNotification(
+            tabCount: 3,
+            in: windowState
+        )
+
+        let notification = try XCTUnwrap(
+            windowState.inAppNotifications.items.first?.notification
+        )
+        XCTAssertEqual(notification.title, "3-tab Split View deleted")
+        XCTAssertEqual(notification.action?.label, "Undo")
+
+        notification.action?.handler()
+
+        XCTAssertEqual(restoreCount, 3)
     }
 
     func testShortcutLiveTabClosePublicationPresentsTabUnloadedNotification() throws {

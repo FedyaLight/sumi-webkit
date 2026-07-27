@@ -177,6 +177,39 @@ extension BrowserNotification {
         )
     }
 
+    static func savedTabDeletion(
+        count: Int,
+        undoShortcut: String?,
+        action: BrowserNotificationAction?
+    ) -> Self {
+        Self(
+            messageKey: "saved-tab-deleted",
+            title: "\(count) tab\(count == 1 ? "" : "s") deleted",
+            subtitle: undoShortcut.map { "Press \($0) to restore" }
+                ?? "Use History to restore",
+            duration: 3.0,
+            action: action,
+            icon: "trash"
+        )
+    }
+
+    static func savedSplitViewDeletion(
+        tabCount: Int,
+        undoShortcut: String?,
+        action: BrowserNotificationAction?
+    ) -> Self {
+        Self(
+            messageKey: "saved-split-view-deleted",
+            title: "\(tabCount)-tab Split View deleted",
+            subtitle: undoShortcut.map {
+                "Press \($0) to restore one tab at a time"
+            } ?? "Use History to restore its tabs",
+            duration: 3.0,
+            action: action,
+            icon: "rectangle.split.2x1"
+        )
+    }
+
     static func profileSwitch(profileName: String) -> Self {
         Self(
             messageKey: "profile-switch",

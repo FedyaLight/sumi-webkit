@@ -52,6 +52,12 @@ final class TabFolderDeletionCommitTransaction {
             forFolderIds: prepared.deletedFolderIDs
         )
         persistence.scheduleStructuralPersistence()
+        if prepared.deletedPins.isEmpty == false {
+            runtime?.notifications()?.presentSavedTabDeletionNotification(
+                tabCount: prepared.deletedPins.count,
+                in: nil
+            )
+        }
         return true
     }
 }

@@ -10,6 +10,8 @@ final class NotificationPresentingSpy: BrowserNotificationPresenting {
     private(set) var presentTabUnloadedNotificationCalls: [(count: Int, windowState: BrowserWindowState?)] = []
     private(set) var presentSplitViewClosureNotificationCalls: [(count: Int, windowState: BrowserWindowState?)] = []
     private(set) var presentSplitViewUnloadedNotificationCalls: [(count: Int, windowState: BrowserWindowState?)] = []
+    private(set) var presentSavedTabDeletionNotificationCalls: [(count: Int, windowState: BrowserWindowState?)] = []
+    private(set) var presentSavedSplitViewDeletionNotificationCalls: [(count: Int, windowState: BrowserWindowState?)] = []
     private(set) var presentSpaceRenamedNotificationCalls: [(name: String, windowState: BrowserWindowState?)] = []
     private(set) var presentBackgroundTabOpenedNotificationCalls: [(tabId: UUID, windowState: BrowserWindowState)] = []
     private(set) var presentSplitViewLimitNotificationCalls: [BrowserWindowState] = []
@@ -42,6 +44,20 @@ final class NotificationPresentingSpy: BrowserNotificationPresenting {
         in windowState: BrowserWindowState?
     ) {
         presentSplitViewUnloadedNotificationCalls.append((tabCount, windowState))
+    }
+
+    func presentSavedTabDeletionNotification(
+        tabCount: Int,
+        in windowState: BrowserWindowState?
+    ) {
+        presentSavedTabDeletionNotificationCalls.append((tabCount, windowState))
+    }
+
+    func presentSavedSplitViewDeletionNotification(
+        tabCount: Int,
+        in windowState: BrowserWindowState?
+    ) {
+        presentSavedSplitViewDeletionNotificationCalls.append((tabCount, windowState))
     }
 
     func presentSpaceRenamedNotification(name: String, in windowState: BrowserWindowState?) {

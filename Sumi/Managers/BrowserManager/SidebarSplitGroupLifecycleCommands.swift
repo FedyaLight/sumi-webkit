@@ -48,7 +48,9 @@ final class SidebarSplitGroupLifecycleCommands {
         if group.container.isShortcutSidebar {
             return SplitGroupContextMenuActions(
                 unload: { [weak self] in self?.unload(group, in: windowState) },
-                delete: { [weak self] in self?.deleteSaved(group) }
+                delete: { [weak self] in
+                    self?.deleteSaved(group, in: windowState)
+                }
             )
         }
         return SplitGroupContextMenuActions(
@@ -67,7 +69,10 @@ final class SidebarSplitGroupLifecycleCommands {
         close.closeSplitGroup(tabs, in: windowState)
     }
 
-    func deleteSaved(_ group: SplitGroup) {
+    func deleteSaved(
+        _ group: SplitGroup,
+        in windowState: BrowserWindowState
+    ) {
         guard groups.group(id: group.id) == group,
               group.container.isShortcutSidebar else { return }
         let groupPins = group.memberIDs.compactMap { memberID -> ShortcutPin? in
@@ -75,6 +80,13 @@ final class SidebarSplitGroupLifecycleCommands {
             return pins.shortcutPin(by: pinID)
         }
         guard groupPins.count == group.memberIDs.count else { return }
-        _ = pinCommands.remove(groupPins)
+        guard pinCommands.remove(
+            groupPins,
+            presentNotification: false
+        ) else { return }
+        notifications.presentSavedSplitViewDeletionNotification(
+            tabCount: groupPins.count,
+            in: windowState
+        )
     }
 }

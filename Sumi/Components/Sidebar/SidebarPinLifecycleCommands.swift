@@ -58,10 +58,16 @@ final class SidebarPinLifecycleCommands {
         return pins.shortcutPin(by: pin.id) == nil
     }
 
-    func remove(_ candidates: [ShortcutPin]) -> Bool {
+    func remove(
+        _ candidates: [ShortcutPin],
+        presentNotification: Bool = true
+    ) -> Bool {
         let currentPins = candidates.compactMap(current)
         guard currentPins.count == candidates.count,
-              retirement.remove(currentPins)
+              retirement.remove(
+                  currentPins,
+                  presentNotification: presentNotification
+              )
         else { return false }
         return currentPins.allSatisfy {
             pins.shortcutPin(by: $0.id) == nil

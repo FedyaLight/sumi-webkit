@@ -154,7 +154,10 @@ struct TabFolderSplitGroupEntryView: View {
                     )
                 },
                 onCloseGroup: {
-                    browserContext.splitGroupLifecycle.deleteSaved(group)
+                    browserContext.splitGroupLifecycle.deleteSaved(
+                        group,
+                        in: windowState
+                    )
                 }
             )
         }

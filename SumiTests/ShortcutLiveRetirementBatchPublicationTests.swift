@@ -553,6 +553,7 @@ final class ShortcutLiveRetirementBatchPublicationTests: XCTestCase {
     }
 
     func testDeletingLoadedHostedSplitRetiresGroupPinsAndRuntime() throws {
+        let notifications = NotificationPresentingSpy()
         let fixture = try PublicationFixture(
             pinCount: 2,
             hostedSplit: true
@@ -565,10 +566,10 @@ final class ShortcutLiveRetirementBatchPublicationTests: XCTestCase {
             hostedUnload: makeHostedSplitUnload(for: browser),
             membership: browser.tabCollectionMembershipOwner,
             close: browser.tabCloseOrchestration,
-            notifications: browser.notificationPresenter
+            notifications: notifications
         )
 
-        lifecycle.deleteSaved(fixture.group)
+        lifecycle.deleteSaved(fixture.group, in: fixture.window)
 
         XCTAssertNil(browser.splitGroupStore.group(id: fixture.group.id))
         XCTAssertTrue(fixture.pins.allSatisfy {
@@ -580,6 +581,16 @@ final class ShortcutLiveRetirementBatchPublicationTests: XCTestCase {
                 && browser.tabCollectionMembershipOwner.tab(for: $0.id) == nil
         })
         XCTAssertNil(fixture.window.splitSelection)
+        XCTAssertEqual(
+            notifications.presentSavedSplitViewDeletionNotificationCalls
+                .map(\.count),
+            [2]
+        )
+        XCTAssertEqual(
+            notifications.presentSavedSplitViewDeletionNotificationCalls
+                .first?.windowState?.id,
+            fixture.window.id
+        )
     }
 
     func testCollapsedFolderResetUnloadsHostedSplitGroup() throws {

@@ -21,12 +21,18 @@ final class ShortcutPinRetirementTransaction {
         _ = remove([pin])
     }
 
-    func remove(_ pins: [ShortcutPin]) -> Bool {
+    func remove(
+        _ pins: [ShortcutPin],
+        presentNotification: Bool = true
+    ) -> Bool {
         structuralLookup.withTransaction {
             guard pins.allSatisfy({ pin in
                 self.pins.shortcutPin(by: pin.id) === pin
             }) else { return false }
-            return committer.commit(pins)
+            return committer.commit(
+                pins,
+                presentNotification: presentNotification
+            )
         }
     }
 }

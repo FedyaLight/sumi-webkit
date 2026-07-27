@@ -113,6 +113,34 @@ final class BrowserNotificationPresenter {
         )
     }
 
+    func presentSavedTabDeletionNotification(
+        tabCount: Int,
+        in windowState: BrowserWindowState? = nil
+    ) {
+        presentNotification(
+            .savedTabDeletion(
+                count: tabCount,
+                undoShortcut: undoCloseTabShortcut(),
+                action: deletionUndoAction(itemCount: tabCount)
+            ),
+            in: windowState
+        )
+    }
+
+    func presentSavedSplitViewDeletionNotification(
+        tabCount: Int,
+        in windowState: BrowserWindowState? = nil
+    ) {
+        presentNotification(
+            .savedSplitViewDeletion(
+                tabCount: tabCount,
+                undoShortcut: undoCloseTabShortcut(),
+                action: deletionUndoAction(itemCount: tabCount)
+            ),
+            in: windowState
+        )
+    }
+
     func presentSpaceRenamedNotification(name: String, in windowState: BrowserWindowState? = nil) {
         presentNotification(.spaceRenamed(name: name), in: windowState)
     }
@@ -132,5 +160,16 @@ final class BrowserNotificationPresenter {
 
     func presentSplitViewLimitNotification(in windowState: BrowserWindowState) {
         presentNotification(.splitViewLimit(maximumPanes: SplitGroup.maximumMembers), in: windowState)
+    }
+
+    private func deletionUndoAction(
+        itemCount: Int
+    ) -> BrowserNotificationAction {
+        let undoCloseTabAction = undoCloseTab
+        return BrowserNotificationAction(label: "Undo") {
+            for _ in 0..<itemCount {
+                undoCloseTabAction()
+            }
+        }
     }
 }
