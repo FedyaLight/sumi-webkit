@@ -25,6 +25,8 @@ struct CommandPaletteView: View {
     @State private var searchModeConfirmation: CommandPaletteSearchModeConfirmation?
     @State private var nativeInteraction =
         CommandPaletteNativeInteraction()
+    @StateObject private var scrollHoverCoordinator =
+        NativeSurfaceScrollHoverCoordinator()
     @State private var searchFocusRequestID: UInt = 0
     @State private var searchFocusSelectAll = false
 
@@ -258,6 +260,7 @@ struct CommandPaletteView: View {
                             CommandPaletteResultsPanelView(
                                 browserContext: browserContext,
                                 tokens: tokens,
+                                scrollHoverCoordinator: scrollHoverCoordinator,
                                 rows: visibleRows,
                                 layoutSuggestionCount: suggestionLayoutCount,
                                 resultListTopRequestID:

@@ -10,6 +10,7 @@ import SwiftUI
 struct CommandPaletteResultsPanelView: View {
     let browserContext: CommandPaletteBrowserContext
     let tokens: ChromeThemeTokens
+    let scrollHoverCoordinator: NativeSurfaceScrollHoverCoordinator
     let rows: [CommandPaletteRow]
     let layoutSuggestionCount: Int
     let resultListTopRequestID: UInt64
@@ -45,6 +46,7 @@ struct CommandPaletteResultsPanelView: View {
                 .frame(height: isExpanded ? CommandPaletteLayoutPolicy.resultsPanelDividerSpacing : 0)
 
             CommandPaletteSuggestionsListView(
+                scrollHoverCoordinator: scrollHoverCoordinator,
                 browserContext: browserContext,
                 tokens: tokens,
                 rows: rows,
@@ -68,6 +70,7 @@ private struct CommandPaletteSuggestionsListView: View {
     @State private var scrollPosition = ScrollPosition(
         idType: CommandPaletteRow.ID.self
     )
+    @ObservedObject var scrollHoverCoordinator: NativeSurfaceScrollHoverCoordinator
 
     let browserContext: CommandPaletteBrowserContext
     let tokens: ChromeThemeTokens
@@ -126,9 +129,18 @@ private struct CommandPaletteSuggestionsListView: View {
                     )
                     .accessibilityLabel(row.accessibilityLabel)
                     .accessibilityAddTraits(.isButton)
-                    .onHover { hovering in
-                        hoveredID = hovering ? row.id : nil
-                    }
+                    .nativeSurfaceHover(
+                        Binding(
+                            get: { hoveredID == row.id },
+                            set: { hovering in
+                                if hovering {
+                                    hoveredID = row.id
+                                } else if hoveredID == row.id {
+                                    hoveredID = nil
+                                }
+                            }
+                        )
+                    )
                     .onTapGesture { onSelect(row.id) }
                 }
             }
@@ -138,6 +150,14 @@ private struct CommandPaletteSuggestionsListView: View {
             }
         }
         .scrollPosition($scrollPosition)
+        .environment(
+            \.nativeSurfaceHoverUpdatesEnabled,
+            scrollHoverCoordinator.hoverUpdatesEnabled
+        )
+        .suppressesNativeSurfaceHoverWhileScrolling(
+            scrollHoverCoordinator,
+            region: "command-palette-results"
+        )
         .accessibilityIdentifier("command-palette-results")
         .scrollIndicators(.hidden, axes: .vertical)
         .frame(height: visibleHeight)
