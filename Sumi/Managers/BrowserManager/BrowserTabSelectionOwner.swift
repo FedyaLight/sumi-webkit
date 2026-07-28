@@ -14,6 +14,7 @@ enum BrowserTabSelectionOutcome: Equatable {
 @MainActor
 final class BrowserTabSelectionOwner {
     private let activation: BrowserTabSelectionActivation
+    private let performance: PageActivationPerformanceMonitor
     private let state: BrowserTabSelectionStateApplication
     private let materialization: BrowserTabSelectionMaterializationOwner
     private let presentation: BrowserTabSelectionPresentationEffects
@@ -21,12 +22,14 @@ final class BrowserTabSelectionOwner {
 
     init(
         activation: BrowserTabSelectionActivation,
+        performance: PageActivationPerformanceMonitor,
         state: BrowserTabSelectionStateApplication,
         materialization: BrowserTabSelectionMaterializationOwner,
         presentation: BrowserTabSelectionPresentationEffects,
         publication: BrowserTabSelectionPublicationTransaction
     ) {
         self.activation = activation
+        self.performance = performance
         self.state = state
         self.materialization = materialization
         self.presentation = presentation
@@ -56,32 +59,28 @@ final class BrowserTabSelectionOwner {
         in windowState: BrowserWindowState,
         loadPolicy: TabSelectionLoadPolicy
     ) -> BrowserTabSelectionOutcome {
-        activation.request(
-            tab,
-            in: windowState,
-            loadPolicy: loadPolicy
-        ) { [weak self] windowID, request in
-            guard let self,
-                  let windowState = state.window(windowID),
-                  let tab = state.resolvedTab(
-                    request.tabId,
-                    in: windowState
-                  )
-            else {
-                return
-            }
-
-            applyTabSelection(
-                tab,
-                in: windowState,
-                updateSpaceFromTab: true,
-                updateTheme: true,
-                rememberSelection: true,
-                persistSelection: true,
-                loadPolicy: request.loadPolicy
+        let currentTabID = state.currentTab(in: windowState)?.id
+        if currentTabID != tab.id {
+            performance.begin(
+                tabID: tab.id,
+                in: windowState.id,
+                residency: tab.hasCurrentWebView ? .live : .cold
             )
         }
-        return .deferred
+
+        let outcome = applyTabSelection(
+            tab,
+            in: windowState,
+            updateSpaceFromTab: true,
+            updateTheme: true,
+            rememberSelection: true,
+            persistSelection: true,
+            loadPolicy: loadPolicy
+        )
+        if currentTabID != tab.id, outcome != .committed {
+            performance.cancel(in: windowState.id)
+        }
+        return outcome
     }
 
     @discardableResult

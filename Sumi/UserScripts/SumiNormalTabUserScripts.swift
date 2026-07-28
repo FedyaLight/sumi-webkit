@@ -20,6 +20,7 @@ final class SumiNormalTabUserScripts {
     private var managedUserScripts: [SumiPageScript]
     private var managedUserScriptSignature: [UserScriptSignature]
     private var cachedUserScripts: [SumiPageScript]?
+    private var cachedWKUserScripts: [WKUserScript]?
     private(set) var scriptsRevision = 0
 
     init(
@@ -50,6 +51,7 @@ final class SumiNormalTabUserScripts {
         managedUserScripts = userScripts
         managedUserScriptSignature = Self.signature(for: userScripts)
         cachedUserScripts = nil
+        cachedWKUserScripts = nil
         scriptsRevision += 1
     }
 
@@ -63,17 +65,21 @@ final class SumiNormalTabUserScripts {
         managedUserScripts = userScripts
         managedUserScriptSignature = signature
         cachedUserScripts = nil
+        cachedWKUserScripts = nil
         scriptsRevision += 1
         return true
     }
 
     func loadWKUserScripts() async -> [WKUserScript] {
-        let scriptsToLoad = userScripts
-        var scripts: [WKUserScript] = []
-        scripts.reserveCapacity(scriptsToLoad.count)
-        for userScript in scriptsToLoad {
-            scripts.append(SumiPageScriptBuilder.makeWKUserScript(from: userScript))
+        preparedWKUserScripts()
+    }
+
+    func preparedWKUserScripts() -> [WKUserScript] {
+        if let cachedWKUserScripts {
+            return cachedWKUserScripts
         }
+        let scripts = userScripts.map(SumiPageScriptBuilder.makeWKUserScript)
+        cachedWKUserScripts = scripts
         return scripts
     }
 

@@ -72,6 +72,15 @@ final class WindowWebContentHostResolver {
             return displayedHost
         }
 
+        if let parkedHost = hostAttachments.parkedHost(
+            for: tab.id,
+            webView: webView
+        ) {
+            guard compositorRuntime.owns(containerRegistration) else { return nil }
+            hostAttachments.replaceHost(parkedHost, in: slot)
+            return parkedHost
+        }
+
         if protectionRuntime.isProtected(webView),
            let protectedHost = hostRegistry.protectedHost(for: webView) {
             guard compositorRuntime.owns(containerRegistration) else { return nil }

@@ -18,6 +18,19 @@ enum BrowserManagerRuntimeWiring {
             to: browserManager,
             splitQuery: splitQuery
         )
+        browserManager.profileWebKitBootstrap.prepareForeground(
+            browserManager.currentProfile
+        )
+        let profileBootstrapCancellable = browserManager.profileManager
+            .$profiles
+            .dropFirst()
+            .sink { [weak browserManager] _ in
+                guard let browserManager else { return }
+                browserManager.profileWebKitBootstrap.invalidate()
+                browserManager.profileWebKitBootstrap.prepareForeground(
+                    browserManager.currentProfile
+                )
+            }
         let webViewCommandCancellable = attachWebViewCommands(
             windowCommands: browserManager.webViewWindowCommands,
             closeRequests: browserManager.webViewCloseRequests,
@@ -62,6 +75,7 @@ enum BrowserManagerRuntimeWiring {
         return AnyCancellable {
             tabRuntimeCompositionCancellable.cancel()
             webViewCommandCancellable.cancel()
+            profileBootstrapCancellable.cancel()
         }
     }
 
@@ -152,13 +166,9 @@ enum BrowserManagerRuntimeWiring {
         let webViewRuntime = browserManager.webViewRuntime
         let tabSuspension = browserManager.tabSuspensionController
         let backgroundMedia = browserManager.backgroundMediaOptimizationService
-        let reconciliation = BrowserTabRuntimeReconcileOwner(
-            tabSuspension: tabSuspension,
-            backgroundMedia: backgroundMedia
-        )
         let structuralObserver = BrowserTabStructuralRuntimeObserver(
             structuralChanges: browserManager.tabStructureEventBus.structureChangedPublisher,
-            reconciliation: reconciliation
+            pageResidency: browserManager.pageResidency
         )
         let tabSuspensionRuntime = BrowserTabSuspensionRuntimeFactory.ports(
             windowRegistry: { [weak shellRuntime] in

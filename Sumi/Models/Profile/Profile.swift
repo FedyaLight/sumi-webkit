@@ -30,6 +30,10 @@ final class Profile: NSObject, Identifiable {
         cachedPersistentDataStore = store
         return store
     }
+
+    func prepareWebKitRuntime() {
+        _ = dataStore
+    }
     // Metadata (not yet persisted)
     var createdDate: Date = Date()
     var lastUsed: Date = Date()

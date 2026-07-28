@@ -64,15 +64,11 @@ final class WindowWebContentController: NSViewController {
             } == true
         }
     )
-    private lazy var backgroundTransitions = WindowWebContentBackgroundTransitionSession(
-        compositorRuntime: webViewCompositorRuntime
-    )
     private lazy var hostAttachments = WindowWebContentHostAttachmentService(
         containerView: containerView,
         hostRegistry: hostRegistry,
         compositorRuntime: webViewCompositorRuntime,
         protectionRuntime: webViewProtectionRuntime,
-        backgroundTransitions: backgroundTransitions,
         windowID: windowState.id,
         surfaceStyle: surfaceStyle
     )

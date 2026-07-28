@@ -55,7 +55,18 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     let stateChangeEmitter = TabStateChangeEmitter()
     let navigationRuntime = TabNavigationRuntime()
     let mediaRuntime = TabMediaRuntime()
-    let faviconRuntime = TabFaviconRuntime()
+    private var retainedFaviconRuntime: TabFaviconRuntime?
+    var faviconRuntime: TabFaviconRuntime {
+        if let retainedFaviconRuntime {
+            return retainedFaviconRuntime
+        }
+        let runtime = TabFaviconRuntime()
+        retainedFaviconRuntime = runtime
+        return runtime
+    }
+    var hasMaterializedFaviconRuntime: Bool {
+        retainedFaviconRuntime != nil
+    }
     let profileResolutionOwner = TabProfileResolutionOwner()
     let extensionPageRuntimeOwner = TabExtensionPageRuntimeOwner()
     public let webViewSession: WebViewSessionHandle
@@ -68,6 +79,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     let webViewRebuildEpoch = TabWebViewRebuildEpoch()
     let committedDocumentRuntime: TabCommittedDocumentRuntime
     let webViewConfigurationOwner = TabWebViewConfigurationOwner()
+    var cachedNormalTabCoreUserScripts: [SumiPageScript]?
     let normalWebViewSetup = TabNormalWebViewSetupService()
     let webViewProvisioningOwner = TabWebViewProvisioningOwner()
     private let closeLifecycleOwner = TabCloseLifecycleOwner()
@@ -75,7 +87,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     lazy var profileWebViewCreationGate = TabProfileWebViewCreationGate(
         tab: self,
         currentProfileUpdates: { [weak self] in
-            self?.browserRuntime.currentProfileUpdates()
+            self?.browserRuntimeReference.runtime.currentProfileUpdates()
         }
     )
     lazy var ownedWebViewPreparationOwner = TabOwnedWebViewPreparationOwner(
@@ -86,11 +98,14 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     lazy var permissionSurfaceOwner = TabPermissionSurfaceOwner(context: .live(tab: self))
     lazy var webKitUIDelegateOwner = TabWebKitUIDelegateOwner(tab: self)
     lazy var webKitPermissionUIDelegateOwner = TabWebKitPermissionUIDelegateOwner(tab: self)
-    private var browserRuntime = TabBrowserRuntime.inactive
+    private var browserRuntimeReference = TabBrowserRuntimeReference(.inactive)
     private var browserRuntimeAttached = false
-    private(set) var linkPresentationCommands =
-        TabLinkPresentationCommands.inactive
-    private(set) var webPageMenuCommands = TabWebPageMenuCommands.inactive
+    var linkPresentationCommands: TabLinkPresentationCommands {
+        browserRuntimeReference.runtime.linkPresentationCommands
+    }
+    var webPageMenuCommands: TabWebPageMenuCommands {
+        browserRuntimeReference.runtime.webPageMenuCommands
+    }
     private let dependencyStateOwner: TabDependencyStateOwner
 
     // MARK: - Pin State
@@ -397,50 +412,23 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     func makeWebViewConfigurationContext() -> TabWebViewConfigurationContext {
-        browserRuntime.webViewConfigurationContext()
+        browserRuntimeReference.runtime.webViewConfigurationContext()
     }
 
     func attachBrowserRuntime(_ runtime: TabBrowserRuntime) {
-        browserRuntime = runtime
+        attachBrowserRuntime(TabBrowserRuntimeReference(runtime))
+    }
+
+    func attachBrowserRuntime(_ runtimeReference: TabBrowserRuntimeReference) {
+        browserRuntimeReference = runtimeReference
         browserRuntimeAttached = true
-        linkPresentationCommands = runtime.linkPresentationCommands
-        webPageMenuCommands = runtime.webPageMenuCommands
-        navigationRuntime.webViewRouting = runtime.webViewRoutingRuntime
-        navigationRuntime.persistenceCallbacks = runtime.persistenceRuntimeCallbacks
-        mediaRuntime.callbacks = runtime.mediaRuntimeCallbacks
-        navigationRuntime.navigationCommandRuntime = runtime.navigationCommandRuntime
-        navigationRuntime.profileResolutionRuntime = runtime.profileResolutionRuntime
-        navigationRuntime.reloadPolicies = runtime.reloadPolicies
-        navigationRuntime.historySwipeRuntime = runtime.historySwipeRuntime
-        navigationRuntime.historyRecordingRuntime = runtime.historyRecordingRuntime
-        navigationRuntime.findInPageRuntime = runtime.findInPageRuntime
-        navigationRuntime.extensionPropertiesRuntime = runtime.extensionPropertiesRuntime
-        navigationRuntime.closeLifecycleRuntime = runtime.closeLifecycleRuntime
-        navigationRuntime.lifecycleNavigationRuntime = runtime.lifecycleNavigationRuntime
-        navigationRuntime.permissionRuntime = runtime.permissionRuntime
-        navigationRuntime.webViewCleanupRuntime = runtime.webViewCleanupRuntime
+        let runtime = runtimeReference.runtime
+        navigationRuntime.attach(browserRuntime: runtimeReference)
+        mediaRuntime.attach(browserRuntime: runtimeReference)
         normalWebViewSetup.attach(
             to: self,
             installation: runtime.untrackedWebViewInstallation
         )
-        navigationRuntime.normalWebViewExtensionRuntime = runtime.normalWebViewExtensionRuntime
-        navigationRuntime.navigationDelegateRuntime = runtime.navigationDelegateRuntime
-        navigationRuntime.faviconExtensionRuntime = runtime.faviconExtensionRuntime
-        navigationRuntime.popupPermissionEvaluator =
-            runtime.popupPermissionEvaluator
-        navigationRuntime.extensionPopupRequestConsumer =
-            runtime.extensionPopupRequestConsumer
-        navigationRuntime.extensionExternalTabOpening =
-            runtime.extensionExternalTabOpening
-        navigationRuntime.physicalWebPopupOpening =
-            runtime.physicalWebPopupOpening
-        navigationRuntime.webKitChildTabOpening =
-            runtime.webKitChildTabOpening
-        navigationRuntime.webKitChildWindowOpening =
-            runtime.webKitChildWindowOpening
-        navigationRuntime.webKitUIRuntime = runtime.webKitUIRuntime
-        navigationRuntime.webViewReplacementRuntime =
-            runtime.webViewReplacementRuntime
         navigationRuntime.webViewRouting.bindWebViewSession(webViewSession)
         sumiSettings = runtime.settings()
     }
@@ -564,10 +552,11 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         navigationStateController.delegate = self
         parkExistingWebView(existingWebView)
 
-        applyCachedFaviconOrPlaceholder(
-            for: url,
-            allowCacheLookup: loadsCachedFaviconOnInit
-        )
+        if loadsCachedFaviconOnInit {
+            applyCachedFaviconOrPlaceholder(for: url)
+        } else {
+            applyFaviconPlaceholderWithoutCache(for: url)
+        }
     }
 
     func parkExistingWebView(_ webView: WKWebView?) {
@@ -629,10 +618,17 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         editingName = ""
     }
 
-    func loadWebViewIfNeeded() {
+    func loadWebViewIfNeeded(preferredViewportSize: CGSize? = nil) {
         if !hasCurrentWebView {
             beginSuspendedRestoreIfNeeded()
-            _ = ensureUntrackedNormalWebView(reason: "Tab.loadWebViewIfNeeded")
+            let webView = ensureUntrackedNormalWebView(
+                reason: "Tab.loadWebViewIfNeeded"
+            )
+            if let preferredViewportSize,
+               preferredViewportSize.width > 0,
+               preferredViewportSize.height > 0 {
+                webView?.setFrameSize(preferredViewportSize)
+            }
             finishSuspendedRestoreIfNeeded()
         }
     }
@@ -650,9 +646,17 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         suspensionState.beginRestoreIfNeeded()
     }
 
-    func markSuspended(at date: Date = Date()) {
+    func markSuspended(
+        interactionStateData: Data? = nil,
+        at date: Date = Date()
+    ) {
         objectWillChange.send()
-        suspensionState.markSuspended(url: url)
+        suspensionState.markSuspended(
+            url: url,
+            interactionStateData: interactionStateData
+        )
+        cachedNormalTabCoreUserScripts = nil
+        retainedFaviconRuntime = nil
         if lastSelectedAt == nil {
             lastSelectedAt = date
         }

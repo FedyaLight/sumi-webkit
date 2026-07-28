@@ -73,13 +73,13 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         let webView = WKWebView()
         let tabSuspension = TabSuspensionController(memoryMonitor: nil)
         let backgroundMedia = SumiBackgroundMediaOptimizationService()
-        let reconciliation = BrowserTabRuntimeReconcileOwner(
+        let reconciliation = BrowserPageResidencyController(
             tabSuspension: tabSuspension,
             backgroundMedia: backgroundMedia
         )
         let structuralObserver = BrowserTabStructuralRuntimeObserver(
             structuralChanges: structuralChanges.eraseToAnyPublisher(),
-            reconciliation: reconciliation
+            pageResidency: reconciliation
         )
         var backgroundMediaReasons: [String] = []
         let structuralChangeHandled = expectation(description: "structural change handled")

@@ -168,6 +168,18 @@ extension Tab {
                 navigationRuntime.normalWebViewExtensionRuntime
                     .registerTabWithExtensionRuntimeIfNeeded(self, reason)
             },
+            restoreSuspendedInteractionState: { [weak self] webView in
+                guard let data = self?.suspensionState
+                    .takeInteractionStateForRestore()
+                else {
+                    return false
+                }
+                SumiWebKitPageStateAdapter.restoreInteractionState(
+                    data,
+                    to: webView
+                )
+                return true
+            },
             scheduleRuntimeHandoff: { [weak self] webView, targetURL, profileID, reason in
                 guard let self else { return }
                 NormalTabInitialDocumentRuntimeHandoff.scheduleTabSetupInitialLoad(

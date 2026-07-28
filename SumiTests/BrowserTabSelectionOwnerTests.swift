@@ -276,24 +276,26 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
         )
     }
 
-    func testUserTabActivationCoalescesBeforeApplyingSelection() async throws {
+    func testUserTabActivationAppliesSelectionSynchronously() throws {
         let harness = try makeHarness()
         let firstTab = makeTab(in: harness.space, manager: harness.manager)
         let secondTab = makeTab(in: harness.space, manager: harness.manager)
 
-        _ = harness.owner.requestUserTabActivation(
+        let firstOutcome = harness.owner.requestUserTabActivation(
             firstTab,
             in: harness.window,
             loadPolicy: .immediate
         )
-        _ = harness.owner.requestUserTabActivation(
+        XCTAssertTrue(firstOutcome.wasCommitted)
+        XCTAssertEqual(harness.window.currentTabId, firstTab.id)
+
+        let secondOutcome = harness.owner.requestUserTabActivation(
             secondTab,
             in: harness.window,
             loadPolicy: .deferred
         )
 
-        await drainScheduledActivationWork()
-
+        XCTAssertTrue(secondOutcome.wasCommitted)
         XCTAssertEqual(harness.window.currentTabId, secondTab.id)
         XCTAssertEqual(harness.window.currentSpaceId, harness.space.id)
         XCTAssertEqual(

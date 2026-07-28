@@ -137,18 +137,29 @@ final class TabLazyRestoreCoordinator {
     private var queuedTabIDs: [UUID] = []
     private var inFlightTabIDs: Set<UUID> = []
     private var startedTabIDs: Set<UUID> = []
+    private var foregroundTabIDs: Set<UUID> = []
+    private var preferredWarmupViewportSize: CGSize?
     private var loadingObserver: NSObjectProtocol?
+    private let loadWebView: @MainActor (Tab, CGSize?) -> Void
 
     init(
         spaces: TabSpaceCollectionStateOwner,
         regularTabs: RegularTabCollectionStateOwner,
         membership: TabCollectionMembershipOwner,
-        policy: TabLazyRestorePolicy = .default
+        policy: TabLazyRestorePolicy = .default,
+        loadWebView: @escaping @MainActor (Tab, CGSize?) -> Void = {
+            tab,
+            preferredViewportSize in
+            tab.loadWebViewIfNeeded(
+                preferredViewportSize: preferredViewportSize
+            )
+        }
     ) {
         self.spaces = spaces
         self.regularTabs = regularTabs
         self.membership = membership
         self.policy = policy
+        self.loadWebView = loadWebView
         self.loadingObserver = NotificationCenter.default.addObserver(
             forName: .sumiTabLoadingStateDidChange,
             object: nil,
@@ -174,6 +185,8 @@ final class TabLazyRestoreCoordinator {
         queuedTabIDs.removeAll()
         inFlightTabIDs.removeAll()
         startedTabIDs.removeAll()
+        foregroundTabIDs.removeAll()
+        preferredWarmupViewportSize = nil
     }
 
     func clear() {
@@ -186,6 +199,14 @@ final class TabLazyRestoreCoordinator {
         visibleTabIDs: Set<UUID>
     ) {
         pruneEligibility()
+        foregroundTabIDs = selectedTabIDs.union(visibleTabIDs)
+        preferredWarmupViewportSize = foregroundTabIDs.lazy
+            .compactMap {
+                self.membership.tab(for: $0)?
+                    .resolvedCurrentWebView()?
+                    .bounds.size
+            }
+            .first(where: Self.isUsableViewportSize)
 
         guard !eligibleTabIDs.isEmpty else {
             queuedTabIDs.removeAll()
@@ -221,6 +242,8 @@ final class TabLazyRestoreCoordinator {
     }
 
     private func startQueuedLoadsIfNeeded() {
+        guard hasLoadingForegroundTab == false else { return }
+
         while inFlightTabIDs.count < policy.maxConcurrentLoads,
               let nextTabID = queuedTabIDs.first {
             queuedTabIDs.removeFirst()
@@ -232,17 +255,12 @@ final class TabLazyRestoreCoordinator {
             inFlightTabIDs.insert(nextTabID)
             eligibleTabIDs.remove(nextTabID)
 
+            loadWebView(tab, preferredWarmupViewportSize)
             Task { @MainActor [weak self, weak tab] in
                 guard let self else { return }
-                guard let tab else {
-                    self.finishLoad(for: nextTabID)
-                    return
-                }
-
-                tab.loadWebViewIfNeeded()
                 await Task.yield()
 
-                if !tab.isLoading {
+                if tab?.isLoading != true {
                     self.finishLoad(for: nextTabID)
                 }
             }
@@ -250,14 +268,26 @@ final class TabLazyRestoreCoordinator {
     }
 
     private func handleLoadingStateChange(for tab: Tab) {
-        guard inFlightTabIDs.contains(tab.id) else { return }
-        guard !tab.isLoading else { return }
-        finishLoad(for: tab.id)
+        if inFlightTabIDs.contains(tab.id), tab.isLoading == false {
+            finishLoad(for: tab.id)
+        } else if foregroundTabIDs.contains(tab.id), tab.isLoading == false {
+            startQueuedLoadsIfNeeded()
+        }
     }
 
     private func finishLoad(for tabID: UUID) {
         guard inFlightTabIDs.remove(tabID) != nil else { return }
         startQueuedLoadsIfNeeded()
+    }
+
+    private var hasLoadingForegroundTab: Bool {
+        foregroundTabIDs.contains { tabID in
+            membership.tab(for: tabID)?.isLoading == true
+        }
+    }
+
+    private static func isUsableViewportSize(_ size: CGSize) -> Bool {
+        size.width > 0 && size.height > 0
     }
 
     func opportunisticRestoreAnchor(

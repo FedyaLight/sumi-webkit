@@ -7,13 +7,13 @@ private final class BrowserTabWebViewAvailabilityParticipant:
     private let compositor: TabCompositorManager
     private let ownership: WebViewOwnershipQuery
     private let trackedAdmission: TrackedWebViewAdmissionService
-    private let tabBrowserRuntime: TabBrowserRuntime
+    private let tabBrowserRuntime: TabBrowserRuntimeReference
 
     init(
         compositor: TabCompositorManager,
         ownership: WebViewOwnershipQuery,
         trackedAdmission: TrackedWebViewAdmissionService,
-        tabBrowserRuntime: TabBrowserRuntime
+        tabBrowserRuntime: TabBrowserRuntimeReference
     ) {
         self.compositor = compositor
         self.ownership = ownership
@@ -42,13 +42,6 @@ private final class BrowserTabWebViewAvailabilityParticipant:
 
     func prepare(_ tab: Tab) {
         tab.attachBrowserRuntime(tabBrowserRuntime)
-        guard tab.hasCurrentWebView == false else { return }
-        _ = tab.navigationCommandOwner
-            .prepareMainFrameConfigurationPolicyIfNeeded(
-                tab.url,
-                for: tab,
-                reason: "BrowserTabManagerWebViewLifecycleFactory.prepareTab"
-            )
     }
 }
 
@@ -172,7 +165,7 @@ enum BrowserTabManagerWebViewLifecycleFactory {
         profileAssignment: WebViewProfileAssignmentService,
         compositor: TabCompositorManager,
         webViewRouting: BrowserWebViewRoutingService,
-        tabBrowserRuntime: TabBrowserRuntime
+        tabBrowserRuntime: TabBrowserRuntimeReference
     ) -> TabManagerWebViewLifecycleService {
         TabManagerWebViewLifecycleService(
             availability: BrowserTabWebViewAvailabilityParticipant(

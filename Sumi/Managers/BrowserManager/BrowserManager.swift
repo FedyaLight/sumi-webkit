@@ -22,6 +22,24 @@ class BrowserManager: ObservableObject {
     let workspaceThemePickerSessionState =
         BrowserWorkspaceThemePickerSessionState()
     let nativeModalPresentationState = BrowserNativeModalPresentationState()
+    lazy var profileWebKitBootstrap = BrowserProfileWebKitBootstrap(
+        profiles: { [weak self] in
+            self?.profileManager.profiles ?? []
+        }
+    )
+    lazy var pageActivationPerformance = PageActivationPerformanceMonitor(
+        onFirstPaint: { [weak self] in
+            guard let self else { return }
+            let profileIDs = Set(
+                tabCollectionMembershipOwner.allTabs().compactMap {
+                    $0.resolveProfile()?.id
+                }
+            )
+            profileWebKitBootstrap.prepareAfterFirstPaint(
+                profileIDs: profileIDs
+            )
+        }
+    )
 
     let webViewSessions: WebViewSessionRepository
     let windowRegistry: WindowRegistry
@@ -111,6 +129,13 @@ class BrowserManager: ObservableObject {
     let compositorManager: TabCompositorManager
     let tabSuspensionController: TabSuspensionController
     let backgroundMediaOptimizationService = SumiBackgroundMediaOptimizationService()
+    lazy var pageResidency = BrowserPageResidencyController(
+        tabSuspension: tabSuspensionController,
+        backgroundMedia: backgroundMediaOptimizationService
+    )
+    lazy var tabBrowserRuntimeReference = TabBrowserRuntimeReference(
+        TabBrowserRuntimeFactory.make(for: self)
+    )
     let nativeNowPlayingController: any SumiNativeNowPlayingRuntimeControlling
     let workspaceThemeCoordinator: WorkspaceThemeCoordinator
     let findManager: FindManager
@@ -226,6 +251,7 @@ class BrowserManager: ObservableObject {
             activation: BrowserTabSelectionActivation(
                 shortcutActivation: shortcutPresentationActivation
             ),
+            performance: pageActivationPerformance,
             state: state,
             materialization: materialization,
             presentation: BrowserTabSelectionPresentationEffects(
@@ -237,10 +263,7 @@ class BrowserManager: ObservableObject {
                 extensionLifecycle: LiveTabExtensionLifecyclePort(
                     extensions: optionalModules.extensions.runtimeSurface
                 ),
-                runtimeReconciliation: BrowserTabRuntimeReconcileOwner(
-                    tabSuspension: tabSuspensionController,
-                    backgroundMedia: backgroundMediaOptimizationService
-                ),
+                pageResidency: pageResidency,
                 activeSelection: activeSelectionOwner,
                 persistence: windowSessionPersistenceCoordinator
             )

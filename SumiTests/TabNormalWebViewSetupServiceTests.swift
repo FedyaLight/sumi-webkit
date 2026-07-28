@@ -382,12 +382,14 @@ final class TabNormalWebViewSetupServiceTests: XCTestCase {
     private func makeInitialDocumentStage(
         loadExtensionOwnedInitialURL: @escaping (WKWebView, URL) -> Void = { _, _ in },
         registerExtensionRuntime: @escaping (String) -> Void = { _ in },
+        restoreSuspendedInteractionState: @escaping (WKWebView) -> Bool = { _ in false },
         scheduleRuntimeHandoff: @escaping (WKWebView?, URL, UUID?, String) -> Void = { _, _, _, _ in }
     ) -> TabNormalWebViewInitialDocumentStage {
         TabNormalWebViewInitialDocumentStage(
             replaceNormalTabUserScripts: { _, _ in },
             loadExtensionOwnedInitialURL: loadExtensionOwnedInitialURL,
             registerExtensionRuntime: registerExtensionRuntime,
+            restoreSuspendedInteractionState: restoreSuspendedInteractionState,
             scheduleRuntimeHandoff: scheduleRuntimeHandoff
         )
     }

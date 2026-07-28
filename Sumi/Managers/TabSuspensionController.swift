@@ -96,6 +96,11 @@ final class TabSuspensionController {
         proactiveLifecycle.scheduleReconcile(reason: reason)
     }
 
+    func reconcileNow(reason: String) {
+        guard lifecycleState == .running else { return }
+        proactiveLifecycle.reconcile(reason: reason)
+    }
+
     func navigationDidStart(for tab: Tab) {
         guard lifecycleState == .running else { return }
         proactiveLifecycle.resetRevisitProtection(for: tab)

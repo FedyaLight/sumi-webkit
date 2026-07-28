@@ -5,12 +5,17 @@ struct TabSuspensionState {
     var isSuspended = false
     var lastSuspendedURL: URL?
     var isRestoreInProgress = false
+    private(set) var interactionStateData: Data?
     private var restoreTraceState: OSSignpostIntervalState?
 
-    mutating func markSuspended(url: URL) {
+    mutating func markSuspended(
+        url: URL,
+        interactionStateData: Data?
+    ) {
         isSuspended = true
         isRestoreInProgress = false
         lastSuspendedURL = url
+        self.interactionStateData = interactionStateData
     }
 
     mutating func beginRestoreIfNeeded() {
@@ -29,5 +34,10 @@ struct TabSuspensionState {
             self.restoreTraceState = nil
         }
         PerformanceTrace.emitEvent("TabSuspension.restoreEnd")
+    }
+
+    mutating func takeInteractionStateForRestore() -> Data? {
+        defer { interactionStateData = nil }
+        return interactionStateData
     }
 }

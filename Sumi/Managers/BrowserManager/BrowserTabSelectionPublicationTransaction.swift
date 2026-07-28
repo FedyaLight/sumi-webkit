@@ -4,20 +4,20 @@ import Foundation
 final class BrowserTabSelectionPublicationTransaction {
     private let state: BrowserTabSelectionStateApplication
     private let extensionLifecycle: any TabExtensionLifecyclePort
-    private let runtimeReconciliation: BrowserTabRuntimeReconcileOwner
+    private let pageResidency: BrowserPageResidencyController
     private let activeSelection: TabActiveSelectionOwner
     private let persistence: WindowSessionPersistenceCoordinator
 
     init(
         state: BrowserTabSelectionStateApplication,
         extensionLifecycle: any TabExtensionLifecyclePort,
-        runtimeReconciliation: BrowserTabRuntimeReconcileOwner,
+        pageResidency: BrowserPageResidencyController,
         activeSelection: TabActiveSelectionOwner,
         persistence: WindowSessionPersistenceCoordinator
     ) {
         self.state = state
         self.extensionLifecycle = extensionLifecycle
-        self.runtimeReconciliation = runtimeReconciliation
+        self.pageResidency = pageResidency
         self.activeSelection = activeSelection
         self.persistence = persistence
     }
@@ -35,7 +35,7 @@ final class BrowserTabSelectionPublicationTransaction {
             newTab: tab,
             previous: previousTab
         )
-        runtimeReconciliation.schedule(reason: "tab-selection-changed")
+        pageResidency.schedule(reason: "tab-selection-changed")
 
         if state.activeWindowID == windowState.id {
             activeSelection.updateActiveTabState(tab)

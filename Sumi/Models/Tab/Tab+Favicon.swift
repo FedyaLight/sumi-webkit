@@ -4,8 +4,24 @@
 //
 
 import Foundation
+import SumiDomain
 
 extension Tab {
+    func applyFaviconPlaceholderWithoutCache(for url: URL) {
+        let systemSymbol: String
+        if SumiSurface.isSettingsSurfaceURL(url) {
+            systemSymbol = SumiSurface.settingsTabFaviconSystemImageName
+        } else if SumiSurface.isHistorySurfaceURL(url) {
+            systemSymbol = SumiSurface.historyTabFaviconSystemImageName
+        } else if SumiSurface.isBookmarksSurfaceURL(url) {
+            systemSymbol = SumiSurface.bookmarksTabFaviconSystemImageName
+        } else {
+            systemSymbol = "globe"
+        }
+        faviconPresentation = .systemSymbol(systemSymbol)
+        faviconIsTemplateGlobePlaceholder = systemSymbol == "globe"
+    }
+
     @discardableResult
     func applyCachedFaviconOrPlaceholder(
         for url: URL,

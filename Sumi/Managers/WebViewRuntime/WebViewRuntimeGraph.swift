@@ -32,6 +32,7 @@ final class WebViewRuntimeGraph {
     fileprivate let visibleContext: WebViewVisibleRuntimeContext
     fileprivate let initialDocumentContext: InitialDocumentWebViewRuntimeContext
     fileprivate let profileReferenceAdmission: ProfileReferenceAdmissionLedger
+    fileprivate let pageActivationPerformance: PageActivationPerformanceMonitor
 
     let runtimeTabs: WebViewRuntimeTabRegistry
 
@@ -45,7 +46,8 @@ final class WebViewRuntimeGraph {
         deferredServices: DeferredWebViewServices,
         visibleContext: WebViewVisibleRuntimeContext,
         initialDocumentContext: InitialDocumentWebViewRuntimeContext,
-        profileReferenceAdmission: ProfileReferenceAdmissionLedger
+        profileReferenceAdmission: ProfileReferenceAdmissionLedger,
+        pageActivationPerformance: PageActivationPerformanceMonitor
     ) {
         self.webViewSessions = webViewSessions
         self.resolveRuntimeTab = resolveRuntimeTab
@@ -55,6 +57,7 @@ final class WebViewRuntimeGraph {
         self.visibleContext = visibleContext
         self.initialDocumentContext = initialDocumentContext
         self.profileReferenceAdmission = profileReferenceAdmission
+        self.pageActivationPerformance = pageActivationPerformance
         let runtimeTabs = WebViewRuntimeTabRegistry(
             webViewSessions: webViewSessions
         )
@@ -67,8 +70,6 @@ final class WebViewRuntimeGraph {
     let visibleWebViewRuntimeOwner = VisibleWebViewRuntimeOwner()
 
     let crossWindowSyncOwner = WebViewCrossWindowSyncOwner()
-
-    private let backgroundTransitionLedger = WebViewBackgroundTransitionLedger()
 
     let webViewTrackingLifecycleOwner = WebViewTrackingLifecycleOwner()
 
@@ -410,7 +411,7 @@ final class WebViewRuntimeGraph {
 
     private(set) lazy var compositorRuntime: WebViewCompositorRuntime = WebViewCompositorRuntime(
         visibleRuntime: visibleWebViewRuntimeOwner,
-        backgroundTransitions: backgroundTransitionLedger,
+        pageActivationPerformance: pageActivationPerformance,
         scheduleProtectedCommand: { [weak self] command, webView, reason in
             self?.protectionRuntime.schedule(
                 command,

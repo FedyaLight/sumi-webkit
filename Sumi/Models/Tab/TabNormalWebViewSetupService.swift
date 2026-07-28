@@ -201,12 +201,16 @@ final class TabNormalWebViewSetupService {
         }
 
         if didCreateNormalWebView && request.isPopupHost == false {
-            initialDocument.scheduleRuntimeHandoff(
-                committedWebView,
-                request.targetURL,
-                profile.id,
-                "\(reason).beforeInitialLoad"
-            )
+            if initialDocument.restoreSuspendedInteractionState(
+                committedWebView
+            ) == false {
+                initialDocument.scheduleRuntimeHandoff(
+                    committedWebView,
+                    request.targetURL,
+                    profile.id,
+                    "\(reason).beforeInitialLoad"
+                )
+            }
         }
 
         admission.finishSuspendedRestore()

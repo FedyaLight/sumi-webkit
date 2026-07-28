@@ -28,6 +28,7 @@ final class WindowWebContentSplitHostLayoutView: NSView, WindowWebContentVisualH
     private let surfaceShadowView = BrowserContentViewportShadowView(frame: .zero)
     private let surfaceClipView: BrowserContentViewportClipView
     private let splitRootView = SplitRootView()
+    private let parkedHostView = NSView()
     private let visualHandoffOverlayView = VisualHandoffOverlayView()
     private var splitDropCaptureView: SplitDropCaptureView?
     private var paneLayout: PaneLayout = .single
@@ -73,6 +74,8 @@ final class WindowWebContentSplitHostLayoutView: NSView, WindowWebContentVisualH
         addSubview(surfaceClipView)
         surfaceClipView.addSubview(singlePaneView)
         surfaceClipView.addSubview(splitRootView)
+        parkedHostView.isHidden = true
+        surfaceClipView.addSubview(parkedHostView)
         visualHandoffOverlayView.isHidden = true
         surfaceClipView.addSubview(visualHandoffOverlayView)
         applyPanePresentation()
@@ -95,6 +98,7 @@ final class WindowWebContentSplitHostLayoutView: NSView, WindowWebContentVisualH
             singlePaneView.frame = .zero
             splitRootView.frame = contentBounds
         }
+        parkedHostView.frame = contentBounds
         visualHandoffOverlayView.frame = contentBounds
         if let splitDropCaptureView,
            splitDropCaptureView.superview === surfaceClipView {
@@ -175,10 +179,16 @@ final class WindowWebContentSplitHostLayoutView: NSView, WindowWebContentVisualH
 
     func removeVisualHandoffCover(_ host: SumiWebViewContainerView) {
         if host.superview === visualHandoffOverlayView {
-            host.removeFromSuperview()
+            parkHost(host)
         }
         visualHandoffOverlayView.isHidden = visualHandoffOverlayView.subviews.isEmpty
         updateSurfaceShadowVisibility()
+    }
+
+    func parkHost(_ host: SumiWebViewContainerView) {
+        guard host.superview !== parkedHostView else { return }
+        host.prepareForSuperviewTransferPreservingDisplayedContent()
+        parkedHostView.addSubview(host)
     }
 
     override var acceptsFirstResponder: Bool { false }

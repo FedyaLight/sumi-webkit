@@ -10,6 +10,7 @@ enum WindowWebContentPaneSlot: Hashable {
 final class WindowWebContentHostRegistry {
     private var singlePaneHost: SumiWebViewContainerView?
     private var splitPaneHostsByTabId: [UUID: SumiWebViewContainerView] = [:]
+    private var parkedHostsByWebViewID: [ObjectIdentifier: SumiWebViewContainerView] = [:]
     private var parkedProtectedHosts: [ObjectIdentifier: SumiWebViewContainerView] = [:]
 
     var splitPaneTabIds: [UUID] {
@@ -34,6 +35,8 @@ final class WindowWebContentHostRegistry {
     }
 
     func setHost(_ host: SumiWebViewContainerView, for slot: WindowWebContentPaneSlot) {
+        installEvictionHandler(on: host)
+        clearReferences(to: host)
         switch slot {
         case .single:
             singlePaneHost = host
@@ -55,6 +58,23 @@ final class WindowWebContentHostRegistry {
     func displayedHost(for tabId: UUID) -> SumiWebViewContainerView? {
         if singlePaneHost?.tabID == tabId { return singlePaneHost }
         return splitPaneHostsByTabId[tabId]
+    }
+
+    func parkedHost(
+        for tabID: UUID,
+        webView: WKWebView
+    ) -> SumiWebViewContainerView? {
+        let host = parkedHostsByWebViewID[ObjectIdentifier(webView)]
+        guard host?.tabID == tabID, host?.webView === webView else {
+            return nil
+        }
+        return host
+    }
+
+    func parkHost(_ host: SumiWebViewContainerView) {
+        installEvictionHandler(on: host)
+        clearDisplayedReferences(to: host)
+        parkedHostsByWebViewID[ObjectIdentifier(host.webView)] = host
     }
 
     func protectedHost(for webView: WKWebView) -> SumiWebViewContainerView? {
@@ -89,11 +109,24 @@ final class WindowWebContentHostRegistry {
     }
 
     func clearReferences(to host: SumiWebViewContainerView) {
+        clearDisplayedReferences(to: host)
+        let webViewID = ObjectIdentifier(host.webView)
+        parkedHostsByWebViewID.removeValue(forKey: webViewID)
+        parkedProtectedHosts.removeValue(forKey: webViewID)
+    }
+
+    private func clearDisplayedReferences(to host: SumiWebViewContainerView) {
         if singlePaneHost === host {
             singlePaneHost = nil
         }
         for (tabId, currentHost) in splitPaneHostsByTabId where currentHost === host {
             splitPaneHostsByTabId[tabId] = nil
+        }
+    }
+
+    private func installEvictionHandler(on host: SumiWebViewContainerView) {
+        host.setRuntimeEvictionHandler { [weak self] host in
+            self?.clearReferences(to: host)
         }
     }
 }

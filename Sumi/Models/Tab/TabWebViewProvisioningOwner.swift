@@ -86,19 +86,33 @@ final class TabWebViewProvisioningOwner {
             StartupPerformanceTrace.firstWebViewCreationFinished(startupTrace)
         }
 
+        let configurationTrace = PerformanceTrace.beginInterval(
+            "TabWebView.prepareConfiguration"
+        )
         let preparedConfiguration = configuration.prepareNormalConfiguration(
             request.targetURL,
             profile,
             configuration.normalTabUserScripts(request.targetURL, profile.id)
         )
+        PerformanceTrace.endInterval(
+            "TabWebView.prepareConfiguration",
+            configurationTrace
+        )
 
         let webViewConfiguration = preparedConfiguration.configuration
+        let extensionTrace = PerformanceTrace.beginInterval(
+            "TabWebView.prepareExtensions"
+        )
         configuration.prepareForExtensionRuntime(
             webViewConfiguration,
             profile.id,
             "\(reason).configuration"
         )
         prepareCandidateConfiguration?(webViewConfiguration, profile.id)
+        PerformanceTrace.endInterval(
+            "TabWebView.prepareExtensions",
+            extensionTrace
+        )
         guard webViewConfiguration.websiteDataStore === profile.dataStore else {
             RuntimeDiagnostics.emit(
                 "[Tab] Rejected normal WebView during \(reason); its data store does not belong to profile \(profile.id)."
@@ -115,19 +129,40 @@ final class TabWebViewProvisioningOwner {
                 from: webViewConfiguration
                     .mediaTypesRequiringUserActionForPlayback
             )
+        let policyTrace = PerformanceTrace.beginInterval(
+            "TabWebView.preparePolicy"
+        )
         let policyChange = policyTransaction.prepare(policyState)
+        PerformanceTrace.endInterval(
+            "TabWebView.preparePolicy",
+            policyTrace
+        )
+        let webViewTrace = PerformanceTrace.beginInterval(
+            "TabWebView.createWKWebView"
+        )
         let webView = FocusableWKWebView(
             frame: .zero,
             configuration: webViewConfiguration
         )
+        PerformanceTrace.endInterval(
+            "TabWebView.createWKWebView",
+            webViewTrace
+        )
         webView.sumiPreparedConfigurationPolicyChange =
             policyChange
+        let preparationTrace = PerformanceTrace.beginInterval(
+            "TabWebView.prepareRuntime"
+        )
         configureNormalTabWebView(
             webView,
             preparation: preparation,
             currentURL: request.targetURL,
             reason: reason,
             prepareExtensionRuntime: prepareExtensionRuntime
+        )
+        PerformanceTrace.endInterval(
+            "TabWebView.prepareRuntime",
+            preparationTrace
         )
         return webView
     }

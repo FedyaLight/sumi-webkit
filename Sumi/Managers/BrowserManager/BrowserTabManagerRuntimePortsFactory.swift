@@ -46,7 +46,7 @@ enum BrowserTabManagerRuntimePortsFactory {
                 profileAssignment: webViewRuntime.profileAssignmentService,
                 compositor: browserManager.compositorManager,
                 webViewRouting: browserManager.webViewRoutingService,
-                tabBrowserRuntime: TabBrowserRuntimeFactory.make(for: browserManager)
+                tabBrowserRuntime: browserManager.tabBrowserRuntimeReference
             )
         )
     }

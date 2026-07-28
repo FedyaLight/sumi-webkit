@@ -3,7 +3,12 @@ import Foundation
 
 extension Tab {
     func normalTabCoreUserScripts() -> [SumiPageScript] {
-        makeNormalTabCoreUserScripts(for: self)
+        if let cachedNormalTabCoreUserScripts {
+            return cachedNormalTabCoreUserScripts
+        }
+        let scripts = makeNormalTabCoreUserScripts(for: self)
+        cachedNormalTabCoreUserScripts = scripts
+        return scripts
     }
 
     func isGlanceTriggerActive(_ flags: NSEvent.ModifierFlags) -> Bool {

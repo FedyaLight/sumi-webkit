@@ -4,6 +4,19 @@ import XCTest
 
 @MainActor
 final class TabLazyRestoreCoordinatorTests: XCTestCase {
+    func testRestoredTabKeepsFaviconRuntimeColdUntilFaviconWorkIsRequested() {
+        let tab = Tab(
+            url: URL(string: "https://example.com")!,
+            loadsCachedFaviconOnInit: false
+        )
+
+        XCTAssertFalse(tab.hasMaterializedFaviconRuntime)
+
+        _ = tab.applyCachedFaviconOrPlaceholder(for: tab.url)
+
+        XCTAssertTrue(tab.hasMaterializedFaviconRuntime)
+    }
+
     func testPlannerPrefersNearestAdjacentTabsAroundAnchor() {
         let spaceId = UUID()
         let tabs = makeTabs(count: 6, spaceId: spaceId)
@@ -74,6 +87,62 @@ final class TabLazyRestoreCoordinatorTests: XCTestCase {
         )
 
         XCTAssertEqual(plannedTabIDs, [tabs[2].id, tabs[4].id, tabs[1].id])
+    }
+
+    func testCoordinatorWaitsForForegroundLoadBeforeStartingWarmup() async {
+        let state = TabStateStore()
+        let space = Space(name: "Space")
+        let tabs = makeTabs(count: 3, spaceId: space.id)
+        state.spaces.replaceSpaces([space])
+        state.regularTabs.replaceTabsBySpace(
+            [space.id: tabs],
+            publish: false
+        )
+        let runtimeConnection = TabRuntimePortConnection()
+        let membership = TabCollectionMembershipOwner(
+            structuralLookupOwner: TabStructuralLookupOwner(),
+            state: state,
+            runtimePreparation: TabRuntimePreparationOwner(
+                runtimeConnection: runtimeConnection
+            ),
+            runtimeConnection: runtimeConnection
+        )
+        var startedTabIDs: [UUID] = []
+        let coordinator = TabLazyRestoreCoordinator(
+            spaces: state.spaces,
+            regularTabs: state.regularTabs,
+            membership: membership,
+            policy: TabLazyRestorePolicy(
+                maxTotalOpportunisticTabs: 2,
+                maxAdjacentTabsPerAnchor: 2,
+                maxConcurrentLoads: 1
+            ),
+            loadWebView: { tab, _ in
+                startedTabIDs.append(tab.id)
+            }
+        )
+        let foreground = tabs[1]
+        foreground.loadingState = .didStartProvisionalNavigation
+        coordinator.reset(restoredTabIDs: Set(tabs.map(\.id)))
+
+        coordinator.refresh(
+            anchors: [
+                TabLazyRestoreAnchor(
+                    spaceId: space.id,
+                    regularTabId: foreground.id
+                ),
+            ],
+            selectedTabIDs: [foreground.id],
+            visibleTabIDs: [foreground.id]
+        )
+
+        XCTAssertTrue(startedTabIDs.isEmpty)
+
+        foreground.loadingState = .didFinish
+        await Task.yield()
+        await Task.yield()
+
+        XCTAssertEqual(startedTabIDs, [tabs[0].id])
     }
 
     private func makeTabs(count: Int, spaceId: UUID) -> [Tab] {

@@ -77,6 +77,15 @@ struct TabBrowserRuntime {
 }
 
 @MainActor
+final class TabBrowserRuntimeReference {
+    var runtime: TabBrowserRuntime
+
+    init(_ runtime: TabBrowserRuntime) {
+        self.runtime = runtime
+    }
+}
+
+@MainActor
 struct TabWebViewRoutingRuntime {
     var syncTabAcrossWindows: (UUID, WKWebView?) -> Void
     var reloadTabAcrossWindows: (
@@ -535,42 +544,151 @@ final class TabNavigationRuntime {
     var loadingState: Tab.LoadingState = .idle
     var restoredCanGoBack: Bool?
     var restoredCanGoForward: Bool?
-    var webViewRouting = TabWebViewRoutingRuntime.inactive
-    var persistenceCallbacks = TabRuntimePersistenceCallbacks.inactive
-    var historySwipeRuntime = TabHistorySwipeRuntime.inactive
-    var historyRecordingRuntime = TabHistoryRecordingRuntime.inactive
-    var findInPageRuntime = TabFindInPageRuntime.inactive
-    var extensionPropertiesRuntime = TabExtensionPropertiesRuntime.inactive
-    var closeLifecycleRuntime = TabCloseLifecycleRuntime.inactive
-    var lifecycleNavigationRuntime = TabLifecycleNavigationRuntime.inactive
-    var permissionRuntime = TabPermissionRuntime.inactive
-    var webViewCleanupRuntime = TabWebViewCleanupRuntime.inactive
-    var normalWebViewExtensionRuntime = TabNormalWebViewExtensionRuntime.inactive
-    var navigationDelegateRuntime = TabNavigationDelegateRuntime.inactive
-    var faviconExtensionRuntime = TabFaviconExtensionRuntime.inactive
-    var popupPermissionEvaluator: (any PopupPermissionEvaluating)?
+    private var browserRuntime = TabBrowserRuntimeReference(.inactive)
+    private var sharesAttachedBrowserRuntime = false
+
+    var webViewRouting: TabWebViewRoutingRuntime {
+        get { browserRuntime.runtime.webViewRoutingRuntime }
+        set { set(\.webViewRoutingRuntime, to: newValue) }
+    }
+    var persistenceCallbacks: TabRuntimePersistenceCallbacks {
+        get { browserRuntime.runtime.persistenceRuntimeCallbacks }
+        set { set(\.persistenceRuntimeCallbacks, to: newValue) }
+    }
+    var historySwipeRuntime: TabHistorySwipeRuntime {
+        get { browserRuntime.runtime.historySwipeRuntime }
+        set { set(\.historySwipeRuntime, to: newValue) }
+    }
+    var historyRecordingRuntime: TabHistoryRecordingRuntime {
+        get { browserRuntime.runtime.historyRecordingRuntime }
+        set { set(\.historyRecordingRuntime, to: newValue) }
+    }
+    var findInPageRuntime: TabFindInPageRuntime {
+        get { browserRuntime.runtime.findInPageRuntime }
+        set { set(\.findInPageRuntime, to: newValue) }
+    }
+    var extensionPropertiesRuntime: TabExtensionPropertiesRuntime {
+        get { browserRuntime.runtime.extensionPropertiesRuntime }
+        set { set(\.extensionPropertiesRuntime, to: newValue) }
+    }
+    var closeLifecycleRuntime: TabCloseLifecycleRuntime {
+        get { browserRuntime.runtime.closeLifecycleRuntime }
+        set { set(\.closeLifecycleRuntime, to: newValue) }
+    }
+    var lifecycleNavigationRuntime: TabLifecycleNavigationRuntime {
+        get { browserRuntime.runtime.lifecycleNavigationRuntime }
+        set { set(\.lifecycleNavigationRuntime, to: newValue) }
+    }
+    var permissionRuntime: TabPermissionRuntime {
+        get { browserRuntime.runtime.permissionRuntime }
+        set { set(\.permissionRuntime, to: newValue) }
+    }
+    var webViewCleanupRuntime: TabWebViewCleanupRuntime {
+        get { browserRuntime.runtime.webViewCleanupRuntime }
+        set { set(\.webViewCleanupRuntime, to: newValue) }
+    }
+    var normalWebViewExtensionRuntime: TabNormalWebViewExtensionRuntime {
+        get { browserRuntime.runtime.normalWebViewExtensionRuntime }
+        set { set(\.normalWebViewExtensionRuntime, to: newValue) }
+    }
+    var navigationDelegateRuntime: TabNavigationDelegateRuntime {
+        get { browserRuntime.runtime.navigationDelegateRuntime }
+        set { set(\.navigationDelegateRuntime, to: newValue) }
+    }
+    var faviconExtensionRuntime: TabFaviconExtensionRuntime {
+        get { browserRuntime.runtime.faviconExtensionRuntime }
+        set { set(\.faviconExtensionRuntime, to: newValue) }
+    }
+    var popupPermissionEvaluator: (any PopupPermissionEvaluating)? {
+        get { browserRuntime.runtime.popupPermissionEvaluator }
+        set { set(\.popupPermissionEvaluator, to: newValue) }
+    }
     var extensionPopupRequestConsumer:
-        (any ExtensionPopupRequestConsuming)?
-    var extensionExternalTabOpening: (any ExtensionExternalTabOpening)?
-    var physicalWebPopupOpening: (any PhysicalWebPopupOpening)?
-    var webKitChildTabOpening: (any WebKitChildTabOpening)?
-    var webKitChildWindowOpening: (any WebKitChildWindowOpening)?
-    var webKitUIRuntime = TabWebKitUIRuntime.inactive
-    var webViewReplacementRuntime =
-        TabWebViewReplacementRuntime.inactive
-    var navigationCommandRuntime = TabNavigationCommandRuntime.inactive
-    var profileResolutionRuntime = TabProfileResolutionRuntime.inactive
-    var reloadPolicies = TabReloadPolicies.inactive
+        (any ExtensionPopupRequestConsuming)? {
+        get { browserRuntime.runtime.extensionPopupRequestConsumer }
+        set { set(\.extensionPopupRequestConsumer, to: newValue) }
+    }
+    var extensionExternalTabOpening: (any ExtensionExternalTabOpening)? {
+        get { browserRuntime.runtime.extensionExternalTabOpening }
+        set { set(\.extensionExternalTabOpening, to: newValue) }
+    }
+    var physicalWebPopupOpening: (any PhysicalWebPopupOpening)? {
+        get { browserRuntime.runtime.physicalWebPopupOpening }
+        set { set(\.physicalWebPopupOpening, to: newValue) }
+    }
+    var webKitChildTabOpening: (any WebKitChildTabOpening)? {
+        get { browserRuntime.runtime.webKitChildTabOpening }
+        set { set(\.webKitChildTabOpening, to: newValue) }
+    }
+    var webKitChildWindowOpening: (any WebKitChildWindowOpening)? {
+        get { browserRuntime.runtime.webKitChildWindowOpening }
+        set { set(\.webKitChildWindowOpening, to: newValue) }
+    }
+    var webKitUIRuntime: TabWebKitUIRuntime {
+        get { browserRuntime.runtime.webKitUIRuntime }
+        set { set(\.webKitUIRuntime, to: newValue) }
+    }
+    var webViewReplacementRuntime: TabWebViewReplacementRuntime {
+        get { browserRuntime.runtime.webViewReplacementRuntime }
+        set { set(\.webViewReplacementRuntime, to: newValue) }
+    }
+    var navigationCommandRuntime: TabNavigationCommandRuntime {
+        get { browserRuntime.runtime.navigationCommandRuntime }
+        set { set(\.navigationCommandRuntime, to: newValue) }
+    }
+    var profileResolutionRuntime: TabProfileResolutionRuntime {
+        get { browserRuntime.runtime.profileResolutionRuntime }
+        set { set(\.profileResolutionRuntime, to: newValue) }
+    }
+    var reloadPolicies: TabReloadPolicies {
+        get { browserRuntime.runtime.reloadPolicies }
+        set { set(\.reloadPolicies, to: newValue) }
+    }
     let navigationTransactionOwner = TabNavigationTransactionOwner()
     let navigationStateController = TabNavigationStateController()
     let historyRecorder = HistoryTabRecorder()
     let titleUpdateOwner = TabTitleUpdateOwner()
     let navigationDelegateBundles = NSMapTable<WKWebView, SumiTabNavigationDelegateAdapter>.weakToStrongObjects()
+
+    func attach(browserRuntime: TabBrowserRuntimeReference) {
+        self.browserRuntime = browserRuntime
+        sharesAttachedBrowserRuntime = true
+    }
+
+    private func set<Value>(
+        _ keyPath: WritableKeyPath<TabBrowserRuntime, Value>,
+        to value: Value
+    ) {
+        if sharesAttachedBrowserRuntime {
+            browserRuntime = TabBrowserRuntimeReference(browserRuntime.runtime)
+            sharesAttachedBrowserRuntime = false
+        }
+        browserRuntime.runtime[keyPath: keyPath] = value
+    }
 }
 
 @MainActor
 final class TabMediaRuntime {
     var lastMediaActivityAt: Date = .distantPast
     var audioStateCancellables: [ObjectIdentifier: AnyCancellable] = [:]
-    var callbacks = TabMediaRuntimeCallbacks.inactive
+    private var browserRuntime = TabBrowserRuntimeReference(.inactive)
+    private var sharesAttachedBrowserRuntime = false
+
+    var callbacks: TabMediaRuntimeCallbacks {
+        get { browserRuntime.runtime.mediaRuntimeCallbacks }
+        set {
+            if sharesAttachedBrowserRuntime {
+                browserRuntime = TabBrowserRuntimeReference(
+                    browserRuntime.runtime
+                )
+                sharesAttachedBrowserRuntime = false
+            }
+            browserRuntime.runtime.mediaRuntimeCallbacks = newValue
+        }
+    }
+
+    func attach(browserRuntime: TabBrowserRuntimeReference) {
+        self.browserRuntime = browserRuntime
+        sharesAttachedBrowserRuntime = true
+    }
 }

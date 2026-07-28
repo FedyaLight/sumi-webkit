@@ -385,6 +385,7 @@
         "SumiTests/WindowSessionServiceTests",
         "SumiTests/WindowSessionShortcutRestorerTests",
         "SumiTests/WindowSplitSessionCodingTests",
+        "SumiTests/WindowWebContentHostRegistryTests",
         "SumiTests/WorkspaceThemePersistenceTests"
       ]
     },
@@ -407,6 +408,7 @@
         "SumiTests/BrowserMouseButtonRoutingOwnerTests",
         "SumiTests/BrowserNativeSurfaceRoutingOwnerTests",
         "SumiTests/BrowserPermissionSettingsRoutesTests",
+        "SumiTests/BrowserProfileWebKitBootstrapTests",
         "SumiTests/BrowserRuntimeLifecycleTests",
         "SumiTests/BrowserSettingsAttachmentCoordinatorTests",
         "SumiTests/BrowserSettingsNavigationServiceTests",
@@ -620,7 +622,6 @@
         "SumiTests/WindowRegistryTests",
         "SumiTests/WindowSessionReopenServiceTests",
         "SumiTests/WindowSplitProjectionTests",
-        "SumiTests/WindowTabActivationBatcherTests",
         "SumiTests/WindowTabSelectionStateApplicatorTests",
         "SumiTests/WindowThemeStateTests",
         "SumiTests/WorkspaceThemePickerPopoverPresenterTests",
@@ -809,7 +810,6 @@
         "SumiTests/WebExtensionRuntimeSourceCacheTests",
         "SumiTests/WebExtensionRuntimeStoragePreparationTests",
         "SumiTests/WebExtensionStorageCleanupPlannerTests",
-        "SumiTests/WebViewBackgroundTransitionLedgerTests",
         "SumiTests/WebViewCreationPlannerTests",
         "SumiTests/WebViewHiddenCloneEvictionOwnerTests",
         "SumiTests/WebViewPresentationRoutingTests",

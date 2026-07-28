@@ -101,9 +101,7 @@ final class SumiUserScriptMessageHandlerRegistry {
         else { return }
         guard !hasInstalledUserScripts(for: provider) else { return }
 
-        let wkUserScripts = provider.userScripts.map {
-            SumiPageScriptBuilder.makeWKUserScript(from: $0)
-        }
+        let wkUserScripts = provider.preparedWKUserScripts()
         guard removeInstalledUserScripts(from: userContentController) else { return }
         removeInstalledScriptMessageHandlers(from: userContentController)
         installUserScripts(

@@ -7,6 +7,64 @@ import XCTest
 
 @MainActor
 final class SumiDDGWebKitRegressionTests: XCTestCase {
+    func testWebContentAttachmentDoesNotDisableWebKitBackgroundDrawing() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Components/WebsiteView/WindowWebContentHostAttachmentService.swift"
+            ),
+            encoding: .utf8
+        )
+
+        XCTAssertFalse(source.contains("sumiSetDrawsBackground(false)"))
+    }
+
+    func testReleasedVisualHandoffKeepsLiveWebViewParkedInWindow() {
+        let browserManager = BrowserManager()
+        let browserContext = CompositorBrowserContextStub()
+        let windowState = BrowserWindowState()
+        let container = WindowWebContentSplitHostLayoutView(
+            splitLayout: browserManager.splitWindowContext.layout,
+            splitDrops: browserManager.splitWindowContext.drops,
+            splitDropTargets: browserManager.splitWindowContext.dropTargets,
+            splitPreviews: browserManager.splitWindowContext.previews,
+            sidebarDragState: browserContext.sidebarDragState,
+            windowState: windowState,
+            resolveDragTab: { _ in nil },
+            surfaceStyle: BrowserContentSurfaceStyle(
+                geometry: BrowserChromeGeometry(),
+                backgroundColor: .white
+            )
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = container
+        defer {
+            window.contentView = nil
+            window.close()
+        }
+
+        let webView = WKWebView(
+            frame: container.bounds,
+            configuration: WKWebViewConfiguration()
+        )
+        let host = SumiWebViewContainerView(tabID: UUID(), webView: webView)
+        container.placeVisualHandoffCover(host, frameInContainer: container.bounds)
+        container.removeVisualHandoffCover(host)
+
+        XCTAssertNotNil(host.superview)
+        XCTAssertTrue(host.window === window)
+        XCTAssertTrue(webView.superview === host)
+        XCTAssertTrue(host.isHiddenOrHasHiddenAncestor)
+    }
+
     func testFindChromeFocusedTextFieldUsesIBeamFieldEditor() throws {
         let viewController = FindInPageViewController.create()
         let window = NSWindow(

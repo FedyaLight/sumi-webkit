@@ -31,7 +31,7 @@ A split participant owned by a Space's regular tab collection.
 _Avoid_: Unsaved launcher
 
 **Launcher Member**:
-A split participant owned by Pinned, a Pinned folder, or Essentials. A launcher may be loaded or unloaded without changing its durable identity.
+A split participant owned by Pinned, a Pinned folder, or Essentials. A launcher may be loaded or unloaded without changing its durable identity; a saved launcher with no prior runtime session remains unloaded and is never background-loaded.
 _Avoid_: Placeholder tab
 
 **Group Activation**:
@@ -83,8 +83,16 @@ The single window-observable order of saved-content structural changes and Folde
 _Avoid_: Independent UI update order, best-effort snapshot delivery
 
 **Page Activation**:
-Selecting a regular tab, launcher, or Split Group participant so its runtime page is presented in the window. A press accepts Page Activation immediately; a later drag or release outside does not roll it back. Nested controls never trigger Page Activation for their parent Sidebar Visual Item.
+Selecting a regular tab, launcher, or Split Group participant so its runtime page is presented in the window. A press accepts Page Activation immediately; every accepted activation of a Live Page is presented without coalescing, while superseded Cold Page preparation never changes the newer selection. A later drag or release outside does not roll activation back. Nested controls never trigger Page Activation for their parent Sidebar Visual Item.
 _Avoid_: Release selection, provisional selection
+
+**Live Page**:
+A runtime page whose WebView remains materialized and can be presented without restoration or a new navigation. Page Activation of a Live Page is expected to reveal its real current frame immediately.
+_Avoid_: Warm tab, cached page
+
+**Cold Page**:
+A durable page identity without a materialized WebView. Browser-session ports are shared rather than copied into every Cold Page, and WebKit-bound caches stay unmaterialized until selection or budgeted warmup. It may retain resumable browsing state within the current app run, but across launches it resumes from its durable URL and ordinary persisted metadata.
+_Avoid_: Slow page, dead tab
 
 **Sidebar Pointer Session**:
 The single exclusive pointer interaction for one Sidebar Visual Item in a window, from press through Page Activation, drag, or a release-only action until completion, cancellation, replacement, or disappearance. Presentation changes, including materialization and temporary gaps between AppKit owners, preserve both the session and its drag owner so the accepted press can cross the drag threshold without a second gesture. While a session is accepted it drives drag and release from the window's event stream rather than from press-time view routing, so the item presenting the session now receives the rest of the gesture. Temporary interaction disablement may prevent new input but does not cancel an accepted session. A loaded item accepts its press visual with the session; an unloaded launcher or Split Group never gains that visual when Page Activation materializes it mid-session. Page Activation is accepted on press; release accepts only a release-only action of the same identity. Starting a session cancels the previous one, and hover is reconciled once after drag ends.

@@ -36,6 +36,19 @@ final class TabSuspensionLifecycleTests: XCTestCase {
         XCTAssertEqual(tab.lastSelectedAt, existingDate)
     }
 
+    func testInteractionStateIsKeptForOnlyOneSameRunRestore() {
+        let tab = makeTab()
+        let interactionState = Data([1, 2, 3])
+
+        tab.markSuspended(interactionStateData: interactionState)
+
+        XCTAssertEqual(
+            tab.suspensionState.takeInteractionStateForRestore(),
+            interactionState
+        )
+        XCTAssertNil(tab.suspensionState.takeInteractionStateForRestore())
+    }
+
     func testSuspendedRestoreFinishesOnlyAfterWebViewExists() {
         let tab = makeTab()
         tab.suspensionState.isSuspended = true

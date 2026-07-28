@@ -111,5 +111,6 @@ struct TabNormalWebViewInitialDocumentStage {
     let replaceNormalTabUserScripts: (WKUserContentController, URL?) async -> Void
     let loadExtensionOwnedInitialURL: (WKWebView, URL) -> Void
     let registerExtensionRuntime: (String) -> Void
+    let restoreSuspendedInteractionState: (WKWebView) -> Bool
     let scheduleRuntimeHandoff: (WKWebView?, URL, UUID?, String) -> Void
 }

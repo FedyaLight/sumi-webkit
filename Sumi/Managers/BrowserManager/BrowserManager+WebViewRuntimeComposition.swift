@@ -33,7 +33,8 @@ extension BrowserManager {
             initialDocumentContext: initialDocumentWebViewRuntimeContext(
                 commands: windowCommands
             ),
-            profileReferenceAdmission: profileReferenceAdmission
+            profileReferenceAdmission: profileReferenceAdmission,
+            pageActivationPerformance: pageActivationPerformance
         )
     }
 
@@ -152,7 +153,7 @@ extension BrowserManager {
         let tabSuspensionController = tabSuspensionController
         let startupGate = startupMaterializationGate
         let compositor = compositorManager
-        let backgroundMedia = backgroundMediaOptimizationService
+        let pageResidency = pageResidency
         return WebViewVisibleRuntimeContext(
             windowState: { [weak windows] windowID in
                 windows?.windows[windowID]
@@ -192,11 +193,11 @@ extension BrowserManager {
             globallyVisibleTabIDs: { [weak tabSuspensionController] in
                 tabSuspensionController?.globallyVisibleTabIDs() ?? []
             },
-            scheduleTabSuspensionReconcile: { [weak tabSuspensionController] reason in
-                tabSuspensionController?.scheduleReconciliation(reason: reason)
+            scheduleTabSuspensionReconcile: { [weak pageResidency] reason in
+                pageResidency?.schedule(reason: reason)
             },
-            scheduleBackgroundMediaReconcile: { [weak backgroundMedia] reason in
-                backgroundMedia?.scheduleReconcile(reason: reason)
+            scheduleBackgroundMediaReconcile: { [weak pageResidency] reason in
+                pageResidency?.schedule(reason: reason)
             },
             refreshCompositor: { [commands] windowID in
                 commands.refreshCompositor(in: windowID)

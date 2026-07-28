@@ -54,6 +54,7 @@ func makeTestWebViewRuntimeGraph(
                 ensureInitialExtensionContextsLoaded: { _ in },
                 refreshCompositorForWindow: { _ in }
             ),
-        profileReferenceAdmission: profileReferenceAdmission
+        profileReferenceAdmission: profileReferenceAdmission,
+        pageActivationPerformance: PageActivationPerformanceMonitor()
     )
 }

@@ -8,7 +8,7 @@ import WebKit
 @MainActor
 final class WebViewCompositorRuntime {
     private let visibleRuntime: VisibleWebViewRuntimeOwner
-    private let backgroundTransitions: WebViewBackgroundTransitionLedger
+    private let pageActivationPerformance: PageActivationPerformanceMonitor
     private let scheduleProtectedCommand: (
         DeferredWebViewCommand,
         WKWebView,
@@ -18,7 +18,7 @@ final class WebViewCompositorRuntime {
 
     init(
         visibleRuntime: VisibleWebViewRuntimeOwner,
-        backgroundTransitions: WebViewBackgroundTransitionLedger,
+        pageActivationPerformance: PageActivationPerformanceMonitor,
         scheduleProtectedCommand: @escaping (
             DeferredWebViewCommand,
             WKWebView,
@@ -27,7 +27,7 @@ final class WebViewCompositorRuntime {
         pruneInvalidProtectedCommands: @escaping (String) -> Void
     ) {
         self.visibleRuntime = visibleRuntime
-        self.backgroundTransitions = backgroundTransitions
+        self.pageActivationPerformance = pageActivationPerformance
         self.scheduleProtectedCommand = scheduleProtectedCommand
         self.pruneInvalidProtectedCommands = pruneInvalidProtectedCommands
     }
@@ -58,28 +58,6 @@ final class WebViewCompositorRuntime {
         _ registration: WebViewCompositorContainerRegistration
     ) -> Bool {
         visibleRuntime.isCurrentCompositorContainerRegistration(registration)
-    }
-
-    func beginBackgroundTransition(
-        for webView: WKWebView
-    ) -> WebViewBackgroundTransitionLease {
-        backgroundTransitions.begin(for: webView)
-    }
-
-    func scheduleBackgroundRestore(
-        matching lease: WebViewBackgroundTransitionLease,
-        containerRegistration: WebViewCompositorContainerRegistration
-    ) {
-        backgroundTransitions.scheduleRestore(matching: lease) { [weak self] in
-            self?.owns(containerRegistration) == true
-        }
-    }
-
-    @discardableResult
-    func finishBackgroundTransition(
-        matching lease: WebViewBackgroundTransitionLease
-    ) -> Bool {
-        backgroundTransitions.finish(matching: lease)
     }
 
     func removeContainer(for windowID: UUID) {
@@ -156,6 +134,18 @@ final class WebViewCompositorRuntime {
         )
     }
 
+    func pageHostDidAttach(
+        tabID: UUID,
+        in windowID: UUID,
+        window: NSWindow?
+    ) {
+        pageActivationPerformance.hostDidAttach(
+            tabID: tabID,
+            in: windowID,
+            window: window
+        )
+    }
+
     func removeWebViewFromContainers(_ webView: WKWebView) {
         if scheduleProtectedCommand(
             .removeWebViewFromContainers(webViewID: ObjectIdentifier(webView)),
@@ -174,7 +164,7 @@ final class WebViewCompositorRuntime {
         for subview in Array(root.subviews) {
             if let host = subview as? SumiWebViewContainerView,
                host.webView === webView {
-                host.removeFromSuperview()
+                host.evictFromRuntime()
             } else if subview === webView {
                 subview.removeFromSuperview()
             } else {

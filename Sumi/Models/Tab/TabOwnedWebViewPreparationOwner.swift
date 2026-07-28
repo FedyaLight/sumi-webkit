@@ -89,7 +89,6 @@ final class TabOwnedWebViewPreparationOwner {
     }
 
     private func applyOwnedTabWebViewOwnershipBaseline(to webView: FocusableWKWebView) {
-        webView.sumiSetDrawsBackground(true)
         bindPhysicalTab(to: webView)
         SumiUserAgent.apply(to: webView)
     }

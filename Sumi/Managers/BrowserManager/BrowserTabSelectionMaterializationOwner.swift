@@ -35,6 +35,10 @@ final class BrowserTabSelectionMaterializationOwner {
             return
         }
 
+        if tab.isUnloaded {
+            tab.resolveProfile()?.prepareWebKitRuntime()
+        }
+
         switch loadPolicy {
         case .immediate:
             materialize(tab, in: windowState)

@@ -8,6 +8,34 @@ import XCTest
 
 @MainActor
 final class TabRuntimeRoutingTests: XCTestCase {
+    func testPerTabRuntimeOverrideDoesNotMutateSharedBrowserRuntime() {
+        var runtime = TabBrowserRuntime.inactive
+        runtime.navigationCommandRuntime = TabNavigationCommandRuntime(
+            resolvedSearchEngineTemplate: { "shared" }
+        )
+        let sharedRuntime = TabBrowserRuntimeReference(runtime)
+        let first = Tab(loadsCachedFaviconOnInit: false)
+        let second = Tab(loadsCachedFaviconOnInit: false)
+        first.attachBrowserRuntime(sharedRuntime)
+        second.attachBrowserRuntime(sharedRuntime)
+
+        first.navigationRuntime.navigationCommandRuntime =
+            TabNavigationCommandRuntime(
+                resolvedSearchEngineTemplate: { "first-only" }
+            )
+
+        XCTAssertEqual(
+            first.navigationRuntime.navigationCommandRuntime
+                .resolvedSearchEngineTemplate(),
+            "first-only"
+        )
+        XCTAssertEqual(
+            second.navigationRuntime.navigationCommandRuntime
+                .resolvedSearchEngineTemplate(),
+            "shared"
+        )
+    }
+
     func testSetMutedUsesInjectedRoutingWithoutBrowserManager() {
         let tab = Tab(loadsCachedFaviconOnInit: false)
         let routing = RecordingTabWebViewRouting()

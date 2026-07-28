@@ -14,6 +14,7 @@ final class WindowWebContentVisualHandoffSession {
         releaseCover: { [weak self] webViewID, host, protectionLease in
             guard let self else { return }
             self.containerView.removeVisualHandoffCover(host)
+            self.hostRegistry.parkHost(host)
             self.hostRegistry.removeParkedProtectedHost(for: webViewID)
             self.protectionRuntime.finishVisualHandoff(protectionLease)
         }

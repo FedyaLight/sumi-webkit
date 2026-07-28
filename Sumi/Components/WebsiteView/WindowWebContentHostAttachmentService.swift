@@ -9,7 +9,6 @@ final class WindowWebContentHostAttachmentService {
     private let hostRegistry: WindowWebContentHostRegistry
     private let compositorRuntime: WebViewCompositorRuntime
     private let protectionRuntime: WebViewProtectionRuntime
-    private let backgroundTransitions: WindowWebContentBackgroundTransitionSession
     private let windowID: UUID
     private var surfaceStyle: BrowserContentSurfaceStyle
 
@@ -18,7 +17,6 @@ final class WindowWebContentHostAttachmentService {
         hostRegistry: WindowWebContentHostRegistry,
         compositorRuntime: WebViewCompositorRuntime,
         protectionRuntime: WebViewProtectionRuntime,
-        backgroundTransitions: WindowWebContentBackgroundTransitionSession,
         windowID: UUID,
         surfaceStyle: BrowserContentSurfaceStyle
     ) {
@@ -26,7 +24,6 @@ final class WindowWebContentHostAttachmentService {
         self.hostRegistry = hostRegistry
         self.compositorRuntime = compositorRuntime
         self.protectionRuntime = protectionRuntime
-        self.backgroundTransitions = backgroundTransitions
         self.windowID = windowID
         self.surfaceStyle = surfaceStyle
     }
@@ -34,6 +31,13 @@ final class WindowWebContentHostAttachmentService {
     func replaceHost(_ host: SumiWebViewContainerView, in slot: WindowWebContentPaneSlot) {
         clearPaneHost(slot)
         hostRegistry.setHost(host, for: slot)
+    }
+
+    func parkedHost(
+        for tabID: UUID,
+        webView: WKWebView
+    ) -> SumiWebViewContainerView? {
+        hostRegistry.parkedHost(for: tabID, webView: webView)
     }
 
     func moveDisplayedHost(
@@ -52,16 +56,11 @@ final class WindowWebContentHostAttachmentService {
     ) {
         guard compositorRuntime.owns(containerRegistration) else { return }
         let isProtected = protectionRuntime.isProtected(host.webView)
-        let needsInsertion = host.superview == nil
-        let needsPaneMove = host.superview != nil && host.superview !== paneView
-        let needsReveal = host.isHidden
-        let needsTransitionGate = needsInsertion || needsPaneMove || needsReveal
         let isStableAttach = host.superview === paneView
             && !host.isHidden
             && host.frame == paneView.bounds
 
         if isStableAttach {
-            backgroundTransitions.settle(host.webView)
             performWithoutImplicitAnimations {
                 guard self.compositorRuntime.owns(containerRegistration) else { return }
                 self.hostRegistry.removeParkedProtectedHost(for: host.webView)
@@ -75,6 +74,11 @@ final class WindowWebContentHostAttachmentService {
                 hostRegistry.parkProtectedHost(host)
             }
             containerView.contentVisibilityDidChange()
+            compositorRuntime.pageHostDidAttach(
+                tabID: host.tabID,
+                in: windowID,
+                window: paneView.window
+            )
             compositorRuntime.completePromotedHostAttachment(
                 for: host.tabID,
                 in: windowID,
@@ -97,11 +101,6 @@ final class WindowWebContentHostAttachmentService {
             host.autoresizingMask = [.width, .height]
             self.applySurfaceBackground(to: host.webView)
 
-            if needsTransitionGate {
-                self.backgroundTransitions.begin(for: host.webView)
-                host.webView.sumiSetDrawsBackground(false)
-            }
-
             host.attachDisplayedContentIfNeeded()
             host.isHidden = false
             paneView.layoutSubtreeIfNeeded()
@@ -110,16 +109,11 @@ final class WindowWebContentHostAttachmentService {
         containerView.contentVisibilityDidChange()
 
         guard compositorRuntime.owns(containerRegistration) else { return }
-        if needsTransitionGate {
-            backgroundTransitions.scheduleRestore(
-                for: host.webView,
-                containerRegistration: containerRegistration
-            )
-        } else {
-            backgroundTransitions.settle(host.webView)
-        }
-
-        guard compositorRuntime.owns(containerRegistration) else { return }
+        compositorRuntime.pageHostDidAttach(
+            tabID: host.tabID,
+            in: windowID,
+            window: paneView.window
+        )
         if isProtected {
             hostRegistry.parkProtectedHost(host)
         }
@@ -198,12 +192,12 @@ final class WindowWebContentHostAttachmentService {
     }
 
     private func removeHostFromDisplay(_ host: SumiWebViewContainerView) {
-        backgroundTransitions.finish(for: host.webView)
         if protectionRuntime.isProtected(host.webView) {
             parkProtectedHost(host)
         } else {
             hostRegistry.removeParkedProtectedHost(for: host.webView)
-            host.removeFromSuperview()
+            hostRegistry.parkHost(host)
+            containerView.parkHost(host)
         }
     }
 

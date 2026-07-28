@@ -29,6 +29,7 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
     private let overlayScrollChrome = WebContentOverlayScrollChrome()
     private var readerPresentationSession: ReaderPresentationSession?
     private var presentationObservers: [UUID: (WKWebView) -> Void] = [:]
+    private var runtimeEvictionHandler: ((SumiWebViewContainerView) -> Void)?
 
     override var constraints: [NSLayoutConstraint] { [] }
 
@@ -192,6 +193,18 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
 
     func prepareForSuperviewTransferPreservingDisplayedContent() {
         preservesDisplayedContentOnNextRemoval = true
+    }
+
+    func setRuntimeEvictionHandler(
+        _ handler: @escaping (SumiWebViewContainerView) -> Void
+    ) {
+        runtimeEvictionHandler = handler
+    }
+
+    func evictFromRuntime() {
+        runtimeEvictionHandler?(self)
+        runtimeEvictionHandler = nil
+        removeFromSuperview()
     }
 
     private func addDisplayedContent(_ displayedView: NSView) {

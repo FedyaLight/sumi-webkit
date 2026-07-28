@@ -62,9 +62,21 @@ final class TabSuspensionExecutor {
         context: TabSuspensionEvaluationContext
     ) -> Bool {
         guard eligibility(for: tab, context: context).isEligible else { return false }
+        let liveWebViews = runtime.liveWebViews(tab)
+        let interactionStateData = tab.resolvedCurrentWebView().flatMap(
+            SumiWebKitPageStateAdapter.interactionStateData
+        )
+        let processMemory = WebContentProcessResourceProbe
+            .residentBytesByProcess(for: liveWebViews)
         guard runtime.suspendWebViews(tab, reason) else { return false }
 
-        tab.markSuspended(at: dateProvider())
+        tab.markSuspended(
+            interactionStateData: interactionStateData,
+            at: dateProvider()
+        )
+        WebContentProcessResourceProbe.measureReclaimedMemory(
+            afterSuspending: processMemory
+        )
         RuntimeDiagnostics.debug(category: "TabSuspension") {
             "suspended tab=\(tab.id.uuidString.prefix(8)) reason=\(reason)"
         }
