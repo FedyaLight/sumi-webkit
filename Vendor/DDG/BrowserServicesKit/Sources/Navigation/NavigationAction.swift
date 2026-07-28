@@ -183,6 +183,7 @@ public struct NavigationPreferences: Equatable {
 
     public var userAgent: String?
     public var contentMode: WKWebpagePreferences.ContentMode
+    public var globalPrivacyControlEnabled: Bool?
 
 #if _WEBPAGE_PREFS_AUTOPLAY_POLICY_ENABLED
     public var autoplayPolicy: _WKWebsiteAutoplayPolicy?
@@ -203,6 +204,12 @@ public struct NavigationPreferences: Equatable {
         self.userAgent = userAgent
         self.contentMode = preferences.preferredContentMode
         self.javaScriptEnabledValue = preferences.allowsContentJavaScript
+        if preferences.responds(to: NSSelectorFromString("globalPrivacyControlEnabled")) {
+            self.globalPrivacyControlEnabled =
+                preferences.value(forKey: "globalPrivacyControlEnabled") as? Bool
+        } else {
+            self.globalPrivacyControlEnabled = nil
+        }
 
 #if _WEBPAGE_PREFS_AUTOPLAY_POLICY_ENABLED
         self.autoplayPolicy = .init(rawValue: preferences.autoplayPolicy)
@@ -213,6 +220,13 @@ public struct NavigationPreferences: Equatable {
     internal func applying(to preferences: WKWebpagePreferences) -> WKWebpagePreferences {
         preferences.preferredContentMode = contentMode
         preferences.allowsContentJavaScript = javaScriptEnabled
+        if let globalPrivacyControlEnabled,
+           preferences.responds(to: NSSelectorFromString("setGlobalPrivacyControlEnabled:")) {
+            preferences.setValue(
+                globalPrivacyControlEnabled,
+                forKey: "globalPrivacyControlEnabled"
+            )
+        }
 
 #if _WEBPAGE_PREFS_AUTOPLAY_POLICY_ENABLED
         if mustApplyAutoplayPolicy, let autoplayPolicy {

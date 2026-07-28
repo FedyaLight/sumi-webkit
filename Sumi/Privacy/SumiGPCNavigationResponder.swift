@@ -20,16 +20,13 @@ enum SumiGPCNavigationRewriteResult: Equatable {
     case failed(SumiGPCNavigationRewriteFailure)
 }
 
-/// Attaches `Sec-GPC: 1` to outgoing main-frame navigation requests, mirroring
-/// the DOM signal from `SumiGPCUserScript` so servers that only look at the
-/// request header (rather than executing JS) still see Global Privacy Control.
+/// Enables WebKit's native GPC navigation preference when the runtime exposes
+/// it. On older WebKit versions, attaches `Sec-GPC: 1` to outgoing main-frame
+/// navigation requests, mirroring the DOM signal from `SumiGPCUserScript`.
 ///
-/// WebKit's public API has no way to mutate an in-flight `WKNavigationAction`'s
-/// request, so this follows the same approach DuckDuckGo's browsers use: cancel
-/// the navigation and reissue it via `webView.load(_:)` with the header added.
-/// `SumiGPCRequestFactory` guarantees this only fires once per request (it
-/// returns `nil` once the header is already present), so the reissued load is
-/// let through as `.next` on its second pass through the responder chain.
+/// The compatibility path cannot mutate an in-flight `WKNavigationAction`, so
+/// it cancels and reissues eligible requests via `webView.load(_:)`.
+/// `SumiGPCRequestFactory` keeps that rewrite idempotent.
 @MainActor
 final class SumiGPCNavigationResponder: SumiNavigationActionTargetContextResponding {
     private static let log = Logger.sumi(category: "GlobalPrivacyControl")
@@ -48,7 +45,7 @@ final class SumiGPCNavigationResponder: SumiNavigationActionTargetContextRespond
         self.tab = tab
         self.requestFactory = requestFactory
         self.isGPCEnabledProvider = isGPCEnabledProvider ?? { [weak tab] in
-            tab?.sumiSettings?.isGPCEnabled ?? true
+            tab?.sumiSettings?.isGPCEnabled ?? false
         }
         self.recordDiagnostic = recordDiagnostic ?? { failure in
             Self.log.error(
@@ -63,11 +60,18 @@ final class SumiGPCNavigationResponder: SumiNavigationActionTargetContextRespond
         context: SumiNavigationActionContext,
         preferences: inout SumiNavigationPreferences
     ) async -> SumiNavigationActionPolicy? {
-        guard navigationAction.isForMainFrame,
-              let targetWebView,
+        guard navigationAction.isForMainFrame else { return .next }
+
+        let isGPCEnabled = isGPCEnabledProvider()
+        if preferences.globalPrivacyControlEnabled != nil {
+            preferences.globalPrivacyControlEnabled = isGPCEnabled
+            return .next
+        }
+
+        guard let targetWebView,
               let rewrittenRequest = requestFactory.requestAddingGPCHeaderIfNeeded(
                   to: navigationAction.request,
-                  isGPCEnabled: isGPCEnabledProvider()
+                  isGPCEnabled: isGPCEnabled
         )
         else { return .next }
 

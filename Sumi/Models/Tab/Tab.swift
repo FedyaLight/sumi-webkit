@@ -80,6 +80,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     let committedDocumentRuntime: TabCommittedDocumentRuntime
     let webViewConfigurationOwner = TabWebViewConfigurationOwner()
     var cachedNormalTabCoreUserScripts: [SumiPageScript]?
+    var cachedNormalTabCoreUserScriptsGPCEnabled: Bool?
     let normalWebViewSetup = TabNormalWebViewSetupService()
     let webViewProvisioningOwner = TabWebViewProvisioningOwner()
     private let closeLifecycleOwner = TabCloseLifecycleOwner()
@@ -656,6 +657,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             interactionStateData: interactionStateData
         )
         cachedNormalTabCoreUserScripts = nil
+        cachedNormalTabCoreUserScriptsGPCEnabled = nil
         retainedFaviconRuntime = nil
         if lastSelectedAt == nil {
             lastSelectedAt = date

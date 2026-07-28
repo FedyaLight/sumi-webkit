@@ -42,11 +42,11 @@ required_keys = {
     "Ask whether to open or save files",
     "Close Glance",
     "Find in page",
+    "Global Privacy Control",
     "Go Back",
     "Open in Split View",
     "Rearrange Split",
     "Screenshot Settings",
-    "Send Global Privacy Control signal",
 }
 missing = sorted(required_keys - strings.keys())
 if missing:

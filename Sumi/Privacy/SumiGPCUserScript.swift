@@ -2,7 +2,7 @@ import Foundation
 import WebKit
 
 /// Injects the Global Privacy Control (GPC) DOM signal into every frame of every
-/// page, per the GPC spec (https://globalprivacycontrol.org/spec). Sites read
+/// page, per the GPC spec (https://www.w3.org/TR/gpc/). Sites read
 /// `navigator.globalPrivacyControl` to learn the user does not consent to having
 /// their data sold or shared.
 ///
@@ -21,7 +21,7 @@ final class SumiGPCUserScript: NSObject, SumiPageScript {
         """
         (function() {
             try {
-                if ("globalPrivacyControl" in Navigator.prototype) { return; }
+                if (navigator.globalPrivacyControl === true) { return; }
                 Object.defineProperty(Navigator.prototype, "globalPrivacyControl", {
                     get: function() { return true; },
                     configurable: true,
@@ -29,9 +29,11 @@ final class SumiGPCUserScript: NSObject, SumiPageScript {
                 });
             } catch (e) {
                 try {
-                    if (typeof navigator.globalPrivacyControl === "undefined") {
-                        navigator.globalPrivacyControl = true;
-                    }
+                    Object.defineProperty(navigator, "globalPrivacyControl", {
+                        get: function() { return true; },
+                        configurable: true,
+                        enumerable: true
+                    });
                 } catch (e2) { /* Best-effort fallback only. */ }
             }
         })();

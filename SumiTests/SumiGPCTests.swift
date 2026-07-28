@@ -32,6 +32,30 @@ final class SumiGPCUserScriptTests: XCTestCase {
         XCTAssertEqual(wkScript.injectionTime, .atDocumentStart)
         XCTAssertFalse(wkScript.isForMainFrameOnly)
     }
+
+    func testScriptOverridesWebKitNativeFalseValue() async throws {
+        let configuration = WKWebViewConfiguration()
+        configuration.userContentController.addUserScript(
+            SumiPageScriptBuilder.makeWKUserScript(from: SumiGPCUserScript())
+        )
+        let webView = WKWebView(
+            frame: CGRect(x: 0, y: 0, width: 100, height: 100),
+            configuration: configuration
+        )
+        let didFinish = expectation(description: "GPC fixture loaded")
+        let delegate = SumiGPCNavigationDelegateBox {
+            didFinish.fulfill()
+        }
+        webView.navigationDelegate = delegate
+
+        webView.loadHTMLString("<!doctype html><html></html>", baseURL: nil)
+        await fulfillment(of: [didFinish], timeout: 5)
+
+        let value = try await webView.evaluateJavaScript(
+            "navigator.globalPrivacyControl"
+        ) as? Bool
+        XCTAssertEqual(value, true)
+    }
 }
 
 final class SumiGPCRequestFactoryTests: XCTestCase {
@@ -472,6 +496,44 @@ final class SumiGPCNavigationResponderTests: XCTestCase {
         XCTAssertTrue(webView.loadedRequests.isEmpty)
     }
 
+    func testUsesNativeWebKitGPCWithoutRewritingNavigation() async {
+        let webView = SumiGPCLoadRecordingWebView()
+        let responder = SumiGPCNavigationResponder(
+            tab: makeTab(),
+            isGPCEnabledProvider: { true }
+        )
+        var preferences = sumiPreferences()
+        preferences.globalPrivacyControlEnabled = false
+
+        let policy = await responder.decidePolicy(
+            for: mainFrameAction(url: URL(string: "https://example.com/")!),
+            targetWebView: webView,
+            preferences: &preferences
+        )
+
+        XCTAssertNil(policy)
+        XCTAssertEqual(preferences.globalPrivacyControlEnabled, true)
+        XCTAssertTrue(
+            webView.loadedRequests.isEmpty,
+            "Native WebKit GPC must not cancel and reissue the page navigation."
+        )
+    }
+
+    func testDoesNotRewriteBeforeSettingsAreAvailable() async {
+        let webView = SumiGPCLoadRecordingWebView()
+        let responder = SumiGPCNavigationResponder(tab: makeTab())
+        var preferences = sumiPreferences()
+
+        let policy = await responder.decidePolicy(
+            for: mainFrameAction(url: URL(string: "https://example.com/")!),
+            targetWebView: webView,
+            preferences: &preferences
+        )
+
+        XCTAssertNil(policy)
+        XCTAssertTrue(webView.loadedRequests.isEmpty)
+    }
+
     func testIgnoresSubframeNavigations() async {
         let webView = SumiGPCLoadRecordingWebView()
         let responder = SumiGPCNavigationResponder(
@@ -522,24 +584,25 @@ final class SumiGPCNavigationResponderTests: XCTestCase {
 
 @MainActor
 final class SumiGPCSettingsTests: XCTestCase {
-    func testGPCIsEnabledByDefault() {
+    func testGPCIsDisabledByDefault() {
         let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
 
-        XCTAssertTrue(settings.isGPCEnabled)
+        XCTAssertFalse(settings.isGPCEnabled)
     }
 
     func testGPCTogglePersistsAcrossReload() {
         let harness = TestDefaultsHarness()
         let settings = SumiSettingsService(userDefaults: harness.defaults)
 
-        settings.isGPCEnabled = false
+        settings.isGPCEnabled = true
 
         let reloaded = SumiSettingsService(userDefaults: harness.defaults)
-        XCTAssertFalse(reloaded.isGPCEnabled)
+        XCTAssertTrue(reloaded.isGPCEnabled)
     }
 
     func testCoreUserScriptsIncludeGPCScriptWhenEnabled() {
         let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
+        settings.isGPCEnabled = true
         let tab = Tab(url: URL(string: "https://example.com")!)
         tab.sumiSettings = settings
 
@@ -550,9 +613,30 @@ final class SumiGPCSettingsTests: XCTestCase {
 
     func testCoreUserScriptsExcludeGPCScriptWhenDisabled() {
         let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
-        settings.isGPCEnabled = false
         let tab = Tab(url: URL(string: "https://example.com")!)
         tab.sumiSettings = settings
+
+        let scripts = tab.normalTabCoreUserScripts()
+
+        XCTAssertFalse(scripts.contains { $0 is SumiGPCUserScript })
+    }
+
+    func testCoreUserScriptsTrackGPCToggleChangesForExistingTab() {
+        let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
+        let tab = Tab(url: URL(string: "https://example.com")!)
+        tab.sumiSettings = settings
+
+        XCTAssertFalse(tab.normalTabCoreUserScripts().contains { $0 is SumiGPCUserScript })
+
+        settings.isGPCEnabled = true
+        XCTAssertTrue(tab.normalTabCoreUserScripts().contains { $0 is SumiGPCUserScript })
+
+        settings.isGPCEnabled = false
+        XCTAssertFalse(tab.normalTabCoreUserScripts().contains { $0 is SumiGPCUserScript })
+    }
+
+    func testCoreUserScriptsDefaultToDisabledBeforeSettingsAreAvailable() {
+        let tab = Tab(url: URL(string: "https://example.com")!)
 
         let scripts = tab.normalTabCoreUserScripts()
 
@@ -579,5 +663,19 @@ final class SumiGPCLoadRecordingWebView: WKWebView {
         stopLoadingCallCount += 1
         activeLoadedRequests.removeAll()
         super.stopLoading()
+    }
+}
+
+private final class SumiGPCNavigationDelegateBox: NSObject, WKNavigationDelegate {
+    private let onFinish: () -> Void
+
+    init(onFinish: @escaping () -> Void) {
+        self.onFinish = onFinish
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        _ = webView
+        _ = navigation
+        onFinish()
     }
 }

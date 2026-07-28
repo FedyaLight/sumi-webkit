@@ -74,6 +74,7 @@ struct SumiNavigationPreferences: Equatable {
     var userAgent: String?
     var contentMode: WKWebpagePreferences.ContentMode
     var javaScriptEnabled: Bool
+    var globalPrivacyControlEnabled: Bool? = nil
     var autoplayPolicy: SumiWebsiteAutoplayPolicy?
     var mustApplyAutoplayPolicy: Bool
 }

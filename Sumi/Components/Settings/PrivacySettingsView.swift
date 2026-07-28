@@ -67,20 +67,24 @@ private struct GlobalPrivacyControlSettingsView: View {
 
     var body: some View {
         SettingsSection(
-            title: "Global Privacy Control",
-            subtitle: "Tell every site you visit that you don't want your data sold or shared."
-        ) {
-            SettingsRow(
-                title: "Send Global Privacy Control signal",
-                subtitle: "Sends the GPC opt-out signal to websites via the page and request headers."
-            ) {
+            title: String(
+                localized: "Global Privacy Control",
+                comment: "Privacy setting title."
+            ),
+            subtitle: String(
+                localized: "Tell every site you visit that you don't want your data sold or shared.",
+                comment: "Explains the Global Privacy Control setting."
+            ),
+            headerAccessory: {
                 Toggle("", isOn: $isGPCEnabled)
                     .labelsHidden()
                     .toggleStyle(.switch)
-                    .accessibilityLabel("Send Global Privacy Control signal")
+                    .accessibilityLabel("Global Privacy Control")
                     .accessibilityIdentifier("privacy-global-privacy-control")
                     .help("Tell sites not to sell or share your data")
             }
+        ) {
+            EmptyView()
         }
     }
 }

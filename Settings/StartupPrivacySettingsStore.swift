@@ -44,8 +44,7 @@ final class StartupPrivacySettingsStore {
 
     /// Global Privacy Control: broadcasts the user's opt-out of sale/sharing of
     /// personal data to every site, via both a DOM signal and a `Sec-GPC` request
-    /// header. On by default, matching Firefox/Brave/DDG's stance that GPC is a
-    /// baseline privacy signal rather than an opt-in feature.
+    /// header.
     var isGPCEnabled: Bool {
         didSet {
             Persisted.bool(isGPCEnabled, key: gpcEnabledKey, defaults: userDefaults)
@@ -92,10 +91,6 @@ final class StartupPrivacySettingsStore {
                 defaults: userDefaults
             )
         }
-        if userDefaults.object(forKey: gpcEnabledKey) == nil {
-            self.isGPCEnabled = true
-        } else {
-            self.isGPCEnabled = userDefaults.bool(forKey: gpcEnabledKey)
-        }
+        self.isGPCEnabled = userDefaults.bool(forKey: gpcEnabledKey)
     }
 }

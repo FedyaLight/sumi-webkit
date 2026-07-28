@@ -6,17 +6,31 @@ import Network
 /// request, keeping navigation deterministic and independent of runner/app
 /// sandbox file access.
 final class SumiUIOracleHTTPServer: @unchecked Sendable {
+    struct RequiredRequestHeader: Sendable {
+        let field: String
+        let value: String
+    }
+
     private let listener: NWListener
     private let queue = DispatchQueue(label: "com.sumi.ui-tests.oracle-http")
     let pageURL: URL
 
-    init(path: String = "oracle.html", html: String) throws {
+    init(
+        path: String = "oracle.html",
+        html: String,
+        requiredRequestHeader: RequiredRequestHeader? = nil
+    ) throws {
         let body = Data(html.utf8)
         let listener = try NWListener(using: .tcp, on: .any)
         let readiness = ListenerReadiness()
 
-        listener.newConnectionHandler = { [queue, body] connection in
-            Self.serve(connection, body: body, queue: queue)
+        listener.newConnectionHandler = { [queue, body, requiredRequestHeader] connection in
+            Self.serve(
+                connection,
+                body: body,
+                requiredRequestHeader: requiredRequestHeader,
+                queue: queue
+            )
         }
         listener.stateUpdateHandler = { [weak listener, readiness] state in
             switch state {
@@ -72,28 +86,40 @@ final class SumiUIOracleHTTPServer: @unchecked Sendable {
     private static func serve(
         _ connection: NWConnection,
         body: Data,
+        requiredRequestHeader: RequiredRequestHeader?,
         queue: DispatchQueue
     ) {
         connection.start(queue: queue)
-        connection.receive(
-            minimumIncompleteLength: 1,
-            maximumLength: 64 * 1024
-        ) { _, _, _, error in
-            guard error == nil else {
+        receiveRequest(on: connection) { requestData in
+            guard let requestData else {
                 connection.cancel()
                 return
             }
+
+            let hasRequiredHeader = requiredRequestHeader.map {
+                Self.requestContainsHeader(
+                    requestData,
+                    field: $0.field,
+                    value: $0.value
+                )
+            } ?? true
+            let responseBody = hasRequiredHeader
+                ? body
+                : Data("Required request header was missing.".utf8)
+            let status = hasRequiredHeader
+                ? "HTTP/1.1 200 OK"
+                : "HTTP/1.1 428 Precondition Required"
             let header = Data([
-                "HTTP/1.1 200 OK",
+                status,
                 "Content-Type: text/html; charset=utf-8",
-                "Content-Length: \(body.count)",
+                "Content-Length: \(responseBody.count)",
                 "Cache-Control: no-store",
                 "Connection: close",
                 "",
                 "",
             ].joined(separator: "\r\n").utf8)
             connection.send(
-                content: header + body,
+                content: header + responseBody,
                 contentContext: .finalMessage,
                 isComplete: true,
                 completion: .contentProcessed { error in
@@ -103,6 +129,58 @@ final class SumiUIOracleHTTPServer: @unchecked Sendable {
                 }
             )
         }
+    }
+
+    private static func receiveRequest(
+        on connection: NWConnection,
+        accumulatedData: Data = Data(),
+        completion: @escaping @Sendable (Data?) -> Void
+    ) {
+        connection.receive(
+            minimumIncompleteLength: 1,
+            maximumLength: 64 * 1024
+        ) { data, _, isComplete, error in
+            var requestData = accumulatedData
+            if let data {
+                requestData.append(data)
+            }
+            if requestData.range(of: Data("\r\n\r\n".utf8)) != nil {
+                completion(requestData)
+            } else if error != nil || isComplete || requestData.count >= 64 * 1024 {
+                completion(nil)
+            } else {
+                Self.receiveRequest(
+                    on: connection,
+                    accumulatedData: requestData,
+                    completion: completion
+                )
+            }
+        }
+    }
+
+    private static func requestContainsHeader(
+        _ requestData: Data,
+        field: String,
+        value: String
+    ) -> Bool {
+        guard let request = String(data: requestData, encoding: .utf8) else {
+            return false
+        }
+        let expectedField = field.lowercased()
+        return request
+            .components(separatedBy: "\r\n")
+            .dropFirst()
+            .contains { line in
+                guard let separator = line.firstIndex(of: ":") else {
+                    return false
+                }
+                let actualField = line[..<separator]
+                    .trimmingCharacters(in: .whitespaces)
+                    .lowercased()
+                let actualValue = line[line.index(after: separator)...]
+                    .trimmingCharacters(in: .whitespaces)
+                return actualField == expectedField && actualValue == value
+            }
     }
 
     private enum ServerError: LocalizedError {

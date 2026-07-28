@@ -244,8 +244,7 @@ class SumiSettingsService {
 
     /// Global Privacy Control: broadcasts the user's opt-out of sale/sharing of
     /// personal data to every site, via both a DOM signal and a `Sec-GPC` request
-    /// header. On by default, matching Firefox/Brave/DDG's stance that GPC is a
-    /// baseline privacy signal rather than an opt-in feature.
+    /// header.
     var isGPCEnabled: Bool {
         get { startupPrivacy.isGPCEnabled }
         set { startupPrivacy.isGPCEnabled = newValue }
@@ -349,7 +348,7 @@ class SumiSettingsService {
             "settings.browsingData.retentionDays": SumiBrowsingDataRetentionPeriod.defaultPeriod.rawValue,
             "settings.downloads.alwaysAskWhereToSave": false,
             "settings.downloads.fallbackAction": SumiDownloadFallbackAction.saveFile.rawValue,
-            "settings.privacy.gpcEnabled": true,
+            "settings.privacy.gpcEnabled": false,
         ])
 
         self.theme = ThemeSettingsStore(

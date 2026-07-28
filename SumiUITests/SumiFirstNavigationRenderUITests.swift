@@ -8,7 +8,7 @@ import XCTest
 /// path without depending on external network state.
 @MainActor
 final class SumiFirstNavigationRenderUITests: SumiLaunchSmokeUITestCase {
-    func testFirstHTTPNavigationRendersWithoutReload() throws {
+    func testFirstHTTPNavigationRendersWithoutReloadWhenGPCEnabled() throws {
         let token = UUID().uuidString.prefix(8)
         let bodyMarker = "SUMI-FIRST-NAVIGATION-ORACLE-\(token)"
         let server = try SumiUIOracleHTTPServer(
@@ -34,9 +34,18 @@ final class SumiFirstNavigationRenderUITests: SumiLaunchSmokeUITestCase {
                 }
               </style>
             </head>
-            <body><h1>\(bodyMarker)</h1></body>
+            <body>
+              <h1 id="result"></h1>
+              <script>
+                document.getElementById("result").textContent =
+                  navigator.globalPrivacyControl === true
+                    ? "\(bodyMarker)"
+                    : "GPC-DOM-SIGNAL-MISSING";
+              </script>
+            </body>
             </html>
-            """
+            """,
+            requiredRequestHeader: .init(field: "Sec-GPC", value: "1")
         )
         defer { server.stop() }
 
@@ -52,7 +61,9 @@ final class SumiFirstNavigationRenderUITests: SumiLaunchSmokeUITestCase {
         }
 
         let app = try launchApp(
-            preferencesHomeURL: try prepareSmokePreferencesHome(),
+            preferencesHomeURL: try prepareSmokePreferencesHome(
+                additionalPreferences: ["settings.privacy.gpcEnabled": true]
+            ),
             additionalEnvironment: [
                 "AppleLanguages": "(en)",
                 "AppleLocale": "en_US",

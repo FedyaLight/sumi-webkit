@@ -297,6 +297,7 @@ private extension SumiNavigationPreferences {
             userAgent: preferences.userAgent,
             contentMode: preferences.contentMode,
             javaScriptEnabled: preferences.javaScriptEnabled,
+            globalPrivacyControlEnabled: preferences.globalPrivacyControlEnabled,
             autoplayPolicy: preferences.autoplayPolicy.flatMap { SumiWebsiteAutoplayPolicy(rawValue: $0.rawValue) },
             mustApplyAutoplayPolicy: preferences.mustApplyAutoplayPolicy
         )
@@ -308,6 +309,7 @@ private extension NavigationPreferences {
         userAgent = preferences.userAgent
         contentMode = preferences.contentMode
         javaScriptEnabled = preferences.javaScriptEnabled
+        globalPrivacyControlEnabled = preferences.globalPrivacyControlEnabled
         autoplayPolicy = preferences.autoplayPolicy.flatMap { _WKWebsiteAutoplayPolicy(rawValue: $0.rawValue) }
         mustApplyAutoplayPolicy = preferences.mustApplyAutoplayPolicy
     }
