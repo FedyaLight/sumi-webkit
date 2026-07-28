@@ -236,10 +236,46 @@ struct PinnedTileVisual: View {
         loadedSelectionAccentColor = accent
     }
 
-    @ViewBuilder
     private func resolvedFaviconSymbol(height: CGFloat) -> some View {
+        PinnedTileFaviconSymbol(
+            content: faviconContent,
+            height: height,
+            foregroundColor: tokens.primaryText
+        )
+    }
+
+    private var faviconContent: PinnedTileFaviconSymbol.Content {
+        if let glyphText {
+            return .glyph(glyphText)
+        }
+        if let systemName = chromeTemplateSystemImageName {
+            return .chromeTemplate(systemName)
+        }
+        return .image(tabIcon)
+    }
+}
+
+/// Icon drawn at the center of an essentials/pinned tile. The live tile and the
+/// space-transition snapshot tile both render through this view so a space
+/// switch cannot change the glyph's metrics: sidebar rows carry a different
+/// launcher type scale than tiles do, and a snapshot that borrowed the row
+/// scale drew user glyphs a pixel or two off from the live grid.
+struct PinnedTileFaviconSymbol: View {
+    enum Content {
+        case image(Image)
+        case glyph(String)
+        /// Drawn with `ChromeThemeTokens.primaryText` + monochrome.
+        case chromeTemplate(String)
+    }
+
+    let content: Content
+    var height: CGFloat = PinnedTileMetrics.faviconHeight
+    let foregroundColor: Color
+
+    var body: some View {
         Group {
-            if let glyphText {
+            switch content {
+            case .glyph(let glyphText):
                 Text(glyphText)
                     .font(
                         SidebarThemeTokens.Typography.pinnedTileGlyphText(
@@ -249,7 +285,7 @@ struct PinnedTileVisual: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.45)
                     .multilineTextAlignment(.center)
-            } else if let systemName = chromeTemplateSystemImageName {
+            case .chromeTemplate(let systemName):
                 Image(systemName: systemName)
                     .font(
                         SidebarThemeTokens.Typography.chromeTemplateIcon(
@@ -257,9 +293,9 @@ struct PinnedTileVisual: View {
                         )
                     )
                     .symbolRenderingMode(.monochrome)
-                    .foregroundStyle(tokens.primaryText)
-            } else {
-                tabIcon
+                    .foregroundStyle(foregroundColor)
+            case .image(let image):
+                image
             }
         }
         .frame(width: height, height: height)

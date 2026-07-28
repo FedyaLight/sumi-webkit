@@ -118,6 +118,11 @@ struct PinnedTabView: View {
         .frame(maxWidth: .infinity)
         .frame(height: PinnedTileMetrics.height)
         .frame(minWidth: PinnedTileMetrics.minWidth)
+        // Flatten the drawn tile before the selection shadow below: an
+        // unflattened `shadow` is inherited by every drawn element, so the
+        // favicon would cast its own shadow onto the translucent selection
+        // plate instead of only the tile lifting off the sidebar.
+        .compositingGroup()
         .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .accessibilityIdentifier(accessibilityID ?? "pinned-tile")
         .accessibilityValue(presentationState.isSelected ? "selected" : "not selected")

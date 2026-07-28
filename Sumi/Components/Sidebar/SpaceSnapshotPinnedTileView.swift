@@ -34,11 +34,11 @@ struct SpaceSnapshotPinnedTileView: View {
                     .frame(width: tileSize.width, height: tileSize.height)
             }
 
-            SpaceSnapshotIconView(
-                icon: item.icon,
-                size: PinnedTileMetrics.faviconHeight,
+            PinnedTileFaviconSymbol(
+                content: iconContent,
                 foregroundColor: tokens.primaryText
             )
+            .accessibilityHidden(true)
             .saturation(item.presentationState.shouldDesaturateIcon ? 0.0 : 1.0)
             .opacity(item.presentationState.shouldDesaturateIcon ? 0.8 : 1.0)
             .frame(width: tileSize.width, height: tileSize.height, alignment: .center)
@@ -69,12 +69,31 @@ struct SpaceSnapshotPinnedTileView: View {
                     .padding(6)
             }
         }
+        // Flatten the tile first: an unflattened `shadow` is inherited by every
+        // drawn element, so the favicon would cast its own shadow onto the
+        // translucent selection plate instead of only the tile lifting off the
+        // sidebar.
+        .compositingGroup()
         .shadow(
             color: item.presentationState.isSelected ? tokens.sidebarSelectionShadow : .clear,
             radius: item.presentationState.isSelected ? 2 : 0,
             y: item.presentationState.isSelected ? 1 : 0
         )
+        // Matches the live tile's press-effect transform so the favicon keeps
+        // its device pixel across the live/snapshot swap.
+        .sidebarZenPressEffectRestingGeometry()
         .accessibilityIdentifier("essential-shortcut-snapshot-\(item.id.uuidString)")
+    }
+
+    private var iconContent: PinnedTileFaviconSymbol.Content {
+        switch item.icon {
+        case .image(let image):
+            return .image(image)
+        case .system(let systemName):
+            return .chromeTemplate(systemName)
+        case .emoji(let emoji):
+            return .glyph(emoji)
+        }
     }
 
     private var cornerRadius: CGFloat {

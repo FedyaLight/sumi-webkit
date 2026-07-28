@@ -294,6 +294,22 @@ extension View {
         )
     }
 
+    /// Reproduces the geometry transform `sidebarZenPressEffect` leaves on a
+    /// live sidebar item even at rest.
+    ///
+    /// A transform opts its subtree out of SwiftUI's pixel snapping, so its
+    /// contents rasterize at their true fractional position. Essentials tiles
+    /// are the one sidebar surface whose width is a fraction of a point
+    /// (the content width is divided between the grid columns), which makes
+    /// snapped and unsnapped rendering land on different device pixels. A
+    /// transition snapshot drawn without the transform therefore shifted the
+    /// tile favicons by up to two pixels the moment the live grid was swapped
+    /// for its snapshot, and back again on commit. Snapshot tiles carry the
+    /// same identity transform so both trees rasterize alike.
+    func sidebarZenPressEffectRestingGeometry() -> some View {
+        scaleEffect(1)
+    }
+
     func sidebarRowListItemTransition(isEnabled: Bool = true) -> some View {
         modifier(SidebarRowListItemTransitionModifier(isEnabled: isEnabled))
     }
