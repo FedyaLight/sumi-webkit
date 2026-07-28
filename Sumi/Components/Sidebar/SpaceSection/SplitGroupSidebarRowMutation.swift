@@ -11,6 +11,14 @@ extension SplitGroupSidebarRow {
         !reduceMotion && !sumiSettings.shouldReduceChromeMotion
     }
 
+    var projectedLayoutAnimation: Animation? {
+        SidebarMotionPolicy.contentLayoutAnimation(
+            for: SidebarMotionPolicy.currentMode(
+                reduceMotion: !shouldAnimateProjectedLayout
+            )
+        )
+    }
+
     var resolvedDisplayItems: [SplitGroupSidebarItem] {
         SplitGroupSidebarModel.displayItems(
             current: items,
@@ -41,7 +49,7 @@ extension SplitGroupSidebarRow {
         let removedIds = Set(oldItems.map(\.id)).subtracting(newIds)
 
         guard !removedIds.isEmpty else {
-            withAnimation(SidebarDropMotion.contentLayout) {
+            withAnimation(projectedLayoutAnimation) {
                 displayedItems = newItems
                 departingItemIds.formIntersection(newIds)
             }
@@ -66,7 +74,7 @@ extension SplitGroupSidebarRow {
         }
         projectedItems.append(contentsOf: newItems.filter { seenIds.insert($0.id).inserted })
 
-        withAnimation(SidebarDropMotion.contentLayout) {
+        withAnimation(projectedLayoutAnimation) {
             displayedItems = projectedItems
             departingItemIds.formUnion(removedIds)
         }
@@ -80,5 +88,4 @@ extension SplitGroupSidebarRow {
     var tokens: ChromeThemeTokens {
         scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
-
 }

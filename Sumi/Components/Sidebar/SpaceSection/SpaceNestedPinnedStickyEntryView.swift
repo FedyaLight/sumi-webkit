@@ -37,6 +37,12 @@ struct SpaceNestedPinnedStickyEntryView: View {
                   let folder = inventory.folder(id: folderID) {
             nestedSplitEntry(group)
                 .padding(.leading, indentation(for: folder))
+                .sidebarDropContainmentBackdrop(
+                    isVisible: dragSnapshot.folderSnapshot
+                        .isExistingSplitGroupTargeted(
+                            memberIDs: group.memberIDs
+                        )
+                )
         }
     }
 
@@ -78,11 +84,7 @@ struct SpaceNestedPinnedStickyEntryView: View {
             ),
             space: space,
             browserContext: browserContext,
-            isInteractive: isInteractive,
-            isDropHighlighted:
-                dragSnapshot.folderSnapshot.isExistingSplitGroupTargeted(
-                    memberIDs: group.memberIDs
-                )
+            isInteractive: isInteractive
         )
     }
 

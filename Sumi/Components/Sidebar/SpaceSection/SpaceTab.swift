@@ -11,7 +11,7 @@ struct SpaceTab: View {
     @ObservedObject var tab: Tab
     var dragSourceConfiguration: SidebarDragSourceConfiguration?
     var isAppKitInteractionEnabled: Bool = true
-    var projectedSplitTarget: SidebarSplitPairingTarget? = nil
+    var projectedSplitTarget: SidebarSplitPairingTarget?
     var action: () -> Void
     var onClose: () -> Void
     var onMiddleClick: () -> Void
@@ -86,18 +86,20 @@ struct SpaceTab: View {
         }
     }
 
-    @ViewBuilder
     private var presentedRow: some View {
-        if let projectedSplitTarget {
-            SidebarProjectedSplitPairTarget(
-                target: projectedSplitTarget,
-                title: tab.name
-            ) {
-                favicon
+        ordinaryRow
+            .opacity(projectedSplitTarget == nil ? 1 : 0)
+            .allowsHitTesting(projectedSplitTarget == nil)
+            .overlay {
+                if let projectedSplitTarget {
+                    SidebarProjectedSplitPairTarget(
+                        target: projectedSplitTarget,
+                        title: tab.name
+                    ) {
+                        favicon
+                    }
+                }
             }
-        } else {
-            ordinaryRow
-        }
     }
 
     private var ordinaryRow: some View {
@@ -191,7 +193,6 @@ struct SpaceTab: View {
             .padding(.trailing, SidebarRowLayout.trailingInset)
             .frame(height: SidebarRowLayout.rowHeight)
             .frame(minWidth: 0, maxWidth: .infinity)
-            .contentShape(Rectangle())
             .overlay(alignment: .trailing) {
                 trailingAccessory
                     .padding(.trailing, SidebarRowLayout.trailingInset)

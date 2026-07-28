@@ -234,8 +234,8 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
     func testPinnedDragPresentationPublishesOneAtomicFrameAtDragStart() {
         let state = SidebarDragState()
         let itemID = UUID()
-        var frames: [SidebarPinnedDragPresentationFrame] = []
-        let cancellable = state.pinnedPresentation.$frame
+        var frames: [SidebarListDragPresentationFrame] = []
+        let cancellable = state.listPresentation.$frame
             .dropFirst()
             .sink { frames.append($0) }
 
@@ -249,6 +249,45 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
         XCTAssertEqual(frames.count, 1)
         XCTAssertEqual(frames.first?.isDragging, true)
         XCTAssertEqual(frames.first?.activeDragItemID, itemID)
+        withExtendedLifetime(cancellable) {}
+    }
+
+    func testPinnedDragPresentationIgnoresRegularSlotMotion() {
+        let state = SidebarDragState()
+        let spaceID = UUID()
+        state.beginExternalDragSession(itemId: UUID())
+        var frames: [SidebarListDragPresentationFrame] = []
+        let cancellable = state.listPresentation.$frame
+            .dropFirst()
+            .sink { frames.append($0) }
+
+        state.presentDropResolution(
+            SidebarDropResolution(
+                slot: .spaceRegular(spaceId: spaceID, slot: 0),
+                folderIntent: .none,
+                activeHoveredFolderId: nil
+            )
+        )
+        state.presentDropResolution(
+            SidebarDropResolution(
+                slot: .spaceRegular(spaceId: spaceID, slot: 1),
+                folderIntent: .none,
+                activeHoveredFolderId: nil
+            )
+        )
+
+        XCTAssertTrue(frames.isEmpty)
+
+        state.presentDropResolution(
+            SidebarDropResolution(
+                slot: .spacePinned(spaceId: spaceID, slot: 0),
+                folderIntent: .none,
+                activeHoveredFolderId: nil
+            )
+        )
+
+        XCTAssertEqual(frames.count, 1)
+        XCTAssertEqual(frames[0].hoveredPinnedSpaceID, spaceID)
         withExtendedLifetime(cancellable) {}
     }
 
@@ -558,6 +597,28 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
         changes.send(true)
 
         XCTAssertTrue(model.snapshot)
+    }
+
+    func testScopedSnapshotModelCanSuppressEquivalentPublications() {
+        let changes = PassthroughSubject<Int, Never>()
+        let model = SidebarScopedSnapshotModel(
+            current: { 0 },
+            changes: changes.eraseToAnyPublisher(),
+            delivery: .mainActorImmediate(),
+            areEquivalent: ==
+        )
+        var publications: [Int] = []
+        let cancellable = model.$snapshot.sink {
+            publications.append($0)
+        }
+        model.setActive(true)
+
+        changes.send(0)
+        changes.send(1)
+        changes.send(1)
+
+        XCTAssertEqual(publications, [0, 1])
+        withExtendedLifetime(cancellable) {}
     }
 
     func testImmediateScopedSnapshotModelPreservesMutationReenteringDemandRead() {

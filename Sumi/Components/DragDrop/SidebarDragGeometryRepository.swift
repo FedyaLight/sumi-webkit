@@ -88,6 +88,40 @@ final class SidebarDragGeometryRepository {
         }
     }
 
+    func schedulePresentedSpaceList(
+        _ layout: PresentedSidebarLayout,
+        generation: Int
+    ) {
+        enqueueDeferredGeometryMutation(
+            key: .presentedSpaceList(
+                spaceID: layout.spaceID,
+                generation: generation
+            )
+        ) { repository in
+            repository.applyPresentedSpaceList(
+                layout,
+                generation: generation
+            )
+        }
+    }
+
+    func schedulePresentedSpaceListRemoval(
+        spaceID: UUID,
+        generation: Int
+    ) {
+        enqueueDeferredGeometryMutation(
+            key: .presentedSpaceList(
+                spaceID: spaceID,
+                generation: generation
+            )
+        ) { repository in
+            repository.applyPresentedSpaceListRemoval(
+                spaceID: spaceID,
+                generation: generation
+            )
+        }
+    }
+
     func schedulePageGeometry(
         spaceId: UUID,
         profileId: UUID?,
@@ -96,7 +130,13 @@ final class SidebarDragGeometryRepository {
         generation: Int
     ) {
         enqueueDeferredGeometryMutation(
-            key: .page(SidebarPageGeometryKey(spaceId: spaceId, profileId: profileId))
+            key: .page(
+                SidebarPageGeometryKey(
+                    spaceId: spaceId,
+                    profileId: profileId
+                ),
+                generation: generation
+            )
         ) { repository in
             repository.applyPageGeometry(
                 spaceId: spaceId,
@@ -108,100 +148,12 @@ final class SidebarDragGeometryRepository {
         }
     }
 
-    func scheduleSectionFrame(
-        spaceId: UUID,
-        section: SidebarSectionPrefix,
-        frame: CGRect?,
-        generation: Int
-    ) {
-        enqueueDeferredGeometryMutation(
-            key: .section(SidebarSectionGeometryKey(spaceId: spaceId, section: section))
-        ) { repository in
-            repository.applySectionFrame(
-                spaceId: spaceId,
-                section: section,
-                frame: frame,
-                generation: generation
-            )
-        }
-    }
-
-    func scheduleFolderDropTarget(_ update: SidebarFolderDropTargetUpdate, generation: Int) {
-        enqueueDeferredGeometryMutation(
-            key: .folder(update.folderId, update.region)
-        ) { repository in
-            repository.applyFolderDropTarget(
-                update,
-                generation: generation
-            )
-        }
-    }
-
-    func scheduleTopLevelPinnedItemTarget(_ update: SidebarTopLevelPinnedItemTargetUpdate, generation: Int) {
-        enqueueDeferredGeometryMutation(
-            key: .topLevelPinnedItem(update.itemId)
-        ) { repository in
-            repository.applyTopLevelPinnedItemTarget(
-                update,
-                generation: generation
-            )
-        }
-    }
-
-    func scheduleFolderChildDropTarget(_ update: SidebarFolderChildDropTargetUpdate, generation: Int) {
-        enqueueDeferredGeometryMutation(
-            key: .folderChild(update.childId)
-        ) { repository in
-            repository.applyFolderChildDropTarget(
-                update,
-                generation: generation
-            )
-        }
-    }
-
-    func schedulePinnedListHitTarget(
-        spaceId: UUID,
-        frame: CGRect?,
-        rowCount: Int,
-        splitPairingMemberIDsByRow: [[SplitMemberID]],
-        leadingInset: CGFloat,
-        generation: Int
-    ) {
-        enqueueDeferredGeometryMutation(key: .pinnedList(spaceId)) { repository in
-            repository.applyPinnedListHitTarget(
-                spaceId: spaceId,
-                frame: frame,
-                rowCount: rowCount,
-                splitPairingMemberIDsByRow: splitPairingMemberIDsByRow,
-                leadingInset: leadingInset,
-                generation: generation
-            )
-        }
-    }
-
-    func scheduleRegularListHitTarget(
-        spaceId: UUID,
-        frame: CGRect?,
-        rowIdentities: [SidebarVisualSceneProjection.RegularRow.Identity],
-        splitPairingMemberIDsByRow: [[SplitMemberID]] = [],
-        generation: Int
-    ) {
-        enqueueDeferredGeometryMutation(
-            key: .regularList(spaceId)
-        ) { repository in
-            repository.applyRegularListHitTarget(
-                spaceId: spaceId,
-                frame: frame,
-                rowIdentities: rowIdentities,
-                splitPairingMemberIDsByRow: splitPairingMemberIDsByRow,
-                generation: generation
-            )
-        }
-    }
-
     func scheduleEssentialsLayoutMetrics(_ update: SidebarEssentialsLayoutUpdate, generation: Int) {
         enqueueDeferredGeometryMutation(
-            key: .essentials(update.spaceId)
+            key: .essentials(
+                spaceID: update.spaceId,
+                generation: generation
+            )
         ) { repository in
             repository.applyEssentialsLayoutMetrics(
                 update,
@@ -245,12 +197,13 @@ final class SidebarDragGeometryRepository {
         let essentialsKey = SidebarSectionGeometryKey(spaceId: spaceId, section: .essentials)
         let pinnedKey = SidebarSectionGeometryKey(spaceId: spaceId, section: .spacePinned)
         let regularKey = SidebarSectionGeometryKey(spaceId: spaceId, section: .spaceRegular)
+        let listLayout = pendingGeometryStore.spaceListLayoutsBySpace[spaceId]
 
         guard pendingGeometryStore.sectionFramesBySpace[essentialsKey] != nil,
-              pendingGeometryStore.sectionFramesBySpace[pinnedKey] != nil,
-              pendingGeometryStore.sectionFramesBySpace[regularKey] != nil,
+              listLayout?.sectionFrames[pinnedKey.section] != nil,
+              listLayout?.sectionFrames[regularKey.section] != nil,
               pendingGeometryStore.essentialsLayoutMetricsBySpace[spaceId] != nil,
-              pendingGeometryStore.regularListHitTargets[spaceId] != nil else {
+              listLayout != nil else {
             return
         }
 
@@ -294,162 +247,56 @@ final class SidebarDragGeometryRepository {
         }
     }
 
-    func applySectionFrame(
-        spaceId: UUID,
-        section: SidebarSectionPrefix,
-        frame: CGRect?,
+    func applyPresentedSpaceList(
+        _ layout: PresentedSidebarLayout,
         generation: Int
     ) {
-        let frame = frame.map { normalizedFrame($0, for: generation) }
+        let normalizedLayout = layout.offsettingY(
+            by: generation == activeGeometryGeneration
+                ? activeGeometryStore.cumulativeScrollDeltaY
+                : 0
+        )
         mutateGeometryStore(for: generation) { store in
-            let key = SidebarSectionGeometryKey(spaceId: spaceId, section: section)
-            if let frame {
-                guard store.sectionFramesBySpace[key] != frame else { return false }
-                store.sectionFramesBySpace[key] = frame
-                return true
-            } else {
-                guard store.sectionFramesBySpace[key] != nil else { return false }
-                store.sectionFramesBySpace[key] = nil
-                return true
-            }
+            Self.replacePresentedSpaceList(
+                normalizedLayout,
+                spaceID: normalizedLayout.spaceID,
+                in: &store
+            )
         }
     }
 
-    func applyFolderDropTarget(_ update: SidebarFolderDropTargetUpdate, generation: Int) {
-        var update = update
-        update.frame = update.frame.map { normalizedFrame($0, for: generation) }
-        mutateGeometryStore(for: generation) { store in
-            guard let metrics = update.metrics, let frame = update.frame else {
-                guard var target = store.folderDropTargets[update.folderId] else { return false }
-                switch update.region {
-                case .header:
-                    target.headerFrame = nil
-                case .body:
-                    target.bodyFrame = nil
-                case .after:
-                    target.afterFrame = nil
-                }
-                if target.headerFrame == nil && target.bodyFrame == nil && target.afterFrame == nil {
-                    store.folderDropTargets[update.folderId] = nil
-                    return true
-                } else {
-                    guard store.folderDropTargets[update.folderId] != target else { return false }
-                    store.folderDropTargets[update.folderId] = target
-                    return true
-                }
-            }
-
-            var target = store.folderDropTargets[update.folderId] ?? metrics
-            target.spaceId = metrics.spaceId
-            target.parentFolderId = metrics.parentFolderId
-            target.topLevelIndex = metrics.topLevelIndex
-            target.childCount = metrics.childCount
-            target.isOpen = metrics.isOpen
-            switch update.region {
-            case .header:
-                target.headerFrame = frame
-            case .body:
-                target.bodyFrame = frame
-            case .after:
-                target.afterFrame = frame
-            }
-            guard store.folderDropTargets[update.folderId] != target else { return false }
-            store.folderDropTargets[update.folderId] = target
-            return true
-        }
-    }
-
-    func applyTopLevelPinnedItemTarget(_ update: SidebarTopLevelPinnedItemTargetUpdate, generation: Int) {
-        var update = update
-        if var metrics = update.metrics {
-            metrics.frame = normalizedFrame(metrics.frame, for: generation)
-            update.metrics = metrics
-        }
-        mutateGeometryStore(for: generation) { store in
-            guard let metrics = update.metrics else {
-                guard store.topLevelPinnedItemTargets[update.itemId] != nil else { return false }
-                store.topLevelPinnedItemTargets[update.itemId] = nil
-                return true
-            }
-
-            guard store.topLevelPinnedItemTargets[update.itemId] != metrics else { return false }
-            store.topLevelPinnedItemTargets[update.itemId] = metrics
-            return true
-        }
-    }
-
-    func applyFolderChildDropTarget(_ update: SidebarFolderChildDropTargetUpdate, generation: Int) {
-        var update = update
-        if var metrics = update.metrics {
-            metrics.frame = normalizedFrame(metrics.frame, for: generation)
-            update.metrics = metrics
-        }
-        mutateGeometryStore(for: generation) { store in
-            guard let metrics = update.metrics else {
-                guard store.folderChildDropTargets[update.childId] != nil else { return false }
-                store.folderChildDropTargets[update.childId] = nil
-                return true
-            }
-
-            guard store.folderChildDropTargets[update.childId] != metrics else { return false }
-            store.folderChildDropTargets[update.childId] = metrics
-            return true
-        }
-    }
-
-    func applyRegularListHitTarget(
-        spaceId: UUID,
-        frame: CGRect?,
-        rowIdentities: [SidebarVisualSceneProjection.RegularRow.Identity],
-        splitPairingMemberIDsByRow: [[SplitMemberID]] = [],
+    func applyPresentedSpaceListRemoval(
+        spaceID: UUID,
         generation: Int
     ) {
-        let frame = frame.map { normalizedFrame($0, for: generation) }
         mutateGeometryStore(for: generation) { store in
-            if let frame {
-                let target = SidebarRegularListHitMetrics(
-                    frame: frame,
-                    rowIdentities: rowIdentities,
-                    splitPairingMemberIDsByRow: splitPairingMemberIDsByRow
-                )
-                guard store.regularListHitTargets[spaceId] != target else { return false }
-                store.regularListHitTargets[spaceId] = target
-                return true
-            } else {
-                guard store.regularListHitTargets[spaceId] != nil else { return false }
-                store.regularListHitTargets[spaceId] = nil
-                return true
-            }
+            Self.replacePresentedSpaceList(
+                nil,
+                spaceID: spaceID,
+                in: &store
+            )
         }
     }
 
-    func applyPinnedListHitTarget(
-        spaceId: UUID,
-        frame: CGRect?,
-        rowCount: Int,
-        splitPairingMemberIDsByRow: [[SplitMemberID]],
-        leadingInset: CGFloat,
-        generation: Int
-    ) {
-        let frame = frame.map { normalizedFrame($0, for: generation) }
-        mutateGeometryStore(for: generation) { store in
-            if let frame {
-                let target = SidebarPinnedListHitMetrics(
-                    frame: frame,
-                    rowCount: rowCount,
-                    splitPairingMemberIDsByRow:
-                        splitPairingMemberIDsByRow,
-                    leadingInset: leadingInset
-                )
-                guard store.pinnedListHitTargets[spaceId] != target else { return false }
-                store.pinnedListHitTargets[spaceId] = target
-                return true
+    private static func replacePresentedSpaceList(
+        _ layout: PresentedSidebarLayout?,
+        spaceID: UUID,
+        in store: inout SidebarRuntimeGeometryStore
+    ) -> Bool {
+        if let layout {
+            precondition(layout.spaceID == spaceID)
+            guard store.spaceListLayoutsBySpace[spaceID] != layout else {
+                return false
             }
-
-            guard store.pinnedListHitTargets[spaceId] != nil else { return false }
-            store.pinnedListHitTargets[spaceId] = nil
+            store.spaceListLayoutsBySpace[spaceID] = layout
             return true
         }
+
+        guard store.spaceListLayoutsBySpace[spaceID] != nil else {
+            return false
+        }
+        store.spaceListLayoutsBySpace[spaceID] = nil
+        return true
     }
 
     func applyEssentialsLayoutMetrics(_ update: SidebarEssentialsLayoutUpdate, generation: Int) {
@@ -465,15 +312,27 @@ final class SidebarDragGeometryRepository {
             update.input = input
         }
         mutateGeometryStore(for: generation) { store in
+            let sectionKey = SidebarSectionGeometryKey(
+                spaceId: update.spaceId,
+                section: .essentials
+            )
             guard let input = update.input else {
-                guard store.essentialsLayoutMetricsBySpace[update.spaceId] != nil else { return false }
+                let hadMetrics =
+                    store.essentialsLayoutMetricsBySpace[update.spaceId] != nil
+                let hadSection = store.sectionFramesBySpace[sectionKey] != nil
+                guard hadMetrics || hadSection else { return false }
                 store.essentialsLayoutMetricsBySpace[update.spaceId] = nil
+                store.sectionFramesBySpace[sectionKey] = nil
                 return true
             }
 
             let metrics = makeEssentialsLayoutMetrics(input)
-            guard store.essentialsLayoutMetricsBySpace[update.spaceId] != metrics else { return false }
+            guard store.essentialsLayoutMetricsBySpace[update.spaceId]
+                    != metrics
+                    || store.sectionFramesBySpace[sectionKey] != input.frame
+            else { return false }
             store.essentialsLayoutMetricsBySpace[update.spaceId] = metrics
+            store.sectionFramesBySpace[sectionKey] = input.frame
             return true
         }
     }
@@ -640,9 +499,7 @@ final class SidebarDragGeometryRepository {
 
     private func rebuildIndices(in store: inout SidebarRuntimeGeometryStore) {
         store.hitTestIndex = SidebarGeometryHitTestIndex(
-            topLevelPinnedItemTargets: store.topLevelPinnedItemTargets,
-            folderDropTargets: store.folderDropTargets,
-            folderChildDropTargets: store.folderChildDropTargets
+            spaceListLayoutsBySpace: store.spaceListLayoutsBySpace
         )
     }
 
@@ -701,15 +558,34 @@ final class SidebarDragGeometryRepository {
     }
 
     private static func snapshot(from store: SidebarRuntimeGeometryStore) -> SidebarGeometrySnapshot {
-        SidebarGeometrySnapshot(
+        var sectionFrames = store.sectionFramesBySpace
+        var folderTargets: [UUID: SidebarFolderDropTargetMetrics] = [:]
+        var pinnedTargets: [UUID: SidebarPinnedListHitMetrics] = [:]
+        var regularTargets: [UUID: SidebarRegularListHitMetrics] = [:]
+
+        for (spaceID, layout) in store.spaceListLayoutsBySpace {
+            for (section, frame) in layout.sectionFrames {
+                sectionFrames[
+                    SidebarSectionGeometryKey(
+                        spaceId: spaceID,
+                        section: section
+                    )
+                ] = frame
+            }
+            folderTargets.merge(layout.folderDropTargets) { _, new in new }
+            pinnedTargets[spaceID] = layout.pinnedListHitTarget
+            regularTargets[spaceID] = layout.regularListHitTarget
+        }
+
+        return SidebarGeometrySnapshot(
             cumulativeScrollDeltaY: store.cumulativeScrollDeltaY,
             structuralRevision: store.structuralRevision,
             scrollRevision: store.scrollRevision,
             pageGeometryByKey: store.pageGeometryByKey,
-            sectionFramesBySpace: store.sectionFramesBySpace,
-            folderDropTargets: store.folderDropTargets,
-            pinnedListHitTargets: store.pinnedListHitTargets,
-            regularListHitTargets: store.regularListHitTargets,
+            sectionFramesBySpace: sectionFrames,
+            folderDropTargets: folderTargets,
+            pinnedListHitTargets: pinnedTargets,
+            regularListHitTargets: regularTargets,
             essentialsLayoutMetricsBySpace: store.essentialsLayoutMetricsBySpace,
             hitTestIndex: store.hitTestIndex
         )

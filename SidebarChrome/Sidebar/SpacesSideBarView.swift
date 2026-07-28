@@ -213,6 +213,7 @@ struct SpacesSideBarView: View {
                         )
                     }
                     .eraseToAnyPublisher(),
+                    areEquivalent: ==,
                     isActive: allowsSidebarInteractiveWork
                 ) { spaces in
                     sidebarInventoryContent(spaces: spaces)

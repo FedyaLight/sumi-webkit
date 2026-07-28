@@ -2,33 +2,12 @@ import CoreGraphics
 import Foundation
 import SumiDomain
 
-enum SidebarFolderDragRegion: Hashable {
-    case header
-    case body
-    case after
-}
-
 struct SidebarTopLevelPinnedItemMetrics: Equatable {
     let itemId: UUID
     var spaceId: UUID
     var topLevelIndex: Int
     var frame: CGRect
     var splitPairingMemberIDs: [SplitMemberID] = []
-}
-
-struct SidebarTopLevelPinnedItemTargetUpdate: Equatable {
-    let itemId: UUID
-    var metrics: SidebarTopLevelPinnedItemMetrics?
-
-    init(metrics: SidebarTopLevelPinnedItemMetrics) {
-        itemId = metrics.itemId
-        self.metrics = metrics
-    }
-
-    init(itemId: UUID) {
-        self.itemId = itemId
-        metrics = nil
-    }
 }
 
 struct SidebarFolderDropTargetMetrics: Equatable {
@@ -43,52 +22,13 @@ struct SidebarFolderDropTargetMetrics: Equatable {
     var afterFrame: CGRect?
 }
 
-struct SidebarFolderDropTargetUpdate: Equatable {
-    let folderId: UUID
-    var region: SidebarFolderDragRegion
-    var metrics: SidebarFolderDropTargetMetrics?
-    var frame: CGRect?
-
-    init(
-        metrics: SidebarFolderDropTargetMetrics,
-        region: SidebarFolderDragRegion,
-        frame: CGRect
-    ) {
-        folderId = metrics.folderId
-        self.region = region
-        self.metrics = metrics
-        self.frame = frame
-    }
-
-    init(folderId: UUID, region: SidebarFolderDragRegion) {
-        self.folderId = folderId
-        self.region = region
-        metrics = nil
-        frame = nil
-    }
-}
-
 struct SidebarFolderChildDropTargetMetrics: Equatable {
     let childId: UUID
+    var spaceId: UUID
     var folderId: UUID
     var index: Int
     var frame: CGRect
     var splitPairingMemberIDs: [SplitMemberID] = []
-}
-
-struct SidebarFolderChildDropTargetUpdate: Equatable {
-    let childId: UUID
-    var metrics: SidebarFolderChildDropTargetMetrics?
-
-    init(metrics: SidebarFolderChildDropTargetMetrics) {
-        childId = metrics.childId
-        self.metrics = metrics
-    }
-
-    init(childId: UUID) {
-        self.childId = childId
-        metrics = nil
-    }
 }
 
 private enum SidebarUniformRowDropGeometry {
@@ -129,6 +69,10 @@ struct SidebarRegularListHitMetrics: Equatable {
     let frame: CGRect
     let rowIdentities: [SidebarVisualSceneProjection.RegularRow.Identity]
     let splitPairingMemberIDsByRow: [[SplitMemberID]]
+    /// Present only while the rendered track is not uniform (for example,
+    /// during insertion, removal, or an interrupted transition). The stable
+    /// common path keeps using fixed-pitch arithmetic without a frame array.
+    private let presentedRowFrames: [CGRect]?
 
     /// Number of rendered rows. A split group is one row regardless of its
     /// member count.
@@ -137,23 +81,52 @@ struct SidebarRegularListHitMetrics: Equatable {
     init(
         frame: CGRect,
         rowIdentities: [SidebarVisualSceneProjection.RegularRow.Identity],
-        splitPairingMemberIDsByRow: [[SplitMemberID]] = []
+        splitPairingMemberIDsByRow: [[SplitMemberID]] = [],
+        presentedRowFrames: [CGRect]? = nil
     ) {
+        precondition(
+            presentedRowFrames == nil
+                || presentedRowFrames?.count == rowIdentities.count
+        )
         self.frame = frame
         self.rowIdentities = rowIdentities
         self.splitPairingMemberIDsByRow = splitPairingMemberIDsByRow
+        self.presentedRowFrames = presentedRowFrames
     }
 
     /// Nearest visual row boundary for a Y offset inside the list frame.
     func rowBoundaryIndex(forLocalY localY: CGFloat) -> Int {
-        SidebarUniformRowDropGeometry.boundaryIndex(
+        if let presentedRowFrames {
+            let globalY = frame.minY + localY
+            for (index, rowFrame) in presentedRowFrames.enumerated() {
+                if globalY < rowFrame.midY {
+                    return index
+                }
+                if globalY <= rowFrame.maxY {
+                    return index + 1
+                }
+            }
+            return rowCount
+        }
+        return SidebarUniformRowDropGeometry.boundaryIndex(
             localY: localY,
             rowCount: rowCount
         )
     }
 
     func boundaryY(for slot: Int) -> CGFloat {
-        SidebarUniformRowDropGeometry.boundaryY(
+        if let presentedRowFrames,
+           let first = presentedRowFrames.first,
+           let last = presentedRowFrames.last {
+            let safeSlot = max(0, min(slot, presentedRowFrames.count))
+            if safeSlot == 0 { return first.minY }
+            if safeSlot == presentedRowFrames.count { return last.maxY }
+            return (
+                presentedRowFrames[safeSlot - 1].maxY
+                    + presentedRowFrames[safeSlot].minY
+            ) / 2
+        }
+        return SidebarUniformRowDropGeometry.boundaryY(
             minY: frame.minY,
             maxY: frame.maxY,
             slot: slot,
@@ -173,6 +146,9 @@ struct SidebarRegularListHitMetrics: Equatable {
 
     func rowFrame(at index: Int) -> CGRect? {
         guard rowIdentities.indices.contains(index) else { return nil }
+        if let presentedRowFrames {
+            return presentedRowFrames[index]
+        }
         return CGRect(
             x: frame.minX,
             y: frame.minY + CGFloat(index) * SidebarRowLayout.rowPitch,
@@ -183,6 +159,11 @@ struct SidebarRegularListHitMetrics: Equatable {
 
     func rowIndex(containing location: CGPoint) -> Int? {
         guard frame.contains(location) else { return nil }
+        if let presentedRowFrames {
+            return presentedRowFrames.firstIndex {
+                $0.contains(location)
+            }
+        }
         let index = Int(
             ((location.y - frame.minY) / SidebarRowLayout.rowPitch)
                 .rounded(.down)
@@ -434,6 +415,33 @@ struct SidebarGeometryHitTestIndex: Equatable {
         }
     }
 
+    init(spaceListLayoutsBySpace: [UUID: PresentedSidebarLayout]) {
+        topLevelPinnedItemsBySpace = spaceListLayoutsBySpace.mapValues {
+            $0.topLevelPinnedItemTargets.values.sorted {
+                if $0.topLevelIndex != $1.topLevelIndex {
+                    return $0.topLevelIndex < $1.topLevelIndex
+                }
+                return $0.itemId.uuidString < $1.itemId.uuidString
+            }
+        }
+        folderTargetsBySpace = spaceListLayoutsBySpace.mapValues {
+            Array($0.folderDropTargets.values)
+        }
+        folderChildrenByFolder = [:]
+        for layout in spaceListLayoutsBySpace.values {
+            for child in layout.folderChildDropTargets.values {
+                folderChildrenByFolder[child.folderId, default: []]
+                    .append(child)
+            }
+        }
+        for folderID in Array(folderChildrenByFolder.keys) {
+            folderChildrenByFolder[folderID]?.sort {
+                if $0.index != $1.index { return $0.index < $1.index }
+                return $0.childId.uuidString < $1.childId.uuidString
+            }
+        }
+    }
+
     private init(
         topLevelPinnedItemsBySpace: [UUID: [SidebarTopLevelPinnedItemMetrics]],
         folderTargetsBySpace: [UUID: [SidebarFolderDropTargetMetrics]],
@@ -450,25 +458,16 @@ struct SidebarRuntimeGeometryStore {
     var structuralRevision: UInt64 = 0
     var scrollRevision: UInt64 = 0
     var pageGeometryByKey: [SidebarPageGeometryKey: SidebarPageGeometryMetrics] = [:]
+    var spaceListLayoutsBySpace: [UUID: PresentedSidebarLayout] = [:]
     var sectionFramesBySpace: [SidebarSectionGeometryKey: CGRect] = [:]
-    var topLevelPinnedItemTargets: [UUID: SidebarTopLevelPinnedItemMetrics] = [:]
-    var folderDropTargets: [UUID: SidebarFolderDropTargetMetrics] = [:]
-    var folderChildDropTargets: [UUID: SidebarFolderChildDropTargetMetrics] = [:]
-    var pinnedListHitTargets: [UUID: SidebarPinnedListHitMetrics] = [:]
-    var regularListHitTargets: [UUID: SidebarRegularListHitMetrics] = [:]
     var essentialsLayoutMetricsBySpace: [UUID: SidebarEssentialsLayoutMetrics] = [:]
     var hitTestIndex: SidebarGeometryHitTestIndex = .empty
 }
 
 enum SidebarDragGeometryMutationKey: Hashable {
-    case page(SidebarPageGeometryKey)
-    case section(SidebarSectionGeometryKey)
-    case folder(UUID, SidebarFolderDragRegion)
-    case topLevelPinnedItem(UUID)
-    case folderChild(UUID)
-    case pinnedList(UUID)
-    case regularList(UUID)
-    case essentials(UUID)
+    case presentedSpaceList(spaceID: UUID, generation: Int)
+    case page(SidebarPageGeometryKey, generation: Int)
+    case essentials(spaceID: UUID, generation: Int)
 }
 
 private struct SidebarDragGeometryMutation {

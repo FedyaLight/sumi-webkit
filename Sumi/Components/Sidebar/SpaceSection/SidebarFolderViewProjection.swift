@@ -4,7 +4,6 @@
 //
 
 import SumiDomain
-import SwiftUI
 
 enum SidebarFolderListItem: Hashable {
     case folder(UUID)
@@ -145,10 +144,16 @@ struct SidebarFolderViewProjection {
         liveFolderItems: [SumiLiveFolderItem],
         currentTab: Tab?,
         windowState: BrowserWindowState,
-        selectionSnapshot: SidebarWindowSelectionSnapshot
+        selectionSnapshot: SidebarWindowSelectionSnapshot,
+        includesCollapsedDescendants: Bool = true
     ) {
         let visualItems = inventory.folderItems(for: folder.id)
-        let descendantItems = inventory.descendantItems(for: folder.id)
+        // An expanded folder's descendants are separate scene elements and
+        // build their own direct projections. Only a collapsed folder needs
+        // the whole subtree to resolve sticky launchers.
+        let descendantItems = includesCollapsedDescendants
+            ? inventory.descendantItems(for: folder.id)
+            : []
         var shortcutHostedGroups = descendantItems.compactMap { item -> SplitGroup? in
             guard case .splitGroup(let groupID) = item else { return nil }
             return inventory.splitGroup(id: groupID)
@@ -285,54 +290,5 @@ struct SidebarFolderViewProjection {
                 return .splitGroup(id)
             }
         }
-    }
-}
-
-struct SidebarFolderViewProjectionReader<Content: View>: View {
-    let folder: TabFolder
-    let space: Space
-    let shortcutPins: [ShortcutPin]
-    let inventory: SidebarSpaceInventorySnapshot
-    let selection: SidebarWindowSelectionQuery
-    let liveFolderSnapshot: SidebarLiveFolderSnapshot
-    @ViewBuilder let content: (SidebarFolderViewProjection) -> Content
-
-    @Environment(BrowserWindowState.self) private var windowState
-    @Environment(\.sidebarWindowSelectionSnapshot) private var sidebarSelection
-
-    init(
-        folder: TabFolder,
-        space: Space,
-        shortcutPins: [ShortcutPin],
-        inventory: SidebarSpaceInventorySnapshot,
-        selection: SidebarWindowSelectionQuery,
-        liveFolderSnapshot: SidebarLiveFolderSnapshot,
-        @ViewBuilder content: @escaping (SidebarFolderViewProjection) -> Content
-    ) {
-        self.folder = folder
-        self.space = space
-        self.shortcutPins = shortcutPins
-        self.inventory = inventory
-        self.selection = selection
-        self.liveFolderSnapshot = liveFolderSnapshot
-        self.content = content
-    }
-
-    var body: some View {
-        let selectionSnapshot = sidebarSelection
-        content(
-            SidebarFolderViewProjection(
-                folder: folder,
-                space: space,
-                shortcutPins: shortcutPins,
-                inventory: inventory,
-                selection: selection,
-                liveFolderSource: liveFolderSnapshot.source,
-                liveFolderItems: liveFolderSnapshot.items,
-                currentTab: selection.currentTab(in: windowState),
-                windowState: windowState,
-                selectionSnapshot: selectionSnapshot
-            )
-        )
     }
 }

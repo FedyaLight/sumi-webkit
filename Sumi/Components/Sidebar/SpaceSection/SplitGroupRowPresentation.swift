@@ -107,7 +107,6 @@ struct SplitGroupSegmentedRow<Slot: Identifiable, Segment: View>: View {
                                 style: .continuous
                             )
                         )
-                        .clipped()
                         .overlay(alignment: .trailing) {
                             if material.drawsSeparators,
                                !isSlotDeparting,

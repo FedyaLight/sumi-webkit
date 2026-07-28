@@ -115,14 +115,6 @@ final class SpaceTabSectionBoundaryTests: XCTestCase {
         )
     }
 
-    func testRegularSectionEndsAtNewTabWithoutTrailingClearance() {
-        XCTAssertEqual(
-            SpaceRegularTabsTailLayout.trailingClearance,
-            0,
-            "New Tab must be the final content row in live and snapshot layouts."
-        )
-    }
-
     // MARK: - Fixtures
 
     private func makeSnapshot(

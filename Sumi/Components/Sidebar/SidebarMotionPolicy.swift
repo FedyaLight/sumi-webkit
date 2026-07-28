@@ -84,13 +84,6 @@ enum SidebarMotionPolicy {
         return .easeOut(duration: 0.10)
     }
 
-    /// Zen parity: the pinned/regular separator fades + collapses (~0.08s) as
-    /// the first regular tab arrives or the last one leaves.
-    static func pinnedSeparatorCollapseAnimation(for mode: Mode) -> Animation? {
-        guard mode != .reducedMotion else { return nil }
-        return .easeInOut(duration: 0.08)
-    }
-
     /// Shared duration for list/folder content reflow. Also gates when model
     /// mutations commit after a gap-collapse (see `SidebarDropMotion`).
     static let contentLayoutDuration: TimeInterval = 0.16
@@ -98,27 +91,6 @@ enum SidebarMotionPolicy {
     static func contentLayoutAnimation(for mode: Mode) -> Animation? {
         guard mode != .reducedMotion else { return nil }
         return .smooth(duration: contentLayoutDuration)
-    }
-
-    static func folderLayoutAnimation(for mode: Mode) -> Animation? {
-        guard mode != .reducedMotion else { return nil }
-        // `.smooth` fronts the motion instead of easing in, so toggles read as
-        // immediate at the same cost.
-        return .smooth(duration: contentLayoutDuration)
-    }
-
-    /// Preserve Zen's 120ms response while front-loading the visible movement.
-    static let disclosureDuration: TimeInterval = 0.12
-
-    static func disclosureAnimation(for mode: Mode) -> Animation? {
-        guard mode != .reducedMotion else { return nil }
-        return .timingCurve(
-            0.2,
-            0.0,
-            0.0,
-            1.0,
-            duration: disclosureDuration
-        )
     }
 
     static let selectedItemRevealDuration: TimeInterval = 0.25

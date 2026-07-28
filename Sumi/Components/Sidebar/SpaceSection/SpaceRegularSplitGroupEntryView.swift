@@ -43,7 +43,6 @@ struct SpaceRegularSplitGroupEntryView: View {
             group: group,
             items: items,
             spaceId: space.id,
-            isDropHighlighted: isDropHighlighted,
             isAppKitInteractionEnabled: isInteractive,
             faviconImageReader: browserContext.faviconImageReader,
             splitLayout: browserContext.splitLayout,
@@ -63,6 +62,7 @@ struct SpaceRegularSplitGroupEntryView: View {
             onActivateMember: activateMember,
             onMemberAction: closeMember
         )
+        .sidebarDropContainmentBackdrop(isVisible: isDropHighlighted)
         .zIndex(
             SidebarSelectionElevation.zIndex(
                 isElevated: SidebarSelectionElevation.splitGroupIsSelected(

@@ -362,6 +362,63 @@ final class RegularSplitSegmentResolverTests: XCTestCase {
         )
     }
 
+    func testThreeMemberDropHighlightFillsIndentedListLane() throws {
+        let browser = BrowserManager()
+        let context = browser.composeSidebarBrowserContext(
+            spaceLifecycle: browser.sidebarSpaceLifecycle
+        )
+        let windowState = BrowserWindowState()
+        let tabs = (0..<3).map { makeTab(name: "Tab \($0)") }
+        let group = try regularGroup(tabs)
+        let items = try zip(group.members, tabs).map { member, tab in
+            try XCTUnwrap(
+                SplitGroupSidebarItem.regular(member, tab: tab)
+            )
+        }
+        let row = SplitGroupSidebarRow(
+            group: group,
+            items: items,
+            spaceId: UUID(),
+            isAppKitInteractionEnabled: false,
+            faviconImageReader:
+                TabDependencyIsolationDefaults.faviconCapabilities.images,
+            splitLayout: context.splitLayout,
+            emptySplitCreation: context.emptySplitCreation,
+            groupEditor: context.splitGroupEditor,
+            contextMenuEntries: { _ in [] },
+            onActivateMember: { _ in }
+        )
+        .environment(windowState)
+        .environment(SidebarInteractionState())
+        .padding(.leading, 28)
+        .sidebarDropContainmentBackdrop(isVisible: true)
+        .frame(width: 280, height: SidebarRowLayout.rowHeight)
+
+        let image = try render(row, size: CGSize(
+            width: 280,
+            height: SidebarRowLayout.rowHeight
+        ))
+        let edgeColor = try XCTUnwrap(
+            image.colorAt(x: 1, y: image.pixelsHigh / 2)?
+                .usingColorSpace(.deviceRGB)
+        )
+        let cornerColor = try XCTUnwrap(
+            image.colorAt(x: 1, y: 1)?
+                .usingColorSpace(.deviceRGB)
+        )
+
+        XCTAssertGreaterThan(
+            edgeColor.alphaComponent,
+            0.01,
+            "The containment backdrop must fill the list lane behind folder indentation"
+        )
+        XCTAssertGreaterThan(
+            cornerColor.alphaComponent,
+            0.01,
+            "The containment backdrop must remain rectangular without rounded corners"
+        )
+    }
+
     func testSourceZonesMatchLauncherPlacement() {
         let space = makeSpace()
         let resolver = RegularSplitSegmentResolver(
@@ -483,5 +540,31 @@ final class RegularSplitSegmentResolverTests: XCTestCase {
             ),
             2
         )
+    }
+
+    private func render<Content: View>(
+        _ content: Content,
+        size: CGSize
+    ) throws -> NSBitmapImageRep {
+        let host = NSHostingView(rootView: content)
+        host.wantsLayer = true
+        host.frame = CGRect(origin: .zero, size: size)
+        let window = NSWindow(
+            contentRect: host.frame,
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.contentView = host
+        window.layoutIfNeeded()
+        host.layoutSubtreeIfNeeded()
+        host.displayIfNeeded()
+        let image = try XCTUnwrap(
+            host.bitmapImageRepForCachingDisplay(in: host.bounds)
+        )
+        host.cacheDisplay(in: host.bounds, to: image)
+        return image
     }
 }

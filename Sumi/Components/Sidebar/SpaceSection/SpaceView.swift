@@ -45,7 +45,7 @@ struct SpaceView: View {
     let regularTabLifecycleCommands: SidebarRegularTabLifecycleCommands
     let regularTabShortcutCommands: SidebarRegularTabShortcutCommands
     let regularTabPlacementCommands: SidebarRegularTabPlacementCommands
-    let pinnedDragPresentation: SidebarPinnedDragPresentation
+    let listDragPresentation: SidebarListDragPresentation
     let renderMode: SpaceViewRenderMode
     let allowsInteraction: Bool
     let restoredScrollViewport: SpaceSidebarSnapshotViewport?
@@ -90,23 +90,6 @@ struct SpaceView: View {
         renderMode.resolvesInteraction(allowsInteraction: allowsInteraction)
     }
 
-    private var pinnedSection: SpacePinnedSectionView {
-        SpacePinnedSectionView(
-            space: space,
-            inventory: inventory,
-            selection: selection,
-            pinProjection: pinProjection,
-            pinCommands: pinCommands,
-            pinExecution: pinExecution,
-            folderCommands: folderCommands,
-            spaceLifecycle: spaceLifecycle,
-            browserContext: browserContext,
-            dragPresentation: pinnedDragPresentation,
-            isInteractive: isInteractive,
-            onSetPinnedContentCollapsed: setPinnedContentCollapsed
-        )
-    }
-
     private var hasPinnedContent: Bool {
         !windowState.isIncognito && !inventory.topLevelItems.isEmpty
     }
@@ -123,23 +106,6 @@ struct SpaceView: View {
             selection: selection,
             selectionSnapshot: sidebarSelection,
             windowState: windowState
-        )
-    }
-
-    private var regularTabsSection: SpaceRegularTabsView {
-        SpaceRegularTabsView(
-            space: space,
-            selection: selection,
-            regularTabCatalog: regularTabCatalog,
-            regularTabTargets: regularTabTargets,
-            regularTabLifecycleCommands: regularTabLifecycleCommands,
-            regularTabShortcutCommands: regularTabShortcutCommands,
-            regularTabPlacementCommands: regularTabPlacementCommands,
-            browserContext: browserContext,
-            isInteractive: isInteractive,
-            innerWidth: innerWidth,
-            hasPinnedContent: hasPinnedContent,
-            isSidebarHovered: $isSidebarHovered
         )
     }
 
@@ -183,9 +149,30 @@ struct SpaceView: View {
                     onScrollViewportChange(space.id, viewport)
                 }
             ) {
-                SpaceSectionsView(
-                    pinnedSection: pinnedSection,
-                    regularTabsSection: regularTabsSection
+                SpaceSidebarListView(
+                    space: space,
+                    inventory: inventory,
+                    selection: selection,
+                    pinProjection: pinProjection,
+                    pinCommands: pinCommands,
+                    pinExecution: pinExecution,
+                    folderCommands: folderCommands,
+                    spaceLifecycle: spaceLifecycle,
+                    regularTabCatalog: regularTabCatalog,
+                    regularTabTargets: regularTabTargets,
+                    regularTabLifecycleCommands:
+                        regularTabLifecycleCommands,
+                    regularTabShortcutCommands:
+                        regularTabShortcutCommands,
+                    regularTabPlacementCommands:
+                        regularTabPlacementCommands,
+                    browserContext: browserContext,
+                listDragPresentation: listDragPresentation,
+                    isInteractive: isInteractive,
+                    innerWidth: innerWidth,
+                    onSetPinnedContentCollapsed:
+                        setPinnedContentCollapsed,
+                    isSidebarHovered: $isSidebarHovered
                 )
             }
         }

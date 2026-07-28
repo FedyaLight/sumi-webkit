@@ -673,9 +673,6 @@ private struct SpaceSnapshotRegularTabsSectionView: View {
             }
 
             contentColumn
-
-            Color.clear
-                .frame(height: SpaceRegularTabsTailLayout.trailingClearance)
         }
     }
 

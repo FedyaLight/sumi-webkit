@@ -13,10 +13,11 @@ final class SidebarInventoryDescendantItemsTests: XCTestCase {
     private let splitGroup = UUID()
 
     private func makeSnapshot(
+        spaceID: UUID = UUID(),
         folderItemsByFolderID: [UUID: [SidebarPinnedInventoryItem]]
     ) -> SidebarSpaceInventorySnapshot {
         SidebarSpaceInventorySnapshot(
-            spaceID: UUID(),
+            spaceID: spaceID,
             regularTabs: [],
             topLevelItems: [],
             topLevelFolders: [],
@@ -29,6 +30,36 @@ final class SidebarInventoryDescendantItemsTests: XCTestCase {
             pinsByID: [:],
             tabsByID: [:],
             splitGroupsByID: [:]
+        )
+    }
+
+    func testStructuralSnapshotEqualityRejectsOnlyChangedStructure() {
+        let spaceID = UUID()
+        let items: [UUID: [SidebarPinnedInventoryItem]] = [
+            rootFolder: [.shortcut(pinA)],
+        ]
+
+        XCTAssertEqual(
+            makeSnapshot(
+                spaceID: spaceID,
+                folderItemsByFolderID: items
+            ),
+            makeSnapshot(
+                spaceID: spaceID,
+                folderItemsByFolderID: items
+            )
+        )
+        XCTAssertNotEqual(
+            makeSnapshot(
+                spaceID: spaceID,
+                folderItemsByFolderID: items
+            ),
+            makeSnapshot(
+                spaceID: spaceID,
+                folderItemsByFolderID: [
+                    rootFolder: [.shortcut(pinB)],
+                ]
+            )
         )
     }
 

@@ -1,5 +1,21 @@
 import AppKit
 
+enum SidebarDropIndicatorMotion: Equatable {
+    case immediate
+    case slide
+
+    static func resolve(
+        wasHidden: Bool,
+        targetChanged: Bool,
+        prefersReducedMotion: Bool
+    ) -> Self {
+        guard !wasHidden, targetChanged, !prefersReducedMotion else {
+            return .immediate
+        }
+        return .slide
+    }
+}
+
 /// Owns the drop-indicator CALayers (2pt rounded bar + leading ring) inside the
 /// sidebar drag overlay. Zen parity: the line slides between slots with a short
 /// ease-out and plays haptic feedback when it lands on a new slot. Pure AppKit —
@@ -7,6 +23,7 @@ import AppKit
 @MainActor
 final class SidebarDropIndicatorPresenter {
     private typealias Metrics = SidebarDropIndicatorGeometry.Metrics
+    private static let slideAnimationKey = "sidebarDropIndicator.slide"
 
     var accentColor: NSColor = .controlAccentColor {
         didSet {
@@ -52,23 +69,20 @@ final class SidebarDropIndicatorPresenter {
         lastLineRect = lineRect
         lastPairingTarget = nil
 
-        let animatesSlide = !wasHidden && !prefersReducedMotion
+        let motion = SidebarDropIndicatorMotion.resolve(
+            wasHidden: wasHidden,
+            targetChanged: slotChanged,
+            prefersReducedMotion: prefersReducedMotion
+        )
 
         CATransaction.begin()
-        if animatesSlide {
-            CATransaction.setAnimationDuration(Metrics.slideDuration)
-            CATransaction.setAnimationTimingFunction(
-                CAMediaTimingFunction(name: .easeOut)
-            )
-        } else {
-            CATransaction.setDisableActions(true)
-        }
+        CATransaction.setDisableActions(true)
         pairingLayer?.isHidden = true
         line.isHidden = false
         ring.isHidden = false
-        line.frame = barFrame(for: lineRect)
-        ring.frame = ringFrame(for: lineRect)
         CATransaction.commit()
+        apply(frame: barFrame(for: lineRect), to: line, motion: motion)
+        apply(frame: ringFrame(for: lineRect), to: ring, motion: motion)
 
         if slotChanged, !wasHidden {
             NSHapticFeedbackManager.defaultPerformer.perform(
@@ -94,21 +108,20 @@ final class SidebarDropIndicatorPresenter {
         lastLineRect = nil
         lastPairingTarget = target
 
+        let motion = SidebarDropIndicatorMotion.resolve(
+            wasHidden: wasHidden,
+            targetChanged: targetChanged,
+            prefersReducedMotion: prefersReducedMotion
+        )
+
         CATransaction.begin()
-        if !wasHidden, !prefersReducedMotion {
-            CATransaction.setAnimationDuration(Metrics.slideDuration)
-            CATransaction.setAnimationTimingFunction(
-                CAMediaTimingFunction(name: .easeOut)
-            )
-        } else {
-            CATransaction.setDisableActions(true)
-        }
+        CATransaction.setDisableActions(true)
         lineLayer?.isHidden = true
         ringLayer?.isHidden = true
         layer.isHidden = false
-        layer.frame = rect
         applyPairingStyle()
         CATransaction.commit()
+        apply(frame: rect, to: layer, motion: motion)
 
         if targetChanged, !wasHidden {
             NSHapticFeedbackManager.defaultPerformer.perform(
@@ -124,6 +137,9 @@ final class SidebarDropIndicatorPresenter {
         lastPairingTarget = nil
         CATransaction.begin()
         CATransaction.setDisableActions(true)
+        lineLayer?.removeAnimation(forKey: Self.slideAnimationKey)
+        ringLayer?.removeAnimation(forKey: Self.slideAnimationKey)
+        pairingLayer?.removeAnimation(forKey: Self.slideAnimationKey)
         lineLayer?.isHidden = true
         ringLayer?.isHidden = true
         pairingLayer?.isHidden = true
@@ -186,6 +202,41 @@ final class SidebarDropIndicatorPresenter {
             SplitGroupSidebarVisualLayout.segmentCornerRadius
         pairingLayer?.borderWidth = 0
         pairingLayer?.backgroundColor = pairingPreviewColor.cgColor
+    }
+
+    private func apply(
+        frame: CGRect,
+        to layer: CALayer,
+        motion: SidebarDropIndicatorMotion
+    ) {
+        let source = layer.presentation() ?? layer
+        let oldPosition = source.position
+        let oldBounds = source.bounds
+
+        layer.removeAnimation(forKey: Self.slideAnimationKey)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.frame = frame
+        CATransaction.commit()
+
+        guard motion == .slide,
+              oldPosition != layer.position || oldBounds != layer.bounds else {
+            return
+        }
+
+        let position = CABasicAnimation(keyPath: "position")
+        position.fromValue = NSValue(point: oldPosition)
+        position.toValue = NSValue(point: layer.position)
+
+        let bounds = CABasicAnimation(keyPath: "bounds")
+        bounds.fromValue = NSValue(rect: oldBounds)
+        bounds.toValue = NSValue(rect: layer.bounds)
+
+        let animation = CAAnimationGroup()
+        animation.animations = [position, bounds]
+        animation.duration = Metrics.slideDuration
+        animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        layer.add(animation, forKey: Self.slideAnimationKey)
     }
 
     // MARK: - Frames (host-view coordinates, bottom-left origin)

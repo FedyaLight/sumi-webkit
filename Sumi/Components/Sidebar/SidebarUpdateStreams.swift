@@ -59,6 +59,7 @@ final class SidebarScopedSnapshotModel<Value>: ObservableObject {
     private let current: @MainActor () -> Value
     private let changes: AnyPublisher<Value, Never>
     private let delivery: SidebarScopedSnapshotDelivery
+    private let areEquivalent: ((Value, Value) -> Bool)?
     private var cancellable: AnyCancellable?
     private var activationGeneration: UInt64 = 0
     private var receivedChangeRevision: UInt64 = 0
@@ -66,11 +67,13 @@ final class SidebarScopedSnapshotModel<Value>: ObservableObject {
     init(
         current: @escaping @MainActor () -> Value,
         changes: AnyPublisher<Value, Never>,
-        delivery: SidebarScopedSnapshotDelivery = .deferredOnMainRunLoop
+        delivery: SidebarScopedSnapshotDelivery = .deferredOnMainRunLoop,
+        areEquivalent: ((Value, Value) -> Bool)? = nil
     ) {
         self.current = current
         self.changes = changes
         self.delivery = delivery
+        self.areEquivalent = areEquivalent
         snapshot = current()
     }
 
@@ -93,9 +96,9 @@ final class SidebarScopedSnapshotModel<Value>: ObservableObject {
                 .receive(on: RunLoop.main)
                 .sink { [weak self] snapshot in
                     guard self?.activationGeneration == generation else { return }
-                    self?.snapshot = snapshot
+                    self?.publishIfChanged(snapshot)
                 }
-            snapshot = current()
+            publishIfChanged(current())
         case .mainActorImmediate(let deferWhile):
             cancellable = changes
                 .sink { [weak self] snapshot in
@@ -108,7 +111,7 @@ final class SidebarScopedSnapshotModel<Value>: ObservableObject {
             let revisionBeforeRead = receivedChangeRevision
             let currentSnapshot = current()
             if receivedChangeRevision == revisionBeforeRead {
-                snapshot = currentSnapshot
+                publishIfChanged(currentSnapshot)
             }
         }
     }
@@ -123,7 +126,7 @@ final class SidebarScopedSnapshotModel<Value>: ObservableObject {
         let revision = receivedChangeRevision
 
         guard deferWhile() else {
-            snapshot = newSnapshot
+            publishIfChanged(newSnapshot)
             return
         }
 
@@ -135,8 +138,15 @@ final class SidebarScopedSnapshotModel<Value>: ObservableObject {
                   self.receivedChangeRevision == revision else {
                 return
             }
-            self.snapshot = newSnapshot
+            self.publishIfChanged(newSnapshot)
         }
+    }
+
+    private func publishIfChanged(_ newSnapshot: Value) {
+        if let areEquivalent, areEquivalent(snapshot, newSnapshot) {
+            return
+        }
+        snapshot = newSnapshot
     }
 
     isolated deinit {
@@ -156,6 +166,7 @@ struct SidebarScopedSnapshotReader<Value, Content: View>: View {
         current: @escaping @MainActor () -> Value,
         changes: AnyPublisher<Value, Never>,
         delivery: SidebarScopedSnapshotDelivery = .deferredOnMainRunLoop,
+        areEquivalent: ((Value, Value) -> Bool)? = nil,
         isActive: Bool,
         @ViewBuilder content: @escaping (Value) -> Content
     ) {
@@ -165,7 +176,8 @@ struct SidebarScopedSnapshotReader<Value, Content: View>: View {
             wrappedValue: SidebarScopedSnapshotModel(
                 current: current,
                 changes: changes,
-                delivery: delivery
+                delivery: delivery,
+                areEquivalent: areEquivalent
             )
         )
     }

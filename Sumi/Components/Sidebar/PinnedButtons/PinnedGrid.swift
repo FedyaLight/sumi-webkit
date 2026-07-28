@@ -90,6 +90,9 @@ struct PinnedGrid: View {
 
     var body: some View {
         let shouldReduceMotion = reduceMotion || sumiSettings.shouldReduceChromeMotion
+        let motionMode = SidebarMotionPolicy.currentMode(
+            reduceMotion: shouldReduceMotion
+        )
         let selectionSnapshot = sidebarSelection
 
         // Use profile-filtered essentials
@@ -176,21 +179,15 @@ struct PinnedGrid: View {
                 }
                 .contentShape(Rectangle())
                 .fixedSize(horizontal: false, vertical: true)
-                .animation(shouldAnimateContentLayout ? SidebarDropMotion.contentLayout : nil, value: visualItems.map(\.id))
-                .animation(shouldAnimateContentLayout ? SidebarDropMotion.contentLayout : nil, value: projectedLayout.visualColumnSignature)
-                .animation(shouldAnimateContentLayout ? SidebarDropMotion.contentLayout : nil, value: projectedLayout.projectedItemCount)
+                .animation(shouldAnimateContentLayout ? SidebarMotionPolicy.contentLayoutAnimation(for: motionMode) : nil, value: visualItems.map(\.id))
+                .animation(shouldAnimateContentLayout ? SidebarMotionPolicy.contentLayoutAnimation(for: motionMode) : nil, value: projectedLayout.visualColumnSignature)
+                .animation(shouldAnimateContentLayout ? SidebarMotionPolicy.contentLayoutAnimation(for: motionMode) : nil, value: projectedLayout.projectedItemCount)
                 .animation(shouldAnimateDropLayout ? .easeInOut(duration: 0.18) : nil, value: previewState?.expandedDropRowCount)
-                .animation(shouldAnimateDropLayout ? SidebarDropMotion.gap : nil, value: displayLayoutSignature)
+                .animation(shouldAnimateDropLayout ? SidebarMotionPolicy.dragGapAnimation(for: motionMode) : nil, value: displayLayoutSignature)
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .frame(minHeight: visualItems.isEmpty ? revealHeight : 0, alignment: .top)
-        .sidebarSectionGeometry(
-            for: .essentials,
-            spaceId: geometrySpaceId,
-            generation: dragGeometry.sidebarGeometryGeneration,
-            isEnabled: reportsGeometry
-        )
         .sidebarEssentialsLayoutGeometry(
             spaceId: geometrySpaceId,
             profileId: effectiveProfileId,
@@ -388,7 +385,13 @@ struct PinnedGrid: View {
             return
         }
 
-        withAnimation(SidebarDropMotion.contentLayout, update)
+        let mode = SidebarMotionPolicy.currentMode(
+            reduceMotion: reduceMotion || sumiSettings.shouldReduceChromeMotion
+        )
+        withAnimation(
+            SidebarMotionPolicy.contentLayoutAnimation(for: mode),
+            update
+        )
     }
 
     private var geometrySpaceId: UUID {

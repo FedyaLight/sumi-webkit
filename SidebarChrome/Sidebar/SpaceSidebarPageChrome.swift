@@ -6,12 +6,23 @@
 
 import SwiftUI
 
-struct SidebarPageInventorySnapshot {
+struct SidebarPageInventorySnapshot: Equatable {
     let space: SidebarSpaceInventorySnapshot
     let essentialPins: [ShortcutPin]
+
+    static func == (
+        lhs: SidebarPageInventorySnapshot,
+        rhs: SidebarPageInventorySnapshot
+    ) -> Bool {
+        lhs.space == rhs.space
+            && lhs.essentialPins.count == rhs.essentialPins.count
+            && zip(lhs.essentialPins, rhs.essentialPins).allSatisfy {
+                $0 === $1
+            }
+    }
 }
 
-private struct SidebarExtensionGridSnapshot {
+private struct SidebarExtensionGridSnapshot: Equatable {
     let enabledExtensions: [BrowserExtensionToolbarDisplayRecord]
     let slotCount: Int
 }
@@ -100,7 +111,7 @@ extension SpacesSideBarView {
             regularTabLifecycleCommands: regularTabLifecycleCommands,
             regularTabShortcutCommands: regularTabShortcutCommands,
             regularTabPlacementCommands: regularTabPlacementCommands,
-            pinnedDragPresentation: dragState.pinnedPresentation,
+            listDragPresentation: dragState.listPresentation,
             renderMode: renderMode,
             allowsInteraction: allowsInteraction,
             restoredScrollViewport: transitionCoordinator.scrollViewport(for: space.id),
@@ -133,6 +144,7 @@ extension SpacesSideBarView {
                 )
             },
             changes: profileUpdates.runtime,
+            areEquivalent: ==,
             isActive: allowsInteractiveWork
         ) { profileRuntime in
             observedSidebarPage(
@@ -192,6 +204,7 @@ extension SpacesSideBarView {
             delivery: .mainActorImmediate(
                 deferWhile: { dragState.isCompletingDrop }
             ),
+            areEquivalent: ==,
             isActive: allowsInteractiveWork
         ) { pageInventory in
             sidebarPageContent(
@@ -248,10 +261,6 @@ extension SpacesSideBarView {
                     allowsInteraction: pageRenderMode == .interactive && allowsSidebarInteractiveWork
                 )
             }
-            .animation(
-                allowsInteractiveWork ? .easeInOut(duration: 0.18) : nil,
-                value: dragState.hoveredSlot
-            )
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .sidebarPageGeometry(
                 spaceId: space.id,
@@ -279,6 +288,7 @@ extension SpacesSideBarView {
                 sidebarExtensionGridSnapshot(profileID: profileId)
             }
             .eraseToAnyPublisher(),
+            areEquivalent: ==,
             isActive: allowsInteractiveWork
         ) { snapshot in
             SpaceSidebarExtensionGridContent(

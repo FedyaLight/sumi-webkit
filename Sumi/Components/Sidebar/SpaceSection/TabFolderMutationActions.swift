@@ -6,7 +6,7 @@
 import SumiDomain
 import SwiftUI
 
-/// Folder open/delete/ungroup mutations that previously lived inline on `TabFolderView`.
+/// Folder open/delete/ungroup mutations used by flattened folder rows.
 @MainActor
 struct TabFolderMutationActions {
     let browserContext: SidebarBrowserContext

@@ -12,18 +12,6 @@ struct SidebarPassiveScrollIndicatorState: Equatable {
     let contentOffset: CGFloat
 }
 
-struct SpaceSectionsView<Pinned: View, Regular: View>: View {
-    let pinnedSection: Pinned
-    let regularTabsSection: Regular
-
-    var body: some View {
-        VStack(spacing: 0) {
-            pinnedSection
-            regularTabsSection
-        }
-    }
-}
-
 /// A layout-stable wrapper that isolates scroll offsets and boundary state to prevent invalidating the parent SpaceView.
 struct SpaceScrollChromeSurface<Content: View>: View {
     let isInteractive: Bool

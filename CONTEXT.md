@@ -106,6 +106,10 @@ _Avoid_: Paired enter/exit truth, row-owned hover lifecycle, continuous mouse-mo
 The exact sidebar destination currently communicated by the visible drop gap. A completed drop commits that same destination even if rendering the gap changes surrounding geometry.
 _Avoid_: Recomputed drop target, approximate hover slot
 
+**Presented Sidebar Layout**:
+The current window-local geometry of Sidebar Visual Items as they are actually drawn, including transient positions during an animation. Rendering, hit testing, and the visible gap for Presented Drop Intent observe this same layout.
+_Avoid_: Target sidebar geometry, reconstructed drag frames
+
 **Drag Presentation**:
 The target-adaptive appearance of one Sidebar Visual Item while it is being moved. It preserves item identity while matching the row, folder, or Essentials surface of the current Presented Drop Intent.
 _Avoid_: Drag snapshot copy, generic ghost

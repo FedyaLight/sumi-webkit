@@ -298,23 +298,33 @@ final class SidebarDropProjectionTests: XCTestCase {
         let spaceId = UUID()
         var appliedValues: [Int] = []
 
-        buffer.enqueue(key: .regularList(spaceId)) { _ in
+        buffer.enqueue(
+            key: .presentedSpaceList(spaceID: spaceId, generation: 0)
+        ) { _ in
             appliedValues.append(1)
         }
-        buffer.enqueue(key: .regularList(spaceId)) { _ in
+        buffer.enqueue(
+            key: .presentedSpaceList(spaceID: spaceId, generation: 0)
+        ) { _ in
             appliedValues.append(2)
         }
         buffer.enqueue(
-            key: .section(SidebarSectionGeometryKey(spaceId: spaceId, section: .spacePinned))
+            key: .essentials(spaceID: spaceId, generation: 0)
         ) { _ in
             appliedValues.append(3)
+        }
+        buffer.enqueue(
+            key: .presentedSpaceList(spaceID: spaceId, generation: 1)
+        ) { _ in
+            appliedValues.append(4)
         }
 
         buffer.flush(into: repository)
 
-        XCTAssertEqual(appliedValues.count, 2)
+        XCTAssertEqual(appliedValues.count, 3)
         XCTAssertTrue(appliedValues.contains(2))
         XCTAssertTrue(appliedValues.contains(3))
+        XCTAssertTrue(appliedValues.contains(4))
         XCTAssertFalse(appliedValues.contains(1))
     }
 

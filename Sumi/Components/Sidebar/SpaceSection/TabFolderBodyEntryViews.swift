@@ -6,49 +6,6 @@
 import SumiDomain
 import SwiftUI
 
-/// One recursive child folder; the parent list owns only slot geometry.
-struct TabFolderNestedFolderEntryView: View {
-    let folder: TabFolder
-    let presentation: SidebarFolderPresentationCell
-    let browserContext: SidebarBrowserContext
-    let space: Space
-    let inventory: SidebarSpaceInventorySnapshot
-    let selection: SidebarWindowSelectionQuery
-    let pinProjection: SidebarPinFolderProjection
-    let pinCommands: SidebarPinCommands
-    let pinExecution: SidebarPinExecutionCommands
-    let folderCommands: SidebarFolderCommands
-    let spaceLifecycle: SidebarSpaceLifecycle
-    let elevatedFolderIDs: Set<UUID>
-    let isInteractive: Bool
-    let parentFolderID: UUID
-    let containerIndex: Int
-    let nestingDepth: Int
-    let dragSnapshot: SidebarFolderDragSnapshot
-
-    var body: some View {
-        TabFolderView(
-            folder: folder,
-            presentation: presentation,
-            browserContext: browserContext,
-            space: space,
-            inventory: inventory,
-            selection: selection,
-            pinProjection: pinProjection,
-            pinCommands: pinCommands,
-            pinExecution: pinExecution,
-            folderCommands: folderCommands,
-            spaceLifecycle: spaceLifecycle,
-            elevatedFolderIds: elevatedFolderIDs,
-            isInteractive: isInteractive,
-            parentFolderId: parentFolderID,
-            containerIndex: containerIndex,
-            nestingDepth: nestingDepth + 1,
-            dragSnapshot: dragSnapshot
-        )
-    }
-}
-
 /// One saved shortcut with presentation resolved before entering the leaf.
 struct TabFolderShortcutEntryView: View {
     let pin: ShortcutPin
@@ -121,7 +78,6 @@ struct TabFolderSplitGroupEntryView: View {
     let space: Space
     let browserContext: SidebarBrowserContext
     let isInteractive: Bool
-    var isDropHighlighted = false
 
     @Environment(BrowserWindowState.self) private var windowState
 
@@ -136,7 +92,6 @@ struct TabFolderSplitGroupEntryView: View {
                 groupEditor: browserContext.splitGroupEditor,
                 groupContextMenuActions: browserContext.splitGroupLifecycle
                     .contextMenuActions(for: group, in: windowState),
-                isDropHighlighted: isDropHighlighted,
                 isAppKitInteractionEnabled: isInteractive,
                 faviconImageReader: browserContext.faviconImageReader,
                 accessibilityID: "folder-shortcut-host-split-row-\(group.id.uuidString)",

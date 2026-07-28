@@ -142,6 +142,14 @@ enum FolderDropIntent: Equatable {
     case insertIntoFolder(folderId: UUID, index: Int)
 }
 
+enum SidebarDeferredDropTarget: Equatable {
+    case split(
+        memberID: SplitMemberID,
+        side: SplitDropSide,
+        residence: DropZoneSlot
+    )
+}
+
 struct SidebarDropResolution: Equatable {
     let slot: DropZoneSlot
     let folderIntent: FolderDropIntent
@@ -190,6 +198,17 @@ struct SidebarDropResolution: Equatable {
         folderIntent: .none,
         activeHoveredFolderId: nil
     )
+
+    var deferredTarget: SidebarDeferredDropTarget? {
+        if let splitPairingTarget {
+            return .split(
+                memberID: splitPairingTarget.memberID,
+                side: splitPairingTarget.side,
+                residence: slot
+            )
+        }
+        return nil
+    }
 }
 
 @MainActor
@@ -202,7 +221,8 @@ enum SidebarDropResolver {
         location: CGPoint,
         state: SidebarDragState,
         draggedItem: SumiDragItem?,
-        scope: SidebarDragScope? = nil
+        scope: SidebarDragScope? = nil,
+        allowsDeferredTargets: Bool = true
     ) -> SidebarDropResolution {
         let activeScope = scope ?? state.activeDragScope
         let hoveredPage = state.hoveredInteractivePage(
@@ -215,7 +235,8 @@ enum SidebarDropResolver {
             state: state,
             draggedItem: draggedItem,
             hoveredPage: hoveredPage,
-            scope: activeScope
+            scope: activeScope,
+            allowsDeferredTargets: allowsDeferredTargets
         ).anchored(in: state.geometry.geometrySnapshot)
     }
 
@@ -224,7 +245,8 @@ enum SidebarDropResolver {
         state: SidebarDragState,
         draggedItem: SumiDragItem?,
         hoveredPage: SidebarPageGeometryMetrics?,
-        scope: SidebarDragScope?
+        scope: SidebarDragScope?,
+        allowsDeferredTargets: Bool
     ) -> SidebarDropResolution {
         if let essentialsResolution = resolveEssentials(
             location: location,
@@ -236,7 +258,8 @@ enum SidebarDropResolver {
             return essentialsResolution
         }
 
-        if let pairingResolution = resolveSplitPairingTarget(
+        if allowsDeferredTargets,
+           let pairingResolution = resolveSplitPairingTarget(
             location: location,
             state: state,
             draggedItem: draggedItem,
@@ -318,12 +341,29 @@ enum SidebarDropResolver {
             draggedItem: draggedItem,
             scope: scope
         )
-        state.presentDropResolution(resolution)
+        let presentedResolution: SidebarDropResolution
+        if let deferredTarget = resolution.deferredTarget {
+            if state.admitsDeferredDropTarget(deferredTarget) {
+                presentedResolution = resolution
+            } else {
+                presentedResolution = resolve(
+                    location: location,
+                    state: state,
+                    draggedItem: draggedItem,
+                    scope: scope,
+                    allowsDeferredTargets: false
+                )
+            }
+        } else {
+            state.leaveDeferredDropTargets()
+            presentedResolution = resolution
+        }
+        state.presentDropResolution(presentedResolution)
         state.updateEssentialsPreviewState(
             at: location,
-            resolution: resolution.slot
+            resolution: presentedResolution.slot
         )
-        return resolution
+        return presentedResolution
     }
 
     private static func resolveSpacePinnedTarget(

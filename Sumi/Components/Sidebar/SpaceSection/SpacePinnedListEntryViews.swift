@@ -6,57 +6,6 @@
 import SumiDomain
 import SwiftUI
 
-/// Recursive folder entry plus the top-level drag geometry owned by its slot.
-struct SpacePinnedFolderEntryView: View {
-    let folder: TabFolder
-    let presentation: SidebarFolderPresentationCell
-    let space: Space
-    let inventory: SidebarSpaceInventorySnapshot
-    let selection: SidebarWindowSelectionQuery
-    let pinProjection: SidebarPinFolderProjection
-    let pinCommands: SidebarPinCommands
-    let pinExecution: SidebarPinExecutionCommands
-    let folderCommands: SidebarFolderCommands
-    let spaceLifecycle: SidebarSpaceLifecycle
-    let browserContext: SidebarBrowserContext
-    let elevatedFolderIDs: Set<UUID>
-    let topLevelIndex: Int
-    let geometryGeneration: Int
-    let dragSnapshot: SidebarFolderDragSnapshot
-    let isInteractive: Bool
-    let reportsDropGeometry: Bool
-
-    var body: some View {
-        TabFolderView(
-            folder: folder,
-            presentation: presentation,
-            browserContext: browserContext,
-            space: space,
-            inventory: inventory,
-            selection: selection,
-            pinProjection: pinProjection,
-            pinCommands: pinCommands,
-            pinExecution: pinExecution,
-            folderCommands: folderCommands,
-            spaceLifecycle: spaceLifecycle,
-            elevatedFolderIds: elevatedFolderIDs,
-            isInteractive: isInteractive,
-            parentFolderId: nil,
-            containerIndex: topLevelIndex,
-            nestingDepth: 0,
-            dragSnapshot: dragSnapshot
-        )
-        .sidebarTopLevelPinnedItemGeometry(
-            itemId: folder.id,
-            spaceId: space.id,
-            topLevelIndex: topLevelIndex,
-            generation: geometryGeneration,
-            isActive: isInteractive && reportsDropGeometry
-        )
-        .sidebarZenCompositeLifecycleTransition(isEnabled: isInteractive)
-    }
-}
-
 /// One top-level shortcut row with its already-resolved presentation values.
 struct SpacePinnedShortcutEntryView: View {
     let pin: ShortcutPin
@@ -67,9 +16,6 @@ struct SpacePinnedShortcutEntryView: View {
     let spaceID: UUID
     let isInteractive: Bool
     let opacity: Double
-    let topLevelIndex: Int
-    let geometryGeneration: Int
-    let reportsDropGeometry: Bool
     let projectedSplitTarget: SidebarSplitPairingTarget?
     let actionOwner: SpacePinnedActionOwner
 
@@ -92,15 +38,6 @@ struct SpacePinnedShortcutEntryView: View {
             onRemove: { actionOwner.removeShortcutPin(pin) }
         )
         .opacity(opacity)
-        .sidebarTopLevelPinnedItemGeometry(
-            itemId: pin.id,
-            spaceId: spaceID,
-            topLevelIndex: topLevelIndex,
-            splitPairingMemberIDs: [.shortcutPin(pin.id)],
-            generation: geometryGeneration,
-            isActive: isInteractive && reportsDropGeometry
-        )
-        .sidebarRowListItemTransition(isEnabled: isInteractive)
     }
 }
 
@@ -111,10 +48,7 @@ struct SpacePinnedSplitGroupEntryView: View {
     let space: Space
     let browserContext: SidebarBrowserContext
     let isInteractive: Bool
-    let topLevelIndex: Int
-    let geometryGeneration: Int
     let dragSnapshot: SidebarFolderDragSnapshot
-    let reportsDropGeometry: Bool
 
     @Environment(BrowserWindowState.self) private var windowState
 
@@ -129,10 +63,6 @@ struct SpacePinnedSplitGroupEntryView: View {
                 groupEditor: browserContext.splitGroupEditor,
                 groupContextMenuActions: browserContext.splitGroupLifecycle
                     .contextMenuActions(for: group, in: windowState),
-                isDropHighlighted:
-                    dragSnapshot.isExistingSplitGroupTargeted(
-                        memberIDs: group.memberIDs
-                    ),
                 isAppKitInteractionEnabled: isInteractive,
                 faviconImageReader: browserContext.faviconImageReader,
                 accessibilityID: "shortcut-host-split-row-\(group.id.uuidString)",
@@ -156,16 +86,11 @@ struct SpacePinnedSplitGroupEntryView: View {
                     )
                 }
             )
-            .sidebarTopLevelPinnedItemGeometry(
-                itemId: group.id,
-                spaceId: space.id,
-                topLevelIndex: topLevelIndex,
-                splitPairingMemberIDs: group.memberIDs,
-                generation: geometryGeneration,
-                isActive: isInteractive && reportsDropGeometry
+            .sidebarDropContainmentBackdrop(
+                isVisible: dragSnapshot.isExistingSplitGroupTargeted(
+                    memberIDs: group.memberIDs
+                )
             )
-            .sidebarRowListItemTransition(isEnabled: isInteractive)
         }
     }
-
 }

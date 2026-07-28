@@ -3,23 +3,23 @@ import Combine
 import SumiDomain
 import SwiftUI
 
-struct SidebarPinnedDragPresentationFrame: Equatable {
+struct SidebarListDragPresentationFrame: Equatable {
     var isDragging = false
     var isCompletingDrop = false
     var activeDragItemID: UUID?
     var activeHoveredFolderID: UUID?
     var folderDropIntent: FolderDropIntent = .none
-    var projectionHoveredSlot: DropZoneSlot = .empty
+    var hoveredPinnedSpaceID: UUID?
     var splitPairingTarget: SidebarSplitPairingTarget?
 }
 
-/// Atomic read model for the pinned section. The broader drag coordinator can
+/// Atomic read model for the flattened sidebar list. The broader drag coordinator can
 /// mutate several internal fields per command; rendering receives one frame.
 @MainActor
-final class SidebarPinnedDragPresentation: ObservableObject {
-    @Published private(set) var frame = SidebarPinnedDragPresentationFrame()
+final class SidebarListDragPresentation: ObservableObject {
+    @Published private(set) var frame = SidebarListDragPresentationFrame()
 
-    fileprivate func publish(_ frame: SidebarPinnedDragPresentationFrame) {
+    fileprivate func publish(_ frame: SidebarListDragPresentationFrame) {
         guard self.frame != frame else { return }
         self.frame = frame
     }
@@ -35,7 +35,7 @@ final class SidebarDragState: ObservableObject {
     /// drag state would re-render all of them on every hover-slot change.
     let activityState = SidebarDragActivityState()
     let geometry = SidebarDragGeometryModule()
-    let pinnedPresentation = SidebarPinnedDragPresentation()
+    let listPresentation = SidebarListDragPresentation()
 
     // Every setter below drops writes that don't change the value. The AppKit drag
     // pipeline re-resolves state on each pointer sample (and on periodic dragging
@@ -50,15 +50,15 @@ final class SidebarDragState: ObservableObject {
     @Published var previewModel: SidebarDragPreviewModel?
     @Published private var storedIsInternalDragSession = false
     @Published private var storedActiveDragScope: SidebarDragScope?
-    private var pinnedPresentationMutationDepth = 0
-    private var pinnedPresentationNeedsPublish = false
+    private var listPresentationMutationDepth = 0
+    private var listPresentationNeedsPublish = false
 
     var isDragging: Bool {
         get { storedIsDragging }
         set {
             guard storedIsDragging != newValue else { return }
             storedIsDragging = newValue
-            markPinnedPresentationChanged()
+            markListPresentationChanged()
             activityState.isDragging = newValue
             interactionState?.setDragActive(newValue, source: .visualItem)
             syncGeometryCollectionContext()
@@ -86,7 +86,7 @@ final class SidebarDragState: ObservableObject {
         set {
             guard storedActiveDragItemId != newValue else { return }
             storedActiveDragItemId = newValue
-            markPinnedPresentationChanged()
+            markListPresentationChanged()
         }
     }
 
@@ -131,6 +131,7 @@ final class SidebarDragState: ObservableObject {
         }
     }
     private let delayedActions: MainActorDelayedActionScheduler
+    private let dropTargetDwellGate: SidebarDropTargetDwellGate
     private let interactionState: SidebarInteractionState?
     private var dropCompletionGeneration = 0
     private var cancelPendingDropCompletionAction: MainActorDelayedActionScheduler.Cancellation?
@@ -147,16 +148,34 @@ final class SidebarDragState: ObservableObject {
         interactionState: SidebarInteractionState? = nil
     ) {
         self.delayedActions = delayedActions
+        dropTargetDwellGate = SidebarDropTargetDwellGate(
+            delayedActions: delayedActions
+        )
         self.interactionState = interactionState
     }
 
     isolated deinit {
         cancelPendingDropCompletionAction?()
+        dropTargetDwellGate.leaveDeferredTargets()
         interactionState?.setDragActive(false, source: .visualItem)
     }
 
     var shouldAnimateDropLayout: Bool {
         isDragging && !isCompletingDrop
+    }
+
+    var deferredDropTargetRevision: UInt64 {
+        dropTargetDwellGate.revision
+    }
+
+    func admitsDeferredDropTarget(
+        _ target: SidebarDeferredDropTarget
+    ) -> Bool {
+        dropTargetDwellGate.admits(target)
+    }
+
+    func leaveDeferredDropTargets() {
+        dropTargetDwellGate.leaveDeferredTargets()
     }
 
     var isCompletingDrop: Bool {
@@ -207,7 +226,7 @@ final class SidebarDragState: ObservableObject {
     func beginDropCommit(
         refreshingIfEmpty refresh: () -> SidebarDropResolution? = { nil }
     ) -> SidebarDropResolution? {
-        withPinnedPresentationMutation {
+        withListPresentationMutation {
             let resolution = hoveredSlot == .empty
                 ? refresh()
                 : presentedDropIntent.active
@@ -228,7 +247,7 @@ final class SidebarDragState: ObservableObject {
     }
 
     func resetInteractionState() {
-        withPinnedPresentationMutation {
+        withListPresentationMutation {
             isDragging = false
             clearHoverState()
             activeDragItemId = nil
@@ -303,7 +322,7 @@ final class SidebarDragState: ObservableObject {
         previewModel: SidebarDragPreviewModel? = nil,
         scope: SidebarDragScope? = nil
     ) {
-        withPinnedPresentationMutation {
+        withListPresentationMutation {
             let resolvedScope = scope ?? armedDragScope
             isDragging = true
             activeDragItemId = itemId
@@ -324,7 +343,7 @@ final class SidebarDragState: ObservableObject {
     }
 
     func beginExternalDragSession(itemId: UUID?) {
-        withPinnedPresentationMutation {
+        withListPresentationMutation {
             isDragging = true
             activeDragItemId = itemId
             previewDragLocation = nil
@@ -372,6 +391,7 @@ final class SidebarDragState: ObservableObject {
     }
 
     func clearHoverState() {
+        leaveDeferredDropTargets()
         var intent = presentedDropIntent
         intent.clearPresentation()
         setPresentedDropIntent(intent)
@@ -445,44 +465,98 @@ final class SidebarDragState: ObservableObject {
         _ intent: SidebarPresentedDropIntentState
     ) {
         presentedDropIntent = intent
-        markPinnedPresentationChanged()
+        markListPresentationChanged()
     }
 
-    private func withPinnedPresentationMutation<T>(
+    private func withListPresentationMutation<T>(
         _ update: () throws -> T
     ) rethrows -> T {
-        pinnedPresentationMutationDepth += 1
+        listPresentationMutationDepth += 1
         defer {
-            pinnedPresentationMutationDepth -= 1
-            if pinnedPresentationMutationDepth == 0,
-               pinnedPresentationNeedsPublish {
-                pinnedPresentationNeedsPublish = false
-                publishPinnedPresentation()
+            listPresentationMutationDepth -= 1
+            if listPresentationMutationDepth == 0,
+               listPresentationNeedsPublish {
+                listPresentationNeedsPublish = false
+                publishListPresentation()
             }
         }
         return try update()
     }
 
-    private func markPinnedPresentationChanged() {
-        guard pinnedPresentationMutationDepth > 0 else {
-            publishPinnedPresentation()
+    private func markListPresentationChanged() {
+        guard listPresentationMutationDepth > 0 else {
+            publishListPresentation()
             return
         }
-        pinnedPresentationNeedsPublish = true
+        listPresentationNeedsPublish = true
     }
 
-    private func publishPinnedPresentation() {
-        pinnedPresentation.publish(
-            SidebarPinnedDragPresentationFrame(
+    private func publishListPresentation() {
+        let hoveredPinnedSpaceID: UUID?
+        if case .spacePinned(let spaceID, _) = projectionHoveredSlot {
+            hoveredPinnedSpaceID = spaceID
+        } else {
+            hoveredPinnedSpaceID = nil
+        }
+        listPresentation.publish(
+            SidebarListDragPresentationFrame(
                 isDragging: isDragging,
                 isCompletingDrop: isCompletingDrop,
                 activeDragItemID: activeDragItemId,
                 activeHoveredFolderID: activeHoveredFolderId,
                 folderDropIntent: folderDropIntent,
-                projectionHoveredSlot: projectionHoveredSlot,
+                hoveredPinnedSpaceID: hoveredPinnedSpaceID,
                 splitPairingTarget: projectionSplitPairingTarget
             )
         )
+    }
+}
+
+@MainActor
+final class SidebarDropTargetDwellGate {
+    static let duration: TimeInterval = 0.16
+
+    private let delayedActions: MainActorDelayedActionScheduler
+    private var pendingTarget: SidebarDeferredDropTarget?
+    private var admittedTarget: SidebarDeferredDropTarget?
+    private var cancelPendingAdmission: MainActorDelayedActionScheduler.Cancellation?
+    private(set) var revision: UInt64 = 0
+
+    init(delayedActions: MainActorDelayedActionScheduler = .live) {
+        self.delayedActions = delayedActions
+    }
+
+    isolated deinit {
+        cancelPendingAdmission?()
+    }
+
+    func admits(_ target: SidebarDeferredDropTarget) -> Bool {
+        if admittedTarget == target {
+            return true
+        }
+        guard pendingTarget != target else { return false }
+
+        cancelPendingAdmission?()
+        admittedTarget = nil
+        pendingTarget = target
+        cancelPendingAdmission = delayedActions.schedule(
+            after: Self.duration
+        ) { [weak self] in
+            guard let self, self.pendingTarget == target else { return }
+            self.pendingTarget = nil
+            self.admittedTarget = target
+            self.cancelPendingAdmission = nil
+            self.revision &+= 1
+        }
+        return false
+    }
+
+    func leaveDeferredTargets() {
+        guard pendingTarget != nil || admittedTarget != nil else { return }
+        cancelPendingAdmission?()
+        cancelPendingAdmission = nil
+        pendingTarget = nil
+        admittedTarget = nil
     }
 }
 

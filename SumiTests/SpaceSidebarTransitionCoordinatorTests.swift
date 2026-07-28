@@ -762,30 +762,6 @@ private func applyIncompleteInteractiveGeometry(
         generation: generation
     )
     dragState.geometry.report(
-        .section(
-            spaceId: spaceId,
-            section: .essentials,
-            frame: CGRect(x: 0, y: 0, width: 300, height: 140)
-        ),
-        generation: generation
-    )
-    dragState.geometry.report(
-        .section(
-            spaceId: spaceId,
-            section: .spacePinned,
-            frame: CGRect(x: 0, y: 140, width: 300, height: 180)
-        ),
-        generation: generation
-    )
-    dragState.geometry.report(
-        .section(
-            spaceId: spaceId,
-            section: .spaceRegular,
-            frame: CGRect(x: 0, y: 320, width: 300, height: 260)
-        ),
-        generation: generation
-    )
-    dragState.geometry.report(
         .essentials(SidebarEssentialsLayoutUpdate(
             spaceId: spaceId,
             input: SidebarEssentialsLayoutMetricsInput(
@@ -833,19 +809,36 @@ private func applyRegularListGeometry(
     spaceId: UUID,
     generation: Int
 ) {
+    let regularFrame = CGRect(x: 0, y: 320, width: 300, height: 260)
     dragState.geometry.report(
-        .regularList(
-            spaceId: spaceId,
-            frame: CGRect(x: 0, y: 320, width: 300, height: 260),
-            rowIdentities: [
-                .tab(UUID(uuidString: "00000000-0000-0000-0000-000000000001")!),
-                .tab(UUID(uuidString: "00000000-0000-0000-0000-000000000002")!),
-                .tab(UUID(uuidString: "00000000-0000-0000-0000-000000000003")!),
-                .tab(UUID(uuidString: "00000000-0000-0000-0000-000000000004")!),
-                .tab(UUID(uuidString: "00000000-0000-0000-0000-000000000005")!),
-                .tab(UUID(uuidString: "00000000-0000-0000-0000-000000000006")!),
-            ],
-            splitPairingMemberIDsByRow: []
+        .presentedSpaceList(
+            PresentedSidebarLayout(
+                spaceID: spaceId,
+                sectionFrames: [
+                    .spacePinned: CGRect(
+                        x: 0,
+                        y: 140,
+                        width: 300,
+                        height: 180
+                    ),
+                    .spaceRegular: regularFrame,
+                ],
+                topLevelPinnedItemTargets: [:],
+                folderDropTargets: [:],
+                folderChildDropTargets: [:],
+                pinnedListHitTarget: nil,
+                regularListHitTarget: SidebarRegularListHitMetrics(
+                    frame: regularFrame,
+                    rowIdentities: [
+                        .tab(UUID(uuidString: "00000000-0000-0000-0000-000000000001")!),
+                        .tab(UUID(uuidString: "00000000-0000-0000-0000-000000000002")!),
+                        .tab(UUID(uuidString: "00000000-0000-0000-0000-000000000003")!),
+                        .tab(UUID(uuidString: "00000000-0000-0000-0000-000000000004")!),
+                        .tab(UUID(uuidString: "00000000-0000-0000-0000-000000000005")!),
+                        .tab(UUID(uuidString: "00000000-0000-0000-0000-000000000006")!),
+                    ]
+                )
+            )
         ),
         generation: generation
     )

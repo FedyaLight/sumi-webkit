@@ -10,14 +10,13 @@ struct SplitGroupSidebarRow: View {
     let group: SplitGroup
     let items: [SplitGroupSidebarItem]
     let spaceId: UUID
-    var isDropHighlighted = false
     let isAppKitInteractionEnabled: Bool
     let faviconImageReader: any BrowserFaviconImageReading
     let splitLayout: SplitLayoutService
     let emptySplitCreation: EmptySplitCreationWorkflow
     let groupEditor: SidebarSplitGroupEditorPresentationService
     var groupContextMenuActions: SplitGroupContextMenuActions = .empty
-    var groupAction: SplitGroupSidebarAction? = nil
+    var groupAction: SplitGroupSidebarAction?
     var memberAction: (SplitGroupSidebarItem) -> SplitGroupSidebarMemberAction? = { _ in nil }
     var dragSource: (SplitGroupSidebarItem) -> SidebarDragSourceConfiguration? = { _ in nil }
     let contextMenuEntries: (SplitGroupSidebarItem) -> [SidebarContextMenuEntry]
@@ -40,12 +39,6 @@ struct SplitGroupSidebarRow: View {
         .frame(height: SidebarRowLayout.rowHeight, alignment: .top)
         .padding(.horizontal, SplitGroupSidebarVisualLayout.outerRowInset)
         .frame(minWidth: 0, maxWidth: .infinity)
-        .background {
-            if isDropHighlighted {
-                Rectangle()
-                    .fill(tokens.sidebarRowHover)
-            }
-        }
         .sidebarRowSurface(
             background: rowBackground,
             cornerRadius: sumiSettings.resolvedCornerRadius(
@@ -134,13 +127,11 @@ struct SplitGroupSidebarRow: View {
             )
         }
         .animation(
-            shouldAnimateProjectedLayout
-                ? SidebarDropMotion.contentLayout : nil,
+            projectedLayoutAnimation,
             value: displayedItems.map(\.id)
         )
         .animation(
-            shouldAnimateProjectedLayout
-                ? SidebarDropMotion.contentLayout : nil,
+            projectedLayoutAnimation,
             value: departingItemIds.map(\.sidebarStableDescription).sorted()
         )
     }

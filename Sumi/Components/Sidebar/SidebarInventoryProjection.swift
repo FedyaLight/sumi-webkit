@@ -1,6 +1,35 @@
-import Foundation
 import Combine
+import Foundation
 import SumiDomain
+
+private func identical<Element: AnyObject>(
+    _ lhs: [Element],
+    _ rhs: [Element]
+) -> Bool {
+    lhs.count == rhs.count
+        && zip(lhs, rhs).allSatisfy { $0 === $1 }
+}
+
+private func identical<Key: Hashable, Value: AnyObject>(
+    _ lhs: [Key: Value],
+    _ rhs: [Key: Value]
+) -> Bool {
+    lhs.count == rhs.count
+        && lhs.allSatisfy { key, value in
+            rhs[key] === value
+        }
+}
+
+private func identical<Key: Hashable, Value: AnyObject>(
+    _ lhs: [Key: [Value]],
+    _ rhs: [Key: [Value]]
+) -> Bool {
+    lhs.count == rhs.count
+        && lhs.allSatisfy { key, value in
+            guard let other = rhs[key] else { return false }
+            return identical(value, other)
+        }
+}
 
 enum SidebarPinnedInventoryItem: Hashable {
     case folder(UUID)
@@ -20,7 +49,7 @@ enum SidebarPinnedInventoryItem: Hashable {
 /// Window-local live tabs and selection are intentionally absent. Consumers
 /// resolve those through `SidebarWindowSelectionQuery` so a snapshot from one
 /// window can never make another window look selected.
-struct SidebarSpaceInventorySnapshot {
+struct SidebarSpaceInventorySnapshot: Equatable {
     let spaceID: UUID
     let regularTabs: [Tab]
     let topLevelItems: [SidebarPinnedInventoryItem]
@@ -34,6 +63,28 @@ struct SidebarSpaceInventorySnapshot {
     let pinsByID: [UUID: ShortcutPin]
     let tabsByID: [UUID: Tab]
     let splitGroupsByID: [UUID: SplitGroup]
+
+    static func == (
+        lhs: SidebarSpaceInventorySnapshot,
+        rhs: SidebarSpaceInventorySnapshot
+    ) -> Bool {
+        lhs.spaceID == rhs.spaceID
+            && identical(lhs.regularTabs, rhs.regularTabs)
+            && lhs.topLevelItems == rhs.topLevelItems
+            && identical(lhs.topLevelFolders, rhs.topLevelFolders)
+            && identical(lhs.topLevelPins, rhs.topLevelPins)
+            && identical(lhs.childFoldersByParentID, rhs.childFoldersByParentID)
+            && identical(lhs.folderPinsByFolderID, rhs.folderPinsByFolderID)
+            && lhs.folderItemsByFolderID == rhs.folderItemsByFolderID
+            && identical(lhs.foldersByID, rhs.foldersByID)
+            && identical(
+                lhs.folderPresentationsByID,
+                rhs.folderPresentationsByID
+            )
+            && identical(lhs.pinsByID, rhs.pinsByID)
+            && identical(lhs.tabsByID, rhs.tabsByID)
+            && lhs.splitGroupsByID == rhs.splitGroupsByID
+    }
 
     var userVisibleTabCount: Int {
         regularTabs.count + topLevelPins.count

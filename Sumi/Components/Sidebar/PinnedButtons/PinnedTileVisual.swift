@@ -18,7 +18,7 @@ struct PinnedTileVisual: View {
     var accentSourceURL: URL?
     var accentSourcePartition: SumiFaviconPartition?
     var faviconImageReader: (any BrowserFaviconImageReading)?
-    var selectionBackdrop: Image? = nil
+    var selectionBackdrop: Image?
 
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
@@ -75,12 +75,6 @@ struct PinnedTileVisual: View {
                             )
                         }
                     }
-                    .clipShape(
-                        RoundedRectangle(
-                            cornerRadius: cornerRadius,
-                            style: .continuous
-                        )
-                    )
             }
 
             HStack {

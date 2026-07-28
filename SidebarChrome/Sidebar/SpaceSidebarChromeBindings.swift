@@ -125,6 +125,7 @@ struct SidebarSpaceCreationProfilesView: View {
         SidebarScopedSnapshotReader(
             current: currentProfiles,
             changes: profileUpdates.profiles,
+            areEquivalent: ==,
             isActive: isActive
         ) { profiles in
             SidebarSpaceCreationView(

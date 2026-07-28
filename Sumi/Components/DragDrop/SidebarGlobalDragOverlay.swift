@@ -72,6 +72,7 @@ class SidebarDragNSView: NSView {
         let scrollRevision: UInt64
         let structuralRevision: UInt64
         let pasteboardChangeCount: Int
+        let deferredTargetRevision: UInt64
     }
 
     var transactionPort: SidebarDragTransactionPort?
@@ -175,7 +176,8 @@ class SidebarDragNSView: NSView {
             location: sender.draggingLocation,
             scrollRevision: dragState.geometry.geometrySnapshot.scrollRevision,
             structuralRevision: dragState.geometry.geometrySnapshot.structuralRevision,
-            pasteboardChangeCount: sender.draggingPasteboard.changeCount
+            pasteboardChangeCount: sender.draggingPasteboard.changeCount,
+            deferredTargetRevision: dragState.deferredDropTargetRevision
         )
         if signature == lastUpdateSignature {
             return lastUpdateAccepted ? context.dragOperation : []

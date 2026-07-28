@@ -26,6 +26,7 @@ enum SidebarRowLayout {
     /// it from a measured frame, so the indicator/resolver can never drift from
     /// the rendered layout.
     static let rowPitch: CGFloat = rowHeight + rowGap
+    static let folderBodyPadding: CGFloat = 4
     static let trailingActionSize: CGFloat = 24
     static let trailingActionGap: CGFloat = 4
     static let trailingActionPadding: CGFloat = trailingActionSize + trailingActionGap
@@ -130,17 +131,12 @@ private struct SidebarRowSurfaceModifier: ViewModifier {
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         let drawsShadow = isVisible && drawsSelectionShadow
+        let bleed = drawsShadow ? SidebarRowLayout.selectionShadowBleed : 0
 
-        let surface = rowSurface(content: content, shape: shape, drawsShadow: drawsShadow)
-
-        if drawsShadow {
-            surface
-                .padding(SidebarRowLayout.selectionShadowBleed)
-                .padding(-SidebarRowLayout.selectionShadowBleed)
-                .zIndex(SidebarRowLayout.selectionZIndex)
-        } else {
-            surface
-        }
+        rowSurface(content: content, shape: shape, drawsShadow: drawsShadow)
+            .padding(bleed)
+            .padding(-bleed)
+            .zIndex(drawsShadow ? SidebarRowLayout.selectionZIndex : 0)
     }
 
     private func rowSurface(
@@ -150,19 +146,41 @@ private struct SidebarRowSurfaceModifier: ViewModifier {
     ) -> some View {
         content
             .background {
-                if isVisible {
-                    shape
-                        .fill(background)
-                        .shadow(
-                            color: drawsShadow ? tokens.sidebarSelectionShadow : .clear,
-                            radius: SidebarRowLayout.selectionShadowRadius,
-                            x: 0,
-                            y: SidebarRowLayout.selectionShadowYOffset
-                        )
-                        .allowsHitTesting(false)
-                }
+                shape
+                    .fill(background)
+                    .opacity(isVisible ? 1 : 0)
+                    .shadow(
+                        color: drawsShadow ? tokens.sidebarSelectionShadow : .clear,
+                        radius: SidebarRowLayout.selectionShadowRadius,
+                        x: 0,
+                        y: SidebarRowLayout.selectionShadowYOffset
+                    )
+                    .allowsHitTesting(false)
             }
             .contentShape(shape)
+    }
+}
+
+private struct SidebarDropContainmentBackdropModifier: ViewModifier {
+    let isVisible: Bool
+
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
+
+    private var color: Color {
+        (scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings))
+            .sidebarRowHover
+    }
+
+    func body(content: Content) -> some View {
+        content.background {
+            if isVisible {
+                Rectangle()
+                    .fill(color)
+                    .allowsHitTesting(false)
+            }
+        }
     }
 }
 
@@ -182,6 +200,12 @@ extension View {
                 isVisible: isVisible,
                 drawsSelectionShadow: drawsSelectionShadow
             )
+        )
+    }
+
+    func sidebarDropContainmentBackdrop(isVisible: Bool) -> some View {
+        modifier(
+            SidebarDropContainmentBackdropModifier(isVisible: isVisible)
         )
     }
 }

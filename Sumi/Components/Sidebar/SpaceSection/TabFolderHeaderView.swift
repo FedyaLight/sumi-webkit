@@ -16,15 +16,11 @@ struct TabFolderHeaderView: View {
     let selection: SidebarWindowSelectionQuery
     let pinProjection: SidebarPinFolderProjection
     let parentFolderId: UUID?
-    let topLevelIndex: Int
     let contentProjection: SidebarFolderContentProjection
-    let projection: SidebarFolderViewProjection
     let isInteractive: Bool
-    let isDropHighlighted: Bool
     let folderPreviewIsOpen: Bool
     let hasActiveSelection: Bool
     let hasActiveProjection: Bool
-    let geometryGeneration: Int
     let isDragging: Bool
     let contextMenuEntries: () -> [SidebarContextMenuEntry]
     let onToggle: () -> Void
@@ -81,20 +77,8 @@ struct TabFolderHeaderView: View {
             title: presentation.title,
             glyphPresentation: folderGlyphPresentation,
             glyphPalette: folderShellPalette,
-            isDropHighlighted: isDropHighlighted,
             isInteractive: isInteractive,
             onResetProjection: onResetProjection
-        )
-        .sidebarFolderDropGeometry(
-            folderId: folder.id,
-            spaceId: space.id,
-            parentFolderId: parentFolderId,
-            topLevelIndex: topLevelIndex,
-            childCount: contentProjection.childCount,
-            isOpen: presentation.isExpanded,
-            region: .header,
-            generation: geometryGeneration,
-            isActive: isInteractive && !projection.isLiveFolder
         )
         .sidebarAppKitContextMenu(
             isEnabled: true,

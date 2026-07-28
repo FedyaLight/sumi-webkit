@@ -14,6 +14,95 @@ final class SidebarDropIndicatorGeometryTests: XCTestCase {
     private let inset = SidebarDropIndicatorGeometry.Metrics.horizontalInset
     private let lineHeight = SidebarDropIndicatorGeometry.Metrics.lineHeight
 
+    func testIndicatorSlidesOnlyWhenVisibleTargetIdentityChanges() {
+        XCTAssertEqual(
+            SidebarDropIndicatorMotion.resolve(
+                wasHidden: true,
+                targetChanged: true,
+                prefersReducedMotion: false
+            ),
+            .immediate
+        )
+        XCTAssertEqual(
+            SidebarDropIndicatorMotion.resolve(
+                wasHidden: false,
+                targetChanged: true,
+                prefersReducedMotion: false
+            ),
+            .slide
+        )
+        XCTAssertEqual(
+            SidebarDropIndicatorMotion.resolve(
+                wasHidden: false,
+                targetChanged: false,
+                prefersReducedMotion: false
+            ),
+            .immediate,
+            "Geometry updates for one slot must not restart its slide"
+        )
+        XCTAssertEqual(
+            SidebarDropIndicatorMotion.resolve(
+                wasHidden: false,
+                targetChanged: true,
+                prefersReducedMotion: true
+            ),
+            .immediate
+        )
+    }
+
+    func testFolderContainmentDoesNotRequireDwell() {
+        let folderID = UUID()
+        let resolution = SidebarDropResolution(
+            slot: .folder(folderId: folderID, slot: 0),
+            folderIntent: .contain(folderId: folderID),
+            activeHoveredFolderId: folderID
+        )
+
+        XCTAssertNil(resolution.deferredTarget)
+    }
+
+    @MainActor
+    func testPresenterInstallsOneShortLayerAnimationAndDoesNotRetargetItForSameSlot() throws {
+        let host = CALayer()
+        let presenter = SidebarDropIndicatorPresenter()
+        let spaceID = UUID()
+        let firstRect = CGRect(x: 8, y: 10, width: 180, height: 2)
+
+        presenter.attach(to: host)
+        presenter.update(
+            lineRect: firstRect,
+            slotKey: .spaceRegular(spaceId: spaceID, slot: 0)
+        )
+
+        let layers = try XCTUnwrap(host.sublayers)
+        XCTAssertEqual(layers.count, 2)
+        XCTAssertTrue(layers.allSatisfy { $0.animationKeys()?.isEmpty != false })
+
+        presenter.update(
+            lineRect: firstRect.offsetBy(dx: 0, dy: 36),
+            slotKey: .spaceRegular(spaceId: spaceID, slot: 1)
+        )
+
+        for layer in layers {
+            let animation = try XCTUnwrap(
+                layer.animation(forKey: "sidebarDropIndicator.slide")
+                    as? CAAnimationGroup
+            )
+            XCTAssertEqual(
+                animation.duration,
+                SidebarDropIndicatorGeometry.Metrics.slideDuration,
+                accuracy: 0.001
+            )
+        }
+
+        presenter.update(
+            lineRect: firstRect.offsetBy(dx: 0, dy: 38),
+            slotKey: .spaceRegular(spaceId: spaceID, slot: 1)
+        )
+
+        XCTAssertTrue(layers.allSatisfy { $0.animationKeys()?.isEmpty != false })
+    }
+
     func testSplitPairingProjectsEmptyPillOnHoveredSide() throws {
         let sourceID = UUID()
         let targetID = SplitMemberID.regularTab(UUID())
@@ -857,6 +946,7 @@ final class SidebarDropIndicatorGeometryTests: XCTestCase {
                     childId,
                     SidebarFolderChildDropTargetMetrics(
                         childId: childId,
+                        spaceId: spaceId,
                         folderId: folderId,
                         index: index,
                         frame: frame

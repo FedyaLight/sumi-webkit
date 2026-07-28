@@ -4,28 +4,13 @@ import Foundation
 import SumiDomain
 
 enum SidebarDragGeometryFact {
+    case presentedSpaceList(PresentedSidebarLayout)
+    case removePresentedSpaceList(spaceID: UUID)
     case page(
         spaceId: UUID,
         profileId: UUID?,
         frame: CGRect?,
         renderMode: SidebarPageGeometryRenderMode
-    )
-    case section(spaceId: UUID, section: SidebarSectionPrefix, frame: CGRect?)
-    case folder(SidebarFolderDropTargetUpdate)
-    case topLevelPinnedItem(SidebarTopLevelPinnedItemTargetUpdate)
-    case folderChild(SidebarFolderChildDropTargetUpdate)
-    case pinnedList(
-        spaceId: UUID,
-        frame: CGRect?,
-        rowCount: Int,
-        splitPairingMemberIDsByRow: [[SplitMemberID]],
-        leadingInset: CGFloat
-    )
-    case regularList(
-        spaceId: UUID,
-        frame: CGRect?,
-        rowIdentities: [SidebarVisualSceneProjection.RegularRow.Identity],
-        splitPairingMemberIDsByRow: [[SplitMemberID]]
     )
     case essentials(SidebarEssentialsLayoutUpdate)
 }
@@ -130,53 +115,22 @@ final class SidebarDragGeometryModule: ObservableObject {
 
     func report(_ fact: SidebarDragGeometryFact, generation: Int) {
         switch fact {
+        case .presentedSpaceList(let layout):
+            repository.schedulePresentedSpaceList(
+                layout,
+                generation: generation
+            )
+        case .removePresentedSpaceList(let spaceID):
+            repository.schedulePresentedSpaceListRemoval(
+                spaceID: spaceID,
+                generation: generation
+            )
         case .page(let spaceId, let profileId, let frame, let renderMode):
             repository.schedulePageGeometry(
                 spaceId: spaceId,
                 profileId: profileId,
                 frame: frame,
                 renderMode: renderMode,
-                generation: generation
-            )
-        case .section(let spaceId, let section, let frame):
-            repository.scheduleSectionFrame(
-                spaceId: spaceId,
-                section: section,
-                frame: frame,
-                generation: generation
-            )
-        case .folder(let update):
-            repository.scheduleFolderDropTarget(update, generation: generation)
-        case .topLevelPinnedItem(let update):
-            repository.scheduleTopLevelPinnedItemTarget(update, generation: generation)
-        case .folderChild(let update):
-            repository.scheduleFolderChildDropTarget(update, generation: generation)
-        case .pinnedList(
-            let spaceId,
-            let frame,
-            let rowCount,
-            let splitPairingMemberIDsByRow,
-            let leadingInset
-        ):
-            repository.schedulePinnedListHitTarget(
-                spaceId: spaceId,
-                frame: frame,
-                rowCount: rowCount,
-                splitPairingMemberIDsByRow: splitPairingMemberIDsByRow,
-                leadingInset: leadingInset,
-                generation: generation
-            )
-        case .regularList(
-            let spaceId,
-            let frame,
-            let rowIdentities,
-            let splitPairingMemberIDsByRow
-        ):
-            repository.scheduleRegularListHitTarget(
-                spaceId: spaceId,
-                frame: frame,
-                rowIdentities: rowIdentities,
-                splitPairingMemberIDsByRow: splitPairingMemberIDsByRow,
                 generation: generation
             )
         case .essentials(let update):

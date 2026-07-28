@@ -9,9 +9,7 @@ struct TabFolderHeaderRow: View {
     let title: String
     let glyphPresentation: SumiFolderGlyphPresentationState
     let glyphPalette: SumiFolderGlyphPalette
-    let isDropHighlighted: Bool
     let isInteractive: Bool
-    var dropHighlightHorizontalBleed: CGFloat = 8
     /// Zen parity: collapsed folders with sticky rows offer an unload/reset
     /// affordance on hover. Nil hides the affordance entirely.
     var onResetProjection: (() -> Void)?
@@ -44,15 +42,7 @@ struct TabFolderHeaderRow: View {
         .padding(.trailing, SidebarRowLayout.trailingInset)
         .frame(height: SidebarRowLayout.rowHeight)
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
         .geometryGroup()
-        .background(alignment: .center) {
-            if isDropHighlighted {
-                RoundedRectangle(cornerRadius: sumiSettings.resolvedCornerRadius(12), style: .continuous)
-                    .fill(tokens.sidebarRowHover)
-                    .padding(.horizontal, -dropHighlightHorizontalBleed)
-            }
-        }
         .sidebarRowSurface(
             background: displayIsHovering ? tokens.sidebarRowHover : Color.clear,
             cornerRadius: sumiSettings.resolvedCornerRadius(12),

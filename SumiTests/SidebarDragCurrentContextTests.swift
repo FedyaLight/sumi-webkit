@@ -16,10 +16,22 @@ final class SidebarDragCurrentContextTests: SidebarDragContextTestCase {
         let key = SidebarSectionGeometryKey(spaceId: spaceId, section: .spaceRegular)
 
         injectedState.geometry.report(
-            .section(
-                spaceId: spaceId,
-                section: .spaceRegular,
-                frame: frame
+            .presentedSpaceList(
+                PresentedSidebarLayout(
+                    spaceID: spaceId,
+                    sectionFrames: [
+                        .spacePinned: .zero,
+                        .spaceRegular: frame,
+                    ],
+                    topLevelPinnedItemTargets: [:],
+                    folderDropTargets: [:],
+                    folderChildDropTargets: [:],
+                    pinnedListHitTarget: nil,
+                    regularListHitTarget: SidebarRegularListHitMetrics(
+                        frame: frame,
+                        rowIdentities: []
+                    )
+                )
             ),
             generation: injectedState.geometry.activeGeometryGeneration
         )
@@ -320,6 +332,63 @@ final class SidebarDragCurrentContextTests: SidebarDragContextTestCase {
         XCTAssertFalse(state.isDropProjectionActive)
         XCTAssertNil(state.projectionDragItemId)
         XCTAssertEqual(state.projectionHoveredSlot, .empty)
+    }
+
+    func testSplitDropTargetRequiresOneCancellableDwell() {
+        let delayedActions = ManualMainActorDelayedActionScheduler()
+        let gate = SidebarDropTargetDwellGate(
+            delayedActions: delayedActions.scheduler
+        )
+        let spaceID = UUID()
+        let target = SidebarDeferredDropTarget.split(
+            memberID: .regularTab(UUID()),
+            side: .right,
+            residence: .spaceRegular(spaceId: spaceID, slot: 1)
+        )
+
+        XCTAssertFalse(gate.admits(target))
+        XCTAssertFalse(gate.admits(target))
+        XCTAssertEqual(
+            delayedActions.scheduledDelays,
+            [SidebarDropTargetDwellGate.duration]
+        )
+        XCTAssertEqual(delayedActions.pendingActionCount, 1)
+
+        delayedActions.runNext()
+
+        XCTAssertTrue(gate.admits(target))
+        XCTAssertEqual(gate.revision, 1)
+
+        gate.leaveDeferredTargets()
+        XCTAssertFalse(gate.admits(target))
+        XCTAssertEqual(delayedActions.pendingActionCount, 1)
+    }
+
+    func testMovingBetweenDeferredTargetsCancelsPreviousDwell() {
+        let delayedActions = ManualMainActorDelayedActionScheduler()
+        let gate = SidebarDropTargetDwellGate(
+            delayedActions: delayedActions.scheduler
+        )
+        let spaceID = UUID()
+        let first = SidebarDeferredDropTarget.split(
+            memberID: .regularTab(UUID()),
+            side: .left,
+            residence: .spaceRegular(spaceId: spaceID, slot: 1)
+        )
+        let second = SidebarDeferredDropTarget.split(
+            memberID: .regularTab(UUID()),
+            side: .right,
+            residence: .spaceRegular(spaceId: spaceID, slot: 2)
+        )
+
+        XCTAssertFalse(gate.admits(first))
+        XCTAssertFalse(gate.admits(second))
+        XCTAssertEqual(delayedActions.pendingActionCount, 1)
+
+        delayedActions.runAll()
+
+        XCTAssertFalse(gate.admits(first))
+        XCTAssertEqual(gate.revision, 1)
     }
 
     func testStaleDelayedDropCommitCleanupDoesNotClearNewDropProjection() {
