@@ -134,7 +134,7 @@ private struct SumiAboutStatusPanel: View {
     private var statusDetail: String? {
         switch viewModel.panelState {
         case .ready, .checking:
-            return "Sumi is looking for the latest \(viewModel.channelDisplayName) build."
+            return nil
         case .upToDate:
             return nil
         case .updateAvailable:
