@@ -186,6 +186,7 @@ struct SplitGroupSidebarRow: View {
         .frame(height: SidebarRowLayout.rowHeight)
         .contentShape(Rectangle())
         .onTapGesture { activate(activationItem) }
+        .sidebarZenPressEffect(sourceID: customIconSourceID, kind: .split)
         .sidebarAppKitContextMenu(
             isInteractionEnabled: isAppKitInteractionEnabled,
             surfaceKind: .row,
@@ -193,11 +194,14 @@ struct SplitGroupSidebarRow: View {
             primaryActionExclusionZones:
                 groupActionExclusionZones,
             pageActivation: { activate(activationItem) },
-            showsPressVisual: !isSavedGroupUnloaded,
             onMiddleClick: middleClickGroupAction,
-            sourceID: "split-group-custom-icon-\(group.id.uuidString)",
+            sourceID: customIconSourceID,
             entries: { groupContextMenuEntries }
         )
+    }
+
+    private var customIconSourceID: String {
+        "split-group-custom-icon-\(group.id.uuidString)"
     }
 
     private var customIconActivationItem: SplitGroupSidebarItem? {

@@ -166,10 +166,12 @@ final class SidebarPointerInteractionRegressionTests: XCTestCase {
         XCTAssertEqual(monitor.stopCount, 1)
     }
 
-    func testColdShortcutNeverGainsPressVisualWhenMaterialized() throws {
+    func testColdShortcutGainsPressVisualWhenMaterialized() throws {
         let monitor = TestSidebarPointerEventMonitor()
+        let scheduler = TestSidebarPressVisualScheduler()
         let interactionState = SidebarInteractionState(
-            pointerEventMonitor: monitor
+            pointerEventMonitor: monitor,
+            pressVisual: SidebarPressVisualPresenter(scheduler: scheduler)
         )
         let model = ShortcutMaterializationHarness()
         let windowState = BrowserWindowState(
@@ -208,10 +210,11 @@ final class SidebarPointerInteractionRegressionTests: XCTestCase {
                 for: ShortcutMaterializationHarnessView.sourceID
             )
         )
-        XCTAssertFalse(
+        XCTAssertTrue(
             interactionState.presentsPressVisual(
                 for: ShortcutMaterializationHarnessView.sourceID
-            )
+            ),
+            "A cold launcher lost its press visual to mid-session materialization"
         )
 
         XCTAssertTrue(
@@ -223,6 +226,192 @@ final class SidebarPointerInteractionRegressionTests: XCTestCase {
             )
         )
         XCTAssertFalse(interactionState.hasActivePointerSession)
+
+        scheduler.runAll()
+
+        XCTAssertFalse(
+            interactionState.presentsPressVisual(
+                for: ShortcutMaterializationHarnessView.sourceID
+            )
+        )
+    }
+
+    func testPressVisualOutlivesAReleaseInsideItsMinimumVisibility() {
+        let monitor = TestSidebarPointerEventMonitor()
+        let scheduler = TestSidebarPressVisualScheduler()
+        let state = SidebarInteractionState(
+            pointerEventMonitor: monitor,
+            pressVisual: SidebarPressVisualPresenter(scheduler: scheduler)
+        )
+        let view = SidebarInteractiveItemView(
+            frame: NSRect(x: 0, y: 0, width: 180, height: 36)
+        )
+        let window = Self.makeWindow(contentView: view)
+        defer {
+            view.prepareForDismantle()
+            window.contentView = nil
+            window.close()
+        }
+        view.update(
+            configuration: SidebarAppKitItemConfiguration(
+                interactionState: state,
+                pageActivation: {},
+                sourceID: "cold-row"
+            )
+        )
+
+        view.mouseDown(
+            with: Self.mouseEvent(
+                .leftMouseDown,
+                windowNumber: window.windowNumber
+            )
+        )
+        XCTAssertTrue(state.presentsPressVisual(for: "cold-row"))
+
+        XCTAssertTrue(
+            monitor.send(
+                Self.mouseEvent(
+                    .leftMouseUp,
+                    windowNumber: window.windowNumber
+                )
+            )
+        )
+
+        XCTAssertFalse(state.hasActivePointerSession)
+        XCTAssertTrue(
+            state.presentsPressVisual(for: "cold-row"),
+            "The press visual was dropped before it could reach the screen"
+        )
+
+        scheduler.runNextEnqueued()
+        XCTAssertTrue(state.presentsPressVisual(for: "cold-row"))
+
+        scheduler.runNextDelayed()
+        XCTAssertFalse(state.presentsPressVisual(for: "cold-row"))
+    }
+
+    func testCrossingTheDragThresholdEndsThePressVisualImmediately() {
+        let monitor = TestSidebarPointerEventMonitor()
+        let scheduler = TestSidebarPressVisualScheduler()
+        let state = SidebarInteractionState(
+            pointerEventMonitor: monitor,
+            nativeDragStarter: SidebarNativeDragSessionStarter { _, _, _ in },
+            pressVisual: SidebarPressVisualPresenter(scheduler: scheduler)
+        )
+        let dragState = SidebarDragState(interactionState: state)
+        let view = SidebarInteractiveItemView(
+            frame: NSRect(x: 0, y: 0, width: 180, height: 36)
+        )
+        let window = Self.makeWindow(contentView: view)
+        defer {
+            dragState.resetInteractionState()
+            view.prepareForDismantle()
+            window.contentView = nil
+            window.close()
+        }
+        view.sidebarDragState = dragState
+        view.update(
+            configuration: Self.draggableConfiguration(
+                state: state,
+                windowState: BrowserWindowState(),
+                sourceID: "dragged-row"
+            )
+        )
+
+        view.mouseDown(
+            with: Self.mouseEvent(
+                .leftMouseDown,
+                windowNumber: window.windowNumber
+            )
+        )
+        XCTAssertTrue(state.presentsPressVisual(for: "dragged-row"))
+
+        XCTAssertTrue(
+            monitor.send(
+                Self.mouseEvent(
+                    .leftMouseDragged,
+                    location: NSPoint(x: 40, y: 12),
+                    windowNumber: window.windowNumber
+                )
+            )
+        )
+
+        XCTAssertTrue(dragState.isDragging)
+        XCTAssertFalse(
+            state.presentsPressVisual(for: "dragged-row"),
+            "A row kept its press visual into the drag it started"
+        )
+    }
+
+    func testPressOnAnotherRowPreemptsAPendingPressVisual() {
+        let monitor = TestSidebarPointerEventMonitor()
+        let scheduler = TestSidebarPressVisualScheduler()
+        let state = SidebarInteractionState(
+            pointerEventMonitor: monitor,
+            pressVisual: SidebarPressVisualPresenter(scheduler: scheduler)
+        )
+        let firstView = SidebarInteractiveItemView(
+            frame: NSRect(x: 0, y: 0, width: 180, height: 36)
+        )
+        let secondView = SidebarInteractiveItemView(
+            frame: NSRect(x: 0, y: 0, width: 180, height: 36)
+        )
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 180, height: 72))
+        container.addSubview(firstView)
+        container.addSubview(secondView)
+        let window = Self.makeWindow(contentView: container)
+        defer {
+            firstView.prepareForDismantle()
+            secondView.prepareForDismantle()
+            window.contentView = nil
+            window.close()
+        }
+        firstView.update(
+            configuration: SidebarAppKitItemConfiguration(
+                interactionState: state,
+                pageActivation: {},
+                sourceID: "first-row"
+            )
+        )
+        secondView.update(
+            configuration: SidebarAppKitItemConfiguration(
+                interactionState: state,
+                pageActivation: {},
+                sourceID: "second-row"
+            )
+        )
+
+        firstView.mouseDown(
+            with: Self.mouseEvent(
+                .leftMouseDown,
+                windowNumber: window.windowNumber
+            )
+        )
+        XCTAssertTrue(
+            monitor.send(
+                Self.mouseEvent(
+                    .leftMouseUp,
+                    windowNumber: window.windowNumber
+                )
+            )
+        )
+        XCTAssertTrue(state.presentsPressVisual(for: "first-row"))
+
+        secondView.mouseDown(
+            with: Self.mouseEvent(
+                .leftMouseDown,
+                windowNumber: window.windowNumber
+            )
+        )
+
+        XCTAssertFalse(state.presentsPressVisual(for: "first-row"))
+        XCTAssertTrue(state.presentsPressVisual(for: "second-row"))
+
+        scheduler.runAll()
+        XCTAssertTrue(
+            state.presentsPressVisual(for: "second-row"),
+            "The held row lost its press visual while still pressed"
+        )
     }
 
     func testAcceptedDragSurvivesPresenterConfigurationDisablement() throws {
@@ -650,6 +839,43 @@ private final class TestSidebarPointerEventMonitor: SidebarPointerEventMonitorin
 
     func send(_ event: NSEvent) -> Bool {
         handler?(event) ?? false
+    }
+}
+
+/// Separates the two press-visual phases so tests can assert each one: the
+/// main-queue turn that first makes the pressed frame drawable, and the
+/// minimum-visibility budget that follows it.
+@MainActor
+private final class TestSidebarPressVisualScheduler: SidebarPressVisualScheduling {
+    private var enqueued: [@MainActor () -> Void] = []
+    private var delayed: [@MainActor () -> Void] = []
+
+    func enqueue(_ work: @escaping @MainActor () -> Void) {
+        enqueued.append(work)
+    }
+
+    func after(_ delay: TimeInterval, _ work: @escaping @MainActor () -> Void) {
+        delayed.append(work)
+    }
+
+    func runNextEnqueued() {
+        guard !enqueued.isEmpty else { return }
+        enqueued.removeFirst()()
+    }
+
+    func runNextDelayed() {
+        guard !delayed.isEmpty else { return }
+        delayed.removeFirst()()
+    }
+
+    func runAll() {
+        while !enqueued.isEmpty || !delayed.isEmpty {
+            if !enqueued.isEmpty {
+                enqueued.removeFirst()()
+            } else {
+                delayed.removeFirst()()
+            }
+        }
     }
 }
 

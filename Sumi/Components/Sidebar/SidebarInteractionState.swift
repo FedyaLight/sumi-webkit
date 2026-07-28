@@ -28,12 +28,14 @@ final class SidebarInteractionState {
         hoverSession: SidebarHoverSession = SidebarHoverSession(),
         pointerEventMonitor: any SidebarPointerEventMonitoring =
             SidebarAppKitPointerEventMonitor(),
-        nativeDragStarter: SidebarNativeDragSessionStarter = .appKit
+        nativeDragStarter: SidebarNativeDragSessionStarter = .appKit,
+        pressVisual: SidebarPressVisualPresenter = SidebarPressVisualPresenter()
     ) {
         self.hoverSession = hoverSession
         pointerSessions = SidebarPointerSessionAuthority(
             eventMonitor: pointerEventMonitor,
-            nativeDragStarter: nativeDragStarter
+            nativeDragStarter: nativeDragStarter,
+            pressVisual: pressVisual
         )
         pointerSessions.onPressVisualSourceIDChanged = { [weak self] sourceID in
             self?.activePressVisualSourceID = sourceID

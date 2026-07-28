@@ -80,7 +80,6 @@ struct ShortcutSidebarRowChrome: View {
             dragSource: dragSourceConfiguration,
             primaryActionExclusionZones: primaryActionExclusionZones,
             pageActivation: action,
-            showsPressVisual: liveTab != nil,
             onMiddleClick: onUnload,
             sourceID: rowSourceID,
             entries: contextMenuEntries

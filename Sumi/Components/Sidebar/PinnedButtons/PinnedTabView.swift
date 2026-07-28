@@ -129,7 +129,6 @@ struct PinnedTabView: View {
             dragSource: dragSourceConfiguration,
             primaryActionExclusionZones: primaryActionExclusionZones,
             pageActivation: action,
-            showsPressVisual: liveTab != nil,
             onMiddleClick: supportsMiddleClickUnload ? onUnload : nil,
             sourceID: tileSourceID,
             entries: contextMenuEntries

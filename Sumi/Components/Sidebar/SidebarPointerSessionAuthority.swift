@@ -69,7 +69,6 @@ struct SidebarPrimaryPointerIntent {
     }
 
     let sourceID: String?
-    let showsPressVisual: Bool
     let drag: Drag?
     let release: Release?
 }
@@ -91,7 +90,6 @@ final class SidebarPointerSessionAuthority {
         let drag: SidebarPrimaryPointerIntent.Drag?
         var release: SidebarPrimaryPointerIntent.Release?
         let acceptsRelease: Bool
-        let pressVisualSourceID: String?
 
         init(
             event: NSEvent,
@@ -106,9 +104,6 @@ final class SidebarPointerSessionAuthority {
             drag = intent.drag
             release = intent.release
             acceptsRelease = intent.release != nil
-            pressVisualSourceID = intent.showsPressVisual
-                ? intent.sourceID
-                : nil
         }
     }
 
@@ -135,21 +130,25 @@ final class SidebarPointerSessionAuthority {
     private var pointerSession: PointerSession? {
         didSet {
             syncEventMonitor()
-            publishPressVisualIfNeeded()
         }
     }
     private var nativeDrag: NativeDrag?
-    private var publishedPressVisualSourceID: String?
+    private let pressVisual: SidebarPressVisualPresenter
 
     var onPressVisualSourceIDChanged: ((String?) -> Void)?
 
     init(
         eventMonitor: any SidebarPointerEventMonitoring =
             SidebarAppKitPointerEventMonitor(),
-        nativeDragStarter: SidebarNativeDragSessionStarter = .appKit
+        nativeDragStarter: SidebarNativeDragSessionStarter = .appKit,
+        pressVisual: SidebarPressVisualPresenter = SidebarPressVisualPresenter()
     ) {
         self.eventMonitor = eventMonitor
         self.nativeDragStarter = nativeDragStarter
+        self.pressVisual = pressVisual
+        pressVisual.onChange = { [weak self] sourceID in
+            self?.onPressVisualSourceIDChanged?(sourceID)
+        }
     }
 
     isolated deinit {
@@ -177,6 +176,7 @@ final class SidebarPointerSessionAuthority {
             intent: intent
         )
         pointerSession = session
+        pressVisual.present(session.sourceID)
         session.drag?.state.armInternalDragGeometry(
             scope: session.drag?.scope
         )
@@ -226,6 +226,7 @@ final class SidebarPointerSessionAuthority {
         }
 
         pointerSession = nil
+        pressVisual.endImmediately()
         session.drag?.state.cancelArmedDragGeometry()
     }
 
@@ -336,6 +337,7 @@ final class SidebarPointerSessionAuthority {
         }
 
         pointerSession = nil
+        pressVisual.endAfterMinimumVisibility()
         session.drag?.state.cancelArmedDragGeometry()
         guard shouldPerformRelease, let release else { return }
         perform(
@@ -367,6 +369,7 @@ final class SidebarPointerSessionAuthority {
         }
 
         pointerSession = nil
+        pressVisual.endImmediately()
         let dragLocation = SidebarDragLocationMapper.swiftUIGlobalPoint(
             fromLocalPoint: point,
             in: owner
@@ -438,13 +441,6 @@ final class SidebarPointerSessionAuthority {
         eventMonitor.start { [weak self] event in
             self?.continueEvent(event) ?? false
         }
-    }
-
-    private func publishPressVisualIfNeeded() {
-        let sourceID = pointerSession?.pressVisualSourceID
-        guard publishedPressVisualSourceID != sourceID else { return }
-        publishedPressVisualSourceID = sourceID
-        onPressVisualSourceIDChanged?(sourceID)
     }
 
     private func perform(

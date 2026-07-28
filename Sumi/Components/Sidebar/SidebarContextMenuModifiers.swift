@@ -14,7 +14,6 @@ private struct SidebarAppKitItemModifier: ViewModifier {
     let primaryActionExclusionZones: [SidebarDragSourceExclusionZone]
     let pageActivation: (() -> Void)?
     let releaseAction: (() -> Void)?
-    let showsPressVisual: Bool
     let onMiddleClick: (() -> Void)?
     let sourceID: String?
     let isInteractionEnabled: Bool
@@ -56,7 +55,6 @@ private struct SidebarAppKitItemModifier: ViewModifier {
                         primaryActionExclusionZones: primaryActionExclusionZones,
                         pageActivation: pageActivation,
                         releaseAction: releaseAction,
-                        showsPressVisual: showsPressVisual,
                         onMiddleClick: onMiddleClick,
                         sourceID: sourceID,
                         suppressesActionAnimation:
@@ -203,7 +201,6 @@ extension View {
         primaryActionExclusionZones: [SidebarDragSourceExclusionZone] = [],
         pageActivation: (() -> Void)? = nil,
         releaseAction: (() -> Void)? = nil,
-        showsPressVisual: Bool = true,
         onMiddleClick: (() -> Void)? = nil,
         sourceID: String? = nil,
         suppressesActionAnimation: Bool? = nil,
@@ -223,7 +220,6 @@ extension View {
                 primaryActionExclusionZones: primaryActionExclusionZones,
                 pageActivation: pageActivation,
                 releaseAction: releaseAction,
-                showsPressVisual: showsPressVisual,
                 onMiddleClick: onMiddleClick,
                 sourceID: sourceID,
                 isInteractionEnabled: isInteractionEnabled,

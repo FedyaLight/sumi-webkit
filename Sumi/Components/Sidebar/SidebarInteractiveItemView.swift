@@ -399,7 +399,6 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource {
 
         return SidebarPrimaryPointerIntent(
             sourceID: itemConfiguration.sourceID,
-            showsPressVisual: itemConfiguration.showsPressVisual,
             drag: drag,
             release: capturesReleaseAction ? configuredReleaseIntent : nil
         )

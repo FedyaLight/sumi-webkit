@@ -8,6 +8,11 @@ enum SidebarMotionPolicy {
 
     static let rowPressedScale: CGFloat = 0.98
 
+    /// How long a row keeps its press visual once it can first be drawn.
+    /// Page Activation materializes a Cold Page synchronously on press, so a
+    /// fast click would otherwise collapse press and release into one frame.
+    static let rowPressMinimumVisibleDuration: TimeInterval = 0.09
+
     static func currentMode(
         reduceMotion: Bool,
         energySaverReducesMotion: Bool = false

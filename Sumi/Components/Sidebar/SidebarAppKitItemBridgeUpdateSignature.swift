@@ -19,7 +19,6 @@ struct SidebarAppKitItemBridgeUpdateSignature: Equatable {
     let primaryActionExclusionZones: [SidebarDragSourceExclusionZone]
     let hasPageActivation: Bool
     let hasReleaseAction: Bool
-    let showsPressVisual: Bool
     let hasMiddleClick: Bool
     let sourceID: String?
     let routingPriorityBoost: Int
@@ -54,7 +53,6 @@ extension SidebarAppKitItemConfiguration {
             primaryActionExclusionZones: primaryActionExclusionZones,
             hasPageActivation: pageActivation != nil,
             hasReleaseAction: releaseAction != nil,
-            showsPressVisual: showsPressVisual,
             hasMiddleClick: onMiddleClick != nil,
             sourceID: sourceID,
             routingPriorityBoost: routingPriorityBoost,

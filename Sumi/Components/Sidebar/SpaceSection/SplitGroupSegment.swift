@@ -82,13 +82,13 @@ struct SplitGroupSegment: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(Rectangle())
             .onTapGesture(perform: onActivate)
+            .sidebarZenPressEffect(sourceID: rowSourceID, kind: .split)
             .sidebarAppKitContextMenu(
                 isInteractionEnabled: (item.tab != nil || dragSourceConfiguration != nil) && isAppKitInteractionEnabled,
                 dragSource: resolvedDragSourceConfiguration,
                 primaryActionExclusionZones:
                     trailingActionExclusionZones,
                 pageActivation: onActivate,
-                showsPressVisual: item.tab != nil,
                 onMiddleClick: onMiddleClick,
                 sourceID: rowSourceID,
                 entries: contextMenuEntries

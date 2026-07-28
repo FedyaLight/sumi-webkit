@@ -166,7 +166,6 @@ struct SidebarAppKitItemConfiguration {
     var primaryActionExclusionZones: [SidebarDragSourceExclusionZone] = []
     var pageActivation: (() -> Void)?
     var releaseAction: (() -> Void)?
-    var showsPressVisual: Bool = true
     var onMiddleClick: (() -> Void)?
     var sourceID: String?
     var routingPriorityBoost: Int = 0
