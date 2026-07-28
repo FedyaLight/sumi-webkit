@@ -73,49 +73,149 @@ final class DownloadFlyAnimationTests: XCTestCase {
         )
     }
 
-    func testArcLiftsFileAboveBothEndpoints() {
+    func testFlightCurveSpansTheFullRangeMonotonically() {
+        XCTAssertEqual(DownloadFlyCurve.flightProgress(atTime: 0), 0, accuracy: 0.0001)
+        XCTAssertEqual(DownloadFlyCurve.flightProgress(atTime: 1), 1, accuracy: 0.0001)
+        XCTAssertEqual(DownloadFlyCurve.flightProgress(atTime: 0.5), 0.5, accuracy: 0.001)
+
+        var previous = DownloadFlyCurve.flightProgress(atTime: 0)
+        for step in 1...100 {
+            let current = DownloadFlyCurve.flightProgress(atTime: CGFloat(step) / 100)
+            XCTAssertGreaterThanOrEqual(current, previous)
+            previous = current
+        }
+    }
+
+    func testArcBowsTowardTheRoomierSideOfTheCanvas() {
+        let nearTop = DownloadFlyArc(
+            start: CGPoint(x: 0, y: 100),
+            end: CGPoint(x: 100, y: 100),
+            canvasHeight: 800
+        )
+        let nearBottom = DownloadFlyArc(
+            start: CGPoint(x: 0, y: 700),
+            end: CGPoint(x: 100, y: 700),
+            canvasHeight: 800
+        )
+
+        XCTAssertEqual(nearTop.direction, 1)
+        XCTAssertEqual(nearBottom.direction, -1)
+    }
+
+    func testArcHeightTakesTheSmallestOfItsThreeBounds() {
+        let boundByDistance = DownloadFlyArc(
+            start: CGPoint(x: 0, y: 400),
+            end: CGPoint(x: 100, y: 400),
+            canvasHeight: 2000
+        )
+        let boundByMaximum = DownloadFlyArc(
+            start: CGPoint(x: 0, y: 1500),
+            end: CGPoint(x: 3000, y: 1500),
+            canvasHeight: 4000
+        )
+        let boundByAvailableSpace = DownloadFlyArc(
+            start: CGPoint(x: 0, y: 100),
+            end: CGPoint(x: 400, y: 100),
+            canvasHeight: 200
+        )
+
+        XCTAssertEqual(boundByDistance.height, 80, accuracy: 0.001)
+        XCTAssertEqual(boundByMaximum.height, DownloadFlyArc.maximumHeight, accuracy: 0.001)
+        XCTAssertEqual(boundByAvailableSpace.height, 80, accuracy: 0.001)
+    }
+
+    func testFlightLandsExactlyOnItsEndpoints() {
         let start = CGPoint(x: 700, y: 360)
         let end = CGPoint(x: 60, y: 740)
+        let arc = DownloadFlyArc(start: start, end: end, canvasHeight: 800)
 
-        let arc = DownloadFlyPlacement.arc(
-            start: start,
-            end: end
-        )
-        let midpoint = arc.point(at: 0.5)
-
-        XCTAssertEqual(arc.departureControl.x, start.x)
-        XCTAssertEqual(arc.arrivalControl.x, end.x)
-        XCTAssertEqual(arc.departureControl.y, arc.arrivalControl.y)
-        XCTAssertLessThan(midpoint.y, start.y)
-        XCTAssertLessThan(midpoint.y, end.y)
-        XCTAssertEqual(midpoint.y, start.y - 144, accuracy: 0.001)
+        XCTAssertEqual(arc.frame(atTime: 0).position.x, start.x, accuracy: 0.001)
+        XCTAssertEqual(arc.frame(atTime: 0).position.y, start.y, accuracy: 0.001)
+        XCTAssertEqual(arc.frame(atTime: 1).position.x, end.x, accuracy: 0.001)
+        XCTAssertEqual(arc.frame(atTime: 1).position.y, end.y, accuracy: 0.001)
     }
 
-    func testArcKeepsModestLiftForShortFlights() {
-        let start = CGPoint(x: 300, y: 300)
-        let end = CGPoint(x: 380, y: 340)
-
-        let arc = DownloadFlyPlacement.arc(
-            start: start,
-            end: end
-        )
-
-        XCTAssertEqual(arc.point(at: 0.5).y, 244, accuracy: 0.001)
-    }
-
-    func testArcEntersTargetVerticallyFromAbove() {
+    func testFlightClearsBothEndpointsAtTheApex() {
+        let start = CGPoint(x: 700, y: 360)
         let end = CGPoint(x: 60, y: 740)
-        let arc = DownloadFlyPlacement.arc(
-            start: CGPoint(x: 700, y: 360),
-            end: end
-        )
-        let nearEnd = arc.point(at: 0.99)
+        let arc = DownloadFlyArc(start: start, end: end, canvasHeight: 800)
+        let apex = arc.frame(atTime: 0.5).position
 
-        XCTAssertLessThan(nearEnd.y, end.y)
+        XCTAssertEqual(arc.direction, -1)
+        XCTAssertLessThan(apex.y, start.y)
+        XCTAssertLessThan(apex.y, end.y)
+    }
+
+    func testFlightSwellsAtTheApexAndShrinksIntoTheTarget() {
+        XCTAssertEqual(DownloadFlyArc.scale(atProgress: 0), DownloadFlyArc.launchScale, accuracy: 0.001)
+        XCTAssertEqual(DownloadFlyArc.scale(atProgress: 0.5), DownloadFlyArc.apexScale, accuracy: 0.001)
+        XCTAssertEqual(DownloadFlyArc.scale(atProgress: 1), DownloadFlyArc.landingScale, accuracy: 0.001)
+
+        let tolerance: CGFloat = 0.0001
+        for step in 0...100 {
+            let scale = DownloadFlyArc.scale(atProgress: CGFloat(step) / 100)
+            XCTAssertGreaterThanOrEqual(scale, DownloadFlyArc.landingScale - tolerance)
+            XCTAssertLessThanOrEqual(scale, DownloadFlyArc.apexScale + tolerance)
+        }
+    }
+
+    func testFlightOpacityStaysWithinRangeAndEndsInvisible() {
+        for step in 0...100 {
+            let opacity = DownloadFlyArc.opacity(atProgress: CGFloat(step) / 100)
+            XCTAssertGreaterThanOrEqual(opacity, 0)
+            XCTAssertLessThanOrEqual(opacity, 1)
+        }
+
+        XCTAssertEqual(DownloadFlyArc.opacity(atProgress: 0.97), 1, accuracy: 0.001)
+        XCTAssertEqual(DownloadFlyArc.opacity(atProgress: 1), 0, accuracy: 0.001)
+    }
+
+    func testBasketOffsetsMirrorWithSidebarPosition() {
+        for phase in DownloadFlyBasketPhase.allCases {
+            XCTAssertEqual(
+                DownloadFlyBasketMotion.offset(
+                    for: phase,
+                    sidebarPosition: .left,
+                    reducesMotion: false
+                ),
+                -DownloadFlyBasketMotion.offset(
+                    for: phase,
+                    sidebarPosition: .right,
+                    reducesMotion: false
+                ),
+                accuracy: 0.001
+            )
+        }
+
         XCTAssertLessThan(
-            abs(end.x - nearEnd.x),
-            abs(end.y - nearEnd.y) * 0.05
+            DownloadFlyBasketMotion.offset(
+                for: .parked,
+                sidebarPosition: .left,
+                reducesMotion: false
+            ),
+            0,
+            "A left-hand basket parks past the left window edge"
         )
+        XCTAssertGreaterThan(
+            DownloadFlyBasketMotion.offset(
+                for: .overshoot,
+                sidebarPosition: .left,
+                reducesMotion: false
+            ),
+            0,
+            "The entry overshoots past the resting spot, into the window"
+        )
+    }
+
+    func testReducedMotionBasketOnlyFades() {
+        for phase in DownloadFlyBasketPhase.allCases {
+            let standard = DownloadFlyBasketMotion.metrics(for: phase, reducesMotion: false)
+            let reduced = DownloadFlyBasketMotion.metrics(for: phase, reducesMotion: true)
+
+            XCTAssertEqual(reduced.outwardOffset, 0)
+            XCTAssertEqual(reduced.scale, 1)
+            XCTAssertEqual(reduced.opacity, standard.opacity)
+        }
     }
 
     func testFlyingGlyphMovesAfterItIsMounted() async throws {
@@ -123,9 +223,10 @@ final class DownloadFlyAnimationTests: XCTestCase {
             rootView: DownloadFlyingGlyph(
                 presentation: DownloadFlyPresentation(
                     id: UUID(),
-                    arc: DownloadFlyPlacement.arc(
+                    arc: DownloadFlyArc(
                         start: CGPoint(x: 50, y: 320),
-                        end: CGPoint(x: 350, y: 320)
+                        end: CGPoint(x: 350, y: 320),
+                        canvasHeight: 400
                     ),
                     icon: testFileIcon
                 ),
@@ -148,14 +249,15 @@ final class DownloadFlyAnimationTests: XCTestCase {
             window.close()
         }
 
+        // The flight eases in slowly, so sample well past the halfway point.
         try await Task.sleep(for: .milliseconds(60))
         let initialCenter = try visiblePixelCenter(in: host)
-        try await Task.sleep(for: .milliseconds(240))
+        try await Task.sleep(for: .milliseconds(540))
         let animatedCenter = try visiblePixelCenter(in: host)
 
         XCTAssertGreaterThan(
             animatedCenter.x - initialCenter.x,
-            40,
+            100,
             "The download glyph remained at its initial position"
         )
     }

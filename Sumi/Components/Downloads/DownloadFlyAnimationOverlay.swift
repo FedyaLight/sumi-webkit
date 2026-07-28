@@ -11,25 +11,26 @@ struct DownloadFlyAnimationOverlay: View {
     @Environment(\.sumiSettings) private var sumiSettings
     @State private var flight: DownloadFlyPresentation?
     @State private var showsBasket = false
-    @State private var cleanupTask: Task<Void, Never>?
+    @State private var basketPhase: DownloadFlyBasketPhase = .parked
+    @State private var basketTask: Task<Void, Never>?
+    @State private var flightTask: Task<Void, Never>?
 
     var body: some View {
         GeometryReader { proxy in
             ZStack {
                 if showsBasket {
-                    DownloadFlyBasket()
-                        .position(
-                            DownloadFlyPlacement.cornerTarget(
-                                canvasSize: proxy.size,
-                                sidebarPosition: sidebarPosition
-                            )
+                    DownloadFlyBasket(
+                        phase: basketPhase,
+                        sidebarPosition: sidebarPosition,
+                        reducesMotion: reducesMotion
+                    )
+                    .position(
+                        DownloadFlyPlacement.cornerTarget(
+                            canvasSize: proxy.size,
+                            sidebarPosition: sidebarPosition
                         )
-                        .transition(
-                            DownloadFlyMotion.basketTransition(
-                                sidebarPosition: sidebarPosition,
-                                reducesMotion: reducesMotion
-                            )
-                        )
+                    )
+                    .transition(.identity)
                 }
 
                 if let flight {
@@ -47,10 +48,15 @@ struct DownloadFlyAnimationOverlay: View {
         .allowsHitTesting(false)
         .accessibilityHidden(true)
         .onDisappear {
-            cleanupTask?.cancel()
-            cleanupTask = nil
+            flightTask?.cancel()
+            flightTask = nil
+            basketTask?.cancel()
+            basketTask = nil
         }
     }
+
+    /// One display frame, long enough for a freshly mounted basket to draw.
+    private static let mountFrameDuration: TimeInterval = 1.0 / 60
 
     private var reducesMotion: Bool {
         accessibilityReduceMotion || sumiSettings.shouldReduceChromeMotion
@@ -90,40 +96,110 @@ struct DownloadFlyAnimationOverlay: View {
         )
         let nextFlight = DownloadFlyPresentation(
             id: request.id,
-            arc: DownloadFlyPlacement.arc(
+            arc: DownloadFlyArc(
                 start: start,
-                end: target
+                end: target,
+                canvasHeight: canvasSize.height
             ),
             icon: request.icon
         )
 
-        cleanupTask?.cancel()
-        if usesBasket, !showsBasket {
-            withAnimation(DownloadFlyMotion.basketEntryAnimation(reducesMotion: reducesMotion)) {
-                showsBasket = true
-            }
-        } else if !usesBasket, showsBasket {
-            withAnimation(DownloadFlyMotion.basketExitAnimation(reducesMotion: reducesMotion)) {
-                showsBasket = false
-            }
+        if usesBasket {
+            runBasketSequence()
+        } else if showsBasket {
+            retractBasket()
         }
+
         flight = nextFlight
-
-        cleanupTask = Task {
-            try? await Task.sleep(for: .seconds(DownloadFlyMotion.totalLifetime))
+        flightTask?.cancel()
+        flightTask = Task {
+            try? await Task.sleep(for: .seconds(DownloadFlyTiming.flightDuration))
             guard !Task.isCancelled, flight?.id == nextFlight.id else { return }
-
             flight = nil
-            if usesBasket {
-                withAnimation(DownloadFlyMotion.basketExitAnimation(reducesMotion: reducesMotion)) {
-                    showsBasket = false
-                }
-            }
         }
+    }
+
+    /// Runs the basket from wherever it currently is through to retraction. A
+    /// download arriving while it is already at rest only extends its stay.
+    private func runBasketSequence() {
+        basketTask?.cancel()
+        showsBasket = true
+
+        basketTask = Task {
+            switch basketPhase {
+            case .parked:
+                // Let the basket render off screen before animating it in, so
+                // the entry starts from the parked metrics rather than popping.
+                guard await sleep(Self.mountFrameDuration),
+                      await advance(to: .overshoot, holding: DownloadFlyTiming.basketOvershootDuration),
+                      await advance(to: .settled, holding: DownloadFlyTiming.basketSettleDuration)
+                else { return }
+            case .overshoot, .squashed:
+                // Caught mid-entry or on the way out: return it to rest first.
+                guard await advance(to: .settled, holding: DownloadFlyTiming.basketSettleDuration)
+                else { return }
+            case .settled:
+                break
+            }
+
+            guard await sleep(DownloadFlyTiming.basketHoldDuration),
+                  await advance(to: .squashed, holding: DownloadFlyTiming.basketSquashDuration),
+                  await advance(to: .parked, holding: DownloadFlyTiming.basketRetractDuration)
+            else { return }
+
+            showsBasket = false
+        }
+    }
+
+    /// Sends a visible basket away without waiting out its hold, for when a
+    /// later download has a real downloads button to fly to instead.
+    private func retractBasket() {
+        basketTask?.cancel()
+        basketTask = Task {
+            if basketPhase != .parked {
+                guard await advance(to: .squashed, holding: DownloadFlyTiming.basketSquashDuration),
+                      await advance(to: .parked, holding: DownloadFlyTiming.basketRetractDuration)
+                else { return }
+            } else {
+                // Already retracting; just outlive the animation in flight.
+                guard await sleep(DownloadFlyTiming.basketRetractDuration) else { return }
+            }
+
+            showsBasket = false
+        }
+    }
+
+    /// Animates the basket into `phase`, then waits for that animation to finish.
+    /// Returns `false` once the sequence has been superseded.
+    @MainActor
+    private func advance(
+        to phase: DownloadFlyBasketPhase,
+        holding duration: TimeInterval
+    ) async -> Bool {
+        guard !Task.isCancelled else { return false }
+        withAnimation(
+            DownloadFlyBasketMotion.animation(
+                enteringPhase: phase,
+                reducesMotion: reducesMotion
+            )
+        ) {
+            basketPhase = phase
+        }
+        return await sleep(duration)
+    }
+
+    @MainActor
+    private func sleep(_ duration: TimeInterval) async -> Bool {
+        try? await Task.sleep(for: .seconds(duration))
+        return !Task.isCancelled
     }
 }
 
 private struct DownloadFlyBasket: View {
+    let phase: DownloadFlyBasketPhase
+    let sidebarPosition: SidebarPosition
+    let reducesMotion: Bool
+
     @Environment(\.chromeThemeTokens) private var scopedChromeTokens
     @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.sumiSettings) private var sumiSettings
@@ -132,14 +208,18 @@ private struct DownloadFlyBasket: View {
         scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 
+    private var metrics: DownloadFlyBasketMetrics {
+        DownloadFlyBasketMotion.metrics(for: phase, reducesMotion: reducesMotion)
+    }
+
     var body: some View {
         ZStack {
             NativeChromeMaterialBackground(role: .inWindowPopover)
 
-                Image(systemName: "archivebox")
-                    .font(.system(size: 19, weight: .regular))
-                    .foregroundStyle(tokens.primaryText)
-                    .frame(width: 20, height: 20)
+            Image(systemName: "archivebox")
+                .font(.system(size: 19, weight: .regular))
+                .foregroundStyle(tokens.primaryText)
+                .frame(width: 20, height: 20)
         }
         .frame(width: DownloadFlyPlacement.basketSize, height: DownloadFlyPlacement.basketSize)
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -148,10 +228,25 @@ private struct DownloadFlyBasket: View {
                 .strokeBorder(tokens.floatingSurfaceBorder, lineWidth: 0.75)
         }
         .shadow(color: .black.opacity(0.22), radius: 12, y: 4)
+        .scaleEffect(metrics.scale)
+        .opacity(metrics.opacity)
+        .offset(
+            x: DownloadFlyBasketMotion.offset(
+                for: phase,
+                sidebarPosition: sidebarPosition,
+                reducesMotion: reducesMotion
+            )
+        )
     }
 }
 
 struct DownloadFlyingGlyph: View {
+    /// Rasterized size of the file icon. Kept well above the on-screen size so
+    /// the glyph stays crisp when the arc swells it at the apex.
+    static let renderSize: CGFloat = 64
+    /// On-screen size at scale 1.
+    static let baseSize: CGFloat = 30
+
     let presentation: DownloadFlyPresentation
     let reducesMotion: Bool
 
@@ -159,95 +254,54 @@ struct DownloadFlyingGlyph: View {
 
     var body: some View {
         KeyframeAnimator(
-            initialValue: DownloadFlyAnimationValues(
-                progress: reducesMotion ? 1 : 0,
-                scale: reducesMotion ? 0.55 : 0.85,
-                opacity: reducesMotion ? 0.7 : 0.9
-            ),
+            initialValue: CGFloat.zero,
             trigger: animationTrigger
-        ) { values in
-            let position = presentation.arc.point(at: values.progress)
+        ) { time in
+            let frame = self.frame(atTime: time)
 
             Image(nsImage: presentation.icon)
                 .resizable()
                 .interpolation(.high)
                 .scaledToFit()
-                .frame(width: 64, height: 64)
+                .frame(width: Self.renderSize, height: Self.renderSize)
                 .shadow(color: .black.opacity(0.24), radius: 8, y: 3)
-                .scaleEffect(values.scale)
-                .opacity(values.opacity)
-                .position(position)
+                .scaleEffect(frame.scale * Self.baseSize / Self.renderSize)
+                .opacity(frame.opacity)
+                .position(frame.position)
         } keyframes: { _ in
-            KeyframeTrack(\.progress) {
-                CubicKeyframe(
-                    1,
-                    duration: DownloadFlyMotion.flightDuration,
-                    startVelocity: 0,
-                    endVelocity: 0
-                )
-            }
-            KeyframeTrack(\.scale) {
-                CubicKeyframe(
-                    reducesMotion ? 0.55 : 1.03,
-                    duration: DownloadFlyMotion.arcRiseDuration
-                )
-                CubicKeyframe(0.38, duration: DownloadFlyMotion.arcFallDuration)
-            }
-            KeyframeTrack(\.opacity) {
-                LinearKeyframe(1, duration: DownloadFlyMotion.fadeInDuration)
-                LinearKeyframe(
-                    1,
-                    duration: DownloadFlyMotion.flightDuration
-                        - DownloadFlyMotion.fadeInDuration
-                        - DownloadFlyMotion.fadeOutDuration
-                )
-                LinearKeyframe(0, duration: DownloadFlyMotion.fadeOutDuration)
-            }
+            LinearKeyframe(1, duration: DownloadFlyTiming.flightDuration)
         }
         .onAppear {
             animationTrigger.toggle()
         }
     }
-}
 
-private struct DownloadFlyAnimationValues {
-    var progress: CGFloat
-    var scale: CGFloat
-    var opacity: CGFloat
+    /// Reduced motion drops the arc and the scale pulse: the glyph simply
+    /// appears at the target and fades away again.
+    private func frame(atTime time: CGFloat) -> DownloadFlyFrame {
+        guard reducesMotion else {
+            return presentation.arc.frame(atTime: time)
+        }
+        let fade: CGFloat
+        if time < 0.2 {
+            fade = time / 0.2
+        } else if time < 0.8 {
+            fade = 1
+        } else {
+            fade = max((1 - time) / 0.2, 0)
+        }
+        return DownloadFlyFrame(
+            position: presentation.arc.end,
+            scale: 1,
+            opacity: fade
+        )
+    }
 }
 
 struct DownloadFlyPresentation: Equatable, Identifiable {
     let id: UUID
     let arc: DownloadFlyArc
     let icon: NSImage
-}
-
-struct DownloadFlyArc: Equatable {
-    let start: CGPoint
-    let departureControl: CGPoint
-    let arrivalControl: CGPoint
-    let end: CGPoint
-
-    func point(at progress: CGFloat) -> CGPoint {
-        let inverseProgress = 1 - progress
-        let inverseSquared = inverseProgress * inverseProgress
-        let progressSquared = progress * progress
-        let startWeight = inverseSquared * inverseProgress
-        let departureWeight = 3 * inverseSquared * progress
-        let arrivalWeight = 3 * inverseProgress * progressSquared
-        let endWeight = progressSquared * progress
-
-        return CGPoint(
-            x: startWeight * start.x
-                + departureWeight * departureControl.x
-                + arrivalWeight * arrivalControl.x
-                + endWeight * end.x,
-            y: startWeight * start.y
-                + departureWeight * departureControl.y
-                + arrivalWeight * arrivalControl.y
-                + endWeight * end.y
-        )
-    }
 }
 
 enum DownloadFlyPlacement {
@@ -275,57 +329,5 @@ enum DownloadFlyPlacement {
                 : canvasSize.width - centerInset,
             y: canvasSize.height - centerInset
         )
-    }
-
-    static func arc(
-        start: CGPoint,
-        end: CGPoint
-    ) -> DownloadFlyArc {
-        let distance = hypot(end.x - start.x, end.y - start.y)
-        let topMargin: CGFloat = 40
-        let highestEndpoint = min(start.y, end.y)
-        let availableLift = max(0, highestEndpoint - topMargin)
-        let lift = min(max(distance * 0.2, 56), availableLift, 144)
-        let desiredMidpointY = highestEndpoint - lift
-        let endpointMidpointContribution = (start.y + end.y) * 0.125
-        let controlY = max(
-            topMargin,
-            (desiredMidpointY - endpointMidpointContribution) / 0.75
-        )
-
-        return DownloadFlyArc(
-            start: start,
-            departureControl: CGPoint(x: start.x, y: controlY),
-            arrivalControl: CGPoint(x: end.x, y: controlY),
-            end: end
-        )
-    }
-}
-
-private enum DownloadFlyMotion {
-    static let arcRiseDuration = 0.375
-    static let arcFallDuration = 0.625
-    static let flightDuration = arcRiseDuration + arcFallDuration
-    static let fadeInDuration = 0.12
-    static let fadeOutDuration = 0.08
-    static let totalLifetime = flightDuration + 0.35
-
-    static func basketEntryAnimation(reducesMotion: Bool) -> Animation? {
-        reducesMotion ? nil : .spring(duration: 0.35, bounce: 0.18)
-    }
-
-    static func basketExitAnimation(reducesMotion: Bool) -> Animation? {
-        reducesMotion ? nil : .easeIn(duration: 0.24)
-    }
-
-    static func basketTransition(
-        sidebarPosition: SidebarPosition,
-        reducesMotion: Bool
-    ) -> AnyTransition {
-        guard !reducesMotion else { return .opacity }
-        let edge: Edge = sidebarPosition == .left ? .leading : .trailing
-        return .move(edge: edge)
-            .combined(with: .scale(scale: 0.8))
-            .combined(with: .opacity)
     }
 }
