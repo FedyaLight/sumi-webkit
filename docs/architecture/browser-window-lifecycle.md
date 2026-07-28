@@ -11,6 +11,10 @@ native shell authority.
 - Sumi's window-session archive is the only restoration owner. SwiftUI scene
   restoration is disabled so AppKit cannot resurrect a second, unrelated
   `WindowGroup` shell.
+- The initial `WindowGroup` state receives its durable sidebar, theme,
+  selection, and geometry projection before SwiftUI mounts the shell.
+  Registration completes runtime restoration; it does not perform a second
+  visible chrome projection.
 - Normal windows share durable browser data but keep selection, sidebar,
   transient chrome, split focus, and WebView residence window-local.
 - Incognito windows never enter the durable snapshot or recently-closed window

@@ -6,6 +6,41 @@ import XCTest
 
 @MainActor
 final class WindowSessionServiceTests: XCTestCase {
+    func testInitialWindowProjectsDurableChromeBeforeRegistration() throws {
+        let browser = BrowserManager()
+        var snapshot = makeSessionRecoveryWindowSession(
+            isShowingEmptyState: true
+        )
+        snapshot.sidebarWidth = 344
+        snapshot.savedSidebarWidth = 344
+        snapshot.sidebarContentWidth = Double(
+            BrowserWindowState.sidebarContentWidth(for: 344)
+        )
+        snapshot.isSidebarVisible = false
+        let store = WindowSessionSnapshotStore(
+            key: "SumiTests.windowSession.initial.\(UUID().uuidString)"
+        )
+        store.persist(snapshot)
+        let delegate = TestWindowSessionDelegate(runtime: browser)
+        let service = delegate.makeRestoreService(snapshotStore: store)
+        let window = BrowserWindowState(
+            awaitsInitialSessionResolution: true
+        )
+
+        XCTAssertTrue(
+            service.prepareInitialWindow(
+                window,
+                currentProfile: browser.currentProfile
+            )
+        )
+
+        XCTAssertEqual(window.sidebarWidth, 344)
+        XCTAssertEqual(window.savedSidebarWidth, 344)
+        XCTAssertFalse(window.isSidebarVisible)
+        XCTAssertEqual(window.currentSpaceId, snapshot.currentSpaceId)
+        XCTAssertTrue(window.restorationState.isAwaitingInitialResolution)
+    }
+
     func testOverrideSnapshotWithBlockedAdmissionLeavesWindowUnseeded() throws {
         let tabManager = BrowserManager()
         let retiredProfile = try XCTUnwrap(tabManager.currentProfile)

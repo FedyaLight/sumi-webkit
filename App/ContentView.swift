@@ -18,6 +18,7 @@ struct ContentView: View {
     private let splitContext: WindowSplitContext
     private let themeChromeContext: WindowThemeChromeContext
     private let providedWindowState: BrowserWindowState?
+    private let registersProvidedWindowState: Bool
 
     @State private var defaultWindowState: BrowserWindowState
     @StateObject private var sidebarDragState: SidebarDragState
@@ -31,7 +32,8 @@ struct ContentView: View {
         splitContext: WindowSplitContext,
         themeChromeContext: WindowThemeChromeContext,
         windowState: BrowserWindowState? = nil,
-        initialWorkspaceTheme: WorkspaceTheme? = nil
+        initialWorkspaceTheme: WorkspaceTheme? = nil,
+        registersProvidedWindowState: Bool = false
     ) {
         self.webContentContext = webContentContext
         self.sidebarContext = sidebarContext
@@ -41,10 +43,12 @@ struct ContentView: View {
         self.splitContext = splitContext
         self.themeChromeContext = themeChromeContext
         self.providedWindowState = windowState
-        let defaultWindowState = BrowserWindowState(
+        self.registersProvidedWindowState = registersProvidedWindowState
+        let defaultWindowState = windowState ?? BrowserWindowState(
             initialWorkspaceTheme: initialWorkspaceTheme,
             awaitsInitialSessionResolution: true,
-            sidebarRecoveryCoordinator: sidebarContext.hostRecoveryCoordinator
+            sidebarRecoveryCoordinator:
+                sidebarContext.hostRecoveryCoordinator
         )
         _defaultWindowState = State(initialValue: defaultWindowState)
         _sidebarDragState = StateObject(
@@ -77,7 +81,9 @@ struct ContentView: View {
             )
             .onAppear {
                 StartupPerformanceTrace.firstWindowVisible()
-                guard providedWindowState == nil else { return }
+                guard providedWindowState == nil || registersProvidedWindowState else {
+                    return
+                }
                 windowRegistry.register(windowState)
             }
     }

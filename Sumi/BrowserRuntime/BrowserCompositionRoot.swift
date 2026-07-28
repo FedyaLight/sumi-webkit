@@ -101,11 +101,13 @@ enum BrowserCompositionRoot {
     static func makeBookmarkManager(
         database: SumiDatabase,
         faviconService: any BrowserFaviconServicing,
-        initialProfile: Profile?
+        initialProfile: Profile?,
+        defersInitialFaviconSync: Bool = false
     ) -> SumiBookmarkManager {
         let bookmarkManager = SumiBookmarkManager(
             database: database,
-            faviconService: faviconService
+            faviconService: faviconService,
+            defersInitialFaviconSync: defersInitialFaviconSync
         )
         if let initialProfile {
             bookmarkManager.setFaviconPrefetchPartition(
@@ -226,7 +228,8 @@ enum BrowserCompositionRoot {
         permissionBridgeOverrides: BrowserPermissionBridgeRegistry.Overrides,
         sidebarHostRecoveryCoordinator: SidebarHostRecoveryHandling,
         initialTabRuntimePorts: RuntimePortRegistry?,
-        automaticallyStartPersistedStateLoad: Bool
+        automaticallyStartPersistedStateLoad: Bool,
+        defersNoncriticalStartupWork: Bool
     ) -> BrowserKernelGraph {
         let resolvedDataServices = browsingDataCleanupService.map {
             dataServices.replacing(browsingDataCleanupService: $0)
@@ -347,12 +350,14 @@ enum BrowserCompositionRoot {
                 database: startupDatabase,
                 profileId: initialProfile?.id,
                 faviconCleaner: resolvedDataServices.historyFaviconCleaner,
-                visitedLinkStore: resolvedDataServices.historyVisitedLinkStore
+                visitedLinkStore: resolvedDataServices.historyVisitedLinkStore,
+                automaticallyStarts: defersNoncriticalStartupWork == false
             ),
             bookmarkManager: makeBookmarkManager(
                 database: startupDatabase,
                 faviconService: resolvedDataServices.faviconService,
-                initialProfile: initialProfile
+                initialProfile: initialProfile,
+                defersInitialFaviconSync: defersNoncriticalStartupWork
             ),
             recentlyClosedManager: RecentlyClosedManager(
                 profileReferenceAdmission: profileReferenceAdmission

@@ -54,6 +54,7 @@ final class HistoryManager: ObservableObject {
     private var summaryRefreshTask: Task<Void, Never>?
     private var visitedLinkPreloadTask: Task<Void, Never>?
     private var recentVisitedCache: [HistoryListItem] = []
+    private var hasStarted = false
     private static let changeRefreshDebounce: TimeInterval = 0.12
 
     var currentProfileId: UUID?
@@ -63,18 +64,29 @@ final class HistoryManager: ObservableObject {
         profileId: UUID? = nil,
         faviconCleaner: any HistoryFaviconCleaning,
         visitedLinkStore: any HistoryVisitedLinkStoring,
-        delayedActions: MainActorDelayedActionScheduler = .live
+        delayedActions: MainActorDelayedActionScheduler = .live,
+        automaticallyStarts: Bool = true
     ) {
         self.store = HistoryStore(database: database)
         self.currentProfileId = profileId
         self.faviconCleaner = faviconCleaner
         self.visitedLinkStore = visitedLinkStore
         self.delayedActions = delayedActions
+        if automaticallyStarts {
+            start()
+        }
+    }
+
+    @discardableResult
+    func start() -> Bool {
+        guard hasStarted == false else { return false }
+        hasStarted = true
         scheduleDeferredHistoryCleanupIfNeeded()
         preloadVisitedLinksForCurrentProfile()
         Task { [weak self] in
             await self?.refreshSummary(incrementRevision: false)
         }
+        return true
     }
 
     isolated deinit {

@@ -83,9 +83,6 @@ final class SumiBoostsModule: ObservableObject {
     func attach(runtime: Runtime) {
         self.runtime = runtime
         hasAttachedRuntime = true
-        if isEnabled {
-            loadStore().beginPrefetch()
-        }
     }
 
     func setEnabled(_ isEnabled: Bool) {

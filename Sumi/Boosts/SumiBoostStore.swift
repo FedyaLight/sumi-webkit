@@ -52,10 +52,6 @@ final class SumiBoostStore: ObservableObject {
         changesSubject.eraseToAnyPublisher()
     }
 
-    func beginPrefetch() {
-        diskWorker.prefetch()
-    }
-
     init(
         rootDirectory: URL? = nil,
         fileManager: FileManager = .default,

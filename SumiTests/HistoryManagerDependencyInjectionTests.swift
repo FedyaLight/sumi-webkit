@@ -78,6 +78,35 @@ final class HistoryManagerDependencyInjectionTests: XCTestCase {
         XCTAssertEqual(replaceCall?.urls, [])
     }
 
+    func testDeferredStartupWorkStartsExactlyOnce() async throws {
+        let database = try SumiDatabase.inMemory()
+        let profileID = UUID()
+        try database.transaction {
+            try $0.profiles.save(
+                ProfileRecord(id: profileID, name: "Deferred", index: 0)
+            )
+        }
+        let visitedLinks = FakeHistoryVisitedLinkStore()
+        let manager = HistoryManager(
+            database: database,
+            profileId: profileID,
+            faviconCleaner: FakeHistoryFaviconCleaner(),
+            visitedLinkStore: visitedLinks,
+            automaticallyStarts: false
+        )
+
+        await Task.yield()
+        XCTAssertTrue(visitedLinks.preloadCalls.isEmpty)
+
+        manager.start()
+        manager.start()
+        for _ in 0..<20 where visitedLinks.preloadCalls.isEmpty {
+            await Task.yield()
+        }
+
+        XCTAssertEqual(visitedLinks.preloadCalls.count, 1)
+    }
+
     private struct HistoryDependencyHarness {
         let container: SumiDatabase
         let store: HistoryStore

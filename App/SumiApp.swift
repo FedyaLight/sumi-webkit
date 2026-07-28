@@ -31,7 +31,8 @@ struct SumiApp: App {
     @State private var settingsManager: SumiSettingsService
     @State private var keyboardShortcutManager: KeyboardShortcutManager
     @State private var appOrchestrationOwner = BrowserAppOrchestrationOwner()
-    @State private var startupRecovery = SumiStartupRecoveryTransaction()
+    @State private var startupRecovery: SumiStartupRecoveryTransaction
+    @State private var initialWindowState: BrowserWindowState
     @State private var pendingProfileRetirementNotice:
         ProfileRetirementStartupRecoveryReport?
     @State private var isPresentingProfileRetirementNotice = false
@@ -80,7 +81,37 @@ struct SumiApp: App {
             nowPlayingController: nowPlayingController,
             permissionSiteActivityStore: permissionSiteActivityStore,
             externalAppResolver: SumiNSWorkspaceExternalAppResolver(),
-            sidebarHostRecoveryCoordinator: SidebarHostRecoveryCoordinator()
+            sidebarHostRecoveryCoordinator: SidebarHostRecoveryCoordinator(),
+            automaticallyPrepareRuntime: false,
+            defersNoncriticalStartupWork: true
+        )
+        let startupAdmission = SumiStartupAdmission.evaluate(
+            preflight: browserManager.profileRetirementStartupPreflight,
+            profileReferenceAdmission: browserManager
+                .profileReferenceAdmission,
+            importJournal: SumiImportTransactionDatabaseJournal(
+                database: browserManager.database
+            )
+        )
+        let startupRecovery: SumiStartupRecoveryTransaction
+        let preparesInitialWindow: Bool
+        switch startupAdmission {
+        case .ready:
+            Self.startBrowserRuntime(browserManager)
+            startupRecovery = SumiStartupRecoveryTransaction(state: .ready)
+            preparesInitialWindow = true
+        case .recoveryRequired:
+            browserManager.prepareRuntimeForStartupRecovery()
+            startupRecovery = SumiStartupRecoveryTransaction()
+            preparesInitialWindow = false
+        case .failed(let message):
+            startupRecovery = SumiStartupRecoveryTransaction(
+                state: .failed(message: message, backupURL: nil)
+            )
+            preparesInitialWindow = false
+        }
+        let initialWindowState = browserManager.makeInitialWindowState(
+            preparesForLaunch: preparesInitialWindow
         )
         let keyboardShortcutManager = KeyboardShortcutManager()
         keyboardShortcutManager.attach(
@@ -103,6 +134,8 @@ struct SumiApp: App {
         _keyboardShortcutManager = State(
             initialValue: keyboardShortcutManager
         )
+        _startupRecovery = State(initialValue: startupRecovery)
+        _initialWindowState = State(initialValue: initialWindowState)
         _browserManager = StateObject(wrappedValue: browserManager)
     }
 
@@ -118,9 +151,10 @@ struct SumiApp: App {
                     .frame(minWidth: 520, minHeight: 240)
                 case .ready:
                     rootContentView(
-                        windowState: nil,
+                        windowState: initialWindowState,
                         initialWorkspaceTheme: browserManager.spaceStateOwner
-                            .currentSpace?.workspaceTheme
+                            .currentSpace?.workspaceTheme,
+                        registersWindowState: true
                     )
                     .onAppear {
                         setupApplicationLifecycle()
@@ -200,17 +234,16 @@ struct SumiApp: App {
                         .importRetirement
                 )
                 let recovery = try await transaction.recoverIfNeeded()
-                // Bulk payloads staged for an import that never finished are
-                // dead weight; nothing outlives the transaction that referenced
-                // them, so anything still on disk here is an orphan.
-                SumiImportBulkStagingStore().sweepOrphans()
                 return recovery
             },
             hasSafeProfile: {
                 browserManager.profileManager.profiles.isEmpty == false
             },
             startRuntime: {
-                browserManager.startRuntimeAfterStartupRecovery()
+                Self.startBrowserRuntime(
+                    browserManager,
+                    initialWindowState: initialWindowState
+                )
             }
         )
 
@@ -262,6 +295,16 @@ struct SumiApp: App {
                 pendingProfileRetirementNotice = nil
             }
         }
+    }
+
+    private static func startBrowserRuntime(
+        _ browserManager: BrowserManager,
+        initialWindowState: BrowserWindowState? = nil
+    ) {
+        if let initialWindowState {
+            browserManager.prepareInitialWindowState(initialWindowState)
+        }
+        browserManager.startRuntimeAfterStartupRecovery()
     }
 
     /// Configures application-level dependencies and callbacks when the first window appears.
@@ -327,7 +370,8 @@ struct SumiApp: App {
 
     private func rootContentView(
         windowState: BrowserWindowState?,
-        initialWorkspaceTheme: WorkspaceTheme?
+        initialWorkspaceTheme: WorkspaceTheme?,
+        registersWindowState: Bool = false
     ) -> some View {
         Self.makeRootContentView(
             dependencies: SumiAppRootDependencies(
@@ -341,7 +385,8 @@ struct SumiApp: App {
                 sidebarMouseButtonCaptureRegistry: appDelegate.sidebarMouseButtonCaptureRegistry
             ),
             windowState: windowState,
-            initialWorkspaceTheme: initialWorkspaceTheme
+            initialWorkspaceTheme: initialWorkspaceTheme,
+            registersWindowState: registersWindowState
         )
     }
 
@@ -352,7 +397,8 @@ struct SumiApp: App {
         let contentView = makeRootContentView(
             dependencies: dependencies,
             windowState: windowState,
-            initialWorkspaceTheme: dependencies.browserManager.spaceStateOwner.currentSpace?.workspaceTheme
+            initialWorkspaceTheme: dependencies.browserManager.spaceStateOwner.currentSpace?.workspaceTheme,
+            registersWindowState: false
         )
 
         return NSHostingView(rootView: contentView)
@@ -361,7 +407,8 @@ struct SumiApp: App {
     private static func makeRootContentView(
         dependencies: SumiAppRootDependencies,
         windowState: BrowserWindowState?,
-        initialWorkspaceTheme: WorkspaceTheme?
+        initialWorkspaceTheme: WorkspaceTheme?,
+        registersWindowState: Bool
     ) -> some View {
         ContentView(
             webContentContext: .make(
@@ -381,7 +428,8 @@ struct SumiApp: App {
             splitContext: .make(browserManager: dependencies.browserManager),
             themeChromeContext: .make(browserManager: dependencies.browserManager),
             windowState: windowState,
-            initialWorkspaceTheme: initialWorkspaceTheme
+            initialWorkspaceTheme: initialWorkspaceTheme,
+            registersProvidedWindowState: registersWindowState
         )
             .ignoresSafeArea(.all)
             .writingToolsBehavior(.disabled)

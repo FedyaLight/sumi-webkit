@@ -50,6 +50,35 @@ final class SumiBookmarkManagerTests: XCTestCase {
         XCTAssertEqual(faviconService.syncedBookmarkPartitions.last, partition)
     }
 
+    func testInitialFaviconSyncCanWaitUntilFirstPaintBoundary() throws {
+        let database = try SumiDatabase.inMemory()
+        let url = try XCTUnwrap(URL(string: "https://deferred.example"))
+        _ = try SumiBookmarkManager(
+            database: database,
+            syncFavicons: false
+        ).createBookmark(url: url, title: "Deferred")
+        let faviconService = FakeBookmarkFaviconService()
+        let manager = SumiBookmarkManager(
+            database: database,
+            faviconService: faviconService,
+            defersInitialFaviconSync: true
+        )
+        let partition = SumiFaviconPartition(
+            profileIdentifier: "deferred-profile",
+            isPrivate: false
+        )
+
+        manager.setFaviconPrefetchPartition(partition)
+
+        XCTAssertTrue(faviconService.syncedBookmarkURLs.isEmpty)
+
+        manager.startDeferredFaviconSync()
+        manager.startDeferredFaviconSync()
+
+        XCTAssertEqual(faviconService.syncedBookmarkURLs, [[url]])
+        XCTAssertEqual(faviconService.syncedBookmarkPartitions, [partition])
+    }
+
     func testRepeatedCreateReturnsExistingBookmark() throws {
         let manager = makeManager()
         let firstURL = try XCTUnwrap(URL(string: "https://repeat.example"))

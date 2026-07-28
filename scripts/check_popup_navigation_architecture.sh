@@ -328,9 +328,9 @@ if (( contract_count == 0 )); then
   guard_record_failure "WebKit child publication must validate inside the pre-registry transaction"
 fi
 
-contract_count="$(guard_count_matches 'tabBrowserRuntime:[[:space:]]*TabBrowserRuntimeFactory\.make\(for:[[:space:]]*browserManager\)' "$runtime_ports_factory")"
+contract_count="$(guard_count_matches 'tabBrowserRuntime:[[:space:]]*browserManager\.tabBrowserRuntimeReference' "$runtime_ports_factory")"
 if (( contract_count == 0 )); then
-  guard_record_failure "Tab runtime-port composition must inject one assembled runtime into lifecycle"
+  guard_record_failure "Tab runtime-port composition must inject the browser's shared runtime reference into lifecycle"
 fi
 contract_count="$(guard_count_matches 'attachBrowserRuntime\(tabBrowserRuntime\)' "$lifecycle_factory")"
 if (( contract_count == 0 )); then

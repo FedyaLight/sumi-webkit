@@ -9,6 +9,10 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
         let app = try launchApp()
 
         XCTAssertTrue(app.windows.element(boundBy: 0).waitForExistence(timeout: 5))
+        XCTAssertFalse(
+            app.staticTexts["Recovering browser data…"].exists,
+            "A clean launch must project the browser without recovery chrome."
+        )
     }
 
     func testClosingNewWindowKeepsOriginalBrowserWindowAlive() throws {

@@ -89,6 +89,25 @@ instead of gaining another generic owner wrapper. Runtime ports live under
 `Sumi/BrowserRuntime/` in the app target, including the UUID-only split
 coordination port.
 
+## Startup Admission and Runtime Cost
+
+Startup admission is a synchronous read-only decision over the already-open
+browser database. A launch enters recovery only when the profile-retirement
+ledger or import journal contains durable pending work. The common empty-ledger
+path starts the browser directly and never mounts recovery UI.
+
+`BrowserRuntimeLifecycle` is passive until admission explicitly prepares it
+for recovery or starts it for ordinary use. Recovery preparation attaches the
+ports required by durable cleanup but does not start permission, retention, or
+startup observers. A normal start attaches those ports once and starts the
+observers once.
+
+History cleanup and visited-link preload, bookmark favicon synchronization,
+and import-staging orphan cleanup begin after the first browser paint. Boost
+data has one demand path and reads its store only when an enabled Boost feature
+queries it. These maintenance paths have no launch-time timer, observer, cache,
+or filesystem scan before they are admitted.
+
 ## Window State Ownership
 
 `BrowserWindowState` owns the mutable session values that can be projected into
@@ -110,6 +129,10 @@ These authorities are passive main-actor storage. Constructing a browser window
 does not start observation, scheduling, timers, tasks, caches, or AppKit work.
 Their separate observation registrars also prevent transient presentation from
 invalidating consumers that read only durable selection, and vice versa.
+The initial window is constructed and receives its durable session projection
+before SwiftUI mounts it. Registry admission then completes runtime-only
+selection, Glance, and publication work; persisted sidebar and theme fields do
+not arrive as a second visible correction.
 
 ## Window View Context Boundaries
 

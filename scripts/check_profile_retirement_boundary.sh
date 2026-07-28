@@ -139,7 +139,7 @@ guard_exact 'single point-of-no-return transition' "$workflow_begin_count" 1
 guard_exact 'reservation cancellation before point-of-no-return' "$workflow_cancel_count" 2
 
 app_startup_authority_count="$({
-  guard_count_matches '@State private var startupRecovery = SumiStartupRecoveryTransaction\(\)' "$app_root"
+  guard_count_matches '@State private var startupRecovery: SumiStartupRecoveryTransaction' "$app_root"
 })"
 runtime_start_count="$({
   guard_count_matches 'browserManager\.startRuntimeAfterStartupRecovery\(\)' "$app_root"

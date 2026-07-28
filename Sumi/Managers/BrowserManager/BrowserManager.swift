@@ -22,24 +22,7 @@ class BrowserManager: ObservableObject {
     let workspaceThemePickerSessionState =
         BrowserWorkspaceThemePickerSessionState()
     let nativeModalPresentationState = BrowserNativeModalPresentationState()
-    lazy var profileWebKitBootstrap = BrowserProfileWebKitBootstrap(
-        profiles: { [weak self] in
-            self?.profileManager.profiles ?? []
-        }
-    )
-    lazy var pageActivationPerformance = PageActivationPerformanceMonitor(
-        onFirstPaint: { [weak self] in
-            guard let self else { return }
-            let profileIDs = Set(
-                tabCollectionMembershipOwner.allTabs().compactMap {
-                    $0.resolveProfile()?.id
-                }
-            )
-            profileWebKitBootstrap.prepareAfterFirstPaint(
-                profileIDs: profileIDs
-            )
-        }
-    )
+    var startupServicesStorage: BrowserStartupServices?
 
     let webViewSessions: WebViewSessionRepository
     let windowRegistry: WindowRegistry
@@ -376,11 +359,6 @@ class BrowserManager: ObservableObject {
         browserManager: self,
         tabCommands: extensionTabCommands
     )
-    /// Attached in init, started after durable recovery, shut down in deinit.
-    private lazy var runtimeLifecycle = BrowserRuntimeLifecycle.live(
-        browserManager: self,
-        splitQuery: splitQuery
-    )
     /// Reached only from `sumiSettings.didSet`; private so feature code cannot use it as a service locator.
     private(set) lazy var settingsAttachment = BrowserSettingsAttachmentCoordinator.live(browserManager: self)
     lazy var webViewCloseRouter = composeWebViewCloseRouter()
@@ -574,17 +552,11 @@ class BrowserManager: ObservableObject {
         _ = webViewRuntime
         _ = shellRuntime
         _ = shutdownCleanupService
-        // Recovery needs attached ports; observation starts only after it succeeds.
-        _ = runtimeLifecycle
-    }
-
-    func startRuntimeAfterStartupRecovery() {
-        runtimeLifecycle.start(after: profileRetirementStartupPreflight)
     }
 
     isolated deinit {
         windowSessionPersistence.flushForBrowserRuntimeTeardown()
-        runtimeLifecycle.shutdown()
+        startupServicesStorage?.shutdown()
         shutdownCleanupService.cleanupAfterBrowserRuntimeDeallocation()
         NotificationCenter.default.removeObserver(self)
     }

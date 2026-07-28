@@ -6,6 +6,10 @@ import Foundation
 @MainActor
 final class WindowSessionRestoreService {
     private enum PreparedRegistrationKind {
+        case initial(
+            glanceSession: GlanceSessionSnapshot?,
+            waitsForInitialTabData: Bool
+        )
         case archived(glanceSession: GlanceSessionSnapshot?)
         case contextualWindowWithInitialTab(executionProfileID: UUID)
     }
@@ -184,6 +188,42 @@ final class WindowSessionRestoreService {
         )
     }
 
+    /// Projects the durable launch state before SwiftUI mounts the first shell.
+    /// Registration still owns runtime-only restoration and publication.
+    @discardableResult
+    func prepareInitialWindow(
+        _ windowState: BrowserWindowState,
+        currentProfile: Profile?
+    ) -> Bool {
+        let snapshot = cycle.claimSnapshot(
+            from: snapshotStore,
+            for: windowState
+        )
+        let coveredProfileIDs = snapshot.map { profileIDs(in: $0) }
+            ?? Set(optional: currentProfile?.id)
+        return prepareRegistration(
+            windowState,
+            coveredProfileIDs: coveredProfileIDs,
+            kind: .initial(
+                glanceSession: snapshot?.glanceSession,
+                waitsForInitialTabData: snapshot != nil
+            )
+        ) {
+            if let snapshot {
+                snapshotApplier.prepareForRegistration(
+                    snapshot,
+                    to: windowState
+                )
+            } else {
+                windowState.currentProfileId = currentProfile?.id
+                windowState.currentSpaceId = spaceResolver.resolve(
+                    for: windowState,
+                    seededProfileId: currentProfile?.id
+                )
+            }
+        }
+    }
+
     /// Stamps an archived identity and its persisted fields before the shell
     /// can register, activate, notify extensions, or become visible.
     @discardableResult
@@ -191,42 +231,19 @@ final class WindowSessionRestoreService {
         _ snapshot: LastSessionWindowSnapshot,
         forRegistration windowState: BrowserWindowState
     ) -> Bool {
-        precondition(
-            preparedRegistrationsByWindowID[windowState.id] == nil,
-            "A browser window cannot prepare two archived sessions"
-        )
         let coveredProfileIDs = profileIDs(in: snapshot.session)
-        let lease: ProfileReferenceMutationLease
-        do {
-            lease = try profileReferenceAdmission.beginReferenceMutation(
-                to: coveredProfileIDs
+        return prepareRegistration(
+            windowState,
+            coveredProfileIDs: coveredProfileIDs,
+            kind: .archived(glanceSession: snapshot.session.glanceSession)
+        ) {
+            windowState.restorationState.restoredSessionWindowID = snapshot.id
+            windowState.restorationState.isAwaitingInitialResolution = true
+            snapshotApplier.prepareForRegistration(
+                snapshot.session,
+                to: windowState
             )
-        } catch {
-            return false
         }
-        windowState.restorationState.restoredSessionWindowID = snapshot.id
-        windowState.restorationState.isAwaitingInitialResolution = true
-        snapshotApplier.prepareForRegistration(
-            snapshot.session,
-            to: windowState
-        )
-        guard profileReferenceAdmission.validate(
-            lease,
-            covers: coveredProfileIDs
-        ) else {
-            precondition(
-                profileReferenceAdmission.endReferenceMutation(lease),
-                "Archived window preparation lost its profile-reference mutation lease"
-            )
-            return false
-        }
-        preparedRegistrationsByWindowID[windowState.id] = PreparedRegistration(
-            windowIdentity: ObjectIdentifier(windowState),
-            kind: .archived(glanceSession: snapshot.session.glanceSession),
-            profileReferenceMutationLease: lease,
-            coveredProfileIDs: coveredProfileIDs
-        )
-        return true
     }
 
     /// A WebKit child window arrives with a concrete configuration that must
@@ -239,46 +256,23 @@ final class WindowSessionRestoreService {
         initialTabExecutionProfileID: UUID,
         forRegistration windowState: BrowserWindowState
     ) -> Bool {
-        precondition(
-            preparedRegistrationsByWindowID[windowState.id] == nil,
-            "A browser window cannot prepare two registration contexts"
-        )
         guard let space = spaceResolver.space(for: spaceID),
               space.profileId == profileID
         else {
             return false
         }
         let coveredProfileIDs = Set([profileID, initialTabExecutionProfileID])
-        let lease: ProfileReferenceMutationLease
-        do {
-            lease = try profileReferenceAdmission.beginReferenceMutation(
-                to: coveredProfileIDs
-            )
-        } catch {
-            return false
-        }
-        windowState.restorationState.isAwaitingInitialResolution = true
-        windowState.currentProfileId = profileID
-        windowState.currentSpaceId = space.id
-        guard profileReferenceAdmission.validate(
-            lease,
-            covers: coveredProfileIDs
-        ) else {
-            precondition(
-                profileReferenceAdmission.endReferenceMutation(lease),
-                "Contextual window preparation lost its profile-reference mutation lease"
-            )
-            return false
-        }
-        preparedRegistrationsByWindowID[windowState.id] = PreparedRegistration(
-            windowIdentity: ObjectIdentifier(windowState),
+        return prepareRegistration(
+            windowState,
+            coveredProfileIDs: coveredProfileIDs,
             kind: .contextualWindowWithInitialTab(
                 executionProfileID: initialTabExecutionProfileID
-            ),
-            profileReferenceMutationLease: lease,
-            coveredProfileIDs: coveredProfileIDs
-        )
-        return true
+            )
+        ) {
+            windowState.restorationState.isAwaitingInitialResolution = true
+            windowState.currentProfileId = profileID
+            windowState.currentSpaceId = space.id
+        }
     }
 
     /// Discards an unconsumed preparation when shell publication is rejected.
@@ -342,6 +336,22 @@ final class WindowSessionRestoreService {
             )
         }
         switch prepared.kind {
+        case .initial(let glanceSession, let waitsForInitialTabData):
+            glanceManager.restoreSession(glanceSession, in: windowState)
+            if waitsForInitialTabData,
+               startupRestore.hasLoadedInitialData == false {
+                commandPaletteSanitizer.sanitize(in: windowState)
+                themeRestorer.restore(
+                    for: windowState,
+                    source: "preparedInitialWindow.preInitialTabManagerLoad"
+                )
+                return
+            }
+            finalizeWindowStateRestore(
+                windowState,
+                source: "preparedInitialWindow",
+                persistsWindowSession: false
+            )
         case .archived(let glanceSession):
             precondition(
                 windowState.restorationState.restoredSessionWindowID != nil,
@@ -410,6 +420,44 @@ final class WindowSessionRestoreService {
         if persistsWindowSession {
             persistence.persist(windowState)
         }
+    }
+
+    private func prepareRegistration(
+        _ windowState: BrowserWindowState,
+        coveredProfileIDs: Set<UUID>,
+        kind: PreparedRegistrationKind,
+        mutation: () -> Void
+    ) -> Bool {
+        precondition(
+            preparedRegistrationsByWindowID[windowState.id] == nil,
+            "A browser window cannot prepare two registration contexts"
+        )
+        let lease: ProfileReferenceMutationLease
+        do {
+            lease = try profileReferenceAdmission.beginReferenceMutation(
+                to: coveredProfileIDs
+            )
+        } catch {
+            return false
+        }
+        mutation()
+        guard profileReferenceAdmission.validate(
+            lease,
+            covers: coveredProfileIDs
+        ) else {
+            precondition(
+                profileReferenceAdmission.endReferenceMutation(lease),
+                "Prepared window lost its profile-reference mutation lease"
+            )
+            return false
+        }
+        preparedRegistrationsByWindowID[windowState.id] = PreparedRegistration(
+            windowIdentity: ObjectIdentifier(windowState),
+            kind: kind,
+            profileReferenceMutationLease: lease,
+            coveredProfileIDs: coveredProfileIDs
+        )
+        return true
     }
 
     private func finalizeContextualWindowWithInitialTab(

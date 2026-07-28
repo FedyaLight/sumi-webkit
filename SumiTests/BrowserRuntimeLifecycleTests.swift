@@ -4,6 +4,18 @@ import XCTest
 
 @MainActor
 final class BrowserRuntimeLifecycleTests: XCTestCase {
+    func testRuntimeIsPassiveUntilExplicitlyStarted() {
+        let browser = BrowserManager(
+            automaticallyPrepareRuntime: false
+        )
+
+        XCTAssertNil(browser.runtimePortConnection.current)
+
+        browser.startRuntimeAfterStartupRecovery()
+
+        XCTAssertNotNil(browser.runtimePortConnection.current)
+    }
+
     func testRepeatedStartKeepsExactRuntimeAttachment() {
         let browser = BrowserManager()
         let connection = browser.runtimePortConnection

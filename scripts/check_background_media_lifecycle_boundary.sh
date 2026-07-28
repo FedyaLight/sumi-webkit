@@ -10,9 +10,10 @@ guard_initialize "$repo_root"
 service="Sumi/Services/SumiBackgroundMediaOptimizationService.swift"
 lifecycle="Sumi/Managers/BrowserManager/BrowserRuntimeLifecycle.swift"
 browser_manager="Sumi/Managers/BrowserManager/BrowserManager.swift"
+startup_services="Sumi/Managers/BrowserManager/BrowserStartupServices.swift"
 termination="Sumi/Managers/BrowserManager/BrowserTerminationRuntimeLease.swift"
 
-for file in "$service" "$lifecycle" "$browser_manager" "$termination"; do
+for file in "$service" "$lifecycle" "$browser_manager" "$startup_services" "$termination"; do
   guard_require_file "$file"
 done
 
@@ -112,7 +113,7 @@ if (( shutdown_detach_line >= shutdown_tab_runtime_line )); then
 fi
 
 manager_deinit="$(extract_scope "$browser_manager" 'isolated deinit')"
-manager_shutdown_line="$(guard_capture_matches 'runtimeLifecycle.shutdown()' -F - <<< "$manager_deinit" | cut -d: -f1)"
+manager_shutdown_line="$(guard_capture_matches 'startupServicesStorage?.shutdown()' -F - <<< "$manager_deinit" | cut -d: -f1)"
 manager_cleanup_line="$(guard_capture_matches 'shutdownCleanupService.cleanupAfterBrowserRuntimeDeallocation()' -F - <<< "$manager_deinit" | cut -d: -f1)"
 if [[ -z "$manager_shutdown_line" || -z "$manager_cleanup_line" ]]; then
   guard_record_failure "background-media lifecycle boundary: BrowserManager deinit lost runtime shutdown or final cleanup"
@@ -120,6 +121,14 @@ if [[ -z "$manager_shutdown_line" || -z "$manager_cleanup_line" ]]; then
 fi
 if (( manager_shutdown_line >= manager_cleanup_line )); then
   guard_record_failure "background-media lifecycle boundary: runtime shutdown must finish before final browser cleanup"
+  exit 1
+fi
+startup_shutdown="$(extract_scope "$startup_services" 'func shutdown() {')"
+startup_lifecycle_shutdown_count="$(
+  guard_count_matches 'runtimeLifecycleStorage?.shutdown()' -F - <<< "$startup_shutdown"
+)"
+if (( startup_lifecycle_shutdown_count == 0 )); then
+  guard_record_failure "background-media lifecycle boundary: startup services must retire an attached runtime lifecycle"
   exit 1
 fi
 manager_detach_reach="$(

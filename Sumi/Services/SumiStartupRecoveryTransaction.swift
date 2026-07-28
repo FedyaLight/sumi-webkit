@@ -25,7 +25,11 @@ final class SumiStartupRecoveryTransaction {
         case failed(Failure)
     }
 
-    private(set) var state = State.pending
+    private(set) var state: State
+
+    init(state: State = .pending) {
+        self.state = state
+    }
 
     func recoverIfNeeded(
         preflight: ProfileRetirementStartupPreflightStatus,

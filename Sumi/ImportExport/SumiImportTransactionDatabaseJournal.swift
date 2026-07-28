@@ -11,6 +11,12 @@ struct SumiImportTransactionDatabaseJournal:
         self.database = database
     }
 
+    func hasPendingRecovery() throws -> Bool {
+        try database.read { connection in
+            try connection.documents.data(forKey: Self.documentKey) != nil
+        }
+    }
+
     func load() async throws -> SumiImportTransactionJournalRecord? {
         try database.read { connection in
             guard let data = try connection.documents.data(

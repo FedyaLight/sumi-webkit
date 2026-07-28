@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 extension BrowserRuntimeLifecycle {
@@ -6,10 +7,6 @@ extension BrowserRuntimeLifecycle {
         browserManager: BrowserManager,
         splitQuery: WindowSplitQuery
     ) -> BrowserRuntimeLifecycle {
-        let runtimeGraphSubscription = BrowserManagerRuntimeWiring.attach(
-            to: browserManager,
-            splitQuery: splitQuery
-        )
         let windowSessions = browserManager.windowSessionBundle
         return BrowserRuntimeLifecycle(
             permissionObservation: BrowserRuntimePermissionObservation(
@@ -19,18 +16,14 @@ extension BrowserRuntimeLifecycle {
             ),
             startupObservation: BrowserRuntimeStartupObservation(
                 tabStructureEvents: browserManager.tabStructureEventBus,
-                initialDataSettlement: BrowserInitialTabDataLoadedSettlement(
-                    windows: BrowserInitialWindowDataSettlement(
-                        windows: browserManager.windowRegistry,
-                        restore: windowSessions.restoreService,
-                        restoration: windowSessions.restoration,
-                        activation: browserManager.windowActivation
-                    ),
-                    liveFolders: browserManager.liveFolderManager,
-                    liveFoldersModule: browserManager.optionalModules.liveFolders,
-                    startupReconciliation: browserManager
-                        .startupSessionReconciliation
-                ),
+                windows: browserManager.windowRegistry,
+                windowRestore: windowSessions.restoreService,
+                windowRestoration: windowSessions.restoration,
+                windowActivation: browserManager.windowActivation,
+                liveFolders: browserManager.liveFolderManager,
+                liveFoldersModule: browserManager.optionalModules.liveFolders,
+                startupReconciliation: browserManager
+                    .startupSessionReconciliation,
                 protectionRestore: browserManager.startupProtectionRuntime
             ),
             retentionObservation: BrowserRuntimeRetentionObservation(
@@ -40,7 +33,15 @@ extension BrowserRuntimeLifecycle {
             backgroundMedia: browserManager
                 .backgroundMediaOptimizationService,
             tabRuntime: browserManager.tabRuntimeLifecycle,
-            runtimeSubscription: runtimeGraphSubscription
+            attachRuntime: { [weak browserManager] in
+                guard let browserManager else {
+                    return AnyCancellable {}
+                }
+                return BrowserManagerRuntimeWiring.attach(
+                    to: browserManager,
+                    splitQuery: splitQuery
+                )
+            }
         )
     }
 }

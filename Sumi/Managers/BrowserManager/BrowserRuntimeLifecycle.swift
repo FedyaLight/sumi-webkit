@@ -5,6 +5,7 @@ import Foundation
 final class BrowserRuntimeLifecycle {
     private enum Phase {
         case idle
+        case recoveryPrepared
         case started
         case shutDown
     }
@@ -14,6 +15,7 @@ final class BrowserRuntimeLifecycle {
     private let retentionObservation: BrowserRuntimeRetentionObservation
     private let backgroundMedia: SumiBackgroundMediaOptimizationService
     private let tabRuntime: TabRuntimeLifecycle
+    private let attachRuntime: @MainActor () -> AnyCancellable
     private var runtimeSubscription: AnyCancellable?
     private var phase: Phase = .idle
 
@@ -23,22 +25,35 @@ final class BrowserRuntimeLifecycle {
         retentionObservation: BrowserRuntimeRetentionObservation,
         backgroundMedia: SumiBackgroundMediaOptimizationService,
         tabRuntime: TabRuntimeLifecycle,
-        runtimeSubscription: AnyCancellable
+        attachRuntime: @escaping @MainActor () -> AnyCancellable
     ) {
         self.permissionObservation = permissionObservation
         self.startupObservation = startupObservation
         self.retentionObservation = retentionObservation
         self.backgroundMedia = backgroundMedia
         self.tabRuntime = tabRuntime
-        self.runtimeSubscription = runtimeSubscription
+        self.attachRuntime = attachRuntime
     }
 
     isolated deinit {
         shutdown()
     }
 
+    func prepareForStartupRecovery() {
+        guard phase == .idle else { return }
+        runtimeSubscription = attachRuntime()
+        phase = .recoveryPrepared
+    }
+
     func start(after preflight: ProfileRetirementStartupPreflightStatus) {
-        guard preflight == .ready, phase == .idle else { return }
+        guard preflight == .ready,
+              phase == .idle || phase == .recoveryPrepared
+        else {
+            return
+        }
+        if phase == .idle {
+            runtimeSubscription = attachRuntime()
+        }
         phase = .started
         permissionObservation.start()
         startupObservation.start()

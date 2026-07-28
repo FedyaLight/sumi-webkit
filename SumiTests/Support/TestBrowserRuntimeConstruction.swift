@@ -47,7 +47,8 @@ extension BrowserManager {
         permissionBridgeOverrides: BrowserPermissionBridgeRegistry.Overrides = .init(),
         sidebarHostRecoveryCoordinator: SidebarHostRecoveryHandling = SidebarHostRecoveryCoordinator(),
         runtimePorts: RuntimePortRegistry? = nil,
-        automaticallyStartPersistedStateLoad: Bool = false
+        automaticallyStartPersistedStateLoad: Bool = false,
+        automaticallyPrepareRuntime: Bool = true
     ) {
         let startupPersistence = startupPersistence
             ?? Self.makeIsolatedTestStartupPersistence()
@@ -85,7 +86,8 @@ extension BrowserManager {
             sidebarHostRecoveryCoordinator: sidebarHostRecoveryCoordinator,
             initialTabRuntimePorts: runtimePorts,
             automaticallyStartPersistedStateLoad:
-                automaticallyStartPersistedStateLoad
+                automaticallyStartPersistedStateLoad,
+            automaticallyPrepareRuntime: automaticallyPrepareRuntime
         )
     }
 

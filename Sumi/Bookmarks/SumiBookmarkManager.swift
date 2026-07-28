@@ -15,14 +15,18 @@ final class SumiBookmarkManager: ObservableObject {
     private var foldersCacheNeedsReload = false
     private var pendingFaviconBookmarksByID: [String: SumiBookmark] = [:]
     private var publicationTask: Task<Void, Never>?
+    private var isInitialFaviconSyncDeferred: Bool
+
     convenience init(
         database: SumiDatabase,
-        faviconService: any BrowserFaviconServicing
+        faviconService: any BrowserFaviconServicing,
+        defersInitialFaviconSync: Bool = false
     ) {
         self.init(
             database: database,
             syncFavicons: true,
-            faviconService: faviconService
+            faviconService: faviconService,
+            defersInitialFaviconSync: defersInitialFaviconSync
         )
     }
 
@@ -33,18 +37,22 @@ final class SumiBookmarkManager: ObservableObject {
         self.init(
             database: database,
             syncFavicons: syncFavicons,
-            faviconService: nil
+            faviconService: nil,
+            defersInitialFaviconSync: false
         )
     }
 
     private init(
         database: SumiDatabase,
         syncFavicons: Bool,
-        faviconService: (any BrowserFaviconServicing)?
+        faviconService: (any BrowserFaviconServicing)?,
+        defersInitialFaviconSync: Bool
     ) {
         self.repository = SumiDatabaseBookmarkRepository(database: database)
         self.syncFavicons = syncFavicons
         self.faviconService = faviconService
+        self.isInitialFaviconSyncDeferred =
+            syncFavicons && defersInitialFaviconSync
         reload(notify: false)
     }
 
@@ -88,7 +96,23 @@ final class SumiBookmarkManager: ObservableObject {
     func setFaviconPrefetchPartition(_ partition: SumiFaviconPartition) {
         guard faviconPrefetchPartition != partition else { return }
         faviconPrefetchPartition = partition
-        guard syncFavicons, !bookmarkIndex.isEmpty else { return }
+        guard syncFavicons,
+              isInitialFaviconSyncDeferred == false,
+              !bookmarkIndex.isEmpty
+        else {
+            return
+        }
+        faviconService?.syncBookmarks(
+            bookmarkIndex.bookmarks,
+            partition: faviconPrefetchPartition
+        )
+        pendingFaviconBookmarksByID.removeAll(keepingCapacity: true)
+    }
+
+    func startDeferredFaviconSync() {
+        guard isInitialFaviconSyncDeferred else { return }
+        isInitialFaviconSyncDeferred = false
+        guard !bookmarkIndex.isEmpty else { return }
         faviconService?.syncBookmarks(
             bookmarkIndex.bookmarks,
             partition: faviconPrefetchPartition
@@ -322,7 +346,7 @@ final class SumiBookmarkManager: ObservableObject {
         foldersCacheNeedsReload = false
         pendingFaviconBookmarksByID.removeAll(keepingCapacity: true)
 
-        if syncFavicons {
+        if syncFavicons, isInitialFaviconSyncDeferred == false {
             faviconService?.syncBookmarks(
                 bookmarks,
                 partition: faviconPrefetchPartition
@@ -364,7 +388,9 @@ final class SumiBookmarkManager: ObservableObject {
         publicationTask = nil
         refreshFoldersCacheIfNeeded()
 
-        if syncFavicons, !pendingFaviconBookmarksByID.isEmpty {
+        if syncFavicons,
+           isInitialFaviconSyncDeferred == false,
+           !pendingFaviconBookmarksByID.isEmpty {
             let bookmarks = pendingFaviconBookmarksByID.values.sorted {
                 $0.id < $1.id
             }
