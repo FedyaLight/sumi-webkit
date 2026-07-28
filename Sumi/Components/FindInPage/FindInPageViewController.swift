@@ -144,28 +144,34 @@ final class FindInPageViewController: NSViewController {
     private weak var backgroundView: FindInPageBackgroundView!
     weak var closeButton: NSButton!
     weak var textField: NSTextField!
-    weak var focusRingView: FocusRingView!
+    weak var placeholderLabel: NSTextField!
     weak var statusField: NSTextField!
     weak var nextButton: NSButton!
     weak var previousButton: NSButton!
 
     private var statusPillView: ColorView?
+    private var statusPillWidthConstraint: NSLayoutConstraint?
     private weak var textFocusHost: ChromeTextFieldFocusHostView?
     private weak var textActivationBoundaryView: NSView?
     private var modelCancellables = Set<AnyCancellable>()
-    private var lastSyncedFocusRingStroke: Bool?
 
     private enum Copy {
         static let placeholder: LocalizedStringResource = "Find in page"
         static let statusAccessibilityLabel: LocalizedStringResource = "Find match position"
 
-        static func status(current: UInt, total: UInt) -> LocalizedStringResource {
-            "Match \(current) of \(total)"
+        static func status(current: UInt, total: UInt) -> String {
+            "\(current)/\(total)"
         }
 
         static func string(_ resource: LocalizedStringResource) -> String {
             String(localized: resource)
         }
+    }
+
+    private enum Layout {
+        static let statusHorizontalInset: CGFloat = 8
+        static let minimumStatusWidth: CGFloat = 52
+        static let maximumStatusWidth: CGFloat = 84
     }
 
     private enum ChromeAction {
@@ -244,6 +250,14 @@ final class FindInPageViewController: NSViewController {
         textFocusHost.setContentHuggingPriority(.defaultLow, for: .horizontal)
         textFocusHost.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
+        let placeholderLabel = NSTextField(labelWithString: Copy.string(Copy.placeholder))
+        placeholderLabel.translatesAutoresizingMaskIntoConstraints = false
+        placeholderLabel.font = textField.font
+        placeholderLabel.textColor = .placeholderTextColor
+        placeholderLabel.lineBreakMode = .byClipping
+        placeholderLabel.setAccessibilityElement(false)
+        textFocusHost.addSubview(placeholderLabel, positioned: .below, relativeTo: textField)
+
         let statusPillView = ColorView(frame: .zero)
         statusPillView.translatesAutoresizingMaskIntoConstraints = false
         statusPillView.cornerRadius = 7
@@ -290,16 +304,12 @@ final class FindInPageViewController: NSViewController {
         stackView.setCustomSpacing(10, after: nextButton)
         backgroundView.addSubview(stackView)
 
-        let focusRingView = FocusRingView(frame: .zero)
-        focusRingView.isHidden = true
-        backgroundView.addSubview(focusRingView)
-
         backgroundView.textField = textField
 
         self.backgroundView = backgroundView
         self.textField = textField
         self.textFocusHost = textFocusHost
-        self.focusRingView = focusRingView
+        self.placeholderLabel = placeholderLabel
         self.statusPillView = statusPillView
         self.statusField = statusField
         self.previousButton = previousButton
@@ -307,13 +317,18 @@ final class FindInPageViewController: NSViewController {
         self.closeButton = closeButton
         self.view = backgroundView
 
+        let statusPillWidthConstraint = statusPillView.widthAnchor.constraint(
+            equalToConstant: Layout.minimumStatusWidth
+        )
+        self.statusPillWidthConstraint = statusPillWidthConstraint
+
         NSLayoutConstraint.activate([
             stackView.leadingAnchor.constraint(equalTo: backgroundView.leadingAnchor, constant: 18),
             stackView.trailingAnchor.constraint(equalTo: backgroundView.trailingAnchor, constant: -10),
             stackView.centerYAnchor.constraint(equalTo: backgroundView.centerYAnchor),
             stackView.heightAnchor.constraint(equalToConstant: 28),
 
-            statusPillView.widthAnchor.constraint(equalToConstant: 52),
+            statusPillWidthConstraint,
             statusPillView.heightAnchor.constraint(equalToConstant: 28),
             statusField.leadingAnchor.constraint(equalTo: statusPillView.leadingAnchor, constant: 8),
             statusField.trailingAnchor.constraint(equalTo: statusPillView.trailingAnchor, constant: -8),
@@ -325,6 +340,10 @@ final class FindInPageViewController: NSViewController {
             nextButton.heightAnchor.constraint(equalToConstant: 26),
             closeButton.widthAnchor.constraint(equalToConstant: 26),
             closeButton.heightAnchor.constraint(equalToConstant: 26),
+
+            placeholderLabel.leadingAnchor.constraint(equalTo: textField.leadingAnchor, constant: 2),
+            placeholderLabel.trailingAnchor.constraint(lessThanOrEqualTo: textField.trailingAnchor),
+            placeholderLabel.centerYAnchor.constraint(equalTo: textField.centerYAnchor),
         ])
     }
 
@@ -333,7 +352,6 @@ final class FindInPageViewController: NSViewController {
 
         configureAppKitViewsAfterNibLoad()
 
-        textField.placeholderString = Copy.string(Copy.placeholder)
         textField.delegate = self
 
         textField.setAccessibilityIdentifier("FindInPageController.textField")
@@ -343,11 +361,9 @@ final class FindInPageViewController: NSViewController {
         statusField.setAccessibilityRole(.staticText)
         statusField.setAccessibilityLabel(Copy.string(Copy.statusAccessibilityLabel))
 
-        applyChromeColors(nil)
     }
 
     private func configureAppKitViewsAfterNibLoad() {
-        focusRingView.configureAfterNibLoadIfNeeded()
         for case let hover as MouseOverButton in [closeButton, nextButton, previousButton] {
             hover.configureAfterNibLoadIfNeeded()
         }
@@ -398,7 +414,6 @@ final class FindInPageViewController: NSViewController {
     override func viewDidLayout() {
         super.viewDidLayout()
         updateTextActivationBoundary()
-        syncFocusRingWithFirstResponderIfNeeded()
     }
 
     @IBAction func findInPageNext(_ sender: Any?) {
@@ -442,7 +457,6 @@ final class FindInPageViewController: NSViewController {
 
     private func subscribeToModelChanges(model: FindInPageModel?) {
         modelCancellables.removeAll()
-        lastSyncedFocusRingStroke = nil
 
         guard let model else { return }
 
@@ -452,17 +466,15 @@ final class FindInPageViewController: NSViewController {
             currentSelection: model.currentSelection
         )
 
-        Publishers.CombineLatest3(
+        Publishers.CombineLatest(
             model.$text.removeDuplicates(),
-            model.$matchesFound.removeDuplicates(),
-            model.$currentSelection.removeDuplicates()
+            model.$progress.removeDuplicates()
         )
-        .receive(on: DispatchQueue.main)
-        .sink { [weak self] text, matchesFound, currentSelection in
+        .sink { [weak self] text, progress in
             self?.applyModelState(
                 text: text,
-                matchesFound: matchesFound,
-                currentSelection: currentSelection
+                matchesFound: progress?.matchesFound,
+                currentSelection: progress?.currentSelection
             )
         }
         .store(in: &modelCancellables)
@@ -480,12 +492,14 @@ final class FindInPageViewController: NSViewController {
         statusField.stringValue = {
             guard let matchesFound,
                   let currentSelection else { return "" }
-            return Copy.string(Copy.status(current: currentSelection, total: matchesFound))
+            return Copy.status(current: currentSelection, total: matchesFound)
         }()
-    }
-
-    private func updateView(firstResponder: Bool) {
-        focusRingView.updateView(stroke: firstResponder)
+        let contentWidth = ceil(statusField.intrinsicContentSize.width)
+            + Layout.statusHorizontalInset * 2
+        statusPillWidthConstraint?.constant = min(
+            max(contentWidth, Layout.minimumStatusWidth),
+            Layout.maximumStatusWidth
+        )
     }
 
     private func updateFieldStates(text: String, matchesFound: UInt?, currentSelection: UInt?) {
@@ -495,6 +509,7 @@ final class FindInPageViewController: NSViewController {
 
         statusPillView?.isHidden = !hasStatus
         statusField.isHidden = !hasStatus
+        placeholderLabel.isHidden = !isEmpty
         nextButton.isHidden = isEmpty
         previousButton.isHidden = isEmpty
         nextButton.isEnabled = canNavigate
@@ -524,63 +539,24 @@ final class FindInPageViewController: NSViewController {
         }
     }
 
-    /// When `paint` is `nil`, uses catalog assets (e.g. before the first SwiftUI theme sync).
-    func applyChromeColors(_ paint: FindInPageChromePaint?) {
-        if let paint {
-            backgroundView.backgroundColor = paint.shellBackground
-            focusRingView.sumi_chromeApplyChromePaint(paint)
-            textField.textColor = paint.primaryText
-            statusField.textColor = paint.secondaryText
-            let font = textField.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize)
-            textField.placeholderAttributedString = NSAttributedString(
-                string: Copy.string(Copy.placeholder),
-                attributes: [
-                    .foregroundColor: paint.secondaryText.withAlphaComponent(0.85),
-                    .font: font,
-                ]
-            )
-            textField.placeholderString = nil
+    func applyChromeColors(_ paint: FindInPageChromePaint) {
+        backgroundView.backgroundColor = paint.shellBackground
+        textField.textColor = paint.primaryText
+        placeholderLabel.textColor = paint.secondaryText
+        statusField.textColor = paint.secondaryText
 
-            for case let hover as MouseOverButton in [closeButton, nextButton, previousButton] {
-                hover.normalTintColor = paint.secondaryText
-                hover.mouseOverTintColor = paint.primaryText
-                hover.mouseDownTintColor = paint.primaryText
-                hover.mouseOverColor = paint.secondaryText.withAlphaComponent(0.10)
-                hover.mouseDownColor = paint.secondaryText.withAlphaComponent(0.16)
-                hover.updateTintColor()
-            }
-            statusPillView?.backgroundColor = paint.secondaryText.withAlphaComponent(0.10)
-            backgroundView.borderColor = paint.shellBorder
-        } else {
-            applyChromeColorsFromAssets()
-        }
-    }
-
-    private func applyChromeColorsFromAssets() {
-        backgroundView.backgroundColor = NSColor(named: "FindInPageBackgroundColor", bundle: .main) ?? .quaternaryLabelColor
-        focusRingView.sumi_chromeApplyAssetColors()
-        textField.textColor = .labelColor
-        statusField.textColor = .secondaryLabelColor
         for case let hover as MouseOverButton in [closeButton, nextButton, previousButton] {
-            hover.normalTintColor = .secondaryLabelColor
-            hover.mouseOverTintColor = .labelColor
-            hover.mouseDownTintColor = .labelColor
-            hover.mouseOverColor = NSColor.labelColor.withAlphaComponent(0.06)
-            hover.mouseDownColor = NSColor.labelColor.withAlphaComponent(0.12)
+            hover.normalTintColor = paint.secondaryText
+            hover.mouseOverTintColor = paint.primaryText
+            hover.mouseDownTintColor = paint.primaryText
+            hover.mouseOverColor = paint.secondaryText.withAlphaComponent(0.10)
+            hover.mouseDownColor = paint.secondaryText.withAlphaComponent(0.16)
             hover.updateTintColor()
         }
-        statusPillView?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.07)
-        backgroundView.borderColor = NSColor.separatorColor.withAlphaComponent(0.45)
-        textField.placeholderAttributedString = nil
-        textField.placeholderString = Copy.string(Copy.placeholder)
+        statusPillView?.backgroundColor = paint.secondaryText.withAlphaComponent(0.10)
+        backgroundView.borderColor = paint.shellBorder
     }
 
-    private func syncFocusRingWithFirstResponderIfNeeded() {
-        let focused = textField.sumi_chromeIsFirstResponder
-        guard focused != lastSyncedFocusRingStroke else { return }
-        lastSyncedFocusRingStroke = focused
-        updateView(firstResponder: focused)
-    }
 }
 
 extension FindInPageViewController: NSTextFieldDelegate {
@@ -589,14 +565,10 @@ extension FindInPageViewController: NSTextFieldDelegate {
     }
 
     func controlTextDidBeginEditing(_ obj: Notification) {
-        updateView(firstResponder: true)
         let fieldEditor = obj.userInfo?["NSFieldEditor"] as? FindInPageFieldEditor
             ?? textField.currentEditor() as? FindInPageFieldEditor
         fieldEditor?.invalidateIBeamCursorRects()
         fieldEditor?.setIBeamCursorIfMouseInside()
     }
 
-    func controlTextDidEndEditing(_ obj: Notification) {
-        updateView(firstResponder: false)
-    }
 }

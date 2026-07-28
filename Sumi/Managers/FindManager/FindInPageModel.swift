@@ -20,15 +20,27 @@ import Combine
 import Foundation
 import WebKit
 
+struct FindInPageProgress: Equatable, Sendable {
+    let currentSelection: UInt
+    let matchesFound: UInt
+}
+
+@MainActor
 final class FindInPageModel {
     @Published private(set) var text: String = ""
-    @Published private(set) var currentSelection: UInt?
-    @Published private(set) var matchesFound: UInt?
+    @Published private(set) var progress: FindInPageProgress?
     @Published private(set) var isVisible: Bool = false
 
-    func update(currentSelection: UInt?, matchesFound: UInt?) {
-        self.currentSelection = currentSelection
-        self.matchesFound = matchesFound
+    var currentSelection: UInt? {
+        progress?.currentSelection
+    }
+
+    var matchesFound: UInt? {
+        progress?.matchesFound
+    }
+
+    func update(progress: FindInPageProgress?) {
+        self.progress = progress
     }
 
     func show() {
@@ -40,6 +52,8 @@ final class FindInPageModel {
     }
 
     func find(_ text: String) {
+        guard self.text != text else { return }
         self.text = text
+        progress = nil
     }
 }

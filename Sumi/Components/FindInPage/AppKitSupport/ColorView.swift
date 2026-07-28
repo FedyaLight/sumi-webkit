@@ -18,7 +18,7 @@
 
 import AppKit
 
-class ColorView: DraggingDestinationView {
+class ColorView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
 

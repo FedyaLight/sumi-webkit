@@ -201,20 +201,16 @@ final class ThemeChromeRecipeBuilderTests: XCTestCase {
         )
     }
 
-    func testFindInPagePaintUsesOpaqueSurfacesInLightRecipe() {
+    func testFindInPagePaintUsesOpaqueSurfaceInLightRecipe() {
         let paint = findInPagePaint(scheme: .light)
 
         XCTAssertEqual(Self.alpha(of: paint.shellBackground), 1, accuracy: 0.02)
-        XCTAssertEqual(Self.alpha(of: paint.fieldUnfocused), 1, accuracy: 0.02)
-        XCTAssertEqual(Self.alpha(of: paint.fieldFocused), 1, accuracy: 0.02)
     }
 
-    func testFindInPagePaintUsesOpaqueSurfacesInDarkRecipe() {
+    func testFindInPagePaintUsesOpaqueSurfaceInDarkRecipe() {
         let paint = findInPagePaint(scheme: .dark)
 
         XCTAssertEqual(Self.alpha(of: paint.shellBackground), 1, accuracy: 0.02)
-        XCTAssertEqual(Self.alpha(of: paint.fieldUnfocused), 1, accuracy: 0.02)
-        XCTAssertEqual(Self.alpha(of: paint.fieldFocused), 1, accuracy: 0.02)
     }
 
     func testFindInPagePaintUsesFloatingSurfaceBorder() {

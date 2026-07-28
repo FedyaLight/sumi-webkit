@@ -63,9 +63,14 @@ enum BrowserGlanceRuntimeService {
                     .dismissIfVisible(in: $0, preserveDraft: true) ?? false
             },
             isFindBarVisible: { [weak browserManager] in browserManager?.findManager.isFindBarVisible ?? false },
-            findCurrentTabId: { [weak browserManager] in browserManager?.findManager.currentTab?.id },
             hideFindBar: { [weak browserManager] in browserManager?.findManager.hideFindBar() },
-            updateFindManagerCurrentTab: { [weak browserManager] in browserManager?.updateFindManagerCurrentTab() },
+            dismissFindSessionIfOwned: { [weak browserManager] tabID in
+                guard let browserManager,
+                      browserManager.findManager.currentTab?.id == tabID
+                else { return }
+                browserManager.findManager.hideFindBar()
+                browserManager.updateFindManagerCurrentTab()
+            },
             persistWindowSession: { [weak browserManager] in
                 browserManager?.windowSessionPersistenceCoordinator.persist($0)
             },

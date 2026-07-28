@@ -696,16 +696,6 @@
     "Manage this permission from site settings." : {
 
     },
-    "Match %llu of %llu" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Match %1$llu of %2$llu"
-          }
-        }
-      }
-    },
     "Merge" : {
 
     },

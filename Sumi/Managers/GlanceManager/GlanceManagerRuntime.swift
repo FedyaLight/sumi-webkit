@@ -15,9 +15,8 @@ extension GlanceManager {
         let visibleSplitTabCount: @MainActor (UUID) -> Int
         let dismissCommandPaletteIfVisible: @MainActor (UUID) -> Bool
         let isFindBarVisible: @MainActor () -> Bool
-        let findCurrentTabId: @MainActor () -> UUID?
         let hideFindBar: @MainActor () -> Void
-        let updateFindManagerCurrentTab: @MainActor () -> Void
+        let dismissFindSessionIfOwned: @MainActor (UUID) -> Void
         let persistWindowSession: @MainActor (BrowserWindowState) -> Void
         let withPreparedPreviewTab: @MainActor (
             URL,

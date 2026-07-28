@@ -357,17 +357,12 @@ final class GlanceManager: ObservableObject {
             runtime?.releasePreviewWebView(session.previewTab)
         }
 
-        let shouldResetFindManager = runtime?.findCurrentTabId() == session.previewTab.id
-
         currentSession = nil
         transition(to: .idle)
         if persistsWindowSession {
             persistWindowSession(for: session.windowId)
         }
-        if shouldResetFindManager {
-            runtime?.hideFindBar()
-            runtime?.updateFindManagerCurrentTab()
-        }
+        runtime?.dismissFindSessionIfOwned(session.previewTab.id)
     }
 
     @discardableResult

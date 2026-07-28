@@ -1,5 +1,6 @@
 import AppKit
 @testable import Sumi
+import Combine
 import SumiDomain
 import SumiWebRuntime
 import WebKit
@@ -157,6 +158,79 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
 
         await fulfillment(of: [didFind], timeout: 3)
         XCTAssertEqual(resultRecorder.result, .found(matches: 3))
+    }
+
+    func testReopeningFindInPageRestoresNativeSelection() async throws {
+        let webView = FocusableWKWebView(
+            frame: NSRect(x: 0, y: 0, width: 640, height: 480),
+            configuration: WKWebViewConfiguration()
+        )
+        let window = NSWindow(
+            contentRect: webView.frame,
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = webView
+        window.makeKeyAndOrderFront(nil)
+        defer { window.orderOut(nil) }
+
+        await loadHTML(
+            """
+            <!doctype html>
+            <html>
+            <body>
+                <p id="match-1">needle</p>
+                <p id="match-2">needle</p>
+                <p id="match-3">needle</p>
+                <p id="match-4">needle</p>
+                <p id="match-5">needle</p>
+                <p id="match-6">needle</p>
+                <p id="match-7">needle</p>
+                <p id="match-8">needle</p>
+                <p id="match-9">needle</p>
+                <p id="match-10">needle</p>
+            </body>
+            </html>
+            """,
+            into: webView
+        )
+
+        let findInPage = FindInPageTabExtension()
+        findInPage.model.find("needle")
+        let (didFindInitialSelection, initialProgressObservation) = progressExpectation(
+            .init(currentSelection: 1, matchesFound: 10),
+            in: findInPage.model
+        )
+        findInPage.show(with: webView)
+        await fulfillment(of: [didFindInitialSelection], timeout: 3)
+        withExtendedLifetime(initialProgressObservation) {}
+
+        for expectedSelection in UInt(2)...UInt(8) {
+            let (didFindExpectedSelection, progressObservation) = progressExpectation(
+                .init(currentSelection: expectedSelection, matchesFound: 10),
+                in: findInPage.model
+            )
+            findInPage.findNext()
+            await fulfillment(of: [didFindExpectedSelection], timeout: 3)
+            withExtendedLifetime(progressObservation) {}
+        }
+        let selectedElementBeforeClose = try await selectedElementID(in: webView)
+        XCTAssertEqual(selectedElementBeforeClose, "match-8")
+
+        findInPage.close()
+        let (didRestoreNativeFind, restoreProgressObservation) = progressExpectation(
+            .init(currentSelection: 8, matchesFound: 10),
+            in: findInPage.model
+        )
+        findInPage.show(with: webView)
+        await fulfillment(of: [didRestoreNativeFind], timeout: 3)
+        withExtendedLifetime(restoreProgressObservation) {}
+
+        XCTAssertEqual(findInPage.model.currentSelection, 8)
+        XCTAssertEqual(findInPage.model.matchesFound, 10)
+        let selectedElementAfterReopen = try await selectedElementID(in: webView)
+        XCTAssertEqual(selectedElementAfterReopen, "match-8")
     }
 
     func testImmediateVisualHandoffHandlerIsWindowScopedAndRemovedWithContainer() {
@@ -1204,6 +1278,35 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 continuation.resume()
             }
         }
+    }
+
+    private func progressExpectation(
+        _ expectedProgress: FindInPageProgress,
+        in model: FindInPageModel
+    ) -> (XCTestExpectation, AnyCancellable) {
+        let expectation = expectation(
+            description: "find progress reached \(expectedProgress.currentSelection)/\(expectedProgress.matchesFound)"
+        )
+        let observation = model.$progress
+            .dropFirst()
+            .filter { $0 == expectedProgress }
+            .prefix(1)
+            .sink { _ in expectation.fulfill() }
+        return (expectation, observation)
+    }
+
+    private func selectedElementID(in webView: WKWebView) async throws -> String? {
+        try await webView.evaluateJavaScript(
+            """
+            (() => {
+                let node = window.getSelection()?.anchorNode;
+                if (node?.nodeType === Node.TEXT_NODE) {
+                    node = node.parentElement;
+                }
+                return node?.id ?? null;
+            })()
+            """
+        ) as? String
     }
 
     private func loadHTML(_ html: String, into webView: WKWebView) async {

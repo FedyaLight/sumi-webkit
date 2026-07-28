@@ -1,8 +1,73 @@
 @testable import Sumi
+import Combine
 import XCTest
 
 @MainActor
 final class FindManagerTests: XCTestCase {
+    func testProgressPublishesCurrentAndTotalAtomically() {
+        let model = FindInPageModel()
+        var values: [FindInPageProgress?] = []
+        let cancellable = model.$progress.sink { values.append($0) }
+
+        model.update(progress: .init(currentSelection: 8, matchesFound: 10))
+
+        XCTAssertEqual(values, [nil, .init(currentSelection: 8, matchesFound: 10)])
+        withExtendedLifetime(cancellable) {}
+    }
+
+    func testUnknownMatchCountDoesNotPublishPartialProgress() async {
+        let webView = RecordingFindInPageWebView()
+        webView.results = [.found(matches: nil), .found(matches: nil)]
+        let findInPage = FindInPageTabExtension()
+        findInPage.model.find("test")
+        let searches = webView.expectSearchCallCount(2)
+
+        findInPage.show(with: webView)
+
+        await fulfillment(of: [searches], timeout: 1)
+        XCTAssertNil(findInPage.model.progress)
+        XCTAssertNil(findInPage.model.currentSelection)
+        XCTAssertNil(findInPage.model.matchesFound)
+    }
+
+    func testChromePresentationRequiresUnsuppressedActivePlacement() {
+        XCTAssertTrue(FindInPageChromePresentation(
+            isActiveWindow: true,
+            isFindBarVisible: true,
+            isModalSuppressed: false,
+            isPlacementSuppressed: false
+        ).isPresented)
+
+        for presentation in [
+            FindInPageChromePresentation(
+                isActiveWindow: false,
+                isFindBarVisible: true,
+                isModalSuppressed: false,
+                isPlacementSuppressed: false
+            ),
+            FindInPageChromePresentation(
+                isActiveWindow: true,
+                isFindBarVisible: false,
+                isModalSuppressed: false,
+                isPlacementSuppressed: false
+            ),
+            FindInPageChromePresentation(
+                isActiveWindow: true,
+                isFindBarVisible: true,
+                isModalSuppressed: true,
+                isPlacementSuppressed: false
+            ),
+            FindInPageChromePresentation(
+                isActiveWindow: true,
+                isFindBarVisible: true,
+                isModalSuppressed: false,
+                isPlacementSuppressed: true
+            ),
+        ] {
+            XCTAssertFalse(presentation.isPresented)
+        }
+    }
+
     func testPrivateFindOptionsKeepDuckDuckGoRawValues() {
         XCTAssertEqual(_WKFindOptions.showOverlay.rawValue, 1 << 5)
         XCTAssertEqual(_WKFindOptions.showFindIndicator.rawValue, 1 << 6)
@@ -13,32 +78,32 @@ final class FindManagerTests: XCTestCase {
         XCTAssertEqual(_WKFindOptions.determineMatchIndex.rawValue, 1 << 9)
     }
 
-    func testVisibleInitialFindUsesDuckDuckGoTwoPhaseOptions() async throws {
+    func testVisibleInitialFindUsesTwoPhaseSemanticSearch() async throws {
         let webView = RecordingFindInPageWebView()
         webView.results = [.found(matches: 6), .found(matches: 6)]
         let findInPage = FindInPageTabExtension()
         findInPage.model.find("test")
-        let findCalls = webView.expectFindCallCount(2)
+        let searchCalls = webView.expectSearchCallCount(2)
 
         findInPage.show(with: webView)
 
-        await fulfillment(of: [findCalls], timeout: 1)
+        await fulfillment(of: [searchCalls], timeout: 1)
         XCTAssertEqual(
             webView.events,
             [
-                .clearFindInPageState,
-                .deselectAll,
-                .readMimeType,
-                .find("test", rawOptions: 81, maxCount: 1000),
-                .clearFindInPageState,
-                .collapseSelectionToStart,
-                .find("test", rawOptions: 369, maxCount: 1000),
+                .prepareFindSession,
+                .search(.init(query: "test")),
+                .dismissFindSession,
+                .search(.init(
+                    query: "test",
+                    preservesSelection: true,
+                    showsOverlay: true
+                )),
             ]
         )
-        XCTAssertFalse(webView.findRawOptions.contains { $0 & _WKFindOptions.showHighlight.rawValue != 0 })
     }
 
-    func testRepeatShowNextPreviousAndCloseUseDuckDuckGoOptions() async throws {
+    func testRepeatShowNextPreviousAndCloseUseSemanticSearch() async throws {
         let webView = RecordingFindInPageWebView()
         webView.results = [
             .found(matches: 6),
@@ -49,38 +114,128 @@ final class FindManagerTests: XCTestCase {
         ]
         let findInPage = FindInPageTabExtension()
         findInPage.model.find("test")
-        let initialFindCalls = webView.expectFindCallCount(2)
+        let initialFindCalls = webView.expectSearchCallCount(2)
         findInPage.show(with: webView)
         await fulfillment(of: [initialFindCalls], timeout: 1)
 
         webView.events.removeAll()
-        let repeatFindCall = webView.expectFindCallCount(1)
+        let repeatFindCall = webView.expectSearchCallCount(1)
         findInPage.show(with: webView)
         await fulfillment(of: [repeatFindCall], timeout: 1)
         XCTAssertEqual(
             webView.events,
             [
-                .collapseSelectionToStart,
-                .find("test", rawOptions: 881, maxCount: 1000),
+                .search(.init(
+                    query: "test",
+                    preservesSelection: true,
+                    showsOverlay: true,
+                    determinesMatchIndex: true
+                )),
             ]
         )
 
         webView.events.removeAll()
-        let nextFindCall = webView.expectFindCallCount(1)
+        let nextFindCall = webView.expectSearchCallCount(1)
         findInPage.findNext()
         await fulfillment(of: [nextFindCall], timeout: 1)
-        XCTAssertEqual(webView.events, [.find("test", rawOptions: 113, maxCount: 1000)])
+        XCTAssertEqual(
+            webView.events,
+            [.search(.init(query: "test", showsOverlay: true))]
+        )
 
         webView.events.removeAll()
-        let previousFindCall = webView.expectFindCallCount(1)
+        let previousFindCall = webView.expectSearchCallCount(1)
         findInPage.findPrevious()
         await fulfillment(of: [previousFindCall], timeout: 1)
-        XCTAssertEqual(webView.events, [.find("test", rawOptions: 121, maxCount: 1000)])
+        XCTAssertEqual(
+            webView.events,
+            [.search(.init(query: "test", direction: .backward, showsOverlay: true))]
+        )
 
         webView.events.removeAll()
         findInPage.close()
-        XCTAssertEqual(webView.events, [.clearFindInPageState])
-        XCTAssertFalse(webView.findRawOptions.contains { $0 & _WKFindOptions.showHighlight.rawValue != 0 })
+        XCTAssertEqual(webView.events, [.dismissFindSession])
+    }
+
+    func testReopeningFindInPageRestoresCurrentMatch() async throws {
+        let webView = RecordingFindInPageWebView()
+        webView.results = Array(repeating: .found(matches: 10), count: 5)
+        let findInPage = FindInPageTabExtension()
+        findInPage.model.find("test")
+
+        let initialFindCalls = webView.expectSearchCallCount(2)
+        findInPage.show(with: webView)
+        await fulfillment(of: [initialFindCalls], timeout: 1)
+
+        let nextFindCall = webView.expectSearchCallCount(3)
+        findInPage.findNext()
+        await fulfillment(of: [nextFindCall], timeout: 1)
+        XCTAssertEqual(findInPage.model.currentSelection, 2)
+
+        findInPage.close()
+        webView.events.removeAll()
+
+        let restoredFindCalls = webView.expectSearchCallCount(2)
+        findInPage.show(with: webView)
+        await fulfillment(of: [restoredFindCalls], timeout: 1)
+
+        XCTAssertEqual(
+            webView.events,
+            [
+                .search(.init(
+                    query: "test",
+                    preservesSelection: true,
+                    determinesMatchIndex: true
+                )),
+                .dismissFindSession,
+                .search(.init(
+                    query: "test",
+                    preservesSelection: true,
+                    showsOverlay: true
+                )),
+            ]
+        )
+        XCTAssertEqual(findInPage.model.currentSelection, 2)
+        XCTAssertEqual(findInPage.model.matchesFound, 10)
+    }
+
+    func testNavigationInvalidatesRestorableFindProgress() async throws {
+        let webView = RecordingFindInPageWebView()
+        webView.results = Array(repeating: .found(matches: 10), count: 5)
+        let findInPage = FindInPageTabExtension()
+        findInPage.model.find("test")
+
+        let initialFindCalls = webView.expectSearchCallCount(2)
+        findInPage.show(with: webView)
+        await fulfillment(of: [initialFindCalls], timeout: 1)
+
+        let nextFindCall = webView.expectSearchCallCount(3)
+        findInPage.findNext()
+        await fulfillment(of: [nextFindCall], timeout: 1)
+        XCTAssertEqual(findInPage.model.currentSelection, 2)
+
+        findInPage.navigationDidStart()
+        webView.events.removeAll()
+
+        let newDocumentFindCalls = webView.expectSearchCallCount(2)
+        findInPage.show(with: webView)
+        await fulfillment(of: [newDocumentFindCalls], timeout: 1)
+
+        XCTAssertEqual(
+            webView.events,
+            [
+                .prepareFindSession,
+                .search(.init(query: "test")),
+                .dismissFindSession,
+                .search(.init(
+                    query: "test",
+                    preservesSelection: true,
+                    showsOverlay: true
+                )),
+            ]
+        )
+        XCTAssertEqual(findInPage.model.currentSelection, 1)
+        XCTAssertEqual(findInPage.model.matchesFound, 10)
     }
 
     func testActiveTextChangeKeepsCurrentMatchUsingDuckDuckGoOptions() async throws {
@@ -88,24 +243,99 @@ final class FindManagerTests: XCTestCase {
         webView.results = [.found(matches: 6), .found(matches: 6), .found(matches: 4)]
         let findInPage = FindInPageTabExtension()
         findInPage.model.find("test")
-        let initialFindCalls = webView.expectFindCallCount(2)
+        let initialFindCalls = webView.expectSearchCallCount(2)
         findInPage.show(with: webView)
         await fulfillment(of: [initialFindCalls], timeout: 1)
 
         webView.events.removeAll()
-        let updatedFindCall = webView.expectFindCallCount(1)
+        let updatedFindCall = webView.expectSearchCallCount(1)
         findInPage.model.find("testing")
 
         await fulfillment(of: [updatedFindCall], timeout: 1)
         XCTAssertEqual(
             webView.events,
             [
-                .collapseSelectionToStart,
-                .find("testing", rawOptions: 369, maxCount: 1000),
+                .search(.init(
+                    query: "testing",
+                    preservesSelection: true,
+                    showsOverlay: true
+                )),
             ]
         )
         XCTAssertEqual(findInPage.model.currentSelection, 1)
         XCTAssertEqual(findInPage.model.matchesFound, 4)
+    }
+
+    func testClosingBeforeDebouncedQueryChangeCannotRestoreOldProgress() async {
+        let webView = RecordingFindInPageWebView()
+        webView.results = Array(repeating: .found(matches: 10), count: 4)
+        let findInPage = FindInPageTabExtension()
+        findInPage.model.find("test")
+
+        let initialSearches = webView.expectSearchCallCount(2)
+        findInPage.show(with: webView)
+        await fulfillment(of: [initialSearches], timeout: 1)
+        XCTAssertEqual(findInPage.model.progress, .init(currentSelection: 1, matchesFound: 10))
+
+        findInPage.model.find("testing")
+        findInPage.close()
+        webView.events.removeAll()
+
+        let reopenedSearches = webView.expectSearchCallCount(2)
+        findInPage.show(with: webView)
+        await fulfillment(of: [reopenedSearches], timeout: 1)
+
+        XCTAssertEqual(
+            webView.events,
+            [
+                .prepareFindSession,
+                .search(.init(query: "testing")),
+                .dismissFindSession,
+                .search(.init(
+                    query: "testing",
+                    preservesSelection: true,
+                    showsOverlay: true
+                )),
+            ]
+        )
+        XCTAssertEqual(findInPage.model.progress, .init(currentSelection: 1, matchesFound: 10))
+    }
+
+    func testChangingPhysicalPresentationInvalidatesRestorableProgress() async {
+        let firstWebView = RecordingFindInPageWebView()
+        firstWebView.results = Array(repeating: .found(matches: 10), count: 3)
+        let secondWebView = RecordingFindInPageWebView()
+        secondWebView.results = Array(repeating: .found(matches: 10), count: 2)
+        let findInPage = FindInPageTabExtension()
+        findInPage.model.find("test")
+
+        let initialSearches = firstWebView.expectSearchCallCount(2)
+        findInPage.show(with: firstWebView)
+        await fulfillment(of: [initialSearches], timeout: 1)
+        let nextSearch = firstWebView.expectSearchCallCount(3)
+        findInPage.findNext()
+        await fulfillment(of: [nextSearch], timeout: 1)
+        XCTAssertEqual(findInPage.model.currentSelection, 2)
+        findInPage.close()
+
+        let replacementSearches = secondWebView.expectSearchCallCount(2)
+        findInPage.show(with: secondWebView)
+        await fulfillment(of: [replacementSearches], timeout: 1)
+
+        XCTAssertEqual(
+            secondWebView.events,
+            [
+                .prepareFindSession,
+                .search(.init(query: "test")),
+                .dismissFindSession,
+                .search(.init(
+                    query: "test",
+                    preservesSelection: true,
+                    showsOverlay: true
+                )),
+            ]
+        )
+        XCTAssertEqual(findInPage.model.currentSelection, 1)
     }
 
     func testShowFindBarWithoutTabKeepsManagerHidden() {
@@ -143,61 +373,100 @@ final class FindManagerTests: XCTestCase {
         XCTAssertEqual(manager.findFieldFocusGeneration, 1)
         XCTAssertIdentical(manager.currentModel, tab.findInPage.model)
     }
+
+    func testRepeatShowFindBarIssuesOneSemanticSearch() async {
+        let webView = RecordingFindInPageWebView()
+        webView.results = Array(repeating: .found(matches: 6), count: 3)
+        let tab = Tab(loadsCachedFaviconOnInit: false)
+        let windowId = UUID()
+        let manager = FindManager { _, _ in webView }
+        tab.findInPage.model.find("test")
+
+        let initialSearches = webView.expectSearchCallCount(2)
+        manager.showFindBar(for: tab, in: windowId)
+        await fulfillment(of: [initialSearches], timeout: 1)
+        webView.events.removeAll()
+
+        let repeatedSearch = webView.expectSearchCallCount(1)
+        manager.showFindBar(for: tab, in: windowId)
+        await fulfillment(of: [repeatedSearch], timeout: 1)
+
+        XCTAssertEqual(
+            webView.searchRequests,
+            [
+                .init(
+                    query: "test",
+                    preservesSelection: true,
+                    showsOverlay: true,
+                    determinesMatchIndex: true
+                ),
+            ]
+        )
+        XCTAssertEqual(manager.findFieldFocusGeneration, 2)
+    }
+
+    func testSameVisibleRoutingUpdateDoesNotRepeatSearch() async {
+        let webView = RecordingFindInPageWebView()
+        webView.results = Array(repeating: .found(matches: 6), count: 2)
+        let tab = Tab(loadsCachedFaviconOnInit: false)
+        let windowId = UUID()
+        let manager = FindManager { _, _ in webView }
+        tab.findInPage.model.find("test")
+
+        let initialSearches = webView.expectSearchCallCount(2)
+        manager.showFindBar(for: tab, in: windowId)
+        await fulfillment(of: [initialSearches], timeout: 1)
+        webView.events.removeAll()
+
+        manager.updateCurrentTab(tab, in: windowId)
+        await Task.yield()
+
+        XCTAssertTrue(webView.searchRequests.isEmpty)
+    }
 }
 
 @MainActor
 private final class RecordingFindInPageWebView: FindInPageWebView {
     enum Event: Equatable {
-        case clearFindInPageState
-        case collapseSelectionToStart
-        case deselectAll
-        case readMimeType
-        case find(String, rawOptions: UInt, maxCount: UInt)
+        case prepareFindSession
+        case search(FindInPageSearchRequest)
+        case dismissFindSession
     }
 
     var events: [Event] = []
-    var results: [FocusableWKWebView.FindResult] = []
-    private var expectedFindCalls: (count: Int, expectation: XCTestExpectation)?
+    var results: [FindInPageSearchResult] = []
+    var documentKind: FindInPageDocumentKind = .html
+    private var expectedSearchCalls: (count: Int, expectation: XCTestExpectation)?
 
-    var findRawOptions: [UInt] {
+    var searchRequests: [FindInPageSearchRequest] {
         events.compactMap {
-            guard case .find(_, let rawOptions, _) = $0 else { return nil }
-            return rawOptions
+            guard case .search(let request) = $0 else { return nil }
+            return request
         }
     }
 
-    var mimeType: String? {
-        get async {
-            events.append(.readMimeType)
-            return "text/html"
-        }
+    func prepareFindSession() async -> FindInPageDocumentKind {
+        events.append(.prepareFindSession)
+        return documentKind
     }
 
-    func collapseSelectionToStart() async {
-        events.append(.collapseSelectionToStart)
-    }
-
-    func deselectAll() async {
-        events.append(.deselectAll)
-    }
-
-    func find(_ string: String, with options: _WKFindOptions, maxCount: UInt) async -> FocusableWKWebView.FindResult {
-        events.append(.find(string, rawOptions: options.rawValue, maxCount: maxCount))
-        if let expectedFindCalls,
-           findRawOptions.count >= expectedFindCalls.count {
-            self.expectedFindCalls = nil
-            expectedFindCalls.expectation.fulfill()
+    func search(_ request: FindInPageSearchRequest) async -> FindInPageSearchResult {
+        events.append(.search(request))
+        if let expectedSearchCalls,
+           searchRequests.count >= expectedSearchCalls.count {
+            self.expectedSearchCalls = nil
+            expectedSearchCalls.expectation.fulfill()
         }
         return results.isEmpty ? .found(matches: 1) : results.removeFirst()
     }
 
-    func clearFindInPageState() {
-        events.append(.clearFindInPageState)
+    func dismissFindSession() {
+        events.append(.dismissFindSession)
     }
 
-    func expectFindCallCount(_ count: Int) -> XCTestExpectation {
-        let expectation = XCTestExpectation(description: "received \(count) find calls")
-        expectedFindCalls = (count, expectation)
+    func expectSearchCallCount(_ count: Int) -> XCTestExpectation {
+        let expectation = XCTestExpectation(description: "received \(count) search calls")
+        expectedSearchCalls = (count, expectation)
         return expectation
     }
 }

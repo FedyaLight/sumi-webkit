@@ -237,17 +237,17 @@ enum WebContentMouseTrackingShield {
 }
 
 @MainActor
-private final class WebContentHoverShieldSensorNSView: NSView {
+class WebContentHoverShieldingNSView: NSView {
     private var trackingArea: NSTrackingArea?
     private var isShielding = false
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        nil
-    }
+    private var isHoverShieldEnabled = false
+    private weak var shieldingWindow: NSWindow?
+    private var shieldingRectInWindow: NSRect?
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         if newWindow == nil {
             setShielding(false)
+            WebContentMouseTrackingShield.unregister(self)
         }
         super.viewWillMove(toWindow: newWindow)
     }
@@ -264,10 +264,8 @@ private final class WebContentHoverShieldSensorNSView: NSView {
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
-        if let trackingArea {
-            removeTrackingArea(trackingArea)
-            self.trackingArea = nil
-        }
+        clearTrackingArea()
+        guard isHoverShieldEnabled else { return }
 
         let trackingArea = NSTrackingArea(
             rect: bounds,
@@ -292,8 +290,28 @@ private final class WebContentHoverShieldSensorNSView: NSView {
         setShielding(false)
     }
 
+    func setHoverShieldEnabled(_ isEnabled: Bool) {
+        guard isHoverShieldEnabled != isEnabled else { return }
+        isHoverShieldEnabled = isEnabled
+
+        if isEnabled {
+            updateTrackingAreas()
+        } else {
+            clearTrackingArea()
+            setShielding(false)
+            WebContentMouseTrackingShield.unregister(self)
+        }
+    }
+
+    private func clearTrackingArea() {
+        if let trackingArea {
+            removeTrackingArea(trackingArea)
+            self.trackingArea = nil
+        }
+    }
+
     private func updateShielding(refreshIfAlreadyShielding: Bool) {
-        guard let window else {
+        guard isHoverShieldEnabled, let window else {
             setShielding(false)
             return
         }
@@ -308,13 +326,30 @@ private final class WebContentHoverShieldSensorNSView: NSView {
     ) {
         guard self.isShielding != isShielding else {
             if isShielding, refreshIfUnchanged {
-                WebContentMouseTrackingShield.refresh(for: self)
+                let rectInWindow = convert(bounds, to: nil)
+                if shieldingWindow !== window {
+                    shieldingWindow = window
+                    shieldingRectInWindow = rectInWindow
+                    WebContentMouseTrackingShield.setActive(true, for: self)
+                } else if shieldingRectInWindow != rectInWindow {
+                    shieldingRectInWindow = rectInWindow
+                    WebContentMouseTrackingShield.refresh(for: self)
+                }
             }
             return
         }
 
         self.isShielding = isShielding
+        shieldingWindow = isShielding ? window : nil
+        shieldingRectInWindow = isShielding ? convert(bounds, to: nil) : nil
         WebContentMouseTrackingShield.setActive(isShielding, for: self)
+    }
+}
+
+@MainActor
+private final class WebContentHoverShieldSensorNSView: WebContentHoverShieldingNSView {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
     }
 }
 
@@ -323,12 +358,14 @@ struct WebContentHoverShieldSensorView: NSViewRepresentable {
         let view = WebContentHoverShieldSensorNSView(frame: .zero)
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor.clear.cgColor
+        view.setHoverShieldEnabled(true)
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {}
 
     static func dismantleNSView(_ nsView: NSView, coordinator: ()) {
+        (nsView as? WebContentHoverShieldingNSView)?.setHoverShieldEnabled(false)
         WebContentMouseTrackingShield.unregister(nsView)
     }
 }

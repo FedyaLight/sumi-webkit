@@ -1,5 +1,5 @@
 //
-//  NSAppearance+FindInPage.swift
+//  NSAppearance+Chrome.swift
 //  Sumi
 //
 //  SPDX-License-Identifier: Apache-2.0

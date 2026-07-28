@@ -7,13 +7,10 @@ enum MouseEventShieldCursorPolicy {
 }
 
 @MainActor
-final class MouseEventShieldNSView: NSView {
+final class MouseEventShieldNSView: WebContentHoverShieldingNSView {
     var onClick: (() -> Void)?
-    private var trackingArea: NSTrackingArea?
     private(set) var isInteractive: Bool = true
     private var cursorPolicy: MouseEventShieldCursorPolicy = .arrow
-    private var suppressesUnderlyingWebContentHover = false
-    private var isSuppressingUnderlyingWebContentHover = false
     private var blocksScrollWheel = true
 
     override init(frame frameRect: NSRect) {
@@ -42,42 +39,6 @@ final class MouseEventShieldNSView: NSView {
         isInteractive
     }
 
-    override func viewWillMove(toWindow newWindow: NSWindow?) {
-        if newWindow == nil {
-            setUnderlyingWebContentHoverSuppressed(false)
-        }
-        super.viewWillMove(toWindow: newWindow)
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        updateUnderlyingWebContentHoverSuppression(refreshIfAlreadySuppressed: true)
-    }
-
-    override func layout() {
-        super.layout()
-        updateUnderlyingWebContentHoverSuppression(refreshIfAlreadySuppressed: true)
-    }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        clearTrackingArea()
-
-        guard isInteractive else { return }
-
-        trackingArea = NSTrackingArea(
-            rect: bounds,
-            options: [.activeAlways, .inVisibleRect, .mouseEnteredAndExited, .mouseMoved],
-            owner: self,
-            userInfo: nil
-        )
-
-        if let trackingArea {
-            addTrackingArea(trackingArea)
-        }
-        updateUnderlyingWebContentHoverSuppression(refreshIfAlreadySuppressed: true)
-    }
-
     override func resetCursorRects() {
         super.resetCursorRects()
         guard isInteractive, cursorPolicy == .arrow else { return }
@@ -101,18 +62,18 @@ final class MouseEventShieldNSView: NSView {
 
     override func mouseMoved(with event: NSEvent) {
         guard isInteractive else { return }
-        updateUnderlyingWebContentHoverSuppression(refreshIfAlreadySuppressed: false)
+        super.mouseMoved(with: event)
         setCursorIfNeeded()
     }
 
     override func mouseEntered(with event: NSEvent) {
         guard isInteractive else { return }
-        updateUnderlyingWebContentHoverSuppression(refreshIfAlreadySuppressed: false)
+        super.mouseEntered(with: event)
         setCursorIfNeeded()
     }
 
     override func mouseExited(with event: NSEvent) {
-        setUnderlyingWebContentHoverSuppressed(false)
+        super.mouseExited(with: event)
     }
 
     override func scrollWheel(with event: NSEvent) {
@@ -136,18 +97,16 @@ final class MouseEventShieldNSView: NSView {
         blocksScrollWheel: Bool
     ) {
         self.onClick = onClick
-        self.suppressesUnderlyingWebContentHover = suppressesUnderlyingWebContentHover
         self.blocksScrollWheel = blocksScrollWheel
         updateCursorPolicy(cursorPolicy)
         setInteractive(isInteractive)
-        updateUnderlyingWebContentHoverSuppression(refreshIfAlreadySuppressed: true)
+        setHoverShieldEnabled(isInteractive && suppressesUnderlyingWebContentHover)
     }
 
     func setInteractive(_ isEnabled: Bool) {
         if !isEnabled {
             onClick = nil
-            clearTrackingArea()
-            setUnderlyingWebContentHoverSuppressed(false)
+            setHoverShieldEnabled(false)
         }
 
         guard isInteractive != isEnabled else {
@@ -159,17 +118,6 @@ final class MouseEventShieldNSView: NSView {
         needsDisplay = true
         needsLayout = true
         window?.invalidateCursorRects(for: self)
-        if isEnabled {
-            updateTrackingAreas()
-        }
-        updateUnderlyingWebContentHoverSuppression(refreshIfAlreadySuppressed: true)
-    }
-
-    private func clearTrackingArea() {
-        if let trackingArea {
-            removeTrackingArea(trackingArea)
-            self.trackingArea = nil
-        }
     }
 
     private func updateCursorPolicy(_ cursorPolicy: MouseEventShieldCursorPolicy) {
@@ -184,35 +132,6 @@ final class MouseEventShieldNSView: NSView {
         sumi_chromeSetCursorIfMouseInside(.arrow)
     }
 
-    private func updateUnderlyingWebContentHoverSuppression(refreshIfAlreadySuppressed: Bool) {
-        guard isInteractive,
-              suppressesUnderlyingWebContentHover,
-              let window
-        else {
-            setUnderlyingWebContentHoverSuppressed(false)
-            return
-        }
-
-        let location = convert(window.mouseLocationOutsideOfEventStream, from: nil)
-        setUnderlyingWebContentHoverSuppressed(
-            bounds.contains(location),
-            refreshIfUnchanged: refreshIfAlreadySuppressed
-        )
-    }
-
-    private func setUnderlyingWebContentHoverSuppressed(
-        _ isSuppressed: Bool,
-        refreshIfUnchanged: Bool = false
-    ) {
-        guard isSuppressingUnderlyingWebContentHover != isSuppressed else {
-            if isSuppressed, refreshIfUnchanged {
-                WebContentMouseTrackingShield.refresh(for: self)
-            }
-            return
-        }
-        isSuppressingUnderlyingWebContentHover = isSuppressed
-        WebContentMouseTrackingShield.setActive(isSuppressed, for: self)
-    }
 }
 
 struct MouseEventShieldView: NSViewRepresentable {

@@ -9,39 +9,63 @@ import Foundation
 
 @MainActor
 final class FindManager: ObservableObject {
+    typealias WebViewResolver = @MainActor (Tab, UUID?) -> (any FindInPageWebView)?
+
     @Published private(set) var isFindBarVisible: Bool = false
     /// Bumps whenever the AppKit find panel should move keyboard focus to the search field (new show or repeat Cmd+F).
     @Published private(set) var findFieldFocusGeneration: UInt = 0
 
     private(set) var currentTab: Tab?
     private var currentWindowId: UUID?
+    private weak var currentWebView: (any FindInPageWebView)?
+    private weak var boundModel: FindInPageModel?
+    private let resolveWebView: WebViewResolver
 
     var currentModel: FindInPageModel? {
         currentTab?.findInPage.model
     }
 
-    private var modelCancellables = Set<AnyCancellable>()
+    private var visibilityCancellable: AnyCancellable?
+
+    init(
+        resolveWebView: @escaping WebViewResolver = { tab, windowId in
+            tab.targetFindWebView(in: windowId)
+        }
+    ) {
+        self.resolveWebView = resolveWebView
+    }
 
     func showFindBar(for tab: Tab?, in windowId: UUID?) {
-        updateCurrentSession(tab, windowId: windowId)
+        let webView = updateCurrentRouting(tab, windowId: windowId)
 
         guard let tab,
-              let webView = tab.targetFindWebView(in: windowId)
+              let webView
         else { return }
 
         findFieldFocusGeneration &+= 1
 
         tab.findInPage.show(with: webView)
-        bindCurrentTabModel()
     }
 
     func hideFindBar() {
         currentTab?.findInPage.close()
-        bindCurrentTabModel()
     }
 
     func updateCurrentTab(_ tab: Tab?, in windowId: UUID?) {
-        updateCurrentSession(tab, windowId: windowId)
+        let oldTab = currentTab
+        let oldWindowId = currentWindowId
+        let oldWebView = currentWebView
+        let webView = updateCurrentRouting(tab, windowId: windowId)
+
+        guard let tab,
+              tab.findInPage.model.isVisible,
+              let webView,
+              oldTab !== tab
+                || oldWindowId != windowId
+                || oldWebView !== webView
+        else { return }
+
+        tab.findInPage.show(with: webView)
     }
 
     func findNext() {
@@ -53,36 +77,40 @@ final class FindManager: ObservableObject {
     }
 
     private func bindCurrentTabModel() {
-        modelCancellables.removeAll()
+        let model = currentTab?.findInPage.model
+        guard boundModel !== model else { return }
 
-        guard let model = currentTab?.findInPage.model else {
-            isFindBarVisible = false
+        visibilityCancellable = nil
+        boundModel = model
+
+        guard let model else {
+            setFindBarVisible(false)
             return
         }
 
-        isFindBarVisible = model.isVisible
+        setFindBarVisible(model.isVisible)
 
-        model.$isVisible
-            .receive(on: DispatchQueue.main)
+        visibilityCancellable = model.$isVisible
             .sink { [weak self] isVisible in
-                self?.isFindBarVisible = isVisible
+                self?.setFindBarVisible(isVisible)
             }
-            .store(in: &modelCancellables)
     }
 
-    private func updateCurrentSession(_ tab: Tab?, windowId: UUID?) {
+    @discardableResult
+    private func updateCurrentRouting(
+        _ tab: Tab?,
+        windowId: UUID?
+    ) -> (any FindInPageWebView)? {
+        let webView = tab.flatMap { resolveWebView($0, windowId) }
         currentTab = tab
         currentWindowId = tab == nil ? nil : windowId
-        rebindVisibleSessionIfNeeded()
+        currentWebView = webView
         bindCurrentTabModel()
+        return webView
     }
 
-    private func rebindVisibleSessionIfNeeded() {
-        guard let currentTab,
-              currentTab.findInPage.model.isVisible,
-              let webView = currentTab.targetFindWebView(in: currentWindowId)
-        else { return }
-
-        currentTab.findInPage.show(with: webView)
+    private func setFindBarVisible(_ isVisible: Bool) {
+        guard isFindBarVisible != isVisible else { return }
+        isFindBarVisible = isVisible
     }
 }

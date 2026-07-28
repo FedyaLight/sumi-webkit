@@ -1013,9 +1013,8 @@ final class GlanceManagerTests: XCTestCase {
             visibleSplitTabCount: { _ in 0 },
             dismissCommandPaletteIfVisible: { _ in false },
             isFindBarVisible: { false },
-            findCurrentTabId: { nil },
             hideFindBar: { /* No-op. */ },
-            updateFindManagerCurrentTab: { /* No-op. */ },
+            dismissFindSessionIfOwned: { _ in /* No-op. */ },
             persistWindowSession: persistWindowSession,
             withPreparedPreviewTab: { url, sourceTab, windowState, publish in
                 publish(makePreviewTab(url, sourceTab, windowState))

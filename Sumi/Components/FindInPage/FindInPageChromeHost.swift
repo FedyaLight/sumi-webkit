@@ -1,5 +1,21 @@
 import SwiftUI
 
+struct FindInPageChromePresentation: Equatable {
+    let isPresented: Bool
+
+    init(
+        isActiveWindow: Bool,
+        isFindBarVisible: Bool,
+        isModalSuppressed: Bool,
+        isPlacementSuppressed: Bool
+    ) {
+        isPresented = isActiveWindow
+            && isFindBarVisible
+            && !isModalSuppressed
+            && !isPlacementSuppressed
+    }
+}
+
 struct FindInPageChromeHost: View {
     @ObservedObject var findManager: FindManager
     var windowRegistry: WindowRegistry
@@ -10,20 +26,22 @@ struct FindInPageChromeHost: View {
     var isModalSuppressed: Bool
     var isSuppressed: Bool = false
 
-    private var shouldPresent: Bool {
-        windowRegistry.activeWindow?.id == windowState.id
-            && findManager.isFindBarVisible
-            && !isModalSuppressed
-            && !isSuppressed
+    private var presentation: FindInPageChromePresentation {
+        FindInPageChromePresentation(
+            isActiveWindow: windowRegistry.activeWindow?.id == windowState.id,
+            isFindBarVisible: findManager.isFindBarVisible,
+            isModalSuppressed: isModalSuppressed,
+            isPlacementSuppressed: isSuppressed
+        )
     }
 
     var body: some View {
         FindInPageChromeHitTestingWrapper(
             findManager: findManager,
-            windowStateID: windowState.id,
+            model: findManager.currentModel,
+            focusGeneration: findManager.findFieldFocusGeneration,
             themeContext: resolvedThemeContext,
-            keepsChromeMounted: shouldPresent,
-            isInteractive: shouldPresent
+            isPresented: presentation.isPresented
         )
         .environment(windowRegistry)
         .environment(\.sumiSettings, sumiSettings)
@@ -33,6 +51,6 @@ struct FindInPageChromeHost: View {
         )
         .environment(\.colorScheme, colorScheme)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-        .allowsHitTesting(shouldPresent)
+        .allowsHitTesting(presentation.isPresented)
     }
 }

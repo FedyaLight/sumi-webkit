@@ -19,20 +19,6 @@
 import Combine
 import Foundation
 import SumiDomain
-import UniformTypeIdentifiers
-import WebKit
-
-@MainActor
-protocol FindInPageWebView: AnyObject {
-    var mimeType: String? { get async }
-
-    func collapseSelectionToStart() async throws
-    func deselectAll() async throws
-    func find(_ string: String, with options: _WKFindOptions, maxCount: UInt) async -> FocusableWKWebView.FindResult
-    func clearFindInPageState()
-}
-
-extension FocusableWKWebView: FindInPageWebView {}
 
 @MainActor
 final class FindInPageTabExtension: SumiNavigationStartResponding, SumiSameDocumentNavigationResponding {
@@ -41,11 +27,14 @@ final class FindInPageTabExtension: SumiNavigationStartResponding, SumiSameDocum
     private var cancellable: AnyCancellable?
 
     private(set) var isActive = false
-    private var isPdf = false
+    private var documentKind: FindInPageDocumentKind?
     private var searchGeneration: UInt64 = 0
+    private var presentationIdentity: ObjectIdentifier?
+    private var resultIdentity: ResultIdentity?
 
-    private enum Constants {
-        static let maxMatches: UInt = 1000
+    private struct ResultIdentity: Equatable {
+        let query: String
+        let presentation: ObjectIdentifier
     }
 
     private func nextSearchGeneration() -> UInt64 {
@@ -58,6 +47,15 @@ final class FindInPageTabExtension: SumiNavigationStartResponding, SumiSameDocum
     }
 
     func show(with webView: any FindInPageWebView) {
+        let newPresentationIdentity = ObjectIdentifier(webView)
+        if presentationIdentity != newPresentationIdentity {
+            self.webView?.dismissFindSession()
+            presentationIdentity = newPresentationIdentity
+            resultIdentity = nil
+            documentKind = nil
+            isActive = false
+            model.update(progress: nil)
+        }
         self.webView = webView
 
         if cancellable == nil {
@@ -82,15 +80,33 @@ final class FindInPageTabExtension: SumiNavigationStartResponding, SumiSameDocum
 
     private func showFindInPage(generation: UInt64) async {
         let alreadyVisible = model.isVisible
+        let canRestoreProgress = !alreadyVisible
+            && documentKind != .pdf
+            && !model.text.isEmpty
+            && model.progress != nil
+            && resultIdentity == currentResultIdentity
         model.show()
 
         guard !alreadyVisible else {
             guard !model.text.isEmpty,
-                  !isPdf else { return }
+                  documentKind != .pdf else { return }
 
             await find(
                 model.text,
-                with: [.noIndexChange, .determineMatchIndex, .showOverlay],
+                preservesSelection: true,
+                showsOverlay: true,
+                determinesMatchIndex: true,
+                generation: generation
+            )
+            return
+        }
+
+        if canRestoreProgress {
+            await find(
+                model.text,
+                preservesSelection: true,
+                showsOverlay: true,
+                determinesMatchIndex: true,
                 generation: generation
             )
             return
@@ -100,17 +116,15 @@ final class FindInPageTabExtension: SumiNavigationStartResponding, SumiSameDocum
         guard isCurrentSearchGeneration(generation) else { return }
         guard !model.text.isEmpty else { return }
 
-        await find(model.text, with: .showOverlay, generation: generation)
+        await find(model.text, showsOverlay: true, generation: generation)
         await doItOneMoreTimeForPdf(with: model.text, generation: generation)
     }
 
     private func reset() async {
-        model.update(currentSelection: nil, matchesFound: nil)
+        model.update(progress: nil)
+        resultIdentity = nil
         isActive = false
-
-        webView?.clearFindInPageState()
-        try? await webView?.deselectAll()
-        self.isPdf = (await webView?.mimeType == UTType.pdf.preferredMIMEType)
+        documentKind = await webView?.prepareFindSession()
     }
 
     private func textDidChange(from oldValue: String, to string: String, generation: UInt64) async {
@@ -119,29 +133,35 @@ final class FindInPageTabExtension: SumiNavigationStartResponding, SumiSameDocum
             return
         }
 
-        var options = _WKFindOptions.showOverlay
-
-        if isActive {
-            options.insert(.noIndexChange)
-        }
-
-        await find(string, with: options, generation: generation)
+        await find(
+            string,
+            preservesSelection: isActive,
+            showsOverlay: true,
+            generation: generation
+        )
         await doItOneMoreTimeForPdf(with: string, oldValue: oldValue, generation: generation)
     }
 
     private func doItOneMoreTimeForPdf(
         with string: String,
-        options: _WKFindOptions = .noIndexChange,
+        preservesSelection: Bool = true,
         oldValue: String? = nil,
         generation: UInt64
     ) async {
-        guard isPdf, oldValue != string else { return }
-        await find(string, with: options, generation: generation)
+        guard documentKind == .pdf, oldValue != string else { return }
+        await find(
+            string,
+            preservesSelection: preservesSelection,
+            generation: generation
+        )
     }
 
     private func find(
         _ string: String,
-        with options: _WKFindOptions = [],
+        direction: FindInPageSearchDirection = .forward,
+        preservesSelection: Bool = false,
+        showsOverlay: Bool = false,
+        determinesMatchIndex: Bool = false,
         generation: UInt64
     ) async {
         guard !string.isEmpty else {
@@ -149,52 +169,87 @@ final class FindInPageTabExtension: SumiNavigationStartResponding, SumiSameDocum
             return
         }
 
-        if options.contains(.noIndexChange) {
-            try? await webView?.collapseSelectionToStart()
-        }
-
-        var options = options.union([.caseInsensitive, .wrapAround, .showFindIndicator])
-        if !self.isActive {
-            options.remove(.showOverlay)
-        }
-
-        let result = await webView?.find(string, with: options, maxCount: Constants.maxMatches)
+        let wasActive = isActive
+        let primaryRequest = FindInPageSearchRequest(
+            query: string,
+            direction: direction,
+            preservesSelection: preservesSelection,
+            showsOverlay: wasActive && showsOverlay,
+            determinesMatchIndex: determinesMatchIndex
+        )
+        let result = await webView?.search(primaryRequest)
         guard isCurrentSearchGeneration(generation) else { return }
 
         switch result {
         case .found(matches: let matchesFound):
-            self.model.update(
-                currentSelection: calculateCurrentIndex(with: options, matchesFound: matchesFound ?? 1),
-                matchesFound: matchesFound
+            let currentSelection = calculateCurrentIndex(
+                direction: direction,
+                preservesSelection: preservesSelection,
+                matchesFound: matchesFound ?? 1
             )
+            var finalMatchesFound = matchesFound
 
-            if !self.isActive {
-                self.isActive = true
+            if !wasActive,
+               model.isVisible,
+               documentKind != .pdf {
+                webView?.dismissFindSession()
+                let overlayResult = await webView?.search(FindInPageSearchRequest(
+                    query: string,
+                    preservesSelection: true,
+                    showsOverlay: true
+                ))
+                guard isCurrentSearchGeneration(generation) else { return }
 
-                guard self.model.isVisible,
-                      !isPdf else { break }
-
-                webView?.clearFindInPageState()
-                await find(string, with: [.noIndexChange, .showOverlay], generation: generation)
+                switch overlayResult {
+                case .found(let overlayMatches):
+                    finalMatchesFound = overlayMatches ?? finalMatchesFound
+                case .notFound:
+                    webView?.dismissFindSession()
+                    isActive = false
+                    resultIdentity = currentResultIdentity
+                    model.update(progress: .init(currentSelection: 0, matchesFound: 0))
+                    return
+                case .cancelled, .none:
+                    return
+                }
             }
 
+            isActive = true
+            resultIdentity = currentResultIdentity
+            model.update(progress: finalMatchesFound.map {
+                FindInPageProgress(
+                    currentSelection: currentSelection,
+                    matchesFound: $0
+                )
+            })
+
         case .notFound:
-            self.webView?.clearFindInPageState()
-            self.isActive = false
-            self.model.update(currentSelection: 0, matchesFound: 0)
+            webView?.dismissFindSession()
+            isActive = false
+            resultIdentity = currentResultIdentity
+            model.update(progress: .init(currentSelection: 0, matchesFound: 0))
 
         case .cancelled, .none:
             break
         }
     }
 
-    private func calculateCurrentIndex(with options: _WKFindOptions, matchesFound: UInt) -> UInt {
+    private var currentResultIdentity: ResultIdentity? {
+        guard let presentationIdentity else { return nil }
+        return ResultIdentity(query: model.text, presentation: presentationIdentity)
+    }
+
+    private func calculateCurrentIndex(
+        direction: FindInPageSearchDirection,
+        preservesSelection: Bool,
+        matchesFound: UInt
+    ) -> UInt {
         guard let currentIndex = model.currentSelection else { return 1 }
 
-        if options.contains(.noIndexChange) {
+        if preservesSelection {
             return currentIndex
 
-        } else if options.contains(.backwards) {
+        } else if direction == .backward {
             return currentIndex > 1 ? currentIndex - 1 : matchesFound
 
         } else if currentIndex < matchesFound {
@@ -208,7 +263,7 @@ final class FindInPageTabExtension: SumiNavigationStartResponding, SumiSameDocum
         _ = nextSearchGeneration()
         model.close()
         cancellable = nil
-        webView?.clearFindInPageState()
+        webView?.dismissFindSession()
         isActive = false
     }
 
@@ -216,7 +271,11 @@ final class FindInPageTabExtension: SumiNavigationStartResponding, SumiSameDocum
         guard !model.text.isEmpty else { return }
         let generation = nextSearchGeneration()
         Task { @MainActor [isActive] in
-            await find(model.text, with: model.isVisible ? .showOverlay : [], generation: generation)
+            await find(
+                model.text,
+                showsOverlay: model.isVisible,
+                generation: generation
+            )
             await doItOneMoreTimeForPdf(
                 with: model.text,
                 oldValue: isActive ? model.text : "",
@@ -231,7 +290,8 @@ final class FindInPageTabExtension: SumiNavigationStartResponding, SumiSameDocum
         Task { @MainActor in
             await find(
                 model.text,
-                with: model.isVisible ? [.showOverlay, .backwards] : [.backwards],
+                direction: .backward,
+                showsOverlay: model.isVisible,
                 generation: generation
             )
         }
@@ -239,11 +299,17 @@ final class FindInPageTabExtension: SumiNavigationStartResponding, SumiSameDocum
 
     func navigationDidStart() {
         close()
+        model.update(progress: nil)
+        resultIdentity = nil
+        documentKind = nil
     }
 
     func navigationDidSameDocumentNavigation(type navigationType: SumiSameDocumentNavigationType) {
         if navigationType == .sessionStatePush || navigationType == .sessionStatePop {
             close()
+            model.update(progress: nil)
+            resultIdentity = nil
+            documentKind = nil
         }
     }
 }

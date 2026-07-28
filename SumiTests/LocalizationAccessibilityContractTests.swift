@@ -25,6 +25,8 @@ final class LocalizationAccessibilityContractTests: XCTestCase {
 
         XCTAssertEqual(viewController.textField.accessibilityIdentifier(), "FindInPageController.textField")
         XCTAssertEqual(viewController.textField.accessibilityLabel(), "Find in page")
+        XCTAssertEqual(viewController.placeholderLabel.stringValue, "Find in page")
+        XCTAssertFalse(viewController.placeholderLabel.isHidden)
         XCTAssertEqual(viewController.statusField.accessibilityIdentifier(), "FindInPageController.statusField")
         XCTAssertEqual(viewController.statusField.accessibilityLabel(), "Find match position")
 
@@ -45,6 +47,79 @@ final class LocalizationAccessibilityContractTests: XCTestCase {
             title: "Close find bar",
             help: "Close find bar (Escape)",
             identifier: "FindInPageController.closeButton"
+        )
+    }
+
+    func testFindChromeDisplaysCompactMatchProgress() {
+        let viewController = FindInPageViewController.create()
+        let model = FindInPageModel()
+        model.find("test")
+        model.update(progress: .init(currentSelection: 8, matchesFound: 10))
+        _ = viewController.view
+        viewController.model = model
+
+        XCTAssertEqual(viewController.statusField.stringValue, "8/10")
+    }
+
+    func testFindChromeFitsMaximumMatchProgress() {
+        let viewController = FindInPageViewController.create()
+        let model = FindInPageModel()
+        model.find("test")
+        model.update(progress: .init(currentSelection: 1000, matchesFound: 1000))
+        _ = viewController.view
+        viewController.model = model
+        viewController.view.layoutSubtreeIfNeeded()
+
+        XCTAssertEqual(viewController.statusField.stringValue, "1000/1000")
+        XCTAssertGreaterThanOrEqual(
+            viewController.statusField.bounds.width,
+            viewController.statusField.intrinsicContentSize.width
+        )
+    }
+
+    func testFindChromeTextFieldHasNoSeparateVisualSurface() {
+        let viewController = FindInPageViewController.create()
+        _ = viewController.view
+        viewController.view.layoutSubtreeIfNeeded()
+
+        XCTAssertFalse(viewController.textField.isBordered)
+        XCTAssertFalse(viewController.textField.isBezeled)
+        XCTAssertFalse(viewController.textField.drawsBackground)
+        XCTAssertNil(viewController.textField.placeholderString)
+        XCTAssertNil(viewController.textField.placeholderAttributedString)
+    }
+
+    func testFindChromePlaceholderTracksWhetherQueryIsEmpty() {
+        let viewController = FindInPageViewController.create()
+        let model = FindInPageModel()
+        _ = viewController.view
+        viewController.model = model
+
+        XCTAssertFalse(viewController.placeholderLabel.isHidden)
+
+        model.find("test")
+        XCTAssertTrue(viewController.placeholderLabel.isHidden)
+
+        model.find("")
+        XCTAssertFalse(viewController.placeholderLabel.isHidden)
+    }
+
+    func testFindChromePlaceholderUsesSecondaryTextWithoutIncreasingItsOpacity() {
+        let viewController = FindInPageViewController.create()
+        _ = viewController.view
+        let secondaryText = NSColor.black.withAlphaComponent(0.56)
+
+        viewController.applyChromeColors(FindInPageChromePaint(
+            shellBackground: .white,
+            shellBorder: .clear,
+            primaryText: .black,
+            secondaryText: secondaryText
+        ))
+
+        XCTAssertEqual(
+            viewController.placeholderLabel.textColor?.alphaComponent ?? 1,
+            secondaryText.alphaComponent,
+            accuracy: 0.001
         )
     }
 
