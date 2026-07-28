@@ -146,13 +146,22 @@ final class WindowWebContentSplitHostLayoutView: NSView, WindowWebContentVisualH
     func configureSplitControls(
         in paneView: PaneContainerView,
         tab: Tab,
+        memberID: SplitMemberID,
+        groupID: UUID,
         windowState: BrowserWindowState
     ) {
         paneView.configureSplitControls(
             tab: tab,
-            splitLayout: splitLayout,
             windowState: windowState,
-            sidebarDragState: sidebarDragState
+            sidebarDragState: sidebarDragState,
+            onSeparate: { [weak splitLayout, weak windowState] in
+                guard let splitLayout, let windowState else { return }
+                splitLayout.separate(
+                    memberID,
+                    from: groupID,
+                    in: windowState
+                )
+            }
         )
     }
 
@@ -412,9 +421,9 @@ final class PaneContainerView: NSView {
 
     func configureSplitControls(
         tab: Tab,
-        splitLayout: SplitLayoutService,
         windowState: BrowserWindowState,
-        sidebarDragState: SidebarDragState
+        sidebarDragState: SidebarDragState,
+        onSeparate: @escaping @MainActor () -> Void
     ) {
         let controls = splitControlsView ?? SplitPaneControlsView(
             frame: NSRect(origin: .zero, size: SplitPaneControlsView.preferredSize)
@@ -422,9 +431,9 @@ final class PaneContainerView: NSView {
         splitControlsView = controls
         controls.configure(
             tab: tab,
-            splitLayout: splitLayout,
             windowState: windowState,
-            sidebarDragState: sidebarDragState
+            sidebarDragState: sidebarDragState,
+            onSeparate: onSeparate
         )
         controls.setSplitDropShieldHandler { [weak self] isActive in
             self?.enclosingSplitHostLayoutView?.setSplitDropCaptureActive(isActive)

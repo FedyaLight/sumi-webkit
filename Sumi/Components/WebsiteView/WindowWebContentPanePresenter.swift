@@ -85,6 +85,11 @@ final class WindowWebContentPanePresenter {
                 hostAttachments.clearSplitPaneHost(tab.id)
                 continue
             }
+            guard let memberID = presentation.memberID(for: tab.id) else {
+                preconditionFailure(
+                    "Validated split presentation lost a runtime tab mapping"
+                )
+            }
             if let host = hostResolver.resolveHost(
                 for: tab,
                 slot: .split(tab.id),
@@ -94,6 +99,8 @@ final class WindowWebContentPanePresenter {
                 containerView.configureSplitControls(
                     in: paneView,
                     tab: tab,
+                    memberID: memberID,
+                    groupID: presentation.groupID,
                     windowState: windowState
                 )
                 hostAttachments.attach(

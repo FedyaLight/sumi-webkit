@@ -9,9 +9,7 @@ final class SplitPaneControlsView: NSVisualEffectView {
     private let stackView = NSStackView()
     private let dragButton = SplitPaneDragButton()
     private let expandButton = SplitPaneToolbarButton(icon: .fullscreen)
-    private weak var splitLayout: SplitLayoutService?
-    private weak var windowState: BrowserWindowState?
-    private weak var tab: Tab?
+    private var onSeparate: (@MainActor () -> Void)?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -54,13 +52,11 @@ final class SplitPaneControlsView: NSVisualEffectView {
 
     func configure(
         tab: Tab,
-        splitLayout: SplitLayoutService,
         windowState: BrowserWindowState,
-        sidebarDragState: SidebarDragState
+        sidebarDragState: SidebarDragState,
+        onSeparate: @escaping @MainActor () -> Void
     ) {
-        self.tab = tab
-        self.splitLayout = splitLayout
-        self.windowState = windowState
+        self.onSeparate = onSeparate
         dragButton.configure(
             tab: tab,
             windowState: windowState,
@@ -93,8 +89,7 @@ final class SplitPaneControlsView: NSVisualEffectView {
     }
 
     @objc private func expandTab() {
-        guard let tab, let splitLayout, let windowState else { return }
-        splitLayout.expand(tabID: tab.id, in: windowState)
+        onSeparate?()
     }
 }
 

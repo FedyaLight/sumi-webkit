@@ -1,4 +1,5 @@
 import AppKit
+import SumiDomain
 import XCTest
 
 @testable import Sumi
@@ -513,6 +514,71 @@ final class BrowserWindowChromeTests: XCTestCase {
         XCTAssertNil(controls.hitTest(NSPoint(x: 8, y: 8)))
     }
 
+    func testSplitPaneExpandSeparatesPinnedAndEssentialPresentedMembers() throws {
+        let browser = BrowserManager(
+            startupPersistence: BrowserManagerStartupPersistence(
+                database: try makeInMemoryStartupDatabase()
+            )
+        )
+        let spaceID = UUID()
+        let windowState = BrowserWindowState()
+        let presentedTab = Tab(loadsCachedFaviconOnInit: false)
+        let containers: [SplitGroupContainer] = [
+            .shortcutSidebar(
+                spaceId: spaceID,
+                profileId: nil,
+                folderId: nil,
+                index: 0
+            ),
+            .essentialSidebar(profileId: nil, index: 0),
+        ]
+
+        for container in containers {
+            let memberID = SplitMemberID.shortcutPin(UUID())
+            let group = try XCTUnwrap(SplitGroup.make(
+                members: [memberID, .shortcutPin(UUID())],
+                layoutKind: .vertical,
+                container: container
+            ))
+            XCTAssertTrue(
+                browser.splitGroupMutations.insert(group, persist: false)
+            )
+
+            let controls = SplitPaneControlsView(
+                frame: NSRect(
+                    origin: .zero,
+                    size: SplitPaneControlsView.preferredSize
+                )
+            )
+            controls.configure(
+                tab: presentedTab,
+                windowState: windowState,
+                sidebarDragState: SidebarDragState(),
+                onSeparate: {
+                    browser.splitLayout.separate(
+                        memberID,
+                        from: group.id,
+                        in: windowState
+                    )
+                }
+            )
+            controls.setVisible(true, animated: false)
+
+            let expandButton = try XCTUnwrap(
+                button(
+                    in: controls,
+                    accessibilityIdentifier: "split-pane-expand-tab"
+                )
+            )
+            expandButton.performClick(nil)
+
+            XCTAssertNil(
+                browser.splitGroupStore.group(id: group.id),
+                "\(container) split was not separated"
+            )
+        }
+    }
+
     func testNativeSplitTreeDelegateCapabilityLookupDoesNotRecurse() {
         let splitView = NativeSplitTreeView(
             axis: .row,
@@ -546,6 +612,25 @@ final class BrowserWindowChromeTests: XCTestCase {
             XCTAssertTrue(button.identifier?.rawValue.isEmpty ?? true, file: file, line: line)
             XCTAssertTrue(button.accessibilityIdentifier().isEmpty, file: file, line: line)
         }
+    }
+
+    private func button(
+        in view: NSView,
+        accessibilityIdentifier: String
+    ) -> NSButton? {
+        if let button = view as? NSButton,
+           button.accessibilityIdentifier() == accessibilityIdentifier {
+            return button
+        }
+        for subview in view.subviews {
+            if let button = button(
+                in: subview,
+                accessibilityIdentifier: accessibilityIdentifier
+            ) {
+                return button
+            }
+        }
+        return nil
     }
 }
 

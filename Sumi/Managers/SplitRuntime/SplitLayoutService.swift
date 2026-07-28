@@ -168,16 +168,6 @@ final class SplitLayoutService {
         commitSeparation(memberID, from: group, in: windowState)
     }
 
-    func expand(tabID: UUID, in windowState: BrowserWindowState) {
-        guard let presentation = query.resolution(
-                  in: windowState.id
-              ).presentation,
-              let memberID = presentation.memberID(for: tabID) else {
-            return
-        }
-        commitSeparation(memberID, from: presentation.group, in: windowState)
-    }
-
     private func commitSeparation(
         _ memberID: SplitMemberID,
         from group: SumiDomain.SplitGroup,
