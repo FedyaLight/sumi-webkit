@@ -7,17 +7,27 @@ import SwiftUI
 struct SpaceTabSectionBoundaryLayout: Equatable {
     static let hairlineHeight: CGFloat = 1
     static let separatorPadding: CGFloat = 10
+    /// Half a row of empty space above the separator when the space has no pinned
+    /// content. It keeps the hairline (and the hovered Clear button) clear of
+    /// the scroll content's top edge, and gives a drop target for turning a
+    /// regular tab into a pinned one.
+    static let emptyPinnedTopPadding: CGFloat = SidebarRowLayout.rowHeight / 2
 
     let showsSeparator: Bool
     let topPadding: CGFloat
     let separatorHeight: CGFloat
     let bottomPadding: CGFloat
 
-    init(hasPinnedContent: Bool, regularTabCount: Int) {
-        showsSeparator = regularTabCount > 0
-        topPadding = hasPinnedContent
+    init(
+        hasPinnedContent: Bool,
+        regularTabCount: Int,
+        supportsPinnedContent: Bool = true
+    ) {
+        let hasVisiblePinnedContent = supportsPinnedContent && hasPinnedContent
+        showsSeparator = supportsPinnedContent && regularTabCount > 0
+        topPadding = hasVisiblePinnedContent
             ? (showsSeparator ? Self.separatorPadding : SidebarRowLayout.rowGap)
-            : 0
+            : (showsSeparator ? Self.emptyPinnedTopPadding : 0)
         separatorHeight = showsSeparator ? Self.hairlineHeight : 0
         bottomPadding = showsSeparator ? Self.separatorPadding : 0
     }

@@ -4,8 +4,9 @@ import Foundation
 /// Pure math for the drop-indicator line: maps a resolved drop slot onto a
 /// line rect in geometry space (scroll-normalized SwiftUI `.global`).
 /// Returns `nil` whenever the line must stay hidden — essentials keep their
-/// grid slot preview, folder "contain" hovers show the folder highlight, and
-/// empty pinned sections show the reveal strip instead.
+/// grid slot preview and folder "contain" hovers show the folder highlight.
+/// An empty pinned section has no rows to anchor to, so its line lands on the
+/// pinned↔regular separator, which is the row the drop would insert above.
 enum SidebarDropIndicatorGeometry {
     enum Metrics {
         static let lineHeight: CGFloat = 2
@@ -42,11 +43,14 @@ enum SidebarDropIndicatorGeometry {
                     container: metrics.rowsFrame
                 )
             }
-            return boundaryLineRect(
+            if let rect = boundaryLineRect(
                 slotIndex: slotIndex,
                 itemFrames: (geometry.hitTestIndex.topLevelPinnedItemsBySpace[spaceId] ?? [])
                     .map(\.frame)
-            )
+            ) {
+                return rect
+            }
+            return emptyPinnedLineRect(spaceId: spaceId, geometry: geometry)
         case .folder(let folderId, let slotIndex):
             return folderLineRect(
                 folderId: folderId,
@@ -73,6 +77,29 @@ enum SidebarDropIndicatorGeometry {
         return lineRect(
             atBoundaryY: metrics.boundaryY(for: slotIndex),
             container: metrics.frame
+        )
+    }
+
+    /// An empty pinned section ends where the boundary element begins. Its line
+    /// belongs on the separator hairline below that edge.
+    private static func emptyPinnedLineRect(
+        spaceId: UUID,
+        geometry: SidebarGeometrySnapshot
+    ) -> CGRect? {
+        guard let frame = geometry.sectionFramesBySpace[
+            SidebarSectionGeometryKey(spaceId: spaceId, section: .spacePinned)
+        ], frame.height == 0,
+              let regularMetrics = geometry.regularListHitTargets[spaceId],
+              regularMetrics.rowCount > 0,
+              regularMetrics.frame.minY > frame.maxY else {
+            return nil
+        }
+
+        return lineRect(
+            atBoundaryY:
+                frame.maxY
+                    + SpaceTabSectionBoundaryLayout.emptyPinnedTopPadding,
+            container: frame
         )
     }
 

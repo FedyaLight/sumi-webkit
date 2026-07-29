@@ -236,6 +236,7 @@ struct SpaceSidebarPageSnapshot {
     let iconValue: String
     let extensionActions: ExtensionActionGridSnapshot?
     let essentials: EssentialsSnapshot?
+    let supportsPinnedContent: Bool
     let hasPinnedContent: Bool
     let isPinnedContentCollapsed: Bool
     let pinnedItems: [SpacePinnedItemSnapshot]
@@ -251,6 +252,7 @@ struct SpaceSidebarPageSnapshot {
         iconValue: String,
         extensionActions: ExtensionActionGridSnapshot?,
         essentials: EssentialsSnapshot?,
+        supportsPinnedContent: Bool = true,
         hasPinnedContent: Bool,
         isPinnedContentCollapsed: Bool,
         pinnedItems: [SpacePinnedItemSnapshot],
@@ -265,6 +267,7 @@ struct SpaceSidebarPageSnapshot {
         self.iconValue = iconValue
         self.extensionActions = extensionActions
         self.essentials = essentials
+        self.supportsPinnedContent = supportsPinnedContent
         self.hasPinnedContent = hasPinnedContent
         self.isPinnedContentCollapsed = isPinnedContentCollapsed
         self.pinnedItems = pinnedItems
@@ -278,7 +281,8 @@ struct SpaceSidebarPageSnapshot {
     var tabSectionBoundaryLayout: SpaceTabSectionBoundaryLayout {
         SpaceTabSectionBoundaryLayout(
             hasPinnedContent: hasPinnedContent,
-            regularTabCount: regularRows.count
+            regularTabCount: regularRows.count,
+            supportsPinnedContent: supportsPinnedContent
         )
     }
 }
@@ -483,6 +487,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                     backdropReader: browserContext.essentialBackdropReader,
                     windowState: windowState
                 ),
+            supportsPinnedContent: !windowState.isIncognito,
             hasPinnedContent: hasPinnedContent,
             isPinnedContentCollapsed: isPinnedContentCollapsed,
             pinnedItems: pinnedItems,

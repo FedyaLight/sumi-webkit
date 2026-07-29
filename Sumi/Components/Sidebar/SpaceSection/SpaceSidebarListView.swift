@@ -1106,7 +1106,8 @@ private struct SpaceSidebarSceneBuilder {
     ) {
         let layout = SpaceTabSectionBoundaryLayout(
             hasPinnedContent: hasPinnedContent,
-            regularTabCount: tabs.count
+            regularTabCount: tabs.count,
+            supportsPinnedContent: !windowState.isIncognito
         )
         let extent =
             layout.topPadding + layout.separatorHeight + layout.bottomPadding
@@ -1120,6 +1121,11 @@ private struct SpaceSidebarSceneBuilder {
                     )
                 ),
                 targetExtent: extent,
+                // The hairline renders inside a 2pt row that is centered on a
+                // 1pt slot, so it always overhangs its own extent by half a
+                // point. Bleeding by the hairline keeps the line whole no
+                // matter how small the surrounding padding gets.
+                overflowBleed: SpaceTabSectionBoundaryLayout.hairlineHeight,
                 contentRevision: AnyHashable(
                     [
                         hasPinnedContent,

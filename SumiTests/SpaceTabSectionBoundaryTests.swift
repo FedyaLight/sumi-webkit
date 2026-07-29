@@ -59,6 +59,16 @@ final class SpaceTabSectionBoundaryTests: XCTestCase {
         XCTAssertTrue(snapshot.tabSectionBoundaryLayout.showsSeparator)
     }
 
+    func testIncognitoSnapshotHidesSeparator() {
+        let snapshot = makeSnapshot(
+            hasPinnedContent: false,
+            regularTabCount: 2,
+            supportsPinnedContent: false
+        )
+
+        XCTAssertFalse(snapshot.tabSectionBoundaryLayout.showsSeparator)
+    }
+
     // MARK: - Layout metrics
 
     func testSeparatorGapIsSymmetricWhenShownWithPinned() {
@@ -74,20 +84,66 @@ final class SpaceTabSectionBoundaryTests: XCTestCase {
         )
     }
 
-    func testTopPadIsZeroWithoutPinnedContent() {
+    func testSeparatorKeepsHalfARowAboveItWithoutPinnedContent() {
+        let layout = SpaceTabSectionBoundaryLayout(
+            hasPinnedContent: false,
+            regularTabCount: 1
+        )
+
+        XCTAssertEqual(
+            layout.topPadding,
+            SpaceTabSectionBoundaryLayout.emptyPinnedTopPadding,
+            "Without pinned content the hairline needs room above it, or the element's own clip shaves it."
+        )
+        XCTAssertEqual(
+            SpaceTabSectionBoundaryLayout.emptyPinnedTopPadding,
+            SidebarRowLayout.rowHeight / 2
+        )
+    }
+
+    func testEmptySpaceKeepsEveryBoundaryMetricAtZero() {
+        let layout = SpaceTabSectionBoundaryLayout(
+            hasPinnedContent: false,
+            regularTabCount: 0
+        )
+
+        XCTAssertFalse(layout.showsSeparator)
+        XCTAssertEqual(
+            layout.topPadding,
+            0,
+            "New Tab must sit directly under the space title when nothing else is in the list."
+        )
+        XCTAssertEqual(layout.separatorHeight, 0)
+        XCTAssertEqual(layout.bottomPadding, 0)
+    }
+
+    func testIncognitoDoesNotShowThePinnedBoundary() {
+        let layout = SpaceTabSectionBoundaryLayout(
+            hasPinnedContent: false,
+            regularTabCount: 3,
+            supportsPinnedContent: false
+        )
+
+        XCTAssertFalse(layout.showsSeparator)
+        XCTAssertEqual(layout.topPadding, 0)
+        XCTAssertEqual(layout.separatorHeight, 0)
+        XCTAssertEqual(layout.bottomPadding, 0)
+    }
+
+    func testPinnedContentKeepsItsExistingPadding() {
         XCTAssertEqual(
             SpaceTabSectionBoundaryLayout(
-                hasPinnedContent: false,
+                hasPinnedContent: true,
                 regularTabCount: 1
             ).topPadding,
-            0
+            SpaceTabSectionBoundaryLayout.separatorPadding
         )
         XCTAssertEqual(
             SpaceTabSectionBoundaryLayout(
-                hasPinnedContent: false,
+                hasPinnedContent: true,
                 regularTabCount: 0
             ).topPadding,
-            0
+            SidebarRowLayout.rowGap
         )
     }
 
@@ -104,6 +160,7 @@ final class SpaceTabSectionBoundaryTests: XCTestCase {
     func testBoundaryConstants() {
         XCTAssertEqual(SpaceTabSectionBoundaryLayout.separatorPadding, 10)
         XCTAssertEqual(SpaceTabSectionBoundaryLayout.hairlineHeight, 1)
+        XCTAssertEqual(SpaceTabSectionBoundaryLayout.emptyPinnedTopPadding, 18)
         XCTAssertEqual(SidebarRowLayout.rowGap, 4)
     }
 
@@ -119,7 +176,8 @@ final class SpaceTabSectionBoundaryTests: XCTestCase {
 
     private func makeSnapshot(
         hasPinnedContent: Bool,
-        regularTabCount: Int
+        regularTabCount: Int,
+        supportsPinnedContent: Bool = true
     ) -> SpaceSidebarPageSnapshot {
         let regularRows = (0..<regularTabCount).map { index in
             SpaceRegularRowSnapshot.tab(
@@ -141,6 +199,7 @@ final class SpaceTabSectionBoundaryTests: XCTestCase {
             iconValue: "globe",
             extensionActions: nil,
             essentials: nil,
+            supportsPinnedContent: supportsPinnedContent,
             hasPinnedContent: hasPinnedContent,
             isPinnedContentCollapsed: false,
             pinnedItems: [],

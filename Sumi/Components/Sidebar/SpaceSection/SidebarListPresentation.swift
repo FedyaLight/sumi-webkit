@@ -647,6 +647,9 @@ private struct SidebarListPresentedElement<
 }
 
 private struct SidebarPresentedExtentReporter: @preconcurrency AnimatableModifier {
+    /// Keeps semantic zero-extent markers visible to `LazyVStack` materialization.
+    private static let materializationFloor = CGFloat.ulpOfOne
+
     let id: AnyHashable
     var extent: CGFloat
     let isEnabled: Bool
@@ -658,7 +661,10 @@ private struct SidebarPresentedExtentReporter: @preconcurrency AnimatableModifie
 
     func body(content: Content) -> some View {
         content
-            .frame(height: max(extent, 0), alignment: .top)
+            .frame(
+                height: max(extent, Self.materializationFloor),
+                alignment: .top
+            )
             .background {
                 if isEnabled {
                     Color.clear.preference(
