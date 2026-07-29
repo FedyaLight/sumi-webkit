@@ -560,7 +560,8 @@ private struct SpaceSidebarListContentView: View {
             animation: contentMutationAnimation,
             identityTransfer: identityTransfer,
             presentedSpaceID: space.id,
-            geometryGeneration: dragSnapshots.pinned.geometryGeneration
+            geometryGeneration: dragSnapshots.pinned.geometryGeneration,
+            autofocusTarget: autofocusTarget(for:)
         ) { payload, _ in
             elementView(payload)
         }
@@ -1222,6 +1223,26 @@ private struct SpaceSidebarSceneBuilder {
 }
 
 private extension SpaceSidebarListContentView {
+    private func autofocusTarget(
+        for elementID: SpaceSidebarListElementID
+    ) -> SidebarScrollTargetID? {
+        switch elementID {
+        case .folderHeader(let folderID):
+            .folder(folderID)
+        case .shortcut(let itemID):
+            .launcher(itemID)
+        case .splitGroup(let groupID):
+            .splitGroup(groupID)
+        case .liveItem(let folderID, let itemID):
+            .liveFolderItem(folderID: folderID, itemID: itemID)
+        case .regularTab(let tabID):
+            .regularTab(tabID)
+        case .pinnedTop, .folderBodyTop, .folderBodyBottom, .boundary,
+                .regularRunStart, .regularRunEnd, .newTabGap, .newTab:
+            nil
+        }
+    }
+
     @ViewBuilder
     private func elementView(
         _ payload: SpaceSidebarListElementPayload
@@ -1252,11 +1273,6 @@ private extension SpaceSidebarListContentView {
                 itemID: itemID,
                 dragSnapshot: dragSnapshots.pinned,
                 contentMutationAnimation: contentMutationAnimation
-            )
-            .sidebarScrollTarget(
-                inventory.pin(id: itemID) != nil
-                    ? .launcher(itemID)
-                    : .splitGroup(itemID)
             )
         case .topLevelSplitGroup(let row):
             topLevelSplitGroup(row)
@@ -1326,7 +1342,6 @@ private extension SpaceSidebarListContentView {
                 isElevated: elevatedFolderIDs.contains(row.model.id)
             )
         )
-        .sidebarScrollTarget(.folder(row.model.id))
     }
 
     private func topLevelShortcut(
@@ -1358,7 +1373,6 @@ private extension SpaceSidebarListContentView {
                 )
             )
         )
-        .sidebarScrollTarget(.launcher(pin.id))
     }
 
     private func folderShortcut(
@@ -1399,7 +1413,6 @@ private extension SpaceSidebarListContentView {
                 isElevated: row.projection.isShortcutSelected(row.pin)
             )
         )
-        .sidebarScrollTarget(.launcher(row.pin.id))
     }
 
     private func topLevelSplitGroup(
@@ -1424,7 +1437,6 @@ private extension SpaceSidebarListContentView {
                 )
             )
         )
-        .sidebarScrollTarget(.splitGroup(row.group.id))
     }
 
     private func folderSplitGroup(
@@ -1454,7 +1466,6 @@ private extension SpaceSidebarListContentView {
                 )
             )
         )
-        .sidebarScrollTarget(.splitGroup(row.group.id))
     }
 
     private func liveFolderItem(
@@ -1474,12 +1485,6 @@ private extension SpaceSidebarListContentView {
         .padding(.leading, CGFloat(row.nestingDepth) * Self.folderIndent)
         .zIndex(
             SidebarSelectionElevation.zIndex(isElevated: row.isSelected)
-        )
-        .sidebarScrollTarget(
-            .liveFolderItem(
-                folderID: row.folder.id,
-                itemID: row.item.id
-            )
         )
     }
 
@@ -1504,7 +1509,6 @@ private extension SpaceSidebarListContentView {
         .zIndex(
             SidebarSelectionElevation.zIndex(isElevated: isCurrent)
         )
-        .sidebarScrollTarget(.regularTab(tab.id))
     }
 
     private func regularSplitGroup(
@@ -1536,7 +1540,6 @@ private extension SpaceSidebarListContentView {
                 ? SidebarDragSourceDim.opacity
                 : 1
         )
-        .sidebarScrollTarget(.splitGroup(row.group.id))
     }
 
     private var folderMutationActions: TabFolderMutationActions {

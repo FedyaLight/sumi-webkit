@@ -451,6 +451,7 @@ struct SidebarListSurface<ID: Hashable, Payload, Content: View>: View {
     let identityTransfer: SidebarListIdentityTransfer<ID>?
     let presentedSpaceID: UUID?
     let geometryGeneration: Int
+    let autofocusTarget: (ID) -> SidebarScrollTargetID?
     @ViewBuilder let content: (
         Payload,
         SidebarListElementPhase
@@ -460,6 +461,7 @@ struct SidebarListSurface<ID: Hashable, Payload, Content: View>: View {
     @State private var presentedGeometryCache =
         SidebarPresentedGeometryCache()
     @EnvironmentObject private var dragGeometry: SidebarDragGeometryModule
+    @Environment(\.sidebarSelectedItemRevealOwner) private var revealOwner
 
     init(
         scene: SidebarListScene<ID, Payload>,
@@ -467,6 +469,9 @@ struct SidebarListSurface<ID: Hashable, Payload, Content: View>: View {
         identityTransfer: SidebarListIdentityTransfer<ID>? = nil,
         presentedSpaceID: UUID? = nil,
         geometryGeneration: Int = 0,
+        autofocusTarget: @escaping (ID) -> SidebarScrollTargetID? = {
+            _ in nil
+        },
         @ViewBuilder content: @escaping (
             Payload,
             SidebarListElementPhase
@@ -477,6 +482,7 @@ struct SidebarListSurface<ID: Hashable, Payload, Content: View>: View {
         self.identityTransfer = identityTransfer
         self.presentedSpaceID = presentedSpaceID
         self.geometryGeneration = geometryGeneration
+        self.autofocusTarget = autofocusTarget
         self.content = content
         _presentation = State(
             initialValue: SidebarListPresentationState(scene: scene)
@@ -526,6 +532,9 @@ struct SidebarListSurface<ID: Hashable, Payload, Content: View>: View {
         .onChange(of: scene.structure) { _, _ in
             transitionToCurrentScene()
         }
+        .onAppear {
+            publishAutofocusLayout()
+        }
         .onChange(of: observesPresentedGeometry) { wasObserving, isObserving in
             if wasObserving, !isObserving {
                 removePresentedLayout()
@@ -533,14 +542,56 @@ struct SidebarListSurface<ID: Hashable, Payload, Content: View>: View {
         }
     }
 
+    /// Resolves row coordinates from the same ordered extents that drive the
+    /// LazyVStack. Callers invoke this only at presentation lifecycle edges;
+    /// scrolling itself produces no row work or environment updates.
+    private func publishAutofocusLayout() {
+        guard let revealOwner else { return }
+
+        var minY: CGFloat = 0
+        var targets: [
+            SidebarScrollTargetID: SidebarAutofocusLayout.Target
+        ] = [:]
+
+        for item in presentation.items {
+            let extent = max(item.extent, 0)
+            defer { minY += extent }
+            guard item.phase != .leaving,
+                  let targetID = autofocusTarget(item.id) else {
+                continue
+            }
+
+            let previous = targets.updateValue(
+                .init(
+                    minY: minY,
+                    maxY: minY + min(extent, SidebarRowLayout.rowHeight)
+                ),
+                forKey: targetID
+            )
+            precondition(
+                previous == nil,
+                "Sidebar autofocus target IDs must be unique"
+            )
+        }
+
+        revealOwner.updateAutofocusLayout(
+            SidebarAutofocusLayout(
+                targets: targets
+            )
+        )
+    }
+
     private func transitionToCurrentScene() {
         guard let animation else {
             SidebarMotionTransaction.withoutAnimation {
                 presentation.synchronize(to: scene)
             }
+            publishAutofocusLayout()
             reportPresentedLayout(presentedGeometryCache.value)
             return
         }
+
+        revealOwner?.updateAutofocusLayout(nil)
 
         let transition: SidebarListPresentationState<ID, Payload>.Transition =
             SidebarMotionTransaction.withoutAnimation {
@@ -563,6 +614,7 @@ struct SidebarListSurface<ID: Hashable, Payload, Content: View>: View {
             SidebarMotionTransaction.withoutAnimation {
                 presentation.settle(transition)
             }
+            publishAutofocusLayout()
         }
         reportPresentedLayout(presentedGeometryCache.value)
     }

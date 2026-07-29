@@ -18,12 +18,16 @@ Commits the selected workspace and tab. It does not synthesize late theme previe
 Stores the latest logical scroll viewport for every space. The same viewport is
 used by transition snapshots and by the next committed interactive scroll view.
 - `SidebarSelectedItemRevealOwner`
-Queues the latest reveal path until its interactive scroll surface is ready,
-then publishes repeatable selection and selected-row-hover reveal intents.
+Queues the latest semantic target until its interactive scroll surface and the
+unified list presentation are both ready, then publishes one exact reveal.
 - `SidebarSelectedItemVisibilityScope`
-Owns the surface's initial `ScrollPosition` and resolves reveal intents through
-one `ScrollViewProxy`. Its scroll-geometry receipt separates viewport restoration
-from the first reveal animation. Selection callers never issue scroll commands.
+Owns the surface's mount `ScrollPosition` and every programmatic scroll command.
+Its first usable geometry applies viewport restoration without animation; a
+geometry receipt proves the result, and a display-pass receipt keeps the first
+reveal animation out of the committed page's mount transaction.
+- `SidebarListSurface`
+Publishes semantic target bounds from the same ordered presentation extents that
+render the unified list. It withholds settled geometry during structural reflow.
 
 ## Rules
 
@@ -40,31 +44,28 @@ from the first reveal animation. Selection callers never issue scroll commands.
 - Browser chrome reads `ResolvedThemeContext`; it should not depend on workspace-specific `colorScheme` injection.
 - Global `System / Light / Dark` appearance remains independent from workspace color styling.
 - A committed space freezes the viewport intent used by its transition snapshot:
-  automatic, top, bottom, or a concrete point. Non-top surfaces mount at the top
-  first, then apply their saved destination to the first usable layout. Point
-  restoration clamps to the current reachable extent and bottom restoration uses
-  the current bottom, so content shrinkage cannot stall surface readiness.
-- Once real scroll geometry confirms restoration, the visibility scope releases
-  the latest selected-row reveal in a later animation transaction. Space return,
-  close/unload fallback, and selected-row hover therefore share one identity-based
-  reveal operation and one motion policy; only the return path has a restoration
-  barrier before it.
+  automatic, top, bottom, or a concrete point. The real surface starts without a
+  pending non-top scroll command; its first usable geometry applies that intent
+  in an animation-disabled transaction before the surface can become ready.
+  Point restoration clamps to the current reachable extent and bottom restoration
+  uses the current bottom.
+- Scroll geometry confirms restoration, but does not by itself make the surface
+  ready. The first AppKit display pass of the interactive committed surface is
+  the presentation barrier; only its receipt releases the reveal in a separate
+  SwiftUI animation transaction.
 - Surface readiness is event-driven. It uses neither a fixed delay nor polling,
   and snapshot-only surfaces never release reveal work.
-- Before readiness, the newest selection replaces the older pending path. After
+- Before readiness, the newest selection replaces the older pending target. After
   readiness, close/unload fallback and selected-row hover reveal immediately.
-- Every direct `LazyVStack` slot carries a stable `SidebarScrollTargetID`.
-  Nested content must not own that identity: SwiftUI cannot materialize an
-  off-screen slot from an ID hidden inside the slot's view hierarchy.
-- Folder selections resolve to a root-to-leaf reveal path. The reveal owner
-  materializes direct folder targets without animation, advancing as they appear;
-  only the final selected row receives the user-visible reveal animation. Closed
-  folders skip non-rendered descendants and target their sticky selected projection.
-- Programmatic identity scrolling omits an explicit anchor. SwiftUI moves only
-  far enough to expose the row, matching Zen's nearest-edge behavior, and uses
-  one shared smooth reveal animation. There is no delayed offset correction.
+- Every selectable unified-list element maps to one stable semantic
+  `SidebarScrollTargetID`. Its target bounds come from ordered presentation
+  extents, so nested-folder rows do not need lazy identity materialization.
+- Programmatic scrolling preserves nearest-edge behavior. A revealed row reserves
+  one complete `SidebarRowLayout.rowGap` (4pt) against either viewport edge when
+  the surrounding content makes that gap reachable. One shared smooth animation
+  owns the final offset, with no delayed correction.
 - Regular tabs, launchers, split groups, collapsed-folder sticky projections,
-  and live-folder results all expose a stable scroll identity. Split members
+  and live-folder results all expose a stable semantic target ID. Split members
   resolve to the one visible split-group row.
 - Hovering a partially clipped selected row issues a fresh reveal generation;
   the scroll view moves only far enough to expose the full row.
@@ -87,7 +88,7 @@ from the first reveal animation. Selection callers never issue scroll commands.
 - Starting the initial selected-row reveal from `task`/`onAppear` in the same
   mount transaction as viewport restoration. SwiftUI can coalesce both positions
   before a frame is presented, turning a smooth reveal into an instant jump.
-- Delaying reveal by a guessed duration. Readiness must come from actual scroll
-  geometry so it remains correct across layout cost, hardware, and nested lists.
-- Scheduling a second offset adjustment after identity scrolling. It races manual
-  scrolling and layout changes; the identity reveal must own the final destination.
+- Delaying reveal by a guessed duration. Readiness must come from restored scroll
+  geometry plus the committed surface's actual display pass.
+- Scheduling a second offset adjustment after the reveal command. It races manual
+  scrolling and layout changes; one reveal must own the final destination.

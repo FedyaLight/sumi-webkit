@@ -50,6 +50,7 @@ struct SpaceScrollChromeSurface<Content: View>: View {
             selection: selection,
             isEnabled: isInteractive,
             motionMode: selectedItemRevealMode,
+            targetResolution: .presentedLayout,
             restoredViewport: isInteractive ? restoredViewport : nil,
             onCommittedViewportChange: onViewportChange
         ) {
