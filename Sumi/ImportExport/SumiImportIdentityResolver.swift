@@ -18,6 +18,7 @@ struct SumiImportIdentityResolver {
     let importsSpaces: Bool
     let importsFolders: Bool
     let profileIDsBySource: [String: String]
+    let legacyImportedIDs: [EntityKind: Set<String>]
     let fallbackProfileId: String?
     let fallbackSpaceId: String?
 
@@ -28,6 +29,7 @@ struct SumiImportIdentityResolver {
         importsSpaces: Bool,
         importsFolders: Bool,
         profileIDsBySource: [String: String] = [:],
+        legacyImportedIDs: [EntityKind: Set<String>] = [:],
         fallbackProfileId: String?,
         fallbackSpaceId: String?
     ) {
@@ -37,6 +39,7 @@ struct SumiImportIdentityResolver {
         self.importsSpaces = importsSpaces
         self.importsFolders = importsFolders
         self.profileIDsBySource = profileIDsBySource
+        self.legacyImportedIDs = legacyImportedIDs
         self.fallbackProfileId = fallbackProfileId
         self.fallbackSpaceId = fallbackSpaceId
     }
@@ -57,7 +60,14 @@ struct SumiImportIdentityResolver {
     }
 
     func importedId(_ kind: EntityKind, source: String) -> String {
-        if mode == .replace, let uuid = UUID(uuidString: source) {
+        if mode == .merge,
+           let uuid = UUID(uuidString: source),
+           legacyImportedIDs[kind]?.contains(uuid.uuidString) == true {
+            return uuid.uuidString
+        }
+        if mode == .replace,
+           sourceKind.preservesNativeIdentity,
+           let uuid = UUID(uuidString: source) {
             return uuid.uuidString
         }
         return deterministicUUID(kind: kind, source: source).uuidString
@@ -78,5 +88,11 @@ struct SumiImportIdentityResolver {
             bytes[8], bytes[9], bytes[10], bytes[11],
             bytes[12], bytes[13], bytes[14], bytes[15]
         ))
+    }
+}
+
+private extension SumiImportSourceKind {
+    var preservesNativeIdentity: Bool {
+        self == .sumiBackup || self == .sumiTransfer
     }
 }

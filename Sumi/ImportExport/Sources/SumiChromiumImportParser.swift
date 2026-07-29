@@ -15,12 +15,21 @@ struct SumiChromiumImportResult {
 /// bookmark the user ever made into the sidebar.
 struct SumiChromiumImportParser {
     var browserName: String
+    /// Stable catalog id ("chrome", "edge", …). It namespaces portable ids so
+    /// profiles with the same on-disk name from different browsers never merge.
+    var sourceIdentifier: String
     var userDataURL: URL
     /// Restricts the import to a single profile directory; `nil` imports all.
     var profileDirectoryName: String?
 
-    init(browserName: String, userDataURL: URL, profileDirectoryName: String? = nil) {
+    init(
+        browserName: String,
+        sourceIdentifier: String,
+        userDataURL: URL,
+        profileDirectoryName: String? = nil
+    ) {
         self.browserName = browserName
+        self.sourceIdentifier = sourceIdentifier
         self.userDataURL = userDataURL
         self.profileDirectoryName = profileDirectoryName
     }
@@ -42,8 +51,8 @@ struct SumiChromiumImportParser {
         var bookmarkRoots: [SumiPortableBookmarkNode] = []
 
         for (index, profile) in profiles.enumerated() {
-            let profileId = "chromium-profile-\(profile.directoryName)"
-            let spaceId = "chromium-space-\(profile.directoryName)"
+            let profileId = "chromium-\(sourceIdentifier)-profile-\(profile.directoryName)"
+            let spaceId = "chromium-\(sourceIdentifier)-space-\(profile.directoryName)"
             portableProfiles.append(
                 SumiPortableProfile(
                     id: profileId,
@@ -68,7 +77,7 @@ struct SumiChromiumImportParser {
             var pinnedIndex = 0
             var regularIndex = 0
             for tab in tabs {
-                let id = "chromium-tab-\(profile.directoryName)-\(tab.windowID)-\(tab.tabID)"
+                let id = "chromium-\(sourceIdentifier)-tab-\(profile.directoryName)-\(tab.windowID)-\(tab.tabID)"
                 let title = SumiImportTextNormalization.nilIfBlank(tab.title) ?? tab.url
                 if tab.isPinned {
                     pinned.append(

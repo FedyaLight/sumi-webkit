@@ -14,15 +14,15 @@ Safari password-manager extension compatibility.
 
 The near-term target is that a user can install an unpacked or zipped password-manager extension and use it from the browser UI. Sumi does not currently claim that Bitwarden, Proton Pass, or 1Password already work.
 
-## Completed Milestone: Arc/Zen Import And Backup/Restore
+## Completed Milestone: Browser Import And Backup/Restore
 
-Sumi now has first-class Arc/Zen migration and Sumi backup/restore surfaces in Settings > Data & Recovery.
+Sumi now has multi-browser migration and Sumi backup/restore surfaces in Settings > Data & Recovery.
 
 - Arc and Zen imports preserve Sumi's own model: essentials remain profile-scoped launchers, pinned items remain space launchers, regular tabs remain regular tabs, and nested sidebar folder hierarchy is preserved instead of flattened.
-- Browser export writes a browser2zen-compatible JSON shape with `source: "sumi"` plus a Sumi extension block for exact future round-trips.
+- Arc, Chrome/Chromium, Edge, Brave, Firefox, Safari, Zen, Vivaldi, Opera/Opera GX, and Yandex imports include the source data each browser exposes: profiles/workspaces, tabs, bookmarks, history, favicons where available, and cookies when the source encryption permits them to be moved.
+- Export for Zen writes a browser2zen v1-compatible `.zenbackup` with workspaces, tabs, folders, bookmarks, history, containers, and cookies.
 - Sumi backup/restore uses `.sumibackup` logical JSON archives. Backup v1 includes profiles, spaces and themes, bookmarks, essentials, pinned launchers, folders, and regular tabs. It excludes history, permission decisions, extension metadata and payloads, cookies, passwords, WebKit website data, caches, downloads, preferences, and session settings.
 - Restore supports explicit Merge and Replace modes. Replace writes an automatic pre-restore backup and prunes old automatic pre-restore files so the feature does not accumulate unbounded app-support data.
-- Chrome, Safari, and Firefox are supported through the existing bookmarks importer; deeper browser organization import requires Arc/Zen data or a portable browser2zen/Sumi transfer file.
 
 ## Done In Alpha
 
@@ -84,4 +84,4 @@ Additional details:
 - Fully encrypted sync without data collection.
 - Multi-window workflows.
 - Improved profile isolation redesign.
-- Deeper direct Safari and Chrome import beyond bookmarks and portable transfer files.
+- Broader migration of browser-specific data that platform APIs or source encryption do not currently make portable.

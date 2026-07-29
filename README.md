@@ -32,7 +32,7 @@ Alpha hardening is focused on the remaining user-safety pieces:
 
 Completed user-safety pieces:
 
-- [x] Arc/Zen import and Sumi backup/restore through Settings > Data & Recovery.
+- [x] Multi-browser import, Zen-compatible export, and Sumi backup/restore through Settings > Data & Recovery.
 - [x] Sparkle-based Alpha update flow with GitHub Releases and static appcast infrastructure.
 
 See [docs/roadmap.md](docs/roadmap.md) for the current Alpha status and planned work.
@@ -140,7 +140,7 @@ Current Alpha builds include:
 - Command palette search/address field with contextual local results, site search, history and bookmark suggestions, and split-aware actions.
 - Bookmarks, history, and search inside bookmarks, history, and settings.
 - Custom themes.
-- Data & Recovery settings for Arc and Zen import with nested folder hierarchy, browser2zen-compatible `.sumiexport` transfer files, bookmarks import from Chrome/Safari/Firefox, and logical Sumi `.sumibackup` backup/restore.
+- Data & Recovery settings for importing Arc, Chromium-family browsers, Firefox, Safari, and Zen; browser2zen-compatible `.zenbackup` export to Zen; and logical Sumi `.sumibackup` backup/restore.
 - Session restore setting for restoring the previous session or starting clean.
 - Mini Player at the bottom of the sidebar for jumping to playing media, pausing media, and muting media.
 - Memory modes and inactive tab unloading that preserve visible organization after a live WebView/runtime instance is unloaded.
@@ -209,7 +209,8 @@ Later work under consideration:
 - Fully encrypted sync without data collection.
 - Multi-window workflows.
 - Improved profile isolation.
-- Deeper direct Safari and Chrome import beyond bookmarks and portable transfer files.
+- Broader migration of browser-specific data that platform APIs or source
+  encryption do not currently make portable.
 
 ## Project Structure
 

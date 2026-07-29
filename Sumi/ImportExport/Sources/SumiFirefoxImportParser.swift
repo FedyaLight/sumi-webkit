@@ -88,27 +88,40 @@ struct SumiFirefoxImportParser {
         let baseProfileId = "firefox-profile-\(directoryName)"
         let spaceId = "firefox-space-\(directoryName)"
         let displayName = Self.profile(at: profileURL).displayName
+        let tabs = sessionTabs(warnings: &warnings)
+        // Contextual identities are persistent user-facing cookie jars. Import
+        // all of them even when none of their tabs or cookies currently exist.
+        let containers = (try? SumiMozillaContainerCatalog.read(profileURL: profileURL)) ?? []
 
         var portableProfiles = [
             SumiPortableProfile(
                 id: baseProfileId,
                 name: displayName,
                 index: 0,
-                sourceDirectoryKey: directoryName
-            )
+                sourceDirectoryKey: SumiMozillaCookiePartition.sourceProfileKey(
+                    directoryName: directoryName,
+                    userContextId: 0
+                )
+            ),
         ]
-        // Containers are separate cookie jars, which is exactly a Sumi profile.
-        // They share the profile directory, so they share the bulk-data key.
-        for (offset, container) in containers().enumerated() {
+        for (offset, container) in containers.enumerated() {
             portableProfiles.append(
                 SumiPortableProfile(
                     id: "firefox-container-\(directoryName)-\(container.id)",
                     name: container.name,
                     index: offset + 1,
-                    sourceDirectoryKey: directoryName
+                    sourceDirectoryKey: SumiMozillaCookiePartition.sourceProfileKey(
+                        directoryName: directoryName,
+                        userContextId: container.id
+                    )
                 )
             )
         }
+        let profileIdByContainer = Dictionary(
+            uniqueKeysWithValues: containers.map {
+                ($0.id, "firefox-container-\(directoryName)-\($0.id)")
+            }
+        )
 
         let spaces = [
             SumiPortableSpace(
@@ -119,13 +132,14 @@ struct SumiFirefoxImportParser {
                 profileId: baseProfileId,
                 themeDataBase64: nil,
                 color: nil
-            )
+            ),
         ]
 
         var pinned: [SumiPortableLauncher] = []
         var regularTabs: [SumiPortableRegularTab] = []
-        for (index, tab) in sessionTabs(warnings: &warnings).enumerated() {
+        for (index, tab) in tabs.enumerated() {
             let id = "firefox-tab-\(directoryName)-\(index)"
+            let profileId = profileIdByContainer[tab.userContextId] ?? baseProfileId
             if tab.isPinned {
                 pinned.append(
                     SumiPortableLauncher(
@@ -134,7 +148,7 @@ struct SumiFirefoxImportParser {
                         urlString: tab.url,
                         index: pinned.count,
                         profileId: nil,
-                        executionProfileId: baseProfileId,
+                        executionProfileId: profileId,
                         spaceId: spaceId,
                         folderId: nil,
                         iconAsset: nil,
@@ -149,7 +163,7 @@ struct SumiFirefoxImportParser {
                         urlString: tab.url,
                         index: regularTabs.count,
                         spaceId: spaceId,
-                        profileId: baseProfileId,
+                        profileId: profileId,
                         folderId: nil
                     )
                 )
@@ -172,35 +186,11 @@ struct SumiFirefoxImportParser {
 
     // MARK: - Sources
 
-    private struct FirefoxContainer {
-        var id: Int
-        var name: String
-    }
-
-    private func containers() -> [FirefoxContainer] {
-        guard let data = try? Data(contentsOf: profileURL.appendingPathComponent("containers.json")),
-              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let identities = root["identities"] as? [[String: Any]]
-        else { return [] }
-
-        return identities.compactMap { identity in
-            guard let id = identity["userContextId"] as? Int,
-                  id != 0,
-                  identity["public"] as? Bool != false
-            else { return nil }
-            // Built-in containers carry a localization key rather than a name.
-            let name = SumiImportTextNormalization.nilIfBlank(identity["name"] as? String)
-                ?? SumiImportTextNormalization.nilIfBlank(identity["l10nID"] as? String)
-                    .map { $0.replacingOccurrences(of: "userContext", with: "").replacingOccurrences(of: ".label", with: "") }
-                ?? "Container \(id)"
-            return FirefoxContainer(id: id, name: name)
-        }
-    }
-
     private struct SessionTab {
         var url: String
         var title: String
         var isPinned: Bool
+        var userContextId: Int
     }
 
     private func sessionTabs(warnings: inout [String]) -> [SessionTab] {
@@ -237,7 +227,8 @@ struct SumiFirefoxImportParser {
                     SessionTab(
                         url: urlString,
                         title: SumiImportTextNormalization.nilIfBlank(entry["title"] as? String) ?? urlString,
-                        isPinned: tab["pinned"] as? Bool ?? false
+                        isPinned: tab["pinned"] as? Bool ?? false,
+                        userContextId: tab["userContextId"] as? Int ?? 0
                     )
                 )
             }
@@ -255,7 +246,7 @@ struct SumiFirefoxImportParser {
                 fileURL: placesURL,
                 kind: .firefoxSQLite
             ).readBookmarks()
-            let converted = try SumiBookmarkPortableBridge.portableNodes(from: nodes)
+            let converted = SumiBookmarkPortableBridge.portableNodes(from: nodes)
             guard converted.isEmpty == false else { return [] }
             return [SumiPortableBookmarkNode(name: browserName, kind: .folder, urlString: nil, children: converted)]
         } catch {

@@ -23,42 +23,50 @@ struct SumiImportHistoryExtractor {
     var profileURL: URL
 
     func stage(to fileURL: URL, staging: SumiImportBulkStagingStore) throws -> Extraction {
-        let visits: [SumiStagedHistoryVisit]
-        switch family {
-        case .chromium, .arc:
-            visits = try chromiumVisits()
-        case .firefox, .zen:
-            visits = try firefoxVisits()
-        case .safari:
-            visits = try safariVisits()
+        var seen = 0
+        let written = try staging.writeStream(to: fileURL) { emit in
+            try readVisits { visit in
+                seen += 1
+                if seen.isMultiple(of: 256) {
+                    try Task.checkCancellation()
+                }
+                guard seen <= Self.maximumVisits else { return }
+                try emit(visit)
+            }
         }
-
-        var skipReasons: [String] = []
-        var kept = visits
-        if kept.count > Self.maximumVisits {
-            skipReasons.append(
-                "Only the \(Self.maximumVisits.formatted()) most recent visits were imported."
-            )
-            kept = Array(kept.sorted { $0.visitedAt > $1.visitedAt }.prefix(Self.maximumVisits))
-        }
-
-        let written = try staging.write(kept, to: fileURL)
+        let skipped = max(seen - written.count, 0)
         return Extraction(
             recordCount: written.count,
             byteCount: written.bytes,
-            skipped: visits.count - kept.count,
-            skipReasons: skipReasons
+            skipped: skipped,
+            skipReasons: skipped > 0
+                ? ["Only the \(Self.maximumVisits.formatted()) most recent visits were imported."]
+                : []
         )
     }
 
     // MARK: - Per-family readers
 
-    private func chromiumVisits() throws -> [SumiStagedHistoryVisit] {
+    private func readVisits(
+        _ visit: (SumiStagedHistoryVisit) throws -> Void
+    ) throws {
+        switch family {
+        case .chromium, .arc:
+            try chromiumVisits(visit)
+        case .firefox, .zen:
+            try firefoxVisits(visit)
+        case .safari:
+            try safariVisits(visit)
+        }
+    }
+
+    private func chromiumVisits(
+        _ visit: (SumiStagedHistoryVisit) throws -> Void
+    ) throws {
         try SumiImportSQLiteSnapshotReader.withSnapshot(
             of: profileURL.appendingPathComponent("History")
         ) { database in
-            guard SumiImportSQLiteSnapshotReader.hasTable(database, named: "visits") else { return [] }
-            var output: [SumiStagedHistoryVisit] = []
+            guard SumiImportSQLiteSnapshotReader.hasTable(database, named: "visits") else { return }
             try SumiImportSQLiteSnapshotReader.query(
                 database,
                 """
@@ -73,7 +81,7 @@ struct SumiImportHistoryExtractor {
                           microseconds: SumiImportSQLiteSnapshotReader.columnInt(statement, 2)
                       )
                 else { return }
-                output.append(
+                try visit(
                     SumiStagedHistoryVisit(
                         urlString: url,
                         title: SumiImportSQLiteSnapshotReader.columnText(statement, 1) ?? "",
@@ -81,16 +89,16 @@ struct SumiImportHistoryExtractor {
                     )
                 )
             }
-            return output
         }
     }
 
-    private func firefoxVisits() throws -> [SumiStagedHistoryVisit] {
+    private func firefoxVisits(
+        _ visit: (SumiStagedHistoryVisit) throws -> Void
+    ) throws {
         try SumiImportSQLiteSnapshotReader.withSnapshot(
             of: profileURL.appendingPathComponent("places.sqlite")
         ) { database in
-            guard SumiImportSQLiteSnapshotReader.hasTable(database, named: "moz_historyvisits") else { return [] }
-            var output: [SumiStagedHistoryVisit] = []
+            guard SumiImportSQLiteSnapshotReader.hasTable(database, named: "moz_historyvisits") else { return }
             try SumiImportSQLiteSnapshotReader.query(
                 database,
                 """
@@ -105,7 +113,7 @@ struct SumiImportHistoryExtractor {
                           microseconds: SumiImportSQLiteSnapshotReader.columnInt(statement, 2)
                       )
                 else { return }
-                output.append(
+                try visit(
                     SumiStagedHistoryVisit(
                         urlString: url,
                         title: SumiImportSQLiteSnapshotReader.columnText(statement, 1) ?? "",
@@ -113,16 +121,16 @@ struct SumiImportHistoryExtractor {
                     )
                 )
             }
-            return output
         }
     }
 
-    private func safariVisits() throws -> [SumiStagedHistoryVisit] {
+    private func safariVisits(
+        _ visit: (SumiStagedHistoryVisit) throws -> Void
+    ) throws {
         try SumiImportSQLiteSnapshotReader.withSnapshot(
             of: profileURL.appendingPathComponent("History.db")
         ) { database in
-            guard SumiImportSQLiteSnapshotReader.hasTable(database, named: "history_visits") else { return [] }
-            var output: [SumiStagedHistoryVisit] = []
+            guard SumiImportSQLiteSnapshotReader.hasTable(database, named: "history_visits") else { return }
             try SumiImportSQLiteSnapshotReader.query(
                 database,
                 """
@@ -137,7 +145,7 @@ struct SumiImportHistoryExtractor {
                           absoluteSeconds: sqlite3_column_double(statement, 2)
                       )
                 else { return }
-                output.append(
+                try visit(
                     SumiStagedHistoryVisit(
                         urlString: url,
                         title: SumiImportSQLiteSnapshotReader.columnText(statement, 1) ?? "",
@@ -145,7 +153,6 @@ struct SumiImportHistoryExtractor {
                     )
                 )
             }
-            return output
         }
     }
 }

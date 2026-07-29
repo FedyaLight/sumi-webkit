@@ -19,13 +19,14 @@ struct SumiImportBulkInstaller: SumiImportBulkInstalling {
         _ visits: [HistoryImportedVisit],
         profileId: UUID?
     ) async throws -> HistoryImportedVisitWriter.Receipt {
-        let receipt = try await historyStore.installImportedVisits(visits, profileId: profileId)
-        await refreshHistory()
-        return receipt
+        try await historyStore.installImportedVisits(visits, profileId: profileId)
     }
 
     func rollbackHistory(_ receipt: HistoryImportedVisitWriter.Receipt) async throws {
         try await historyStore.rollbackImportedVisits(receipt)
+    }
+
+    func didMutateHistory() async {
         await refreshHistory()
     }
 
@@ -44,44 +45,19 @@ struct SumiImportBulkInstaller: SumiImportBulkInstalling {
 
     func installCookies(
         _ cookies: [SumiStagedCookie],
-        profileId: UUID?
-    ) async -> (installed: Set<String>, replaced: [SumiStagedCookie]) {
-        guard let profileId else { return ([], []) }
-        let receipt = await cookieInstaller.install(
+        profileId: UUID
+    ) async throws -> SumiCookieInstallationReceipt {
+        try await cookieInstaller.install(
             cookies,
             profileId: profileId,
             overwriteExisting: overwriteExistingCookies
         )
-        // The replaced originals are carried as staged values so the receipt
-        // stays a plain value type the coordinator can hold.
-        return (
-            receipt.installedIdentities,
-            receipt.replaced.map { cookie in
-                SumiStagedCookie(
-                    name: cookie.name,
-                    value: cookie.value,
-                    domain: cookie.domain,
-                    path: cookie.path,
-                    expiresAt: cookie.expiresDate,
-                    isSecure: cookie.isSecure,
-                    isHTTPOnly: cookie.isHTTPOnly
-                )
-            }
-        )
     }
 
     func rollbackCookies(
-        identities: Set<String>,
-        replaced: [SumiStagedCookie],
-        profileId: UUID?
+        _ receipt: SumiCookieInstallationReceipt,
+        profileId: UUID
     ) async {
-        guard let profileId else { return }
-        await cookieInstaller.rollback(
-            SumiCookieInstallationReceipt(
-                installedIdentities: identities,
-                replaced: replaced.compactMap(SumiProfileCookieInstallationService.makeCookie)
-            ),
-            profileId: profileId
-        )
+        await cookieInstaller.rollback(receipt, profileId: profileId)
     }
 }

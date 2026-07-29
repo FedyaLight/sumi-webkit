@@ -136,7 +136,7 @@ enum SumiBrowserSourceCatalog {
             sourceKind: .safari,
             bundleIdentifiers: ["com.apple.Safari"],
             relativeDataPath: "Library/Safari",
-            capabilities: [.structure, .bookmarks, .history]
+            capabilities: [.structure, .bookmarks, .history, .cookies]
         ),
     ]
 
@@ -223,7 +223,7 @@ enum SumiBrowserSourceCatalog {
                     displayName: "All spaces",
                     directoryURL: dataRoot,
                     sourceDirectoryKey: "Default"
-                )
+                ),
             ], nil)
 
         case .chromium:
@@ -270,7 +270,7 @@ enum SumiBrowserSourceCatalog {
                     displayName: "Safari",
                     directoryURL: dataRoot,
                     sourceDirectoryKey: "default"
-                )
+                ),
             ], nil)
         }
     }

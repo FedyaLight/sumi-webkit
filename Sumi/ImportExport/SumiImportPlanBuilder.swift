@@ -26,9 +26,11 @@ struct SumiImportPlanBuilder {
         var output = baseline
         clearReplacedCategories(request.categories, in: &output, mode: request.mode)
 
+        let legacyImportedIDs = legacyImportedIDs(from: baseline)
         let profileIDsBySource = makeProfileIdentityMapping(
             request: request,
-            baseline: baseline
+            baseline: baseline,
+            legacyImportedIDs: legacyImportedIDs
         )
         let identity = SumiImportIdentityResolver(
             sourceKind: request.sourceKind,
@@ -37,6 +39,7 @@ struct SumiImportPlanBuilder {
             importsSpaces: request.categories.contains(.spaces),
             importsFolders: request.categories.contains(.folders),
             profileIDsBySource: profileIDsBySource,
+            legacyImportedIDs: legacyImportedIDs,
             fallbackProfileId: output.profiles.first?.id,
             fallbackSpaceId: output.spaces.first?.id
         )
@@ -79,7 +82,8 @@ struct SumiImportPlanBuilder {
 
     private func makeProfileIdentityMapping(
         request: SumiImportRequest,
-        baseline: SumiPortableData
+        baseline: SumiPortableData,
+        legacyImportedIDs: [SumiImportIdentityResolver.EntityKind: Set<String>]
     ) -> [String: String] {
         guard request.categories.contains(.profiles) else { return [:] }
         let incoming = request.data.profiles.sorted(by: stableIndexOrder)
@@ -87,7 +91,8 @@ struct SumiImportPlanBuilder {
         var mapping: [String: String] = [:]
         var usedTargetIDs: Set<String> = []
 
-        if request.mode == .replace {
+        if request.mode == .replace,
+           request.sourceKind == .sumiBackup || request.sourceKind == .sumiTransfer {
             let existingIDs = Set(existing.map(\.id))
             for profile in incoming where existingIDs.contains(profile.id) {
                 mapping[profile.id] = profile.id
@@ -114,7 +119,29 @@ struct SumiImportPlanBuilder {
             return mapping
         }
 
+        if request.mode == .replace {
+            let existingIDs = Set(existing.map(\.id))
+            for profile in incoming where existingIDs.contains(profile.id) {
+                mapping[profile.id] = profile.id
+                usedTargetIDs.insert(profile.id)
+            }
+        }
+
+        if request.mode == .merge {
+            let inferred = inferredProfileIdentityMapping(
+                request: request,
+                baseline: baseline,
+                legacyImportedIDs: legacyImportedIDs
+            )
+            for profile in incoming {
+                guard let target = inferred[profile.id],
+                      usedTargetIDs.insert(target).inserted else { continue }
+                mapping[profile.id] = target
+            }
+        }
+
         for profile in incoming {
+            guard mapping[profile.id] == nil else { continue }
             let created = availableImportedProfileID(
                 source: profile.id,
                 sourceKind: request.sourceKind,
@@ -125,6 +152,53 @@ struct SumiImportPlanBuilder {
             usedTargetIDs.insert(created)
         }
         return mapping
+    }
+
+    private func inferredProfileIdentityMapping(
+        request: SumiImportRequest,
+        baseline: SumiPortableData,
+        legacyImportedIDs: [SumiImportIdentityResolver.EntityKind: Set<String>]
+    ) -> [String: String] {
+        let baselineProfileIDs = Set(baseline.profiles.map(\.id))
+        let baselineSpacesByID = Dictionary(
+            baseline.spaces.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let resolver = SumiImportIdentityResolver(
+            sourceKind: request.sourceKind,
+            mode: .merge,
+            importsProfiles: true,
+            importsSpaces: true,
+            importsFolders: true,
+            legacyImportedIDs: legacyImportedIDs,
+            fallbackProfileId: nil,
+            fallbackSpaceId: nil
+        )
+        var mapping: [String: String] = [:]
+        for space in request.data.spaces.sorted(by: stableIndexOrder) {
+            guard let sourceProfileID = space.profileId,
+                  mapping[sourceProfileID] == nil,
+                  let existing = baselineSpacesByID[
+                    resolver.importedId(.space, source: space.id)
+                  ],
+                  let targetProfileID = existing.profileId,
+                  baselineProfileIDs.contains(targetProfileID)
+            else { continue }
+            mapping[sourceProfileID] = targetProfileID
+        }
+        return mapping
+    }
+
+    private func legacyImportedIDs(
+        from baseline: SumiPortableData
+    ) -> [SumiImportIdentityResolver.EntityKind: Set<String>] {
+        [
+            .space: Set(baseline.spaces.map(\.id)),
+            .folder: Set(baseline.folders.map(\.id)),
+            .essential: Set(baseline.essentials.map(\.id)),
+            .pinnedLauncher: Set(baseline.pinnedLaunchers.map(\.id)),
+            .regularTab: Set(baseline.regularTabs.map(\.id)),
+        ]
     }
 
     private func availableImportedProfileID(

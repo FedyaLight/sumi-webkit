@@ -1630,6 +1630,7 @@ final class WebViewSessionRepositoryTests: XCTestCase {
         let repository = WebViewSessionRepository()
         let tabID = UUID()
         let windowID = UUID()
+        let cleanupTabID = UUID()
         let oldWebView = WKWebView()
         let replacement = WKWebView()
         let pendingCleanup = WKWebView()
@@ -1644,8 +1645,13 @@ final class WebViewSessionRepositoryTests: XCTestCase {
             return XCTFail("Expected replacement batch")
         }
         let cleanupLease = try XCTUnwrap(
-            repository.beginPendingCleanup(of: pendingCleanup, for: UUID())
+            repository.beginPendingCleanup(
+                of: pendingCleanup,
+                for: cleanupTabID
+            )
         )
+        XCTAssertTrue(repository.hasOwnershipTransition(for: tabID))
+        XCTAssertTrue(repository.hasOwnershipTransition(for: cleanupTabID))
         var barrierResult: Bool?
         let barrier = Task { @MainActor in
             let result = await repository.waitUntilOwnershipTransitionsAreSettled()
@@ -1656,6 +1662,8 @@ final class WebViewSessionRepositoryTests: XCTestCase {
 
         _ = repository.commitReplacementBatch(replacementLease)
         await Task.yield()
+        XCTAssertFalse(repository.hasOwnershipTransition(for: tabID))
+        XCTAssertTrue(repository.hasOwnershipTransition(for: cleanupTabID))
         XCTAssertNil(barrierResult)
 
         XCTAssertTrue(
@@ -1664,6 +1672,7 @@ final class WebViewSessionRepositoryTests: XCTestCase {
                 lease: cleanupLease
             )
         )
+        XCTAssertFalse(repository.hasOwnershipTransition(for: cleanupTabID))
         let didCrossBarrier = await barrier.value
         XCTAssertTrue(didCrossBarrier)
         XCTAssertEqual(barrierResult, true)

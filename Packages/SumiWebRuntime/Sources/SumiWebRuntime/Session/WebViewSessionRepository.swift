@@ -68,6 +68,10 @@ public final class WebViewSessionRepository {
         await queries.waitUntilOwnershipTransitionsAreSettled()
     }
 
+    public func hasOwnershipTransition(for tabID: UUID) -> Bool {
+        queries.hasOwnershipTransition(for: tabID)
+    }
+
     public func residence(of webView: WKWebView) -> WebViewResidence? {
         queries.residence(of: webView)
     }

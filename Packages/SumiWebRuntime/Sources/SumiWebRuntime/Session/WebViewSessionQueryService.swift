@@ -47,6 +47,11 @@ public final class WebViewSessionQueryService {
         await transitions.waitUntilSettled()
     }
 
+    public func hasOwnershipTransition(for tabID: UUID) -> Bool {
+        transitions.pendingCleanupTabIDs.contains(tabID)
+            || transitions.retirementTabIDs.contains(tabID)
+    }
+
     public func residence(of webView: WKWebView) -> WebViewResidence? {
         let active = placements.residence(of: webView)
         let transition = transitions.residence(of: webView)

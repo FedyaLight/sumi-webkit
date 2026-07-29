@@ -17,13 +17,13 @@ enum SumiImportBulkKind: String, Codable, CaseIterable, Hashable, Sendable, Iden
         switch self {
         case .history: return "History"
         case .favicons: return "Site icons"
-        case .cookies: return "Signed-in sessions"
+        case .cookies: return "Cookies"
         }
     }
 
     /// Applied in order of increasing irreversibility, so a failure late in the
     /// sequence never demands an impossible rollback of something earlier.
-    static let applyOrder: [SumiImportBulkKind] = [.history, .favicons, .cookies]
+    static let applyOrder: [SumiImportBulkKind] = [.cookies, .history, .favicons]
 }
 
 /// Describes payloads staged on disk during preview. Small, `Equatable`, and
@@ -111,7 +111,24 @@ struct SumiStagedCookie: Codable, Equatable, Sendable {
     var expiresAt: Date?
     var isSecure: Bool
     var isHTTPOnly: Bool
+    /// Overrides the manifest entry's physical-profile key when the source
+    /// stores several isolated cookie jars in one database.
+    var sourceProfileKey: String? = nil
 
     /// Cookies are identified by the tuple browsers use for replacement.
     var identity: String { "\(name)\u{1}\(domain)\u{1}\(path)" }
+}
+
+enum SumiMozillaCookiePartition {
+    static func sourceProfileKey(directoryName: String, userContextId: Int) -> String {
+        "\(directoryName)|userContextId=\(userContextId)"
+    }
+
+    static func userContextId(from originAttributes: String) -> Int {
+        let marker = "userContextId="
+        guard let markerRange = originAttributes.range(of: marker) else { return 0 }
+        let suffix = originAttributes[markerRange.upperBound...]
+        let digits = suffix.prefix(while: { $0.isNumber || $0 == "-" })
+        return Int(digits) ?? 0
+    }
 }

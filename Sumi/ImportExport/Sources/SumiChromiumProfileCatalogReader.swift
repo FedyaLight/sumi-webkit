@@ -12,10 +12,12 @@ struct SumiChromiumProfile: Equatable, Sendable {
 
 /// Enumerates the profiles of any Chromium-derived browser, including Arc.
 enum SumiChromiumProfileCatalogReader {
-    /// Directories that hold a `Bookmarks` or `History` file are profiles;
-    /// everything else in the user-data root is support state.
+    /// A profile may contain only cookies (for example a fresh Arc profile),
+    /// so cookie jars count alongside bookmarks and history. Requiring one of
+    /// these files still excludes support directories such as ShaderCache.
     static func profiles(userDataURL: URL) -> [SumiChromiumProfile] {
         let fileManager = FileManager.default
+        let profileMarkers = ["Bookmarks", "History", "Network/Cookies", "Cookies"]
         let children = (try? fileManager.contentsOfDirectory(
             at: userDataURL,
             includingPropertiesForKeys: [.isDirectoryKey],
@@ -23,10 +25,12 @@ enum SumiChromiumProfileCatalogReader {
         )) ?? []
         let names = displayNames(userDataURL: userDataURL)
 
-        return children
+        let profiles = children
             .filter { url in
                 (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
-                    && ["Bookmarks", "History"].contains { fileManager.fileExists(atPath: url.appendingPathComponent($0).path) }
+                    && profileMarkers.contains {
+                        fileManager.fileExists(atPath: url.appendingPathComponent($0).path)
+                    }
             }
             .map { url in
                 let directoryName = url.lastPathComponent
@@ -37,6 +41,20 @@ enum SumiChromiumProfileCatalogReader {
                 )
             }
             .sorted { $0.directoryName.localizedStandardCompare($1.directoryName) == .orderedAscending }
+
+        if profiles.isEmpty,
+           profileMarkers.contains(where: {
+               fileManager.fileExists(atPath: userDataURL.appendingPathComponent($0).path)
+           }) {
+            return [
+                SumiChromiumProfile(
+                    directoryName: "Default",
+                    displayName: names["Default"] ?? "Default",
+                    directoryURL: userDataURL
+                ),
+            ]
+        }
+        return profiles
     }
 
     static func displayNames(userDataURL: URL) -> [String: String] {

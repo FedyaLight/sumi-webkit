@@ -45,6 +45,20 @@ struct SumiImportBulkStagingStore {
         _ records: some Sequence<Record>,
         to fileURL: URL
     ) throws -> (count: Int, bytes: Int) {
+        try writeStream(to: fileURL) { emit in
+            for record in records {
+                try emit(record)
+            }
+        }
+    }
+
+    /// Writes records as they are produced, keeping the source query and the
+    /// NDJSON encoder streaming end-to-end.
+    @discardableResult
+    func writeStream<Record: Encodable>(
+        to fileURL: URL,
+        produce: ((_ record: Record) throws -> Void) throws -> Void
+    ) throws -> (count: Int, bytes: Int) {
         FileManager.default.createFile(atPath: fileURL.path, contents: nil)
         guard let handle = FileHandle(forWritingAtPath: fileURL.path) else {
             throw CocoaError(.fileWriteUnknown)
@@ -55,7 +69,7 @@ struct SumiImportBulkStagingStore {
         var count = 0
         var bytes = 0
         var buffer = Data()
-        for record in records {
+        try produce { record in
             var line = try encoder.encode(record)
             line.append(0x0A)
             buffer.append(line)
@@ -132,13 +146,17 @@ struct SumiImportBulkStagingStore {
 
         while let block = try handle.read(upToCount: 1024 * 1024), block.isEmpty == false {
             pending.append(block)
-            while let newline = pending.firstIndex(of: 0x0A) {
-                consume(line: pending[pending.startIndex..<newline])
-                pending = Data(pending[pending.index(after: newline)...])
+            var lineStart = pending.startIndex
+            while let newline = pending[lineStart...].firstIndex(of: 0x0A) {
+                consume(line: pending[lineStart..<newline])
+                lineStart = pending.index(after: newline)
                 if batch.count >= chunkSize {
                     try chunk(batch)
                     batch.removeAll(keepingCapacity: true)
                 }
+            }
+            if lineStart != pending.startIndex {
+                pending.removeSubrange(pending.startIndex..<lineStart)
             }
         }
         consume(line: pending)
@@ -170,6 +188,44 @@ struct SumiImportBulkStagingStore {
             )
         }
         return manifest
+    }
+
+    /// Verifies every selected payload before the structural transaction
+    /// commits. This keeps missing or abandoned staging files from turning a
+    /// deterministic preview error into a partial import.
+    func validate(
+        _ manifest: SumiImportBulkStagingManifest,
+        kinds: Set<SumiImportBulkKind>
+    ) throws {
+        guard try loadManifest(for: manifest.stagingID) == manifest else {
+            throw SumiImportExportError.importFailed(
+                "Staged browsing data no longer matches its import preview."
+            )
+        }
+        let directory = directory(for: manifest.stagingID)
+        for entry in manifest.entries where kinds.contains(entry.kind) {
+            var isDirectory: ObjCBool = false
+            let recordURL = directory.appendingPathComponent(entry.fileName)
+            guard FileManager.default.fileExists(
+                atPath: recordURL.path,
+                isDirectory: &isDirectory
+            ), isDirectory.boolValue == false else {
+                throw SumiImportExportError.importFailed(
+                    "Staged \(entry.kind.title.lowercased()) data is no longer available."
+                )
+            }
+            if let blobDirectoryName = entry.blobDirectoryName {
+                let blobURL = directory.appendingPathComponent(blobDirectoryName)
+                guard FileManager.default.fileExists(
+                    atPath: blobURL.path,
+                    isDirectory: &isDirectory
+                ), isDirectory.boolValue else {
+                    throw SumiImportExportError.importFailed(
+                        "Staged site icon data is no longer available."
+                    )
+                }
+            }
+        }
     }
 
     // MARK: - Lifetime

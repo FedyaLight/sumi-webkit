@@ -1,4 +1,5 @@
 import Compression
+import SQLite3
 
 @testable import Sumi
 import XCTest
@@ -306,6 +307,63 @@ final class SumiImportExportTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(multiSpace.themeOpacity), 0.5, accuracy: 0.0001)
     }
 
+    func testZenImportKeepsOnlyCookiePartitionsUsedByWorkspaces() throws {
+        let profileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("abc.default", isDirectory: true)
+        try FileManager.default.createDirectory(at: profileURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: profileURL) }
+        let sessionJSON = Data(
+            """
+            {
+              "spaces": [
+                { "uuid": "personal", "name": "Personal" },
+                { "uuid": "banking", "name": "Banking", "containerTabId": 2 }
+              ],
+              "folders": [],
+              "tabs": [
+                {
+                  "zenWorkspace": "personal",
+                  "userContextId": 0,
+                  "entries": [{ "url": "https://personal.example" }]
+                },
+                {
+                  "zenWorkspace": "personal",
+                  "userContextId": -1,
+                  "entries": [{ "url": "about:thumbnail" }]
+                }
+              ]
+            }
+            """.utf8
+        )
+        try mozLZ4(sessionJSON).write(
+            to: profileURL.appendingPathComponent("zen-sessions.jsonlz4")
+        )
+        try JSONSerialization.data(withJSONObject: [
+            "identities": [
+                ["userContextId": 1, "name": "Unused", "public": true],
+                ["userContextId": 2, "l10nID": "user-context-banking", "public": true],
+                ["userContextId": -1, "l10nID": "userContextIdInternal.thumbnail", "public": true],
+                ["userContextId": 99, "name": "Extension internals", "public": false],
+            ],
+        ]).write(to: profileURL.appendingPathComponent("containers.json"))
+
+        let data = try SumiZenImportParser().parse(profileURL: profileURL)
+
+        XCTAssertEqual(data.profiles.map(\.name), ["default", "Banking"])
+        XCTAssertEqual(
+            data.profiles.map(\.id),
+            ["zen-abc.default-container-0", "zen-abc.default-container-2"]
+        )
+        XCTAssertEqual(
+            data.profiles.compactMap(\.sourceDirectoryKey),
+            ["abc.default|userContextId=0", "abc.default|userContextId=2"]
+        )
+        XCTAssertEqual(
+            data.spaces.map(\.profileId),
+            data.profiles.map(\.id)
+        )
+    }
+
     func testZenProfileDetectionSkipsDirectoriesWithoutPlacesDatabase() throws {
         let home = FileManager.default.temporaryDirectory
             .appendingPathComponent("ZenHome-\(UUID().uuidString)", isDirectory: true)
@@ -494,6 +552,186 @@ final class SumiImportExportTests: XCTestCase {
         XCTAssertEqual(decoded.data, data)
     }
 
+    func testZenBackupExportIsRestorableByBrowser2ZenV1Layout() throws {
+        let profileId = "profile-a"
+        let spaceId = "space-a"
+        let data = SumiPortableData(
+            profiles: [
+                SumiPortableProfile(id: profileId, name: "Personal", index: 0),
+            ],
+            spaces: [
+                SumiPortableSpace(
+                    id: spaceId,
+                    name: "Home",
+                    icon: "🏠",
+                    index: 0,
+                    profileId: profileId,
+                    themeDataBase64: nil,
+                    color: SumiPortableRGBColor(r: 0.2, g: 0.4, b: 0.8)
+                ),
+            ],
+            folders: [
+                SumiPortableFolder(
+                    id: "folder-a",
+                    name: "Daily",
+                    icon: "folder",
+                    colorHex: "#000000",
+                    spaceId: spaceId,
+                    parentFolderId: nil,
+                    isOpen: true,
+                    index: 0,
+                    sourcePath: ["Daily"]
+                ),
+            ],
+            essentials: [],
+            pinnedLaunchers: [
+                SumiPortableLauncher(
+                    id: "pin-a",
+                    title: "Mail",
+                    urlString: "https://mail.example.com",
+                    index: 0,
+                    profileId: nil,
+                    executionProfileId: profileId,
+                    spaceId: spaceId,
+                    folderId: "folder-a",
+                    iconAsset: nil,
+                    sourceSpaceId: spaceId
+                ),
+            ],
+            regularTabs: [
+                SumiPortableRegularTab(
+                    id: "tab-a",
+                    title: "Docs",
+                    urlString: "https://docs.example.com",
+                    index: 0,
+                    spaceId: spaceId,
+                    profileId: profileId,
+                    folderId: nil
+                ),
+            ],
+            bookmarks: [
+                SumiPortableBookmarkNode(
+                    name: "Example",
+                    kind: .bookmark,
+                    urlString: "https://example.com",
+                    children: []
+                ),
+            ]
+        )
+        let cookie = try XCTUnwrap(
+            HTTPCookie(properties: [
+                .name: "session",
+                .value: "abc123",
+                .domain: ".example.com",
+                .path: "/",
+                .expires: Date(timeIntervalSince1970: 4_102_444_800),
+                .secure: "TRUE",
+            ])
+        )
+        let archive = temporaryImportFile(named: "Sumi-\(UUID().uuidString).zenbackup")
+        let extracted = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SumiZenExtract-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            try? FileManager.default.removeItem(at: archive)
+            try? FileManager.default.removeItem(at: extracted)
+        }
+
+        try SumiZenBackupExportService().write(
+            data: data,
+            cookiesByProfileId: [profileId: [cookie]],
+            history: [
+                SumiZenHistoryVisit(
+                    urlString: "https://history.example.com",
+                    title: "History",
+                    visitedAt: Date(timeIntervalSince1970: 1_700_000_000)
+                ),
+            ],
+            to: archive
+        )
+        try FileManager.default.createDirectory(at: extracted, withIntermediateDirectories: true)
+        try extractTarGzip(archive, to: extracted)
+
+        let manifestData = try Data(contentsOf: extracted.appendingPathComponent("manifest.json"))
+        let manifest = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: manifestData) as? [String: Any]
+        )
+        XCTAssertEqual(manifest["format_version"] as? Int, 1)
+        XCTAssertEqual(
+            Set(manifest["included"] as? [String] ?? []),
+            ["workspaces", "browsing", "cookies"]
+        )
+
+        let sessionsData = try SumiMozillaLZ4Decoder.decode(
+            Data(contentsOf: extracted.appendingPathComponent("profile/zen-sessions.jsonlz4"))
+        )
+        let sessions = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: sessionsData) as? [String: Any]
+        )
+        let sessionFolders = try XCTUnwrap(sessions["folders"] as? [[String: Any]])
+        let sessionGroups = try XCTUnwrap(sessions["groups"] as? [[String: Any]])
+        let sessionTabs = try XCTUnwrap(sessions["tabs"] as? [[String: Any]])
+        XCTAssertEqual(sessionGroups.map { $0["id"] as? String }, ["folder-a"])
+        let emptyId = try XCTUnwrap((sessionFolders.first?["emptyTabIds"] as? [String])?.first)
+        let placeholder = try XCTUnwrap(
+            sessionTabs.first { ($0["zenSyncId"] as? String) == emptyId }
+        )
+        XCTAssertEqual(placeholder["zenIsEmpty"] as? Bool, true)
+        XCTAssertEqual(placeholder["groupId"] as? String, "folder-a")
+        let pinned = try XCTUnwrap(
+            sessionTabs.first { ($0["zenSyncId"] as? String) == "pin-a" }
+        )
+        XCTAssertNotNil(pinned["_zenPinnedInitialState"] as? [String: Any])
+
+        let restored = try SumiZenImportParser().parse(
+            profileURL: extracted.appendingPathComponent("profile", isDirectory: true)
+        )
+        XCTAssertEqual(restored.spaces.map(\.name), ["Home"])
+        XCTAssertEqual(restored.folders.map(\.name), ["Daily"])
+        XCTAssertEqual(restored.pinnedLaunchers.map(\.urlString), ["https://mail.example.com"])
+        XCTAssertEqual(restored.regularTabs.map(\.urlString), ["https://docs.example.com"])
+        XCTAssertEqual(restored.bookmarks.reduce(0) { $0 + $1.totalBookmarkCount }, 1)
+
+        let placesURL = extracted.appendingPathComponent("profile/places.sqlite")
+        var placesDatabase: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(placesURL.path, &placesDatabase), SQLITE_OK)
+        defer { sqlite3_close(placesDatabase) }
+        var hashStatement: OpaquePointer?
+        XCTAssertEqual(
+            sqlite3_prepare_v2(
+                placesDatabase,
+                "SELECT COUNT(*) FROM moz_places WHERE url_hash != 0",
+                -1,
+                &hashStatement,
+                nil
+            ),
+            SQLITE_OK
+        )
+        defer { sqlite3_finalize(hashStatement) }
+        XCTAssertEqual(sqlite3_step(hashStatement), SQLITE_ROW)
+        XCTAssertGreaterThan(sqlite3_column_int(hashStatement, 0), 0)
+
+        let cookiesURL = extracted.appendingPathComponent("profile/cookies.sqlite")
+        var database: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(cookiesURL.path, &database), SQLITE_OK)
+        defer { sqlite3_close(database) }
+        var statement: OpaquePointer?
+        XCTAssertEqual(
+            sqlite3_prepare_v2(
+                database,
+                "SELECT name, value, originAttributes FROM moz_cookies",
+                -1,
+                &statement,
+                nil
+            ),
+            SQLITE_OK
+        )
+        defer { sqlite3_finalize(statement) }
+        XCTAssertEqual(sqlite3_step(statement), SQLITE_ROW)
+        XCTAssertEqual(String(cString: sqlite3_column_text(statement, 0)), "session")
+        XCTAssertEqual(String(cString: sqlite3_column_text(statement, 1)), "abc123")
+        XCTAssertEqual(String(cString: sqlite3_column_text(statement, 2)), "^userContextId=1")
+    }
+
     func testBackupV1ScopeMatchesPortableModelAndNamesEveryExclusion() {
         XCTAssertEqual(
             SumiBackupV1Scope.portableCategories,
@@ -667,5 +905,27 @@ final class SumiImportExportTests: XCTestCase {
         archive.append(UInt8((size >> 24) & 0xFF))
         archive.append(output.prefix(compressedSize))
         return archive
+    }
+
+    private func extractTarGzip(_ archive: URL, to directory: URL) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
+        process.arguments = ["-xzf", archive.path, "-C", directory.path]
+        let errors = Pipe()
+        process.standardError = errors
+        try process.run()
+        process.waitUntilExit()
+        if process.terminationStatus != 0 {
+            throw NSError(
+                domain: "SumiZenBackupTests",
+                code: Int(process.terminationStatus),
+                userInfo: [
+                    NSLocalizedDescriptionKey: String(
+                        decoding: errors.fileHandleForReading.readDataToEndOfFile(),
+                        as: UTF8.self
+                    ),
+                ]
+            )
+        }
     }
 }

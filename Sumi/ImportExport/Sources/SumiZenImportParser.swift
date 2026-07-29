@@ -44,22 +44,64 @@ struct SumiZenImportParser {
             throw SumiImportExportError.unsupportedFile("Zen sessions file did not decode to JSON.")
         }
 
-        let containers = parseContainers(profileURL: profileURL, warnings: &warnings)
         let zenSpaces = root["spaces"] as? [[String: Any]] ?? []
         let zenFolders = root["folders"] as? [[String: Any]] ?? []
         let zenTabs = root["tabs"] as? [[String: Any]] ?? []
+        let directoryName = profileURL.lastPathComponent
+        let displayName = directoryName.contains(".")
+            ? String(directoryName.drop(while: { $0 != "." }).dropFirst())
+            : directoryName
+        let publicContainers: [Int: String]
+        let containersURL = profileURL.appendingPathComponent("containers.json")
+        if FileManager.default.fileExists(atPath: containersURL.path) == false {
+            publicContainers = [:]
+        } else {
+            do {
+            publicContainers = Dictionary(
+                uniqueKeysWithValues: try SumiMozillaContainerCatalog
+                    .read(profileURL: profileURL)
+                    .map { ($0.id, $0.name) }
+            )
+            } catch {
+                warnings.append(
+                    "Zen containers were skipped because containers.json could not be read: "
+                        + error.localizedDescription
+                )
+                publicContainers = [:]
+            }
+        }
+        let tabContainerIds = Set(
+            zenTabs.compactMap { tab -> Int? in
+                guard (tab["zenIsEmpty"] as? Bool) != true else { return nil }
+                return tab["userContextId"] as? Int
+            }
+        )
+        let workspaceContainerIds = Set(
+            zenSpaces.compactMap { $0["containerTabId"] as? Int }
+        )
+        let usedContainerIds = tabContainerIds.union(workspaceContainerIds)
 
+        let profileIdentityPrefix = "zen-\(directoryName)-container"
         let defaultProfile = SumiPortableProfile(
-            id: "zen-container-0",
-            name: "Default",
-            index: 0
+            id: "\(profileIdentityPrefix)-0",
+            name: SumiImportTextNormalization.nilIfBlank(displayName) ?? "Default",
+            index: 0,
+            sourceDirectoryKey: SumiMozillaCookiePartition.sourceProfileKey(
+                directoryName: directoryName,
+                userContextId: 0
+            )
         )
         var profilesByContainer: [Int: SumiPortableProfile] = [0: defaultProfile]
-        for container in containers.sorted(by: { $0.key < $1.key }) where container.key != 0 {
+        for container in publicContainers.sorted(by: { $0.key < $1.key })
+        where container.key != 0 && usedContainerIds.contains(container.key) {
             profilesByContainer[container.key] = SumiPortableProfile(
-                id: "zen-container-\(container.key)",
+                id: "\(profileIdentityPrefix)-\(container.key)",
                 name: SumiImportTextNormalization.nilIfBlank(container.value) ?? "Container \(container.key)",
-                index: profilesByContainer.count
+                index: profilesByContainer.count,
+                sourceDirectoryKey: SumiMozillaCookiePartition.sourceProfileKey(
+                    directoryName: directoryName,
+                    userContextId: container.key
+                )
             )
         }
 
@@ -78,7 +120,9 @@ struct SumiZenImportParser {
                 .reduce(into: [Int: Int]()) { $0[$1, default: 0] += 1 }
             let dominantContainerId = containerCounts
                 .sorted { ($0.value, $1.key) > ($1.value, $0.key) }
-                .first?.key ?? 0
+                .first?.key
+                ?? (space["containerTabId"] as? Int)
+                ?? 0
             let profile = profilesByContainer[dominantContainerId] ?? defaultProfile
             workspaceProfileId[workspaceId] = profile.id
             let theme = zenTheme(from: space)
@@ -224,43 +268,6 @@ struct SumiZenImportParser {
             regularTabs: regularTabs,
             bookmarks: bookmarks
         )
-    }
-
-    private func parseContainers(profileURL: URL, warnings: inout [String]) -> [Int: String] {
-        let url = profileURL.appendingPathComponent("containers.json")
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            return [:]
-        }
-
-        let data: Data
-        do {
-            data = try Data(contentsOf: url)
-        } catch {
-            warnings.append("Zen containers were skipped because containers.json could not be read: \(error.localizedDescription)")
-            return [:]
-        }
-
-        let identities: [[String: Any]]
-        do {
-            guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let decodedIdentities = root["identities"] as? [[String: Any]]
-            else {
-                warnings.append("Zen containers were skipped because containers.json did not contain identities.")
-                return [:]
-            }
-            identities = decodedIdentities
-        } catch {
-            warnings.append("Zen containers were skipped because containers.json could not be decoded: \(error.localizedDescription)")
-            return [:]
-        }
-
-        var output: [Int: String] = [:]
-        for identity in identities {
-            if let id = identity["userContextId"] as? Int {
-                output[id] = identity["name"] as? String ?? "Container \(id)"
-            }
-        }
-        return output
     }
 
     func flattenZenFolders(

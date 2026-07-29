@@ -86,10 +86,32 @@ final class SumiChromiumImportParserTests: XCTestCase {
         XCTAssertThrowsError(try parse())
     }
 
+    func testDifferentChromiumBrowsersDoNotSharePortableIdentity() throws {
+        try makeProfile("Default", displayName: "Personal")
+
+        let chrome = try SumiChromiumImportParser(
+            browserName: "Google Chrome",
+            sourceIdentifier: "chrome",
+            userDataURL: userData
+        ).parseWithDiagnostics()
+        let edge = try SumiChromiumImportParser(
+            browserName: "Microsoft Edge",
+            sourceIdentifier: "edge",
+            userDataURL: userData
+        ).parseWithDiagnostics()
+
+        XCTAssertNotEqual(chrome.data.profiles.first?.id, edge.data.profiles.first?.id)
+        XCTAssertNotEqual(chrome.data.spaces.first?.id, edge.data.spaces.first?.id)
+    }
+
     // MARK: - Helpers
 
     private func parse() throws -> SumiChromiumImportResult {
-        try SumiChromiumImportParser(browserName: "Chrome", userDataURL: userData).parseWithDiagnostics()
+        try SumiChromiumImportParser(
+            browserName: "Chrome",
+            sourceIdentifier: "chrome",
+            userDataURL: userData
+        ).parseWithDiagnostics()
     }
 
     private func makeProfile(

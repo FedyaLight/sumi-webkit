@@ -30,7 +30,19 @@ final class TabWebViewRebuildService {
         let primaryCandidate: (UUID) -> TrackedWebViewOwner?
     }
 
+    private struct PendingOwnershipRetry {
+        var tab: Tab
+        var preferredPrimaryWindowID: UUID?
+        var targetURL: URL
+        var configuration: DeferredWebViewRebuildConfiguration
+        var reason: String
+        var intentRevision: UInt64
+        var rebuildKind: DeferredWebViewRebuildKind
+    }
+
     private let runtime: Runtime
+    private var pendingOwnershipRetries: [UUID: PendingOwnershipRetry] = [:]
+    private var ownershipRetryWaiters: Set<UUID> = []
 
     init(runtime: Runtime) {
         self.runtime = runtime
@@ -52,6 +64,19 @@ final class TabWebViewRebuildService {
         let targetWindowIDs = Set(snapshot.windowWebViews.keys)
             .intersection(runtime.liveWindowIDs())
         guard targetWindowIDs.isEmpty == false else { return .noLiveWindows }
+
+        if runtime.webViewSessions.hasOwnershipTransition(for: tab.id) {
+            retryAfterOwnershipBarrier(
+                tab: tab,
+                preferredPrimaryWindowID: preferredPrimaryWindowID,
+                targetURL: targetURL,
+                configuration: configuration,
+                reason: reason,
+                intentRevision: intentRevision,
+                rebuildKind: rebuildKind
+            )
+            return .deferred
+        }
 
         let protected = runtime.webViewSessions
             .protectedCandidateWebViews(for: tab.id)
@@ -247,20 +272,36 @@ final class TabWebViewRebuildService {
         intentRevision: UInt64,
         rebuildKind: DeferredWebViewRebuildKind
     ) {
+        pendingOwnershipRetries[tab.id] = PendingOwnershipRetry(
+            tab: tab,
+            preferredPrimaryWindowID: preferredPrimaryWindowID,
+            targetURL: targetURL,
+            configuration: configuration,
+            reason: reason,
+            intentRevision: intentRevision,
+            rebuildKind: rebuildKind
+        )
+        guard ownershipRetryWaiters.insert(tab.id).inserted else { return }
+
         Task { @MainActor [weak self, weak tab] in
-            guard let self, let tab,
-                  await runtime.webViewSessions
-                    .waitUntilOwnershipTransitionsAreSettled() else {
+            guard let self, let tab else { return }
+            let settled = await runtime.webViewSessions
+                .waitUntilOwnershipTransitionsAreSettled()
+            ownershipRetryWaiters.remove(tab.id)
+            guard settled,
+                  let retry = pendingOwnershipRetries.removeValue(forKey: tab.id)
+            else {
+                pendingOwnershipRetries.removeValue(forKey: tab.id)
                 return
             }
             _ = rebuild(
-                tab: tab,
-                preferredPrimaryWindowID: preferredPrimaryWindowID,
-                targetURL: targetURL,
-                configuration: configuration,
-                reason: reason,
-                intentRevision: intentRevision,
-                rebuildKind: rebuildKind
+                tab: retry.tab,
+                preferredPrimaryWindowID: retry.preferredPrimaryWindowID,
+                targetURL: retry.targetURL,
+                configuration: retry.configuration,
+                reason: retry.reason,
+                intentRevision: retry.intentRevision,
+                rebuildKind: retry.rebuildKind
             )
         }
     }

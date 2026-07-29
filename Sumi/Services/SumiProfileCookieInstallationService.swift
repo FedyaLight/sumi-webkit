@@ -12,6 +12,22 @@ struct SumiCookieInstallationReceipt: Sendable {
     /// Values that were present before the import overwrote them, so a rollback
     /// restores the user's own session rather than merely deleting.
     var replaced: [HTTPCookie] = []
+
+    mutating func merge(_ other: Self) {
+        installedIdentities.formUnion(other.installedIdentities)
+        replaced.append(contentsOf: other.replaced)
+    }
+}
+
+enum SumiProfileCookieInstallationError: LocalizedError {
+    case missingDataStore(UUID)
+
+    var errorDescription: String? {
+        switch self {
+        case let .missingDataStore(profileID):
+            return "The target profile data store is unavailable (\(profileID.uuidString))."
+        }
+    }
 }
 
 /// Writes cookies into a profile's website data store.
@@ -35,8 +51,10 @@ final class SumiProfileCookieInstallationService {
         _ cookies: [SumiStagedCookie],
         profileId: UUID,
         overwriteExisting: Bool
-    ) async -> SumiCookieInstallationReceipt {
-        guard let store = dataStoreProvider(profileId) else { return SumiCookieInstallationReceipt() }
+    ) async throws -> SumiCookieInstallationReceipt {
+        guard let store = dataStoreProvider(profileId) else {
+            throw SumiProfileCookieInstallationError.missingDataStore(profileId)
+        }
         let cookieStore = store.httpCookieStore
 
         let existing = await cookieStore.allCookies()

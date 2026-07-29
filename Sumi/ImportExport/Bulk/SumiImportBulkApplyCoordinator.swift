@@ -5,11 +5,10 @@ import OSLog
 struct SumiImportBulkReceipt: Sendable {
     var history: [HistoryImportedVisitWriter.Receipt] = []
     var faviconCount: Int = 0
-    var cookieIdentitiesByProfile: [UUID: Set<String>] = [:]
-    var replacedCookies: [SumiStagedCookie] = []
+    var cookiesByProfile: [UUID: SumiCookieInstallationReceipt] = [:]
 
     var isEmpty: Bool {
-        history.isEmpty && faviconCount == 0 && cookieIdentitiesByProfile.isEmpty
+        history.isEmpty && faviconCount == 0 && cookiesByProfile.isEmpty
     }
 }
 
@@ -24,17 +23,18 @@ protocol SumiImportBulkInstalling {
 
     func rollbackHistory(_ receipt: HistoryImportedVisitWriter.Receipt) async throws
 
+    func didMutateHistory() async
+
     func installFavicons(_ favicons: [SumiImportFaviconPayload], profileId: UUID?) async
 
     func installCookies(
         _ cookies: [SumiStagedCookie],
-        profileId: UUID?
-    ) async -> (installed: Set<String>, replaced: [SumiStagedCookie])
+        profileId: UUID
+    ) async throws -> SumiCookieInstallationReceipt
 
     func rollbackCookies(
-        identities: Set<String>,
-        replaced: [SumiStagedCookie],
-        profileId: UUID?
+        _ receipt: SumiCookieInstallationReceipt,
+        profileId: UUID
     ) async
 }
 
@@ -81,6 +81,7 @@ final class SumiImportBulkApplyCoordinator {
         let directory = staging.directory(for: manifest.stagingID)
 
         for kind in SumiImportBulkKind.applyOrder where kinds.contains(kind) {
+            var mutatedHistory = false
             for entry in manifest.entries where entry.kind == kind {
                 try Task.checkCancellation()
                 let fileURL = directory.appendingPathComponent(entry.fileName)
@@ -106,6 +107,7 @@ final class SumiImportBulkApplyCoordinator {
                         receipt.history.append(
                             try await installer.installHistory(visits, profileId: profileId)
                         )
+                        mutatedHistory = true
                         completed += chunk.count
                         report(kind, completed, entry.recordCount)
                         try Task.checkCancellation()
@@ -143,17 +145,31 @@ final class SumiImportBulkApplyCoordinator {
                         chunkSize: Self.chunkSize
                     )
                     for try await chunk in stream {
-                        let outcome = await installer.installCookies(chunk, profileId: profileId)
-                        if let profileId {
-                            receipt.cookieIdentitiesByProfile[profileId, default: []]
-                                .formUnion(outcome.installed)
+                        let cookiesBySourceKey = Dictionary(
+                            grouping: chunk,
+                            by: { $0.sourceProfileKey ?? entry.sourceProfileKey }
+                        )
+                        for (sourceKey, cookies) in cookiesBySourceKey {
+                            guard let cookieProfileId = profileIDsBySourceKey[sourceKey] else {
+                                throw SumiImportExportError.importFailed(
+                                    "No target profile exists for cookie jar \(sourceKey)."
+                                )
+                            }
+                            let outcome = try await installer.installCookies(
+                                cookies,
+                                profileId: cookieProfileId
+                            )
+                            receipt.cookiesByProfile[cookieProfileId, default: .init()]
+                                .merge(outcome)
                         }
-                        receipt.replacedCookies.append(contentsOf: outcome.replaced)
                         completed += chunk.count
                         report(kind, completed, entry.recordCount)
                         try Task.checkCancellation()
                     }
                 }
+            }
+            if mutatedHistory {
+                await installer.didMutateHistory()
             }
         }
     }
@@ -162,26 +178,24 @@ final class SumiImportBulkApplyCoordinator {
     /// deliberately not undone: the favicon store is a documented cache that
     /// rebuilds itself, and deleting entries would evict icons Sumi fetched on
     /// its own.
-    func rollback(
-        _ receipt: SumiImportBulkReceipt,
-        profileIDsBySourceKey: [String: UUID]
-    ) async -> [Error] {
+    func rollback(_ receipt: SumiImportBulkReceipt) async -> [Error] {
         var errors: [Error] = []
 
+        var rolledBackHistory = false
         for historyReceipt in receipt.history.reversed() {
             do {
                 try await installer.rollbackHistory(historyReceipt)
+                rolledBackHistory = true
             } catch {
                 errors.append(error)
             }
         }
+        if rolledBackHistory {
+            await installer.didMutateHistory()
+        }
 
-        for (profileId, identities) in receipt.cookieIdentitiesByProfile {
-            await installer.rollbackCookies(
-                identities: identities,
-                replaced: receipt.replacedCookies,
-                profileId: profileId
-            )
+        for (profileId, cookieReceipt) in receipt.cookiesByProfile {
+            await installer.rollbackCookies(cookieReceipt, profileId: profileId)
         }
 
         if receipt.faviconCount > 0 {

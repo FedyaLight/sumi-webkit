@@ -129,19 +129,50 @@ enum WebsiteViewContextFactory {
                 importBookmarksFromMenu: { [weak browserManager] in
                     browserManager?.bookmarkBundle.bookmarkCommandOwner.importBookmarksFromMenu()
                 },
-                exportBrowser2ZenDocument: { [weak browserManager] in
+                writeZenBackup: { [weak browserManager] url in
                     guard let browserManager else {
                         throw SumiImportExportError.browserUnavailable
                     }
+                    let profiles = browserManager.profileManager.profiles
                     let data = SumiImportExportSnapshot.makeData(
-                        profiles: browserManager.profileManager.profiles,
+                        profiles: profiles,
                         state: browserManager.tabStateStore,
                         bookmarks: browserManager.bookmarkManager.snapshot(
                             sortMode: .manual
                         ).root.children
                     )
-                    return try SumiTransferExportService()
-                        .exportBrowser2ZenDocument(from: data)
+                    var cookiesByProfileId: [String: [HTTPCookie]] = [:]
+                    for profile in profiles where profile.isEphemeral == false {
+                        cookiesByProfileId[profile.id.uuidString] =
+                            await profile.dataStore.httpCookieStore.allCookies()
+                    }
+                    let database = browserManager.database
+                    let profileIDs = profiles.map(\.id)
+                    try await Task.detached(priority: .userInitiated) {
+                        let history = try database.read { connection in
+                            try profileIDs.flatMap { profileID -> [SumiZenHistoryVisit] in
+                                let entries = try connection.history.entries(profileID: profileID)
+                            let entriesById = Dictionary(
+                                uniqueKeysWithValues: entries.map { ($0.id, $0) }
+                            )
+                                return try connection.history.visits(profileID: profileID)
+                                    .compactMap { visit in
+                                        guard let entry = entriesById[visit.entryID] else { return nil }
+                                        return SumiZenHistoryVisit(
+                                            urlString: entry.urlString,
+                                            title: entry.title,
+                                            visitedAt: visit.visitedAt
+                                        )
+                                    }
+                            }
+                        }
+                        try SumiZenBackupExportService().write(
+                            data: data,
+                            cookiesByProfileId: cookiesByProfileId,
+                            history: history,
+                            to: url
+                        )
+                    }.value
                 },
                 writeBackup: { [weak browserManager] url in
                     guard let browserManager else {
@@ -173,6 +204,11 @@ enum WebsiteViewContextFactory {
                                 sortMode: .manual
                             ).root.children
                         )
+                    )
+                    try Self.validateBulkImport(
+                        request: request,
+                        transition: plan.profileTransition,
+                        currentProfileID: browserManager.currentProfile?.id
                     )
                     let runtime = SumiImportRuntimeStore(
                         profileManager: browserManager.profileManager,
@@ -347,15 +383,22 @@ enum WebsiteViewContextFactory {
         // Bulk payloads are keyed by the source browser's profile directory;
         // resolve each to the Sumi profile the plan mapped it onto.
         var profileIDsBySourceKey: [String: UUID] = [:]
+        let sourceKeys = Set(request.data.profiles.compactMap(\.sourceDirectoryKey))
         for profile in request.data.profiles {
             guard let key = profile.sourceDirectoryKey else { continue }
             let target = transition.sourceToTargetProfileID[profile.id]
                 .flatMap(UUID.init(uuidString:))
-                ?? browserManager.currentProfile?.id
+                ?? (sourceKeys.count == 1 ? browserManager.currentProfile?.id : nil)
             guard let target else { continue }
             profileIDsBySourceKey[key] = target
         }
-
+        let missingSourceKeys = sourceKeys.subtracting(profileIDsBySourceKey.keys)
+        guard missingSourceKeys.isEmpty else {
+            return [
+                "Browsing data was not imported because its isolated source profiles "
+                    + "could not be mapped without merging cookie jars.",
+            ]
+        }
         let installer = SumiImportBulkInstaller(
             historyStore: browserManager.historyManager.store,
             refreshHistory: { [weak browserManager] in
@@ -385,10 +428,7 @@ enum WebsiteViewContextFactory {
             )
             return []
         } catch {
-            let rollbackErrors = await coordinator.rollback(
-                receipt,
-                profileIDsBySourceKey: profileIDsBySourceKey
-            )
+            let rollbackErrors = await coordinator.rollback(receipt)
             var warnings = [
                 "Browsing data could not be imported: \(error.localizedDescription). "
                     + "Spaces, tabs, and bookmarks were imported successfully.",
@@ -397,6 +437,41 @@ enum WebsiteViewContextFactory {
                 warnings.append("Some partially imported browsing data could not be removed.")
             }
             return warnings
+        }
+    }
+
+    private static func validateBulkImport(
+        request: SumiImportRequest,
+        transition: SumiImportProfileTransition,
+        currentProfileID: UUID?
+    ) throws {
+        guard let manifest = request.bulkStaging,
+              request.bulkKinds.isEmpty == false
+        else {
+            return
+        }
+
+        try SumiImportBulkStagingStore().validate(
+            manifest,
+            kinds: request.bulkKinds
+        )
+        let sourceProfiles = request.data.profiles.filter {
+            $0.sourceDirectoryKey != nil
+        }
+        let sourceKeys = Set(sourceProfiles.compactMap(\.sourceDirectoryKey))
+        let mappedKeys = Set(sourceProfiles.compactMap { profile -> String? in
+            guard transition.sourceToTargetProfileID[profile.id]
+                .flatMap(UUID.init(uuidString:)) != nil
+            else {
+                return nil
+            }
+            return profile.sourceDirectoryKey
+        })
+        let canUseCurrentProfile = sourceKeys.count == 1 && currentProfileID != nil
+        guard sourceKeys.isSubset(of: mappedKeys) || canUseCurrentProfile else {
+            throw SumiImportExportError.importFailed(
+                "Import Profiles with browsing data to preserve isolated browser profiles."
+            )
         }
     }
 }

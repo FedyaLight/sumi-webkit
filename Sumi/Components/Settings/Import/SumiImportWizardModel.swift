@@ -36,6 +36,7 @@ final class SumiImportWizardModel {
     var applyMode: SumiImportApplyMode = .merge
 
     private let actions: SumiImportWizardActions
+    private let staging = SumiImportBulkStagingStore()
     private var work: Task<Void, Never>?
 
     init(actions: SumiImportWizardActions) {
@@ -44,7 +45,17 @@ final class SumiImportWizardModel {
 
     var canImport: Bool {
         guard step == .categories, preview != nil else { return false }
+        guard requiresProfilesForBrowsingData == false
+            || selectedCategories.contains(.profiles)
+        else {
+            return false
+        }
         return selectedCategories.isEmpty == false || selectedBulkKinds.isEmpty == false
+    }
+
+    var requiresProfilesForBrowsingData: Bool {
+        guard selectedBulkKinds.isEmpty == false, let preview else { return false }
+        return Set(preview.data.profiles.compactMap(\.sourceDirectoryKey)).count > 1
     }
 
     func detect() {
@@ -89,6 +100,7 @@ final class SumiImportWizardModel {
             selectedBrowser = nil
             step = .source
         case .categories:
+            discardPreview()
             preview = nil
             selectedProfile = nil
             step = (selectedBrowser?.profiles.count ?? 0) > 1 ? .profile : .source
@@ -116,6 +128,7 @@ final class SumiImportWizardModel {
                     )
                 )
                 guard Task.isCancelled == false else { return }
+                discardPreview()
                 var messages = report.warnings
                 if let backup = report.preRestoreBackupURL {
                     messages.append("Pre-import backup: \(backup.lastPathComponent)")
@@ -132,10 +145,35 @@ final class SumiImportWizardModel {
     func cancelWork() {
         work?.cancel()
         work = nil
+        if step != .applying {
+            discardPreview()
+            preview = nil
+        }
+    }
+
+    func setBulkKind(_ kind: SumiImportBulkKind, enabled: Bool) {
+        if enabled {
+            selectedBulkKinds.insert(kind)
+            if requiresProfilesForBrowsingData {
+                selectedCategories.insert(.profiles)
+            }
+        } else {
+            selectedBulkKinds.remove(kind)
+        }
+    }
+
+    func setCategory(_ category: SumiImportCategory, enabled: Bool) {
+        if enabled {
+            selectedCategories.insert(category)
+        } else if category != .profiles || requiresProfilesForBrowsingData == false {
+            selectedCategories.remove(category)
+        }
     }
 
     private func loadPreview(_ selection: SumiImportSourceSelection) {
         work?.cancel()
+        discardPreview()
+        preview = nil
         isPreparingPreview = true
         errorMessage = nil
         step = .categories
@@ -143,13 +181,15 @@ final class SumiImportWizardModel {
             defer { isPreparingPreview = false }
             do {
                 let loaded = try await actions.preparePreview(selection)
-                guard Task.isCancelled == false else { return }
+                guard Task.isCancelled == false else {
+                    if let stagingID = loaded.bulkStaging?.stagingID {
+                        staging.discard(stagingID)
+                    }
+                    return
+                }
                 preview = loaded
                 selectedCategories = loaded.suggestedCategories
-                // History and site icons are safe wins and default on. Cookies
-                // are opt-in: they move live sessions and are the one kind that
-                // cannot be fully undone.
-                selectedBulkKinds = (loaded.bulkStaging?.kinds ?? []).subtracting([.cookies])
+                selectedBulkKinds = loaded.bulkStaging?.kinds ?? []
                 applyMode = loaded.defaultMode
             } catch is CancellationError {
                 return
@@ -159,6 +199,11 @@ final class SumiImportWizardModel {
                 preview = nil
             }
         }
+    }
+
+    private func discardPreview() {
+        guard let stagingID = preview?.bulkStaging?.stagingID else { return }
+        staging.discard(stagingID)
     }
 }
 

@@ -263,7 +263,10 @@ struct SumiImportCategoryStepView: View {
                     ForEach(SumiImportCategory.allCases) { category in
                         Toggle(isOn: binding(category)) { Text(category.title) }
                             .toggleStyle(.checkbox)
-                            .disabled(preview.suggestedCategories.contains(category) == false)
+                            .disabled(
+                                preview.suggestedCategories.contains(category) == false
+                                    || (category == .profiles && model.requiresProfilesForBrowsingData)
+                            )
                     }
                 }
 
@@ -322,13 +325,12 @@ struct SumiImportCategoryStepView: View {
     }
 
     /// Each note states the cost the user is accepting, not just the benefit.
-    private func note(for kind: SumiImportBulkKind) -> String? {
+    private func note(for kind: SumiImportBulkKind) -> LocalizedStringKey? {
         switch kind {
         case .history: return nil
         case .favicons: return "Site icons appear immediately instead of loading in over time."
         case .cookies:
-            return "macOS may ask for your password. Sessions are not included in Sumi backups, "
-                + "and existing sign-ins in Sumi are never overwritten."
+            return "macOS may ask for your password. Cookies are not included in Sumi backups. Merge keeps existing Sumi cookies; Replace overwrites matching cookies."
         }
     }
 
@@ -336,11 +338,7 @@ struct SumiImportCategoryStepView: View {
         Binding(
             get: { model.selectedBulkKinds.contains(kind) },
             set: { enabled in
-                if enabled {
-                    model.selectedBulkKinds.insert(kind)
-                } else {
-                    model.selectedBulkKinds.remove(kind)
-                }
+                model.setBulkKind(kind, enabled: enabled)
             }
         )
     }
@@ -349,11 +347,7 @@ struct SumiImportCategoryStepView: View {
         Binding(
             get: { model.selectedCategories.contains(category) },
             set: { enabled in
-                if enabled {
-                    model.selectedCategories.insert(category)
-                } else {
-                    model.selectedCategories.remove(category)
-                }
+                model.setCategory(category, enabled: enabled)
             }
         )
     }

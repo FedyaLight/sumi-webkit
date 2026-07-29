@@ -65,7 +65,8 @@ enum SumiBrowserImportPreviewWorker {
             if let staged = SumiImportBulkStagingCoordinator().stage(
                 browser: browser,
                 profile: profile,
-                kinds: SumiImportBulkStagingCoordinator.supportedKinds(for: browser)
+                kinds: SumiImportBulkStagingCoordinator.supportedKinds(for: browser),
+                sourceProfileKeys: Set(preview.data.profiles.compactMap(\.sourceDirectoryKey))
             ) {
                 preview.bulkStaging = staged.manifest
                 preview.warnings.append(contentsOf: staged.warnings)
@@ -111,6 +112,7 @@ enum SumiBrowserImportPreviewWorker {
     ) throws -> SumiImportPreview {
         let result = try SumiChromiumImportParser(
             browserName: browser.displayName,
+            sourceIdentifier: browser.id,
             userDataURL: browser.dataRoot,
             profileDirectoryName: profile.sourceDirectoryKey
         ).parseWithDiagnostics()

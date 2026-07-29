@@ -10,7 +10,7 @@ import UniformTypeIdentifiers
 
 struct SumiDataRecoveryActions {
     let importBookmarksFromMenu: () -> Void
-    let exportBrowser2ZenDocument: () throws -> Data
+    let writeZenBackup: (URL) async throws -> Void
     let writeBackup: (URL) throws -> Void
     let applyImport: (SumiImportRequest) async throws -> SumiImportReport
 }
@@ -62,16 +62,16 @@ struct SumiDataRecoverySettingsPane: View {
 
             SettingsSection(
                 title: "Export & Backup",
-                subtitle: "Write portable Sumi data without cookies, passwords, caches, downloads, or WebKit website data."
+                subtitle: "Move your browser data to Zen or create a logical Sumi backup."
             ) {
                 VStack(alignment: .leading, spacing: 12) {
                     SettingsActionRow(
                         title: "Export for Zen",
-                        subtitle: "Create browser2zen-compatible JSON with a Sumi extension block for future Sumi-to-Zen support.",
+                        subtitle: "Create a browser2zen .zenbackup with workspaces, tabs, folders, bookmarks, history, and cookies.",
                         systemImage: "arrow.up.doc",
                         buttonTitle: "Export"
                     ) {
-                        exportBrowser2Zen()
+                        exportForZen()
                     }
                     .disabled(isWorking)
 
@@ -200,20 +200,24 @@ struct SumiDataRecoverySettingsPane: View {
         }
     }
 
-    private func exportBrowser2Zen() {
+    private func exportForZen() {
         let panel = NSSavePanel()
-        panel.allowedContentTypes = [.sumiTransfer, .json]
-        panel.nameFieldStringValue = "sumi-browser2zen.sumiexport"
+        panel.allowedContentTypes = [.zenBackup]
+        panel.nameFieldStringValue = "Sumi-\(Self.backupDateStamp()).zenbackup"
         panel.canCreateDirectories = true
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            let payload = try actions.exportBrowser2ZenDocument()
-            try withSecurityScoped(url) {
-                try payload.write(to: url, options: .atomic)
+        isWorking = true
+        statusMessage = nil
+        Task { @MainActor in
+            defer { isWorking = false }
+            do {
+                try await withSecurityScoped(url) {
+                    try await actions.writeZenBackup(url)
+                }
+                statusMessage = "Exported \(url.lastPathComponent)."
+            } catch {
+                statusMessage = error.localizedDescription
             }
-            statusMessage = "Exported \(url.lastPathComponent)."
-        } catch {
-            statusMessage = error.localizedDescription
         }
     }
 

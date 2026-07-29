@@ -22,6 +22,63 @@ final class SumiImportTransactionTests: XCTestCase {
         XCTAssertEqual(first.targetRuntimeData.regularTabs.count, 1)
     }
 
+    func testExternalReplaceAndSubsequentMergeUseTheSameIdentities() {
+        let mergeRequest = makeMergeRequest()
+        let replaceRequest = SumiImportRequest(
+            sourceKind: mergeRequest.sourceKind,
+            data: mergeRequest.data,
+            categories: mergeRequest.categories,
+            mode: .replace
+        )
+        let builder = SumiImportPlanBuilder()
+
+        let replaced = builder.makePlan(
+            request: replaceRequest,
+            baseline: SumiPortableData()
+        )
+        let merged = builder.makePlan(
+            request: mergeRequest,
+            baseline: replaced.targetRuntimeData
+        )
+
+        XCTAssertEqual(merged.targetRuntimeData, replaced.targetRuntimeData)
+        XCTAssertEqual(
+            merged.profileTransition.sourceToTargetProfileID,
+            replaced.profileTransition.sourceToTargetProfileID
+        )
+    }
+
+    func testMergeRecognizesIdentitiesPreservedByLegacyExternalReplace() {
+        let sourceProfileID = "zen-container-0"
+        let sourceSpaceID = UUID().uuidString
+        let localProfileID = UUID().uuidString
+        let baseline = SumiPortableData(
+            profiles: [portableProfile(id: localProfileID, name: "Default")],
+            spaces: [portableSpace(id: sourceSpaceID, profileId: localProfileID)]
+        )
+        let request = SumiImportRequest(
+            sourceKind: .zen,
+            data: SumiPortableData(
+                profiles: [portableProfile(id: sourceProfileID, name: "Default")],
+                spaces: [portableSpace(id: sourceSpaceID, profileId: sourceProfileID)]
+            ),
+            categories: [.profiles, .spaces],
+            mode: .merge
+        )
+
+        let plan = SumiImportPlanBuilder().makePlan(
+            request: request,
+            baseline: baseline
+        )
+
+        XCTAssertEqual(plan.targetRuntimeData.profiles.count, 1)
+        XCTAssertEqual(plan.targetRuntimeData.spaces.count, 1)
+        XCTAssertEqual(
+            plan.profileTransition.sourceToTargetProfileID[sourceProfileID],
+            localProfileID
+        )
+    }
+
     func testReplacingProfilesRehomesSurvivingReferencesInsteadOfDroppingData() throws {
         let originalProfileId = UUID().uuidString
         let originalSpaceId = UUID().uuidString

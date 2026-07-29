@@ -98,7 +98,7 @@ struct SumiImportPreview: Identifiable, Sendable {
     var defaultMode: SumiImportApplyMode
     /// Bulk payloads already staged on disk, described by counts only. The
     /// payloads themselves never enter `SumiPortableData`.
-    var bulkStaging: SumiImportBulkStagingManifest? = nil
+    var bulkStaging: SumiImportBulkStagingManifest?
 
     var summary: SumiImportSummary {
         SumiImportSummary(data: data)
@@ -306,4 +306,5 @@ struct SumiPortableBookmarkNode: Codable, Equatable, Sendable {
 extension UTType {
     static let sumiBackup = UTType(exportedAs: "com.sumi.browser.backup", conformingTo: .json)
     static let sumiTransfer = UTType(exportedAs: "com.sumi.browser.transfer", conformingTo: .json)
+    static let zenBackup = UTType(filenameExtension: "zenbackup") ?? .data
 }

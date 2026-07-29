@@ -1,4 +1,5 @@
 import Compression
+import SQLite3
 import XCTest
 
 @testable import Sumi
@@ -49,7 +50,7 @@ final class SumiFirefoxImportParserTests: XCTestCase {
         XCTAssertTrue(SumiFirefoxImportParser.profiles(rootURL: root).isEmpty)
     }
 
-    func testContainersBecomeAdditionalProfilesSharingTheBulkDataKey() throws {
+    func testContainersBecomeAdditionalProfilesWithDistinctCookiePartitions() throws {
         let profile = try makeProfile("abc.default")
         try JSONSerialization.data(withJSONObject: [
             "identities": [
@@ -57,15 +58,78 @@ final class SumiFirefoxImportParserTests: XCTestCase {
                 ["userContextId": 1, "name": "Banking", "public": true],
                 ["userContextId": 2, "l10nID": "userContextWork.label", "public": true],
                 ["userContextId": 3, "name": "Hidden", "public": false],
-            ]
+            ],
         ]).write(to: profile.appendingPathComponent("containers.json"))
+        let session: [String: Any] = [
+            "windows": [[
+                "tabs": [
+                    [
+                        "userContextId": 1,
+                        "entries": [["url": "https://banking.example"]],
+                    ],
+                    [
+                        "userContextId": 2,
+                        "entries": [["url": "https://work.example"]],
+                    ],
+                ],
+            ]],
+        ]
+        try mozLZ4(JSONSerialization.data(withJSONObject: session))
+            .write(to: profile.appendingPathComponent("sessionstore.jsonlz4"))
 
         let result = try parse(profile)
 
         XCTAssertEqual(result.data.profiles.map(\.name), ["abc.default".dropFirst(4).description, "Banking", "Work"])
-        // Containers share one profile directory, so bulk data joins on the
-        // same key for all of them.
-        XCTAssertEqual(Set(result.data.profiles.compactMap(\.sourceDirectoryKey)), ["abc.default"])
+        XCTAssertEqual(
+            result.data.profiles.compactMap(\.sourceDirectoryKey),
+            [
+                "abc.default|userContextId=0",
+                "abc.default|userContextId=1",
+                "abc.default|userContextId=2",
+            ]
+        )
+    }
+
+    func testPublicContainersSurviveWithoutOpenTabsOrCookies() throws {
+        let profile = try makeProfile("abc.default")
+        try JSONSerialization.data(withJSONObject: [
+            "identities": [
+                ["userContextId": 4, "name": "Shopping", "public": true],
+                ["userContextId": 5, "name": "Unused", "public": true],
+            ],
+        ]).write(to: profile.appendingPathComponent("containers.json"))
+
+        var database: OpaquePointer?
+        XCTAssertEqual(
+            sqlite3_open(profile.appendingPathComponent("cookies.sqlite").path, &database),
+            SQLITE_OK
+        )
+        defer { sqlite3_close(database) }
+        XCTAssertEqual(
+            sqlite3_exec(
+                database,
+                """
+                CREATE TABLE moz_cookies (originAttributes TEXT);
+                INSERT INTO moz_cookies VALUES ('^userContextId=4');
+                """,
+                nil,
+                nil,
+                nil
+            ),
+            SQLITE_OK
+        )
+
+        let result = try parse(profile)
+
+        XCTAssertEqual(result.data.profiles.map(\.name), ["default", "Shopping", "Unused"])
+        XCTAssertEqual(
+            result.data.profiles.compactMap(\.sourceDirectoryKey),
+            [
+                "abc.default|userContextId=0",
+                "abc.default|userContextId=4",
+                "abc.default|userContextId=5",
+            ]
+        )
     }
 
     func testSessionStorePinnedAndOpenTabs() throws {
@@ -87,8 +151,8 @@ final class SumiFirefoxImportParserTests: XCTestCase {
                     ],
                     // `about:` pages have no meaning outside Firefox.
                     ["index": 1, "entries": [["url": "about:newtab", "title": "New Tab"]]],
-                ]
-            ]]
+                ],
+            ]],
         ]
         try mozLZ4(JSONSerialization.data(withJSONObject: session))
             .write(to: profile.appendingPathComponent("sessionstore.jsonlz4"))
@@ -111,8 +175,8 @@ final class SumiFirefoxImportParserTests: XCTestCase {
                         ["url": "https://current.example", "title": "Current"],
                         ["url": "https://forward.example", "title": "Forward"],
                     ],
-                ]]
-            ]]
+                ]],
+            ]],
         ]
         try mozLZ4(JSONSerialization.data(withJSONObject: session))
             .write(to: profile.appendingPathComponent("sessionstore.jsonlz4"))
@@ -125,7 +189,7 @@ final class SumiFirefoxImportParserTests: XCTestCase {
         let backups = profile.appendingPathComponent("sessionstore-backups", isDirectory: true)
         try FileManager.default.createDirectory(at: backups, withIntermediateDirectories: true)
         let session: [String: Any] = [
-            "windows": [["tabs": [["index": 1, "entries": [["url": "https://recovered.example"]]]]]]
+            "windows": [["tabs": [["index": 1, "entries": [["url": "https://recovered.example"]]]]]],
         ]
         try mozLZ4(JSONSerialization.data(withJSONObject: session))
             .write(to: backups.appendingPathComponent("recovery.jsonlz4"))

@@ -79,7 +79,7 @@ enum SumiImportSQLiteSnapshotReader {
     static func query(
         _ database: OpaquePointer,
         _ sql: String,
-        row: (OpaquePointer) -> Void
+        row: (OpaquePointer) throws -> Void
     ) throws {
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
@@ -88,7 +88,7 @@ enum SumiImportSQLiteSnapshotReader {
         }
         defer { sqlite3_finalize(statement) }
         while sqlite3_step(statement) == SQLITE_ROW {
-            row(statement)
+            try row(statement)
         }
     }
 
