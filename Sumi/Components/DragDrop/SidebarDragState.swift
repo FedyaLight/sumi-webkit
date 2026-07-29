@@ -6,6 +6,7 @@ import SwiftUI
 struct SidebarListDragPresentationFrame: Equatable {
     var isDragging = false
     var isCompletingDrop = false
+    var isApplyingDropMutation = false
     var activeDragItemID: UUID?
     var activeHoveredFolderID: UUID?
     var folderDropIntent: FolderDropIntent = .none
@@ -137,6 +138,7 @@ final class SidebarDragState: ObservableObject {
     private var floatingPresentationRevision: UInt64 = 0
     private var storedIsInternalDragSession = false
     private var storedActiveDragScope: SidebarDragScope?
+    private var storedIsApplyingDropMutation = false
     private var presentationMutationDepth = 0
     private var presentationNeedsPublish = false
 
@@ -186,6 +188,10 @@ final class SidebarDragState: ObservableObject {
             markPresentationChanged()
             syncGeometryCollectionContext()
         }
+    }
+
+    var isApplyingDropMutation: Bool {
+        storedIsApplyingDropMutation
     }
 
     var dragLocation: CGPoint? {
@@ -312,6 +318,7 @@ final class SidebarDragState: ObservableObject {
                 resolution: resolution
             )
             setPresentedDropIntent(projection)
+            setApplyingDropMutation(true)
             return resolution
         }
     }
@@ -328,6 +335,7 @@ final class SidebarDragState: ObservableObject {
             activeDragScope = nil
             if isCompletingDrop {
                 let expectedGeneration = dropCompletionGeneration
+                setApplyingDropMutation(false)
                 scheduleDropCompletionFinish(expectedGeneration: expectedGeneration)
             } else {
                 finishDropCompletion()
@@ -360,6 +368,7 @@ final class SidebarDragState: ObservableObject {
             return
         }
         cancelPendingDropCompletion()
+        setApplyingDropMutation(false)
         var projection = presentedDropIntent
         projection.finish()
         setPresentedDropIntent(projection)
@@ -540,6 +549,14 @@ final class SidebarDragState: ObservableObject {
         markPresentationChanged()
     }
 
+    private func setApplyingDropMutation(_ isApplying: Bool) {
+        guard storedIsApplyingDropMutation != isApplying else {
+            return
+        }
+        storedIsApplyingDropMutation = isApplying
+        markPresentationChanged()
+    }
+
     private func setPreviewPresentation(
         kind: SidebarDragPreviewKind,
         assets: [SidebarDragPreviewKind: SidebarDragPreviewAsset],
@@ -597,6 +614,7 @@ final class SidebarDragState: ObservableObject {
             SidebarListDragPresentationFrame(
                 isDragging: isDragging,
                 isCompletingDrop: isCompletingDrop,
+                isApplyingDropMutation: isApplyingDropMutation,
                 // Retained past the pointer session: the list surface needs to
                 // know which row the committed drop retired in order to hand
                 // its presentation identity to the row replacing it. Source

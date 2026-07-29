@@ -112,6 +112,12 @@ require 'snapshot = current\(\)' \
   "scoped reader lost its fresh demand-time snapshot" "$updates"
 require 'SidebarScopedSnapshotReader' \
   "Space catalog root no longer uses a demand-scoped reader" "$sidebar_root"
+require 'sourceIdentity: pinIDs' \
+  "launcher runtime reader no longer rebinds when its pin membership changes" \
+  "$sidebar_page"
+forbid '\.id\(pinIDs\)' \
+  "launcher runtime reader replaces the child list surface instead of rebinding its source" \
+  "$sidebar_page"
 require 'SpaceSidebarLiveFolderReader' \
   "live-folder leaf no longer uses a demand-scoped reader" "$live_folder_view"
 require '@ObservedObject var listPresentation: SidebarListDragPresentation' \

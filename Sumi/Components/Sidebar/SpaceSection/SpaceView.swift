@@ -123,8 +123,8 @@ struct SpaceView: View {
     }
 
     // Drop commits are no longer suppressed at the surface level: the list
-    // sections settle rows into place (SidebarMotionPolicy.dropSettleAnimation)
-    // while the essentials grid keeps its own commit suppression in PinnedGrid.
+    // uses its ordinary content-layout animation after mouse-up, while the
+    // Essentials grid keeps its own commit suppression in PinnedGrid.
     var body: some View {
         VStack(spacing: SidebarRowLayout.rowGap) {
             SpaceTitle(

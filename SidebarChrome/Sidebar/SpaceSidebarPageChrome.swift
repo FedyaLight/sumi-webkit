@@ -205,7 +205,7 @@ extension SpacesSideBarView {
             }
             .eraseToAnyPublisher(),
             delivery: .mainActorImmediate(
-                deferral: presentedDropCompletionDeferral(
+                deferral: presentedDropMutationDeferral(
                     for: dragState
                 )
             ),
@@ -259,11 +259,12 @@ extension SpacesSideBarView {
             .map { _ in current() }
             .eraseToAnyPublisher(),
             delivery: .mainActorImmediate(
-                deferral: presentedDropCompletionDeferral(
+                deferral: presentedDropMutationDeferral(
                     for: dragState
                 )
             ),
             areEquivalent: ==,
+            sourceIdentity: pinIDs,
             isActive: allowsInteractiveWork
         ) { launcherRuntime in
             sidebarPageContent(
@@ -277,7 +278,6 @@ extension SpacesSideBarView {
                 allowsInteractiveWork: allowsInteractiveWork
             )
         }
-        .id(pinIDs)
     }
 
     @ViewBuilder

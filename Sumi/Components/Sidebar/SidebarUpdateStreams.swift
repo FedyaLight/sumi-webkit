@@ -27,13 +27,13 @@ enum SidebarScopedSnapshotDeferralEnd: Sendable {
 }
 
 @MainActor
-func presentedDropCompletionDeferral(
+func presentedDropMutationDeferral(
     for dragState: SidebarDragState
 ) -> SidebarScopedSnapshotDeferral {
     SidebarScopedSnapshotDeferral(
-        isActive: { dragState.isCompletingDrop },
+        isActive: { dragState.isApplyingDropMutation },
         ended: dragState.listPresentation.$frame
-            .map(\.isCompletingDrop)
+            .map(\.isApplyingDropMutation)
             .removeDuplicates()
             .dropFirst()
             .filter { !$0 }
@@ -106,10 +106,10 @@ struct SidebarProfileUpdates {
 final class SidebarScopedSnapshotModel<Value>: ObservableObject {
     @Published private(set) var snapshot: Value
 
-    private let current: @MainActor () -> Value
-    private let changes: AnyPublisher<Value, Never>
-    private let delivery: SidebarScopedSnapshotDelivery
-    private let areEquivalent: ((Value, Value) -> Bool)?
+    private var current: @MainActor () -> Value
+    private var changes: AnyPublisher<Value, Never>
+    private var delivery: SidebarScopedSnapshotDelivery
+    private var areEquivalent: ((Value, Value) -> Bool)?
     private var cancellable: AnyCancellable?
     private var deferralCancellable: AnyCancellable?
     private var activationGeneration: UInt64 = 0
@@ -127,6 +127,27 @@ final class SidebarScopedSnapshotModel<Value>: ObservableObject {
         self.delivery = delivery
         self.areEquivalent = areEquivalent
         snapshot = current()
+    }
+
+    /// Rebinds a dynamic reader without replacing the model that owns its
+    /// consumer subtree.
+    func replaceSource(
+        current: @escaping @MainActor () -> Value,
+        changes: AnyPublisher<Value, Never>,
+        delivery: SidebarScopedSnapshotDelivery,
+        areEquivalent: ((Value, Value) -> Bool)?
+    ) {
+        let wasActive = cancellable != nil
+        setActive(false)
+        self.current = current
+        self.changes = changes
+        self.delivery = delivery
+        self.areEquivalent = areEquivalent
+        if wasActive {
+            setActive(true)
+        } else {
+            publishIfChanged(current())
+        }
     }
 
     func setActive(_ isActive: Bool) {
@@ -232,6 +253,13 @@ final class SidebarScopedSnapshotModel<Value>: ObservableObject {
 struct SidebarScopedSnapshotReader<Value, Content: View>: View {
     let isActive: Bool
     @ViewBuilder let content: (Value) -> Content
+    /// Changes only when the closures/publisher above this reader capture a
+    /// different source. The reader rebinds in place so child state survives.
+    private let sourceIdentity: AnyHashable?
+    private let current: @MainActor () -> Value
+    private let changes: AnyPublisher<Value, Never>
+    private let delivery: SidebarScopedSnapshotDelivery
+    private let areEquivalent: ((Value, Value) -> Bool)?
     @StateObject private var model: SidebarScopedSnapshotModel<Value>
 
     init(
@@ -239,11 +267,17 @@ struct SidebarScopedSnapshotReader<Value, Content: View>: View {
         changes: AnyPublisher<Value, Never>,
         delivery: SidebarScopedSnapshotDelivery = .deferredOnMainRunLoop,
         areEquivalent: ((Value, Value) -> Bool)? = nil,
+        sourceIdentity: AnyHashable? = nil,
         isActive: Bool,
         @ViewBuilder content: @escaping (Value) -> Content
     ) {
         self.isActive = isActive
         self.content = content
+        self.sourceIdentity = sourceIdentity
+        self.current = current
+        self.changes = changes
+        self.delivery = delivery
+        self.areEquivalent = areEquivalent
         _model = StateObject(
             wrappedValue: SidebarScopedSnapshotModel(
                 current: current,
@@ -261,6 +295,14 @@ struct SidebarScopedSnapshotReader<Value, Content: View>: View {
             }
             .onChange(of: isActive) { _, isActive in
                 model.setActive(isActive)
+            }
+            .onChange(of: sourceIdentity) { _, _ in
+                model.replaceSource(
+                    current: current,
+                    changes: changes,
+                    delivery: delivery,
+                    areEquivalent: areEquivalent
+                )
             }
             .onDisappear {
                 model.setActive(false)

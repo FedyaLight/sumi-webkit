@@ -770,7 +770,7 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
         XCTAssertEqual(model.snapshot, 1)
     }
 
-    func testInteractionSnapshotDefersStructuralDropMutationUntilDropCompletionEnds() {
+    func testInteractionSnapshotReleasesStructuralDropMutationBeforeDropCompletionEnds() {
         let changes = PassthroughSubject<Int, Never>()
         let delayedActions = ManualMainActorDelayedActionScheduler()
         let dragState = SidebarDragState(delayedActions: delayedActions.scheduler)
@@ -787,7 +787,7 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
             current: { currentSnapshot },
             changes: changes.eraseToAnyPublisher(),
             delivery: .mainActorImmediate(
-                deferral: presentedDropCompletionDeferral(
+                deferral: presentedDropMutationDeferral(
                     for: dragState
                 )
             )
@@ -800,9 +800,43 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
         XCTAssertEqual(model.snapshot, 0)
 
         dragState.resetInteractionState()
-        XCTAssertEqual(model.snapshot, 0)
+        XCTAssertEqual(
+            model.snapshot,
+            1,
+            "The final structural snapshot must be released while the drop identity transfer is still active"
+        )
+        XCTAssertTrue(dragState.isCompletingDrop)
         delayedActions.runNext()
         XCTAssertEqual(model.snapshot, 1)
+    }
+
+    func testScopedSnapshotModelRebindsPublisherAndCurrentRead() {
+        let firstChanges = PassthroughSubject<Int, Never>()
+        let secondChanges = PassthroughSubject<Int, Never>()
+        var firstCurrent = 1
+        var secondCurrent = 2
+        let model = SidebarScopedSnapshotModel(
+            current: { firstCurrent },
+            changes: firstChanges.eraseToAnyPublisher(),
+            delivery: .mainActorImmediate()
+        )
+        model.setActive(true)
+        defer { model.setActive(false) }
+
+        model.replaceSource(
+            current: { secondCurrent },
+            changes: secondChanges.eraseToAnyPublisher(),
+            delivery: .mainActorImmediate(),
+            areEquivalent: nil
+        )
+
+        XCTAssertEqual(model.snapshot, 2)
+        firstCurrent = 3
+        firstChanges.send(3)
+        XCTAssertEqual(model.snapshot, 2)
+        secondCurrent = 4
+        secondChanges.send(4)
+        XCTAssertEqual(model.snapshot, 4)
     }
 
     func testDeferredDropDeliveryPublishesStateAtDeliveryRatherThanAtAnnouncement() {
@@ -822,7 +856,7 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
             current: { currentSnapshot },
             changes: changes.eraseToAnyPublisher(),
             delivery: .mainActorImmediate(
-                deferral: presentedDropCompletionDeferral(
+                deferral: presentedDropMutationDeferral(
                     for: dragState
                 )
             )
@@ -836,12 +870,13 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
         changes.send(1)
 
         dragState.resetInteractionState()
-        XCTAssertEqual(model.snapshot, 0)
+        XCTAssertEqual(model.snapshot, 2)
+        XCTAssertTrue(dragState.isCompletingDrop)
         delayedActions.runNext()
         XCTAssertEqual(model.snapshot, 2)
     }
 
-    func testDeferredDropDeliveryPublishesFinalStateWhenDropCompletionEnds() {
+    func testDeferredDropDeliveryPublishesFinalStateWhenDropMutationReturns() {
         let changes = PassthroughSubject<Int, Never>()
         let delayedActions = ManualMainActorDelayedActionScheduler()
         let dragState = SidebarDragState(delayedActions: delayedActions.scheduler)
@@ -853,26 +888,28 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
             )
         )
         _ = dragState.beginDropCommit()
-        dragState.resetInteractionState()
         var currentSnapshot = 0
         let model = SidebarScopedSnapshotModel(
             current: { currentSnapshot },
             changes: changes.eraseToAnyPublisher(),
             delivery: .mainActorImmediate(
-                deferral: presentedDropCompletionDeferral(
+                deferral: presentedDropMutationDeferral(
                     for: dragState
                 )
             )
         )
         model.setActive(true)
 
-        // The structural event can precede the final mutation. Consuming it
-        // before drop completion loses the final state until another unrelated
-        // invalidation arrives.
+        // A structural event may arrive before the last write inside the
+        // synchronous drop transaction. Re-read only after that transaction
+        // returns, while the post-drop identity transfer remains active.
         changes.send(0)
         currentSnapshot = 1
 
         XCTAssertEqual(model.snapshot, 0)
+        dragState.resetInteractionState()
+        XCTAssertEqual(model.snapshot, 1)
+        XCTAssertTrue(dragState.isCompletingDrop)
         delayedActions.runNext()
         XCTAssertEqual(model.snapshot, 1)
     }

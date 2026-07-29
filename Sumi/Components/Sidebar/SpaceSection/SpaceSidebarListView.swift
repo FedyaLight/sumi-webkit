@@ -477,9 +477,7 @@ private struct SpaceSidebarListContentView: View {
         let mode = SidebarMotionPolicy.currentMode(
             reduceMotion: reduceMotion || sumiSettings.shouldReduceChromeMotion
         )
-        return isCompletingDrop
-            ? SidebarMotionPolicy.dropSettleAnimation(for: mode)
-            : SidebarMotionPolicy.contentLayoutAnimation(for: mode)
+        return SidebarMotionPolicy.contentLayoutAnimation(for: mode)
     }
 
     private var isCompletingDrop: Bool {
@@ -706,11 +704,7 @@ private struct SpaceSidebarSceneBuilder {
                 .init(
                     id: .pinnedTop,
                     payload: .pinnedTop,
-                    targetExtent:
-                        isInteractive
-                            && dragSnapshots.pinned.isHoveringEmptySection
-                        ? SidebarRowLayout.rowHeight
-                        : 0
+                    targetExtent: 0
                 )
             )
             return

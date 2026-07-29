@@ -371,8 +371,8 @@ for name in folder_interaction_views:
             f"SpaceView decomposition guard: {name} must store exactly one Bool "
             "isInteractive gate"
         )
-# Drop commits settle with SidebarMotionPolicy.dropSettleAnimation in the list
-# sections; whole-surface suppression must not regrow around SpaceView.
+# Drop commits use the ordinary content-layout animation in the list sections;
+# whole-surface suppression must not regrow around SpaceView.
 if re.search(r"\bSpaceDropCommitSignalReader\b", space_view_source):
     raise SystemExit(
         "SpaceView decomposition guard: whole-surface drop commit suppression "
