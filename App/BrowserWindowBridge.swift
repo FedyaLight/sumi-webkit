@@ -133,10 +133,6 @@ struct BrowserWindowBridge: NSViewRepresentable {
                     BrowserWindowGeometryPolicy.captureRestorableFrame(
                         of: window
                     )
-                    window
-                        .setNativeStandardWindowButtonsForBrowserFullScreenChromeVisible(
-                            true
-                        )
                 }
             }
 
@@ -149,19 +145,6 @@ struct BrowserWindowBridge: NSViewRepresentable {
                     BrowserWindowGeometryPolicy.captureRestorableFrame(
                         of: window
                     )
-                }
-            }
-
-            addObserver(
-                center: .default,
-                forName: NSWindow.willExitFullScreenNotification,
-                object: window
-            ) { _ in
-                MainActor.assumeIsolated {
-                    window
-                        .setNativeStandardWindowButtonsForBrowserFullScreenChromeVisible(
-                            false
-                        )
                 }
             }
 
@@ -250,9 +233,6 @@ struct BrowserWindowBridge: NSViewRepresentable {
             guard windowState.presentationState.nativeDisplayMode != mode
             else { return }
             windowState.presentationState.nativeDisplayMode = mode
-            window.setNativeStandardWindowButtonsForBrowserFullScreenChromeVisible(
-                mode == .fullScreen
-            )
         }
     }
 }

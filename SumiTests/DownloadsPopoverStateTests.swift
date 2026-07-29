@@ -111,13 +111,6 @@ final class DownloadsPopoverStateTests: XCTestCase {
         XCTAssertEqual(windowState.sidebarWidth, 250)
         XCTAssertEqual(windowState.savedSidebarWidth, 300)
         XCTAssertTrue(windowState.sidebarTransientSessionCoordinator.hasPinnedTransientUI(for: windowState.id))
-        XCTAssertTrue(
-            SidebarHoverOverlayTransientPinningPolicy.shouldPinHoverSidebar(
-                transientWindowID: windowState.sidebarTransientSessionCoordinator.currentPresentationWindowID,
-                currentWindowID: windowState.id,
-                isSidebarVisible: windowState.isSidebarVisible
-            )
-        )
 
         windowState.sidebarTransientSessionCoordinator.finishSession(
             token,

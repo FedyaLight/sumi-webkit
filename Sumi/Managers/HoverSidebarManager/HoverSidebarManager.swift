@@ -31,8 +31,6 @@ enum HoverSidebarCompactMetrics {
     static let edgeOvershootSlack: CGFloat = 10
     static let keepOpenHysteresis: CGFloat = 0
     static let verticalBoundsSlack: CGFloat = 7
-    static let revealAnimationDuration: TimeInterval = 0.25
-    static let hideAnimationDuration: TimeInterval = 0.25
     static let keepHoverDuration: TimeInterval = 0.15
 }
 
@@ -91,11 +89,9 @@ enum HoverSidebarOverlayHostLifecycleState: Equatable {
 @MainActor
 struct HoverSidebarRuntime {
     let browserRuntimeAvailable: @MainActor () -> Bool
-    let settings: @MainActor () -> SumiSettingsService?
 
     static let inactive = HoverSidebarRuntime(
-        browserRuntimeAvailable: { false },
-        settings: { nil }
+        browserRuntimeAvailable: { false }
     )
 }
 
@@ -104,6 +100,11 @@ struct HoverSidebarRuntime {
 /// event monitoring.
 @MainActor
 final class HoverSidebarManager: ObservableObject {
+    private enum ScheduledOverlayVisibilityIntent {
+        case reveal
+        case hide
+    }
+
     // MARK: - Published State
     @Published private(set) var overlayHostLifecycleState: HoverSidebarOverlayHostLifecycleState = .unmounted
 
@@ -131,6 +132,7 @@ final class HoverSidebarManager: ObservableObject {
     weak var windowRegistry: WindowRegistry?
     private var runtime = HoverSidebarRuntime.inactive
     private var hostedWindowId: UUID?
+    private weak var chromePresentation: BrowserWindowChromePresentation?
 
     // MARK: - Monitors
     private var localMonitor: Any?
@@ -142,6 +144,9 @@ final class HoverSidebarManager: ObservableObject {
     private var overlayHostPrewarmGeneration: UInt64 = 0
     private var overlayVisibilityGeneration: UInt64 = 0
     private var isEmptyStateOverlayForceActive = false
+    private var isPinnedInteractionActive = false
+    private var isStartupResolutionPending = false
+    private var overlayMotionMode: SidebarMotionPolicy.Mode = .standard
     private let duplicateMouseMovementThreshold: CGFloat = 0.5
     private let mouseUpdateBypassDistance: CGFloat = 8
     private let mouseUpdateMinimumInterval: CFTimeInterval = 1.0 / 60.0
@@ -149,6 +154,7 @@ final class HoverSidebarManager: ObservableObject {
     private let mouseLocationProvider: () -> CGPoint
     private let delayedActions: MainActorDelayedActionScheduler
     private var cancelScheduledOverlayVisibilityAction: MainActorDelayedActionScheduler.Cancellation?
+    private var scheduledOverlayVisibilityIntent: ScheduledOverlayVisibilityIntent?
     private var cancelInactiveHostReleaseAction: MainActorDelayedActionScheduler.Cancellation?
 
     init(
@@ -167,6 +173,7 @@ final class HoverSidebarManager: ObservableObject {
     func attach(runtime: HoverSidebarRuntime, windowState: BrowserWindowState) {
         self.runtime = runtime
         hostedWindowId = windowState.id
+        chromePresentation = windowState.chromePresentation
     }
 
     func start() {
@@ -213,7 +220,7 @@ final class HoverSidebarManager: ObservableObject {
         deferOverlayHostRetentionWhileCollapsed()
         installMonitorsIfNeeded()
         if isEmptyStateOverlayForceActive, !isOverlayVisible {
-            requestOverlayReveal(animationDuration: HoverSidebarCompactMetrics.revealAnimationDuration)
+            requestOverlayReveal()
         }
     }
 
@@ -255,7 +262,7 @@ final class HoverSidebarManager: ObservableObject {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.isMouseUpdateScheduled = false
-            self.handleMouseMovementOnMain()
+            self.handleMouseMovementOnMain(mouse: mouse)
         }
     }
 
@@ -287,7 +294,7 @@ final class HoverSidebarManager: ObservableObject {
     }
 
     @MainActor
-    private func handleMouseMovementOnMain() {
+    private func handleMouseMovementOnMain(mouse: CGPoint) {
         guard runtime.browserRuntimeAvailable(),
               let registry = windowRegistry,
               let hostedWindowId,
@@ -303,6 +310,7 @@ final class HoverSidebarManager: ObservableObject {
         // The empty-state force and pinned transient UI both hold the overlay open
         // regardless of pointer position; keep it revealed and skip hover tracking.
         if isEmptyStateOverlayForceActive
+            || isPinnedInteractionActive
             || activeState.sidebarTransientSessionCoordinator.hasPinnedTransientUI(for: activeState.id) {
             revealOverlayForActivePin()
             return
@@ -314,7 +322,6 @@ final class HoverSidebarManager: ObservableObject {
         }
 
         // Mouse and window frames are in screen coordinates
-        let mouse = mouseLocationProvider()
         let frame = window.frame
 
         let overlayWidth = SidebarPresentationContext.collapsedSidebarWidth(
@@ -338,34 +345,27 @@ final class HoverSidebarManager: ObservableObject {
         if shouldShow {
             cancelScheduledOverlayHide()
             if !isOverlayVisible {
-                requestPointerOverlayReveal(animationDuration: HoverSidebarCompactMetrics.revealAnimationDuration)
+                requestPointerOverlayReveal()
             }
         } else if isOverlayVisible {
             // An active empty-state force would have returned early above, so reaching
             // here means no pin is holding the overlay open and it may schedule a hide.
-            scheduleOverlayHide(animationDuration: HoverSidebarCompactMetrics.hideAnimationDuration)
+            scheduleOverlayHide()
         }
     }
 
-    func requestOverlayReveal(animationDuration: TimeInterval) {
-        requestOverlayReveal(animationDuration: animationDuration, validatesPointerIntent: false)
+    func requestOverlayReveal() {
+        requestOverlayReveal(validatesPointerIntent: false)
     }
 
-    func requestPointerOverlayReveal(
-        animationDuration: TimeInterval,
-        sidebarPosition: SidebarPosition? = nil
-    ) {
+    func requestPointerOverlayReveal() {
         requestOverlayReveal(
-            animationDuration: animationDuration,
-            validatesPointerIntent: true,
-            pointerSidebarPosition: sidebarPosition
+            validatesPointerIntent: true
         )
     }
 
     private func requestOverlayReveal(
-        animationDuration: TimeInterval,
-        validatesPointerIntent: Bool,
-        pointerSidebarPosition: SidebarPosition? = nil
+        validatesPointerIntent: Bool
     ) {
         retainOverlayHostWhileCollapsed()
         invalidateOverlayVisibilityWork()
@@ -377,21 +377,24 @@ final class HoverSidebarManager: ObservableObject {
             else { return }
 
             self.cancelScheduledOverlayVisibilityAction = nil
+            self.scheduledOverlayVisibilityIntent = nil
             if validatesPointerIntent,
                !self.shouldCompletePendingPointerReveal(
-                    sidebarPosition: pointerSidebarPosition ?? self.sidebarPosition
+                    sidebarPosition: self.sidebarPosition
                ) {
                 return
             }
 
-            withAnimation(sidebarOverlayAnimation(fallbackDuration: animationDuration)) {
+            self.performOverlayMotion(
+                toward: .visible,
+                animation: SidebarMotionPolicy.overlayMotion(
+                    for: self.overlayMotionMode
+                ).animation
+            ) {
                 self.overlayHostLifecycleState = .visible
             }
         }
-    }
-
-    func retainOverlayHostForPinnedInteraction() {
-        retainOverlayHostWhileCollapsed()
+        scheduledOverlayVisibilityIntent = .reveal
     }
 
     func retainOverlayHostWhileCollapsed() {
@@ -407,7 +410,7 @@ final class HoverSidebarManager: ObservableObject {
         cancelScheduledOverlayHide()
 
         if animated {
-            requestOverlayReveal(animationDuration: HoverSidebarCompactMetrics.revealAnimationDuration)
+            requestOverlayReveal()
         } else {
             revealOverlayImmediately()
         }
@@ -428,13 +431,14 @@ final class HoverSidebarManager: ObservableObject {
         }
 
         if animated {
-            hideOverlay(animationDuration: HoverSidebarCompactMetrics.hideAnimationDuration)
+            hideOverlay()
         } else {
             hideOverlayImmediately()
         }
     }
 
     func deferOverlayHostRetentionWhileCollapsed() {
+        guard !isStartupResolutionPending else { return }
         invalidateOverlayHostPrewarmWork()
         let generation = overlayHostPrewarmGeneration
 
@@ -458,27 +462,51 @@ final class HoverSidebarManager: ObservableObject {
         overlayHostLifecycleState = .unmounted
     }
 
-    func setOverlayVisibility(_ isVisible: Bool, animationDuration: TimeInterval) {
-        if isVisible {
-            requestOverlayReveal(animationDuration: animationDuration)
-        } else {
-            hideOverlay(animationDuration: animationDuration)
-        }
-    }
-
-    func dismissOverlayForTransientChrome(animationDuration: TimeInterval) {
+    func dismissOverlayForTransientChrome() {
         guard !isEmptyStateOverlayForceActive else { return }
-        setOverlayVisibility(false, animationDuration: animationDuration)
+        hideOverlay()
     }
 
-    private func hideOverlay(animationDuration: TimeInterval) {
-        invalidateOverlayVisibilityWork()
-        withAnimation(sidebarOverlayAnimation(fallbackDuration: animationDuration)) {
-            overlayHostLifecycleState = .retainedHidden
+    func configureMotionMode(_ mode: SidebarMotionPolicy.Mode) {
+        overlayMotionMode = mode
+    }
+
+    func setStartupResolutionPending(_ isPending: Bool) {
+        guard isStartupResolutionPending != isPending else { return }
+        isStartupResolutionPending = isPending
+        if isPending {
+            invalidateOverlayHostPrewarmWork()
+            if !isOverlayVisible {
+                overlayHostLifecycleState = .unmounted
+            }
+        } else {
+            deferOverlayHostRetentionWhileCollapsed()
         }
     }
 
-    private func scheduleOverlayHide(animationDuration: TimeInterval) {
+    func setPinnedInteractionActive(_ isActive: Bool) {
+        guard isPinnedInteractionActive != isActive else { return }
+        isPinnedInteractionActive = isActive
+        if isActive {
+            retainOverlayHostWhileCollapsed()
+            revealOverlayForActivePin()
+        } else if isOverlayVisible,
+                  !shouldCompletePendingPointerReveal(sidebarPosition: sidebarPosition) {
+            scheduleOverlayHide()
+        }
+    }
+
+    private func hideOverlay() {
+        invalidateOverlayVisibilityWork()
+        performOverlayMotion(
+            toward: .hidden,
+            animation: SidebarMotionPolicy.overlayMotion(for: overlayMotionMode).animation
+        ) {
+            self.overlayHostLifecycleState = .retainedHidden
+        }
+    }
+
+    private func scheduleOverlayHide() {
         guard !isEmptyStateOverlayForceActive else { return }
 
         invalidateOverlayVisibilityWork()
@@ -492,11 +520,14 @@ final class HoverSidebarManager: ObservableObject {
             else { return }
 
             self.cancelScheduledOverlayVisibilityAction = nil
-            self.hideOverlay(animationDuration: animationDuration)
+            self.scheduledOverlayVisibilityIntent = nil
+            self.hideOverlay()
         }
+        scheduledOverlayVisibilityIntent = .hide
     }
 
     private func cancelScheduledOverlayHide() {
+        guard scheduledOverlayVisibilityIntent == .hide else { return }
         invalidateOverlayVisibilityWork()
     }
 
@@ -513,7 +544,8 @@ final class HoverSidebarManager: ObservableObject {
               let hostedWindowId,
               registry.activeWindowId == hostedWindowId,
               let hostedState = registry.windows[hostedWindowId],
-              hostedState.isSidebarVisible == false
+              hostedState.isSidebarVisible == false,
+              !isStartupResolutionPending
         else {
             return false
         }
@@ -573,8 +605,10 @@ final class HoverSidebarManager: ObservableObject {
     }
 
     private func hideOverlayImmediately() {
-        if isOverlayVisible {
-            overlayHostLifecycleState = .retainedHidden
+        performOverlayMotion(toward: .hidden, animation: nil) {
+            if self.isOverlayVisible {
+                self.overlayHostLifecycleState = .retainedHidden
+            }
         }
     }
 
@@ -584,11 +618,8 @@ final class HoverSidebarManager: ObservableObject {
     private func revealOverlayImmediately() {
         invalidateOverlayHostPrewarmWork()
         invalidateOverlayVisibilityWork()
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        transaction.animation = nil
-        withTransaction(transaction) {
-            overlayHostLifecycleState = .visible
+        performOverlayMotion(toward: .visible, animation: nil) {
+            self.overlayHostLifecycleState = .visible
         }
     }
 
@@ -597,19 +628,42 @@ final class HoverSidebarManager: ObservableObject {
     private func revealOverlayForActivePin() {
         cancelScheduledOverlayHide()
         if !isOverlayVisible {
-            requestOverlayReveal(animationDuration: HoverSidebarCompactMetrics.revealAnimationDuration)
+            requestOverlayReveal()
         }
     }
 
-    private func sidebarOverlayAnimation(fallbackDuration: TimeInterval) -> Animation? {
-        SidebarMotionPolicy.overlayAnimation(
-            for: SidebarMotionPolicy.appKitCurrentMode(settings: runtime.settings())
-        )
-            ?? .easeOut(duration: fallbackDuration)
+    private func performOverlayMotion(
+        toward visibility: BrowserWindowSidebarLayoutVisibility,
+        animation: Animation?,
+        update: @escaping @MainActor () -> Void
+    ) {
+        if let chromePresentation {
+            chromePresentation.performSidebarMotion(
+                surface: .collapsed,
+                toward: visibility,
+                animation: animation,
+                updateLayout: update
+            )
+        } else if let animation {
+            withAnimation(
+                animation,
+                completionCriteria: .removed,
+                update,
+                completion: {
+                    // No chrome authority exists in isolated manager tests.
+                }
+            )
+        } else {
+            var transaction = Transaction()
+            transaction.animation = nil
+            transaction.disablesAnimations = true
+            withTransaction(transaction, update)
+        }
     }
 
     private func resetOverlayVisibilityAndHost() {
         isEmptyStateOverlayForceActive = false
+        isPinnedInteractionActive = false
         invalidateOverlayVisibilityWork()
         invalidateOverlayHostPrewarmWork()
         overlayHostLifecycleState = .unmounted
@@ -619,6 +673,7 @@ final class HoverSidebarManager: ObservableObject {
         overlayVisibilityGeneration &+= 1
         cancelScheduledOverlayVisibilityAction?()
         cancelScheduledOverlayVisibilityAction = nil
+        scheduledOverlayVisibilityIntent = nil
     }
 
     private func invalidateOverlayHostPrewarmWork() {

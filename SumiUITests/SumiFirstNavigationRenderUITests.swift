@@ -79,7 +79,7 @@ final class SumiFirstNavigationRenderUITests: SumiLaunchSmokeUITestCase {
         )
         let input = element(withIdentifier: "command-palette-input", in: app)
         XCTAssertTrue(input.isHittable, "URL Hub input is not hittable")
-        try paste(server.pageURL.absoluteString, into: input, in: app)
+        try pasteText(server.pageURL.absoluteString, into: input, in: app)
         wait(
             for: NSPredicate(format: "value == %@", server.pageURL.absoluteString),
             on: input,
@@ -119,34 +119,6 @@ final class SumiFirstNavigationRenderUITests: SumiLaunchSmokeUITestCase {
             0.5,
             "The first HTTP document loaded but remained visually blank; black ratio: \(renderedBlackRatio)"
         )
-    }
-
-    private func paste(
-        _ text: String,
-        into input: XCUIElement,
-        in app: XCUIApplication
-    ) throws {
-        let pasteboard = NSPasteboard.general
-        let previousContents: [(type: NSPasteboard.PasteboardType, data: Data)] =
-            pasteboard.types?.compactMap { type in
-                pasteboard.data(forType: type).map { (type, $0) }
-            } ?? []
-        defer {
-            pasteboard.clearContents()
-            if previousContents.isEmpty == false {
-                pasteboard.declareTypes(previousContents.map(\.type), owner: nil)
-                for content in previousContents {
-                    pasteboard.setData(content.data, forType: content.type)
-                }
-            }
-        }
-
-        pasteboard.clearContents()
-        guard pasteboard.setString(text, forType: .string) else {
-            throw FixtureError.missingValue("Unable to seed the pasteboard with the fixture URL")
-        }
-        input.click()
-        app.typeKey("v", modifierFlags: [.command])
     }
 
     private func inputSourceID(_ source: TISInputSource) -> String? {

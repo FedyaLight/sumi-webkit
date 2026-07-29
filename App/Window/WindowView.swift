@@ -230,6 +230,7 @@ struct WindowView: View {
         }
         // Lifecycle management
         .onAppear {
+            syncChromePresentationConfiguration()
             syncDockedSidebarLayout(isVisible: windowState.isSidebarVisible, animated: false)
             hoverSidebarManager.sidebarPosition = sumiSettings.sidebarPosition
             sidebarContext.attachHoverSidebar(hoverSidebarManager, to: windowState)
@@ -262,11 +263,15 @@ struct WindowView: View {
             revealCollapsedSidebarForPinnedTransientIfNeeded()
         }
         .onChange(of: sumiSettings.sidebarPosition) { _, newPosition in
+            syncChromePresentationConfiguration()
             Task { @MainActor in
                 hoverSidebarManager.sidebarPosition = newPosition
                 hoverSidebarManager.refreshMonitoring()
                 revealCollapsedSidebarForPinnedTransientIfNeeded()
             }
+        }
+        .onChange(of: windowState.presentationState.nativeDisplayMode) { _, _ in
+            syncChromePresentationConfiguration()
         }
         .onDisappear {
             hoverSidebarManager.stop()
@@ -306,9 +311,7 @@ struct WindowView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .sumiShouldHideCollapsedSidebarOverlay)) { _ in
-            hoverSidebarManager.dismissOverlayForTransientChrome(
-                animationDuration: SidebarHoverOverlayMetrics.revealAnimationDuration
-            )
+            hoverSidebarManager.dismissOverlayForTransientChrome()
         }
         .onReceive(NotificationCenter.default.publisher(for: .sumiMemoryPressureReceived)) { _ in
             hoverSidebarManager.releaseOverlayHostForMemoryPressure()
@@ -333,9 +336,7 @@ struct WindowView: View {
             return
         }
 
-        hoverSidebarManager.requestOverlayReveal(
-            animationDuration: SidebarHoverOverlayMetrics.revealAnimationDuration
-        )
+        hoverSidebarManager.requestOverlayReveal()
     }
 
     @ViewBuilder
@@ -447,33 +448,54 @@ struct WindowView: View {
             for: SidebarMotionPolicy.currentMode(reduceMotion: effectiveReduceMotion),
             isShowing: isVisible
         )
+        let visibility: BrowserWindowSidebarLayoutVisibility =
+            isVisible ? .visible : .hidden
+        let resolvedAnimation = animated ? animation : nil
 
         if isVisible {
-            dockedSidebarLayout.beginShow()
-            if animated, let animation {
-                withAnimation(animation) {
-                    dockedSidebarLayout.show()
-                }
-            } else {
+            windowState.chromePresentation.performSidebarMotion(
+                surface: .docked,
+                toward: visibility,
+                animation: resolvedAnimation
+            ) {
+                dockedSidebarLayout.beginShow()
                 dockedSidebarLayout.show()
             }
             return
         }
 
-        if animated, let animation {
-            let generation = dockedSidebarLayout.beginAnimatedHide()
-
-            withAnimation(animation, completionCriteria: .logicallyComplete) {
-                dockedSidebarLayout.hide()
-            } completion: {
-                dockedSidebarLayout.completeAnimatedHide(
-                    generation: generation,
-                    isVisible: windowState.isSidebarVisible
-                )
-            }
+        if resolvedAnimation != nil {
+            windowState.chromePresentation.performSidebarMotion(
+                surface: .docked,
+                toward: visibility,
+                animation: resolvedAnimation,
+                updateLayout: {
+                    dockedSidebarLayout.beginAnimatedHide()
+                    dockedSidebarLayout.hide()
+                },
+                completion: {
+                    dockedSidebarLayout.completeAnimatedHide(
+                        isVisible: windowState.isSidebarVisible
+                    )
+                }
+            )
         } else {
-            dockedSidebarLayout.hideImmediately()
+            windowState.chromePresentation.performSidebarMotion(
+                surface: .docked,
+                toward: visibility,
+                animation: nil
+            ) {
+                dockedSidebarLayout.hideImmediately()
+            }
         }
+    }
+
+    private func syncChromePresentationConfiguration() {
+        windowState.chromePresentation.configure(
+            shellEdge: sumiSettings.sidebarPosition.shellEdge,
+            isBrowserWindowFullScreen:
+                windowState.presentationState.nativeDisplayMode == .fullScreen
+        )
     }
 
     @ViewBuilder

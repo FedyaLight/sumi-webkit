@@ -6,6 +6,12 @@ import SwiftUI
 enum SidebarMotionPolicy {
     typealias Mode = SumiChromeMotionPolicy.Mode
 
+    struct OverlayMotion {
+        let animation: Animation
+        let usesTravel: Bool
+        let shadowDuration: TimeInterval
+    }
+
     static let rowPressedScale: CGFloat = 0.98
 
     /// How long a row keeps its press visual once it can first be drawn.
@@ -23,11 +29,6 @@ enum SidebarMotionPolicy {
         )
     }
 
-    @MainActor
-    static func appKitCurrentMode(settings: SumiSettingsService?) -> Mode {
-        SumiChromeMotionPolicy.appKitCurrentMode(settings: settings)
-    }
-
     static func dockedLayoutAnimation(for mode: Mode, isShowing: Bool) -> Animation? {
         switch mode {
         case .reducedMotion:
@@ -43,23 +44,23 @@ enum SidebarMotionPolicy {
         }
     }
 
-    static func overlayAnimation(for mode: Mode) -> Animation? {
-        let duration = overlayAnimationDuration(for: mode)
+    static func overlayMotion(for mode: Mode) -> OverlayMotion {
+        let duration: TimeInterval
+        let animation: Animation
         switch mode {
         case .reducedMotion:
-            return .easeOut(duration: duration)
+            duration = 0.08
+            animation = .easeOut(duration: duration)
         case .standard:
-            return .smooth(duration: duration)
+            duration = 0.22
+            animation = .smooth(duration: duration)
         }
-    }
-
-    static func overlayAnimationDuration(for mode: Mode) -> TimeInterval {
-        switch mode {
-        case .reducedMotion:
-            return 0.08
-        case .standard:
-            return 0.22
-        }
+        let usesTravel = mode != .reducedMotion
+        return OverlayMotion(
+            animation: animation,
+            usesTravel: usesTravel,
+            shadowDuration: usesTravel ? duration : 0
+        )
     }
 
     static func rowReleaseAnimation(for mode: Mode, split: Bool) -> Animation? {
@@ -103,9 +104,5 @@ enum SidebarMotionPolicy {
     static func spaceSwitchAnimation(for mode: Mode) -> Animation? {
         guard mode != .reducedMotion else { return nil }
         return .timingCurve(0.16, 1.0, 0.3, 1.0, duration: 0.37)
-    }
-
-    static func overlayUsesTravel(for mode: Mode) -> Bool {
-        mode != .reducedMotion
     }
 }

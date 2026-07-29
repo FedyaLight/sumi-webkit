@@ -20,16 +20,18 @@ final class SidebarZenMotionTests: XCTestCase {
     func testSidebarMotionPolicyUsesReducedMotionContract() {
         XCTAssertEqual(SidebarMotionPolicy.currentMode(reduceMotion: true), .reducedMotion)
         XCTAssertNil(SidebarMotionPolicy.dockedLayoutAnimation(for: .reducedMotion, isShowing: true))
-        XCTAssertFalse(SidebarMotionPolicy.overlayUsesTravel(for: .reducedMotion))
-        XCTAssertEqual(SidebarMotionPolicy.overlayAnimationDuration(for: .reducedMotion), 0.08)
+        let overlayMotion = SidebarMotionPolicy.overlayMotion(for: .reducedMotion)
+        XCTAssertFalse(overlayMotion.usesTravel)
+        XCTAssertEqual(overlayMotion.shadowDuration, 0)
         XCTAssertNil(SidebarMotionPolicy.contentLayoutAnimation(for: .reducedMotion))
     }
 
     func testSidebarMotionPolicyKeepsStandardShellMotion() {
         XCTAssertEqual(SidebarMotionPolicy.currentMode(reduceMotion: false), .standard)
         XCTAssertNotNil(SidebarMotionPolicy.dockedLayoutAnimation(for: .standard, isShowing: true))
-        XCTAssertTrue(SidebarMotionPolicy.overlayUsesTravel(for: .standard))
-        XCTAssertEqual(SidebarMotionPolicy.overlayAnimationDuration(for: .standard), 0.22)
+        let overlayMotion = SidebarMotionPolicy.overlayMotion(for: .standard)
+        XCTAssertTrue(overlayMotion.usesTravel)
+        XCTAssertEqual(overlayMotion.shadowDuration, 0.22)
         XCTAssertNotNil(SidebarMotionPolicy.contentLayoutAnimation(for: .standard))
     }
 

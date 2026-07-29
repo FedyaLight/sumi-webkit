@@ -402,6 +402,35 @@ extension SumiLaunchSmokeUITestCase {
     }
 
     @MainActor
+    func pasteText(
+        _ text: String,
+        into input: XCUIElement,
+        in app: XCUIApplication
+    ) throws {
+        let pasteboard = NSPasteboard.general
+        let previousContents: [(type: NSPasteboard.PasteboardType, data: Data)] =
+            pasteboard.types?.compactMap { type in
+                pasteboard.data(forType: type).map { (type, $0) }
+            } ?? []
+        defer {
+            pasteboard.clearContents()
+            if previousContents.isEmpty == false {
+                pasteboard.declareTypes(previousContents.map(\.type), owner: nil)
+                for content in previousContents {
+                    pasteboard.setData(content.data, forType: content.type)
+                }
+            }
+        }
+
+        pasteboard.clearContents()
+        guard pasteboard.setString(text, forType: .string) else {
+            throw FixtureError.missingValue("Unable to seed the pasteboard")
+        }
+        input.click()
+        app.typeKey("v", modifierFlags: [.command])
+    }
+
+    @MainActor
     func performLauncherDragNoOp(
         elementID: String,
         app: XCUIApplication,
@@ -1656,42 +1685,6 @@ extension SumiLaunchSmokeUITestCase {
     }
 
     @MainActor
-    func assertNativeTrafficLightsHidden(
-        in app: XCUIApplication,
-        window: XCUIElement,
-        searchRoot: XCUIElement? = nil,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) {
-        let root: XCUIElement = searchRoot ?? app
-        let closeButton = element(
-            withIdentifier: BrowserWindowControlIdentifiers.closeButton,
-            inSearchRoot: root
-        )
-        let minimizeButton = element(
-            withIdentifier: BrowserWindowControlIdentifiers.minimizeButton,
-            inSearchRoot: root
-        )
-        let zoomButton = element(
-            withIdentifier: BrowserWindowControlIdentifiers.zoomButton,
-            inSearchRoot: root
-        )
-
-        for (identifier, element) in [
-            (BrowserWindowControlIdentifiers.closeButton, closeButton),
-            (BrowserWindowControlIdentifiers.minimizeButton, minimizeButton),
-            (BrowserWindowControlIdentifiers.zoomButton, zoomButton),
-        ] {
-            XCTAssertTrue(
-                waitForTrafficLightElementToBeHiddenOrDisabled(element, timeout: 3),
-                "Browser traffic light \(identifier) should be hidden while collapsed sidebar overlay is closed. exists=\(element.exists) enabled=\(element.isEnabled) hittable=\(element.isHittable) frame=\(element.frame). Window frame: \(window.frame)",
-                file: file,
-                line: line
-            )
-        }
-    }
-
-    @MainActor
     func assertTrafficLightFramesAreAligned(
         closeButton: XCUIElement,
         minimizeButton: XCUIElement,
@@ -1788,6 +1781,139 @@ extension SumiLaunchSmokeUITestCase {
     }
 
     @MainActor
+    func assertNativeTrafficLightGlyphsAppear(
+        in buttons: [XCUIElement],
+        comparedTo unhoveredScreenshot: XCUIScreenshot,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let hoveredScreenshot = XCUIScreen.main.screenshot()
+        guard let unhoveredBitmap = NSBitmapImageRep(data: unhoveredScreenshot.pngRepresentation),
+              let hoveredBitmap = NSBitmapImageRep(data: hoveredScreenshot.pngRepresentation)
+        else {
+            XCTFail("Could not decode traffic-light hover screenshots.", file: file, line: line)
+            return
+        }
+
+        let pointSize = NSScreen.main?.frame.size ?? .zero
+        guard pointSize.width > 0, pointSize.height > 0 else {
+            XCTFail("Traffic-light hover screenshot has no point size.", file: file, line: line)
+            return
+        }
+
+        let scaleX = CGFloat(hoveredBitmap.pixelsWide) / pointSize.width
+        let scaleY = CGFloat(hoveredBitmap.pixelsHigh) / pointSize.height
+
+        for button in buttons {
+            let frame = button.frame.insetBy(
+                dx: button.frame.width * 0.28,
+                dy: button.frame.height * 0.28
+            )
+            let minX = max(0, Int(floor(frame.minX * scaleX)))
+            let maxX = min(hoveredBitmap.pixelsWide - 1, Int(ceil(frame.maxX * scaleX)))
+            let minY = max(
+                0,
+                Int(floor(frame.minY * scaleY))
+            )
+            let maxY = min(
+                hoveredBitmap.pixelsHigh - 1,
+                Int(ceil(frame.maxY * scaleY))
+            )
+
+            var changedPixelCount = 0
+            if minX <= maxX, minY <= maxY {
+                for y in minY...maxY {
+                    for x in minX...maxX {
+                        guard let before = unhoveredBitmap.colorAt(x: x, y: y)?
+                            .usingColorSpace(.deviceRGB),
+                              let after = hoveredBitmap.colorAt(x: x, y: y)?
+                            .usingColorSpace(.deviceRGB)
+                        else { continue }
+
+                        let largestChannelDelta = max(
+                            abs(before.redComponent - after.redComponent),
+                            abs(before.greenComponent - after.greenComponent),
+                            abs(before.blueComponent - after.blueComponent)
+                        )
+                        if largestChannelDelta > 0.08 {
+                            changedPixelCount += 1
+                        }
+                    }
+                }
+            }
+
+            XCTAssertGreaterThan(
+                changedPixelCount,
+                4,
+                "Hovering one native traffic light should reveal the glyph on every button. "
+                    + "id=\(button.identifier) frame=\(button.frame) "
+                    + "changedPixels=\(changedPixelCount)",
+                file: file,
+                line: line
+            )
+        }
+    }
+
+    @MainActor
+    func assertTrafficLightClusterIsNotDrawn(
+        in frames: [CGRect],
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let screenshot = XCUIScreen.main.screenshot()
+        guard let bitmap = NSBitmapImageRep(data: screenshot.pngRepresentation),
+              let pointSize = NSScreen.main?.frame.size,
+              pointSize.width > 0,
+              pointSize.height > 0
+        else {
+            XCTFail("Could not decode the hidden traffic-light screenshot.", file: file, line: line)
+            return
+        }
+
+        let scaleX = CGFloat(bitmap.pixelsWide) / pointSize.width
+        let scaleY = CGFloat(bitmap.pixelsHigh) / pointSize.height
+        var saturatedPixelCount = 0
+
+        for frame in frames {
+            let minX = max(0, Int(floor(frame.minX * scaleX)))
+            let maxX = min(bitmap.pixelsWide - 1, Int(ceil(frame.maxX * scaleX)))
+            let minY = max(0, Int(floor(frame.minY * scaleY)))
+            let maxY = min(bitmap.pixelsHigh - 1, Int(ceil(frame.maxY * scaleY)))
+
+            guard minX <= maxX, minY <= maxY else { continue }
+            for y in minY...maxY {
+                for x in minX...maxX {
+                    guard let color = bitmap.colorAt(x: x, y: y)?
+                        .usingColorSpace(.deviceRGB)
+                    else { continue }
+
+                    let maximum = max(
+                        color.redComponent,
+                        color.greenComponent,
+                        color.blueComponent
+                    )
+                    let minimum = min(
+                        color.redComponent,
+                        color.greenComponent,
+                        color.blueComponent
+                    )
+                    if maximum - minimum > 0.25 {
+                        saturatedPixelCount += 1
+                    }
+                }
+            }
+        }
+
+        XCTAssertLessThanOrEqual(
+            saturatedPixelCount,
+            4,
+            "A hidden collapsed sidebar must not leave a coloured placeholder after window refocus. saturatedPixels=\(saturatedPixelCount)",
+            file: file,
+            line: line
+        )
+    }
+
+    @MainActor
     func waitForElementToBecomeHittable(
         _ element: XCUIElement,
         timeout: TimeInterval
@@ -1846,28 +1972,6 @@ extension SumiLaunchSmokeUITestCase {
             && element.isEnabled
             && element.frame.width > 0
             && element.frame.height > 0
-    }
-
-    @MainActor
-    func waitForTrafficLightElementToBeHiddenOrDisabled(
-        _ element: XCUIElement,
-        timeout: TimeInterval
-    ) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if !element.exists
-                || !element.isEnabled
-                || element.frame.width <= 0
-                || element.frame.height <= 0 {
-                return true
-            }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-        }
-
-        return !element.exists
-            || !element.isEnabled
-            || element.frame.width <= 0
-            || element.frame.height <= 0
     }
 
     @MainActor

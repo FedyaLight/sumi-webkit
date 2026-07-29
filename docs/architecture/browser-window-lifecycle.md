@@ -28,9 +28,9 @@ native shell authority.
 - Moved standard buttons keep AppKit's native target/action. Programmatic
   closing uses `performClose:`. AppKit alone owns button action, enablement,
   localized accessibility labels, active-state dimming, and hover glyphs.
-  Sumi owns only custody, layout, visibility, and interaction hit testing.
-  Once `willClose` begins, the custodian stops moving live buttons back into
-  the titlebar being torn down.
+  The buttons never leave AppKit's titlebar hierarchy. Sumi owns only the
+  titlebar-container placement and visibility projection. Once `willClose`
+  begins, `BrowserWindowTrafficLightPlacement` stops enforcing that projection.
 - Reopening the app from the Dock lets AppKit reveal an existing visible or
   miniaturized window. A new normal window is created only when no browser
   windows remain.
@@ -47,6 +47,13 @@ native shell authority.
 - `BrowserWindowGeometryPolicy` is the only AppKit geometry/display-mode
   adapter. Runtime presentation and extension projection read its canonical
   mode precedence: miniaturized, fullscreen, zoomed, normal.
+- `BrowserWindowChromePresentation` is the only owner of Presented Sidebar
+  Layout Phase for docked and collapsed chrome. Native-button rendering,
+  placeholder travel, and display-frame handoff are projections of that phase;
+  callers provide only the real layout mutation.
+- `BrowserWindowTrafficLightPlacement` is an AppKit enforcement adapter, not a
+  second state owner. Placeholder snapshot cache and appearance observers are
+  demand-driven by the placeholder's own lifetime and disappear after handoff.
 - `WindowSessionPersistenceCoordinator` is the live persistence transaction.
   It builds the regular-window projection once, reuses it for the primary
   snapshot and archive, and cancels older coalesced writes that the transaction
@@ -60,7 +67,7 @@ native shell authority.
 | Scenario | Zen rule | Sumi owner |
 | --- | --- | --- |
 | `Cmd+N` | Clone shared browser/sidebar data, discard source geometry and selection | `BrowserWindowCommands` + `BrowserWindowGeometryPolicy` |
-| Close second window | Mark closing state before synchronized teardown; avoid reentrant close work | native standard-button action + `BrowserWindowBridge` + traffic-light custodian |
+| Close second window | Mark closing state before synchronized teardown; avoid reentrant close work | native standard-button action + `BrowserWindowBridge` + `BrowserWindowTrafficLightPlacement` |
 | Restore closed window | Keep the closed window's own geometry and session selection | window-session snapshot/archive |
 | Restart with multiple windows | Restore normal windows once; exclude private windows | `StartupWindowRestoreService` |
 | Private window | Empty, isolated, non-durable shell | incognito branch of `BrowserWindowShellService` |

@@ -44,6 +44,7 @@ struct CollapsedSidebarOverlayHost: View {
     var windowChromeSize: CGSize
     var sidebarDragState: SidebarDragState
     var presentationContext: SidebarPresentationContext
+    var motionMode: SidebarMotionPolicy.Mode
     var isHostRequested: Bool
 
     private var isRevealed: Bool {
@@ -57,14 +58,7 @@ struct CollapsedSidebarOverlayHost: View {
     }
 
     var body: some View {
-        let mode = SidebarMotionPolicy.currentMode(
-            reduceMotion: reduceMotion,
-            energySaverReducesMotion: sumiSettings.shouldReduceChromeMotion
-        )
-        let overlayUsesTravel = SidebarMotionPolicy.overlayUsesTravel(for: mode)
-        let collapsedShadowAnimationDuration = overlayUsesTravel
-            ? SidebarMotionPolicy.overlayAnimationDuration(for: mode)
-            : 0
+        let motion = SidebarMotionPolicy.overlayMotion(for: motionMode)
         if isHostRequested {
             ZStack {
                 SidebarColumnRepresentable(
@@ -97,7 +91,7 @@ struct CollapsedSidebarOverlayHost: View {
                     windowChromeSize: windowChromeSize,
                     sidebarDragState: sidebarDragState,
                     presentationContext: presentationContext,
-                    collapsedShadowAnimationDuration: collapsedShadowAnimationDuration
+                    collapsedShadowAnimationDuration: motion.shadowDuration
                 )
 
                 if isRevealed {
@@ -109,16 +103,15 @@ struct CollapsedSidebarOverlayHost: View {
             .frame(maxHeight: .infinity)
             .modifier(ZenCompactSidebarOffset(
                 hiddenOffset: hiddenOffset,
-                usesTravel: overlayUsesTravel,
+                usesTravel: motion.usesTravel,
                 revealProgress: isRevealed ? 1 : 0
             ))
-            .opacity(isRevealed || overlayUsesTravel ? 1 : 0)
+            .opacity(isRevealed || motion.usesTravel ? 1 : 0)
             .allowsHitTesting(isRevealed)
             .alwaysArrowCursor()
             .accessibilityHidden(!isRevealed)
         }
     }
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(KeyboardShortcutManager.self) private var keyboardShortcutManager
 }

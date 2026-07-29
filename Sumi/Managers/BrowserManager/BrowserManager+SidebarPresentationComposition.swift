@@ -127,8 +127,7 @@ extension BrowserManager {
         return HoverSidebarRuntime(
             browserRuntimeAvailable: { [runtimeConnection] in
                 runtimeConnection.current != nil
-            },
-            settings: { [weak self] in self?.sumiSettings }
+            }
         )
     }
 

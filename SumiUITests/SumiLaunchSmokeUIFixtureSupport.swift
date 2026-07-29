@@ -173,9 +173,47 @@ extension SumiLaunchSmokeUITestCase {
         )
     }
 
+    func prepareEmptyDockedSidebarPreferencesHome() throws -> URL {
+        let storeURL = try requiredSmokeStoreURL()
+        let fixture = try loadPersonalSidebarFixture()
+        let personalSpaceHex = try hexUUIDString(
+            fromAccessibilityUUID: fixture.personalSpaceID
+        )
+        try executeSQLite(
+            sql: """
+            DELETE FROM tabs;
+            DELETE FROM folders;
+            UPDATE tab_state
+            SET current_tab_id = NULL,
+                current_space_id = \(sqlBlob(personalSpaceHex)),
+                split_groups = X'5B5D';
+            """,
+            storeURL: storeURL
+        )
+
+        let snapshot: [String: Any] = [
+            "currentSpaceId": fixture.personalSpaceID,
+            "currentProfileId": try accessibilityUUIDString(fromHex: fixture.profileID),
+            "isShowingEmptyState": true,
+            "activeTabsBySpace": [],
+            "activeShortcutsBySpace": [],
+            "sidebarWidth": 250.0,
+            "savedSidebarWidth": 250.0,
+            "sidebarContentWidth": 234.0,
+            "isSidebarVisible": true,
+            "commandPaletteDraft": [
+                "text": "",
+                "navigateCurrentTab": false,
+            ],
+        ]
+        let snapshotData = try JSONSerialization.data(withJSONObject: snapshot, options: [])
+        return try preparePreferencesHome(windowSessionSnapshotData: snapshotData)
+    }
+
     func prepareSelectedRegularTabPreferencesHome(
         tabURLString: String,
         tabName: String,
+        isSidebarVisible: Bool = true,
         additionalPreferences: [String: Any] = [:]
     ) throws -> URL {
         let storeURL = try requiredSmokeStoreURL()
@@ -205,7 +243,7 @@ extension SumiLaunchSmokeUITestCase {
             "sidebarWidth": 250.0,
             "savedSidebarWidth": 250.0,
             "sidebarContentWidth": 234.0,
-            "isSidebarVisible": true,
+            "isSidebarVisible": isSidebarVisible,
             "commandPaletteDraft": [
                 "text": "",
                 "navigateCurrentTab": false,

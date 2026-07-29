@@ -69,6 +69,46 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
         assertNativeTrafficLightsHittable(in: app, window: window)
     }
 
+    func testDockedSidebarKeepsNativeTrafficLightsWhenNoTabsExist() throws {
+        let preferencesHome = try prepareEmptyDockedSidebarPreferencesHome()
+        let app = try launchApp(preferencesHomeURL: preferencesHome)
+        let window = app.windows.element(boundBy: 0)
+
+        XCTAssertTrue(window.waitForExistence(timeout: 5))
+        assertNativeTrafficLightsHittable(in: app, window: window)
+
+        XCUIApplication(bundleIdentifier: "com.apple.finder").activate()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        app.activate()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.4))
+
+        assertNativeTrafficLightsHittable(in: app, window: window)
+
+        let content = window.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.5))
+        for iteration in 0..<4 {
+            let collapseToggle = app.buttons["Toggle Sidebar"].firstMatch
+            XCTAssertTrue(
+                collapseToggle.waitForExistence(timeout: 3),
+                "Docked toggle is missing before cycle \(iteration)"
+            )
+            collapseToggle.click()
+            content.hover()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.8))
+
+            revealHoverSidebar(in: window)
+            let expandToggle = app.buttons["Toggle Sidebar"].firstMatch
+            XCTAssertTrue(
+                expandToggle.waitForExistence(timeout: 3),
+                "Collapsed toggle is missing during cycle \(iteration)"
+            )
+            expandToggle.click()
+            content.hover()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.8))
+
+            assertNativeTrafficLightsHittable(in: app, window: window)
+        }
+    }
+
     func testGreenTrafficLightHoverOpensCompactMenu() throws {
         let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
         let window = app.windows.element(boundBy: 0)
@@ -125,16 +165,28 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
             withIdentifier: BrowserWindowControlIdentifiers.closeButton,
             inSearchRoot: app
         )
+        let minimizeButton = element(
+            withIdentifier: BrowserWindowControlIdentifiers.minimizeButton,
+            inSearchRoot: app
+        )
         let zoomButton = element(
             withIdentifier: BrowserWindowControlIdentifiers.zoomButton,
             inSearchRoot: app
         )
+
+        window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).hover()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        let unhoveredScreenshot = XCUIScreen.main.screenshot()
 
         let closeFrame = closeButton.frame
         closeButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).hover()
         RunLoop.current.run(until: Date().addingTimeInterval(0.35))
         XCTAssertTrue(waitForTrafficLightElementToBeVisibleAndEnabled(closeButton, timeout: 2))
         XCTAssertEqual(closeButton.frame, closeFrame)
+        assertNativeTrafficLightGlyphsAppear(
+            in: [closeButton, minimizeButton, zoomButton],
+            comparedTo: unhoveredScreenshot
+        )
 
         let zoomFrame = zoomButton.frame
         zoomButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).hover()
@@ -166,20 +218,6 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
         assertNativeTrafficLightsHittable(in: app, window: window)
     }
 
-    func testCollapsedHoverSidebarWithdrawsTrafficLightsWhenOverlayCloses() throws {
-        _ = try loadPersonalSidebarFixture()
-        let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome(isSidebarVisible: false))
-        let window = app.windows.element(boundBy: 0)
-
-        XCTAssertTrue(window.waitForExistence(timeout: 5))
-        revealHoverSidebar(in: window)
-        assertNativeTrafficLightsHittable(in: app, window: window)
-
-        // Moving off the overlay closes it; the buttons ride it out and must stop responding.
-        window.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.6)).hover()
-        assertNativeTrafficLightsHidden(in: app, window: window)
-    }
-
     func testCollapsedHoverSidebarCanBeRevealedFromRestoredSession() throws {
         let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome(isSidebarVisible: false))
         let window = app.windows.element(boundBy: 0)
@@ -188,6 +226,70 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
 
         revealHoverSidebar(in: window)
         assertNativeTrafficLightsHittable(in: app, window: window)
+    }
+
+    func testCollapsedSidebarCarriesTrafficLightPlaceholderDuringReveal() throws {
+        let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
+        let window = app.windows.element(boundBy: 0)
+
+        XCTAssertTrue(window.waitForExistence(timeout: 5))
+
+        app.typeKey("t", modifierFlags: [.command])
+        XCTAssertTrue(
+            waitForCommandPalette(in: app, timeout: 10),
+            "URL Hub did not appear before opening example.com"
+        )
+        let input = element(withIdentifier: "command-palette-input", in: app)
+        XCTAssertTrue(input.isHittable, "URL Hub input is not hittable")
+        try pasteText("https://example.com", into: input, in: app)
+        app.typeKey(.return, modifierFlags: [])
+
+        let urlBar = app.staticTexts.matching(identifier: "sidebar-urlbar").firstMatch
+        let exampleDotComIsActive = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value CONTAINS[c] %@", "example.com"),
+            object: urlBar
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [exampleDotComIsActive], timeout: 20),
+            .completed,
+            "example.com must be the active page before the sidebar transition is exercised."
+        )
+
+        let trafficLightFrames = [
+            BrowserWindowControlIdentifiers.closeButton,
+            BrowserWindowControlIdentifiers.minimizeButton,
+            BrowserWindowControlIdentifiers.zoomButton,
+        ].map {
+            element(withIdentifier: $0, inSearchRoot: app).frame
+        }
+        let sidebarToggle = app.buttons["Toggle Sidebar"].firstMatch
+        XCTAssertTrue(sidebarToggle.waitForExistence(timeout: 3))
+        sidebarToggle.click()
+        window.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.5)).hover()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.8))
+
+        XCUIApplication(bundleIdentifier: "com.apple.finder").activate()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        app.activate()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.4))
+        assertTrafficLightClusterIsNotDrawn(in: trafficLightFrames)
+
+        let edge = window.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.2))
+        let content = window.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.5))
+        for _ in 0..<4 {
+            edge.withOffset(CGVector(dx: 2, dy: 0)).hover()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.08))
+            content.hover()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.12))
+        }
+        edge.withOffset(CGVector(dx: 2, dy: 0)).hover()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.8))
+
+        let closeButton = element(
+            withIdentifier: BrowserWindowControlIdentifiers.closeButton,
+            inSearchRoot: app
+        )
+        XCTAssertTrue(waitForTrafficLightElementToBeVisibleAndEnabled(closeButton, timeout: 2))
     }
 
     func testLaunchWithPersistedBrightThemeDoesNotRenderDominantBlackWindow() throws {

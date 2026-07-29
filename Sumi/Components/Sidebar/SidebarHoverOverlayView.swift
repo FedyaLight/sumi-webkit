@@ -4,118 +4,13 @@
 //
 //
 
-import AppKit
 import SwiftUI
-
-enum SidebarHoverOverlayTransientPinningPolicy {
-    static func shouldPinHoverSidebar(
-        transientWindowID: UUID?,
-        currentWindowID: UUID,
-        isSidebarVisible: Bool
-    ) -> Bool {
-        guard let transientWindowID else { return false }
-        return transientWindowID == currentWindowID && !isSidebarVisible
-    }
-}
-
-enum SidebarHoverOverlayDragPinningPolicy {
-    static func shouldPinHoverSidebar(
-        activeWindowID: UUID?,
-        currentWindowID: UUID,
-        isSidebarVisible: Bool,
-        isDragging: Bool,
-        isInternalDragSession: Bool
-    ) -> Bool {
-        activeWindowID == currentWindowID
-            && !isSidebarVisible
-            && isDragging
-            && isInternalDragSession
-    }
-}
-
-enum SidebarHoverOverlayRevealPolicy {
-    static func isOverlayRevealed(
-        isOverlayVisible: Bool,
-        transientUIPinsHoverSidebar: Bool,
-        sidebarDragPinsHoverSidebar: Bool
-    ) -> Bool {
-        isOverlayVisible
-            || transientUIPinsHoverSidebar
-            || sidebarDragPinsHoverSidebar
-    }
-}
-
-enum SidebarHoverOverlayHostMountPolicy {
-    static func shouldMountCollapsedHost(
-        isSidebarVisible: Bool,
-        isOverlayVisible: Bool,
-        isOverlayHostPrewarmed: Bool,
-        transientUIPinsHoverSidebar: Bool,
-        sidebarDragPinsHoverSidebar: Bool
-    ) -> Bool {
-        guard !isSidebarVisible else { return false }
-        return isOverlayHostPrewarmed
-            || SidebarHoverOverlayRevealPolicy.isOverlayRevealed(
-                isOverlayVisible: isOverlayVisible,
-                transientUIPinsHoverSidebar: transientUIPinsHoverSidebar,
-                sidebarDragPinsHoverSidebar: sidebarDragPinsHoverSidebar
-            )
-    }
-}
-
-enum SidebarHoverOverlayStartupEmptyStatePolicy {
-    static func shouldBootstrapVisible(
-        isStartupEmptyStateSyncPending: Bool,
-        isSidebarVisible: Bool,
-        isShowingEmptyState: Bool
-    ) -> Bool {
-        isStartupEmptyStateSyncPending
-            && !isSidebarVisible
-            && isShowingEmptyState
-    }
-
-    static func shouldAnimateEmptyStateSync(
-        isStartupEmptyStateSyncPending: Bool
-    ) -> Bool {
-        !isStartupEmptyStateSyncPending
-    }
-
-    static func effectiveOverlayVisible(
-        isStartupEmptyStateSyncPending: Bool,
-        isOverlayVisible: Bool,
-        startupEmptyStateBootstrapVisible: Bool
-    ) -> Bool {
-        // While startup is still pending, the only thing allowed to reveal the
-        // collapsed overlay is the empty-state bootstrap. Ignoring the manager's
-        // live visibility here guarantees the host is never mounted-then-revealed
-        // during launch (which would animate the reveal).
-        if isStartupEmptyStateSyncPending {
-            return startupEmptyStateBootstrapVisible
-        }
-        return isOverlayVisible
-    }
-
-    static func effectiveOverlayHostPrewarmed(
-        isStartupEmptyStateSyncPending: Bool,
-        isOverlayHostPrewarmed: Bool,
-        startupEmptyStateBootstrapVisible: Bool
-    ) -> Bool {
-        // During startup, suppress the prewarmed-hidden mount so the collapsed
-        // host stays unmounted until the empty-state bootstrap reveals it. That
-        // way it mounts fresh already at full reveal (no hidden→visible slide).
-        if isStartupEmptyStateSyncPending {
-            return startupEmptyStateBootstrapVisible
-        }
-        return isOverlayHostPrewarmed
-    }
-}
 
 enum SidebarHoverOverlayMetrics {
     static let cornerRadius: CGFloat = 12
     static let shadowOpacity: Float = 0.18
     static let shadowRadius: CGFloat = 8
-    static let shadowOffset = CGSize(width: 0, height: 0)
-    static let revealAnimationDuration: TimeInterval = HoverSidebarCompactMetrics.revealAnimationDuration
+    static let shadowOffset: CGSize = .zero
 }
 
 struct SidebarHoverOverlayView: View {
@@ -148,7 +43,7 @@ struct SidebarHoverOverlayView: View {
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(WindowRegistry.self) private var windowRegistry
     @Environment(\.sumiSettings) private var sumiSettings
-    @State private var isStartupEmptyStateSyncPending = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(
         resolvedThemeContext: ResolvedThemeContext,
@@ -202,71 +97,28 @@ struct SidebarHoverOverlayView: View {
 
     /// Keep the hover sidebar on-screen while any sidebar transient UI is alive in compact mode.
     private var transientUIPinsHoverSidebar: Bool {
-        SidebarHoverOverlayTransientPinningPolicy.shouldPinHoverSidebar(
-            transientWindowID: windowState.sidebarTransientSessionCoordinator.currentPresentationWindowID,
-            currentWindowID: windowState.id,
-            isSidebarVisible: windowState.isSidebarVisible
-        )
+        windowState.sidebarTransientSessionCoordinator.currentPresentationWindowID
+            == windowState.id
+            && !windowState.isSidebarVisible
     }
 
     private var sidebarDragPinsHoverSidebar: Bool {
-        SidebarHoverOverlayDragPinningPolicy.shouldPinHoverSidebar(
-            activeWindowID: windowRegistry.activeWindowId,
-            currentWindowID: windowState.id,
-            isSidebarVisible: windowState.isSidebarVisible,
-            isDragging: dragState.isDragging,
-            isInternalDragSession: dragState.isInternalDragSession
-        )
+        windowRegistry.activeWindowId == windowState.id
+            && !windowState.isSidebarVisible
+            && dragState.isDragging
+            && dragState.isInternalDragSession
     }
 
     private var emptyStateRequestsCollapsedSidebar: Bool {
         !windowState.isSidebarVisible && windowState.isShowingEmptyState
     }
 
-    private var startupEmptyStateBootstrapVisible: Bool {
-        SidebarHoverOverlayStartupEmptyStatePolicy.shouldBootstrapVisible(
-            isStartupEmptyStateSyncPending: isStartupEmptyStateSyncPending,
-            isSidebarVisible: windowState.isSidebarVisible,
-            isShowingEmptyState: windowState.isShowingEmptyState
-        )
-    }
-
-    private var effectiveOverlayVisible: Bool {
-        SidebarHoverOverlayStartupEmptyStatePolicy.effectiveOverlayVisible(
-            isStartupEmptyStateSyncPending: isStartupEmptyStateSyncPending,
-            isOverlayVisible: hoverManager.isOverlayVisible,
-            startupEmptyStateBootstrapVisible: startupEmptyStateBootstrapVisible
-        )
-    }
-
-    private var effectiveOverlayHostPrewarmed: Bool {
-        SidebarHoverOverlayStartupEmptyStatePolicy.effectiveOverlayHostPrewarmed(
-            isStartupEmptyStateSyncPending: isStartupEmptyStateSyncPending,
-            isOverlayHostPrewarmed: hoverManager.isOverlayHostPrewarmed,
-            startupEmptyStateBootstrapVisible: startupEmptyStateBootstrapVisible
-        )
-    }
-
     private var overlaySidebarRevealed: Bool {
-        SidebarHoverOverlayRevealPolicy.isOverlayRevealed(
-            isOverlayVisible: effectiveOverlayVisible,
-            transientUIPinsHoverSidebar: transientUIPinsHoverSidebar,
-            sidebarDragPinsHoverSidebar: sidebarDragPinsHoverSidebar
-        )
-    }
-
-    private var isCollapsedSidebar: Bool {
-        !windowState.isSidebarVisible
+        hoverManager.isOverlayVisible
     }
 
     private var shouldMountCollapsedSidebarHost: Bool {
-        SidebarHoverOverlayHostMountPolicy.shouldMountCollapsedHost(
-            isSidebarVisible: windowState.isSidebarVisible,
-            isOverlayVisible: effectiveOverlayVisible,
-            isOverlayHostPrewarmed: effectiveOverlayHostPrewarmed,
-            transientUIPinsHoverSidebar: transientUIPinsHoverSidebar,
-            sidebarDragPinsHoverSidebar: sidebarDragPinsHoverSidebar
-        )
+        !windowState.isSidebarVisible && hoverManager.isOverlayHostPrewarmed
     }
 
     private var pinnedInteractionRequestsHostRetention: Bool {
@@ -294,51 +146,39 @@ struct SidebarHoverOverlayView: View {
         )
     }
 
+    private var motionMode: SidebarMotionPolicy.Mode {
+        SidebarMotionPolicy.currentMode(
+            reduceMotion: reduceMotion,
+            energySaverReducesMotion: sumiSettings.shouldReduceChromeMotion
+        )
+    }
+
     var body: some View {
-        Group {
-            if isCollapsedSidebar {
-                ZStack(alignment: presentationContext.shellEdge.overlayAlignment) {
-                    // Full-window layout without hit-testing so points outside the edge strip and sidebar host
-                    // are not absorbed by an implicit full-screen hit target.
-                    Color.clear
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .allowsHitTesting(false)
+        ZStack(alignment: presentationContext.shellEdge.overlayAlignment) {
+            Color.clear
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .allowsHitTesting(false)
 
-                    Color.clear
-                        .frame(width: hoverManager.triggerWidth)
-                        .contentShape(Rectangle())
-                        .sidebarHover { isIn in
-                            if isIn && isCollapsedSidebar {
-                                hoverManager.requestPointerOverlayReveal(
-                                    animationDuration: SidebarHoverOverlayMetrics.revealAnimationDuration,
-                                    sidebarPosition: sumiSettings.sidebarPosition
-                                )
-                            }
-                            NSCursor.arrow.set()
-                        }
-
-                    collapsedOverlayHost
-                }
-                .frame(
-                    maxWidth: .infinity,
-                    maxHeight: .infinity,
-                    alignment: presentationContext.shellEdge.frameAlignment
-                )
-            }
+            collapsedOverlayHost
         }
+        .frame(
+            maxWidth: .infinity,
+            maxHeight: .infinity,
+            alignment: presentationContext.shellEdge.frameAlignment
+        )
         .onChange(of: presentationContext) { _, _ in
             dragState.requestGeometryRefresh()
         }
         .onAppear {
-            if emptyStateRequestsCollapsedSidebar {
-                syncEmptyStateOverlayForce(animated: false)
-            } else {
-                hoverManager.deferOverlayHostRetentionWhileCollapsed()
-            }
-            retainOverlayHostIfPinned()
-            completeStartupEmptyStateSyncIfResolved()
+            hoverManager.configureMotionMode(motionMode)
+            hoverManager.setStartupResolutionPending(
+                windowState.restorationState.isAwaitingInitialResolution
+            )
+            syncEmptyStateOverlayForce(animated: false)
+            syncPinnedInteraction()
         }
         .onDisappear {
+            hoverManager.setPinnedInteractionActive(false)
             hoverManager.releaseEmptyStateOverlayForce(
                 animated: false,
                 sidebarPosition: sumiSettings.sidebarPosition
@@ -346,18 +186,18 @@ struct SidebarHoverOverlayView: View {
         }
         .onChange(of: emptyStateRequestsCollapsedSidebar) { _, _ in
             syncEmptyStateOverlayForce(
-                animated: SidebarHoverOverlayStartupEmptyStatePolicy.shouldAnimateEmptyStateSync(
-                    isStartupEmptyStateSyncPending: isStartupEmptyStateSyncPending
-                )
+                animated: !windowState.restorationState.isAwaitingInitialResolution
             )
         }
-        .onChange(of: windowState.restorationState.isAwaitingInitialResolution) { _, _ in
-            completeStartupEmptyStateSyncIfResolved()
+        .onChange(of: windowState.restorationState.isAwaitingInitialResolution) { _, isPending in
+            hoverManager.setStartupResolutionPending(isPending)
+            syncEmptyStateOverlayForce(animated: false)
         }
-        .onChange(of: pinnedInteractionRequestsHostRetention) { _, isPinned in
-            if isPinned {
-                retainOverlayHostIfPinned()
-            }
+        .onChange(of: pinnedInteractionRequestsHostRetention) { _, _ in
+            syncPinnedInteraction()
+        }
+        .onChange(of: motionMode) { _, newMode in
+            hoverManager.configureMotionMode(newMode)
         }
     }
 
@@ -391,6 +231,7 @@ struct SidebarHoverOverlayView: View {
             windowChromeSize: windowChromeSize,
             sidebarDragState: dragState,
             presentationContext: presentationContext,
+            motionMode: motionMode,
             isHostRequested: shouldMountCollapsedSidebarHost
         )
         .id("collapsed-sidebar-overlay-host")
@@ -398,10 +239,10 @@ struct SidebarHoverOverlayView: View {
         .frame(maxHeight: .infinity)
     }
 
-    private func retainOverlayHostIfPinned() {
-        if pinnedInteractionRequestsHostRetention {
-            hoverManager.retainOverlayHostForPinnedInteraction()
-        }
+    private func syncPinnedInteraction() {
+        hoverManager.setPinnedInteractionActive(
+            pinnedInteractionRequestsHostRetention
+        )
     }
 
     private func syncEmptyStateOverlayForce(animated: Bool) {
@@ -416,17 +257,5 @@ struct SidebarHoverOverlayView: View {
                 sidebarPosition: sumiSettings.sidebarPosition
             )
         }
-    }
-
-    private func completeStartupEmptyStateSyncIfResolved() {
-        guard isStartupEmptyStateSyncPending,
-              !windowState.restorationState.isAwaitingInitialResolution
-        else { return }
-
-        if emptyStateRequestsCollapsedSidebar {
-            syncEmptyStateOverlayForce(animated: false)
-        }
-
-        isStartupEmptyStateSyncPending = false
     }
 }

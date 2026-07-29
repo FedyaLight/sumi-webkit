@@ -13,9 +13,8 @@ final class DockedSidebarLayoutStateTests: XCTestCase {
     func testAnimatedHideKeepsSidebarMountedAndSeedsProgressWhenStartingCollapsed() {
         var state = DockedSidebarLayoutState()
 
-        let generation = state.beginAnimatedHide()
+        state.beginAnimatedHide()
 
-        XCTAssertEqual(generation, 1)
         XCTAssertTrue(state.shouldRender)
         XCTAssertEqual(state.progress, 1)
 
@@ -27,22 +26,22 @@ final class DockedSidebarLayoutStateTests: XCTestCase {
 
     func testCurrentHideCompletionUnmountsOnlyWhileStillHidden() {
         var state = DockedSidebarLayoutState()
-        let generation = state.beginAnimatedHide()
+        state.beginAnimatedHide()
         state.hide()
 
-        state.completeAnimatedHide(generation: generation, isVisible: false)
+        state.completeAnimatedHide(isVisible: false)
 
         XCTAssertFalse(state.shouldRender)
     }
 
-    func testStaleHideCompletionDoesNotUnmountAfterShow() {
+    func testHideCompletionDoesNotUnmountAfterSidebarBecameVisible() {
         var state = DockedSidebarLayoutState()
-        let staleGeneration = state.beginAnimatedHide()
+        state.beginAnimatedHide()
         state.hide()
 
         state.beginShow()
         state.show()
-        state.completeAnimatedHide(generation: staleGeneration, isVisible: true)
+        state.completeAnimatedHide(isVisible: true)
 
         XCTAssertTrue(state.shouldRender)
         XCTAssertEqual(state.progress, 1)

@@ -13,11 +13,11 @@ final class HoverSidebarManagerTests: XCTestCase {
         manager.retainOverlayHostWhileCollapsed()
         XCTAssertEqual(manager.overlayHostLifecycleState, .retainedHidden)
 
-        manager.requestOverlayReveal(animationDuration: 0)
+        manager.requestOverlayReveal()
         await drainMainQueue()
         XCTAssertEqual(manager.overlayHostLifecycleState, .visible)
 
-        manager.setOverlayVisibility(false, animationDuration: 0)
+        manager.dismissOverlayForTransientChrome()
         XCTAssertEqual(manager.overlayHostLifecycleState, .retainedHidden)
 
         manager.releaseOverlayHostForMemoryPressure()
@@ -40,7 +40,7 @@ final class HoverSidebarManagerTests: XCTestCase {
         let manager = HoverSidebarManager()
 
         manager.forceOverlayVisibleForEmptyState(animated: false, sidebarPosition: .left)
-        manager.dismissOverlayForTransientChrome(animationDuration: 0)
+        manager.dismissOverlayForTransientChrome()
 
         XCTAssertEqual(manager.overlayHostLifecycleState, .visible)
 
@@ -54,12 +54,12 @@ final class HoverSidebarManagerTests: XCTestCase {
 
         manager.forceOverlayVisibleForEmptyState(animated: false, sidebarPosition: .left)
         manager.releaseEmptyStateOverlayForce(animated: false, sidebarPosition: .left)
-        manager.requestOverlayReveal(animationDuration: 0)
+        manager.requestOverlayReveal()
         await drainMainQueue()
 
         XCTAssertEqual(manager.overlayHostLifecycleState, .visible)
 
-        manager.dismissOverlayForTransientChrome(animationDuration: 0)
+        manager.dismissOverlayForTransientChrome()
 
         XCTAssertEqual(manager.overlayHostLifecycleState, .retainedHidden)
     }
@@ -119,6 +119,61 @@ final class HoverSidebarManagerTests: XCTestCase {
         XCTAssertEqual(manager.overshootSlack, 10)
         XCTAssertEqual(manager.keepOpenHysteresis, 0)
         XCTAssertEqual(manager.verticalSlack, 7)
+    }
+
+    func testStartupPendingDefersHiddenHostPrewarmUntilResolution() async {
+        let harness = makePointerRevealHarness {
+            CGPoint(x: 650, y: 300)
+        }
+        defer {
+            harness.windowRegistry.unregister(harness.windowState.id)
+        }
+
+        harness.manager.setStartupResolutionPending(true)
+        harness.manager.deferOverlayHostRetentionWhileCollapsed()
+        await drainMainQueue()
+        XCTAssertEqual(harness.manager.overlayHostLifecycleState, .unmounted)
+
+        harness.manager.setStartupResolutionPending(false)
+        await drainMainQueue()
+        await Task.yield()
+        XCTAssertEqual(harness.manager.overlayHostLifecycleState, .retainedHidden)
+    }
+
+    func testPinnedInteractionPublishesThroughManagerLifecycle() async {
+        let harness = makePointerRevealHarness {
+            CGPoint(x: 650, y: 300)
+        }
+        defer {
+            harness.windowRegistry.unregister(harness.windowState.id)
+        }
+
+        harness.manager.setPinnedInteractionActive(true)
+        harness.delayedActions.runNext()
+        XCTAssertEqual(harness.manager.overlayHostLifecycleState, .visible)
+
+        harness.manager.setPinnedInteractionActive(false)
+        harness.delayedActions.runNext()
+        XCTAssertEqual(harness.manager.overlayHostLifecycleState, .retainedHidden)
+    }
+
+    func testMouseEventUsesOneSampleBeforeDelayedIntentValidation() async {
+        var sampleCount = 0
+        let harness = makePointerRevealHarness {
+            sampleCount += 1
+            return CGPoint(x: 102, y: 300)
+        }
+        defer {
+            harness.windowRegistry.unregister(harness.windowState.id)
+        }
+
+        await drainMainQueue()
+        sampleCount = 0
+        harness.recorder.sendMouseMoved()
+        await drainMainQueue()
+
+        XCTAssertEqual(sampleCount, 1)
+        XCTAssertEqual(harness.delayedActions.scheduledDelays, [0])
     }
 
     func testVisibilityPolicyUsesLeftSidebarTriggerAndKeepOpenZones() {
@@ -206,7 +261,7 @@ final class HoverSidebarManagerTests: XCTestCase {
     func testOverlayRevealPrewarmsHostBeforePublishingVisibleState() async {
         let manager = HoverSidebarManager()
 
-        manager.requestOverlayReveal(animationDuration: 0)
+        manager.requestOverlayReveal()
 
         XCTAssertTrue(manager.isOverlayHostPrewarmed)
         XCTAssertFalse(manager.isOverlayVisible)
@@ -220,9 +275,9 @@ final class HoverSidebarManagerTests: XCTestCase {
     func testOverlayHideKeepsPrewarmedHostForCollapsedReuse() async {
         let manager = HoverSidebarManager()
 
-        manager.requestOverlayReveal(animationDuration: 0)
+        manager.requestOverlayReveal()
         await drainMainQueue()
-        manager.setOverlayVisibility(false, animationDuration: 0)
+        manager.dismissOverlayForTransientChrome()
 
         XCTAssertFalse(manager.isOverlayVisible)
         XCTAssertTrue(manager.isOverlayHostPrewarmed)
@@ -252,7 +307,7 @@ final class HoverSidebarManagerTests: XCTestCase {
         otherWindow.isSidebarVisible = false
 
         manager.windowRegistry = windowRegistry
-        manager.attach(runtime: BrowserHoverSidebarRuntimeFactory.runtime(for: browserManager), windowState: hostedWindow)
+        manager.attach(runtime: makeHoverSidebarRuntime(for: browserManager), windowState: hostedWindow)
 
         windowRegistry.register(hostedWindow)
         windowRegistry.register(otherWindow)
@@ -293,7 +348,7 @@ final class HoverSidebarManagerTests: XCTestCase {
         hostedWindow.isSidebarVisible = false
 
         manager.windowRegistry = windowRegistry
-        manager.attach(runtime: BrowserHoverSidebarRuntimeFactory.runtime(for: browserManager), windowState: hostedWindow)
+        manager.attach(runtime: makeHoverSidebarRuntime(for: browserManager), windowState: hostedWindow)
 
         // Mirror startup: the window is registered but the registry has not promoted
         // any window to active yet (`activeWindowId == nil`).
@@ -340,7 +395,7 @@ final class HoverSidebarManagerTests: XCTestCase {
         otherWindow.isSidebarVisible = false
 
         manager.windowRegistry = windowRegistry
-        manager.attach(runtime: BrowserHoverSidebarRuntimeFactory.runtime(for: browserManager), windowState: hostedWindow)
+        manager.attach(runtime: makeHoverSidebarRuntime(for: browserManager), windowState: hostedWindow)
 
         windowRegistry.register(hostedWindow)
         windowRegistry.register(otherWindow)
@@ -363,24 +418,10 @@ final class HoverSidebarManagerTests: XCTestCase {
         XCTAssertTrue(manager.isOverlayHostPrewarmed)
     }
 
-    func testPinnedInteractionRetainsHost() async {
-        let manager = HoverSidebarManager()
-
-        manager.requestOverlayReveal(animationDuration: 0)
-        await drainMainQueue()
-        manager.setOverlayVisibility(false, animationDuration: 0)
-        await drainMainQueue()
-
-        manager.retainOverlayHostForPinnedInteraction()
-
-        XCTAssertFalse(manager.isOverlayVisible)
-        XCTAssertTrue(manager.isOverlayHostPrewarmed)
-    }
-
     func testMemoryPressureReleaseDropsPrewarmedHost() async {
         let manager = HoverSidebarManager()
 
-        manager.requestOverlayReveal(animationDuration: 0)
+        manager.requestOverlayReveal()
         await drainMainQueue()
 
         XCTAssertTrue(manager.isOverlayVisible)
@@ -395,8 +436,8 @@ final class HoverSidebarManagerTests: XCTestCase {
     func testOverlayHideCancelsPendingRevealBeforeVisibleStatePublishes() async {
         let manager = HoverSidebarManager()
 
-        manager.requestOverlayReveal(animationDuration: 0)
-        manager.setOverlayVisibility(false, animationDuration: 0)
+        manager.requestOverlayReveal()
+        manager.dismissOverlayForTransientChrome()
 
         await drainMainQueue()
 
@@ -411,7 +452,7 @@ final class HoverSidebarManagerTests: XCTestCase {
             harness.windowRegistry.unregister(harness.windowState.id)
         }
 
-        harness.manager.requestPointerOverlayReveal(animationDuration: 0)
+        harness.manager.requestPointerOverlayReveal()
 
         XCTAssertTrue(harness.manager.isOverlayHostPrewarmed)
         XCTAssertFalse(harness.manager.isOverlayVisible)
@@ -431,7 +472,7 @@ final class HoverSidebarManagerTests: XCTestCase {
             harness.windowRegistry.unregister(harness.windowState.id)
         }
 
-        harness.manager.requestPointerOverlayReveal(animationDuration: 0)
+        harness.manager.requestPointerOverlayReveal()
 
         mouse = CGPoint(x: 180, y: 300)
         XCTAssertEqual(harness.delayedActions.scheduledDelays, [0])
@@ -448,11 +489,8 @@ final class HoverSidebarManagerTests: XCTestCase {
             harness.windowRegistry.unregister(harness.windowState.id)
         }
 
-        harness.manager.sidebarPosition = .left
-        harness.manager.requestPointerOverlayReveal(
-            animationDuration: 0,
-            sidebarPosition: .right
-        )
+        harness.manager.sidebarPosition = .right
+        harness.manager.requestPointerOverlayReveal()
 
         mouse = CGPoint(x: 820, y: 300)
         XCTAssertEqual(harness.delayedActions.scheduledDelays, [0])
@@ -485,7 +523,7 @@ final class HoverSidebarManagerTests: XCTestCase {
         windowState.isSidebarVisible = false
 
         manager.windowRegistry = windowRegistry
-        manager.attach(runtime: BrowserHoverSidebarRuntimeFactory.runtime(for: browserManager), windowState: windowState)
+        manager.attach(runtime: makeHoverSidebarRuntime(for: browserManager), windowState: windowState)
 
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
@@ -524,7 +562,7 @@ final class HoverSidebarManagerTests: XCTestCase {
         otherWindow.isSidebarVisible = false
 
         manager.windowRegistry = windowRegistry
-        manager.attach(runtime: BrowserHoverSidebarRuntimeFactory.runtime(for: browserManager), windowState: hostedWindow)
+        manager.attach(runtime: makeHoverSidebarRuntime(for: browserManager), windowState: hostedWindow)
 
         windowRegistry.register(hostedWindow)
         windowRegistry.register(otherWindow)
@@ -536,6 +574,63 @@ final class HoverSidebarManagerTests: XCTestCase {
         XCTAssertTrue(recorder.localMasks.isEmpty)
         XCTAssertEqual(recorder.removedMonitorCount, 0)
     }
+
+    func testLosingFocusSettlesAnAlreadyHiddenCollapsedSidebarTrip() async {
+        let harness = makePointerRevealHarness {
+            .zero
+        }
+        let presentation = harness.windowState.chromePresentation
+        harness.manager.requestOverlayReveal()
+        harness.delayedActions.runNext()
+        XCTAssertTrue(harness.manager.isOverlayVisible)
+
+        let otherWindow = BrowserWindowState()
+        harness.browserManager.tabResidenceAuthority.establishResidenceSession(on: otherWindow)
+        harness.windowRegistry.register(otherWindow)
+        harness.windowRegistry.setActive(otherWindow)
+
+        harness.manager.refreshMonitoring()
+        await drainMainQueue()
+
+        XCTAssertEqual(presentation.trafficLights.rendering, .hidden)
+    }
+
+    func testRepeatedMouseMovementDuringRevealCannotLoseTrafficLightSettlement() async throws {
+        var mouse = CGPoint(x: 102, y: 300)
+        let harness = makePointerRevealHarness {
+            mouse
+        }
+        defer {
+            harness.windowRegistry.unregister(harness.windowState.id)
+        }
+        let presentation = harness.windowState.chromePresentation
+
+        harness.manager.requestPointerOverlayReveal()
+        harness.delayedActions.runNext()
+
+        XCTAssertTrue(harness.manager.isOverlayVisible)
+        XCTAssertEqual(presentation.trafficLights.rendering, .travelling)
+
+        mouse = CGPoint(x: 180, y: 300)
+        harness.recorder.sendMouseMoved()
+        await drainMainQueue()
+        try await Task.sleep(for: .milliseconds(100))
+
+        XCTAssertEqual(
+            presentation.sidebarLayoutPhase,
+            .settled(surface: .collapsed, visibility: .visible),
+            "Pointer intent must not invalidate settlement of the active visual motion"
+        )
+        XCTAssertEqual(presentation.placement.displayFrameRequest?.frameCount, 2)
+
+        let confirmationID = try XCTUnwrap(presentation.placement.displayFrameRequest?.id)
+        presentation.displayFramesDidElapse(requestID: confirmationID)
+        XCTAssertEqual(presentation.trafficLights.rendering, .handoff)
+
+        let retirementID = try XCTUnwrap(presentation.placement.displayFrameRequest?.id)
+        presentation.displayFramesDidElapse(requestID: retirementID)
+        XCTAssertEqual(presentation.trafficLights.rendering, .chrome)
+    }
 }
 
 @MainActor
@@ -545,6 +640,17 @@ private func drainMainQueue() async {
             continuation.resume()
         }
     }
+}
+
+@MainActor
+private func makeHoverSidebarRuntime(
+    for browserManager: BrowserManager
+) -> HoverSidebarRuntime {
+    HoverSidebarRuntime(
+        browserRuntimeAvailable: { [weak browserManager] in
+            browserManager != nil
+        }
+    )
 }
 
 @MainActor
@@ -584,7 +690,7 @@ private func makePointerRevealHarness(
     windowState.isSidebarVisible = false
 
     manager.windowRegistry = windowRegistry
-    manager.attach(runtime: BrowserHoverSidebarRuntimeFactory.runtime(for: browserManager), windowState: windowState)
+    manager.attach(runtime: makeHoverSidebarRuntime(for: browserManager), windowState: windowState)
 
     windowRegistry.register(windowState)
     windowRegistry.setActive(windowState)
@@ -605,16 +711,38 @@ private func makePointerRevealHarness(
 private final class EventMonitorRecorder {
     private(set) var localMasks: [NSEvent.EventTypeMask] = []
     private(set) var removedMonitorCount = 0
+    private var localHandlers: [(NSEvent) -> NSEvent?] = []
 
     var client: HoverSidebarEventMonitorClient {
         HoverSidebarEventMonitorClient(
-            addLocalMonitor: { [weak self] mask, _ in
+            addLocalMonitor: { [weak self] mask, handler in
                 self?.localMasks.append(mask)
+                self?.localHandlers.append(handler)
                 return NSObject()
             },
             removeMonitor: { [weak self] _ in
                 self?.removedMonitorCount += 1
             }
         )
+    }
+
+    func sendMouseMoved() {
+        guard let event = NSEvent.mouseEvent(
+            with: .mouseMoved,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 0,
+            pressure: 0
+        ) else {
+            XCTFail("Could not create mouse-moved event")
+            return
+        }
+        for handler in localHandlers {
+            _ = handler(event)
+        }
     }
 }

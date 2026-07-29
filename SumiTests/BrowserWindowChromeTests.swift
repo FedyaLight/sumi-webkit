@@ -367,13 +367,10 @@ final class BrowserWindowChromeTests: XCTestCase {
         assertNativeBrowserControlsHidden(window)
     }
 
-    func testNativePerformCloseWorksWhileStandardButtonIsHostedInBrowserChrome() {
+    func testNativePerformCloseWorksWhileStandardButtonIsPlacedInBrowserChrome() {
         let window = WindowChromeTestSupport.makeBrowserWindow()
-        let host = makeTrafficLightHost(in: window)
-        window.browserTrafficLightCustodian.attach(
-            host: host,
-            presentation: .interactive
-        )
+        let titlebarSuperview = window.standardWindowButton(.closeButton)?.superview
+        placeTrafficLightsInChrome(of: window)
         let willClose = expectation(description: "Browser chrome close posts will-close notification.")
         let observer = NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification,
@@ -386,20 +383,18 @@ final class BrowserWindowChromeTests: XCTestCase {
 
         XCTAssertIdentical(
             window.standardWindowButton(.closeButton)?.superview,
-            host
+            titlebarSuperview,
+            "Chrome placement translates the button; it must never leave the titlebar."
         )
         window.performClose(nil)
 
         wait(for: [willClose], timeout: 0.2)
     }
 
-    func testNativePerformCloseRespectsDelegateWhileStandardButtonIsHostedInBrowserChrome() {
+    func testNativePerformCloseRespectsDelegateWhileStandardButtonIsPlacedInBrowserChrome() {
         let window = WindowChromeTestSupport.makeBrowserWindow()
-        let host = makeTrafficLightHost(in: window)
-        window.browserTrafficLightCustodian.attach(
-            host: host,
-            presentation: .interactive
-        )
+        let titlebarSuperview = window.standardWindowButton(.closeButton)?.superview
+        placeTrafficLightsInChrome(of: window)
         let delegate = WindowShouldCloseDelegate(shouldClose: false)
         let willClose = expectation(description: "Browser chrome close should not post will-close notification.")
         willClose.isInverted = true
@@ -416,7 +411,8 @@ final class BrowserWindowChromeTests: XCTestCase {
 
         XCTAssertIdentical(
             window.standardWindowButton(.closeButton)?.superview,
-            host
+            titlebarSuperview,
+            "Chrome placement translates the button; it must never leave the titlebar."
         )
         window.performClose(nil)
 
@@ -424,17 +420,10 @@ final class BrowserWindowChromeTests: XCTestCase {
         wait(for: [willClose], timeout: 0.1)
     }
 
-    private func makeTrafficLightHost(in window: NSWindow) -> NSView {
-        let host = NSView(
-            frame: NSRect(
-                x: 0,
-                y: 0,
-                width: BrowserWindowTrafficLightMetrics.sidebarReservedWidth,
-                height: BrowserWindowTrafficLightMetrics.clusterHeight
-            )
+    private func placeTrafficLightsInChrome(of window: NSWindow) {
+        window.browserTrafficLightPlacement.apply(
+            rendering: .chrome
         )
-        window.contentView?.addSubview(host)
-        return host
     }
 
     func testContentViewCanBeConstructedWithoutLifecycleForwarding() {
@@ -597,21 +586,35 @@ final class BrowserWindowChromeTests: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
+        var titlebarView: NSView?
+        var titlebarContainer: NSView?
         for type in WindowChromeTestSupport.standardButtonTypes {
             guard let button = window.standardWindowButton(type) else {
                 XCTFail("Expected standard window button for \(type).", file: file, line: line)
                 return
             }
 
-            XCTAssertTrue(button.isHidden, file: file, line: line)
-            XCTAssertEqual(button.alphaValue, 0, file: file, line: line)
+            titlebarView = titlebarView ?? button.superview
+            titlebarContainer = titlebarContainer ?? button.superview?.superview
+            XCTAssertFalse(
+                button.isHidden,
+                "Visibility must not be implemented again on each child",
+                file: file,
+                line: line
+            )
+            XCTAssertEqual(button.alphaValue, 1, file: file, line: line)
             XCTAssertFalse(button.isTransparent, file: file, line: line)
-            XCTAssertFalse(button.isEnabled, file: file, line: line)
-            XCTAssertFalse(button.isAccessibilityElement(), file: file, line: line)
             XCTAssertTrue(button.isAccessibilityHidden(), file: file, line: line)
             XCTAssertTrue(button.identifier?.rawValue.isEmpty ?? true, file: file, line: line)
             XCTAssertTrue(button.accessibilityIdentifier().isEmpty, file: file, line: line)
         }
+        XCTAssertTrue(titlebarView?.isHidden == true, file: file, line: line)
+        XCTAssertFalse(
+            titlebarContainer?.isHidden ?? true,
+            "The AppKit-owned titlebar container must remain in its native lifecycle",
+            file: file,
+            line: line
+        )
     }
 
     private func button(

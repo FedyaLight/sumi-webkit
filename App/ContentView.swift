@@ -75,6 +75,14 @@ struct ContentView: View {
         )
             .environment(windowState)
             .background(BrowserWindowBridge(windowState: windowState, windowRegistry: windowRegistry))
+            .background(
+                BrowserWindowTrafficLightPlacementBridge(
+                    state: windowState.chromePresentation.placement,
+                    displayFramesDidElapse: {
+                        windowState.chromePresentation.displayFramesDidElapse(requestID: $0)
+                    }
+                )
+            )
             .frame(
                 minWidth: SumiBrowserWindowShellConfiguration.minimumContentSize.width,
                 minHeight: SumiBrowserWindowShellConfiguration.minimumContentSize.height

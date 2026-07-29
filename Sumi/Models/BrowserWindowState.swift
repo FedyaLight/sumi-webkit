@@ -294,6 +294,9 @@ class BrowserWindowState {
     /// Whether the sidebar is visible in this window
     var isSidebarVisible: Bool = true
 
+    /// Window-local authority for Presented Sidebar Layout phase and native chrome presentation.
+    let chromePresentation = BrowserWindowChromePresentation()
+
     /// Preserved text draft for the command palette.
     var commandPaletteDraftText: String = ""
 

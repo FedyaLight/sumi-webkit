@@ -110,6 +110,10 @@ _Avoid_: Recomputed drop target, approximate hover slot
 The current window-local geometry of Sidebar Visual Items as they are actually drawn, including transient positions during an animation. Rendering, hit testing, and the visible gap for Presented Drop Intent observe this same layout.
 _Avoid_: Target sidebar geometry, reconstructed drag frames
 
+**Presented Sidebar Layout Phase**:
+The window-local statement that Presented Sidebar Layout is moving toward a visible or hidden position, or has settled there. A requested target is not settled; only completion of that same uninterrupted presentation makes it settled. Transitional stand-ins and native window controls derive their visibility from this phase.
+_Avoid_: Nominal-duration settlement, pointer-intent generation, independently reconstructed chrome state
+
 **Drag Presentation**:
 The target-adaptive appearance of one Sidebar Visual Item while it is being moved. It preserves item identity while matching the row, folder, or Essentials surface of the current Presented Drop Intent.
 _Avoid_: Drag snapshot copy, generic ghost
