@@ -200,7 +200,7 @@ final class SidebarDropProjectionTests: XCTestCase {
                 SidebarEssentialVisualItem.pin
             ),
             width: 155,
-            dragState: dragState
+            dragPresentation: dragState.essentialsPresentation.frame
         )
 
         XCTAssertEqual(layout.visibleItems.compactMap { $0?.id }, [second.id, third.id])
@@ -237,7 +237,7 @@ final class SidebarDropProjectionTests: XCTestCase {
         let layout = SidebarEssentialsProjectionPolicy.make(
             items: [],
             width: 155,
-            dragState: dragState
+            dragPresentation: dragState.essentialsPresentation.frame
         )
 
         XCTAssertTrue(layout.canAcceptDrop)

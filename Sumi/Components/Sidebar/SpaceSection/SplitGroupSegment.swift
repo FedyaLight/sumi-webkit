@@ -17,6 +17,8 @@ struct SplitGroupSegment: View {
     let memberAction: SplitGroupSidebarMemberAction?
     let isRowHovered: Bool
     let isAppKitInteractionEnabled: Bool
+    let pressSourceID: String
+    let faviconPartition: SumiFaviconPartition
     let faviconImageReader: any BrowserFaviconImageReading
     let dragSourceConfiguration: SidebarDragSourceConfiguration?
     let dragPreviewSourceGeometry: SidebarDragPreviewSourceGeometry?
@@ -56,7 +58,7 @@ struct SplitGroupSegment: View {
                 storedFaviconLoader.invalidateIfNeeded(
                     for: notification,
                     launchURL: pin.launchURL,
-                    partition: faviconPartition(for: pin)
+                    partition: faviconPartition
                 )
             }
     }
@@ -82,7 +84,6 @@ struct SplitGroupSegment: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(Rectangle())
             .onTapGesture(perform: onActivate)
-            .sidebarZenPressEffect(sourceID: rowSourceID, kind: .split)
             .sidebarAppKitContextMenu(
                 isInteractionEnabled: (item.tab != nil || dragSourceConfiguration != nil) && isAppKitInteractionEnabled,
                 dragSource: resolvedDragSourceConfiguration,
@@ -90,7 +91,7 @@ struct SplitGroupSegment: View {
                     trailingActionExclusionZones,
                 pageActivation: onActivate,
                 onMiddleClick: onMiddleClick,
-                sourceID: rowSourceID,
+                sourceID: pressSourceID,
                 entries: contextMenuEntries
             )
 
@@ -174,6 +175,7 @@ struct SplitGroupSegment: View {
                 item: item,
                 liveTab: liveTab,
                 loadedStoredFavicon: loadedStoredFavicon,
+                faviconPartition: faviconPartition,
                 faviconImageReader: faviconImageReader
             )
         } else {
@@ -185,6 +187,7 @@ struct SplitGroupSegment: View {
         SplitGroupMemberIconResolver.resolve(
             item: item,
             loadedStoredFavicon: loadedStoredFavicon,
+            faviconPartition: faviconPartition,
             imageReader: faviconImageReader
         )
     }
@@ -193,7 +196,7 @@ struct SplitGroupSegment: View {
         item.pin.flatMap {
             storedFaviconLoader.image(
                 for: $0.launchURL,
-                partition: faviconPartition(for: $0)
+                partition: faviconPartition
             )
         }
     }
@@ -202,7 +205,7 @@ struct SplitGroupSegment: View {
         guard let pin = item.pin else { return nil }
         return storedFaviconLoader.loadKey(
             launchURL: pin.launchURL,
-            partition: faviconPartition(for: pin),
+            partition: faviconPartition,
             isEnabled: pin.iconAsset == nil,
             disabledID: pin.id.uuidString
         )
@@ -213,14 +216,10 @@ struct SplitGroupSegment: View {
         guard let pin = item.pin, pin.iconAsset == nil else { return }
         await storedFaviconLoader.load(
             launchURL: pin.launchURL,
-            partition: faviconPartition(for: pin),
+            partition: faviconPartition,
             imageReader: faviconImageReader,
             isCurrentLaunchURL: { item.pin?.launchURL == $0 }
         )
-    }
-
-    private func faviconPartition(for pin: ShortcutPin) -> SumiFaviconPartition {
-        .regular(pin.executionProfileId ?? pin.profileId)
     }
 
     private var resolvedDragSourceConfiguration: SidebarDragSourceConfiguration? {
@@ -251,10 +250,6 @@ struct SplitGroupSegment: View {
         return [.trailingStrip(trailingActionExclusionWidth)]
     }
 
-    private var rowSourceID: String {
-        "space-split-member-\(item.stableIDDescription)"
-    }
-
     @Environment(\.chromeThemeTokens) private var scopedChromeTokens
 
     private var tokens: ChromeThemeTokens {
@@ -266,6 +261,7 @@ private struct SplitGroupLiveMemberIcon: View {
     let item: SplitGroupSidebarItem
     @ObservedObject var liveTab: Tab
     let loadedStoredFavicon: Image?
+    let faviconPartition: SumiFaviconPartition
     let faviconImageReader: any BrowserFaviconImageReading
 
     var body: some View {
@@ -273,6 +269,7 @@ private struct SplitGroupLiveMemberIcon: View {
             presentation: SplitGroupMemberIconResolver.resolve(
                 item: item,
                 loadedStoredFavicon: loadedStoredFavicon,
+                faviconPartition: faviconPartition,
                 imageReader: faviconImageReader
             )
         )

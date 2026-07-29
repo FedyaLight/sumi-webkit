@@ -11,6 +11,7 @@ final class SidebarVisualSceneProjectionTests: XCTestCase {
         let window = BrowserWindowState()
         let projection = SidebarVisualSceneProjection(
             inventory: .ephemeral(spaceID: UUID(), regularTabs: [tab]),
+            launcherRuntime: .empty,
             selection: makeSelection(browser: browser),
             selectionSnapshot: SidebarWindowSelectionSnapshot(
                 shortcut: ShortcutSelectionSnapshot(currentTabID: tab.id)
@@ -38,6 +39,7 @@ final class SidebarVisualSceneProjectionTests: XCTestCase {
                 regularTabs: members,
                 splitGroups: [group]
             ),
+            launcherRuntime: .empty,
             selection: makeSelection(browser: browser),
             selectionSnapshot: SidebarWindowSelectionSnapshot(
                 shortcut: ShortcutSelectionSnapshot(currentTabID: members[1].id)
@@ -54,9 +56,15 @@ final class SidebarVisualSceneProjectionTests: XCTestCase {
     func testSelectedShortcutSplitMemberProjectsToWholeGroupRow() throws {
         let fixture = try PublicationFixture(pinCount: 2)
         let spaceID = try XCTUnwrap(fixture.window.currentSpaceId)
+        let inventory = makeInventory(browser: fixture.browser, spaceID: spaceID)
+        let selection = makeSelection(browser: fixture.browser)
         let projection = SidebarVisualSceneProjection(
-            inventory: makeInventory(browser: fixture.browser, spaceID: spaceID),
-            selection: makeSelection(browser: fixture.browser),
+            inventory: inventory,
+            launcherRuntime: selection.launcherRuntimeSnapshot(
+                pinIDs: Set(inventory.pinsByID.keys),
+                in: fixture.window
+            ),
+            selection: selection,
             selectionSnapshot: SidebarWindowSelectionSnapshot(
                 shortcut: ShortcutSelectionSnapshot(
                     currentShortcutPinID: fixture.pins[1].id
@@ -146,6 +154,10 @@ final class SidebarVisualSceneProjectionTests: XCTestCase {
 
         let before = SidebarVisualSceneProjection(
             inventory: inventory,
+            launcherRuntime: selection.launcherRuntimeSnapshot(
+                pinIDs: Set(inventory.pinsByID.keys),
+                in: fixture.window
+            ),
             selection: selection,
             selectionSnapshot: SidebarWindowSelectionSnapshot(
                 windowState: fixture.window
@@ -165,6 +177,10 @@ final class SidebarVisualSceneProjectionTests: XCTestCase {
 
         let after = SidebarVisualSceneProjection(
             inventory: inventory,
+            launcherRuntime: selection.launcherRuntimeSnapshot(
+                pinIDs: Set(inventory.pinsByID.keys),
+                in: fixture.window
+            ),
             selection: selection,
             selectionSnapshot: SidebarWindowSelectionSnapshot(
                 windowState: fixture.window
@@ -235,9 +251,14 @@ final class SidebarVisualSceneProjectionTests: XCTestCase {
         ))
         XCTAssertTrue(browser.splitGroupMutations.insert(group, persist: false))
         let inventory = makeInventory(browser: browser, spaceID: space.id)
+        let selection = makeSelection(browser: browser)
         let items = SidebarVisualSceneProjection(
             inventory: inventory,
-            selection: makeSelection(browser: browser),
+            launcherRuntime: selection.launcherRuntimeSnapshot(
+                pinIDs: Set(inventory.pinsByID.keys),
+                in: window
+            ),
+            selection: selection,
             selectionSnapshot: SidebarWindowSelectionSnapshot(windowState: window),
             windowState: window
         ).launcherItems(inventory.descendantItems(for: folder.id))

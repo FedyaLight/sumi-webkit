@@ -4,6 +4,7 @@ import SwiftUI
 struct EssentialSplitGroupTile: View {
     let group: SplitGroup
     let pinsByID: [UUID: ShortcutPin]
+    let launcherRuntime: SidebarLauncherRuntimeSnapshot
     let selection: SidebarWindowSelectionQuery
     let selectionSnapshot: SidebarWindowSelectionSnapshot
     let faviconImageReader: any BrowserFaviconImageReading
@@ -26,7 +27,7 @@ struct EssentialSplitGroupTile: View {
     @State private var backdropLoader = SidebarEssentialBackdropLoader()
 
     var body: some View {
-        Group {
+        ZStack {
             if let iconAsset = group.iconAsset,
                let activationMember = preferredActivationMember {
                 groupIconTile(
@@ -37,6 +38,10 @@ struct EssentialSplitGroupTile: View {
                 memberCompositionTile
             }
         }
+        .sidebarZenPressEffect(
+            sourceIDs: pressSourceIDs,
+            kind: .split
+        )
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("essential-split-group-\(group.id.uuidString)")
         .task(id: accentLoadKey) {
@@ -140,7 +145,7 @@ struct EssentialSplitGroupTile: View {
                                 },
                                 onMiddleClick: supportsUnload
                                     ? onUnloadGroup : nil,
-                                sourceID: "essential-split-member-\(member.persistentID.uuidString)",
+                                sourceID: memberPressSourceID(member),
                                 entries: contextMenuEntries
                             )
                             .accessibilityIdentifier(
@@ -177,9 +182,26 @@ struct EssentialSplitGroupTile: View {
             ),
             pageActivation: { onActivateMember(activationMember.id) },
             onMiddleClick: supportsUnload ? onUnloadGroup : nil,
-            sourceID: "essential-split-group-icon-\(group.id.uuidString)",
+            sourceID: groupIconPressSourceID,
             entries: contextMenuEntries
         )
+    }
+
+    private var pressSourceIDs: [String] {
+        if group.iconAsset != nil, preferredActivationMember != nil {
+            return [groupIconPressSourceID]
+        }
+        return memberVisuals.map(memberPressSourceID)
+    }
+
+    private var groupIconPressSourceID: String {
+        "essential-split-group-icon-\(group.id.uuidString)"
+    }
+
+    private func memberPressSourceID(
+        _ member: EssentialSplitMemberVisual
+    ) -> String {
+        "essential-split-member-\(member.persistentID.uuidString)"
     }
 
     private var preferredActivationMember: EssentialSplitMemberVisual? {
@@ -196,7 +218,7 @@ struct EssentialSplitGroupTile: View {
 
     private var liveTabsByPinID: [UUID: Tab] {
         pinsByID.reduce(into: [:]) { result, entry in
-            if let tab = selection.liveTab(for: entry.key, in: windowState) {
+            if let tab = launcherRuntime.liveTab(for: entry.key) {
                 result[entry.key] = tab
             }
         }
@@ -243,6 +265,7 @@ struct EssentialSplitGroupTile: View {
                     for: pin.launchURL,
                     partition: faviconPartition(for: pin)
                 ),
+                faviconPartition: faviconPartition(for: pin),
                 imageReader: faviconImageReader
             )
             return EssentialSplitMemberVisual(

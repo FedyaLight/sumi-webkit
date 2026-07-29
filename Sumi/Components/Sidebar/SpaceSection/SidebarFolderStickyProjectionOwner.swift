@@ -13,6 +13,7 @@ struct SidebarFolderStickyProjectionOwner {
     let folder: TabFolder
     let presentation: SidebarFolderPresentationCell
     let inventory: SidebarSpaceInventorySnapshot
+    let launcherRuntime: SidebarLauncherRuntimeSnapshot
     let selection: SidebarWindowSelectionQuery
     let selectionSnapshot: SidebarWindowSelectionSnapshot
     let windowState: BrowserWindowState
@@ -146,6 +147,7 @@ struct SidebarFolderStickyProjectionOwner {
         let descendantItems = inventory.descendantItems(for: contextFolder.id)
         let projectedItems = SidebarVisualSceneProjection(
             inventory: inventory,
+            launcherRuntime: launcherRuntime,
             selection: selection,
             selectionSnapshot: selectionSnapshot,
             windowState: windowState

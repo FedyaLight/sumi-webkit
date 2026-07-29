@@ -14,6 +14,7 @@ struct SpaceRegularSplitGroupEntryView: View {
     let space: Space
     let tabByID: [UUID: Tab]
     let selection: SidebarWindowSelectionQuery
+    let launcherRuntime: SidebarLauncherRuntimeSnapshot
     let regularTabCatalog: SidebarRegularTabCatalog
     let regularTabTargets: SidebarRegularTabTargetQuery
     let browserContext: SidebarBrowserContext
@@ -33,7 +34,7 @@ struct SpaceRegularSplitGroupEntryView: View {
             for: group,
             tabByID: tabByID,
             regularTab: { regularTabCatalog.tab(for: $0) },
-            shortcutLiveTab: { selection.liveTab(for: $0, in: windowState) },
+            shortcutLiveTab: launcherRuntime.liveTab,
             shortcutPin: { regularTabTargets.shortcutPin(by: $0) }
         )
     }
@@ -105,6 +106,11 @@ struct SpaceRegularSplitGroupEntryView: View {
             SplitGroupMemberIconResolver.resolve(
                 item: item,
                 loadedStoredFavicon: nil,
+                faviconPartition: .regular(
+                    item.pin?.executionProfileId
+                        ?? item.pin?.profileId
+                        ?? item.tab?.profileId
+                ),
                 imageReader: browserContext.faviconImageReader
             )
         }

@@ -10,6 +10,7 @@ struct ShortcutHostedSplitGroupRow: View {
     let groupEditor: SidebarSplitGroupEditorPresentationService
     let groupContextMenuActions: SplitGroupContextMenuActions
     let isAppKitInteractionEnabled: Bool
+    let faviconPartition: (ShortcutPin) -> SumiFaviconPartition
     let faviconImageReader: any BrowserFaviconImageReading
     let accessibilityID: String
     let onActivateMember: (SplitMemberID) -> Void
@@ -25,6 +26,7 @@ struct ShortcutHostedSplitGroupRow: View {
         groupEditor: SidebarSplitGroupEditorPresentationService,
         groupContextMenuActions: SplitGroupContextMenuActions,
         isAppKitInteractionEnabled: Bool,
+        faviconPartition: @escaping (ShortcutPin) -> SumiFaviconPartition,
         faviconImageReader: any BrowserFaviconImageReading,
         accessibilityID: String,
         onActivateMember: @escaping (SplitMemberID) -> Void,
@@ -39,6 +41,7 @@ struct ShortcutHostedSplitGroupRow: View {
         self.groupEditor = groupEditor
         self.groupContextMenuActions = groupContextMenuActions
         self.isAppKitInteractionEnabled = isAppKitInteractionEnabled
+        self.faviconPartition = faviconPartition
         self.faviconImageReader = faviconImageReader
         self.accessibilityID = accessibilityID
         self.onActivateMember = onActivateMember
@@ -61,6 +64,10 @@ struct ShortcutHostedSplitGroupRow: View {
                 for: group,
                 items: items
             ),
+            faviconPartition: { item in
+                item.pin.map(faviconPartition)
+                    ?? .regular(item.tab?.profileId)
+            },
             dragSource: shortcutHostedSplitSegmentDragSource,
             contextMenuEntries: { _ in [] },
             onActivateMember: onActivateMember,
@@ -147,6 +154,8 @@ struct ShortcutHostedSplitGroupRow: View {
         SplitGroupMemberIconResolver.resolve(
             item: item,
             loadedStoredFavicon: nil,
+            faviconPartition: item.pin.map(faviconPartition)
+                ?? .regular(item.tab?.profileId),
             imageReader: faviconImageReader
         )
     }
@@ -160,9 +169,7 @@ struct ShortcutHostedSplitGroupRow: View {
         let pin = item.pin
         return PinnedTileAccentResolver.resolve(
             launchURL: item.tab?.url ?? pin?.launchURL,
-            partition: pin.map {
-                .regular($0.executionProfileId ?? $0.profileId)
-            },
+            partition: pin.map(faviconPartition),
             glyphText: pin?.glyphText,
             chromeTemplateSystemImageName:
                 pin?.chromeTemplateSystemImageName,

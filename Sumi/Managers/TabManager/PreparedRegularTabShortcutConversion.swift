@@ -21,6 +21,7 @@ struct PreparedRegularTabShortcutSidebarDrop {
 
     let conversion: PreparedRegularTabShortcutConversion
     let targetGroup: SumiDomain.SplitGroup
+    let targetGroupWasExisting: Bool
 }
 
 /// Typed sidebar participant for a regular-tab conversion. `noChange` is an

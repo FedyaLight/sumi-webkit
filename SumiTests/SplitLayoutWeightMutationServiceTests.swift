@@ -163,7 +163,7 @@ final class SplitLayoutWeightMutationServiceTests: XCTestCase {
             presentations: tabManager.splitPresentations,
             dissolution: SplitGroupDissolutionService(
                 splitGroups: tabManager.splitGroupStore,
-                mutations: tabManager.splitGroupMutations,
+                releaseOrdering: tabManager.splitReleaseOrdering,
                 presentations: tabManager.splitPresentations
             )
         )

@@ -28,20 +28,36 @@ enum SidebarZenPressKind {
 }
 
 private struct SidebarZenPressEffectModifier: ViewModifier {
+    enum Sources {
+        case one(String)
+        case any([String])
+    }
+
     @Environment(SidebarInteractionState.self) private var sidebarInteractionState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.sumiSettings) private var sumiSettings
 
-    let sourceID: String
+    let sources: Sources
     let kind: SidebarZenPressKind
 
     func body(content: Content) -> some View {
         let isPressed = !shouldReduceMotion
-            && sidebarInteractionState.presentsPressVisual(for: sourceID)
+            && presentsPressVisual
 
         content
             .scaleEffect(isPressed ? SidebarRowMotionMetrics.pressedScale : 1)
             .animation(releaseAnimation(isPressed: isPressed), value: isPressed)
+    }
+
+    private var presentsPressVisual: Bool {
+        switch sources {
+        case .one(let sourceID):
+            return sidebarInteractionState.presentsPressVisual(for: sourceID)
+        case .any(let sourceIDs):
+            return sidebarInteractionState.presentsPressVisual(
+                forAny: sourceIDs
+            )
+        }
     }
 
     private func releaseAnimation(isPressed: Bool) -> Animation? {
@@ -150,7 +166,19 @@ extension View {
     ) -> some View {
         modifier(
             SidebarZenPressEffectModifier(
-                sourceID: sourceID,
+                sources: .one(sourceID),
+                kind: kind
+            )
+        )
+    }
+
+    func sidebarZenPressEffect(
+        sourceIDs: [String],
+        kind: SidebarZenPressKind = .row
+    ) -> some View {
+        modifier(
+            SidebarZenPressEffectModifier(
+                sources: .any(sourceIDs),
                 kind: kind
             )
         )

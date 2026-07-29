@@ -84,12 +84,24 @@ final class TabShortcutPresentationOwner {
         in windowState: BrowserWindowState,
         selection: ShortcutSelectionSnapshot
     ) -> SumiLauncherRuntimeAffordanceState {
-        let presentation = shortcutPresentationState(
+        shortcutRuntimeAffordanceState(
             for: pin,
-            in: windowState,
+            liveTab: shortcutLiveTab(for: pin.id, in: windowState.id),
             selection: selection
         )
-        let drifted = shortcutHasDrifted(pin, in: windowState)
+    }
+
+    func shortcutRuntimeAffordanceState(
+        for pin: ShortcutPin,
+        liveTab: Tab?,
+        selection: ShortcutSelectionSnapshot
+    ) -> SumiLauncherRuntimeAffordanceState {
+        let presentation = shortcutPresentationState(
+            for: pin,
+            liveTab: liveTab,
+            selection: selection
+        )
+        let drifted = liveTab.map { pin.hasDrifted(from: $0.url) } ?? false
 
         switch (presentation, drifted) {
         case (.launcherOnly, _):
@@ -124,8 +136,24 @@ final class TabShortcutPresentationOwner {
         splitQuery: WindowSplitQuery,
         selection: ShortcutSelectionSnapshot
     ) -> SumiEssentialRuntimeState? {
+        essentialRuntimeState(
+            for: pin,
+            liveTab: shortcutLiveTab(for: pin.id, in: windowState.id),
+            in: windowState,
+            splitQuery: splitQuery,
+            selection: selection
+        )
+    }
+
+    func essentialRuntimeState(
+        for pin: ShortcutPin,
+        liveTab: Tab?,
+        in windowState: BrowserWindowState,
+        splitQuery: WindowSplitQuery,
+        selection: ShortcutSelectionSnapshot
+    ) -> SumiEssentialRuntimeState? {
         guard pin.role == .essential else { return nil }
-        guard let liveTab = shortcutLiveTab(for: pin.id, in: windowState.id) else {
+        guard let liveTab else {
             return .launcherOnly
         }
 
@@ -213,7 +241,19 @@ final class TabShortcutPresentationOwner {
         in windowState: BrowserWindowState,
         selection: ShortcutSelectionSnapshot
     ) -> ShortcutPresentationState {
-        guard let liveTab = shortcutLiveTab(for: pin.id, in: windowState.id) else {
+        shortcutPresentationState(
+            for: pin,
+            liveTab: shortcutLiveTab(for: pin.id, in: windowState.id),
+            selection: selection
+        )
+    }
+
+    func shortcutPresentationState(
+        for pin: ShortcutPin,
+        liveTab: Tab?,
+        selection: ShortcutSelectionSnapshot
+    ) -> ShortcutPresentationState {
+        guard let liveTab else {
             return .launcherOnly
         }
 

@@ -77,6 +77,7 @@ struct TabFolderSplitGroupEntryView: View {
     let items: [SplitGroupSidebarItem]
     let space: Space
     let browserContext: SidebarBrowserContext
+    let pinProjection: SidebarPinFolderProjection
     let isInteractive: Bool
 
     @Environment(BrowserWindowState.self) private var windowState
@@ -93,6 +94,12 @@ struct TabFolderSplitGroupEntryView: View {
                 groupContextMenuActions: browserContext.splitGroupLifecycle
                     .contextMenuActions(for: group, in: windowState),
                 isAppKitInteractionEnabled: isInteractive,
+                faviconPartition: {
+                    pinProjection.faviconPartition(
+                        for: $0,
+                        currentSpaceID: space.id
+                    )
+                },
                 faviconImageReader: browserContext.faviconImageReader,
                 accessibilityID: "folder-shortcut-host-split-row-\(group.id.uuidString)",
                 onActivateMember: { memberID in

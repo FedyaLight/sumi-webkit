@@ -8,6 +8,7 @@ final class TabStructureEventBusTests: XCTestCase {
     func testTypedPublishersReceiveOnlyTheirEvents() {
         let bus = TabStructureEventBus()
         var structureChangedCount = 0
+        var livePageResidenceChangedCount = 0
         var folderExpansionChangedCount = 0
         var initialDataLoadedCount = 0
         let structureCancellable = bus.structureChangedPublisher.sink {
@@ -19,10 +20,17 @@ final class TabStructureEventBusTests: XCTestCase {
         let expansionCancellable = bus.folderExpansionChangesPublisher.sink { _ in
             folderExpansionChangedCount += 1
         }
+        let residenceCancellable = bus.livePageResidenceChangesPublisher.sink {
+            _ in livePageResidenceChangedCount += 1
+        }
 
         bus.publishInitialDataLoaded()
         bus.publishStructureChanged()
         bus.publishStructureChanged()
+        bus.publishLivePageResidenceChanged(LivePageResidenceScope(
+            windowID: UUID(),
+            spaceID: UUID()
+        ))
         bus.publishFolderExpansionChanged(
             TabFolderExpansionChange(
                 revision: 3,
@@ -32,10 +40,12 @@ final class TabStructureEventBusTests: XCTestCase {
         )
 
         XCTAssertEqual(structureChangedCount, 2)
+        XCTAssertEqual(livePageResidenceChangedCount, 1)
         XCTAssertEqual(folderExpansionChangedCount, 1)
         XCTAssertEqual(initialDataLoadedCount, 1)
         withExtendedLifetime((
             structureCancellable,
+            residenceCancellable,
             initialDataCancellable,
             expansionCancellable
         )) {}

@@ -281,6 +281,9 @@ final class RegularSplitSegmentResolverTests: XCTestCase {
         let presentation = SplitGroupMemberIconResolver.resolve(
             item: item,
             loadedStoredFavicon: nil,
+            faviconPartition: .regular(
+                pin.executionProfileId ?? pin.profileId
+            ),
             imageReader: TabDependencyIsolationDefaults.faviconCapabilities.images
         )
 
@@ -312,11 +315,50 @@ final class RegularSplitSegmentResolverTests: XCTestCase {
         let presentation = SplitGroupMemberIconResolver.resolve(
             item: item,
             loadedStoredFavicon: Image(systemName: "star.fill"),
+            faviconPartition: .regular(
+                pin.executionProfileId ?? pin.profileId
+            ),
             imageReader: TabDependencyIsolationDefaults.faviconCapabilities.images
         )
 
         XCTAssertEqual(presentation.kind, .storedLauncher)
         XCTAssertFalse(presentation.shouldDesaturate)
+    }
+
+    func testUnloadedSplitUsesResolvedSpaceProfileFaviconPartition() throws {
+        let profileID = UUID()
+        let pin = makePin()
+        let group = try XCTUnwrap(SplitGroup.make(
+            members: [
+                .shortcutPin(pin.id),
+                .shortcutPin(UUID()),
+            ],
+            layoutKind: .vertical,
+            container: .shortcutSidebar(
+                spaceId: UUID(),
+                profileId: profileID,
+                folderId: nil,
+                index: 0
+            )
+        ))
+        let item = try XCTUnwrap(SplitGroupSidebarItem.shortcut(
+            try XCTUnwrap(group.members.first),
+            pin: pin,
+            liveTab: nil
+        ))
+        let reader = PartitionedSplitFaviconReader(
+            availablePartition: .regular(profileID)
+        )
+
+        let presentation = SplitGroupMemberIconResolver.resolve(
+            item: item,
+            loadedStoredFavicon: nil,
+            faviconPartition: .regular(profileID),
+            imageReader: reader
+        )
+
+        XCTAssertEqual(presentation.kind, .storedLauncher)
+        XCTAssertTrue(presentation.shouldDesaturate)
     }
 
     func testSegmentedSplitRowKeepsStandardSidebarRowHeight() throws {
@@ -566,5 +608,38 @@ final class RegularSplitSegmentResolverTests: XCTestCase {
         )
         host.cacheDisplay(in: host.bounds, to: image)
         return image
+    }
+}
+
+private final class PartitionedSplitFaviconReader:
+    BrowserFaviconImageReading,
+    @unchecked Sendable
+{
+    let availablePartition: SumiFaviconPartition
+    let image = NSImage(size: NSSize(width: 16, height: 16))
+
+    init(availablePartition: SumiFaviconPartition) {
+        self.availablePartition = availablePartition
+    }
+
+    func cachedPreparedImage(
+        for request: SumiPreparedFaviconRequest
+    ) -> NSImage? {
+        request.partition == availablePartition ? image : nil
+    }
+
+    func cachedSelection(
+        for _: URL,
+        partition _: SumiFaviconPartition
+    ) -> SumiStoredFaviconSelection? {
+        nil
+    }
+
+    func preparedImage(
+        for _: SumiPreparedFaviconRequest,
+        priority _: SumiFaviconFetchPriority,
+        scheduleFetchOnMiss _: Bool
+    ) async -> NSImage? {
+        nil
     }
 }

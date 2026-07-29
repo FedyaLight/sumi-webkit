@@ -92,6 +92,7 @@ enum SplitGroupMemberIconResolver {
     static func resolve(
         item: SplitGroupSidebarItem,
         loadedStoredFavicon: Image?,
+        faviconPartition: SumiFaviconPartition,
         imageReader: any BrowserFaviconImageReading
     ) -> SplitGroupMemberIconPresentation {
         guard let pin = item.pin else {
@@ -144,13 +145,10 @@ enum SplitGroupMemberIconResolver {
             )
         }
 
-        let partition = SumiFaviconPartition.regular(
-            pin.executionProfileId ?? pin.profileId
-        )
         if let storedFavicon = loadedStoredFavicon
             ?? ShortcutPin.cachedLaunchFavicon(
                 for: pin.launchURL,
-                partition: partition,
+                partition: faviconPartition,
                 imageReader: imageReader
             ) {
             return SplitGroupMemberIconPresentation(
@@ -187,7 +185,7 @@ enum SplitGroupMemberIconResolver {
         }
 
         if let systemImageName = pin.storedChromeTemplateSystemImageName(
-            for: partition,
+            for: faviconPartition,
             imageReader: imageReader
         ) {
             return SplitGroupMemberIconPresentation(
@@ -201,7 +199,7 @@ enum SplitGroupMemberIconResolver {
 
         return SplitGroupMemberIconPresentation(
             image: pin.storedFaviconImage(
-                partition: partition,
+                partition: faviconPartition,
                 imageReader: imageReader
             ),
             glyphText: nil,
@@ -268,8 +266,7 @@ enum SplitGroupSidebarModel {
     static func items(
         for group: SplitGroup,
         inventory: SidebarSpaceInventorySnapshot,
-        selection: SidebarWindowSelectionQuery,
-        windowState: BrowserWindowState
+        launcherRuntime: SidebarLauncherRuntimeSnapshot
     ) -> [SplitGroupSidebarItem] {
         group.members.compactMap { member in
             switch member.memberID {
@@ -283,7 +280,7 @@ enum SplitGroupSidebarModel {
                 guard let pin = inventory.pin(id: pinID) else {
                     return nil
                 }
-                let liveTab = selection.liveTab(for: pinID, in: windowState)
+                let liveTab = launcherRuntime.liveTab(for: pinID)
                 return .shortcut(member, pin: pin, liveTab: liveTab)
             }
         }

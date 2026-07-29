@@ -5,6 +5,13 @@ import Foundation
 struct LiveShortcutPresentationPageReceipt: Equatable, Sendable {
     let page: TabStructurePageScope
 
+    var residenceScope: LivePageResidenceScope {
+        LivePageResidenceScope(
+            windowID: page.windowID,
+            spaceID: page.spaceID
+        )
+    }
+
     init(windowID: UUID, spaceID: UUID, profileID: UUID?) {
         page = TabStructurePageScope(
             windowID: windowID,
@@ -21,10 +28,6 @@ struct LiveShortcutTabEntry {
     let pinId: UUID
     let tab: Tab
     let presentationPage: LiveShortcutPresentationPageReceipt
-
-    var pageScope: TabStructureChangeScope {
-        .page(presentationPage.page)
-    }
 
     func isIdentical(to other: LiveShortcutTabEntry) -> Bool {
         windowId == other.windowId

@@ -55,6 +55,7 @@ struct SplitGroupSegmentedRow<Slot: Identifiable, Segment: View>: View {
     let material: SplitGroupRowMaterial
     let tokens: ChromeThemeTokens
     let departingIDs: Set<Slot.ID>
+    var lastPillTrailingInset: CGFloat = 0
     @ViewBuilder let segment: (
         Int,
         Slot,
@@ -78,6 +79,10 @@ struct SplitGroupSegmentedRow<Slot: Identifiable, Segment: View>: View {
                     id: \.element.id
                 ) { index, slot in
                     let isSlotDeparting = departingIDs.contains(slot.id)
+                    let isLastVisibleSlot = !isSlotDeparting
+                        && slots[(index + 1)...].contains {
+                            !departingIDs.contains($0.id)
+                        } == false
                     let metrics = SplitGroupRowSegmentMetrics(
                         rowSize: geometry.size,
                         width: segmentWidth,
@@ -95,11 +100,24 @@ struct SplitGroupSegmentedRow<Slot: Identifiable, Segment: View>: View {
 
                     segment(index, slot, metrics)
                         .frame(width: isSlotDeparting ? 0 : segmentWidth)
-                        .background(
-                            material.drawsPillMaterial
-                                ? tokens.fieldBackground
-                                : Color.clear
-                        )
+                        .background(alignment: .leading) {
+                            RoundedRectangle(
+                                cornerRadius:
+                                    SplitGroupSidebarVisualLayout.segmentCornerRadius,
+                                style: .continuous
+                            )
+                            .fill(
+                                material.drawsPillMaterial
+                                    ? tokens.fieldBackground
+                                    : Color.clear
+                            )
+                            .padding(
+                                .trailing,
+                                isLastVisibleSlot
+                                    ? lastPillTrailingInset
+                                    : 0
+                            )
+                        }
                         .clipShape(
                             RoundedRectangle(
                                 cornerRadius:

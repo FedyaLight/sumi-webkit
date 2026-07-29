@@ -34,6 +34,7 @@ struct SpaceView: View {
     let space: Space
     let browserContext: SidebarBrowserContext
     let inventory: SidebarSpaceInventorySnapshot
+    let launcherRuntime: SidebarLauncherRuntimeSnapshot
     let selection: SidebarWindowSelectionQuery
     let pinProjection: SidebarPinFolderProjection
     let pinCommands: SidebarPinCommands
@@ -46,6 +47,7 @@ struct SpaceView: View {
     let regularTabShortcutCommands: SidebarRegularTabShortcutCommands
     let regularTabPlacementCommands: SidebarRegularTabPlacementCommands
     let listDragPresentation: SidebarListDragPresentation
+    let dragAutoscrollRegistry: SidebarTabListDragAutoscrollRegistry
     let renderMode: SpaceViewRenderMode
     let allowsInteraction: Bool
     let restoredScrollViewport: SpaceSidebarSnapshotViewport?
@@ -103,6 +105,7 @@ struct SpaceView: View {
         SidebarSpacePinnedStickyProjectionOwner(
             space: space,
             inventory: inventory,
+            launcherRuntime: launcherRuntime,
             selection: selection,
             selectionSnapshot: sidebarSelection,
             windowState: windowState
@@ -112,6 +115,7 @@ struct SpaceView: View {
     private var selectedItemRevealPath: SidebarSelectedItemRevealPath? {
         SidebarVisualSceneProjection(
             inventory: inventory,
+            launcherRuntime: launcherRuntime,
             selection: selection,
             selectionSnapshot: sidebarSelection,
             windowState: windowState
@@ -143,6 +147,7 @@ struct SpaceView: View {
                     reduceMotion: reduceMotion || sumiSettings.shouldReduceChromeMotion
                 ),
                 restoredViewport: restoredScrollViewport,
+                dragAutoscrollRegistry: dragAutoscrollRegistry,
                 scrollHoverCoordinator: scrollHoverCoordinator,
                 outerWidth: outerWidth,
                 onViewportChange: { viewport in
@@ -152,6 +157,7 @@ struct SpaceView: View {
                 SpaceSidebarListView(
                     space: space,
                     inventory: inventory,
+                    launcherRuntime: launcherRuntime,
                     selection: selection,
                     pinProjection: pinProjection,
                     pinCommands: pinCommands,

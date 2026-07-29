@@ -102,8 +102,25 @@ extension BrowserManager {
     func composeSplitDissolution() -> SplitGroupDissolutionService {
         SplitGroupDissolutionService(
             splitGroups: splitGroupStore,
-            mutations: splitGroupMutations,
+            releaseOrdering: splitReleaseOrdering,
             presentations: splitPresentations
+        )
+    }
+
+    func composeSplitReleaseOrdering()
+        -> SplitGroupReleaseOrderingService {
+        SplitGroupReleaseOrderingService(
+            splitGroups: splitGroupStore,
+            mutations: splitGroupMutations,
+            ordering: splitGroupSidebarOrdering,
+            regularTabs: regularTabCollectionOwner,
+            pins: shortcutPinCollectionStateOwner,
+            structuralMutations: structuralCollectionMutationOwner,
+            spacePinnedOrder: SpacePinnedOrderTransaction(
+                folders: folderCollectionStateOwner,
+                pins: shortcutPinCollectionStateOwner,
+                mutations: structuralCollectionMutationOwner
+            )
         )
     }
 
@@ -170,12 +187,8 @@ extension BrowserManager {
                 conversion: regularTabShortcutConversion,
                 presentations: splitPresentations
             ),
+            shortcutToRegular: shortcutPinToRegularTab,
             shortcutMemberRelocation: splitGroupShortcutMemberRelocation,
-            duplication: SplitTabDuplicationService(
-                spaces: spaceStateOwner,
-                regularTabs: regularTabLifecycleOwner,
-                closure: tabClosureService
-            ),
             presentations: splitPresentations,
             notifyLimit: { [weak self] in
                 self?.notificationPresenter.presentSplitViewLimitNotification(

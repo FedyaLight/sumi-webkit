@@ -114,6 +114,11 @@ final class SplitRuntimeMemberResolver {
         }
     }
 
+    func shortcutPin(for memberID: SplitMemberID) -> ShortcutPin? {
+        guard case .shortcutPin(let pinID) = memberID else { return nil }
+        return pins.shortcutPin(by: pinID)
+    }
+
     func initialContainer(
         incoming: SplitMemberID,
         target: SplitMemberID,

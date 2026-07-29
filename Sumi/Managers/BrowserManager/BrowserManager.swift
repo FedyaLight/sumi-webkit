@@ -88,6 +88,7 @@ class BrowserManager: ObservableObject {
     let splitGroupMembership: SplitGroupMembershipQuery
     let regularTabShortcutConversion:
         RegularTabShortcutConversionService
+    let shortcutPinToRegularTab: ShortcutPinToRegularTabService
     let shortcutLiveTabRetirement: ShortcutLiveTabRetirementService
     let sidebarPinCommands: SidebarPinCommands
     let sidebarFolderCommands: SidebarFolderCommands
@@ -156,6 +157,7 @@ class BrowserManager: ObservableObject {
     lazy var splitMaterialization = composeSplitMaterialization()
     lazy var splitPresentations = composeSplitPresentations()
     lazy var splitLauncherRelease = composeSplitLauncherRelease()
+    lazy var splitReleaseOrdering = composeSplitReleaseOrdering()
     lazy var splitDissolution = composeSplitDissolution()
     lazy var splitWeightMutations = composeSplitWeightMutations()
     lazy var splitDropTargets = composeSplitDropTargets()
@@ -515,6 +517,7 @@ class BrowserManager: ObservableObject {
         self.splitGroupMembership = graph.splitGroupMembership
         self.regularTabShortcutConversion =
             graph.regularTabShortcutConversion
+        self.shortcutPinToRegularTab = graph.shortcutPinToRegularTab
         self.shortcutLiveTabRetirement = graph.shortcutLiveTabRetirement
         self.sidebarPinCommands = graph.sidebarPinCommands
         self.sidebarFolderCommands = graph.sidebarFolderCommands

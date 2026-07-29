@@ -53,17 +53,15 @@ extension_view="Sumi/Components/Extensions/ExtensionActionView.swift"
 url_bar="Sumi/Components/Sidebar/URLBarView.swift"
 url_hub="Sumi/Components/Sidebar/URLBarHubPopover.swift"
 live_folders="Sumi/LiveFolders/SumiLiveFolderManager.swift"
-live_folder_view="Sumi/Components/Sidebar/SpaceSection/TabFolderView.swift"
-pinned_section="Sumi/Components/Sidebar/SpaceSection/SpacePinnedSection.swift"
-pinned_list="Sumi/Components/Sidebar/SpaceSection/SpacePinnedListView.swift"
+live_folder_view="Sumi/Components/Sidebar/SpaceSection/SpaceSidebarListView.swift"
+pinned_section="Sumi/Components/Sidebar/SpaceSection/SpaceSidebarListView.swift"
+pinned_list="Sumi/Components/Sidebar/SpaceSection/SpaceSidebarListView.swift"
 space_section_views="Sumi/Components/Sidebar/SpaceSection"
 folder_render_views=(
-  "Sumi/Components/Sidebar/SpaceSection/SpacePinnedListView.swift"
   "Sumi/Components/Sidebar/SpaceSection/SpacePinnedListEntryViews.swift"
-  "Sumi/Components/Sidebar/SpaceSection/TabFolderView.swift"
-  "Sumi/Components/Sidebar/SpaceSection/TabFolderViewContent.swift"
+  "Sumi/Components/Sidebar/SpaceSection/SpaceSidebarListView.swift"
   "Sumi/Components/Sidebar/SpaceSection/TabFolderHeaderView.swift"
-  "Sumi/Components/Sidebar/SpaceSection/TabFolderBodyListView.swift"
+  "Sumi/Components/Sidebar/SpaceSection/TabFolderHeaderRow.swift"
   "Sumi/Components/Sidebar/SpaceSection/TabFolderBodyEntryViews.swift"
 )
 residence_store="Sumi/Managers/TabManager/LiveShortcutTabResidenceStore.swift"
@@ -114,13 +112,13 @@ require 'snapshot = current\(\)' \
   "scoped reader lost its fresh demand-time snapshot" "$updates"
 require 'SidebarScopedSnapshotReader' \
   "Space catalog root no longer uses a demand-scoped reader" "$sidebar_root"
-require 'SidebarScopedSnapshotReader' \
+require 'SpaceSidebarLiveFolderReader' \
   "live-folder leaf no longer uses a demand-scoped reader" "$live_folder_view"
-require '@ObservedObject var dragPresentation: SidebarPinnedDragPresentation' \
+require '@ObservedObject var listPresentation: SidebarListDragPresentation' \
   "pinned section lost its atomic drag-presentation boundary" "$pinned_section"
 forbid '@EnvironmentObject private var dragState: SidebarDragState' \
   "pinned section regained broad drag-state observation" "$pinned_section"
-require 'dragSnapshot: dragSnapshot\.folderSnapshot' \
+require 'dragSnapshot: dragSnapshots\.pinned\.folderSnapshot' \
   "pinned section no longer passes one drag snapshot into folder rendering" "$pinned_list"
 forbid 'SidebarFolderDragSnapshotReader' \
   "folder subtrees regained redundant drag-state observation" "$space_section_views"
@@ -168,8 +166,10 @@ forbid 'presentationPagesByWindow' \
   "$residence_store" "$residence_snapshot"
 require 'final class LiveShortcutPresentationResidenceTransaction' \
   "shared presentation residence transaction is missing" "$residence_transaction"
-require 'requestPublish\(scope: entry.pageScope\)' \
+require 'requestLivePageResidencePublish' \
   "live shortcut mutation lost exact page publication" "$structural_lookup"
+require 'entries\.map\(\\\.presentationPage\.residenceScope\)' \
+  "live shortcut mutation no longer derives exact mounted page scope" "$structural_lookup"
 forbid '\.runtimeOnly' \
   "live shortcut mutation is filtered from mounted pages" \
   Sumi/Managers/TabManager/LiveShortcutTabRegistry.swift \

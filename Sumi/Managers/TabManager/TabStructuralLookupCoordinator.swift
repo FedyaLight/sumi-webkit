@@ -87,13 +87,10 @@ final class TabStructuralLookupCoordinator {
         entries: [LiveShortcutTabEntry]
     ) {
         queueTransientRefresh()
-        entries.forEach { publishTransientShortcutPageChange($0) }
-    }
-
-    private func publishTransientShortcutPageChange(
-        _ entry: LiveShortcutTabEntry
-    ) {
-        requestPublish(scope: entry.pageScope)
+        requestPublish(scope: .runtimeOnly)
+        publishOwner.requestLivePageResidencePublish(
+            pages: Set(entries.map(\.presentationPage.residenceScope))
+        )
     }
 
     func queueEntries(removing previousTabs: [Tab], with currentTabs: [Tab]) {

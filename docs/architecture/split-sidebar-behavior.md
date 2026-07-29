@@ -1,6 +1,6 @@
 # Split sidebar behavior
 
-This document records the product decisions agreed on 2026-07-19 and updated on 2026-07-26 for split groups in Regular, Pinned, Folder, and Essentials.
+This document records the product decisions agreed on 2026-07-19 and updated on 2026-07-29 for split groups in Regular, Pinned, Folder, and Essentials.
 
 ## Core model
 
@@ -19,9 +19,13 @@ This document records the product decisions agreed on 2026-07-19 and updated on 
 | Regular | Essentials | Move and convert to an Essential launcher |
 | Pinned or Folder | Essentials | Move and convert to an Essential launcher |
 | Essentials | Pinned or Folder | Move and convert to a Pinned launcher |
-| Pinned or Essentials | Regular | Keep the saved launcher and add a new regular copy |
+| Pinned or Essentials | Regular | Move and convert to a regular tab; remove the saved launcher |
 
 An unloaded launcher dropped into an active split is materialized immediately and becomes the active participant. Failure leaves topology and storage unchanged. Ordinary sidebar movement of an unloaded launcher does not load it.
+
+Dragging a standalone item always transfers that item into the destination
+container. It never leaves a second launcher, tab, or linked presentation row
+in the source container.
 
 ## Whole-group movement
 

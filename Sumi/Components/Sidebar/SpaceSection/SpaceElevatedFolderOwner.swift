@@ -9,6 +9,7 @@ import Foundation
 @MainActor
 struct SpaceElevatedFolderOwner {
     let inventory: SidebarSpaceInventorySnapshot
+    let launcherRuntime: SidebarLauncherRuntimeSnapshot
     let selection: SidebarWindowSelectionQuery
     let windowState: BrowserWindowState
     let selectionSnapshot: SidebarWindowSelectionSnapshot
@@ -17,18 +18,19 @@ struct SpaceElevatedFolderOwner {
         var elevated = Set<UUID>()
         if selection.isCurrent(windowState) {
             for pin in inventory.pinsByID.values
-            where selection.isShortcutSelected(
-                pin,
+            where selection.runtimeAffordance(
+                for: pin,
+                liveTab: launcherRuntime.liveTab(for: pin.id),
                 in: windowState,
                 selection: selectionSnapshot
-            ) {
+            ).isSelected {
                 elevateAncestors(of: pin.folderId, into: &elevated)
             }
         }
 
         if let currentTabId = selectionSnapshot.currentTabID {
             for pin in inventory.pinsByID.values {
-                if selection.liveTab(for: pin.id, in: windowState)?.id == currentTabId {
+                if launcherRuntime.liveTab(for: pin.id)?.id == currentTabId {
                     elevateAncestors(of: pin.folderId, into: &elevated)
                 }
             }

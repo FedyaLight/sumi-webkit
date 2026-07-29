@@ -55,6 +55,7 @@ struct FolderSearchActivationActions {
 struct FolderSearchCandidateBuilder {
     let inventory: SidebarSpaceInventorySnapshot
     let selection: SidebarWindowSelectionQuery
+    let launcherRuntime: SidebarLauncherRuntimeSnapshot
     let windowState: BrowserWindowState
     let liveFolderProvider: FolderSearchLiveFolderProviding
     let faviconImageReader: any BrowserFaviconImageReading
@@ -74,6 +75,10 @@ struct FolderSearchCandidateBuilder {
     ) {
         self.inventory = inventory
         self.selection = selection
+        self.launcherRuntime = selection.launcherRuntimeSnapshot(
+            pinIDs: Set(inventory.pinsByID.keys),
+            in: windowState
+        )
         self.windowState = windowState
         self.liveFolderProvider = liveFolderProvider
         self.faviconImageReader = faviconImageReader
@@ -143,8 +148,7 @@ struct FolderSearchCandidateBuilder {
                 return SplitGroupSidebarModel.items(
                     for: group,
                     inventory: inventory,
-                    selection: selection,
-                    windowState: windowState
+                    launcherRuntime: launcherRuntime
                 ).map { item in
                     splitGroupCandidate(
                         item,
@@ -183,7 +187,7 @@ struct FolderSearchCandidateBuilder {
     private func shortcutIcon(_ pin: ShortcutPin) -> FolderSearchCandidateIcon {
         .shortcut(
             pin: pin,
-            liveTab: selection.liveTab(for: pin.id, in: windowState),
+            liveTab: launcherRuntime.liveTab(for: pin.id),
             partition: pinProjection.faviconPartition(
                 for: pin,
                 currentSpaceID: windowState.currentSpaceId
@@ -228,6 +232,12 @@ struct FolderSearchCandidateBuilder {
         let icon = SplitGroupMemberIconResolver.resolve(
             item: item,
             loadedStoredFavicon: nil,
+            faviconPartition: item.pin.map {
+                pinProjection.faviconPartition(
+                    for: $0,
+                    currentSpaceID: inventory.spaceID
+                )
+            } ?? .regular(item.tab?.profileId),
             imageReader: faviconImageReader
         ).image
 

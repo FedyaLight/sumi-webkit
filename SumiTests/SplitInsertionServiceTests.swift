@@ -505,7 +505,7 @@ private extension SplitInsertionServiceTests {
             presentations: presentations,
             dissolution: SplitGroupDissolutionService(
                 splitGroups: manager.splitGroupStore,
-                mutations: manager.splitGroupMutations,
+                releaseOrdering: manager.splitReleaseOrdering,
                 presentations: presentations
             )
         )
@@ -552,9 +552,9 @@ private extension SplitInsertionServiceTests {
                     conversion: manager.regularTabShortcutConversion,
                     presentations: presentations
                 ),
+            shortcutToRegular: manager.shortcutPinToRegularTab,
             shortcutMemberRelocation:
                 manager.splitGroupShortcutMemberRelocation,
-            duplication: makeTestSplitTabDuplicationService(manager),
             presentations: presentations,
             notifyLimit: { _ in }
         )

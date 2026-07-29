@@ -1,8 +1,8 @@
 import Foundation
 import SumiDomain
 
-/// Commits pin removal, exact split mutation and runtime promotion in one
-/// structural batch, then performs one durable persistence request.
+/// Commits exact split mutation and runtime promotion in one structural batch,
+/// removes the saved launcher, then persists once.
 @MainActor
 final class ShortcutPinRegularConversionTransaction {
     private let promotion: ShortcutTabPromotionService
@@ -29,7 +29,7 @@ final class ShortcutPinRegularConversionTransaction {
         pin: ShortcutPin,
         plan: ShortcutTabPromotionPlan,
         split: ShortcutPinRegularSplitTransition?
-    ) -> Bool {
+    ) -> ShortcutTabPromotionResult? {
         var prepared: PreparedShortcutTabPromotion?
         let applyPromotion: @MainActor () -> Bool = { [self] in
             guard let committedPromotion = promotion.commit(
@@ -62,12 +62,12 @@ final class ShortcutPinRegularConversionTransaction {
 
         guard committed else {
             _ = plan.placement.cancel()
-            return false
+            return nil
         }
-        guard let prepared else { return false }
-        _ = promotion.finish(prepared)
+        guard let prepared else { return nil }
+        let result = promotion.finish(prepared)
         persistence.scheduleStructuralPersistence()
-        return true
+        return result
     }
 
     func commitGroup(

@@ -11,6 +11,7 @@ import SumiDomain
 struct TabFolderShortcutPresentationOwner {
     let pinProjection: SidebarPinFolderProjection
     let selection: SidebarWindowSelectionQuery
+    let launcherRuntime: SidebarLauncherRuntimeSnapshot
     let windowState: BrowserWindowState
     let selectionSnapshot: SidebarWindowSelectionSnapshot
 
@@ -24,6 +25,7 @@ struct TabFolderShortcutPresentationOwner {
     func runtimeAffordance(for pin: ShortcutPin) -> SumiLauncherRuntimeAffordanceState {
         selection.runtimeAffordance(
             for: pin,
+            liveTab: launcherRuntime.liveTab(for: pin.id),
             in: windowState,
             selection: selectionSnapshot
         )

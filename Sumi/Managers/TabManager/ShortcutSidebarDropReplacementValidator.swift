@@ -15,7 +15,6 @@ struct ShortcutSidebarDropReplacementValidator {
         )
         guard replacement != expected,
               SumiDomain.SplitGroup.sanitized(replacement) == replacement,
-              expected.contains(prepared.targetGroup),
               replacement.allSatisfy({ !$0.contains(sourceID) }),
               expected.allSatisfy({ !$0.contains(prepared.member.memberID) }),
               let target = replacement.first(where: {
@@ -23,14 +22,35 @@ struct ShortcutSidebarDropReplacementValidator {
               }),
               target.container == prepared.targetGroup.container,
               target.container.isShortcutSidebar,
-              target.member(for: prepared.member.memberID) == prepared.member,
-              acceptsTargetMembers(target, prepared: prepared) else {
+              target.member(for: prepared.member.memberID) == prepared.member
+        else {
             return false
+        }
+        if prepared.targetGroupWasExisting {
+            guard expected.contains(prepared.targetGroup),
+                  acceptsExistingTargetMembers(
+                      target,
+                      prepared: prepared
+                  ) else { return false }
+        } else {
+            guard !expected.contains(where: {
+                $0.id == prepared.targetGroup.id
+            }), target == prepared.targetGroup,
+                  expected.allSatisfy({ group in
+                      prepared.targetGroup.memberIDs.allSatisfy {
+                          !group.contains($0)
+                      }
+                  }) else { return false }
         }
 
         let sourceGroup = prepared.conversion.structure.sourceSplitGroup
         let mutableIDs = Set(
-            [sourceGroup?.id, prepared.targetGroup.id].compactMap { $0 }
+            [
+                sourceGroup?.id,
+                prepared.targetGroupWasExisting
+                    ? prepared.targetGroup.id
+                    : nil,
+            ].compactMap { $0 }
         )
         for group in expected where !mutableIDs.contains(group.id) {
             guard replacement.first(where: { $0.id == group.id }) == group else {
@@ -47,11 +67,14 @@ struct ShortcutSidebarDropReplacementValidator {
             replacement,
             expected: expected,
             sourceGroup: sourceGroup,
-            sourceID: sourceID
+            sourceID: sourceID,
+            createdTargetID: prepared.targetGroupWasExisting
+                ? nil
+                : prepared.targetGroup.id
         )
     }
 
-    private func acceptsTargetMembers(
+    private func acceptsExistingTargetMembers(
         _ replacement: SumiDomain.SplitGroup,
         prepared: PreparedRegularTabShortcutSidebarDrop
     ) -> Bool {
@@ -70,14 +93,18 @@ struct ShortcutSidebarDropReplacementValidator {
         _ replacement: [SumiDomain.SplitGroup],
         expected: [SumiDomain.SplitGroup],
         sourceGroup: SumiDomain.SplitGroup?,
-        sourceID: SplitMemberID
+        sourceID: SplitMemberID,
+        createdTargetID: UUID?
     ) -> Bool {
         let expectedIDs = Set(expected.map(\.id))
         let replacementIDs = Set(replacement.map(\.id))
+        let targetIDs = createdTargetID.map { Set([$0]) } ?? []
         guard let sourceGroup,
               sourceGroup.removingMember(sourceID) == nil else {
-            return replacementIDs == expectedIDs
+            return replacementIDs == expectedIDs.union(targetIDs)
         }
-        return replacementIDs == expectedIDs.subtracting([sourceGroup.id])
+        return replacementIDs
+            == expectedIDs.subtracting([sourceGroup.id])
+                .union(targetIDs)
     }
 }

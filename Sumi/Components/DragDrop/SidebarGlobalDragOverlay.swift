@@ -4,8 +4,8 @@ import UniformTypeIdentifiers
 
 struct SidebarGlobalDragOverlay: NSViewRepresentable {
     let transactionPort: SidebarDragTransactionPort
+    let dragState: SidebarDragState
     let dragAutoscrollRegistry: SidebarTabListDragAutoscrollRegistry
-    @EnvironmentObject private var dragState: SidebarDragState
     @Environment(BrowserWindowState.self) var windowState
     @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

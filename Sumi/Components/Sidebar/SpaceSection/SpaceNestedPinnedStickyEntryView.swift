@@ -9,6 +9,7 @@ struct SpaceNestedPinnedStickyEntryView: View {
     let space: Space
     let inventory: SidebarSpaceInventorySnapshot
     let selection: SidebarWindowSelectionQuery
+    let launcherRuntime: SidebarLauncherRuntimeSnapshot
     let pinProjection: SidebarPinFolderProjection
     let pinCommands: SidebarPinCommands
     let pinExecution: SidebarPinExecutionCommands
@@ -58,7 +59,7 @@ struct SpaceNestedPinnedStickyEntryView: View {
         let presentationOwner = shortcutPresentationOwner
         return TabFolderShortcutEntryView(
             pin: pin,
-            liveTab: selection.liveTab(for: pin.id, in: windowState),
+            liveTab: launcherRuntime.liveTab(for: pin.id),
             faviconPartition: presentationOwner.faviconPartition(for: pin),
             faviconImageReader: browserContext.faviconImageReader,
             runtimeAffordance: presentationOwner.runtimeAffordance(for: pin),
@@ -79,11 +80,11 @@ struct SpaceNestedPinnedStickyEntryView: View {
             items: SplitGroupSidebarModel.items(
                 for: group,
                 inventory: inventory,
-                selection: selection,
-                windowState: windowState
+                launcherRuntime: launcherRuntime
             ),
             space: space,
             browserContext: browserContext,
+            pinProjection: pinProjection,
             isInteractive: isInteractive
         )
     }
@@ -92,6 +93,7 @@ struct SpaceNestedPinnedStickyEntryView: View {
         TabFolderShortcutPresentationOwner(
             pinProjection: pinProjection,
             selection: selection,
+            launcherRuntime: launcherRuntime,
             windowState: windowState,
             selectionSnapshot: sidebarSelection
         )

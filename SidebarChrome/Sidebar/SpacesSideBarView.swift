@@ -162,6 +162,7 @@ struct SpacesSideBarView: View {
                 ZStack {
                     SidebarGlobalDragOverlay(
                         transactionPort: dragTransactions,
+                        dragState: dragState,
                         dragAutoscrollRegistry: dragState.dragAutoscrollRegistry
                     )
                         .allowsHitTesting(allowsSidebarInteractiveWork)

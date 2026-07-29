@@ -148,7 +148,10 @@ extension BrowserManager {
                 composeSidebarRegularTabPlacementCommands(),
             dragTransactions: dragTransactions,
             inventoryUpdates: SidebarInventoryUpdates(
-                changes: tabStructureEventBus.scopedStructureChangesPublisher
+                structuralChanges:
+                    tabStructureEventBus.scopedStructureChangesPublisher,
+                livePageResidenceChanges:
+                    tabStructureEventBus.livePageResidenceChangesPublisher
             ),
             profileUpdates: profileUpdates,
             hostActions: SidebarHostActions(

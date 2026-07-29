@@ -93,6 +93,7 @@ extension SpacesSideBarView {
     func makeSpaceView(
         for space: Space,
         inventory pageInventory: SidebarSpaceInventorySnapshot,
+        launcherRuntime: SidebarLauncherRuntimeSnapshot,
         renderMode: SpaceViewRenderMode,
         allowsInteraction: Bool
     ) -> some View {
@@ -100,6 +101,7 @@ extension SpacesSideBarView {
             space: space,
             browserContext: sidebarBrowserContext,
             inventory: pageInventory,
+            launcherRuntime: launcherRuntime,
             selection: selection,
             pinProjection: pinProjection,
             pinCommands: pinCommands,
@@ -112,6 +114,7 @@ extension SpacesSideBarView {
             regularTabShortcutCommands: regularTabShortcutCommands,
             regularTabPlacementCommands: regularTabPlacementCommands,
             listDragPresentation: dragState.listPresentation,
+            dragAutoscrollRegistry: dragState.dragAutoscrollRegistry,
             renderMode: renderMode,
             allowsInteraction: allowsInteraction,
             restoredScrollViewport: transitionCoordinator.scrollViewport(for: space.id),
@@ -202,12 +205,14 @@ extension SpacesSideBarView {
             }
             .eraseToAnyPublisher(),
             delivery: .mainActorImmediate(
-                deferWhile: { dragState.isCompletingDrop }
+                deferral: presentedDropCompletionDeferral(
+                    for: dragState
+                )
             ),
             areEquivalent: ==,
             isActive: allowsInteractiveWork
         ) { pageInventory in
-            sidebarPageContent(
+            observedSidebarLauncherRuntime(
                 space: space,
                 pageRenderMode: pageRenderMode,
                 pageProfileId: pageProfileId,
@@ -227,11 +232,61 @@ extension SpacesSideBarView {
     }
 
     @ViewBuilder
+    private func observedSidebarLauncherRuntime(
+        space: Space,
+        pageRenderMode: SidebarPageRenderMode,
+        pageProfileId: UUID?,
+        pageInventory: SidebarPageInventorySnapshot,
+        includesPinnedGrid: Bool,
+        isTransitioningProfile: Bool,
+        allowsInteractiveWork: Bool
+    ) -> some View {
+        let pinIDs = Set(pageInventory.space.pinsByID.keys)
+            .union(pageInventory.essentialPins.map(\.id))
+        let current: @MainActor () -> SidebarLauncherRuntimeSnapshot = {
+            selection.launcherRuntimeSnapshot(
+                pinIDs: pinIDs,
+                in: windowState
+            )
+        }
+
+        SidebarScopedSnapshotReader(
+            current: current,
+            changes: inventoryUpdates.launcherResidenceChanges(
+                windowID: windowState.id,
+                spaceID: space.id
+            )
+            .map { _ in current() }
+            .eraseToAnyPublisher(),
+            delivery: .mainActorImmediate(
+                deferral: presentedDropCompletionDeferral(
+                    for: dragState
+                )
+            ),
+            areEquivalent: ==,
+            isActive: allowsInteractiveWork
+        ) { launcherRuntime in
+            sidebarPageContent(
+                space: space,
+                pageRenderMode: pageRenderMode,
+                pageProfileId: pageProfileId,
+                pageInventory: pageInventory,
+                launcherRuntime: launcherRuntime,
+                includesPinnedGrid: includesPinnedGrid,
+                isTransitioningProfile: isTransitioningProfile,
+                allowsInteractiveWork: allowsInteractiveWork
+            )
+        }
+        .id(pinIDs)
+    }
+
+    @ViewBuilder
     private func sidebarPageContent(
         space: Space,
         pageRenderMode: SidebarPageRenderMode,
         pageProfileId: UUID?,
         pageInventory: SidebarPageInventorySnapshot,
+        launcherRuntime: SidebarLauncherRuntimeSnapshot,
         includesPinnedGrid: Bool,
         isTransitioningProfile: Bool,
         allowsInteractiveWork: Bool
@@ -249,6 +304,7 @@ extension SpacesSideBarView {
                         profileId: pageProfileId,
                         inventory: pageInventory.space,
                         items: pageInventory.essentialPins,
+                        launcherRuntime: launcherRuntime,
                         isTransitioningProfile: isTransitioningProfile,
                         pageRenderMode: pageRenderMode
                     )
@@ -257,6 +313,7 @@ extension SpacesSideBarView {
                 makeSpaceView(
                     for: space,
                     inventory: pageInventory.space,
+                    launcherRuntime: launcherRuntime,
                     renderMode: pageRenderMode.spaceRenderMode,
                     allowsInteraction: pageRenderMode == .interactive && allowsSidebarInteractiveWork
                 )
@@ -307,6 +364,7 @@ extension SpacesSideBarView {
         profileId: UUID?,
         inventory pageInventory: SidebarSpaceInventorySnapshot,
         items: [ShortcutPin],
+        launcherRuntime: SidebarLauncherRuntimeSnapshot,
         isTransitioningProfile: Bool,
         pageRenderMode: SidebarPageRenderMode
     ) -> some View {
@@ -323,6 +381,7 @@ extension SpacesSideBarView {
             browserContext: sidebarBrowserContext,
             inventory: pageInventory,
             items: items,
+            launcherRuntime: launcherRuntime,
             selection: selection,
             pinProjection: pinProjection,
             pinCommands: pinCommands,
@@ -331,6 +390,7 @@ extension SpacesSideBarView {
             spaceId: spaceId,
             profileId: profileId,
             isTransitioningProfile: isTransitioningProfile,
+            dragPresentation: dragState.essentialsPresentation,
             animateLayout: shouldAnimate,
             reportsGeometry: allowsInteractiveWork,
             isAppKitInteractionEnabled: allowsInteractiveWork

@@ -129,7 +129,6 @@ extension View {
             .environmentObject(context.nowPlayingController)
             .environment(context.windowState)
             .environment(context.windowRegistry)
-            .environmentObject(context.sidebarDragState)
             .environmentObject(context.sidebarDragState.geometry)
             .environmentObject(context.sidebarDragState.geometry.refreshSignal)
             .environment(\.sidebarDragStateHandle, context.sidebarDragState)

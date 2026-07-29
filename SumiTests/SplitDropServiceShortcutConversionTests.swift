@@ -290,7 +290,7 @@ final class SplitDropServiceShortcutConversionTests: XCTestCase {
         )
     }
 
-    func testPinnedMemberSplitsWithRegularTabByCreatingRegularCopy() throws {
+    func testPinnedMemberSplitsWithRegularTabByConvertingLauncher() throws {
         let fixture = try makeFixture(sourceMemberCount: 2)
         defer { fixture.manager.tabRuntimeLifecycle.shutdown() }
         fixture.probe.reconcilesPresentations = false
@@ -341,10 +341,130 @@ final class SplitDropServiceShortcutConversionTests: XCTestCase {
             return false
         })
         XCTAssertFalse(group.contains(.shortcutPin(pin.id)))
-        XCTAssertNotNil(
+        XCTAssertNil(
             fixture.manager.shortcutPinCollectionStateOwner.shortcutPin(
                 by: pin.id
             )
+        )
+    }
+
+    func testPinnedLauncherJoinsRegularSplitByConvertingWithoutCopy() throws {
+        let fixture = try makeFixture(sourceMemberCount: 2)
+        defer { fixture.manager.tabRuntimeLifecycle.shutdown() }
+        fixture.probe.reconcilesPresentations = false
+        let pin = ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            spaceId: fixture.space.id,
+            index: fixture.targetPins.count,
+            launchURL: URL(string: "https://pinned-incoming.example")!,
+            title: "Pinned Incoming"
+        )
+        fixture.manager.structuralCollectionMutationOwner
+            .setSpacePinnedShortcuts(
+                fixture.targetPins + [pin],
+                for: fixture.space.id
+            )
+
+        XCTAssertTrue(fixture.service.drop(
+            .shortcutPin(pin.id),
+            on: SplitDropTarget(
+                targetMemberID: .regularTab(fixture.source.id),
+                side: .right,
+                targetRect: .zero
+            ),
+            in: fixture.window
+        ))
+
+        let group = try XCTUnwrap(
+            fixture.manager.splitGroupStore.group(id: fixture.sourceGroup.id)
+        )
+        XCTAssertEqual(group.memberIDs.count, 3)
+        XCTAssertTrue(group.memberIDs.allSatisfy { memberID in
+            if case .regularTab = memberID { return true }
+            return false
+        })
+        XCTAssertNil(
+            fixture.manager.shortcutPinCollectionStateOwner.shortcutPin(
+                by: pin.id
+            )
+        )
+        XCTAssertEqual(
+            fixture.manager.regularTabCollectionOwner
+                .tabs(in: fixture.space.id)
+                .filter { group.contains(.regularTab($0.id)) }
+                .count,
+            3
+        )
+    }
+
+    func testRegularTabSplitsWithStandalonePinnedByConvertingIntoPinned()
+        throws {
+        let fixture = try makeFixture(sourceMemberCount: 2)
+        defer { fixture.manager.tabRuntimeLifecycle.shutdown() }
+        fixture.probe.reconcilesPresentations = false
+        XCTAssertTrue(fixture.manager.splitGroupMutations.replaceAll(
+            expected: [fixture.sourceGroup, fixture.targetGroup],
+            with: [],
+            persist: false
+        ))
+        let targetPin = fixture.targetPins[0]
+
+        XCTAssertTrue(fixture.service.drop(
+            fixture.source,
+            on: SplitDropTarget(
+                targetMemberID: .shortcutPin(targetPin.id),
+                side: .left,
+                targetRect: .zero
+            ),
+            in: fixture.window
+        ))
+
+        let group = try XCTUnwrap(
+            fixture.manager.splitGroupStore.group(
+                containing: .shortcutPin(targetPin.id)
+            )
+        )
+        guard case .shortcutSidebar(
+            let spaceID,
+            _,
+            let folderID,
+            _
+        ) = group.container else {
+            return XCTFail("Expected the pinned target to own the group")
+        }
+        XCTAssertEqual(spaceID, fixture.space.id)
+        XCTAssertNil(folderID)
+        XCTAssertEqual(group.memberIDs.count, 2)
+        XCTAssertTrue(group.memberIDs.allSatisfy(\.isShortcutPin))
+        XCTAssertFalse(
+            fixture.manager.regularTabCollectionOwner.contains(fixture.source)
+        )
+        XCTAssertFalse(group.contains(.regularTab(fixture.source.id)))
+        let groupPinIDs = Set(
+            group.memberIDs.compactMap(\.shortcutPinID)
+        )
+        let pinnedIDs = Set(
+            fixture.manager.shortcutPinCollectionStateOwner
+                .spacePinnedPins(for: fixture.space.id)
+                .map(\.id)
+        )
+        XCTAssertTrue(groupPinIDs.isSubset(of: pinnedIDs))
+        XCTAssertTrue(groupPinIDs.contains(targetPin.id))
+        XCTAssertEqual(groupPinIDs.count, 2)
+        let visualItems = fixture.manager.splitGroupSidebarOrdering
+            .topLevelItems(for: fixture.space.id)
+        XCTAssertEqual(
+            visualItems.filter {
+                if case .splitGroup = $0 { return true }
+                return false
+            },
+            [.splitGroup(group.id)]
+        )
+        XCTAssertFalse(visualItems.contains(.shortcut(targetPin.id)))
+        XCTAssertEqual(
+            Set(visualItems.map(\.id)).count,
+            visualItems.count
         )
     }
 
@@ -645,9 +765,9 @@ private extension SplitDropServiceShortcutConversionTests {
                     conversion: manager.regularTabShortcutConversion,
                     presentations: recordingPresentations
                 ),
+            shortcutToRegular: manager.shortcutPinToRegularTab,
             shortcutMemberRelocation:
                 manager.splitGroupShortcutMemberRelocation,
-            duplication: makeTestSplitTabDuplicationService(manager),
             presentations: recordingPresentations,
             notifyLimit: { _ in probe.limitCount += 1 }
         )

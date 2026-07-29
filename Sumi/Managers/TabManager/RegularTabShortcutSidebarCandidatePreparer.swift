@@ -52,7 +52,89 @@ final class RegularTabShortcutSidebarCandidatePreparer {
             member: .shortcutPin(conversion.candidatePin.id),
             expectedSplitGroups: structure.expectedSplitGroups,
             conversion: conversion,
-            targetGroup: targetGroup
+            targetGroup: targetGroup,
+            targetGroupWasExisting: true
+        )
+    }
+
+    func prepare(
+        tab: Tab,
+        standaloneTargetPin: ShortcutPin,
+        target: SplitDropTarget,
+        preferredWindowID: UUID
+    ) -> PreparedRegularTabShortcutSidebarDrop? {
+        let preparation = conversions.prepare(
+            tab,
+            preferredWindowID: preferredWindowID
+        )
+        guard let structure = preparation.structurePlan else { return nil }
+
+        let destination: TabShortcutPinDestination
+        let container: SplitGroupContainer
+        switch standaloneTargetPin.role {
+        case .essential:
+            guard let profileID = standaloneTargetPin.profileId else {
+                return nil
+            }
+            destination = TabShortcutPinDestination(
+                role: .essential,
+                profileId: profileID,
+                spaceId: nil,
+                folderId: nil,
+                index: standaloneTargetPin.index,
+                opensFolder: false
+            )
+            container = .essentialSidebar(
+                profileId: profileID,
+                index: standaloneTargetPin.index
+            )
+        case .spacePinned:
+            guard let spaceID = standaloneTargetPin.spaceId else {
+                return nil
+            }
+            destination = TabShortcutPinDestination(
+                role: .spacePinned,
+                profileId: nil,
+                spaceId: spaceID,
+                folderId: standaloneTargetPin.folderId,
+                index: standaloneTargetPin.index,
+                opensFolder: false
+            )
+            container = .shortcutSidebar(
+                spaceId: spaceID,
+                profileId: standaloneTargetPin.profileId,
+                folderId: standaloneTargetPin.folderId,
+                index: standaloneTargetPin.index
+            )
+        }
+        guard let conversion = conversions.candidate(
+            for: tab,
+            preparation: preparation,
+            destination: destination
+        ) else { return nil }
+
+        let incoming = SplitMember.shortcutPin(conversion.candidatePin.id)
+        let existing = SplitMember.shortcutPin(standaloneTargetPin.id)
+        let members = target.side.insertsBeforeTarget
+            ? [incoming, existing]
+            : [existing, incoming]
+        let layoutKind: SplitLayoutKind =
+            target.side == .top || target.side == .bottom
+            ? .horizontal
+            : .vertical
+        guard let targetGroup = SplitGroup.make(
+            members: members,
+            layoutKind: layoutKind,
+            container: container
+        ) else { return nil }
+
+        return PreparedRegularTabShortcutSidebarDrop(
+            candidatePin: conversion.candidatePin,
+            member: incoming,
+            expectedSplitGroups: structure.expectedSplitGroups,
+            conversion: conversion,
+            targetGroup: targetGroup,
+            targetGroupWasExisting: false
         )
     }
 }

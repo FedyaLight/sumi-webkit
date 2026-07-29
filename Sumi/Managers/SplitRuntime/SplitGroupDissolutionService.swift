@@ -6,17 +6,25 @@ import SumiDomain
 @MainActor
 final class SplitGroupDissolutionService {
     private let splitGroups: SplitGroupStore
-    private let mutations: SplitGroupMutationService
+    private let releaseOrdering: SplitGroupReleaseOrderingService
     private let presentations: WindowSplitPresentationSynchronizer
 
     init(
         splitGroups: SplitGroupStore,
-        mutations: SplitGroupMutationService,
+        releaseOrdering: SplitGroupReleaseOrderingService,
         presentations: WindowSplitPresentationSynchronizer
     ) {
         self.splitGroups = splitGroups
-        self.mutations = mutations
+        self.releaseOrdering = releaseOrdering
         self.presentations = presentations
+    }
+
+    func replace(
+        _ group: SumiDomain.SplitGroup,
+        with replacement: SumiDomain.SplitGroup
+    ) -> Bool {
+        guard splitGroups.group(id: group.id) == group else { return false }
+        return releaseOrdering.commit(group, replacingWith: replacement)
     }
 
     @discardableResult
@@ -25,7 +33,7 @@ final class SplitGroupDissolutionService {
         standaloneMembers: [UUID: SplitMemberID] = [:]
     ) -> Bool {
         guard splitGroups.group(id: group.id) == group,
-              mutations.remove(group) else {
+              releaseOrdering.commit(group, replacingWith: nil) else {
             return false
         }
 

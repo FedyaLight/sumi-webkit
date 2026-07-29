@@ -79,10 +79,14 @@ enum SidebarMotionPolicy {
     }
 
     /// Post-drop settle: rows slide into their committed positions (Zen:
-    /// 100ms ease-out FLIP after the model mutates).
+    /// 100ms ease-out FLIP after the model mutates). Drop-completion state
+    /// must outlive this, or the identity transfer and the animation it is
+    /// paired with switch off midway through the slide.
+    static let dropSettleDuration: TimeInterval = 0.10
+
     static func dropSettleAnimation(for mode: Mode) -> Animation? {
         guard mode != .reducedMotion else { return nil }
-        return .easeOut(duration: 0.10)
+        return .easeOut(duration: dropSettleDuration)
     }
 
     /// Shared duration for list/folder content reflow. Also gates when model

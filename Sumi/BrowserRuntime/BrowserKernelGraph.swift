@@ -75,6 +75,7 @@ struct BrowserKernelGraph {
     let splitGroupMembership: SplitGroupMembershipQuery
     let regularTabShortcutConversion:
         RegularTabShortcutConversionService
+    let shortcutPinToRegularTab: ShortcutPinToRegularTabService
     let shortcutLiveTabRetirement: ShortcutLiveTabRetirementService
     let sidebarPinCommands: SidebarPinCommands
     let sidebarFolderCommands: SidebarFolderCommands

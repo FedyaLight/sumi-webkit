@@ -53,6 +53,20 @@ final class RegularTabShortcutConversionService {
         )
     }
 
+    func prepareShortcutSidebarDrop(
+        _ tab: Tab,
+        onto standaloneTargetPin: ShortcutPin,
+        target: SplitDropTarget,
+        preferredWindowId: UUID
+    ) -> PreparedRegularTabShortcutSidebarDrop? {
+        sidebarCandidates.prepare(
+            tab: tab,
+            standaloneTargetPin: standaloneTargetPin,
+            target: target,
+            preferredWindowID: preferredWindowId
+        )
+    }
+
     @discardableResult
     func commitShortcutSidebarDrop(
         _ prepared: PreparedRegularTabShortcutSidebarDrop,

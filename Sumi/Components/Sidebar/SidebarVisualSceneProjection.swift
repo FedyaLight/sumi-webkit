@@ -69,6 +69,7 @@ struct SidebarVisualSceneProjection {
     }
 
     let inventory: SidebarSpaceInventorySnapshot
+    let launcherRuntime: SidebarLauncherRuntimeSnapshot
     let selection: SidebarWindowSelectionQuery
     let selectionSnapshot: SidebarWindowSelectionSnapshot
     let windowState: BrowserWindowState
@@ -233,7 +234,7 @@ struct SidebarVisualSceneProjection {
 
             case .shortcut(let pinID):
                 guard let pin = inventory.pin(id: pinID) else { return nil }
-                let liveTab = selection.liveTab(for: pinID, in: windowState)
+                let liveTab = launcherRuntime.liveTab(for: pinID)
                 return LauncherItem(
                     source: source,
                     isLive: liveTab != nil,
@@ -247,8 +248,7 @@ struct SidebarVisualSceneProjection {
                 let items = SplitGroupSidebarModel.items(
                     for: group,
                     inventory: inventory,
-                    selection: selection,
-                    windowState: windowState
+                    launcherRuntime: launcherRuntime
                 )
                 return LauncherItem(
                     source: source,

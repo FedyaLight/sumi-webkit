@@ -7,7 +7,8 @@ import SwiftUI
 /// folder drag start from under it instead of being swallowed by a popover's
 /// dismissal.
 struct SidebarFolderPreviewOverlay: View {
-    let sidebarDragState: SidebarDragState
+    @ObservedObject private var dragSessionPresentation:
+        SidebarDragSessionPresentation
 
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
@@ -18,10 +19,16 @@ struct SidebarFolderPreviewOverlay: View {
         themeContext.nativeSurfaceColorScheme
     }
 
+    init(sidebarDragState: SidebarDragState) {
+        _dragSessionPresentation = ObservedObject(
+            wrappedValue: sidebarDragState.sessionPresentation
+        )
+    }
+
     var body: some View {
-        SidebarDragActivityReader(activityState: sidebarDragState.activityState) { isDragging in
-            overlayContent(isDragging: isDragging)
-        }
+        overlayContent(
+            isDragging: dragSessionPresentation.frame.isDragging
+        )
     }
 
     @ViewBuilder
@@ -142,16 +149,4 @@ enum SidebarFolderPreviewMotion {
         )
     }
 
-}
-
-/// Narrow subscription to the drag-activity flag so the overlay does not
-/// re-render on every drag hover sample.
-private struct SidebarDragActivityReader<Content: View>: View {
-    @ObservedObject var activityState: SidebarDragActivityState
-
-    @ViewBuilder let content: (Bool) -> Content
-
-    var body: some View {
-        content(activityState.isDragging)
-    }
 }

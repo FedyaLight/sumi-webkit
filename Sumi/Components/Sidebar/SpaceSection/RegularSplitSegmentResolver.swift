@@ -100,6 +100,11 @@ struct RegularSplitSegmentResolver {
         let memberIcon = SplitGroupMemberIconResolver.resolve(
             item: item,
             loadedStoredFavicon: nil,
+            faviconPartition: .regular(
+                item.pin?.executionProfileId
+                    ?? item.pin?.profileId
+                    ?? item.tab?.profileId
+            ),
             imageReader: faviconImageReader
         )
         return SidebarDragSourceConfiguration(

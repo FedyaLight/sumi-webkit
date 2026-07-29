@@ -81,8 +81,15 @@ final class ShortcutDragOperationOwner {
                 at: operation.toIndex
             )
 
-        case (.spacePinned, .spaceRegular(let targetSpaceId)),
-             (.folder, .spaceRegular(let targetSpaceId)):
+        case (.spacePinned, .spaceRegular(let targetSpaceId)):
+            return pinToRegular.convert(
+                pin,
+                into: targetSpaceId,
+                at: operation.toIndex,
+                preferredWindowId: operation.scope.windowId
+            )
+
+        case (.folder, .spaceRegular(let targetSpaceId)):
             return pinToRegular.convert(
                 pin,
                 into: targetSpaceId,

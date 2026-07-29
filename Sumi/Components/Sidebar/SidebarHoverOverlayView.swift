@@ -36,7 +36,9 @@ struct SidebarHoverOverlayView: View {
     let profileUpdates: SidebarProfileUpdates
     let updaterService: SumiUpdaterService
     let hostActions: SidebarHostActions
-    @ObservedObject private var dragState: SidebarDragState
+    private let dragState: SidebarDragState
+    @ObservedObject private var dragSessionPresentation:
+        SidebarDragSessionPresentation
 
     @EnvironmentObject var hoverManager: HoverSidebarManager
     @EnvironmentObject private var nowPlayingController: SumiNativeNowPlayingController
@@ -92,7 +94,10 @@ struct SidebarHoverOverlayView: View {
         self.profileUpdates = profileUpdates
         self.updaterService = updaterService
         self.hostActions = hostActions
-        self._dragState = ObservedObject(wrappedValue: sidebarDragState)
+        self.dragState = sidebarDragState
+        self._dragSessionPresentation = ObservedObject(
+            wrappedValue: sidebarDragState.sessionPresentation
+        )
     }
 
     /// Keep the hover sidebar on-screen while any sidebar transient UI is alive in compact mode.
@@ -105,8 +110,8 @@ struct SidebarHoverOverlayView: View {
     private var sidebarDragPinsHoverSidebar: Bool {
         windowRegistry.activeWindowId == windowState.id
             && !windowState.isSidebarVisible
-            && dragState.isDragging
-            && dragState.isInternalDragSession
+            && dragSessionPresentation.frame.isDragging
+            && dragSessionPresentation.frame.isInternalDragSession
     }
 
     private var emptyStateRequestsCollapsedSidebar: Bool {

@@ -26,6 +26,32 @@ final class ShortcutPinToRegularTabService {
         at targetIndex: Int? = nil,
         preferredWindowId: UUID? = nil
     ) -> Bool {
+        promote(
+            candidatePin,
+            into: targetSpaceId,
+            at: targetIndex,
+            preferredWindowId: preferredWindowId
+        ) != nil
+    }
+
+    func promoteForSplitDrop(
+        _ candidatePin: ShortcutPin,
+        into targetSpaceID: UUID,
+        preferredWindowID: UUID
+    ) -> Tab? {
+        promote(
+            candidatePin,
+            into: targetSpaceID,
+            preferredWindowId: preferredWindowID
+        )?.tab
+    }
+
+    private func promote(
+        _ candidatePin: ShortcutPin,
+        into targetSpaceId: UUID,
+        at targetIndex: Int? = nil,
+        preferredWindowId: UUID? = nil
+    ) -> ShortcutTabPromotionResult? {
         guard let pin = admission.canonicalPin(for: candidatePin),
               let plan = promotion.preparePromotion(
                   pin,
@@ -33,7 +59,7 @@ final class ShortcutPinToRegularTabService {
                   at: targetIndex,
                   preferredWindowId: preferredWindowId,
                   allowsGroupedPin: true
-              ) else { return false }
+              ) else { return nil }
 
         guard case .admitted(let split) = admission.splitOutcome(
             pinID: pin.id,
@@ -41,9 +67,13 @@ final class ShortcutPinToRegularTabService {
             targetSpaceID: targetSpaceId
         ) else {
             _ = plan.placement.cancel()
-            return false
+            return nil
         }
-        return transaction.commit(pin: pin, plan: plan, split: split)
+        return transaction.commit(
+            pin: pin,
+            plan: plan,
+            split: split
+        )
     }
 
     func convertGroup(

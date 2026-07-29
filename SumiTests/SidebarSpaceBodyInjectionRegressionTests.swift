@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import CoreGraphics
+import class SwiftUI.NSHostingView
 import XCTest
 
 @testable import Sumi
@@ -99,10 +100,9 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         }
         let model = SidebarScopedSnapshotModel(
             current: current,
-            changes: context.inventoryUpdates.pageChanges(
+            changes: context.inventoryUpdates.launcherResidenceChanges(
                 windowID: window.id,
-                spaceID: space.id,
-                profileID: space.profileId
+                spaceID: space.id
             )
             .map { _ in current() }
             .eraseToAnyPublisher()
@@ -154,6 +154,296 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         await drainMainActorTurns()
         XCTAssertEqual(model.snapshot, [])
         XCTAssertEqual(window.currentTabId, unchangedSelection)
+    }
+
+    func testMountedPagePublishesBackgroundShortcutUnloadWhenInventoryIsUnchanged()
+        throws {
+        let registry = WindowRegistry()
+        let browserManager = BrowserManager(windowRegistry: registry)
+        let window = BrowserWindowState()
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: window)
+        let space = browserManager.spaceStateOwner.currentSpace
+            ?? installTestSpace(
+                in: browserManager.spaceStateOwner,
+                name: "Mounted Unload"
+            )
+        let selectedPin = makeShortcutPin(
+            title: "Selected",
+            spaceID: space.id
+        )
+        let backgroundPin = makeShortcutPin(
+            title: "Background",
+            spaceID: space.id
+        )
+        browserManager.structuralCollectionMutationOwner
+            .setSpacePinnedShortcuts(
+                [selectedPin, backgroundPin],
+                for: space.id
+            )
+        window.currentSpaceId = space.id
+        window.currentProfileId = space.profileId
+        XCTAssertEqual(registry.register(window), .registered)
+        defer { registry.unregister(window.id) }
+        let selectedTab = try XCTUnwrap(
+            browserManager.shortcutTabMaterializer.materialize(
+                selectedPin,
+                in: window.id,
+                currentSpaceId: space.id
+            )
+        )
+        XCTAssertNotNil(
+            browserManager.shortcutTabMaterializer.materialize(
+                backgroundPin,
+                in: window.id,
+                currentSpaceId: space.id
+            )
+        )
+        window.currentTabId = selectedTab.id
+        window.currentShortcutPinId = selectedPin.id
+        window.currentShortcutPinRole = selectedPin.role
+
+        let context = WindowSidebarContext.make(
+            browserManager: browserManager,
+            updaterService: SumiUpdaterService(backendFactory: { _ in nil }),
+            nowPlayingController: SumiNativeNowPlayingController()
+        )
+        let pinIDs = Set([selectedPin.id, backgroundPin.id])
+        let current: @MainActor () -> SidebarLauncherRuntimeSnapshot = {
+            context.selection.launcherRuntimeSnapshot(
+                pinIDs: pinIDs,
+                in: window
+            )
+        }
+        let residenceChanges = context.inventoryUpdates.launcherResidenceChanges(
+            windowID: window.id,
+            spaceID: space.id
+        )
+        var residenceChangeCount = 0
+        let residenceChangesCancellable = residenceChanges.sink { _ in
+            residenceChangeCount += 1
+        }
+        var structuralPageChangeCount = 0
+        let structuralPageChanges = context.inventoryUpdates.pageChanges(
+            windowID: window.id,
+            spaceID: space.id,
+            profileID: space.profileId
+        ).sink { _ in
+            structuralPageChangeCount += 1
+        }
+        let model = SidebarScopedSnapshotModel(
+            current: current,
+            changes: residenceChanges.map { _ in current() }.eraseToAnyPublisher(),
+            delivery: .mainActorImmediate(),
+            areEquivalent: ==
+        )
+        model.setActive(true)
+        defer { model.setActive(false) }
+        var runtimePublicationCount = 0
+        let publication = model.$snapshot.dropFirst().sink { _ in
+            runtimePublicationCount += 1
+        }
+        XCTAssertNotNil(model.snapshot.liveTab(for: backgroundPin.id))
+        XCTAssertFalse(
+            context.selection.presentationState(
+                for: backgroundPin,
+                in: window
+            ).shouldDesaturateIcon
+        )
+
+        context.browserContext.shortcutPinUnload.unloadShortcutPin(
+            backgroundPin,
+            in: window
+        )
+
+        XCTAssertNil(
+            browserManager.shortcutPresentationOwner.shortcutLiveTab(
+                for: backgroundPin.id,
+                in: window.id
+            )
+        )
+        XCTAssertTrue(
+            context.selection.presentationState(
+                for: backgroundPin,
+                in: window
+            ).shouldDesaturateIcon
+        )
+        XCTAssertNil(model.snapshot.liveTab(for: backgroundPin.id))
+        XCTAssertEqual(residenceChangeCount, 1)
+        XCTAssertEqual(runtimePublicationCount, 1)
+        XCTAssertEqual(structuralPageChangeCount, 0)
+        withExtendedLifetime((
+            residenceChangesCancellable,
+            structuralPageChanges,
+            publication
+        )) {}
+    }
+
+    func testMountedSidebarRendersBackgroundShortcutAsUnloadedWithoutAnotherEvent()
+        async throws {
+        let nowPlayingController = SumiNativeNowPlayingController()
+        let updaterService = SumiUpdaterService(backendFactory: { _ in nil })
+        let registry = WindowRegistry()
+        let browserManager = BrowserManager(
+            windowRegistry: registry,
+            nowPlayingController: nowPlayingController
+        )
+        let space = installTestSpace(
+            in: browserManager.spaceStateOwner,
+            name: "Mounted Visual Unload"
+        )
+        let selectedPin = ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            spaceId: space.id,
+            index: 0,
+            launchURL: URL(string: "https://selected-visual.example")!,
+            title: "Selected Visual",
+            iconAsset: "🟠"
+        )
+        let backgroundPin = ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            spaceId: space.id,
+            index: 1,
+            launchURL: URL(string: "https://background-visual.example")!,
+            title: "Background Visual"
+        )
+        browserManager.structuralCollectionMutationOwner
+            .setSpacePinnedShortcuts(
+                [selectedPin, backgroundPin],
+                for: space.id
+            )
+
+        let windowState = BrowserWindowState()
+        browserManager.tabResidenceAuthority.establishResidenceSession(
+            on: windowState
+        )
+        windowState.currentSpaceId = space.id
+        windowState.currentProfileId = space.profileId
+        windowState.sidebarWidth = 280
+        windowState.sidebarContentWidth = BrowserWindowState
+            .sidebarContentWidth(for: 280)
+        XCTAssertEqual(registry.register(windowState), .registered)
+        registry.setActive(windowState)
+        defer { registry.unregister(windowState.id) }
+
+        let selectedTab = try XCTUnwrap(
+            browserManager.shortcutTabMaterializer.materialize(
+                selectedPin,
+                in: windowState.id,
+                currentSpaceId: space.id
+            )
+        )
+        let backgroundTab = try XCTUnwrap(
+            browserManager.shortcutTabMaterializer.materialize(
+                backgroundPin,
+                in: windowState.id,
+                currentSpaceId: space.id
+            )
+        )
+        backgroundTab.faviconPresentation = .bitmap(
+            NSImage(size: NSSize(width: 16, height: 16), flipped: false) {
+                rect in
+                NSColor.systemOrange.setFill()
+                rect.fill()
+                return true
+            }
+        )
+        backgroundTab.faviconIsTemplateGlobePlaceholder = false
+        windowState.currentTabId = selectedTab.id
+        windowState.currentShortcutPinId = selectedPin.id
+        windowState.currentShortcutPinRole = selectedPin.role
+
+        let viewContext = WindowSidebarContext.make(
+            browserManager: browserManager,
+            updaterService: updaterService,
+            nowPlayingController: nowPlayingController
+        )
+        let dragState = SidebarDragState()
+        let settingsSuiteName = "SumiTests.mountedVisualUnload.\(UUID().uuidString)"
+        let settingsDefaults = try XCTUnwrap(
+            UserDefaults(suiteName: settingsSuiteName)
+        )
+        defer {
+            settingsDefaults.removePersistentDomain(forName: settingsSuiteName)
+        }
+        let environmentContext = SidebarHostEnvironmentContext(
+            browserContext: viewContext.browserContext,
+            hostActions: viewContext.hostActions,
+            windowState: windowState,
+            windowRegistry: registry,
+            sumiSettings: SumiSettingsService(userDefaults: settingsDefaults),
+            keyboardShortcutManager: KeyboardShortcutManager(
+                installEventMonitor: false
+            ),
+            nowPlayingController: nowPlayingController,
+            updaterService: updaterService,
+            resolvedThemeContext: .default,
+            chromeBackgroundResolvedThemeContext: .default,
+            windowChromeSize: CGSize(width: 280, height: 640),
+            sidebarDragState: dragState
+        )
+        let root = SidebarColumnHostedRoot.view(
+            environmentContext: environmentContext,
+            presentationContext: .docked(sidebarWidth: 280),
+            spaceCatalog: viewContext.spaceCatalog,
+            inventory: viewContext.inventory,
+            selection: viewContext.selection,
+            pinProjection: viewContext.pinProjection,
+            pinCommands: viewContext.pinCommands,
+            pinExecution: viewContext.pinExecution,
+            folderCommands: viewContext.folderCommands,
+            spaceLifecycle: viewContext.spaceLifecycle,
+            regularTabCatalog: viewContext.regularTabCatalog,
+            regularTabTargets: viewContext.regularTabTargets,
+            regularTabLifecycleCommands:
+                viewContext.regularTabLifecycleCommands,
+            regularTabShortcutCommands:
+                viewContext.regularTabShortcutCommands,
+            regularTabPlacementCommands:
+                viewContext.regularTabPlacementCommands,
+            dragTransactions: viewContext.dragTransactions,
+            inventoryUpdates: viewContext.inventoryUpdates,
+            profileUpdates: viewContext.profileUpdates
+        )
+        let host = NSHostingView(rootView: root)
+        host.wantsLayer = true
+        host.frame = CGRect(x: 0, y: 0, width: 280, height: 640)
+        let hostWindow = NSWindow(
+            contentRect: host.frame,
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        hostWindow.contentView = host
+
+        await drainMainActorTurns()
+        hostWindow.layoutIfNeeded()
+        host.layoutSubtreeIfNeeded()
+        let loadedColorCount = try colorfulPixelCount(in: host)
+
+        viewContext.browserContext.shortcutPinUnload.unloadShortcutPin(
+            backgroundPin,
+            in: windowState
+        )
+
+        await drainMainActorTurns()
+        hostWindow.layoutIfNeeded()
+        host.layoutSubtreeIfNeeded()
+        let unloadedColorCount = try colorfulPixelCount(in: host)
+
+        XCTAssertNil(
+            browserManager.shortcutPresentationOwner.shortcutLiveTab(
+                for: backgroundPin.id,
+                in: windowState.id
+            )
+        )
+        XCTAssertLessThan(
+            unloadedColorCount,
+            loadedColorCount - 20,
+            "The mounted background launcher icon must desaturate on the unload publication itself"
+        )
+        withExtendedLifetime(hostWindow) {}
     }
 
     func testLiveShortcutEventsRetainAndRelocateExactPresentationPage()
@@ -208,25 +498,21 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
             updaterService: SumiUpdaterService(backendFactory: { _ in nil }),
             nowPlayingController: SumiNativeNowPlayingController()
         )
-        let firstSameProfile = context.inventoryUpdates.pageChanges(
+        let firstSameProfile = context.inventoryUpdates.launcherResidenceChanges(
             windowID: window.id,
-            spaceID: firstSameProfileSpace.id,
-            profileID: presentationProfileID
+            spaceID: firstSameProfileSpace.id
         ).sink { _ in firstSameProfileChanges += 1 }
-        let presentation = context.inventoryUpdates.pageChanges(
+        let presentation = context.inventoryUpdates.launcherResidenceChanges(
             windowID: window.id,
-            spaceID: presentationSpace.id,
-            profileID: presentationProfileID
+            spaceID: presentationSpace.id
         ).sink { _ in presentationChanges += 1 }
-        let execution = context.inventoryUpdates.pageChanges(
+        let execution = context.inventoryUpdates.launcherResidenceChanges(
             windowID: window.id,
-            spaceID: executionSpace.id,
-            profileID: executionProfileID
+            spaceID: executionSpace.id
         ).sink { _ in executionChanges += 1 }
-        let unrelated = context.inventoryUpdates.pageChanges(
+        let unrelated = context.inventoryUpdates.launcherResidenceChanges(
             windowID: unrelatedWindowID,
-            spaceID: presentationSpace.id,
-            profileID: presentationProfileID
+            spaceID: presentationSpace.id
         ).sink { _ in unrelatedChanges += 1 }
         let sourceEssential = ShortcutPin(
             id: UUID(),
@@ -1090,6 +1376,39 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         for _ in 0..<10 {
             await Task.yield()
         }
+    }
+
+    private func colorfulPixelCount(
+        in host: NSView
+    ) throws -> Int {
+        host.displayIfNeeded()
+        let bitmap = try XCTUnwrap(
+            host.bitmapImageRepForCachingDisplay(in: host.bounds)
+        )
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        var count = 0
+        for y in 0..<bitmap.pixelsHigh {
+            for x in 0..<bitmap.pixelsWide {
+                guard let color = bitmap.colorAt(x: x, y: y)?
+                    .usingColorSpace(.sRGB),
+                    color.alphaComponent > 0.5
+                else { continue }
+                let maximum = max(
+                    color.redComponent,
+                    color.greenComponent,
+                    color.blueComponent
+                )
+                let minimum = min(
+                    color.redComponent,
+                    color.greenComponent,
+                    color.blueComponent
+                )
+                if maximum - minimum > 0.2 {
+                    count += 1
+                }
+            }
+        }
+        return count
     }
 
     private func makeToolbarExtension(

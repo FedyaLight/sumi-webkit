@@ -17,6 +17,14 @@ struct SplitGroupSidebarRow: View {
     let groupEditor: SidebarSplitGroupEditorPresentationService
     var groupContextMenuActions: SplitGroupContextMenuActions = .empty
     var groupAction: SplitGroupSidebarAction?
+    var faviconPartition: (SplitGroupSidebarItem) -> SumiFaviconPartition = {
+        item in
+        .regular(
+            item.pin?.executionProfileId
+                ?? item.pin?.profileId
+                ?? item.tab?.profileId
+        )
+    }
     var memberAction: (SplitGroupSidebarItem) -> SplitGroupSidebarMemberAction? = { _ in nil }
     var dragSource: (SplitGroupSidebarItem) -> SidebarDragSourceConfiguration? = { _ in nil }
     let contextMenuEntries: (SplitGroupSidebarItem) -> [SidebarContextMenuEntry]
@@ -33,6 +41,7 @@ struct SplitGroupSidebarRow: View {
     @State var isRowHovered = false
     @State var displayedItems: [SplitGroupSidebarItem] = []
     @State var departingItemIds = Set<SplitMemberID>()
+    @State var presentationGeneration: UInt64 = 0
 
     var body: some View {
         rowContent
@@ -57,6 +66,10 @@ struct SplitGroupSidebarRow: View {
             trailingActionButton
                 .padding(.trailing, SidebarRowLayout.trailingInset)
         }
+        .sidebarZenPressEffect(
+            sourceIDs: pressSourceIDs,
+            kind: .split
+        )
         .sidebarHover($isRowHovered, isEnabled: isRowHoverTrackingEnabled)
         .accessibilityIdentifier("space-split-group-\(group.id.uuidString)")
         .onAppear {
@@ -85,7 +98,8 @@ struct SplitGroupSidebarRow: View {
             slots: rowItems,
             material: .settled(isSelected: isFocusedGroup),
             tokens: tokens,
-            departingIDs: departingItemIds
+            departingIDs: departingItemIds,
+            lastPillTrailingInset: lastPillTrailingInset
         ) { index, item, metrics in
             let itemAction = memberAction(item)
             SplitGroupSegment(
@@ -109,6 +123,8 @@ struct SplitGroupSidebarRow: View {
                 isRowHovered: isRowHovered,
                 isAppKitInteractionEnabled:
                     isAppKitInteractionEnabled && !isDeparting(item),
+                pressSourceID: segmentPressSourceID(for: item),
+                faviconPartition: faviconPartition(item),
                 faviconImageReader: faviconImageReader,
                 dragSourceConfiguration: dragSource(item),
                 dragPreviewSourceGeometry: SidebarDragPreviewSourceGeometry(
@@ -177,7 +193,6 @@ struct SplitGroupSidebarRow: View {
         .frame(height: SidebarRowLayout.rowHeight)
         .contentShape(Rectangle())
         .onTapGesture { activate(activationItem) }
-        .sidebarZenPressEffect(sourceID: customIconSourceID, kind: .split)
         .sidebarAppKitContextMenu(
             isInteractionEnabled: isAppKitInteractionEnabled,
             surfaceKind: .row,
@@ -193,6 +208,19 @@ struct SplitGroupSidebarRow: View {
 
     private var customIconSourceID: String {
         "split-group-custom-icon-\(group.id.uuidString)"
+    }
+
+    private var pressSourceIDs: [String] {
+        if group.iconAsset != nil, customIconActivationItem != nil {
+            return [customIconSourceID]
+        }
+        return resolvedDisplayItems.map(segmentPressSourceID)
+    }
+
+    private func segmentPressSourceID(
+        for item: SplitGroupSidebarItem
+    ) -> String {
+        "space-split-member-\(item.stableIDDescription)"
     }
 
     private var customIconActivationItem: SplitGroupSidebarItem? {
@@ -259,6 +287,16 @@ struct SplitGroupSidebarRow: View {
         showsGroupAction ? SidebarRowLayout.trailingActionPadding : 0
     }
 
+    private var lastPillTrailingInset: CGFloat {
+        guard isFocusedGroup, showsGroupAction else { return 0 }
+        return max(
+            0,
+            groupActionExclusionWidth
+                - SplitGroupSidebarVisualLayout.outerRowInset
+                - SplitGroupSidebarVisualLayout.horizontalInset
+        )
+    }
+
     private func segmentTrailingPadding(
         for index: Int,
         in rowItems: [SplitGroupSidebarItem]
@@ -272,7 +310,11 @@ struct SplitGroupSidebarRow: View {
             ),
             groupActionTrailingPadding:
                 showsGroupAction
-                    ? SidebarRowLayout.trailingActionPadding
+                    ? max(
+                        SidebarRowLayout.trailingActionPadding,
+                        lastPillTrailingInset
+                            + SplitGroupSidebarVisualLayout.standardTrailingPadding
+                    )
                     : 0
         )
     }

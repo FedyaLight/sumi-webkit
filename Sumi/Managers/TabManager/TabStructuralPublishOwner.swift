@@ -6,6 +6,7 @@ final class TabStructuralPublishOwner {
     private let eventBus: TabStructureEventBus
     private var structuralUpdateDepth = 0
     private var pendingStructuralScope: TabStructureChangeScope?
+    private var pendingLivePageResidenceScopes = Set<LivePageResidenceScope>()
     private var actionsBeforeStructuralPublication: [@MainActor () -> Void] = []
     private var actionsAfterStructuralBatch: [@MainActor () -> Void] = []
     private var structuralTransactionSignpostState: OSSignpostIntervalState?
@@ -43,6 +44,17 @@ final class TabStructuralPublishOwner {
         mutationRevision += 1
         PerformanceTrace.emitEvent("TabManager.structuralPublish.immediate")
         emitStructureChanged(scope: scope)
+    }
+
+    func requestLivePageResidencePublish(
+        pages: Set<LivePageResidenceScope>
+    ) {
+        guard !pages.isEmpty else { return }
+        if structuralUpdateDepth > 0 {
+            pendingLivePageResidenceScopes.formUnion(pages)
+            return
+        }
+        emitLivePageResidenceChanged(pages)
     }
 
     @discardableResult
@@ -87,6 +99,23 @@ final class TabStructuralPublishOwner {
         eventBus.publishStructureChanged(scope: scope)
     }
 
+    private func emitLivePageResidenceChanged(
+        _ pages: Set<LivePageResidenceScope>
+    ) {
+        let sortedPages = pages.sorted {
+            if $0.windowID != $1.windowID {
+                return $0.windowID.uuidString < $1.windowID.uuidString
+            }
+            if $0.spaceID != $1.spaceID {
+                return $0.spaceID.uuidString < $1.spaceID.uuidString
+            }
+            return false
+        }
+        for page in sortedPages {
+            eventBus.publishLivePageResidenceChanged(page)
+        }
+    }
+
     private func begin() {
         if structuralUpdateDepth == 0 {
             structuralTransactionSignpostState = PerformanceTrace.beginInterval("TabManager.structuralTransaction")
@@ -113,6 +142,8 @@ final class TabStructuralPublishOwner {
         structuralUpdateDepth = 0
         let scope = pendingStructuralScope
         pendingStructuralScope = nil
+        let livePageResidenceScopes = pendingLivePageResidenceScopes
+        pendingLivePageResidenceScopes.removeAll(keepingCapacity: true)
         if let state = structuralTransactionSignpostState {
             PerformanceTrace.endInterval("TabManager.structuralTransaction", state)
             structuralTransactionSignpostState = nil
@@ -121,6 +152,7 @@ final class TabStructuralPublishOwner {
             PerformanceTrace.emitEvent("TabManager.structuralPublish.coalesced")
             emitStructureChanged(scope: scope)
         }
+        emitLivePageResidenceChanged(livePageResidenceScopes)
         let actions = actionsAfterStructuralBatch
         actionsAfterStructuralBatch.removeAll(keepingCapacity: true)
         actions.forEach { $0() }

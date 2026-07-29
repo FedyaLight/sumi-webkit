@@ -64,6 +64,11 @@ final class SidebarInteractionState {
         activePressVisualSourceID == sourceID
     }
 
+    func presentsPressVisual(forAny sourceIDs: [String]) -> Bool {
+        guard let activePressVisualSourceID else { return false }
+        return sourceIDs.contains(activePressVisualSourceID)
+    }
+
     var hasActivePointerSession: Bool {
         pointerSessions.hasActiveSession
     }

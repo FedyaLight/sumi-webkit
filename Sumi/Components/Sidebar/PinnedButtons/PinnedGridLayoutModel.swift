@@ -18,7 +18,7 @@ struct PinnedGridLayoutModel {
 
     let width: CGFloat
     let items: [SidebarEssentialVisualItem]
-    let dragState: SidebarDragState
+    let dragPresentation: SidebarEssentialsDragPresentationFrame
     let dragGeometry: SidebarDragGeometryModule
     let geometrySpaceId: UUID
     let effectiveProfileId: UUID?
@@ -32,7 +32,7 @@ struct PinnedGridLayoutModel {
     init(
         width: CGFloat,
         items: [SidebarEssentialVisualItem],
-        dragState: SidebarDragState,
+        dragPresentation: SidebarEssentialsDragPresentationFrame,
         dragGeometry: SidebarDragGeometryModule,
         geometrySpaceId: UUID,
         effectiveProfileId: UUID?,
@@ -44,7 +44,7 @@ struct PinnedGridLayoutModel {
     ) {
         self.width = width
         self.items = items
-        self.dragState = dragState
+        self.dragPresentation = dragPresentation
         self.dragGeometry = dragGeometry
         self.geometrySpaceId = geometrySpaceId
         self.effectiveProfileId = effectiveProfileId
@@ -53,7 +53,7 @@ struct PinnedGridLayoutModel {
         projectedLayout = SidebarEssentialsProjectionPolicy.make(
             items: items,
             width: width,
-            dragState: dragState
+            dragPresentation: dragPresentation
         )
         reportsDetailedGeometry = reportsGeometry
             && dragGeometry.shouldCollectDetailedGeometry(
@@ -61,13 +61,14 @@ struct PinnedGridLayoutModel {
                 profileId: effectiveProfileId
             )
         let animationsAllowed = animateLayout && isActiveWindow && !isTransitioningProfile && !shouldReduceMotion
-        shouldAnimateDropLayout = animationsAllowed && dragState.shouldAnimateDropLayout
+        shouldAnimateDropLayout = animationsAllowed
+            && dragPresentation.shouldAnimateDropLayout
         shouldAnimateContentLayout = animationsAllowed
     }
 
     var isHoveringThisEssentials: Bool {
-        guard dragState.isDropProjectionActive,
-              case .essentials = dragState.projectionHoveredSlot else {
+        guard dragPresentation.isDropProjectionActive,
+              case .essentials = dragPresentation.projectionHoveredSlot else {
             return false
         }
         return true
@@ -98,7 +99,7 @@ struct PinnedGridLayoutModel {
                 layoutItemCount: projectedLayout.projectedItemCount,
                 columnCount: projectedLayout.columnCount,
                 canAcceptDrop: projectedLayout.canAcceptDrop,
-                dragState: dragState
+                dragPresentation: dragPresentation
             )
     }
 
@@ -114,7 +115,7 @@ struct PinnedGridLayoutModel {
     }
 
     var previewState: SidebarEssentialsPreviewState? {
-        dragState.essentialsPreviewState(for: geometrySpaceId).flatMap {
+        dragPresentation.previewState(for: geometrySpaceId).flatMap {
             gridProjection.resolvedPreviewState(
                 $0,
                 visibleRowCount: visibleRowCount,

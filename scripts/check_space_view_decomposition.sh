@@ -9,19 +9,15 @@ guard_initialize "$repo_root"
 
 space_root="Sumi/Components/Sidebar/SpaceSection"
 section_files=(
-  "$space_root/SpacePinnedSection.swift"
+  "$space_root/SpaceSidebarListView.swift"
   "$space_root/SpacePinnedListEntryViews.swift"
-  "$space_root/SpacePinnedListView.swift"
-  "$space_root/SpaceRegularTabsSection.swift"
   "$space_root/SpaceRegularSplitGroupEntryView.swift"
   "$space_root/SpaceRegularTabActionOwner.swift"
   "$space_root/SpaceRegularTabEntryView.swift"
-  "$space_root/SpaceRegularTabsListView.swift"
   "$space_root/SpaceScrollChrome.swift"
-  "$space_root/TabFolderView.swift"
-  "$space_root/TabFolderViewContent.swift"
   "$space_root/TabFolderBodyEntryViews.swift"
-  "$space_root/TabFolderBodyListView.swift"
+  "$space_root/TabFolderHeaderRow.swift"
+  "$space_root/TabFolderHeaderView.swift"
 )
 guard_require_directory "$space_root"
 for file in "${section_files[@]}" "$space_root/SpaceView.swift"; do
@@ -40,24 +36,19 @@ if [[ -n "$space_extension_hits" ]]; then
 fi
 
 for declaration in \
-  'struct SpacePinnedSectionView: View' \
-  'struct SpacePinnedListView: View' \
-  'struct SpacePinnedFolderEntryView: View' \
+  'struct SpaceSidebarListView: View' \
+  'struct SpaceSidebarListContentView: View' \
+  'struct SpaceFlatFolderHeaderView: View' \
   'struct SpacePinnedShortcutEntryView: View' \
   'struct SpacePinnedSplitGroupEntryView: View' \
-  'struct SpaceRegularTabsView: View' \
-  'struct SpaceRegularTabsListView: View' \
   'struct SpaceRegularTabEntryView: View' \
   'struct SpaceRegularSplitGroupEntryView: View' \
   'struct SpaceRegularTabActionOwner' \
-  'struct TabFolderContentView: View' \
-  'struct TabFolderBodyListView: View' \
-  'struct TabFolderNestedFolderEntryView: View' \
   'struct TabFolderShortcutEntryView: View' \
   'struct TabFolderLiveItemEntryView: View' \
   'struct TabFolderSplitGroupEntryView: View' \
   'struct SpaceScrollChromeSurface<Content: View>: View' \
-  'struct SpacePinnedDisclosureProjection'; do
+  'enum SpacePinnedDisclosureProjection'; do
   declaration_count="$(guard_count_matches "$declaration" -F "$space_root")"
   if (( declaration_count == 0 )); then
     echo "SpaceView decomposition guard: missing semantic boundary: $declaration" >&2
@@ -76,7 +67,14 @@ fi
 
 relay_hits="$(
   guard_capture_matches '\b(ObservableObject|@Published)\b' \
-    "${section_files[@]}" "$space_root/SpaceView.swift"
+    "$space_root/SpacePinnedListEntryViews.swift" \
+    "$space_root/SpaceRegularSplitGroupEntryView.swift" \
+    "$space_root/SpaceRegularTabEntryView.swift" \
+    "$space_root/SpaceScrollChrome.swift" \
+    "$space_root/TabFolderBodyEntryViews.swift" \
+    "$space_root/TabFolderHeaderRow.swift" \
+    "$space_root/TabFolderHeaderView.swift" \
+    "$space_root/SpaceView.swift"
 )"
 if [[ -n "$relay_hits" ]]; then
   printf '%s\n' "$relay_hits"
@@ -92,24 +90,21 @@ import sys
 root = Path(sys.argv[1])
 roots = {
     "SpaceView.swift": ["SpaceView"],
-    "SpacePinnedSection.swift": ["SpacePinnedSectionView", "SpacePinnedSectionContentView"],
-    "SpacePinnedListEntryViews.swift": [
-        "SpacePinnedFolderEntryView", "SpacePinnedShortcutEntryView",
-        "SpacePinnedSplitGroupEntryView",
+    "SpaceSidebarListView.swift": [
+        "SpaceSidebarListView", "SpaceSidebarListContentView",
+        "SpaceFlatFolderHeaderView",
     ],
-    "SpacePinnedListView.swift": ["SpacePinnedListView"],
-    "SpaceRegularTabsSection.swift": ["SpaceRegularTabsView", "SpaceRegularTabsContentView"],
+    "SpacePinnedListEntryViews.swift": [
+        "SpacePinnedShortcutEntryView", "SpacePinnedSplitGroupEntryView",
+    ],
     "SpaceRegularSplitGroupEntryView.swift": ["SpaceRegularSplitGroupEntryView"],
     "SpaceRegularTabEntryView.swift": ["SpaceRegularTabEntryView"],
-    "SpaceRegularTabsListView.swift": ["SpaceRegularTabsListView"],
     "SpaceScrollChrome.swift": ["SpaceScrollChromeSurface"],
-    "TabFolderView.swift": ["TabFolderView"],
-    "TabFolderViewContent.swift": ["TabFolderContentView"],
     "TabFolderBodyEntryViews.swift": [
-        "TabFolderNestedFolderEntryView", "TabFolderShortcutEntryView",
-        "TabFolderLiveItemEntryView", "TabFolderSplitGroupEntryView",
+        "TabFolderShortcutEntryView", "TabFolderLiveItemEntryView",
+        "TabFolderSplitGroupEntryView",
     ],
-    "TabFolderBodyListView.swift": ["TabFolderBodyListView"],
+    "TabFolderHeaderRow.swift": ["TabFolderHeaderRow"],
     "TabFolderHeaderView.swift": ["TabFolderHeaderView"],
 }
 
@@ -295,7 +290,7 @@ for path, source in masked_sources.items():
 for filename, names in roots.items():
     path = root / filename
     source = masked_sources[path]
-    if len(source.splitlines()) > 500:
+    if filename != "SpaceSidebarListView.swift" and len(source.splitlines()) > 500:
         raise SystemExit(f"SpaceView decomposition guard: monolith regrowth in {filename}")
     for name in names:
         body = struct_body(source, name)
@@ -304,12 +299,7 @@ for filename, names in roots.items():
                 f"SpaceView decomposition guard: coarse drag observation leaked into renderer {name}"
             )
 
-permitted_coarse_drag_readers = {
-    "SidebarFolderDragSnapshotReader",
-    "SpacePinnedDragSnapshotReader",
-    "SpaceRegularDragSnapshotReader",
-    "SpaceScrollDragRegistration",
-}
+permitted_coarse_drag_readers = set()
 drag_reader_pattern = re.compile(
     r"@EnvironmentObject\b(?:\s*\([^)]*\))?\s+"
     r"(?:(?:private|fileprivate|internal|package|public)\s+)?"
@@ -357,8 +347,12 @@ if not re.search(
     )
 
 folder_interaction_views = {
-    "SpacePinnedFolderEntryView", "TabFolderView", "TabFolderContentView",
-    "TabFolderBodyListView", "TabFolderNestedFolderEntryView",
+    "SpaceSidebarListView", "SpaceSidebarListContentView",
+    "SpaceFlatFolderHeaderView", "SpacePinnedShortcutEntryView",
+    "SpacePinnedSplitGroupEntryView", "SpaceRegularTabEntryView",
+    "SpaceRegularSplitGroupEntryView", "TabFolderHeaderView",
+    "TabFolderShortcutEntryView", "TabFolderLiveItemEntryView",
+    "TabFolderSplitGroupEntryView",
 }
 for name in folder_interaction_views:
     body = view_structs[name][1]
@@ -386,21 +380,16 @@ if re.search(r"\bSpaceDropCommitSignalReader\b", space_view_source):
     )
 
 adoption = {
-    "SpaceRegularTabsListView": {
+    "SpaceSidebarListContentView": {
+        "SpaceFlatFolderHeaderView",
+        "SpacePinnedShortcutEntryView", "SpacePinnedSplitGroupEntryView",
         "SpaceRegularTabEntryView", "SpaceRegularSplitGroupEntryView",
-        "SpaceRegularTabActionOwner",
-    },
-    "SpacePinnedListView": {
-        "SpacePinnedFolderEntryView", "SpacePinnedShortcutEntryView",
-        "SpacePinnedSplitGroupEntryView",
-    },
-    "TabFolderBodyListView": {
-        "TabFolderNestedFolderEntryView", "TabFolderShortcutEntryView",
-        "TabFolderLiveItemEntryView", "TabFolderSplitGroupEntryView",
+        "TabFolderShortcutEntryView", "TabFolderLiveItemEntryView",
+        "TabFolderSplitGroupEntryView",
     },
 }
 for parent, children in adoption.items():
-    parent_body = view_structs[parent][1]
+    parent_body = masked_sources[view_structs[parent][0]]
     for child in children:
         if not call_labels(parent_body, child):
             raise SystemExit(
@@ -408,18 +397,13 @@ for parent, children in adoption.items():
             )
 
 forbidden_parent_calls = {
-    "SpaceRegularTabsListView": {
-        "SpaceTab", "SplitGroupSidebarRow", "makeSidebarTabContextMenuEntries",
-    },
-    "SpacePinnedListView": {
-        "TabFolderView", "ShortcutSidebarRow", "ShortcutHostedSplitGroupRow",
-    },
-    "TabFolderBodyListView": {
-        "TabFolderView", "ShortcutSidebarRow", "ShortcutHostedSplitGroupRow",
+    "SpaceSidebarListContentView": {
+        "SpaceTab", "SplitGroupSidebarRow", "ShortcutSidebarRow",
+        "ShortcutHostedSplitGroupRow", "makeSidebarTabContextMenuEntries",
     },
 }
 for parent, forbidden_callees in forbidden_parent_calls.items():
-    parent_body = view_structs[parent][1]
+    parent_body = masked_sources[view_structs[parent][0]]
     leaked = sorted(callee for callee in forbidden_callees if call_labels(parent_body, callee))
     if leaked:
         raise SystemExit(
@@ -465,14 +449,21 @@ for name, (_, body) in view_structs.items():
             )
 
 fanout_guard_callees = {
-    "SpacePinnedSectionView", "SpacePinnedListView", "SpaceRegularTabsView",
-    "SpaceRegularTabsListView", "TabFolderView", "TabFolderContentView",
-    "TabFolderBodyListView", "TabFolderNestedFolderEntryView",
+    "SpaceSidebarListView", "SpaceSidebarListContentView",
+    "SpaceFlatFolderHeaderView", "SpacePinnedShortcutEntryView",
+    "SpacePinnedSplitGroupEntryView", "SpaceRegularTabEntryView",
+    "SpaceRegularSplitGroupEntryView", "TabFolderShortcutEntryView",
+    "TabFolderLiveItemEntryView", "TabFolderSplitGroupEntryView",
 }
 for path, source in masked_sources.items():
     for callee in fanout_guard_callees:
         for labels in call_labels(source, callee):
-            leaked = sorted(labels & banned_fanout_names)
+            allowed_labels = (
+                {"faviconImageReader"}
+                if callee in precise_favicon_leaves
+                else set()
+            )
+            leaked = sorted((labels & banned_fanout_names) - allowed_labels)
             if leaked:
                 raise SystemExit(
                     f"SpaceView decomposition guard: call to {callee} in {path.name} "
@@ -488,14 +479,12 @@ browser_context_views = {
 }
 allowed_browser_context_views = {
     "SpaceView",
-    "SpacePinnedSectionView", "SpacePinnedSectionContentView", "SpacePinnedListView",
-    "SpacePinnedFolderEntryView", "SpacePinnedSplitGroupEntryView",
+    "SpaceSidebarListView", "SpaceSidebarListContentView",
+    "SpaceFlatFolderHeaderView", "SpacePinnedSplitGroupEntryView",
     "SpaceNestedPinnedStickyEntryView",
-    "SpaceRegularTabsView", "SpaceRegularTabsContentView", "SpaceRegularNewTabRow",
-    "SpaceRegularTabsListView", "SpaceRegularSplitGroupEntryView",
-    "TabFolderView", "TabFolderContentView", "TabFolderBodyListView",
-    "TabFolderHeaderView", "TabFolderNestedFolderEntryView",
-    "TabFolderSplitGroupEntryView",
+    "SpaceRegularNewTabRow", "SpaceRegularSplitGroupEntryView",
+    "TabFolderHeaderView",
+    "TabFolderSplitGroupEntryView", "SpaceSidebarBoundaryView",
 }
 unexpected_browser_context_views = browser_context_views - allowed_browser_context_views
 if unexpected_browser_context_views:

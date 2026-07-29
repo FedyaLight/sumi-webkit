@@ -87,6 +87,28 @@ final class SidebarListPresentationTests: XCTestCase {
         XCTAssertEqual(state.payload(for: 3), "latest")
     }
 
+    func testInterruptedRemovalEvictsAlreadyLeavingRowOnNextTransition() {
+        var state = SidebarListPresentationState(
+            scene: scene([
+                element(id: 1, payload: "pinned", extent: 36),
+                element(id: 2, payload: "survivor", extent: 36),
+            ])
+        )
+        let removal = state.prepareTransition(to: scene([
+            element(id: 2, payload: "survivor", extent: 36),
+        ]))
+        state.animate(removal)
+
+        let interruption = state.prepareTransition(to: scene([
+            element(id: 2, payload: "survivor", extent: 36),
+            element(id: 3, payload: "new", extent: 36),
+        ]))
+
+        XCTAssertEqual(state.items.map(\.id), [2, 3])
+        state.animate(interruption)
+        state.settle(interruption)
+    }
+
     func testInsertionPreservesTargetOrderWithoutChangingExistingIdentity() {
         var state = SidebarListPresentationState(
             scene: scene([

@@ -3,6 +3,32 @@ import Foundation
 import SumiDomain
 import SwiftUI
 
+/// Immutable window-local Live Page residence consumed by one sidebar page.
+/// Durable inventory remains separate so a load/unload never rebuilds it.
+struct SidebarLauncherRuntimeSnapshot: Equatable {
+    static let empty = Self(liveTabsByPinID: [:])
+
+    private let liveTabsByPinID: [UUID: Tab]
+
+    init(liveTabsByPinID: [UUID: Tab]) {
+        self.liveTabsByPinID = liveTabsByPinID
+    }
+
+    func liveTab(for pinID: UUID) -> Tab? {
+        liveTabsByPinID[pinID]
+    }
+
+    static func == (
+        lhs: SidebarLauncherRuntimeSnapshot,
+        rhs: SidebarLauncherRuntimeSnapshot
+    ) -> Bool {
+        lhs.liveTabsByPinID.count == rhs.liveTabsByPinID.count
+            && lhs.liveTabsByPinID.allSatisfy { pinID, tab in
+                rhs.liveTabsByPinID[pinID] === tab
+            }
+    }
+}
+
 struct SidebarWindowSelectionSnapshot: Equatable {
     static let none = Self()
 
@@ -150,6 +176,24 @@ final class SidebarWindowSelectionQuery {
         )
     }
 
+    func launcherRuntimeSnapshot(
+        pinIDs: Set<UUID>,
+        in windowState: BrowserWindowState
+    ) -> SidebarLauncherRuntimeSnapshot {
+        guard isCurrent(windowState), !pinIDs.isEmpty else { return .empty }
+        return SidebarLauncherRuntimeSnapshot(
+            liveTabsByPinID: Dictionary(
+                uniqueKeysWithValues: shortcutPresentation
+                    .liveShortcutTabs(in: windowState.id)
+                    .compactMap { tab in
+                        guard let pinID = tab.shortcutPinId,
+                              pinIDs.contains(pinID) else { return nil }
+                        return (pinID, tab)
+                    }
+            )
+        )
+    }
+
     func presentationState(
         for pin: ShortcutPin,
         in windowState: BrowserWindowState
@@ -170,6 +214,20 @@ final class SidebarWindowSelectionQuery {
         return shortcutPresentation.shortcutPresentationState(
             for: pin,
             in: windowState,
+            selection: selection.shortcut
+        )
+    }
+
+    func presentationState(
+        for pin: ShortcutPin,
+        liveTab: Tab?,
+        in windowState: BrowserWindowState,
+        selection: SidebarWindowSelectionSnapshot
+    ) -> ShortcutPresentationState {
+        guard isCurrent(windowState) else { return .launcherOnly }
+        return shortcutPresentation.shortcutPresentationState(
+            for: pin,
+            liveTab: liveTab,
             selection: selection.shortcut
         )
     }
@@ -198,6 +256,20 @@ final class SidebarWindowSelectionQuery {
         )
     }
 
+    func runtimeAffordance(
+        for pin: ShortcutPin,
+        liveTab: Tab?,
+        in windowState: BrowserWindowState,
+        selection: SidebarWindowSelectionSnapshot
+    ) -> SumiLauncherRuntimeAffordanceState {
+        guard isCurrent(windowState) else { return .launcherOnly }
+        return shortcutPresentation.shortcutRuntimeAffordanceState(
+            for: pin,
+            liveTab: liveTab,
+            selection: selection.shortcut
+        )
+    }
+
     func essentialRuntimeState(
         for pin: ShortcutPin,
         in windowState: BrowserWindowState
@@ -219,6 +291,24 @@ final class SidebarWindowSelectionQuery {
         }
         return shortcutPresentation.essentialRuntimeState(
             for: pin,
+            in: windowState,
+            splitQuery: splitQuery,
+            selection: selection.shortcut
+        )
+    }
+
+    func essentialRuntimeState(
+        for pin: ShortcutPin,
+        liveTab: Tab?,
+        in windowState: BrowserWindowState,
+        selection: SidebarWindowSelectionSnapshot
+    ) -> SumiEssentialRuntimeState? {
+        guard isCurrent(windowState) else {
+            return pin.role == .essential ? .launcherOnly : nil
+        }
+        return shortcutPresentation.essentialRuntimeState(
+            for: pin,
+            liveTab: liveTab,
             in: windowState,
             splitQuery: splitQuery,
             selection: selection.shortcut

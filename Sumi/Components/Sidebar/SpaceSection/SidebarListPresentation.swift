@@ -71,12 +71,69 @@ struct SidebarListScene<ID: Hashable, Payload> {
         structure = Structure(layouts: elements.map(\.layout))
         self.payloadByID = payloadByID
     }
+
+    private init(
+        structure: Structure,
+        payloadByID: [ID: Payload]
+    ) {
+        self.structure = structure
+        self.payloadByID = payloadByID
+    }
+
+    /// Gives one target element the source element's presentation identity
+    /// for the duration of a container-transfer animation.
+    fileprivate func replacingID(_ id: ID, with replacementID: ID) -> Self? {
+        guard id != replacementID,
+              let payload = payloadByID[id],
+              payloadByID[replacementID] == nil else {
+            return nil
+        }
+
+        var payloads = payloadByID
+        payloads[id] = nil
+        payloads[replacementID] = payload
+        let layouts = structure.layouts.map { layout in
+            guard layout.id == id else { return layout }
+            return Layout(
+                id: replacementID,
+                targetExtent: layout.targetExtent,
+                targetOpacity: layout.targetOpacity,
+                overflowBleed: layout.overflowBleed,
+                contentRevision: layout.contentRevision,
+                placement: layout.placement
+            )
+        }
+        return Self(
+            structure: Structure(layouts: layouts),
+            payloadByID: payloads
+        )
+    }
 }
 
 enum SidebarListElementPhase: Equatable {
     case stable
     case entering
     case leaving
+}
+
+/// One container transfer in flight. The row a drop retires lends its
+/// presentation identity to the row that replaces it, so a move between the
+/// pinned and regular sections animates as a slide instead of a collapse in
+/// one section and a growth in the other.
+struct SidebarListIdentityTransfer<ID: Hashable> {
+    /// True only for the row the drop is retiring. Without this the diff
+    /// would fuse any coincident removal with any coincident insertion.
+    let isSource: (ID) -> Bool
+    /// True for rows that may lend or adopt a transferred identity.
+    let isTransferable: (ID) -> Bool
+
+    init(
+        isSource: @escaping (ID) -> Bool,
+        isTransferable: @escaping (ID) -> Bool
+    ) {
+        self.isSource = isSource
+        self.isTransferable = isTransferable
+    }
 }
 
 /// Owns the transient union of the last rendered scene and the latest target.
@@ -95,11 +152,20 @@ struct SidebarListPresentationState<ID: Hashable, Payload> {
     struct Transition {
         let generation: UInt64
         let target: SidebarListScene<ID, Payload>
+        let settledTarget: SidebarListScene<ID, Payload>
+    }
+
+    /// A row rendering under another row's identity for the duration of a
+    /// container transfer.
+    private struct BorrowedIdentity {
+        let presented: ID
+        let settled: ID
     }
 
     private(set) var items: [Item]
     private(set) var generation: UInt64 = 0
     private var payloadByID: [ID: Payload]
+    private var borrowedIdentity: BorrowedIdentity?
 
     init(scene: SidebarListScene<ID, Payload>) {
         items = scene.structure.layouts.map {
@@ -134,6 +200,7 @@ struct SidebarListPresentationState<ID: Hashable, Payload> {
 
     mutating func synchronize(to scene: SidebarListScene<ID, Payload>) {
         generation &+= 1
+        borrowedIdentity = nil
         items = scene.structure.layouts.map {
             Item(
                 id: $0.id,
@@ -151,12 +218,107 @@ struct SidebarListPresentationState<ID: Hashable, Payload> {
     mutating func prepareTransition(
         to scene: SidebarListScene<ID, Payload>
     ) -> Transition {
+        reclaimBorrowedIdentity()
+        return prepareTransition(to: scene, settlingTo: scene, borrowing: nil)
+    }
+
+    mutating func prepareTransition(
+        to scene: SidebarListScene<ID, Payload>,
+        transferring transfer: SidebarListIdentityTransfer<ID>
+    ) -> Transition {
+        reclaimBorrowedIdentity()
+
+        let currentIDs = Set(
+            items.lazy
+                .filter { $0.phase != .leaving }
+                .map(\.id)
+                .filter(transfer.isTransferable)
+        )
+        let targetIDs = Set(
+            scene.structure.layouts.lazy
+                .map(\.id)
+                .filter(transfer.isTransferable)
+        )
+        let removed = currentIDs.subtracting(targetIDs)
+        let inserted = targetIDs.subtracting(currentIDs)
+
+        guard removed.count == 1,
+              inserted.count == 1,
+              let sourceID = removed.first,
+              transfer.isSource(sourceID),
+              let targetID = inserted.first,
+              let animatedScene = scene.replacingID(
+                  targetID,
+                  with: sourceID
+              ) else {
+            return prepareTransition(
+                to: scene,
+                settlingTo: scene,
+                borrowing: nil
+            )
+        }
+        return prepareTransition(
+            to: animatedScene,
+            settlingTo: scene,
+            borrowing: BorrowedIdentity(
+                presented: sourceID,
+                settled: targetID
+            )
+        )
+    }
+
+    /// Hands a borrowed identity back before the next diff is computed. A
+    /// transfer whose settle was superseded would otherwise keep the retired
+    /// source's identity on screen, where nothing retires it and the next
+    /// transfer adopts it again.
+    private mutating func reclaimBorrowedIdentity() {
+        guard let borrowed = borrowedIdentity else { return }
+        borrowedIdentity = nil
+        guard let index = items.firstIndex(
+            where: { $0.id == borrowed.presented }
+        ) else { return }
+
+        let presented = items[index]
+        items[index] = Item(
+            id: borrowed.settled,
+            extent: presented.extent,
+            opacity: presented.opacity,
+            overflowBleed: presented.overflowBleed,
+            phase: presented.phase,
+            placement: presented.placement,
+            reportsAnimatedExtent: presented.reportsAnimatedExtent
+        )
+        if let payload = payloadByID.removeValue(forKey: borrowed.presented) {
+            payloadByID[borrowed.settled] = payload
+        }
+    }
+
+    private mutating func prepareTransition(
+        to scene: SidebarListScene<ID, Payload>,
+        settlingTo settledScene: SidebarListScene<ID, Payload>,
+        borrowing borrowed: BorrowedIdentity?
+    ) -> Transition {
         generation &+= 1
-        let transition = Transition(generation: generation, target: scene)
+        borrowedIdentity = borrowed
+        let transition = Transition(
+            generation: generation,
+            target: scene,
+            settledTarget: settledScene
+        )
         let targetIDs = Set(scene.structure.layouts.map(\.id))
         let targetByID = Dictionary(
             uniqueKeysWithValues: scene.structure.layouts.map { ($0.id, $0) }
         )
+
+        let staleDepartureIDs = Set(items.compactMap { item in
+            item.phase == .leaving && !targetIDs.contains(item.id)
+                ? item.id
+                : nil
+        })
+        if !staleDepartureIDs.isEmpty {
+            items.removeAll { staleDepartureIDs.contains($0.id) }
+            staleDepartureIDs.forEach { payloadByID.removeValue(forKey: $0) }
+        }
 
         for (id, payload) in scene.payloadByID {
             payloadByID[id] = payload
@@ -239,7 +401,7 @@ struct SidebarListPresentationState<ID: Hashable, Payload> {
 
     mutating func settle(_ transition: Transition) {
         guard transition.generation == generation else { return }
-        synchronize(to: transition.target)
+        synchronize(to: transition.settledTarget)
     }
 
     /// Builds the transient union in O(previous + target). Departing rows stay
@@ -286,6 +448,7 @@ struct SidebarListPresentationState<ID: Hashable, Payload> {
 struct SidebarListSurface<ID: Hashable, Payload, Content: View>: View {
     let scene: SidebarListScene<ID, Payload>
     let animation: Animation?
+    let identityTransfer: SidebarListIdentityTransfer<ID>?
     let presentedSpaceID: UUID?
     let geometryGeneration: Int
     @ViewBuilder let content: (
@@ -301,6 +464,7 @@ struct SidebarListSurface<ID: Hashable, Payload, Content: View>: View {
     init(
         scene: SidebarListScene<ID, Payload>,
         animation: Animation?,
+        identityTransfer: SidebarListIdentityTransfer<ID>? = nil,
         presentedSpaceID: UUID? = nil,
         geometryGeneration: Int = 0,
         @ViewBuilder content: @escaping (
@@ -310,6 +474,7 @@ struct SidebarListSurface<ID: Hashable, Payload, Content: View>: View {
     ) {
         self.scene = scene
         self.animation = animation
+        self.identityTransfer = identityTransfer
         self.presentedSpaceID = presentedSpaceID
         self.geometryGeneration = geometryGeneration
         self.content = content
@@ -379,7 +544,14 @@ struct SidebarListSurface<ID: Hashable, Payload, Content: View>: View {
 
         let transition: SidebarListPresentationState<ID, Payload>.Transition =
             SidebarMotionTransaction.withoutAnimation {
-                presentation.prepareTransition(to: scene)
+                if let identityTransfer {
+                    presentation.prepareTransition(
+                        to: scene,
+                        transferring: identityTransfer
+                    )
+                } else {
+                    presentation.prepareTransition(to: scene)
+                }
             }
 
         withAnimation(

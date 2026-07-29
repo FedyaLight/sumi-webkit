@@ -66,7 +66,7 @@ final class TabStructuralLookupCoordinatorTests: XCTestCase {
         XCTAssertEqual(eventCount, 0)
     }
 
-    func testNotifyTransientShortcutStateChangedEmitsExactPagePublish() {
+    func testNotifyTransientShortcutStateChangedSeparatesRuntimeAndPageResidence() {
         let eventBus = TabStructureEventBus()
         let coordinator = makeCoordinator(eventBus: eventBus)
         let windowID = UUID()
@@ -76,11 +76,14 @@ final class TabStructuralLookupCoordinatorTests: XCTestCase {
         let tab = Tab(spaceId: spaceID, loadsCachedFaviconOnInit: false)
         tab.profileId = profileID
         var scopes: [TabStructureChangeScope] = []
-        let cancellable = eventBus.scopedStructureChangesPublisher.sink {
+        var pages: [LivePageResidenceScope] = []
+        let structuralCancellable = eventBus.scopedStructureChangesPublisher.sink {
             scopes.append($0)
         }
+        let residenceCancellable = eventBus.livePageResidenceChangesPublisher
+            .sink { pages.append($0) }
 
-        withExtendedLifetime(cancellable) {
+        withExtendedLifetime((structuralCancellable, residenceCancellable)) {
             coordinator.notifyTransientShortcutStateChanged(
                 entries: [
                     LiveShortcutTabEntry(
@@ -99,13 +102,14 @@ final class TabStructuralLookupCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(
             scopes,
-            [
-                .page(TabStructurePageScope(
-                    windowID: windowID,
-                    spaceID: spaceID,
-                    profileID: profileID
-                )),
-            ]
+            [.runtimeOnly]
+        )
+        XCTAssertEqual(
+            pages,
+            [LivePageResidenceScope(
+                windowID: windowID,
+                spaceID: spaceID
+            )]
         )
     }
 
@@ -138,6 +142,69 @@ final class TabStructuralLookupCoordinatorTests: XCTestCase {
             ]
         )
         withExtendedLifetime(cancellable) {}
+    }
+
+    func testNestedTransactionCoalescesDuplicateLivePageResidenceScopes() {
+        let eventBus = TabStructureEventBus()
+        let coordinator = makeCoordinator(eventBus: eventBus)
+        let windowID = UUID()
+        let profileID = UUID()
+        let firstPage = TabStructurePageScope(
+            windowID: windowID,
+            spaceID: UUID(),
+            profileID: profileID
+        )
+        let secondPage = TabStructurePageScope(
+            windowID: windowID,
+            spaceID: UUID(),
+            profileID: profileID
+        )
+        func entry(_ page: TabStructurePageScope) -> LiveShortcutTabEntry {
+            LiveShortcutTabEntry(
+                windowId: windowID,
+                pinId: UUID(),
+                tab: Tab(loadsCachedFaviconOnInit: false),
+                presentationPage: LiveShortcutPresentationPageReceipt(
+                    windowID: page.windowID,
+                    spaceID: page.spaceID,
+                    profileID: page.profileID
+                )
+            )
+        }
+        var structuralScopes: [TabStructureChangeScope] = []
+        var residencePages: [LivePageResidenceScope] = []
+        let structuralCancellable = eventBus.scopedStructureChangesPublisher
+            .sink { structuralScopes.append($0) }
+        let residenceCancellable = eventBus.livePageResidenceChangesPublisher
+            .sink { residencePages.append($0) }
+
+        coordinator.withTransaction {
+            coordinator.notifyTransientShortcutStateChanged(
+                entries: [entry(firstPage), entry(firstPage)]
+            )
+            coordinator.withTransaction {
+                coordinator.notifyTransientShortcutStateChanged(
+                    entries: [entry(secondPage)]
+                )
+            }
+        }
+
+        XCTAssertEqual(structuralScopes, [.runtimeOnly])
+        XCTAssertEqual(
+            Set(residencePages),
+            Set([
+                LivePageResidenceScope(
+                    windowID: firstPage.windowID,
+                    spaceID: firstPage.spaceID
+                ),
+                LivePageResidenceScope(
+                    windowID: secondPage.windowID,
+                    spaceID: secondPage.spaceID
+                ),
+            ])
+        )
+        XCTAssertEqual(residencePages.count, 2)
+        withExtendedLifetime((structuralCancellable, residenceCancellable)) {}
     }
 
     func testWithTransactionReturnsOperationValue() {

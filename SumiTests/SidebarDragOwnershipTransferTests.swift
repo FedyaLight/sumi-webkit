@@ -611,7 +611,7 @@ final class SidebarDragOwnershipTransferTests: SidebarDragContextTestCase {
         XCTAssertTrue(tabManager.regularTabCollectionOwner.tabs(in: space.id).isEmpty)
     }
 
-    func testSpacePinnedDropIntoRegularCreatesRegularTabAndRemovesLauncherOwnership() throws {
+    func testSpacePinnedDropIntoRegularCreatesRegularTabAndRemovesLauncher() throws {
         let tabManager = BrowserManager()
         let profileId = UUID()
         let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
@@ -639,11 +639,211 @@ final class SidebarDragOwnershipTransferTests: SidebarDragContextTestCase {
         )
 
         XCTAssertTrue(didMove)
-        XCTAssertTrue(tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id).isEmpty)
+        XCTAssertTrue(
+            tabManager.shortcutPinCollectionStateOwner
+                .spacePinnedPins(for: space.id).isEmpty
+        )
         let converted = try XCTUnwrap(tabManager.regularTabCollectionOwner.tabs(in: space.id).first)
         XCTAssertEqual(converted.url, pin.launchURL)
         XCTAssertNil(converted.shortcutPinId)
         XCTAssertFalse(converted.isShortcutLiveInstance)
+    }
+
+    func testSeparatingRegularSplitExpandsMembersAtGroupPosition() throws {
+        let harness = try makeLiveWindowHarness()
+        let browser = harness.browserManager
+        let space = try makeSpace(browser, name: "Work")
+        let tabs = ["a", "b", "c", "d"].map { name in
+            browser.regularTabLifecycleOwner.createNewTab(
+                url: "https://\(name).example",
+                in: space,
+                activate: false
+            )
+        }
+        let group = try XCTUnwrap(SplitGroup.make(
+            members: [
+                .regularTab(tabs[1].id),
+                .regularTab(tabs[3].id),
+            ],
+            layoutKind: .vertical,
+            container: .regularTabs(spaceId: space.id)
+        ))
+        XCTAssertTrue(browser.splitGroupMutations.insert(group))
+        harness.windowState.currentSpaceId = space.id
+
+        browser.splitLayout.separate(
+            .regularTab(tabs[3].id),
+            from: group.id,
+            in: harness.windowState
+        )
+
+        XCTAssertNil(browser.splitGroupStore.group(id: group.id))
+        XCTAssertEqual(
+            browser.regularTabCollectionOwner.tabs(in: space.id).map(\.id),
+            [tabs[0].id, tabs[1].id, tabs[3].id, tabs[2].id]
+        )
+    }
+
+    func testSeparatingPinnedSplitExpandsLaunchersAtGroupPosition() throws {
+        let harness = try makeLiveWindowHarness()
+        let browser = harness.browserManager
+        let profileID = UUID()
+        let space = try makeSpace(
+            browser,
+            name: "Work",
+            profileId: profileID
+        )
+        let pins = try ["a", "b", "c", "d"].enumerated().map {
+            index, name in
+            try makeSpacePinnedPin(
+                browser,
+                in: space,
+                url: "https://\(name).example",
+                index: index
+            )
+        }
+        let group = try XCTUnwrap(SplitGroup.make(
+            members: [
+                .shortcutPin(pins[1].id),
+                .shortcutPin(pins[3].id),
+            ],
+            layoutKind: .vertical,
+            container: .shortcutSidebar(
+                spaceId: space.id,
+                profileId: profileID,
+                folderId: nil,
+                index: 1
+            )
+        ))
+        XCTAssertTrue(browser.splitGroupMutations.insert(group))
+        harness.windowState.currentSpaceId = space.id
+
+        browser.splitLayout.separate(
+            .shortcutPin(pins[3].id),
+            from: group.id,
+            in: harness.windowState
+        )
+
+        XCTAssertNil(browser.splitGroupStore.group(id: group.id))
+        XCTAssertEqual(
+            browser.splitGroupSidebarOrdering.topLevelItems(for: space.id),
+            [
+                .shortcut(pins[0].id),
+                .shortcut(pins[1].id),
+                .shortcut(pins[3].id),
+                .shortcut(pins[2].id),
+            ]
+        )
+    }
+
+    func testSeparatingOnePinnedMemberKeepsRemainingGroupAtOriginalPosition()
+        throws {
+        let harness = try makeLiveWindowHarness()
+        let browser = harness.browserManager
+        let profileID = UUID()
+        let space = try makeSpace(
+            browser,
+            name: "Work",
+            profileId: profileID
+        )
+        let pins = try ["a", "b", "c", "d", "e"].enumerated().map {
+            index, name in
+            try makeSpacePinnedPin(
+                browser,
+                in: space,
+                url: "https://\(name).example",
+                index: index
+            )
+        }
+        let group = try XCTUnwrap(SplitGroup.make(
+            members: [
+                .shortcutPin(pins[1].id),
+                .shortcutPin(pins[3].id),
+                .shortcutPin(pins[4].id),
+            ],
+            layoutKind: .vertical,
+            container: .shortcutSidebar(
+                spaceId: space.id,
+                profileId: profileID,
+                folderId: nil,
+                index: 1
+            )
+        ))
+        XCTAssertTrue(browser.splitGroupMutations.insert(group))
+        harness.windowState.currentSpaceId = space.id
+
+        browser.splitLayout.separate(
+            .shortcutPin(pins[3].id),
+            from: group.id,
+            in: harness.windowState
+        )
+
+        let remainingGroup = try XCTUnwrap(
+            browser.splitGroupStore.group(id: group.id)
+        )
+        XCTAssertEqual(
+            remainingGroup.memberIDs,
+            [.shortcutPin(pins[1].id), .shortcutPin(pins[4].id)]
+        )
+        XCTAssertEqual(
+            browser.splitGroupSidebarOrdering.topLevelItems(for: space.id),
+            [
+                .shortcut(pins[0].id),
+                .splitGroup(group.id),
+                .shortcut(pins[3].id),
+                .shortcut(pins[2].id),
+            ]
+        )
+    }
+
+    func testSeparatingEssentialSplitExpandsLaunchersAtTilePosition() throws {
+        let harness = try makeLiveWindowHarness()
+        let browser = harness.browserManager
+        let profileID = UUID()
+        let space = try makeSpace(
+            browser,
+            name: "Work",
+            profileId: profileID
+        )
+        let pins = try ["a", "b", "c", "d"].enumerated().map {
+            index, name in
+            try makeEssentialPin(
+                browser,
+                in: space,
+                profileId: profileID,
+                url: "https://\(name).example",
+                index: index
+            )
+        }
+        let group = try XCTUnwrap(SplitGroup.make(
+            members: [
+                .shortcutPin(pins[1].id),
+                .shortcutPin(pins[3].id),
+            ],
+            layoutKind: .vertical,
+            container: .essentialSidebar(
+                profileId: profileID,
+                index: 1
+            )
+        ))
+        XCTAssertTrue(browser.splitGroupMutations.insert(group))
+
+        browser.splitLayout.separate(
+            .shortcutPin(pins[3].id),
+            from: group.id,
+            in: harness.windowState
+        )
+
+        XCTAssertNil(browser.splitGroupStore.group(id: group.id))
+        XCTAssertEqual(
+            browser.splitGroupSidebarOrdering.essentialItems(for: profileID),
+            [
+                .shortcut(pins[0].id),
+                .shortcut(pins[1].id),
+                .shortcut(pins[3].id),
+                .shortcut(pins[2].id),
+            ]
+        )
     }
 
     func testFolderChildDropIntoRegularCreatesRegularTabAndRemovesFolderOwnership() throws {

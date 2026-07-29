@@ -11,21 +11,60 @@ enum SidebarScopedSnapshotDelivery {
     case deferredOnMainRunLoop
     /// The upstream publisher must already be confined to the main actor.
     case mainActorImmediate(
-        deferWhile: @MainActor () -> Bool = { false }
+        deferral: SidebarScopedSnapshotDeferral? = nil
+    )
+}
+
+struct SidebarScopedSnapshotDeferral {
+    /// The reader buffers only the fact that a change arrived, then re-reads
+    /// current state when the explicit boundary ends.
+    let isActive: @MainActor () -> Bool
+    let ended: AnyPublisher<SidebarScopedSnapshotDeferralEnd, Never>
+}
+
+enum SidebarScopedSnapshotDeferralEnd: Sendable {
+    case reached
+}
+
+@MainActor
+func presentedDropCompletionDeferral(
+    for dragState: SidebarDragState
+) -> SidebarScopedSnapshotDeferral {
+    SidebarScopedSnapshotDeferral(
+        isActive: { dragState.isCompletingDrop },
+        ended: dragState.listPresentation.$frame
+            .map(\.isCompletingDrop)
+            .removeDuplicates()
+            .dropFirst()
+            .filter { !$0 }
+            .map { _ in SidebarScopedSnapshotDeferralEnd.reached }
+            .eraseToAnyPublisher()
     )
 }
 
 /// Exact structural invalidation source. It owns no subscription; mounted
 /// snapshot readers subscribe only while their sidebar surface is interactive.
 struct SidebarInventoryUpdates {
-    let changes: AnyPublisher<TabStructureChangeScope, Never>
+    let structuralChanges: AnyPublisher<TabStructureChangeScope, Never>
+    let livePageResidenceChanges: AnyPublisher<LivePageResidenceScope, Never>
+
+    init(
+        structuralChanges: AnyPublisher<TabStructureChangeScope, Never>,
+        livePageResidenceChanges: AnyPublisher<
+            LivePageResidenceScope,
+            Never
+        > = Empty(completeImmediately: false).eraseToAnyPublisher()
+    ) {
+        self.structuralChanges = structuralChanges
+        self.livePageResidenceChanges = livePageResidenceChanges
+    }
 
     func pageChanges(
         windowID: UUID,
         spaceID: UUID,
         profileID: UUID?
     ) -> AnyPublisher<TabStructureChangeScope, Never> {
-        changes
+        structuralChanges
             .filter {
                 $0.affectsPage(
                     windowID: windowID,
@@ -37,8 +76,19 @@ struct SidebarInventoryUpdates {
     }
 
     var catalogChanges: AnyPublisher<TabStructureChangeScope, Never> {
-        changes
+        structuralChanges
             .filter(\.affectsSpaceCatalog)
+            .eraseToAnyPublisher()
+    }
+
+    func launcherResidenceChanges(
+        windowID: UUID,
+        spaceID: UUID
+    ) -> AnyPublisher<LivePageResidenceScope, Never> {
+        livePageResidenceChanges
+            .filter {
+                $0.windowID == windowID && $0.spaceID == spaceID
+            }
             .eraseToAnyPublisher()
     }
 }
@@ -61,8 +111,10 @@ final class SidebarScopedSnapshotModel<Value>: ObservableObject {
     private let delivery: SidebarScopedSnapshotDelivery
     private let areEquivalent: ((Value, Value) -> Bool)?
     private var cancellable: AnyCancellable?
+    private var deferralCancellable: AnyCancellable?
     private var activationGeneration: UInt64 = 0
     private var receivedChangeRevision: UInt64 = 0
+    private var hasDeferredChange = false
 
     init(
         current: @escaping @MainActor () -> Value,
@@ -82,6 +134,9 @@ final class SidebarScopedSnapshotModel<Value>: ObservableObject {
             activationGeneration &+= 1
             cancellable?.cancel()
             cancellable = nil
+            deferralCancellable?.cancel()
+            deferralCancellable = nil
+            hasDeferredChange = false
             return
         }
         guard cancellable == nil else { return }
@@ -99,13 +154,22 @@ final class SidebarScopedSnapshotModel<Value>: ObservableObject {
                     self?.publishIfChanged(snapshot)
                 }
             publishIfChanged(current())
-        case .mainActorImmediate(let deferWhile):
+        case .mainActorImmediate(let deferral):
+            if let deferral {
+                deferralCancellable = deferral.ended
+                    .sink { [weak self] _ in
+                        self?.resumeDeferredSnapshot(
+                            generation: generation,
+                            deferral: deferral
+                        )
+                    }
+            }
             cancellable = changes
                 .sink { [weak self] snapshot in
                     self?.receiveImmediateSnapshot(
                         snapshot,
                         generation: generation,
-                        deferWhile: deferWhile
+                        deferral: deferral
                     )
                 }
             let revisionBeforeRead = receivedChangeRevision
@@ -119,26 +183,33 @@ final class SidebarScopedSnapshotModel<Value>: ObservableObject {
     private func receiveImmediateSnapshot(
         _ newSnapshot: Value,
         generation: UInt64,
-        deferWhile: @MainActor () -> Bool
+        deferral: SidebarScopedSnapshotDeferral?
     ) {
         guard activationGeneration == generation else { return }
         receivedChangeRevision &+= 1
-        let revision = receivedChangeRevision
 
-        guard deferWhile() else {
-            publishIfChanged(newSnapshot)
+        if let deferral, deferral.isActive() {
+            hasDeferredChange = true
             return
         }
+        hasDeferredChange = false
+        publishIfChanged(newSnapshot)
+    }
 
-        // Drop commits disable SwiftUI animations. Publish after that transaction
-        // so the settle animation and AppKit interaction owner remain intact.
-        RunLoop.main.schedule { [weak self] in
-            guard let self,
-                  self.activationGeneration == generation,
-                  self.receivedChangeRevision == revision else {
-                return
-            }
-            self.publishIfChanged(newSnapshot)
+    private func resumeDeferredSnapshot(
+        generation: UInt64,
+        deferral: SidebarScopedSnapshotDeferral
+    ) {
+        guard activationGeneration == generation,
+              hasDeferredChange,
+              !deferral.isActive() else {
+            return
+        }
+        hasDeferredChange = false
+        let revisionBeforeRead = receivedChangeRevision
+        let currentSnapshot = current()
+        if receivedChangeRevision == revisionBeforeRead {
+            publishIfChanged(currentSnapshot)
         }
     }
 
@@ -151,6 +222,7 @@ final class SidebarScopedSnapshotModel<Value>: ObservableObject {
 
     isolated deinit {
         cancellable?.cancel()
+        deferralCancellable?.cancel()
     }
 }
 

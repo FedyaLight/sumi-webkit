@@ -262,7 +262,14 @@ class SidebarDragContextTestCase: XCTestCase {
         )
 
         XCTAssertTrue(didMove)
-        XCTAssertNil(shortcutPin(for: source, tabManager: tabManager, profileId: profileId, space: space, folder: folder))
+        let persistedPin = shortcutPin(
+            for: source,
+            tabManager: tabManager,
+            profileId: profileId,
+            space: space,
+            folder: folder
+        )
+        XCTAssertNil(persistedPin)
         XCTAssertNil(tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
         let converted = try XCTUnwrap(tabManager.regularTabCollectionOwner.tabs(in: space.id).first)
         XCTAssertIdentical(converted, liveTab)
@@ -314,7 +321,14 @@ class SidebarDragContextTestCase: XCTestCase {
         )
 
         XCTAssertTrue(didMove)
-        XCTAssertNil(shortcutPin(for: source, tabManager: tabManager, profileId: profileId, space: space, folder: folder))
+        let persistedPin = shortcutPin(
+            for: source,
+            tabManager: tabManager,
+            profileId: profileId,
+            space: space,
+            folder: folder
+        )
+        XCTAssertNil(persistedPin)
         XCTAssertNil(tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
         let converted = try XCTUnwrap(tabManager.regularTabCollectionOwner.tabs(in: space.id).first)
         XCTAssertNotEqual(converted.id, pin.id)

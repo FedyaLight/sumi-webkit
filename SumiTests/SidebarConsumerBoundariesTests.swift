@@ -234,10 +234,31 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
     func testPinnedDragPresentationPublishesOneAtomicFrameAtDragStart() {
         let state = SidebarDragState()
         let itemID = UUID()
-        var frames: [SidebarListDragPresentationFrame] = []
-        let cancellable = state.listPresentation.$frame
+        var listFrames: [SidebarListDragPresentationFrame] = []
+        var sessionFrames: [SidebarDragSessionPresentationFrame] = []
+        var essentialsFrames: [SidebarEssentialsDragPresentationFrame] = []
+        var floatingFrames: [SidebarFloatingDragPresentationFrame] = []
+        var broadPublicationCount = 0
+        var cancellables = Set<AnyCancellable>()
+        state.listPresentation.$frame
             .dropFirst()
-            .sink { frames.append($0) }
+            .sink { listFrames.append($0) }
+            .store(in: &cancellables)
+        state.sessionPresentation.$frame
+            .dropFirst()
+            .sink { sessionFrames.append($0) }
+            .store(in: &cancellables)
+        state.essentialsPresentation.$frame
+            .dropFirst()
+            .sink { essentialsFrames.append($0) }
+            .store(in: &cancellables)
+        state.floatingPresentation.$frame
+            .dropFirst()
+            .sink { floatingFrames.append($0) }
+            .store(in: &cancellables)
+        state.objectWillChange
+            .sink { broadPublicationCount += 1 }
+            .store(in: &cancellables)
 
         state.beginInternalDragSession(
             itemId: itemID,
@@ -246,10 +267,114 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
             previewAssets: [:]
         )
 
-        XCTAssertEqual(frames.count, 1)
-        XCTAssertEqual(frames.first?.isDragging, true)
-        XCTAssertEqual(frames.first?.activeDragItemID, itemID)
-        withExtendedLifetime(cancellable) {}
+        XCTAssertEqual(listFrames.count, 1)
+        XCTAssertEqual(sessionFrames.count, 1)
+        XCTAssertEqual(essentialsFrames.count, 1)
+        XCTAssertEqual(floatingFrames.count, 1)
+        XCTAssertEqual(listFrames.first?.isDragging, true)
+        XCTAssertEqual(listFrames.first?.activeDragItemID, itemID)
+        XCTAssertEqual(sessionFrames.first?.isInternalDragSession, true)
+        XCTAssertEqual(essentialsFrames.first?.projectionDragItemID, itemID)
+        XCTAssertEqual(floatingFrames.first?.previewKind, .row)
+        XCTAssertEqual(broadPublicationCount, 0)
+    }
+
+    func testRegularSlotMotionPublishesOnlyFramesThatConsumeTheSlot() {
+        let state = SidebarDragState()
+        let spaceID = UUID()
+        state.beginExternalDragSession(itemId: UUID())
+        var listPublicationCount = 0
+        var sessionPublicationCount = 0
+        var essentialsPublicationCount = 0
+        var floatingPublicationCount = 0
+        var broadPublicationCount = 0
+        var cancellables = Set<AnyCancellable>()
+        state.listPresentation.objectWillChange
+            .sink { listPublicationCount += 1 }
+            .store(in: &cancellables)
+        state.sessionPresentation.objectWillChange
+            .sink { sessionPublicationCount += 1 }
+            .store(in: &cancellables)
+        state.essentialsPresentation.objectWillChange
+            .sink { essentialsPublicationCount += 1 }
+            .store(in: &cancellables)
+        state.floatingPresentation.objectWillChange
+            .sink { floatingPublicationCount += 1 }
+            .store(in: &cancellables)
+        state.objectWillChange
+            .sink { broadPublicationCount += 1 }
+            .store(in: &cancellables)
+
+        state.presentDropResolution(
+            SidebarDropResolution(
+                slot: .spaceRegular(spaceId: spaceID, slot: 0),
+                folderIntent: .none,
+                activeHoveredFolderId: nil
+            )
+        )
+
+        XCTAssertEqual(listPublicationCount, 0)
+        XCTAssertEqual(sessionPublicationCount, 0)
+        XCTAssertEqual(essentialsPublicationCount, 1)
+        XCTAssertEqual(floatingPublicationCount, 1)
+        XCTAssertEqual(broadPublicationCount, 0)
+    }
+
+    func testArmingInternalGeometryPublishesOnlySessionFrame() {
+        let state = SidebarDragState()
+        var listPublicationCount = 0
+        var sessionPublicationCount = 0
+        var essentialsPublicationCount = 0
+        var floatingPublicationCount = 0
+        var cancellables = Set<AnyCancellable>()
+        state.listPresentation.objectWillChange
+            .sink { listPublicationCount += 1 }
+            .store(in: &cancellables)
+        state.sessionPresentation.objectWillChange
+            .sink { sessionPublicationCount += 1 }
+            .store(in: &cancellables)
+        state.essentialsPresentation.objectWillChange
+            .sink { essentialsPublicationCount += 1 }
+            .store(in: &cancellables)
+        state.floatingPresentation.objectWillChange
+            .sink { floatingPublicationCount += 1 }
+            .store(in: &cancellables)
+
+        state.armInternalDragGeometry(scope: nil)
+
+        XCTAssertEqual(listPublicationCount, 0)
+        XCTAssertEqual(sessionPublicationCount, 1)
+        XCTAssertEqual(essentialsPublicationCount, 0)
+        XCTAssertEqual(floatingPublicationCount, 0)
+    }
+
+    func testPinnedDragPresentationRetainsCommittedSourceDuringDropCompletion() {
+        let delayedActions = ManualMainActorDelayedActionScheduler()
+        let state = SidebarDragState(delayedActions: delayedActions.scheduler)
+        let itemID = UUID()
+        let spaceID = UUID()
+        state.beginInternalDragSession(
+            itemId: itemID,
+            location: CGPoint(x: 12, y: 20),
+            previewKind: .row,
+            previewAssets: [:]
+        )
+        state.presentDropResolution(
+            SidebarDropResolution(
+                slot: .spaceRegular(spaceId: spaceID, slot: 0),
+                folderIntent: .none,
+                activeHoveredFolderId: nil
+            )
+        )
+
+        _ = state.beginDropCommit()
+        state.resetInteractionState()
+
+        XCTAssertTrue(state.listPresentation.frame.isCompletingDrop)
+        XCTAssertEqual(
+            state.listPresentation.frame.activeDragItemID,
+            itemID
+        )
     }
 
     func testPinnedDragPresentationIgnoresRegularSlotMotion() {
@@ -645,9 +770,10 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
         XCTAssertEqual(model.snapshot, 1)
     }
 
-    func testInteractionSnapshotDefersStructuralDropMutationUntilNextRunLoopTurn() {
+    func testInteractionSnapshotDefersStructuralDropMutationUntilDropCompletionEnds() {
         let changes = PassthroughSubject<Int, Never>()
-        let dragState = SidebarDragState()
+        let delayedActions = ManualMainActorDelayedActionScheduler()
+        let dragState = SidebarDragState(delayedActions: delayedActions.scheduler)
         dragState.presentDropResolution(
             SidebarDropResolution(
                 slot: .spacePinned(spaceId: UUID(), slot: 0),
@@ -656,27 +782,99 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
             )
         )
         _ = dragState.beginDropCommit()
+        var currentSnapshot = 0
         let model = SidebarScopedSnapshotModel(
-            current: { 0 },
+            current: { currentSnapshot },
             changes: changes.eraseToAnyPublisher(),
             delivery: .mainActorImmediate(
-                deferWhile: { dragState.isCompletingDrop }
+                deferral: presentedDropCompletionDeferral(
+                    for: dragState
+                )
             )
         )
         model.setActive(true)
 
+        currentSnapshot = 1
         changes.send(1)
 
         XCTAssertEqual(model.snapshot, 0)
 
-        let delivered = expectation(description: "drop mutation delivered after tracking turn")
-        let cancellable = model.$snapshot
-            .filter { $0 == 1 }
-            .prefix(1)
-            .sink { _ in delivered.fulfill() }
-        wait(for: [delivered], timeout: 1)
+        dragState.resetInteractionState()
+        XCTAssertEqual(model.snapshot, 0)
+        delayedActions.runNext()
         XCTAssertEqual(model.snapshot, 1)
-        withExtendedLifetime(cancellable) {}
+    }
+
+    func testDeferredDropDeliveryPublishesStateAtDeliveryRatherThanAtAnnouncement() {
+        let changes = PassthroughSubject<Int, Never>()
+        let delayedActions = ManualMainActorDelayedActionScheduler()
+        let dragState = SidebarDragState(delayedActions: delayedActions.scheduler)
+        dragState.presentDropResolution(
+            SidebarDropResolution(
+                slot: .spacePinned(spaceId: UUID(), slot: 0),
+                folderIntent: .none,
+                activeHoveredFolderId: nil
+            )
+        )
+        _ = dragState.beginDropCommit()
+        var currentSnapshot = 0
+        let model = SidebarScopedSnapshotModel(
+            current: { currentSnapshot },
+            changes: changes.eraseToAnyPublisher(),
+            delivery: .mainActorImmediate(
+                deferral: presentedDropCompletionDeferral(
+                    for: dragState
+                )
+            )
+        )
+        model.setActive(true)
+
+        // A structural change announced mid-commit carries the value as it was
+        // partway through the mutation. Replaying it would put retired rows
+        // back on screen, so the deferred turn re-reads instead.
+        currentSnapshot = 2
+        changes.send(1)
+
+        dragState.resetInteractionState()
+        XCTAssertEqual(model.snapshot, 0)
+        delayedActions.runNext()
+        XCTAssertEqual(model.snapshot, 2)
+    }
+
+    func testDeferredDropDeliveryPublishesFinalStateWhenDropCompletionEnds() {
+        let changes = PassthroughSubject<Int, Never>()
+        let delayedActions = ManualMainActorDelayedActionScheduler()
+        let dragState = SidebarDragState(delayedActions: delayedActions.scheduler)
+        dragState.presentDropResolution(
+            SidebarDropResolution(
+                slot: .spacePinned(spaceId: UUID(), slot: 0),
+                folderIntent: .none,
+                activeHoveredFolderId: nil
+            )
+        )
+        _ = dragState.beginDropCommit()
+        dragState.resetInteractionState()
+        var currentSnapshot = 0
+        let model = SidebarScopedSnapshotModel(
+            current: { currentSnapshot },
+            changes: changes.eraseToAnyPublisher(),
+            delivery: .mainActorImmediate(
+                deferral: presentedDropCompletionDeferral(
+                    for: dragState
+                )
+            )
+        )
+        model.setActive(true)
+
+        // The structural event can precede the final mutation. Consuming it
+        // before drop completion loses the final state until another unrelated
+        // invalidation arrives.
+        changes.send(0)
+        currentSnapshot = 1
+
+        XCTAssertEqual(model.snapshot, 0)
+        delayedActions.runNext()
+        XCTAssertEqual(model.snapshot, 1)
     }
 
     func testScopedSnapshotModelRejectsQueuedDeliveryAfterCancellation() {
@@ -704,7 +902,8 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
         let unrelatedSpaceID = UUID()
         let targetWindowID = UUID()
         let updates = SidebarInventoryUpdates(
-            changes: bus.scopedStructureChangesPublisher
+            structuralChanges: bus.scopedStructureChangesPublisher,
+            livePageResidenceChanges: bus.livePageResidenceChangesPublisher
         )
         var recomputations = 0
         var catalogRecomputations = 0
@@ -729,7 +928,32 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
         bus.publishStructureChanged(scope: .space(targetSpaceID, catalog: true))
         XCTAssertEqual(recomputations, 2)
         XCTAssertEqual(catalogRecomputations, 1)
-        withExtendedLifetime((cancellable, catalogCancellable)) {}
+
+        var residenceRecomputations = 0
+        let residenceCancellable = updates.launcherResidenceChanges(
+            windowID: targetWindowID,
+            spaceID: targetSpaceID
+        ).sink { _ in residenceRecomputations += 1 }
+
+        bus.publishLivePageResidenceChanged(LivePageResidenceScope(
+            windowID: UUID(),
+            spaceID: targetSpaceID
+        ))
+        XCTAssertEqual(residenceRecomputations, 0)
+        XCTAssertEqual(recomputations, 2)
+
+        bus.publishLivePageResidenceChanged(LivePageResidenceScope(
+            windowID: targetWindowID,
+            spaceID: targetSpaceID
+        ))
+        XCTAssertEqual(residenceRecomputations, 1)
+        XCTAssertEqual(recomputations, 2)
+        XCTAssertEqual(catalogRecomputations, 1)
+        withExtendedLifetime((
+            cancellable,
+            catalogCancellable,
+            residenceCancellable
+        )) {}
     }
 
     private func makeInventory(

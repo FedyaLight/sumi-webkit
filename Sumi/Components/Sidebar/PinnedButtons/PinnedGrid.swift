@@ -36,6 +36,7 @@ struct PinnedGrid: View {
     let browserContext: SidebarBrowserContext
     let inventory: SidebarSpaceInventorySnapshot
     let items: [ShortcutPin]
+    let launcherRuntime: SidebarLauncherRuntimeSnapshot
     let selection: SidebarWindowSelectionQuery
     let pinProjection: SidebarPinFolderProjection
     let pinCommands: SidebarPinCommands
@@ -47,6 +48,8 @@ struct PinnedGrid: View {
     let animateLayout: Bool
     let reportsGeometry: Bool
     let isAppKitInteractionEnabled: Bool
+    @ObservedObject private var dragPresentation:
+        SidebarEssentialsDragPresentation
 
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(WindowRegistry.self) private var windowRegistry
@@ -59,6 +62,7 @@ struct PinnedGrid: View {
         browserContext: SidebarBrowserContext,
         inventory: SidebarSpaceInventorySnapshot,
         items: [ShortcutPin],
+        launcherRuntime: SidebarLauncherRuntimeSnapshot,
         selection: SidebarWindowSelectionQuery,
         pinProjection: SidebarPinFolderProjection,
         pinCommands: SidebarPinCommands,
@@ -67,6 +71,7 @@ struct PinnedGrid: View {
         spaceId: UUID? = nil,
         profileId: UUID? = nil,
         isTransitioningProfile: Bool,
+        dragPresentation: SidebarEssentialsDragPresentation,
         animateLayout: Bool = true,
         reportsGeometry: Bool = true,
         isAppKitInteractionEnabled: Bool = true
@@ -75,6 +80,7 @@ struct PinnedGrid: View {
         self.browserContext = browserContext
         self.inventory = inventory
         self.items = items
+        self.launcherRuntime = launcherRuntime
         self.selection = selection
         self.pinProjection = pinProjection
         self.pinCommands = pinCommands
@@ -83,6 +89,9 @@ struct PinnedGrid: View {
         self.spaceId = spaceId
         self.profileId = profileId
         self.isTransitioningProfile = isTransitioningProfile
+        self._dragPresentation = ObservedObject(
+            wrappedValue: dragPresentation
+        )
         self.animateLayout = animateLayout
         self.reportsGeometry = reportsGeometry
         self.isAppKitInteractionEnabled = isAppKitInteractionEnabled
@@ -94,6 +103,7 @@ struct PinnedGrid: View {
             reduceMotion: shouldReduceMotion
         )
         let selectionSnapshot = sidebarSelection
+        let dragFrame = dragPresentation.frame
 
         // Use profile-filtered essentials
         let effectiveProfileId = profileId
@@ -107,7 +117,7 @@ struct PinnedGrid: View {
         let layout = PinnedGridLayoutModel(
             width: width,
             items: visualItems,
-            dragState: dragState,
+            dragPresentation: dragFrame,
             dragGeometry: dragGeometry,
             geometrySpaceId: geometrySpaceId,
             effectiveProfileId: effectiveProfileId,
@@ -207,7 +217,7 @@ struct PinnedGrid: View {
             isEnabled: reportsDetailedGeometry
         )
         .transaction { transaction in
-            if dragState.isCompletingDrop {
+            if dragFrame.isCompletingDrop {
                 transaction.animation = nil
                 transaction.disablesAnimations = true
             }
@@ -224,6 +234,7 @@ struct PinnedGrid: View {
         EssentialSplitGroupTile(
             group: group,
             pinsByID: Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) }),
+            launcherRuntime: launcherRuntime,
             selection: selection,
             selectionSnapshot: selectionSnapshot,
             faviconImageReader: browserContext.faviconImageReader,
@@ -250,7 +261,8 @@ struct PinnedGrid: View {
         )
         .frame(width: tileSize.width, height: tileSize.height, alignment: .center)
         .opacity(
-            dragState.isDragging && dragState.activeDragItemId == group.id
+            dragPresentation.frame.isDragging
+                && dragPresentation.frame.projectionDragItemID == group.id
                 ? 0.001
                 : 1
         )
@@ -271,7 +283,7 @@ struct PinnedGrid: View {
             pin,
             selectionSnapshot: selectionSnapshot
         )
-        let liveTab = selection.liveTab(for: pin.id, in: windowState)
+        let liveTab = launcherRuntime.liveTab(for: pin.id)
         let contextMenuActions = essentialTileActionOwner.contextMenuActions(for: pin)
 
         PinnedTile(
@@ -297,7 +309,8 @@ struct PinnedGrid: View {
         )
         .frame(width: tileSize.width, height: tileSize.height, alignment: .center)
         .opacity(
-            dragState.isDragging && dragState.activeDragItemId == pin.id
+            dragPresentation.frame.isDragging
+                && dragPresentation.frame.projectionDragItemID == pin.id
                 ? 0.001
                 : 1
         )
@@ -318,7 +331,6 @@ struct PinnedGrid: View {
         .accessibilityHidden(true)
     }
 
-    @EnvironmentObject private var dragState: SidebarDragState
     @EnvironmentObject private var dragGeometry: SidebarDragGeometryModule
 
     private func pinPresentationState(
@@ -327,6 +339,7 @@ struct PinnedGrid: View {
     ) -> ShortcutPresentationState {
         selection.presentationState(
             for: pin,
+            liveTab: launcherRuntime.liveTab(for: pin.id),
             in: windowState,
             selection: selectionSnapshot
         )
@@ -338,6 +351,7 @@ struct PinnedGrid: View {
     ) -> SumiEssentialRuntimeState? {
         selection.essentialRuntimeState(
             for: pin,
+            liveTab: launcherRuntime.liveTab(for: pin.id),
             in: windowState,
             selection: selectionSnapshot
         )
@@ -380,7 +394,7 @@ struct PinnedGrid: View {
               windowRegistry.activeWindow?.id == windowState.id,
               !isTransitioningProfile,
               !reduceMotion,
-              !dragState.isCompletingDrop else {
+              !dragPresentation.frame.isCompletingDrop else {
             update()
             return
         }

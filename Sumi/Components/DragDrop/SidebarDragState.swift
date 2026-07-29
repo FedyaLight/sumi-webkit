@@ -25,41 +25,127 @@ final class SidebarListDragPresentation: ObservableObject {
     }
 }
 
+struct SidebarDragSessionPresentationFrame: Equatable {
+    var isDragging = false
+    var isInternalDragSession = false
+    var isInternalDragGeometryArmed = false
+}
+
+@MainActor
+final class SidebarDragSessionPresentation: ObservableObject {
+    @Published private(set) var frame = SidebarDragSessionPresentationFrame()
+
+    fileprivate func publish(_ frame: SidebarDragSessionPresentationFrame) {
+        guard self.frame != frame else { return }
+        self.frame = frame
+    }
+}
+
+struct SidebarEssentialsDragPresentationFrame: Equatable {
+    var isDragging = false
+    var isCompletingDrop = false
+    var projectionDragItemID: UUID?
+    var projectionDragScope: SidebarDragScope?
+    var projectionHoveredSlot: DropZoneSlot = .empty
+    var previewStateBySpace: [UUID: SidebarEssentialsPreviewState] = [:]
+
+    var isDropProjectionActive: Bool {
+        isDragging || isCompletingDrop
+    }
+
+    var shouldAnimateDropLayout: Bool {
+        isDragging && !isCompletingDrop
+    }
+
+    func previewState(for spaceID: UUID) -> SidebarEssentialsPreviewState? {
+        previewStateBySpace[spaceID]
+    }
+
+    func shouldHideCommittedCrossContainerPlaceholder(
+        into targetContainer: TabDragManager.DragContainer,
+        targetAlreadyContainsDraggedItem: Bool
+    ) -> Bool {
+        SidebarDragPlaceholderPolicy.shouldHideCommittedCrossContainerPlaceholder(
+            isCompletingDrop: isCompletingDrop,
+            sourceContainer: projectionDragScope?.sourceContainer,
+            targetContainer: targetContainer,
+            targetAlreadyContainsDraggedItem: targetAlreadyContainsDraggedItem
+        )
+    }
+}
+
+@MainActor
+final class SidebarEssentialsDragPresentation: ObservableObject {
+    @Published private(set) var frame = SidebarEssentialsDragPresentationFrame()
+
+    fileprivate func publish(_ frame: SidebarEssentialsDragPresentationFrame) {
+        guard self.frame != frame else { return }
+        self.frame = frame
+    }
+}
+
+struct SidebarFloatingDragPresentationFrame: Equatable {
+    let revision: UInt64
+    let hoveredSlot: DropZoneSlot
+    let previewKind: SidebarDragPreviewKind?
+    let previewAssets: [SidebarDragPreviewKind: SidebarDragPreviewAsset]
+    let previewModel: SidebarDragPreviewModel?
+
+    static func == (
+        lhs: SidebarFloatingDragPresentationFrame,
+        rhs: SidebarFloatingDragPresentationFrame
+    ) -> Bool {
+        lhs.revision == rhs.revision && lhs.hoveredSlot == rhs.hoveredSlot
+    }
+}
+
+@MainActor
+final class SidebarFloatingDragPresentation: ObservableObject {
+    @Published private(set) var frame = SidebarFloatingDragPresentationFrame(
+        revision: 0,
+        hoveredSlot: .empty,
+        previewKind: nil,
+        previewAssets: [:],
+        previewModel: nil
+    )
+
+    fileprivate func publish(_ frame: SidebarFloatingDragPresentationFrame) {
+        guard self.frame != frame else { return }
+        self.frame = frame
+    }
+}
+
 @MainActor
 final class SidebarDragState: ObservableObject {
     /// Window-scoped registry for tab-list drag autoscroll + swipe forwarding.
     let dragAutoscrollRegistry = SidebarTabListDragAutoscrollRegistry()
     let locationTracker = SidebarDragLocationTracker()
-    /// Narrow observable for per-row chrome (hover sensors etc.) that only
-    /// cares whether a drag session is active — subscribing rows to the full
-    /// drag state would re-render all of them on every hover-slot change.
-    let activityState = SidebarDragActivityState()
     let geometry = SidebarDragGeometryModule()
     let listPresentation = SidebarListDragPresentation()
+    let sessionPresentation = SidebarDragSessionPresentation()
+    let essentialsPresentation = SidebarEssentialsDragPresentation()
+    let floatingPresentation = SidebarFloatingDragPresentation()
 
-    // Every setter below drops writes that don't change the value. The AppKit drag
-    // pipeline re-resolves state on each pointer sample (and on periodic dragging
-    // updates while the pointer is idle); without this guard each sample publishes
-    // `objectWillChange` to every observing sidebar view even when nothing moved.
-    @Published private var storedIsDragging = false
-    @Published private var presentedDropIntent = SidebarPresentedDropIntentState()
-    @Published private var storedActiveSplitTarget: SplitDropSide?
-    @Published private var storedActiveDragItemId: UUID?
-    @Published private var storedPreviewKind: SidebarDragPreviewKind?
-    @Published var previewAssets: [SidebarDragPreviewKind: SidebarDragPreviewAsset] = [:]
-    @Published var previewModel: SidebarDragPreviewModel?
-    @Published private var storedIsInternalDragSession = false
-    @Published private var storedActiveDragScope: SidebarDragScope?
-    private var listPresentationMutationDepth = 0
-    private var listPresentationNeedsPublish = false
+    // The AppKit drag pipeline mutates this command owner. SwiftUI observes only
+    // the immutable frames above, each of which drops unchanged publications.
+    private var storedIsDragging = false
+    private var presentedDropIntent = SidebarPresentedDropIntentState()
+    private var storedActiveDragItemId: UUID?
+    private var storedPreviewKind: SidebarDragPreviewKind?
+    private var previewAssets: [SidebarDragPreviewKind: SidebarDragPreviewAsset] = [:]
+    private var previewModel: SidebarDragPreviewModel?
+    private var floatingPresentationRevision: UInt64 = 0
+    private var storedIsInternalDragSession = false
+    private var storedActiveDragScope: SidebarDragScope?
+    private var presentationMutationDepth = 0
+    private var presentationNeedsPublish = false
 
     var isDragging: Bool {
         get { storedIsDragging }
         set {
             guard storedIsDragging != newValue else { return }
             storedIsDragging = newValue
-            markListPresentationChanged()
-            activityState.isDragging = newValue
+            markPresentationChanged()
             interactionState?.setDragActive(newValue, source: .visualItem)
             syncGeometryCollectionContext()
         }
@@ -73,28 +159,12 @@ final class SidebarDragState: ObservableObject {
         presentedDropIntent.active.activeHoveredFolderId
     }
 
-    var activeSplitTarget: SplitDropSide? {
-        get { storedActiveSplitTarget }
-        set {
-            guard storedActiveSplitTarget != newValue else { return }
-            storedActiveSplitTarget = newValue
-        }
-    }
-
     var activeDragItemId: UUID? {
         get { storedActiveDragItemId }
         set {
             guard storedActiveDragItemId != newValue else { return }
             storedActiveDragItemId = newValue
-            markListPresentationChanged()
-        }
-    }
-
-    var previewKind: SidebarDragPreviewKind? {
-        get { storedPreviewKind }
-        set {
-            guard storedPreviewKind != newValue else { return }
-            storedPreviewKind = newValue
+            markPresentationChanged()
         }
     }
 
@@ -103,6 +173,7 @@ final class SidebarDragState: ObservableObject {
         set {
             guard storedIsInternalDragSession != newValue else { return }
             storedIsInternalDragSession = newValue
+            markPresentationChanged()
             syncGeometryCollectionContext()
         }
     }
@@ -112,6 +183,7 @@ final class SidebarDragState: ObservableObject {
         set {
             guard storedActiveDragScope != newValue else { return }
             storedActiveDragScope = newValue
+            markPresentationChanged()
             syncGeometryCollectionContext()
         }
     }
@@ -138,10 +210,7 @@ final class SidebarDragState: ObservableObject {
     private(set) var isInternalDragGeometryArmed: Bool = false
     private(set) var armedDragScope: SidebarDragScope?
 
-    // For Zen's auto workspace switch
-    @Published var isHoveringNearEdge: Bool = false
-
-    @Published var essentialsPreviewStateBySpace: [UUID: SidebarEssentialsPreviewState] = [:]
+    private var essentialsPreviewStateBySpace: [UUID: SidebarEssentialsPreviewState] = [:]
 
     init(
         delayedActions: MainActorDelayedActionScheduler = .live,
@@ -220,13 +289,14 @@ final class SidebarDragState: ObservableObject {
     private func clearEssentialsPreviewState() {
         guard !essentialsPreviewStateBySpace.isEmpty else { return }
         essentialsPreviewStateBySpace = [:]
+        markPresentationChanged()
     }
 
     @discardableResult
     func beginDropCommit(
         refreshingIfEmpty refresh: () -> SidebarDropResolution? = { nil }
     ) -> SidebarDropResolution? {
-        withListPresentationMutation {
+        withPresentationMutation {
             let resolution = hoveredSlot == .empty
                 ? refresh()
                 : presentedDropIntent.active
@@ -247,15 +317,13 @@ final class SidebarDragState: ObservableObject {
     }
 
     func resetInteractionState() {
-        withListPresentationMutation {
+        withPresentationMutation {
             isDragging = false
             clearHoverState()
             activeDragItemId = nil
             dragLocation = nil
             previewDragLocation = nil
-            previewKind = nil
-            previewAssets = [:]
-            previewModel = nil
+            clearPreviewPresentation()
             isInternalDragSession = false
             activeDragScope = nil
             if isCompletingDrop {
@@ -266,8 +334,8 @@ final class SidebarDragState: ObservableObject {
             }
             isInternalDragGeometryArmed = false
             armedDragScope = nil
+            markPresentationChanged()
             syncGeometryCollectionContext()
-            isHoveringNearEdge = false
             clearEssentialsPreviewState()
             requestGeometryRefresh()
         }
@@ -275,7 +343,9 @@ final class SidebarDragState: ObservableObject {
 
     private func scheduleDropCompletionFinish(expectedGeneration: Int) {
         cancelPendingDropCompletion()
-        cancelPendingDropCompletionAction = delayedActions.schedule(after: 0.05) { [weak self] in
+        cancelPendingDropCompletionAction = delayedActions.schedule(
+            after: SidebarMotionPolicy.dropSettleDuration
+        ) { [weak self] in
             self?.finishDropCompletion(expectedGeneration: expectedGeneration)
         }
     }
@@ -322,19 +392,22 @@ final class SidebarDragState: ObservableObject {
         previewModel: SidebarDragPreviewModel? = nil,
         scope: SidebarDragScope? = nil
     ) {
-        withListPresentationMutation {
+        withPresentationMutation {
             let resolvedScope = scope ?? armedDragScope
             isDragging = true
             activeDragItemId = itemId
             dragLocation = location
             previewDragLocation = previewLocation ?? location
-            self.previewKind = previewKind
-            self.previewAssets = previewAssets
-            self.previewModel = previewModel
+            setPreviewPresentation(
+                kind: previewKind,
+                assets: previewAssets,
+                model: previewModel
+            )
             isInternalDragSession = true
             activeDragScope = resolvedScope
             isInternalDragGeometryArmed = false
             armedDragScope = nil
+            markPresentationChanged()
             syncGeometryCollectionContext()
             clearEssentialsPreviewState()
             requestGeometryRefresh()
@@ -343,7 +416,7 @@ final class SidebarDragState: ObservableObject {
     }
 
     func beginExternalDragSession(itemId: UUID?) {
-        withListPresentationMutation {
+        withPresentationMutation {
             isDragging = true
             activeDragItemId = itemId
             previewDragLocation = nil
@@ -351,6 +424,7 @@ final class SidebarDragState: ObservableObject {
             activeDragScope = nil
             isInternalDragGeometryArmed = false
             armedDragScope = nil
+            markPresentationChanged()
             syncGeometryCollectionContext()
             clearEssentialsPreviewState()
             requestGeometryRefresh()
@@ -364,6 +438,7 @@ final class SidebarDragState: ObservableObject {
 
         isInternalDragGeometryArmed = true
         armedDragScope = scope
+        markPresentationChanged()
         syncGeometryCollectionContext()
         requestGeometryRefresh()
     }
@@ -376,6 +451,7 @@ final class SidebarDragState: ObservableObject {
 
         isInternalDragGeometryArmed = false
         armedDragScope = nil
+        markPresentationChanged()
         syncGeometryCollectionContext()
         requestGeometryRefresh()
     }
@@ -395,7 +471,6 @@ final class SidebarDragState: ObservableObject {
         var intent = presentedDropIntent
         intent.clearPresentation()
         setPresentedDropIntent(intent)
-        activeSplitTarget = nil
         clearEssentialsPreviewState()
     }
 
@@ -441,10 +516,7 @@ final class SidebarDragState: ObservableObject {
         ]
         guard essentialsPreviewStateBySpace != nextPreviewState else { return }
         essentialsPreviewStateBySpace = nextPreviewState
-    }
-
-    func essentialsPreviewState(for spaceId: UUID) -> SidebarEssentialsPreviewState? {
-        essentialsPreviewStateBySpace[spaceId]
+        markPresentationChanged()
     }
 
     func adjustGeometryStoreScrollDelta(deltaY: CGFloat) {
@@ -465,33 +537,56 @@ final class SidebarDragState: ObservableObject {
         _ intent: SidebarPresentedDropIntentState
     ) {
         presentedDropIntent = intent
-        markListPresentationChanged()
+        markPresentationChanged()
     }
 
-    private func withListPresentationMutation<T>(
+    private func setPreviewPresentation(
+        kind: SidebarDragPreviewKind,
+        assets: [SidebarDragPreviewKind: SidebarDragPreviewAsset],
+        model: SidebarDragPreviewModel?
+    ) {
+        storedPreviewKind = kind
+        previewAssets = assets
+        previewModel = model
+        floatingPresentationRevision &+= 1
+        markPresentationChanged()
+    }
+
+    private func clearPreviewPresentation() {
+        guard storedPreviewKind != nil
+                || !previewAssets.isEmpty
+                || previewModel != nil else { return }
+        storedPreviewKind = nil
+        previewAssets = [:]
+        previewModel = nil
+        floatingPresentationRevision &+= 1
+        markPresentationChanged()
+    }
+
+    private func withPresentationMutation<T>(
         _ update: () throws -> T
     ) rethrows -> T {
-        listPresentationMutationDepth += 1
+        presentationMutationDepth += 1
         defer {
-            listPresentationMutationDepth -= 1
-            if listPresentationMutationDepth == 0,
-               listPresentationNeedsPublish {
-                listPresentationNeedsPublish = false
-                publishListPresentation()
+            presentationMutationDepth -= 1
+            if presentationMutationDepth == 0,
+               presentationNeedsPublish {
+                presentationNeedsPublish = false
+                publishPresentations()
             }
         }
         return try update()
     }
 
-    private func markListPresentationChanged() {
-        guard listPresentationMutationDepth > 0 else {
-            publishListPresentation()
+    private func markPresentationChanged() {
+        guard presentationMutationDepth > 0 else {
+            publishPresentations()
             return
         }
-        listPresentationNeedsPublish = true
+        presentationNeedsPublish = true
     }
 
-    private func publishListPresentation() {
+    private func publishPresentations() {
         let hoveredPinnedSpaceID: UUID?
         if case .spacePinned(let spaceID, _) = projectionHoveredSlot {
             hoveredPinnedSpaceID = spaceID
@@ -502,11 +597,41 @@ final class SidebarDragState: ObservableObject {
             SidebarListDragPresentationFrame(
                 isDragging: isDragging,
                 isCompletingDrop: isCompletingDrop,
-                activeDragItemID: activeDragItemId,
+                // Retained past the pointer session: the list surface needs to
+                // know which row the committed drop retired in order to hand
+                // its presentation identity to the row replacing it. Source
+                // dimming is unaffected — it is gated on `isDragging`.
+                activeDragItemID: projectionDragItemId,
                 activeHoveredFolderID: activeHoveredFolderId,
                 folderDropIntent: folderDropIntent,
                 hoveredPinnedSpaceID: hoveredPinnedSpaceID,
                 splitPairingTarget: projectionSplitPairingTarget
+            )
+        )
+        sessionPresentation.publish(
+            SidebarDragSessionPresentationFrame(
+                isDragging: isDragging,
+                isInternalDragSession: isInternalDragSession,
+                isInternalDragGeometryArmed: isInternalDragGeometryArmed
+            )
+        )
+        essentialsPresentation.publish(
+            SidebarEssentialsDragPresentationFrame(
+                isDragging: isDragging,
+                isCompletingDrop: isCompletingDrop,
+                projectionDragItemID: projectionDragItemId,
+                projectionDragScope: projectionDragScope,
+                projectionHoveredSlot: projectionHoveredSlot,
+                previewStateBySpace: essentialsPreviewStateBySpace
+            )
+        )
+        floatingPresentation.publish(
+            SidebarFloatingDragPresentationFrame(
+                revision: floatingPresentationRevision,
+                hoveredSlot: hoveredSlot,
+                previewKind: storedPreviewKind,
+                previewAssets: previewAssets,
+                previewModel: previewModel
             )
         )
     }
@@ -564,11 +689,4 @@ final class SidebarDropTargetDwellGate {
 final class SidebarDragLocationTracker: ObservableObject {
     @Published var location: CGPoint? = nil
     @Published var previewLocation: CGPoint? = nil
-}
-
-/// Minimal drag-session flag for chrome that must disable itself while any
-/// drag is in flight. Publishes exactly twice per drag (begin/end).
-@MainActor
-final class SidebarDragActivityState: ObservableObject {
-    @Published var isDragging: Bool = false
 }

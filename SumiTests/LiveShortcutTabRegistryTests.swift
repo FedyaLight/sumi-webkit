@@ -46,9 +46,12 @@ final class LiveShortcutTabRegistryTests: XCTestCase {
             profileID: profileID
         )
         var scopes: [TabStructureChangeScope] = []
-        let cancellable = harness.eventBus.scopedStructureChangesPublisher.sink {
+        var pages: [LivePageResidenceScope] = []
+        let structuralCancellable = harness.eventBus.scopedStructureChangesPublisher.sink {
             scopes.append($0)
         }
+        let residenceCancellable = harness.eventBus.livePageResidenceChangesPublisher
+            .sink { pages.append($0) }
         _ = harness.registry.register(
             tab,
             for: sourcePinId,
@@ -56,8 +59,9 @@ final class LiveShortcutTabRegistryTests: XCTestCase {
             presentationPage: presentationPage
         )
         scopes = []
+        pages = []
 
-        withExtendedLifetime(cancellable) {
+        withExtendedLifetime((structuralCancellable, residenceCancellable)) {
             XCTAssertTrue(
                 harness.registry.rekey(
                     tab,
@@ -78,7 +82,8 @@ final class LiveShortcutTabRegistryTests: XCTestCase {
                 harness.registry.entry(containing: tab)?.presentationPage,
                 presentationPage
             )
-            XCTAssertEqual(scopes, [.page(presentationPage.page)])
+            XCTAssertEqual(scopes, [.runtimeOnly])
+            XCTAssertEqual(pages, [presentationPage.residenceScope])
 
             XCTAssertFalse(
                 harness.registry.rekey(
@@ -88,7 +93,8 @@ final class LiveShortcutTabRegistryTests: XCTestCase {
                     in: windowId
                 )
             )
-            XCTAssertEqual(scopes, [.page(presentationPage.page)])
+            XCTAssertEqual(scopes, [.runtimeOnly])
+            XCTAssertEqual(pages, [presentationPage.residenceScope])
         }
     }
 
@@ -147,9 +153,12 @@ final class LiveShortcutTabRegistryTests: XCTestCase {
         )
         let tab = makeTab()
         var scopes: [TabStructureChangeScope] = []
-        let cancellable = harness.eventBus.scopedStructureChangesPublisher.sink {
+        var pages: [LivePageResidenceScope] = []
+        let structuralCancellable = harness.eventBus.scopedStructureChangesPublisher.sink {
             scopes.append($0)
         }
+        let residenceCancellable = harness.eventBus.livePageResidenceChangesPublisher
+            .sink { pages.append($0) }
         _ = harness.registry.register(
             tab,
             for: pinID,
@@ -157,6 +166,7 @@ final class LiveShortcutTabRegistryTests: XCTestCase {
             presentationPage: sourcePage
         )
         scopes = []
+        pages = []
 
         XCTAssertTrue(
             harness.registry.relocate(
@@ -167,30 +177,29 @@ final class LiveShortcutTabRegistryTests: XCTestCase {
                 presentationPage: targetPage
             )
         )
-        XCTAssertEqual(scopes.count, 1)
+        XCTAssertEqual(scopes, [.runtimeOnly])
         XCTAssertEqual(
-            scopes[0].affectedPages,
-            Set([sourcePage.page, targetPage.page])
+            Set(pages),
+            Set([sourcePage.residenceScope, targetPage.residenceScope])
         )
-        XCTAssertFalse(
-            scopes[0].affectsPage(
-                windowID: unrelatedPage.windowID,
-                spaceID: unrelatedPage.spaceID,
-                profileID: unrelatedPage.profileID
-            )
-        )
+        XCTAssertFalse(pages.contains(LivePageResidenceScope(
+            windowID: unrelatedPage.windowID,
+            spaceID: unrelatedPage.spaceID
+        )))
         XCTAssertEqual(
             harness.registry.entry(containing: tab)?.presentationPage,
             targetPage
         )
 
         scopes = []
+        pages = []
         XCTAssertIdentical(
             harness.registry.remove(pinId: pinID, in: windowID)?.tab,
             tab
         )
-        XCTAssertEqual(scopes, [.page(targetPage.page)])
-        withExtendedLifetime(cancellable) {}
+        XCTAssertEqual(scopes, [.runtimeOnly])
+        XCTAssertEqual(pages, [targetPage.residenceScope])
+        withExtendedLifetime((structuralCancellable, residenceCancellable)) {}
     }
 
     func testRelocationRejectsOccupiedTargetWithoutMutationOrPublication() {

@@ -32,7 +32,7 @@ final class PinnedGridLayoutModelTests: XCTestCase {
         PinnedGridLayoutModel(
             width: width,
             items: items.map(SidebarEssentialVisualItem.pin),
-            dragState: dragState,
+            dragPresentation: dragState.essentialsPresentation.frame,
             dragGeometry: dragState.geometry,
             geometrySpaceId: UUID(),
             effectiveProfileId: UUID(),
@@ -76,7 +76,7 @@ final class PinnedGridLayoutModelTests: XCTestCase {
             layoutItemCount: model.projectedLayout.projectedItemCount,
             columnCount: model.projectedLayout.columnCount,
             canAcceptDrop: model.projectedLayout.canAcceptDrop,
-            dragState: SidebarDragState()
+            dragPresentation: SidebarEssentialsDragPresentationFrame()
         )
 
         XCTAssertEqual(model.maxDropRowCount, expected)
@@ -114,7 +114,7 @@ final class PinnedGridLayoutModelTests: XCTestCase {
     func testContentLayoutAnimatesWithoutAnActiveDragButDropLayoutDoesNot() {
         let model = makeModel(dragState: SidebarDragState())
 
-        // No active drag: SidebarDragState.shouldAnimateDropLayout requires isDragging.
+        // No active drag: the presentation frame does not animate drop layout.
         XCTAssertFalse(model.shouldAnimateDropLayout)
         XCTAssertTrue(model.shouldAnimateContentLayout)
     }

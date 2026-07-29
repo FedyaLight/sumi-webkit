@@ -47,6 +47,7 @@ struct SpacePinnedSplitGroupEntryView: View {
     let items: [SplitGroupSidebarItem]
     let space: Space
     let browserContext: SidebarBrowserContext
+    let pinProjection: SidebarPinFolderProjection
     let isInteractive: Bool
     let dragSnapshot: SidebarFolderDragSnapshot
 
@@ -64,6 +65,12 @@ struct SpacePinnedSplitGroupEntryView: View {
                 groupContextMenuActions: browserContext.splitGroupLifecycle
                     .contextMenuActions(for: group, in: windowState),
                 isAppKitInteractionEnabled: isInteractive,
+                faviconPartition: {
+                    pinProjection.faviconPartition(
+                        for: $0,
+                        currentSpaceID: space.id
+                    )
+                },
                 faviconImageReader: browserContext.faviconImageReader,
                 accessibilityID: "shortcut-host-split-row-\(group.id.uuidString)",
                 onActivateMember: { memberID in

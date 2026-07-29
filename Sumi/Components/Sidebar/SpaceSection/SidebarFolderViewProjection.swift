@@ -140,6 +140,7 @@ struct SidebarFolderViewProjection {
         shortcutPins: [ShortcutPin],
         inventory: SidebarSpaceInventorySnapshot,
         selection: SidebarWindowSelectionQuery,
+        launcherRuntime: SidebarLauncherRuntimeSnapshot,
         liveFolderSource: SumiLiveFolderSource?,
         liveFolderItems: [SumiLiveFolderItem],
         currentTab: Tab?,
@@ -175,6 +176,7 @@ struct SidebarFolderViewProjection {
         let uniqueProjectionPins = Array(projectionPinsById.values)
         let launcherItems = SidebarVisualSceneProjection(
             inventory: inventory,
+            launcherRuntime: launcherRuntime,
             selection: selection,
             selectionSnapshot: selectionSnapshot,
             windowState: windowState
@@ -197,8 +199,7 @@ struct SidebarFolderViewProjection {
                     SplitGroupSidebarModel.items(
                         for: group,
                         inventory: inventory,
-                        selection: selection,
-                        windowState: windowState
+                        launcherRuntime: launcherRuntime
                     )
                 )
             }
@@ -206,10 +207,7 @@ struct SidebarFolderViewProjection {
         self.shortcutPinsById = projectionPinsById
         self.liveTabsByPinId = Dictionary(
             uniqueKeysWithValues: uniqueProjectionPins.compactMap { pin in
-                guard let liveTab = selection.liveTab(for: pin.id, in: windowState) else {
-                    return nil
-                }
-                return (pin.id, liveTab)
+                launcherRuntime.liveTab(for: pin.id).map { (pin.id, $0) }
             }
         )
         self.liveCollapsedProjectionItemIDs = Set(

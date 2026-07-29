@@ -6,6 +6,7 @@ import SumiDomain
 struct SidebarSpacePinnedStickyProjectionOwner {
     let space: Space
     let inventory: SidebarSpaceInventorySnapshot
+    let launcherRuntime: SidebarLauncherRuntimeSnapshot
     let selection: SidebarWindowSelectionQuery
     let selectionSnapshot: SidebarWindowSelectionSnapshot
     let windowState: BrowserWindowState
@@ -57,6 +58,7 @@ struct SidebarSpacePinnedStickyProjectionOwner {
                 folder: folder,
                 presentation: presentation,
                 inventory: inventory,
+                launcherRuntime: launcherRuntime,
                 selection: selection,
                 selectionSnapshot: selectionSnapshot,
                 windowState: windowState
@@ -112,6 +114,7 @@ struct SidebarSpacePinnedStickyProjectionOwner {
         let leafItems = inventory.orderedPinnedLeafItems()
         let projectedItems = SidebarVisualSceneProjection(
             inventory: inventory,
+            launcherRuntime: launcherRuntime,
             selection: selection,
             selectionSnapshot: selectionSnapshot,
             windowState: windowState

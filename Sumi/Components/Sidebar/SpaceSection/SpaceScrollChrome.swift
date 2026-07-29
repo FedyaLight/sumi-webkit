@@ -20,6 +20,7 @@ struct SpaceScrollChromeSurface<Content: View>: View {
     let selection: SidebarWindowSelectionSnapshot
     let selectedItemRevealMode: SidebarMotionPolicy.Mode
     let restoredViewport: SpaceSidebarSnapshotViewport?
+    let dragAutoscrollRegistry: SidebarTabListDragAutoscrollRegistry
     @ObservedObject var scrollHoverCoordinator: NativeSurfaceScrollHoverCoordinator
     let outerWidth: CGFloat
     let onViewportChange: (SpaceSidebarSnapshotViewport) -> Void
@@ -61,7 +62,8 @@ struct SpaceScrollChromeSurface<Content: View>: View {
                             isEnabled: isInteractive,
                             indicatorColor: scrollIndicatorColor,
                             contentViewportWidth: contentWidth,
-                            trailingProjection: scrollIndicatorTrailingProjection
+                            trailingProjection: scrollIndicatorTrailingProjection,
+                            dragAutoscrollRegistry: dragAutoscrollRegistry
                         )
                         .frame(width: 0, height: 0)
                         .allowsHitTesting(false)
@@ -109,8 +111,7 @@ private struct SpaceScrollDragRegistration: View {
     let indicatorColor: NSColor
     let contentViewportWidth: CGFloat
     let trailingProjection: CGFloat
-
-    @EnvironmentObject private var dragState: SidebarDragState
+    let dragAutoscrollRegistry: SidebarTabListDragAutoscrollRegistry
 
     var body: some View {
         SidebarTabListScrollRegistrationViewRepresentable(
@@ -118,7 +119,7 @@ private struct SpaceScrollDragRegistration: View {
             indicatorColor: indicatorColor,
             contentViewportWidth: contentViewportWidth,
             trailingProjection: trailingProjection,
-            dragAutoscrollRegistry: dragState.dragAutoscrollRegistry
+            dragAutoscrollRegistry: dragAutoscrollRegistry
         )
     }
 }

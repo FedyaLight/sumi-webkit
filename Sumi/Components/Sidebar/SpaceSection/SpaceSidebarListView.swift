@@ -9,14 +9,24 @@ private enum SpaceSidebarListElementID: Hashable {
     case folderBodyBottom(UUID)
     case shortcut(UUID)
     case liveItem(UUID, String)
-    case savedSplitGroup(UUID)
+    case splitGroup(UUID)
     case boundary
     case regularRunStart
     case regularTab(UUID)
-    case regularSplitGroup(UUID)
     case regularRunEnd
     case newTabGap
     case newTab
+
+    /// The dragged item behind a row that can move between the pinned and
+    /// regular sections, and therefore lend or adopt a presentation identity.
+    var transferableItemID: UUID? {
+        switch self {
+        case .shortcut(let itemID), .regularTab(let itemID):
+            return itemID
+        default:
+            return nil
+        }
+    }
 }
 
 private enum SpaceSidebarListElementPayload {
@@ -38,6 +48,8 @@ private enum SpaceSidebarListElementPayload {
 
     struct TopLevelShortcut {
         let pin: ShortcutPin
+        let liveTab: Tab?
+        let runtimeAffordance: SumiLauncherRuntimeAffordanceState
         let index: Int
     }
 
@@ -242,6 +254,7 @@ private struct SpaceSidebarLiveFolderReader<Content: View>: View {
 struct SpaceSidebarListView: View {
     let space: Space
     let inventory: SidebarSpaceInventorySnapshot
+    let launcherRuntime: SidebarLauncherRuntimeSnapshot
     let selection: SidebarWindowSelectionQuery
     let pinProjection: SidebarPinFolderProjection
     let pinCommands: SidebarPinCommands
@@ -283,6 +296,7 @@ struct SpaceSidebarListView: View {
                 SpaceSidebarListContentView(
                     space: space,
                     inventory: inventory,
+                    launcherRuntime: launcherRuntime,
                     selection: selection,
                     pinProjection: pinProjection,
                     pinCommands: pinCommands,
@@ -297,10 +311,11 @@ struct SpaceSidebarListView: View {
                     browserContext: browserContext,
                     isInteractive: isInteractive,
                     innerWidth: innerWidth,
-                    tabs: regularTabCatalog.tabs(
-                        in: space,
-                        windowState: windowState
-                    ),
+                    // Both halves of the scene must come from the same
+                    // snapshot: a live regular read would land one run loop
+                    // ahead of the deferred inventory publish and split one
+                    // container transfer into two structural transitions.
+                    tabs: inventory.regularTabs,
                     inventoryTraversal: traversal,
                     liveSnapshots: liveSnapshots,
                     dragSnapshots: dragSnapshots,
@@ -343,14 +358,8 @@ private struct SpaceSidebarInventoryTraversal {
             if isVisible {
                 visibleFolderIDs.append(folderID)
             }
-            let isExpanded: Bool
-            if let presentation = inventory.folderPresentation(id: folderID) {
-                isExpanded = presentation.isExpanded
-            } else if let folder = inventory.folder(id: folderID) {
-                isExpanded = folder.isOpen
-            } else {
-                isExpanded = false
-            }
+            let isExpanded = inventory.folderPresentation(id: folderID)?
+                .isExpanded ?? false
             let childrenAreVisible = isVisible
                 && isExpanded
                 && !isLiveFolder(folderID)
@@ -396,6 +405,7 @@ private struct SpaceSidebarListContentView: View {
 
     let space: Space
     let inventory: SidebarSpaceInventorySnapshot
+    let launcherRuntime: SidebarLauncherRuntimeSnapshot
     let selection: SidebarWindowSelectionQuery
     let pinProjection: SidebarPinFolderProjection
     let pinCommands: SidebarPinCommands
@@ -441,6 +451,7 @@ private struct SpaceSidebarListContentView: View {
     private var elevatedFolderIDs: Set<UUID> {
         SpaceElevatedFolderOwner(
             inventory: inventory,
+            launcherRuntime: launcherRuntime,
             selection: selection,
             windowState: windowState,
             selectionSnapshot: sidebarSelection
@@ -451,6 +462,7 @@ private struct SpaceSidebarListContentView: View {
         SidebarSpacePinnedStickyProjectionOwner(
             space: space,
             inventory: inventory,
+            launcherRuntime: launcherRuntime,
             selection: selection,
             selectionSnapshot: sidebarSelection,
             windowState: windowState
@@ -465,10 +477,30 @@ private struct SpaceSidebarListContentView: View {
         let mode = SidebarMotionPolicy.currentMode(
             reduceMotion: reduceMotion || sumiSettings.shouldReduceChromeMotion
         )
-        return dragSnapshots.pinned.isCompletingDrop
-                || dragSnapshots.regular.isCompletingDrop
+        return isCompletingDrop
             ? SidebarMotionPolicy.dropSettleAnimation(for: mode)
             : SidebarMotionPolicy.contentLayoutAnimation(for: mode)
+    }
+
+    private var isCompletingDrop: Bool {
+        dragSnapshots.pinned.isCompletingDrop
+            || dragSnapshots.regular.isCompletingDrop
+    }
+
+    /// A committed drop moves the dragged row between the pinned and regular
+    /// sections. Naming the retired row keeps an unrelated coincident change
+    /// from being mistaken for that move.
+    private var identityTransfer:
+        SidebarListIdentityTransfer<SpaceSidebarListElementID>? {
+        guard isCompletingDrop,
+              let draggedItemID = dragSnapshots.pinned.activeDragItemID
+                  ?? dragSnapshots.regular.activeDragItemID
+        else { return nil }
+
+        return SidebarListIdentityTransfer(
+            isSource: { $0.transferableItemID == draggedItemID },
+            isTransferable: { $0.transferableItemID != nil }
+        )
     }
 
     private var topLevelActionOwner: SpacePinnedActionOwner {
@@ -507,6 +539,7 @@ private struct SpaceSidebarListContentView: View {
         let output = SpaceSidebarSceneBuilder(
             space: space,
             inventory: inventory,
+            launcherRuntime: launcherRuntime,
             selection: selection,
             regularTabTargets: regularTabTargets,
             tabs: tabs,
@@ -527,6 +560,7 @@ private struct SpaceSidebarListContentView: View {
         SidebarListSurface(
             scene: output.scene,
             animation: contentMutationAnimation,
+            identityTransfer: identityTransfer,
             presentedSpaceID: space.id,
             geometryGeneration: dragSnapshots.pinned.geometryGeneration
         ) { payload, _ in
@@ -565,6 +599,7 @@ private struct SpaceSidebarListContentView: View {
 private struct SpaceSidebarSceneBuilder {
     let space: Space
     let inventory: SidebarSpaceInventorySnapshot
+    let launcherRuntime: SidebarLauncherRuntimeSnapshot
     let selection: SidebarWindowSelectionQuery
     let regularTabTargets: SidebarRegularTabTargetQuery
     let tabs: [Tab]
@@ -745,7 +780,7 @@ private struct SpaceSidebarSceneBuilder {
                 let id: SpaceSidebarListElementID =
                     inventory.pin(id: itemID) != nil
                     ? .shortcut(itemID)
-                    : .savedSplitGroup(itemID)
+                    : .splitGroup(itemID)
                 elements.append(
                     .init(
                         id: id,
@@ -789,10 +824,21 @@ private struct SpaceSidebarSceneBuilder {
             )
         case .shortcut(let pinID):
             guard let pin = inventory.pin(id: pinID) else { return }
+            let liveTab = launcherRuntime.liveTab(for: pin.id)
             elements.append(
                 .init(
                     id: .shortcut(pin.id),
-                    payload: .topLevelShortcut(.init(pin: pin, index: index)),
+                    payload: .topLevelShortcut(.init(
+                        pin: pin,
+                        liveTab: liveTab,
+                        runtimeAffordance: selection.runtimeAffordance(
+                            for: pin,
+                            liveTab: liveTab,
+                            in: windowState,
+                            selection: selectionSnapshot
+                        ),
+                        index: index
+                    )),
                     targetExtent: SidebarRowLayout.rowHeight,
                     overflowBleed: SidebarRowLayout.selectionShadowBleed,
                     placement: .pinnedRow(
@@ -804,18 +850,18 @@ private struct SpaceSidebarSceneBuilder {
             )
         case .splitGroup(let groupID):
             guard let group = inventory.splitGroup(id: groupID) else { return }
+            let items = SplitGroupSidebarModel.items(
+                for: group,
+                inventory: inventory,
+                launcherRuntime: launcherRuntime
+            )
             elements.append(
                 .init(
-                    id: .savedSplitGroup(group.id),
+                    id: .splitGroup(group.id),
                     payload: .topLevelSplitGroup(
                         .init(
                             group: group,
-                            items: SplitGroupSidebarModel.items(
-                                for: group,
-                                inventory: inventory,
-                                selection: selection,
-                                windowState: windowState
-                            ),
+                            items: items,
                             index: index
                         )
                     ),
@@ -854,6 +900,7 @@ private struct SpaceSidebarSceneBuilder {
             shortcutPins: inventory.folderPinsByFolderID[folder.id] ?? [],
             inventory: inventory,
             selection: selection,
+            launcherRuntime: launcherRuntime,
             liveFolderSource: live.source,
             liveFolderItems: live.items,
             currentTab: selection.currentTab(in: windowState),
@@ -967,15 +1014,14 @@ private struct SpaceSidebarSceneBuilder {
                 guard let group = projection.splitGroup(with: groupID) else {
                     continue
                 }
+                let items = projection.splitGroupItems(for: group.id)
                 body.append(
                     .init(
-                        id: .savedSplitGroup(group.id),
+                        id: .splitGroup(group.id),
                         payload: .folderSplitGroup(
                             .init(
                                 group: group,
-                                items: projection.splitGroupItems(
-                                    for: group.id
-                                ),
+                                items: items,
                                 folder: folder,
                                 index: entry.dropIndex,
                                 nestingDepth: nestingDepth + 1
@@ -1130,7 +1176,7 @@ private struct SpaceSidebarSceneBuilder {
                 guard let group = groupsByID[groupID] else { continue }
                 elements.append(
                     .init(
-                        id: .regularSplitGroup(groupID),
+                        id: .splitGroup(groupID),
                         payload: .regularSplitGroup(
                             .init(group: group, tabByID: tabByID)
                         ),
@@ -1195,6 +1241,7 @@ private extension SpaceSidebarListContentView {
                 space: space,
                 inventory: inventory,
                 selection: selection,
+                launcherRuntime: launcherRuntime,
                 pinProjection: pinProjection,
                 pinCommands: pinCommands,
                 pinExecution: pinExecution,
@@ -1257,6 +1304,7 @@ private extension SpaceSidebarListContentView {
             space: space,
             inventory: inventory,
             selection: selection,
+            launcherRuntime: launcherRuntime,
             pinProjection: pinProjection,
             browserContext: browserContext,
             isInteractive: isInteractive,
@@ -1287,17 +1335,13 @@ private extension SpaceSidebarListContentView {
         let pin = row.pin
         return SpacePinnedShortcutEntryView(
             pin: pin,
-            liveTab: selection.liveTab(for: pin.id, in: windowState),
+            liveTab: row.liveTab,
             faviconPartition: pinProjection.faviconPartition(
                 for: pin,
                 currentSpaceID: windowState.currentSpaceId
             ),
             faviconImageReader: browserContext.faviconImageReader,
-            runtimeAffordance: selection.runtimeAffordance(
-                for: pin,
-                in: windowState,
-                selection: sidebarSelection
-            ),
+            runtimeAffordance: row.runtimeAffordance,
             spaceID: space.id,
             isInteractive: isInteractive,
             opacity: itemOpacity(pin.id),
@@ -1328,6 +1372,7 @@ private extension SpaceSidebarListContentView {
         let presentationOwner = TabFolderShortcutPresentationOwner(
             pinProjection: pinProjection,
             selection: selection,
+            launcherRuntime: launcherRuntime,
             windowState: windowState,
             selectionSnapshot: sidebarSelection
         )
@@ -1365,6 +1410,7 @@ private extension SpaceSidebarListContentView {
             items: row.items,
             space: space,
             browserContext: browserContext,
+            pinProjection: pinProjection,
             isInteractive: isInteractive,
             dragSnapshot: dragSnapshots.pinned.folderSnapshot
         )
@@ -1389,6 +1435,7 @@ private extension SpaceSidebarListContentView {
             items: row.items,
             space: space,
             browserContext: browserContext,
+            pinProjection: pinProjection,
             isInteractive: isInteractive
         )
         .padding(.leading, CGFloat(row.nestingDepth) * Self.folderIndent)
@@ -1475,6 +1522,7 @@ private extension SpaceSidebarListContentView {
             space: space,
             tabByID: row.tabByID,
             selection: selection,
+            launcherRuntime: launcherRuntime,
             regularTabCatalog: regularTabCatalog,
             regularTabTargets: regularTabTargets,
             browserContext: browserContext,
@@ -1541,6 +1589,7 @@ private struct SpaceFlatFolderHeaderView: View {
     let space: Space
     let inventory: SidebarSpaceInventorySnapshot
     let selection: SidebarWindowSelectionQuery
+    let launcherRuntime: SidebarLauncherRuntimeSnapshot
     let pinProjection: SidebarPinFolderProjection
     let browserContext: SidebarBrowserContext
     let isInteractive: Bool
@@ -1559,6 +1608,7 @@ private struct SpaceFlatFolderHeaderView: View {
             folder: folder.model,
             presentation: folder.presentation,
             inventory: inventory,
+            launcherRuntime: launcherRuntime,
             selection: selection,
             selectionSnapshot: sidebarSelection,
             windowState: windowState

@@ -324,7 +324,11 @@ final class SidebarDragCurrentContextTests: SidebarDragContextTestCase {
         XCTAssertTrue(state.isCompletingDrop)
         XCTAssertTrue(state.isDropProjectionActive)
         XCTAssertEqual(state.projectionDragItemId, draggedItemId)
-        XCTAssertEqual(delayedActions.scheduledDelays, [0.05])
+        XCTAssertEqual(
+            delayedActions.scheduledDelays,
+            [SidebarMotionPolicy.dropSettleDuration],
+            "Drop-completion state must outlive the settle animation it gates"
+        )
 
         delayedActions.runNext()
 

@@ -16,6 +16,14 @@ struct TabStructurePageScope: Equatable, Hashable, Sendable {
     let profileID: UUID?
 }
 
+/// Exact window-local page whose transient Live Page residence changed.
+/// Profile is deliberately absent: one mounted Space page owns all launcher
+/// residence presentation for its window, including fallback-profile pins.
+struct LivePageResidenceScope: Equatable, Hashable, Sendable {
+    let windowID: UUID
+    let spaceID: UUID
+}
+
 struct TabStructureChangeScope: Equatable, Sendable {
     let affectedSpaceIDs: Set<UUID>
     let affectedProfileIDs: Set<UUID>
@@ -132,6 +140,7 @@ struct TabFolderExpansionChange: Equatable, Sendable {
 @MainActor
 enum TabStructureEvent: Equatable, Sendable {
     case structureChanged(TabStructureChangeScope)
+    case livePageResidenceChanged(LivePageResidenceScope)
     case folderExpansionChanged(TabFolderExpansionChange)
     case initialDataLoaded
 }
@@ -174,6 +183,20 @@ final class TabStructureEventBus {
             .eraseToAnyPublisher()
     }
 
+    var livePageResidenceChangesPublisher: AnyPublisher<
+        LivePageResidenceScope,
+        Never
+    > {
+        subject
+            .compactMap { event -> LivePageResidenceScope? in
+                guard case .livePageResidenceChanged(let page) = event else {
+                    return nil
+                }
+                return page
+            }
+            .eraseToAnyPublisher()
+    }
+
     var initialDataLoadedPublisher: AnyPublisher<Void, Never> {
         initialDataLoadedState
             .filter { $0 }
@@ -190,6 +213,10 @@ final class TabStructureEventBus {
 
     func publishStructureChanged(scope: TabStructureChangeScope = .all) {
         publish(.structureChanged(scope))
+    }
+
+    func publishLivePageResidenceChanged(_ page: LivePageResidenceScope) {
+        publish(.livePageResidenceChanged(page))
     }
 
     func publishFolderExpansionChanged(_ change: TabFolderExpansionChange) {

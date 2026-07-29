@@ -94,16 +94,16 @@ enum SidebarEssentialsProjectionPolicy {
     static func make(
         items: [SidebarEssentialVisualItem],
         width: CGFloat,
-        dragState: SidebarDragState
+        dragPresentation: SidebarEssentialsDragPresentationFrame
     ) -> SidebarEssentialsProjectedLayout {
         let baseVisibleItems = resolvedVisibleItems(
             from: items,
-            dragState: dragState
+            dragPresentation: dragPresentation
         )
         let canAcceptDrop = baseVisibleItems.count < maxItems
         let layoutItems = resolvedLayoutItems(
             from: baseVisibleItems,
-            dragState: dragState,
+            dragPresentation: dragPresentation,
             canAcceptDrop: canAcceptDrop,
             essentialsStoreIsEmpty: items.isEmpty
         )
@@ -138,21 +138,22 @@ enum SidebarEssentialsProjectionPolicy {
         visibleItemCount: Int,
         layoutItemCount: Int,
         canAcceptDrop: Bool,
-        dragState: SidebarDragState
+        dragPresentation: SidebarEssentialsDragPresentationFrame
     ) -> Int {
         let safeVisibleItemCount = max(visibleItemCount, 0)
         guard canAcceptDrop else { return min(safeVisibleItemCount, maxItems) }
 
-        let isDraggingExistingEssential = dragState.projectionDragItemId.map { itemIDs.contains($0) } ?? false
+        let isDraggingExistingEssential = dragPresentation.projectionDragItemID
+            .map { itemIDs.contains($0) } ?? false
         let isHoveringEssentials = {
-            guard dragState.isDropProjectionActive,
-                  case .essentials = dragState.projectionHoveredSlot else {
+            guard dragPresentation.isDropProjectionActive,
+                  case .essentials = dragPresentation.projectionHoveredSlot else {
                 return false
             }
             return true
         }()
 
-        let emptyStorePlaceholderActive = dragState.isDropProjectionActive
+        let emptyStorePlaceholderActive = dragPresentation.isDropProjectionActive
             && canAcceptDrop
             && itemIDs.isEmpty
             && safeVisibleItemCount == 0
@@ -175,14 +176,14 @@ enum SidebarEssentialsProjectionPolicy {
         layoutItemCount: Int,
         columnCount: Int,
         canAcceptDrop: Bool,
-        dragState: SidebarDragState
+        dragPresentation: SidebarEssentialsDragPresentationFrame
     ) -> Int {
         let projectedCount = projectedCountAfterDrop(
             itemIDs: itemIDs,
             visibleItemCount: visibleItemCount,
             layoutItemCount: layoutItemCount,
             canAcceptDrop: canAcceptDrop,
-            dragState: dragState
+            dragPresentation: dragPresentation
         )
         let safeColumnCount = max(columnCount, 1)
         return min(
@@ -193,22 +194,22 @@ enum SidebarEssentialsProjectionPolicy {
 
     private static func resolvedVisibleItems(
         from items: [SidebarEssentialVisualItem],
-        dragState: SidebarDragState
+        dragPresentation: SidebarEssentialsDragPresentationFrame
     ) -> [SidebarEssentialVisualItem?] {
-        guard let projectionDragItemId = dragState.projectionDragItemId else {
+        guard let projectionDragItemID = dragPresentation.projectionDragItemID else {
             return items.map { Optional($0) }
         }
 
         let isDraggingExistingEssential: Bool = {
-            guard dragState.isDropProjectionActive,
-                  dragState.projectionDragScope?.sourceContainer == .essentials else {
+            guard dragPresentation.isDropProjectionActive,
+                  dragPresentation.projectionDragScope?.sourceContainer == .essentials else {
                 return false
             }
-            return items.contains { $0.id == projectionDragItemId }
+            return items.contains { $0.id == projectionDragItemID }
         }()
 
         return items.compactMap { item -> SidebarEssentialVisualItem? in
-            if item.id == projectionDragItemId, isDraggingExistingEssential {
+            if item.id == projectionDragItemID, isDraggingExistingEssential {
                 return nil
             }
             return item
@@ -217,20 +218,20 @@ enum SidebarEssentialsProjectionPolicy {
 
     private static func resolvedLayoutItems(
         from items: [SidebarEssentialVisualItem?],
-        dragState: SidebarDragState,
+        dragPresentation: SidebarEssentialsDragPresentationFrame,
         canAcceptDrop: Bool,
         essentialsStoreIsEmpty: Bool
     ) -> [SidebarEssentialVisualItem?] {
         var layoutItems = items
 
-        guard dragState.isDropProjectionActive, canAcceptDrop else {
+        guard dragPresentation.isDropProjectionActive, canAcceptDrop else {
             return layoutItems
         }
 
-        if let projectionDragItemId = dragState.projectionDragItemId,
-           dragState.shouldHideCommittedCrossContainerPlaceholder(
+        if let projectionDragItemID = dragPresentation.projectionDragItemID,
+           dragPresentation.shouldHideCommittedCrossContainerPlaceholder(
                 into: .essentials,
-                targetAlreadyContainsDraggedItem: items.contains { $0?.id == projectionDragItemId }
+                targetAlreadyContainsDraggedItem: items.contains { $0?.id == projectionDragItemID }
            ) {
             return layoutItems
         }
@@ -242,7 +243,7 @@ enum SidebarEssentialsProjectionPolicy {
             return layoutItems
         }
 
-        guard case .essentials(let slot) = dragState.projectionHoveredSlot else {
+        guard case .essentials(let slot) = dragPresentation.projectionHoveredSlot else {
             return layoutItems
         }
 

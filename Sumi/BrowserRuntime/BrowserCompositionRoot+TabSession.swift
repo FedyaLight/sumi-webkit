@@ -1100,6 +1100,7 @@ extension BrowserCompositionRoot {
                 splitGroupShortcutMemberRelocation,
             splitGroupMembership: splitGroupMembership,
             regularTabShortcutConversion: regularTabShortcutConversion,
+            shortcutPinToRegularTab: shortcutPinToRegularTab,
             shortcutLiveTabRetirement: shortcutLiveTabRetirement,
             sidebarPinCommands: sidebarPinCommands,
             sidebarFolderCommands: sidebarFolderCommands,

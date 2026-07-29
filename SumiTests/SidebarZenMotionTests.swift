@@ -57,6 +57,24 @@ final class SidebarZenMotionTests: XCTestCase {
         XCTAssertTrue(state.presentsPressVisual(for: "tab-row-test"))
     }
 
+    func testGroupedPressVisualMatchesAnyMemberSource() {
+        let presenter = SidebarPressVisualPresenter()
+        let state = SidebarInteractionState(pressVisual: presenter)
+
+        presenter.present("second-member")
+
+        XCTAssertTrue(
+            state.presentsPressVisual(
+                forAny: ["first-member", "second-member"]
+            )
+        )
+        XCTAssertFalse(
+            state.presentsPressVisual(
+                forAny: ["third-member", "fourth-member"]
+            )
+        )
+    }
+
     func testSidebarInteractiveItemActivatesPageOnMouseDownOnlyOnce() {
         let state = SidebarInteractionState()
         let dragState = SidebarDragState()

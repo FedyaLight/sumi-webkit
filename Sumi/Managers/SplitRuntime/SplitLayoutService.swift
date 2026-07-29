@@ -180,7 +180,7 @@ final class SplitLayoutService {
 
         let didCommit: Bool
         if let replacement = group.removingMember(memberID) {
-            didCommit = topology.replace(
+            didCommit = dissolution.replace(
                 group,
                 with: replacement
             )

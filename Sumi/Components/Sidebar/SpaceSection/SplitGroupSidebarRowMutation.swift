@@ -37,6 +37,9 @@ extension SplitGroupSidebarRow {
     }
 
     func reconcileDisplayedItems(with newItems: [SplitGroupSidebarItem]) {
+        presentationGeneration &+= 1
+        let generation = presentationGeneration
+
         guard !reduceMotion && !sumiSettings.shouldReduceChromeMotion else {
             displayedItems = newItems
             departingItemIds.removeAll()
@@ -74,14 +77,18 @@ extension SplitGroupSidebarRow {
         }
         projectedItems.append(contentsOf: newItems.filter { seenIds.insert($0.id).inserted })
 
-        withAnimation(projectedLayoutAnimation) {
+        withAnimation(
+            projectedLayoutAnimation,
+            completionCriteria: .logicallyComplete
+        ) {
             displayedItems = projectedItems
             departingItemIds.formUnion(removedIds)
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + SidebarDropMotion.contentLayoutDuration) {
-            displayedItems = newItems
-            departingItemIds.subtract(removedIds)
+        } completion: {
+            guard presentationGeneration == generation else { return }
+            SidebarMotionTransaction.withoutAnimation {
+                displayedItems = newItems
+                departingItemIds.subtract(removedIds)
+            }
         }
     }
 

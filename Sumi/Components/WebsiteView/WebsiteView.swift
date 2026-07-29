@@ -139,7 +139,9 @@ struct WebsiteView: View {
     @Environment(KeyboardShortcutManager.self) private var keyboardShortcutManager
     @Environment(\.sumiSettings) var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
-    @ObservedObject private var sidebarDragState: SidebarDragState
+    private let sidebarDragState: SidebarDragState
+    @ObservedObject private var dragSessionPresentation:
+        SidebarDragSessionPresentation
     @State private var hoveredLink: String?
     @State private var splitUpdateRevision: UInt = 0
 
@@ -174,7 +176,10 @@ struct WebsiteView: View {
     ) {
         self.browserContext = browserContext
         self.nativeSurfaceRootBuilders = nativeSurfaceRootBuilders
-        self._sidebarDragState = ObservedObject(wrappedValue: sidebarDragState)
+        self.sidebarDragState = sidebarDragState
+        self._dragSessionPresentation = ObservedObject(
+            wrappedValue: sidebarDragState.sessionPresentation
+        )
         self.splitUpdates = splitUpdates
         self.splitQuery = splitQuery
         self.splitPreviews = splitPreviews
@@ -307,8 +312,12 @@ struct WebsiteView: View {
             webViewProtectionRuntime: webViewProtectionRuntime,
             hoveredLink: $hoveredLink,
             splitPresentation: splitPresentation,
-            isSplitDropCaptureActive: sidebarDragState.isInternalDragGeometryArmed
-                || (sidebarDragState.isDragging && sidebarDragState.isInternalDragSession),
+            isSplitDropCaptureActive:
+                dragSessionPresentation.frame.isInternalDragGeometryArmed
+                || (
+                    dragSessionPresentation.frame.isDragging
+                        && dragSessionPresentation.frame.isInternalDragSession
+                ),
             surfaceStyle: surfaceStyle,
             windowState: windowState,
             isSurfaceVisible: isSurfaceVisible

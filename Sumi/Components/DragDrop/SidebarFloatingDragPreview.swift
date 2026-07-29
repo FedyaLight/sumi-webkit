@@ -63,7 +63,10 @@ struct SidebarFloatingDragPreviewContext {
 }
 
 struct SidebarFloatingDragPreview: View {
-    @ObservedObject private var dragState: SidebarDragState
+    private let dragState: SidebarDragState
+    @ObservedObject private var presentation: SidebarFloatingDragPresentation
+    @ObservedObject private var essentialsPresentation:
+        SidebarEssentialsDragPresentation
     @ObservedObject private var locationTracker: SidebarDragLocationTracker
     private let browserContext: SidebarFloatingDragPreviewContext
     @Environment(BrowserWindowState.self) private var windowState
@@ -72,7 +75,13 @@ struct SidebarFloatingDragPreview: View {
         sidebarDragState: SidebarDragState,
         browserContext: SidebarFloatingDragPreviewContext
     ) {
-        self._dragState = ObservedObject(wrappedValue: sidebarDragState)
+        self.dragState = sidebarDragState
+        self._presentation = ObservedObject(
+            wrappedValue: sidebarDragState.floatingPresentation
+        )
+        self._essentialsPresentation = ObservedObject(
+            wrappedValue: sidebarDragState.essentialsPresentation
+        )
         self._locationTracker = ObservedObject(wrappedValue: sidebarDragState.locationTracker)
         self.browserContext = browserContext
     }
@@ -81,11 +90,11 @@ struct SidebarFloatingDragPreview: View {
         Group {
             if shouldRenderPreview {
                 GeometryReader { geo in
-                    if let previewModel = dragState.previewModel,
+                    if let previewModel = presentation.frame.previewModel,
                        let dragLocation = currentDragLocation {
                         let previewKind = SidebarDragPresentationProjection.resolvedPreviewKind(
                             model: previewModel,
-                            hoveredSlot: dragState.hoveredSlot
+                            hoveredSlot: presentation.frame.hoveredSlot
                         )
                         let size = resolvedSize(for: previewKind, model: previewModel)
                         let anchor = previewModel.anchorOffset(in: size)
@@ -99,7 +108,10 @@ struct SidebarFloatingDragPreview: View {
                             .transition(.opacity.combined(with: .scale(scale: 0.98)))
                             .animation(SidebarDragPresentationProjection.transformAnimation, value: previewKind)
                             .animation(SidebarDragPresentationProjection.transformAnimation, value: size)
-                            .animation(SidebarDragPresentationProjection.transformAnimation, value: dragState.hoveredSlot)
+                            .animation(
+                                SidebarDragPresentationProjection.transformAnimation,
+                                value: presentation.frame.hoveredSlot
+                            )
                     } else if let asset = currentAsset,
                               let dragLocation = currentDragLocation {
                         fallbackImagePreview(asset: asset)
@@ -209,7 +221,7 @@ struct SidebarFloatingDragPreview: View {
     }
 
     private func resolvedEssentialsTileSize(model: SidebarDragPreviewModel) -> CGSize {
-        guard case .essentials(let slot) = dragState.hoveredSlot,
+        guard case .essentials(let slot) = presentation.frame.hoveredSlot,
               let location = locationTracker.location,
               let hoveredPage = dragState.hoveredInteractivePage(at: location),
               let metrics = dragState.essentialsLayoutMetricsBySpace[hoveredPage.spaceId]
@@ -236,7 +248,7 @@ struct SidebarFloatingDragPreview: View {
         let projection = SidebarEssentialsProjectionPolicy.make(
             items: items,
             width: metrics.frame.width,
-            dragState: dragState
+            dragPresentation: essentialsPresentation.frame
         )
 
         if let row = projection.rows.first(where: { row in
@@ -264,7 +276,7 @@ struct SidebarFloatingDragPreview: View {
     }
 
     private func activeRowTargetWidth() -> CGFloat? {
-        switch dragState.hoveredSlot {
+        switch presentation.frame.hoveredSlot {
         case .spacePinned(let spaceId, _):
             return dragState.sectionFrame(for: .spacePinned, in: spaceId)?.width
         case .spaceRegular(let spaceId, _):
@@ -282,7 +294,7 @@ struct SidebarFloatingDragPreview: View {
 
     private var currentAsset: SidebarDragPreviewAsset? {
         guard let currentPreviewKind else { return nil }
-        return dragState.previewAssets[currentPreviewKind]
+        return presentation.frame.previewAssets[currentPreviewKind]
     }
 
     private var currentDragLocation: CGPoint? {
@@ -290,14 +302,15 @@ struct SidebarFloatingDragPreview: View {
     }
 
     private var shouldRenderPreview: Bool {
-        currentDragLocation != nil && (dragState.previewModel != nil || currentAsset != nil)
+        currentDragLocation != nil
+            && (presentation.frame.previewModel != nil || currentAsset != nil)
     }
 
     private var currentPreviewKind: SidebarDragPreviewKind? {
         SidebarDragPresentationProjection.resolvedPreviewKind(
-            baseKind: dragState.previewKind,
-            hoveredSlot: dragState.hoveredSlot,
-            previewAssets: dragState.previewAssets
+            baseKind: presentation.frame.previewKind,
+            hoveredSlot: presentation.frame.hoveredSlot,
+            previewAssets: presentation.frame.previewAssets
         )
     }
 }
