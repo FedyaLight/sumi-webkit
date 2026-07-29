@@ -41,9 +41,9 @@ struct TabRestoreSpacePlanner: Sendable {
     func makeDefaultSpace(profileId: UUID?) -> TabRestoreSpaceDTO {
         TabRestoreSpaceDTO(
             id: UUID(),
-            name: "Space",
-            icon: SumiPersistentGlyph.spaceDefaultIconValue,
-            workspaceTheme: .default,
+            name: DefaultSpaceConfiguration.name,
+            icon: DefaultSpaceConfiguration.icon,
+            workspaceTheme: DefaultSpaceConfiguration.makeTheme(),
             profileId: profileId
         )
     }

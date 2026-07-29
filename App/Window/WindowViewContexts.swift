@@ -156,18 +156,21 @@ final class WindowSidebarContext {
 @MainActor
 final class WindowNativeModalContext {
     private let presentationOwner: BrowserNativeDialogPresentationOwner
+    let presentationState: BrowserNativeModalPresentationState
     let browsingDataDialogContext: SumiBrowsingDataDialogContext
 
     init(
         presentationOwner: BrowserNativeDialogPresentationOwner,
+        presentationState: BrowserNativeModalPresentationState,
         browsingDataDialogContext: SumiBrowsingDataDialogContext
     ) {
         self.presentationOwner = presentationOwner
+        self.presentationState = presentationState
         self.browsingDataDialogContext = browsingDataDialogContext
     }
 
     var presentation: BrowserNativeModalPresentation? {
-        presentationOwner.currentPresentation
+        presentationState.presentation
     }
 
     func isPresented(in windowID: UUID) -> Bool {

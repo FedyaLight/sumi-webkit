@@ -18,6 +18,7 @@ final class Profile: NSObject, Identifiable {
     var name: String
     @ObservationIgnored private let explicitDataStore: WKWebsiteDataStore?
     @ObservationIgnored private var cachedPersistentDataStore: WKWebsiteDataStore?
+    @ObservationIgnored private var persistentDataStoreWasRemoved = false
     var dataStore: WKWebsiteDataStore {
         if let explicitDataStore {
             return explicitDataStore
@@ -117,28 +118,17 @@ final class Profile: NSObject, Identifiable {
 
     // MARK: - Cleanup
     @discardableResult
-    func clearAllData(
-        browsingDataCleanupService: SumiBrowsingDataCleanupService,
-        websiteDataCleanupService: any SumiWebsiteDataCleanupServicing
-    ) async -> Bool {
-        let didClear = await browsingDataCleanupService
-            .performDestructiveWebsiteDataCleanup(profileIDs: [id]) {
-                await websiteDataCleanupService.clearAllProfileWebsiteData(
-                    in: self.dataStore
-                )
-            }
-        guard didClear else { return false }
-        await refreshDataStoreStats(cleanupService: websiteDataCleanupService)
-        return true
-    }
-
-    @discardableResult
     func removePersistentDataStore(
         cleanupService: any SumiWebsiteDataCleanupServicing
     ) async -> Bool {
         guard !isEphemeral else { return true }
+        guard persistentDataStoreWasRemoved == false else { return true }
         cachedPersistentDataStore = nil
-        return await cleanupService.removePersistentDataStore(forIdentifier: id)
+        let removed = await cleanupService.removePersistentDataStore(
+            forIdentifier: id
+        )
+        persistentDataStoreWasRemoved = removed
+        return removed
     }
 
     /// Releases the ephemeral profile's non-persistent store ownership.

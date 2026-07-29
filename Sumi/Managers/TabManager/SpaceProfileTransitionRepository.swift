@@ -103,6 +103,14 @@ final class SpaceProfileTransitionRepository {
         return transaction.desiredProfileID
     }
 
+    func containsReference(to profileID: UUID) -> Bool {
+        entriesBySpaceID.values.contains { entry in
+            guard let transaction = entry.transaction else { return false }
+            return transaction.state != .terminal && (entry.intent.expectedProfileID == profileID
+                    || entry.intent.desiredProfileID == profileID)
+        }
+    }
+
     @discardableResult
     func registerCreationFollower(
         _ tab: Tab,

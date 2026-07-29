@@ -37,32 +37,41 @@ struct TabStructuralSnapshotMaterializer {
         currentSpaceId: UUID?,
         shouldPersistRegularTab: (Tab) -> Bool
     ) -> TabStructuralPersistenceDelta {
-        TabStructuralPersistenceDelta(
-            spaces: makeDirtySpaceSnapshots(spaces: spaces, ids: dirtySet.dirtySpaceIds),
-            tabs: makeDirtyTabSnapshots(
+        PerformanceTrace.withInterval(
+            "TabManager.materializeStructuralDelta"
+        ) {
+            let tabProjection = makeDirtyTabProjection(
                 ids: dirtySet.dirtyTabIds,
                 spaces: spaces,
                 pinnedByProfile: pinnedByProfile,
                 spacePinnedShortcuts: spacePinnedShortcuts,
                 tabsBySpace: tabsBySpace,
                 shouldPersistRegularTab: shouldPersistRegularTab
-            ),
-            folders: makeDirtyFolderSnapshots(
-                ids: dirtySet.dirtyFolderIds,
-                spaces: spaces,
-                foldersBySpace: foldersBySpace
-            ),
-            splitGroups: dirtySet.splitGroupsDirty ? makeSplitGroupSnapshots(splitGroups) : nil,
-            deletedSpaceIds: dirtySet.deletedSpaceIds,
-            deletedTabIds: dirtySet.deletedTabIds
-                .union(nonPersistableRegularTabIds(
-                    from: dirtySet.dirtyTabIds,
-                    tabsBySpace: tabsBySpace,
-                    shouldPersistRegularTab: shouldPersistRegularTab
-                )),
-            deletedFolderIds: dirtySet.deletedFolderIds,
-            state: makeState(currentTabId: currentTabId, currentSpaceId: currentSpaceId)
-        )
+            )
+            return TabStructuralPersistenceDelta(
+                spaces: makeDirtySpaceSnapshots(
+                    spaces: spaces,
+                    ids: dirtySet.dirtySpaceIds
+                ),
+                tabs: tabProjection.snapshots,
+                folders: makeDirtyFolderSnapshots(
+                    ids: dirtySet.dirtyFolderIds,
+                    spaces: spaces,
+                    foldersBySpace: foldersBySpace
+                ),
+                splitGroups: dirtySet.splitGroupsDirty
+                    ? makeSplitGroupSnapshots(splitGroups) : nil,
+                deletedSpaceIds: dirtySet.deletedSpaceIds,
+                deletedTabIds: dirtySet.deletedTabIds.union(
+                    tabProjection.nonPersistableRegularTabIDs
+                ),
+                deletedFolderIds: dirtySet.deletedFolderIds,
+                state: makeState(
+                    currentTabId: currentTabId,
+                    currentSpaceId: currentSpaceId
+                )
+            )
+        }
     }
 
     func makeSpaceSnapshots(spaces: [Space]) -> [TabPersistenceSpace] {
@@ -147,37 +156,50 @@ struct TabStructuralSnapshotMaterializer {
         }
     }
 
-    private func makeDirtyTabSnapshots(
+    private func makeDirtyTabProjection(
         ids: Set<UUID>,
         spaces: [Space],
         pinnedByProfile: [UUID: [ShortcutPin]],
         spacePinnedShortcuts: [UUID: [ShortcutPin]],
         tabsBySpace: [UUID: [Tab]],
         shouldPersistRegularTab: (Tab) -> Bool
-    ) -> [TabPersistenceTab] {
-        guard ids.isEmpty == false else { return [] }
+    ) -> (
+        snapshots: [TabPersistenceTab],
+        nonPersistableRegularTabIDs: Set<UUID>
+    ) {
+        guard ids.isEmpty == false else { return ([], []) }
         var snapshots: [SnapshotTab] = []
+        var nonPersistableRegularTabIDs = Set<UUID>()
 
         for profileId in pinnedByProfile.keys.sorted(by: uuidLessThan) {
-            let orderedPins = Array(pinnedByProfile[profileId] ?? []).sorted { $0.index < $1.index }
-            for pin in orderedPins where ids.contains(pin.id) {
+            let orderedPins = (pinnedByProfile[profileId] ?? [])
+                .filter { ids.contains($0.id) }
+                .sorted { $0.index < $1.index }
+            for pin in orderedPins {
                 snapshots.append(makePinnedTabSnapshot(pin: pin, profileId: profileId))
             }
         }
 
         for space in spaces {
-            let shortcutPins = Array(spacePinnedShortcuts[space.id] ?? []).sorted { $0.index < $1.index }
-            for pin in shortcutPins where ids.contains(pin.id) {
+            let shortcutPins = (spacePinnedShortcuts[space.id] ?? [])
+                .filter { ids.contains($0.id) }
+                .sorted { $0.index < $1.index }
+            for pin in shortcutPins {
                 snapshots.append(makeSpacePinnedTabSnapshot(pin: pin, spaceId: space.id))
             }
 
-            let regularTabs = Array(tabsBySpace[space.id] ?? [])
-            for tab in regularTabs where ids.contains(tab.id) && shouldPersistRegularTab(tab) {
-                snapshots.append(makeRegularTabSnapshot(tab: tab, spaceId: space.id))
+            for tab in tabsBySpace[space.id] ?? [] where ids.contains(tab.id) {
+                if shouldPersistRegularTab(tab) {
+                    snapshots.append(
+                        makeRegularTabSnapshot(tab: tab, spaceId: space.id)
+                    )
+                } else {
+                    nonPersistableRegularTabIDs.insert(tab.id)
+                }
             }
         }
 
-        return snapshots
+        return (snapshots, nonPersistableRegularTabIDs)
     }
 
     private func makeDirtyFolderSnapshots(
@@ -188,8 +210,10 @@ struct TabStructuralSnapshotMaterializer {
         guard ids.isEmpty == false else { return [] }
         var snapshots: [SnapshotFolder] = []
         for space in spaces {
-            let orderedFolders = (foldersBySpace[space.id] ?? []).sorted { $0.index < $1.index }
-            for folder in orderedFolders where ids.contains(folder.id) {
+            let orderedFolders = (foldersBySpace[space.id] ?? [])
+                .filter { ids.contains($0.id) }
+                .sorted { $0.index < $1.index }
+            for folder in orderedFolders {
                 snapshots.append(makeFolderSnapshot(folder: folder, spaceId: space.id))
             }
         }
@@ -278,22 +302,6 @@ struct TabStructuralSnapshotMaterializer {
             isOpen: folder.isOpen,
             index: folder.index
         )
-    }
-
-    private func nonPersistableRegularTabIds(
-        from ids: Set<UUID>,
-        tabsBySpace: [UUID: [Tab]],
-        shouldPersistRegularTab: (Tab) -> Bool
-    ) -> Set<UUID> {
-        guard ids.isEmpty == false else { return [] }
-
-        var deletedIds = Set<UUID>()
-        for tabs in tabsBySpace.values {
-            for tab in tabs where ids.contains(tab.id) && shouldPersistRegularTab(tab) == false {
-                deletedIds.insert(tab.id)
-            }
-        }
-        return deletedIds
     }
 
     private func uuidLessThan(_ lhs: UUID, _ rhs: UUID) -> Bool {

@@ -340,7 +340,7 @@ struct SumiSettingsTabRootView: View {
             SumiProfilesSettingsPane(
                 profileManager: browserContext.profileManager,
                 profileInventory: browserContext.profileInventory,
-                deleteProfile: browserContext.deleteProfile
+                requestProfileDeletion: browserContext.requestProfileDeletion
             )
         case .shortcuts:
             ShortcutsSettingsView(shortcutManager: keyboardShortcutManager)

@@ -5,7 +5,6 @@
 //  Profile management (also used in the in-tab settings surface).
 //
 
-import AppKit
 import SwiftUI
 
 struct SumiProfilesSettingsPane: View {
@@ -25,8 +24,7 @@ struct SumiProfilesSettingsPane: View {
 
     @ObservedObject var profileManager: ProfileManager
     let profileInventory: ProfileSettingsInventory
-    let deleteProfile: (Profile) -> Void
-    @Environment(\.resolvedThemeContext) private var themeContext
+    let requestProfileDeletion: (Profile, String) -> Void
     @State private var profileEditorPresentation: ProfileEditorPresentation?
     @State private var profileCreationFailed = false
     @State private var usage: [UUID: ProfileUsage] = [:]
@@ -61,7 +59,7 @@ struct SumiProfilesSettingsPane: View {
         } message: {
             Text("The profile couldn't be saved. No profile was created.")
         }
-        .onChange(of: profileManager.profiles.map(\.id), initial: true) { _, _ in
+        .onReceive(profileManager.$profiles) { _ in
             refreshUsage()
         }
         .onReceive(profileInventory.updates) { _ in
@@ -73,11 +71,14 @@ struct SumiProfilesSettingsPane: View {
 
     private var profileRows: some View {
         VStack(spacing: 0) {
-            ForEach(profileManager.profiles, id: \.id) { profile in
+            ForEach(profileManager.profiles) { profile in
                 ProfileRowView(
                     profile: profile,
                     usage: usage(for: profile),
-                    canDelete: canDelete,
+                    isDeleting: profileManager.retiringProfileIDs.contains(
+                        profile.id
+                    ),
+                    canDelete: profileManager.retiringProfileIDs.isEmpty,
                     onEdit: { startEdit(profile) },
                     onDelete: { startDelete(profile) }
                 )
@@ -97,12 +98,8 @@ struct SumiProfilesSettingsPane: View {
                 profileEditorPresentation = .add
             }
             .buttonStyle(.bordered)
+            .disabled(profileManager.retiringProfileIDs.isEmpty == false)
         }
-    }
-
-    /// The last profile is the browser's fallback and can never be removed.
-    private var canDelete: Bool {
-        profileManager.profiles.count > 1
     }
 
     private func usage(for profile: Profile) -> ProfileUsage {
@@ -110,11 +107,7 @@ struct SumiProfilesSettingsPane: View {
     }
 
     private func refreshUsage() {
-        usage = Dictionary(
-            uniqueKeysWithValues: profileManager.profiles.map {
-                ($0.id, profileInventory.usage($0.id))
-            }
-        )
+        usage = profileInventory.snapshot()
     }
 
     // MARK: - Actions
@@ -156,33 +149,21 @@ struct SumiProfilesSettingsPane: View {
     }
 
     private func startEdit(_ profile: Profile) {
+        guard profileManager.retiringProfileIDs.contains(profile.id) == false
+        else { return }
         profileEditorPresentation = .edit(profile.id)
     }
 
     private func startDelete(_ profile: Profile) {
-        guard canDelete else { return }
-
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = "Delete “\(profile.name)”?"
-        alert.informativeText = deleteConfirmationMessage(for: profile)
-        if let icon = NSImage(
-            systemSymbolName: "trash",
-            accessibilityDescription: "Delete Profile"
-        ) {
-            alert.icon = icon
+        guard profileManager.retiringProfileIDs.isEmpty else {
+            return
         }
-
-        let deleteButton = alert.addButton(withTitle: "Delete Profile")
-        deleteButton.hasDestructiveAction = true
-
-        let cancelButton = alert.addButton(withTitle: "Cancel")
-        cancelButton.keyEquivalent = "\u{1b}"
-
-        alert.sumiApplyNativeSurfaceAppearance(themeContext: themeContext)
-        if alert.runModal() == .alertFirstButtonReturn, canDelete {
-            deleteProfile(profile)
-        }
+        requestProfileDeletion(
+            profile,
+            ProfileRetirementImpactPresentation.confirmationMessage(
+                for: usage(for: profile)
+            )
+        )
     }
 
     private func createProfile(name: String) {
@@ -221,10 +202,5 @@ struct SumiProfilesSettingsPane: View {
             $0.id != excludedProfileID
                 && $0.name.caseInsensitiveCompare(trimmed) == .orderedSame
         }
-    }
-
-    private func deleteConfirmationMessage(for profile: Profile) -> String {
-        let usage = usage(for: profile)
-        return "\(usage.spacesText) and \(usage.tabsText) that use this profile will move to another profile. Website data stored for this profile will be deleted."
     }
 }

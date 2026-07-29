@@ -5,6 +5,7 @@ protocol SumiNotificationServicing: Sendable {
     func post(_ payload: SumiNotificationPayload) async -> SumiNotificationDeliveryResult
     func close(identifier: SumiNotificationIdentifier) async
     func retireProfile(profilePartitionId: String) async -> Bool
+    func rehydrateRetiredProfile(profilePartitionId: String) async
 }
 
 struct SumiNotificationCenterRecord: Equatable, Sendable {
@@ -189,6 +190,12 @@ actor SumiNotificationService: SumiNotificationServicing {
             normalizedProfileID($0.profilePartitionId ?? "") == profileID
         }
         return deliveredStillPresent == false && pendingStillPresent == false
+    }
+
+    func rehydrateRetiredProfile(profilePartitionId: String) {
+        let profileID = normalizedProfileID(profilePartitionId)
+        guard profileID.isEmpty == false else { return }
+        retiredProfileIDs.insert(profileID)
     }
 
     #if DEBUG

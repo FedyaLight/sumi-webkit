@@ -9,7 +9,12 @@ final class TabStructuralPersistenceService {
         case fullReconcile(String)
     }
 
-    private let structuralStore: TabStructuralSnapshotStore
+    private enum PersistenceRequest {
+        case incremental
+        case fullReconcile(String)
+    }
+
+    private let structuralStore: any TabStructuralSnapshotPersisting
     private let selectionStore: TabSelectionStore
     private let runtimeStateCoalescer: RuntimeStateCoalescer
     private let state: TabStateStore
@@ -20,14 +25,13 @@ final class TabStructuralPersistenceService {
     private var persistenceGeneration = 0
     private(set) var scheduledPersistTask: Task<Void, Never>?
     private(set) var selectionPersistTask: Task<Void, Never>?
+    private var queuedPersistenceTask: Task<Bool, Never>?
     private var persistRequestID: UInt64 = 0
 
-    /// Monotonic scheduling/cancellation boundary used by exact transaction
-    /// oracles. A rejected structural operation must not advance it.
     var schedulingRevision: UInt64 { persistRequestID }
 
     init(
-        structuralStore: TabStructuralSnapshotStore,
+        structuralStore: any TabStructuralSnapshotPersisting,
         selectionStore: TabSelectionStore,
         runtimeStateCoalescer: RuntimeStateCoalescer,
         debounceNanoseconds: UInt64 = 250_000_000,
@@ -53,16 +57,23 @@ final class TabStructuralPersistenceService {
         scheduleStructuralPersistenceOnMain()
     }
 
-    func scheduleStructuralPersistenceFromMain() {
-        scheduleStructuralPersistenceOnMain()
+    nonisolated func persistPendingStructuralChangesAwaitingResult() async -> Bool {
+        let task = await MainActor.run { [weak self] in
+            guard let self else { return nil as Task<Bool, Never>? }
+            self.cancelScheduledStructuralPersistence()
+            return self.enqueuePersistence(.incremental)
+        }
+        return await task?.value ?? false
     }
 
     /// Explicit full reconcile path for restore, repair, fallback, and termination only.
     nonisolated func persistFullReconcileAwaitingResult(reason: String) async -> Bool {
-        await MainActor.run { [weak self] in
-            self?.cancelScheduledStructuralPersistence()
+        let task = await MainActor.run { [weak self] in
+            guard let self else { return nil as Task<Bool, Never>? }
+            self.cancelScheduledStructuralPersistence()
+            return self.enqueuePersistence(.fullReconcile(reason))
         }
-        return await performFullReconcileNow(reason: reason)
+        return await task?.value ?? false
     }
 
     private func scheduleStructuralPersistenceOnMain() {
@@ -95,7 +106,26 @@ final class TabStructuralPersistenceService {
     private func executeScheduledStructuralPersistence(requestID: UInt64) async {
         guard persistRequestID == requestID else { return }
         scheduledPersistTask = nil
-        _ = await persistIncrementalStructuralNow()
+        let task = enqueuePersistence(.incremental)
+        _ = await task.value
+    }
+
+    private func enqueuePersistence(
+        _ request: PersistenceRequest
+    ) -> Task<Bool, Never> {
+        let preceding = queuedPersistenceTask
+        let task = Task { [weak self] in
+            _ = await preceding?.value
+            guard let self else { return false }
+            switch request {
+            case .incremental:
+                return await self.persistIncrementalStructuralNow()
+            case .fullReconcile(let reason):
+                return await self.performFullReconcileNow(reason: reason)
+            }
+        }
+        queuedPersistenceTask = task
+        return task
     }
 
     private nonisolated func persistIncrementalStructuralNow() async -> Bool {
@@ -152,30 +182,42 @@ final class TabStructuralPersistenceService {
         await runtimeStateCoalescer.flushImmediately()
     }
 
-    private nonisolated func performFullReconcileNow(reason _: String) async -> Bool {
-        _ = await flushRuntimeStatePersistenceAwaitingResult()
+    private nonisolated func performFullReconcileNow(reason: String) async -> Bool {
+        _ = await runtimeStateCoalescer.discardPending()
 
         let signpostState = PerformanceTrace.beginInterval("TabManager.performFullReconcileNow")
         defer {
             PerformanceTrace.endInterval("TabManager.performFullReconcileNow", signpostState)
         }
 
-        let payload: (TabPersistenceSnapshot, Int)? = await MainActor.run { [weak self] in
+        let payload: (
+            TabPersistenceSnapshot,
+            Int,
+            TabStructuralDirtySet
+        )? = await MainActor.run { [weak self] in
             guard let strong = self else { return nil }
+            let consumedDirtySet = strong.dirtySet.takePending()
             let generation = strong.nextPersistenceGeneration()
             let snapshot = strong.buildSnapshot()
-            return (snapshot, generation)
+            RuntimeDiagnostics.debug(
+                "Full tab reconcile requested: \(reason)",
+                category: "TabPersistence"
+            )
+            return (snapshot, generation, consumedDirtySet)
         }
-        guard let (snapshot, generation) = payload else {
+        guard let (snapshot, generation, consumedDirtySet) = payload else {
             return false
         }
         let didPersist = await structuralStore.persistFullReconcile(
             snapshot: snapshot,
             generation: generation
         )
-        if didPersist {
+        if didPersist == false {
             await MainActor.run { [weak self] in
-                self?.dirtySet = TabStructuralDirtySet()
+                self?.dirtySet.merge(consumedDirtySet)
+                self?.dirtySet.requestFullReconcile(
+                    reason: "full structural reconcile failed"
+                )
             }
         }
         return didPersist

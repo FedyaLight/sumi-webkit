@@ -18,15 +18,15 @@ final class ProfileApplicationDataCleanupServiceTests: XCTestCase {
         }
         XCTAssertEqual(
             recorder.calls,
-            [.history, .basicAuth, .sitePolicies, .zoom, .boosts]
+            [.basicAuth, .sitePolicies, .zoom, .boosts]
         )
 
         try await service.cleanup(profileID: profileID)
         XCTAssertEqual(
             recorder.calls,
             [
-                .history, .basicAuth, .sitePolicies, .zoom, .boosts,
-                .history, .basicAuth, .sitePolicies, .zoom, .boosts,
+                .basicAuth, .sitePolicies, .zoom, .boosts,
+                .basicAuth, .sitePolicies, .zoom, .boosts,
                 .adblockZapper, .extensionPrivateData,
             ]
         )
@@ -93,7 +93,6 @@ final class ProfileApplicationDataCleanupServiceTests: XCTestCase {
 }
 
 private enum ProfileApplicationCleanupDomain: Equatable {
-    case history
     case basicAuth
     case sitePolicies
     case zoom
@@ -113,7 +112,6 @@ private final class ProfileApplicationCleanupRecorder {
 
     var operations: ProfileApplicationDataCleanupService.Operations {
         .init(
-            clearHistory: { [self] _ in calls.append(.history) },
             clearBasicAuthCredentials: { [self] _ in calls.append(.basicAuth) },
             clearSiteDataPolicies: { [self] _ in calls.append(.sitePolicies) },
             clearZoomPreferences: { [self] _ in calls.append(.zoom) },

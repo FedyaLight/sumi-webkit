@@ -4,11 +4,8 @@ import Foundation
 enum BrowserProfileRetirementStartupRecovery {
     static func make(
         profileManager: ProfileManager,
-        profileDeletion: ProfileDeletionMigration,
-        tabPersistence: TabStructuralPersistenceService,
-        referenceRetirement: BrowserProfileReferenceRetirementCoordinator,
+        referenceMigration: BrowserProfileReferenceRetirementRuntime,
         permissionRuntime: BrowserManagerPermissionRuntime,
-        browsingDataCleanupService: SumiBrowsingDataCleanupService,
         cleanupDependencies: ProfileRetirementCleanupDependencies
     ) -> ProfileRetirementStartupRecovery {
         ProfileRetirementStartupRecovery(
@@ -32,13 +29,9 @@ enum BrowserProfileRetirementStartupRecovery {
                             profileID: record.snapshot.id
                         )
                 }
-                guard await migrateReferences(
-                    deletedProfileID: record.snapshot.id,
-                    fallback: fallback,
-                    profileDeletion: profileDeletion,
-                    tabPersistence: tabPersistence,
-                    referenceRetirement: referenceRetirement,
-                    browsingDataCleanupService: browsingDataCleanupService
+                guard await referenceMigration.migrateReferences(
+                    from: record.snapshot.id,
+                    to: fallback
                 ) else {
                     throw ProfileRetirementStartupRecoveryError
                         .referenceMigrationFailed(
@@ -46,8 +39,18 @@ enum BrowserProfileRetirementStartupRecovery {
                         )
                 }
             },
-            prepareCleanup: { record in
+            prepareRuntimeRetirement: { record in
                 guard await permissionRuntime.prepareForProfileRetirement(
+                    profilePartitionId: record.snapshot.id.uuidString
+                ) else {
+                    throw ProfileRetirementStartupRecoveryError
+                        .cleanupPreparationFailed(
+                            profileID: record.snapshot.id
+                        )
+                }
+            },
+            rehydrateRetirementState: { record in
+                guard await permissionRuntime.rehydrateRetiredProfile(
                     profilePartitionId: record.snapshot.id.uuidString
                 ) else {
                     throw ProfileRetirementStartupRecoveryError
@@ -68,13 +71,9 @@ enum BrowserProfileRetirementStartupRecovery {
                             $0.id == record.fallbackProfileID
                         }
                     } ?? defaultFallback
-                    guard await migrateReferences(
-                        deletedProfileID: profileID,
-                        fallback: fallback,
-                        profileDeletion: profileDeletion,
-                        tabPersistence: tabPersistence,
-                        referenceRetirement: referenceRetirement,
-                        browsingDataCleanupService: browsingDataCleanupService
+                    guard await referenceMigration.migrateReferences(
+                        from: profileID,
+                        to: fallback
                     ) else {
                         return false
                     }
@@ -91,32 +90,5 @@ enum BrowserProfileRetirementStartupRecovery {
                 )
             }
         )
-    }
-
-    private static func migrateReferences(
-        deletedProfileID: UUID,
-        fallback: Profile,
-        profileDeletion: ProfileDeletionMigration,
-        tabPersistence: TabStructuralPersistenceService,
-        referenceRetirement: BrowserProfileReferenceRetirementCoordinator,
-        browsingDataCleanupService: SumiBrowsingDataCleanupService
-    ) async -> Bool {
-        guard await browsingDataCleanupService
-            .performDestructiveWebsiteDataCleanup(
-                profileIDs: [deletedProfileID],
-                deletion: {}
-            )
-        else { return false }
-        guard await profileDeletion.migrate(
-            deletedProfileID: deletedProfileID,
-            fallbackProfileID: fallback.id
-        ) == .committed else { return false }
-        guard await tabPersistence.persistFullReconcileAwaitingResult(
-            reason: "profile retirement recovery"
-        ) else { return false }
-        return await referenceRetirement.migrateReferences(
-            from: deletedProfileID,
-            to: fallback
-        ) && referenceRetirement.containsReference(to: deletedProfileID) == false
     }
 }

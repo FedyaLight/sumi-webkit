@@ -77,7 +77,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
         XCTAssertEqual(tabManager.regularTabCollectionOwner.tabs(in: spaceA).count, 1)
     }
 
-    func testProfileCleanupKeepsReassignedSpacesAndMovesStaleTabsToOwningSpaceProfile() async throws {
+    func testProfileCleanupDeletesOwnedSpacesAndMovesStaleTabsToOwningSpaceProfile() async throws {
         let deletedProfileId = UUID()
         let fallbackProfileId = UUID()
         let reassignedProfileId = UUID()
@@ -118,7 +118,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
             )
 
         XCTAssertEqual(outcome, .committed)
-        XCTAssertEqual(deletedSpace.profileId, fallbackProfileId)
+        XCTAssertNil(tabManager.spaceStateOwner.space(with: deletedSpace.id))
         XCTAssertEqual(reassignedSpace.profileId, reassignedProfileId)
         XCTAssertNil(staleTab.profileId)
         XCTAssertEqual(

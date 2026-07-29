@@ -82,7 +82,11 @@ extension BrowserManager {
             modal: nativeModalTransaction,
             commandPalette: commandPalettePresentation,
             themes: workspaceThemeEditorOwner,
-            sharing: sharing
+            sharing: sharing,
+            alerts: BrowserNativeAlertPresenter(
+                windows: windowRegistry,
+                settings: settingsState
+            )
         )
         return BrowserChromeBundle(
             commands: commands,

@@ -23,6 +23,59 @@ final class SpaceRemovalServiceTests: XCTestCase {
         XCTAssertEqual(validationCount, 0)
     }
 
+    func testProfileRetirementCanRemoveTheLastSpace() {
+        let tabManager = BrowserManager()
+        let onlySpace = Space(name: "Only")
+        tabManager.spaceStateOwner.replaceSpaces([onlySpace])
+        tabManager.spaceStateOwner.replaceCurrentSpace(onlySpace)
+        let service = makeService(tabManager) {}
+
+        XCTAssertTrue(
+            service.removeSpacesForProfileRetirement([onlySpace.id])
+        )
+
+        XCTAssertTrue(tabManager.spaceStateOwner.spaces.isEmpty)
+        XCTAssertNil(tabManager.spaceStateOwner.currentSpace)
+    }
+
+    func testProfileRetirementRemovesOwnedSpacesInOnePublishedBatch() {
+        let tabManager = BrowserManager()
+        let survivor = Space(name: "Survivor")
+        let firstOwned = Space(name: "First owned")
+        let secondOwned = Space(name: "Second owned")
+        tabManager.spaceStateOwner.replaceSpaces([
+            survivor,
+            firstOwned,
+            secondOwned,
+        ])
+        tabManager.spaceStateOwner.replaceCurrentSpace(firstOwned)
+        var validationCount = 0
+        var publicationCount = 0
+        var modelAnnouncementCount = 0
+        let observation = tabManager.tabStructureEventBus
+            .structureChangedPublisher.sink {
+                publicationCount += 1
+            }
+        let modelObservation = tabManager.objectWillChange.sink {
+            modelAnnouncementCount += 1
+        }
+        let service = makeService(tabManager) { validationCount += 1 }
+
+        XCTAssertTrue(
+            service.removeSpacesForProfileRetirement([
+                firstOwned.id,
+                secondOwned.id,
+            ])
+        )
+
+        XCTAssertEqual(tabManager.spaceStateOwner.spaces.map(\.id), [survivor.id])
+        XCTAssertEqual(tabManager.spaceStateOwner.currentSpace?.id, survivor.id)
+        XCTAssertEqual(publicationCount, 1)
+        XCTAssertEqual(modelAnnouncementCount, 1)
+        XCTAssertEqual(validationCount, 1)
+        withExtendedLifetime((observation, modelObservation)) {}
+    }
+
     func testRemovalClearsEverySpaceScopedCollectionAndRepairsSelection() throws {
         let tabManager = BrowserManager()
         let survivingSpace = Space(name: "Surviving")
@@ -313,8 +366,7 @@ final class SpaceRemovalServiceTests: XCTestCase {
             ),
             catalog: SpaceRemovalCatalogCommitter(
                 state: tabManager.tabStateStore,
-                persistence: tabManager.structuralPersistence,
-                changes: tabManager.objectWillChange
+                persistence: tabManager.structuralPersistence
             )
         )
     }

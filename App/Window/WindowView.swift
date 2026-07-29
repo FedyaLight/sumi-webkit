@@ -39,6 +39,8 @@ struct WindowView: View {
     private let sidebarContext: WindowSidebarContext
     private let commandPaletteContext: CommandPaletteBrowserContext
     private let nativeModalContext: WindowNativeModalContext
+    @ObservedObject private var nativeModalPresentationState:
+        BrowserNativeModalPresentationState
     private let findContext: WindowFindContext
     private let splitContext: WindowSplitContext
     private let themeChromeContext: WindowThemeChromeContext
@@ -58,6 +60,9 @@ struct WindowView: View {
         self.sidebarContext = sidebarContext
         self.commandPaletteContext = commandPaletteContext
         self.nativeModalContext = nativeModalContext
+        _nativeModalPresentationState = ObservedObject(
+            wrappedValue: nativeModalContext.presentationState
+        )
         self.findContext = findContext
         self.splitContext = splitContext
         self.themeChromeContext = themeChromeContext
@@ -557,7 +562,7 @@ struct WindowView: View {
     private var nativeModalPresentationBinding: Binding<BrowserNativeModalPresentation?> {
         Binding(
             get: {
-                guard let presentation = nativeModalContext.presentation,
+                guard let presentation = nativeModalPresentationState.presentation,
                       presentation.windowID == windowState.id
                 else {
                     return nil

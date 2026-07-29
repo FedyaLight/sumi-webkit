@@ -5,6 +5,8 @@ import Observation
 @Observable
 final class SumiStartupRecoveryTransaction {
     enum State {
+        case preparing
+        case rehydrating
         case pending
         case recovering
         case ready
@@ -39,8 +41,16 @@ final class SumiStartupRecoveryTransaction {
         hasSafeProfile: @MainActor () -> Bool = { true },
         startRuntime: @MainActor () -> Void
     ) async -> Outcome {
-        guard case .pending = state else { return .notClaimed }
-        state = .recovering
+        let presentsRecoveryChrome: Bool
+        switch state {
+        case .pending:
+            presentsRecoveryChrome = true
+        case .preparing:
+            presentsRecoveryChrome = false
+        case .rehydrating, .recovering, .ready, .failed:
+            return .notClaimed
+        }
+        state = presentsRecoveryChrome ? .recovering : .rehydrating
 
         guard preflight == .ready else {
             let failure = Failure(

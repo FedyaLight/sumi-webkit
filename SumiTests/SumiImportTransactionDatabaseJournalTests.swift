@@ -39,6 +39,61 @@ final class SumiImportTransactionDatabaseJournalTests: XCTestCase {
         }
     }
 
+    func testCompletedRetirementTombstoneDoesNotPresentRecoveryChrome() throws {
+        let database = try SumiDatabase.inMemory()
+        let retired = Profile(name: "Retired")
+        let retained = Profile(name: "Retained")
+        try persistProfiles([retired, retained], in: database)
+        try persistRetiredTombstone(
+            for: retired,
+            fallbackID: retained.id,
+            in: database
+        )
+
+        let admission = SumiStartupAdmission.evaluate(
+            preflight: .ready,
+            profileReferenceAdmission: try ProfileReferenceAdmissionLedger(
+                database: database
+            ),
+            importJournal: SumiImportTransactionDatabaseJournal(
+                database: database
+            )
+        )
+
+        guard case .retirementStateRehydrationRequired = admission else {
+            return XCTFail(
+                "Completed retirement history must use silent state rehydration"
+            )
+        }
+    }
+
+    func testActiveRetirementStillRequiresRecoveryChrome() throws {
+        let database = try SumiDatabase.inMemory()
+        let retiring = Profile(name: "Retiring")
+        let retained = Profile(name: "Retained")
+        try persistProfiles([retiring, retained], in: database)
+        let ledger = try ProfileReferenceAdmissionLedger(database: database)
+        let token = try ledger.reserve(
+            profile: retiring,
+            fallbackID: retained.id
+        )
+        XCTAssertTrue(try ledger.beginReferenceMigration(token))
+
+        let admission = SumiStartupAdmission.evaluate(
+            preflight: .ready,
+            profileReferenceAdmission: ledger,
+            importJournal: SumiImportTransactionDatabaseJournal(
+                database: database
+            )
+        )
+
+        guard case .recoveryRequired = admission else {
+            return XCTFail(
+                "An interrupted profile deletion must retain emergency recovery chrome"
+            )
+        }
+    }
+
     func testFailedRetirementPreflightFailsClosed() throws {
         let database = try SumiDatabase.inMemory()
         let admission = SumiStartupAdmission.evaluate(
@@ -106,6 +161,42 @@ final class SumiImportTransactionDatabaseJournalTests: XCTestCase {
             bookmarkCheckpoint: nil,
             preRestoreBackupURL: nil
         )
+    }
+
+    private func persistProfiles(
+        _ profiles: [Profile],
+        in database: SumiDatabase
+    ) throws {
+        try database.transaction {
+            for (index, profile) in profiles.enumerated() {
+                try $0.profiles.save(
+                    ProfileRecord(
+                        id: profile.id,
+                        name: profile.name,
+                        index: index
+                    )
+                )
+            }
+        }
+    }
+
+    private func persistRetiredTombstone(
+        for profile: Profile,
+        fallbackID: UUID,
+        in database: SumiDatabase
+    ) throws {
+        let ledger = try ProfileReferenceAdmissionLedger(database: database)
+        let token = try ledger.reserve(
+            profile: profile,
+            fallbackID: fallbackID
+        )
+        XCTAssertTrue(try ledger.beginReferenceMigration(token))
+        XCTAssertTrue(try ledger.commitLogicalDeletion(token))
+        XCTAssertTrue(try ledger.beginCleaning(token))
+        for step in ProfileRetirementCleanupStep.ordered {
+            XCTAssertTrue(try ledger.completeCleanupStep(step, using: token))
+        }
+        XCTAssertTrue(try ledger.markRetired(token))
     }
 }
 

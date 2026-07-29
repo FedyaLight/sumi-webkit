@@ -29,6 +29,10 @@ actor FakeSumiNotificationService: SumiNotificationServicing {
         return true
     }
 
+    func rehydrateRetiredProfile(profilePartitionId: String) {
+        retiredProfileIDs.append(profilePartitionId)
+    }
+
     func postedCount() -> Int {
         postedPayloads.count
     }

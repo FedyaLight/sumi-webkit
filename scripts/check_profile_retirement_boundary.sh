@@ -18,6 +18,7 @@ retirement_recovery="Sumi/Services/ProfileRetirementStartupRecovery.swift"
 startup_recovery="Sumi/Services/SumiStartupRecoveryTransaction.swift"
 app_root="App/SumiApp.swift"
 browser_retirement_coordinator="Sumi/Managers/BrowserManager/BrowserProfileReferenceRetirementCoordinator.swift"
+browser_reference_runtime="Sumi/Managers/BrowserManager/BrowserProfileReferenceRetirementRuntime.swift"
 browser_deletion_workflow="Sumi/Managers/BrowserManager/BrowserProfileDeletionWorkflow.swift"
 browser_retirement_recovery="Sumi/Managers/BrowserManager/BrowserProfileRetirementStartupRecovery.swift"
 browser_profile_lifecycle="Sumi/Managers/BrowserManager/BrowserProfileLifecycleBundle.swift"
@@ -34,6 +35,7 @@ for source in \
   "$retirement_recovery" \
   "$startup_recovery" \
   "$browser_retirement_coordinator" \
+  "$browser_reference_runtime" \
   "$browser_deletion_workflow" \
   "$browser_retirement_recovery" \
   "$browser_profile_lifecycle" \
@@ -63,12 +65,14 @@ guard_expect_no_matches \
   'browser profile retirement manager reachback' \
   '\b(BrowserManager|TabManager|browserManager|tabManager)\b' \
   "$browser_retirement_coordinator" \
+  "$browser_reference_runtime" \
   "$browser_deletion_workflow" \
   "$browser_retirement_recovery"
 guard_expect_no_matches \
   'browser profile retirement generic dependency bags' \
   '\bstruct[[:space:]]+(Context|Dependencies|Actions|Environment|Capabilities)\b' \
   "$browser_retirement_coordinator" \
+  "$browser_reference_runtime" \
   "$browser_deletion_workflow" \
   "$browser_retirement_recovery"
 guard_expect_no_matches \
@@ -136,7 +140,7 @@ workflow_cancel_count="$({
   guard_count_matches 'cancelReservation\(token, using: context\)' "$retirement_workflow"
 })"
 guard_exact 'single point-of-no-return transition' "$workflow_begin_count" 1
-guard_exact 'reservation cancellation before point-of-no-return' "$workflow_cancel_count" 2
+guard_exact 'reservation cancellation before point-of-no-return' "$workflow_cancel_count" 1
 
 app_startup_authority_count="$({
   guard_count_matches '@State private var startupRecovery: SumiStartupRecoveryTransaction' "$app_root"
@@ -148,16 +152,16 @@ guard_exact 'single app startup-recovery authority' "$app_startup_authority_coun
 guard_exact 'single post-recovery runtime start' "$runtime_start_count" 1
 
 migration_begin_line="$(guard_capture_matches 'beginReferenceMigration\(token\)' "$retirement_workflow" | head -1 | cut -d: -f1)"
-forward_migration_line="$(guard_capture_matches 'let migration = await context\.migrateProfileReferences' "$retirement_workflow" | head -1 | cut -d: -f1)"
+forward_migration_line="$(guard_capture_matches 'await context\.migrateReferences' "$retirement_workflow" | head -1 | cut -d: -f1)"
 last_cancel_line="$(guard_capture_matches 'cancelReservation\(token, using: context\)' "$retirement_workflow" | tail -1 | cut -d: -f1)"
 logical_delete_line="$(guard_capture_matches 'commitLogicalDeletion\(token\)' "$retirement_workflow" | head -1 | cut -d: -f1)"
 runtime_seal_line="$(guard_capture_matches 'sealProfileRuntime\(profile\.id\)' "$retirement_workflow" | head -1 | cut -d: -f1)"
 if [[ -z "$last_cancel_line" || -z "$migration_begin_line" || -z "$forward_migration_line" || -z "$logical_delete_line" || -z "$runtime_seal_line" ]] \
   || (( migration_begin_line >= forward_migration_line )) \
   || (( last_cancel_line >= forward_migration_line )) \
-  || (( forward_migration_line >= logical_delete_line )) \
-  || (( logical_delete_line >= runtime_seal_line )); then
-  guard_record_failure 'retirement ordering must be cancelable preflight → migrating → logical deletion → irreversible runtime seal'
+  || (( forward_migration_line >= runtime_seal_line )) \
+  || (( runtime_seal_line >= logical_delete_line )); then
+  guard_record_failure 'retirement ordering must be cancelable preflight → runtime/reference drain → logical deletion'
 fi
 
 guard_finish 'profile-retirement boundary audit'

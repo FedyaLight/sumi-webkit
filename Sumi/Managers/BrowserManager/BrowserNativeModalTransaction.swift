@@ -17,10 +17,6 @@ final class BrowserNativeModalTransaction {
         self.recovery = recovery
     }
 
-    var currentPresentation: BrowserNativeModalPresentation? {
-        state.presentation
-    }
-
     @discardableResult
     func present(
         _ kind: BrowserNativeModalKind,

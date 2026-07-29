@@ -141,7 +141,6 @@ extension BrowserManager {
         )
 
         let applicationDataCleanup = ProfileApplicationDataCleanupComposition.make(
-            historyManager: historyManager,
             browsingDataCleanupService: browsingDataCleanupService,
             siteDataPolicyStore: dataServices.siteDataPolicyStore,
             zoomManager: zoomManager,
@@ -150,7 +149,6 @@ extension BrowserManager {
             database: database
         )
         let cleanupDependencies = ProfileRetirementCleanupDependencies(
-            browsingDataCleanupService: browsingDataCleanupService,
             websiteDataCleanupService: dataServices.websiteDataCleanupService,
             faviconService: dataServices.faviconService,
             visitedLinkStore: dataServices.visitedLinkStore,
@@ -158,61 +156,32 @@ extension BrowserManager {
             applicationDataCleanupService: applicationDataCleanup
         )
         let noticePresenter = chromeBundle.nativeDialogPresentationOwner
+        let referenceMigration = BrowserProfileReferenceRetirementRuntime(
+            tabs: profileDeletion,
+            persistence: tabPersistence,
+            browserReferences: referenceRetirement
+        )
         let maintenanceContext = SumiProfileMaintenanceService.Context(
-                currentProfile: { [currentProfileAuthority] in
-                    currentProfileAuthority.currentProfile
-                },
                 profileManager: profileManager,
-                migrateProfileReferences: { [profileDeletion] deleted, fallback in
-                    await profileDeletion.migrate(
-                        deletedProfileID: deleted,
-                        fallbackProfileID: fallback
-                    )
-                },
-                persistProfileReferences: { [tabPersistence] in
-                    await tabPersistence.persistFullReconcileAwaitingResult(
-                        reason: "profile retirement"
-                    )
-                },
-                migrateBrowserProfileReferences: {
-                    [referenceRetirement] deleted,
-                    fallback in
-                    await referenceRetirement.migrateReferences(
+                migrateReferences: {
+                    [referenceMigration] deleted, fallback in
+                    await referenceMigration.migrateReferences(
                         from: deleted,
                         to: fallback
                     )
                 },
-                hasProfileReferences: { [referenceRetirement] profileID in
-                    referenceRetirement.containsReference(to: profileID)
-                },
-                sealProfileRuntime: { [permissionRuntime] profileID in
-                    await permissionRuntime.prepareForProfileRetirement(
+                sealProfileRuntime: {
+                    [historyManager, permissionRuntime] profileID in
+                    await historyManager.flushPendingChanges()
+                    return await permissionRuntime.prepareForProfileRetirement(
                         profilePartitionId: profileID.uuidString
                     )
                 },
-                browsingDataCleanupService: cleanupDependencies
-                    .browsingDataCleanupService,
-                websiteDataCleanupService: cleanupDependencies
-                    .websiteDataCleanupService,
-                faviconService: cleanupDependencies.faviconService,
-                visitedLinkStore: cleanupDependencies.visitedLinkStore,
-                permissionCleanupService: cleanupDependencies
-                    .permissionCleanupService,
-                applicationDataCleanupService: cleanupDependencies
-                    .applicationDataCleanupService,
-                showNotice: { [weak noticePresenter] notice in
-                    noticePresenter?.presentNoticeSheet(
-                        BrowserNoticeSheetModel(
-                            title: notice.title,
-                            subtitle: notice.subtitle,
-                            message: notice.message
-                        ),
-                        source: nil
-                    )
-                }
+                cleanupDependencies: cleanupDependencies
             )
         let deletionWorkflow = BrowserProfileDeletionWorkflow(
-            maintenanceContext: maintenanceContext
+            maintenanceContext: maintenanceContext,
+            presenter: noticePresenter
         )
 
         return BrowserProfileLifecycleBundle(
@@ -222,11 +191,8 @@ extension BrowserManager {
             retirementStartupRecovery:
                 BrowserProfileRetirementStartupRecovery.make(
                     profileManager: profileManager,
-                    profileDeletion: profileDeletion,
-                    tabPersistence: tabPersistence,
-                    referenceRetirement: referenceRetirement,
+                    referenceMigration: referenceMigration,
                     permissionRuntime: permissionRuntime,
-                    browsingDataCleanupService: browsingDataCleanupService,
                     cleanupDependencies: cleanupDependencies
                 ),
             importRetirement: SumiImportProfileRetirementCoordinator(

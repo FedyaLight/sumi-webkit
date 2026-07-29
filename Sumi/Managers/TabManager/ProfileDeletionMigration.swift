@@ -7,30 +7,16 @@ private final class ProfileDeletionTabIntentState {
 }
 
 @MainActor
-private final class ProfileDeletionSpaceIntentState {
-    var intent: DeferredWebViewSpaceProfileAssignmentIntent?
-}
-
-@MainActor
 final class ProfileDeletionOperationPlanner {
-    private let spaces: TabSpaceCollectionStateOwner
     private let policy: ProfileAssignmentPolicy
     private let tabTransitions: TabProfileTransitionService
-    private let spaceTransitions: SpaceProfileTransitionService
-    private let spaceTransitionLifecycle: SpaceProfileTransitionRepository
 
     init(
-        spaces: TabSpaceCollectionStateOwner,
         policy: ProfileAssignmentPolicy,
-        tabTransitions: TabProfileTransitionService,
-        spaceTransitions: SpaceProfileTransitionService,
-        spaceTransitionLifecycle: SpaceProfileTransitionRepository
+        tabTransitions: TabProfileTransitionService
     ) {
-        self.spaces = spaces
         self.policy = policy
         self.tabTransitions = tabTransitions
-        self.spaceTransitions = spaceTransitions
-        self.spaceTransitionLifecycle = spaceTransitionLifecycle
     }
 
     func operations(
@@ -39,35 +25,6 @@ final class ProfileDeletionOperationPlanner {
         using runtimeLease: TabRuntimePortLease
     ) -> [ProfileDeletionOperation] {
         var result: [ProfileDeletionOperation] = []
-        let candidateSpaces = spaces.spaces
-            .filter { $0.profileId == deletedProfileID }
-            .sorted { $0.id.uuidString < $1.id.uuidString }
-        for space in candidateSpaces {
-            let state = ProfileDeletionSpaceIntentState()
-            result.append(
-                ProfileDeletionOperation(
-                    id: .space(space.id),
-                    start: { [weak spaceTransitions] callback in
-                        guard let spaceTransitions else { return .failed }
-                        return spaceTransitions.start(
-                            spaceID: space.id,
-                            profileID: fallbackProfileID,
-                            using: runtimeLease,
-                            capturingIntent: { state.intent = $0 },
-                            settlementObserver: callback
-                        )
-                    },
-                    cancelPending: { [weak spaceTransitionLifecycle] in
-                        guard let spaceTransitionLifecycle,
-                              let intent = state.intent else {
-                            return
-                        }
-                        spaceTransitionLifecycle.cancelPending(intent)
-                    }
-                )
-            )
-        }
-
         for tab in policy.allProfileManagedTabs().sorted(by: tabOrder) {
             guard case .assign(let desiredProfileID) = policy.deletionAssignment(
                 for: tab,
@@ -78,7 +35,7 @@ final class ProfileDeletionOperationPlanner {
             let state = ProfileDeletionTabIntentState()
             result.append(
                 ProfileDeletionOperation(
-                    id: .tab(tab.id),
+                    id: tab.id,
                     start: { [weak tabTransitions, weak tab] callback in
                         guard let tabTransitions, let tab else { return .failed }
                         return tabTransitions.start(
@@ -104,19 +61,12 @@ final class ProfileDeletionOperationPlanner {
         return result
     }
 
-    func containsTabOrSpaceReference(
+    func containsTabReference(
         to deletedProfileID: UUID,
         fallbackProfileID: UUID,
         using runtimeLease: TabRuntimePortLease
     ) -> Bool {
-        if spaces.spaces.contains(where: {
-            $0.profileId == deletedProfileID
-                || spaceTransitionLifecycle.inFlightProfileID(for: $0.id)
-                == deletedProfileID
-        }) {
-            return true
-        }
-        return policy.allProfileManagedTabs().contains { tab in
+        policy.allProfileManagedTabs().contains { tab in
             if tab.profileAssignment.hasPendingAssignment(
                 to: deletedProfileID
             ) {
@@ -132,14 +82,7 @@ final class ProfileDeletionOperationPlanner {
     }
 
     func containsReference(to profileID: UUID) -> Bool {
-        if spaces.spaces.contains(where: {
-            $0.profileId == profileID
-                || spaceTransitionLifecycle.inFlightProfileID(for: $0.id)
-                == profileID
-        }) {
-            return true
-        }
-        return policy.allProfileManagedTabs().contains { tab in
+        policy.allProfileManagedTabs().contains { tab in
             tab.profileId == profileID
                 || tab.profileAssignment.hasPendingAssignment(to: profileID)
                 || tab.profileAssignment.hasPendingResolvedAssignment(
@@ -154,43 +97,46 @@ final class ProfileDeletionOperationPlanner {
 }
 
 @MainActor
-final class ProfileDeletionFinalizer {
-    private let references: ShortcutProfileReferenceRetirementService
-    private let runtimeConnection: TabRuntimePortConnection
-    private let selection: ProfileSelectionCoordinator
+final class ProfileSpaceRetirementService {
+    private let spaces: TabSpaceCollectionStateOwner
+    private let catalog: SpaceCatalogCommands
+    private let removal: SpaceRemovalService
+    private let transitions: SpaceProfileTransitionRepository
 
     init(
-        references: ShortcutProfileReferenceRetirementService,
-        runtimeConnection: TabRuntimePortConnection,
-        selection: ProfileSelectionCoordinator
+        spaces: TabSpaceCollectionStateOwner,
+        catalog: SpaceCatalogCommands,
+        removal: SpaceRemovalService,
+        transitions: SpaceProfileTransitionRepository
     ) {
-        self.references = references
-        self.runtimeConnection = runtimeConnection
-        self.selection = selection
+        self.spaces = spaces
+        self.catalog = catalog
+        self.removal = removal
+        self.transitions = transitions
     }
 
-    func finish(
-        deletedProfileID: UUID,
-        fallbackProfileID: UUID,
-        using runtimeLease: TabRuntimePortLease
-    ) -> Bool {
-        guard runtimeConnection.acceptsExactAttachment(runtimeLease) else {
+    func ensureFallbackSpace(for profileID: UUID) -> Bool {
+        catalog.ensureProfileRetirementFallbackSpace(profileID: profileID)
+    }
+
+    func retireSpaces(ownedBy profileID: UUID) -> Bool {
+        guard transitions.containsReference(to: profileID) == false else {
             return false
         }
-        guard references.migrate(
-            deletedProfileID: deletedProfileID,
-            fallbackProfileID: fallbackProfileID,
-            using: runtimeLease
-        ) else { return false }
-        if runtimeConnection.acceptsExactAttachment(runtimeLease),
-           runtimeLease.currentProfileID != deletedProfileID {
-            selection.handleProfileSwitch()
+        let spaceIDs = spaces.spaces
+            .filter { $0.profileId == profileID }
+            .map(\.id)
+            .sorted { $0.uuidString < $1.uuidString }
+        guard spaceIDs.isEmpty
+                || removal.removeSpacesForProfileRetirement(spaceIDs) else {
+            return false
         }
-        return containsShortcutReference(to: deletedProfileID) == false
+        return containsReference(to: profileID) == false
     }
 
-    func containsShortcutReference(to profileID: UUID) -> Bool {
-        references.containsReference(to: profileID)
+    func containsReference(to profileID: UUID) -> Bool {
+        spaces.spaces.contains { $0.profileId == profileID }
+            || transitions.containsReference(to: profileID)
     }
 }
 
@@ -199,22 +145,32 @@ final class ProfileDeletionFinalizer {
 final class ProfileDeletionMigration {
     private let policy: ProfileAssignmentPolicy
     private let runtimeConnection: TabRuntimePortConnection
+    private let spaces: ProfileSpaceRetirementService
     private let operations: ProfileDeletionOperationPlanner
     private let settlement: ProfileDeletionSettlementCoordinator
-    private let finalizer: ProfileDeletionFinalizer
+    private let shortcutReferences: ShortcutProfileReferenceRetirementService
+    private let selection: ProfileSelectionCoordinator
 
     init(
         policy: ProfileAssignmentPolicy,
         runtimeConnection: TabRuntimePortConnection,
+        spaces: ProfileSpaceRetirementService,
         operations: ProfileDeletionOperationPlanner,
         settlement: ProfileDeletionSettlementCoordinator,
-        finalizer: ProfileDeletionFinalizer
+        shortcutReferences: ShortcutProfileReferenceRetirementService,
+        selection: ProfileSelectionCoordinator
     ) {
         self.policy = policy
         self.runtimeConnection = runtimeConnection
+        self.spaces = spaces
         self.operations = operations
         self.settlement = settlement
-        self.finalizer = finalizer
+        self.shortcutReferences = shortcutReferences
+        self.selection = selection
+    }
+
+    func ensureFallbackSpace(for profileID: UUID) -> Bool {
+        spaces.ensureFallbackSpace(for: profileID)
     }
 
     func migrate(
@@ -252,10 +208,12 @@ final class ProfileDeletionMigration {
                 }
             )
         )
-        guard outcome == .committed else { return outcome }
+        guard outcome == .committed else {
+            return outcome
+        }
 
         guard runtimeConnection.acceptsExactAttachment(runtimeLease),
-              operations.containsTabOrSpaceReference(
+              operations.containsTabReference(
                   to: deletedProfileID,
                   fallbackProfileID: fallbackProfileID,
                   using: runtimeLease
@@ -264,19 +222,38 @@ final class ProfileDeletionMigration {
             return .rejected
         }
 
-        guard finalizer.finish(
+        guard shortcutReferences.migrate(
             deletedProfileID: deletedProfileID,
             fallbackProfileID: fallbackProfileID,
             using: runtimeLease
-        ) else { return .rejected }
+        ) else {
+            return .rejected
+        }
         guard runtimeConnection.acceptsExactAttachment(runtimeLease),
-              operations.containsTabOrSpaceReference(
+              operations.containsTabReference(
                   to: deletedProfileID,
                   fallbackProfileID: fallbackProfileID,
                   using: runtimeLease
               ) == false,
+              shortcutReferences.containsReference(
+                  to: deletedProfileID
+              ) == false,
+              spaces.retireSpaces(ownedBy: deletedProfileID),
+              runtimeConnection.acceptsExactAttachment(runtimeLease),
+              spaces.containsReference(to: deletedProfileID) == false,
+              operations.containsTabReference(
+                  to: deletedProfileID,
+                  fallbackProfileID: fallbackProfileID,
+                  using: runtimeLease
+              ) == false,
+              shortcutReferences.containsReference(
+                  to: deletedProfileID
+              ) == false,
               runtimeConnection.acceptsExactAttachment(runtimeLease) else {
             return .rejected
+        }
+        if runtimeLease.currentProfileID != deletedProfileID {
+            selection.handleProfileSwitch()
         }
         return .committed
     }
@@ -284,8 +261,9 @@ final class ProfileDeletionMigration {
     func containsReference(to profileID: UUID) -> Bool {
         let runtimeLease = runtimeConnection.captureLease()
         guard runtimeConnection.acceptsExactAttachment(runtimeLease),
+              spaces.containsReference(to: profileID) == false,
               operations.containsReference(to: profileID) == false,
-              finalizer.containsShortcutReference(to: profileID) == false,
+              shortcutReferences.containsReference(to: profileID) == false,
               runtimeConnection.acceptsExactAttachment(runtimeLease)
         else {
             return true

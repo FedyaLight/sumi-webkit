@@ -17,7 +17,11 @@ There is no compatibility path for other installations or historical app version
 - Keychain continues to own credentials. Extension packages, favicon/preview blobs, compiled content rules, remote bundles, downloads, and user-selected exports remain files.
 - Scalar preferences such as theme and feature toggles remain in `UserDefaults`; browser records and Codable session payloads do not.
 - Import parsers remain read-only source adapters. Every supported browser importer publishes parsed records through the canonical stores for the selected Browser Profile. Structural records and bookmarks use bounded SQLite transactions; bulk history is written in bounded batches. A durable database journal and compensation receipts coordinate these commits with WebKit-owned website data.
-- Profile deletion removes database-owned profile data by transaction and delegates Platform Store cleanup to the existing WebKit/Keychain/file owners.
+- Profile deletion removes only the selected profile's database-owned data by
+  transaction and delegates its Platform Store cleanup to the existing
+  WebKit/Keychain/file owners. Deleting the final profile first provisions a
+  new empty `Default` profile and Space; scalar preferences and global browser
+  data are not reset.
 - Startup fails closed on permission, disk, schema, or unclassified database errors. Confirmed SQLite corruption is preserved before replacement.
 
 ## Local conversion

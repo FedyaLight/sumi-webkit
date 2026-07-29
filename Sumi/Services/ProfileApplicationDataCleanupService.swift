@@ -5,7 +5,6 @@ import Foundation
 @MainActor
 final class ProfileApplicationDataCleanupService {
     struct Operations {
-        let clearHistory: @MainActor (UUID) async throws -> Void
         let clearBasicAuthCredentials: @MainActor (UUID) throws -> Void
         let clearSiteDataPolicies: @MainActor (UUID) throws -> Void
         let clearZoomPreferences: @MainActor (UUID) throws -> Void
@@ -21,7 +20,6 @@ final class ProfileApplicationDataCleanupService {
     }
 
     func cleanup(profileID: UUID) async throws {
-        try await operations.clearHistory(profileID)
         try operations.clearBasicAuthCredentials(profileID)
         try operations.clearSiteDataPolicies(profileID)
         try operations.clearZoomPreferences(profileID)
@@ -34,7 +32,6 @@ final class ProfileApplicationDataCleanupService {
 @MainActor
 enum ProfileApplicationDataCleanupComposition {
     static func make(
-        historyManager: HistoryManager,
         browsingDataCleanupService: SumiBrowsingDataCleanupService,
         siteDataPolicyStore: any BrowserSiteDataPolicyStoring,
         zoomManager: ZoomManager,
@@ -44,12 +41,6 @@ enum ProfileApplicationDataCleanupComposition {
     ) -> ProfileApplicationDataCleanupService {
         ProfileApplicationDataCleanupService(
             operations: .init(
-                clearHistory: { profileID in
-                    await historyManager.flushPendingChanges()
-                    _ = try await historyManager.store.clearAllExplicit(
-                        profileId: profileID
-                    )
-                },
                 clearBasicAuthCredentials: { profileID in
                     try browsingDataCleanupService
                         .deleteBasicAuthCredentialsForProfileRetirement(profileID)

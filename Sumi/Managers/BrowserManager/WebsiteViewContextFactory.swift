@@ -78,24 +78,26 @@ enum WebsiteViewContextFactory {
         let spaces = browserManager.spaceStateOwner
         let membership = browserManager
             .tabCollectionMembershipOwner
+        let impactProjection = ProfileRetirementImpactProjection(
+            spaces: spaces,
+            tabs: membership,
+            pins: browserManager.shortcutPinCollectionStateOwner
+        )
         let profileDeletion = browserManager.profileLifecycleBundle
             .deletionWorkflow
         return SettingsBrowserContext(
             profileManager: browserManager.profileManager,
             profileInventory: ProfileSettingsInventory(
-                usage: { profileID in
-                    let spaceIDs = Set(
-                        spaces.spaces.lazy.filter {
-                            $0.profileId == profileID
-                        }.map(\.id)
-                    )
-                    let tabs = membership.allTabs().lazy.filter {
-                        $0.spaceId.map(spaceIDs.contains) == true
-                    }.count
-                    return ProfileUsage(spaces: spaceIDs.count, tabs: tabs)
+                snapshot: { [impactProjection] in
+                    impactProjection.snapshot()
                 },
                 updates: browserManager.tabStructureEventBus
-                    .structureChangedPublisher
+                    .scopedStructureChangesPublisher
+                    .filter { scope in
+                        scope != .runtimeOnly
+                    }
+                    .map { _ in () }
+                    .eraseToAnyPublisher()
             ),
             extensionsModule: browserManager.optionalModules.extensions,
             extensionSurfaceStore: browserManager.optionalModules.extensions.surfaceStore,
@@ -107,8 +109,8 @@ enum WebsiteViewContextFactory {
             currentTab: { [weak browserManager] windowState in
                 browserManager?.shellRuntime.windowTabs.currentTab(for: windowState)
             },
-            deleteProfile: { [profileDeletion] profile in
-                profileDeletion.delete(profile)
+            requestProfileDeletion: { [profileDeletion] profile, message in
+                profileDeletion.requestDeletion(profile, message: message)
             },
             scheduleRuntimeStatePersistence: { [weak browserManager] tab in
                 browserManager?.structuralPersistence.scheduleRuntimeStatePersistence(for: tab)

@@ -4,6 +4,45 @@ import XCTest
 
 @MainActor
 final class TabManagerStructuralPersistenceTests: XCTestCase {
+    func testFullReconcilePreservesMutationsAcceptedDuringWrite() async throws {
+        let store = SuspendedStructuralPersistenceStore()
+        let state = TabStateStore()
+        let database = try SumiDatabase.inMemory()
+        let writes = TabStoreWriteExecutor(database: database)
+        let persistence = TabStructuralPersistenceService(
+            structuralStore: store,
+            selectionStore: TabSelectionStore(writes: writes),
+            runtimeStateCoalescer: RuntimeStateCoalescer { _ in },
+            state: state
+        )
+        let initialSpace = Space(name: "Initial")
+        state.spaces.replaceSpaces([initialSpace])
+        persistence.markAllSpacesStructurallyDirty()
+
+        let fullWrite = Task {
+            await persistence.persistFullReconcileAwaitingResult(
+                reason: "race regression"
+            )
+        }
+        await store.waitUntilFullWriteStarts()
+
+        let laterDeletedSpaceID = UUID()
+        persistence.markSpaceStructurallyDeleted(laterDeletedSpaceID)
+        let incrementalWrite = Task {
+            await persistence.persistPendingStructuralChangesAwaitingResult()
+        }
+
+        await store.finishFullWrite()
+
+        let didPersistFull = await fullWrite.value
+        let didPersistIncremental = await incrementalWrite.value
+        let incrementalWriteCount = await store.incrementalWriteCount
+        XCTAssertTrue(didPersistFull)
+        XCTAssertTrue(didPersistIncremental)
+        XCTAssertEqual(incrementalWriteCount, 1)
+        XCTAssertTrue(persistence.dirtySet.isEmpty)
+    }
+
     func testFullReconcilePersistsAndReloadsBrowserStructure() async throws {
         let database = try SumiDatabase.inMemory()
         let browser = makeBrowser(database: database)
@@ -127,5 +166,49 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
             ),
             automaticallyStartPersistedStateLoad: false
         )
+    }
+}
+
+private actor SuspendedStructuralPersistenceStore:
+    TabStructuralSnapshotPersisting {
+    private var fullWriteStarted = false
+    private var fullWriteStartWaiters: [CheckedContinuation<Void, Never>] = []
+    private var fullWriteContinuation: CheckedContinuation<Bool, Never>?
+    private(set) var incrementalWriteCount = 0
+
+    func persistFullReconcile(
+        snapshot: TabPersistenceSnapshot,
+        generation: Int
+    ) async -> Bool {
+        _ = snapshot
+        _ = generation
+        fullWriteStarted = true
+        fullWriteStartWaiters.forEach { $0.resume() }
+        fullWriteStartWaiters.removeAll()
+        return await withCheckedContinuation { continuation in
+            fullWriteContinuation = continuation
+        }
+    }
+
+    func persistIncremental(
+        delta: TabStructuralPersistenceDelta,
+        generation: Int
+    ) async -> Bool {
+        _ = delta
+        _ = generation
+        incrementalWriteCount += 1
+        return true
+    }
+
+    func waitUntilFullWriteStarts() async {
+        guard fullWriteStarted == false else { return }
+        await withCheckedContinuation { continuation in
+            fullWriteStartWaiters.append(continuation)
+        }
+    }
+
+    func finishFullWrite() {
+        fullWriteContinuation?.resume(returning: true)
+        fullWriteContinuation = nil
     }
 }

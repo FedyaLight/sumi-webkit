@@ -2,7 +2,6 @@ import Foundation
 
 @MainActor
 struct ProfileRetirementCleanupDependencies {
-    let browsingDataCleanupService: SumiBrowsingDataCleanupService
     let websiteDataCleanupService: any SumiWebsiteDataCleanupServicing
     let faviconService: any BrowserFaviconServicing
     let visitedLinkStore: any BrowserVisitedLinkStoreManaging
@@ -11,7 +10,6 @@ struct ProfileRetirementCleanupDependencies {
 }
 
 enum ProfileRetirementCleanupCompositionError: Error {
-    case websiteDataQuiesceFailed
     case persistentStoreRemovalFailed
 }
 
@@ -21,20 +19,23 @@ enum ProfileRetirementCleanupComposition {
         profile: Profile,
         dependencies: ProfileRetirementCleanupDependencies
     ) -> ProfileDeletionCleanupOrchestrator {
-        ProfileDeletionCleanupOrchestrator(participants: [
-            BrowsingDataProfileCleanupParticipant { profileID in
-                guard profile.id == profileID,
-                      await profile.clearAllData(
-                          browsingDataCleanupService: dependencies
-                              .browsingDataCleanupService,
-                          websiteDataCleanupService: dependencies
-                              .websiteDataCleanupService
-                      )
-                else {
-                    throw ProfileRetirementCleanupCompositionError
-                        .websiteDataQuiesceFailed
-                }
-            },
+        let removePersistentDataStore: @MainActor (UUID) async throws -> Void = {
+            profileID in
+            guard profile.id == profileID,
+                  await profile.removePersistentDataStore(
+                      cleanupService: dependencies.websiteDataCleanupService
+                  )
+            else {
+                throw ProfileRetirementCleanupCompositionError
+                    .persistentStoreRemovalFailed
+            }
+        }
+        // The trailing checkpoint also resumes journals written before store
+        // removal moved first; Profile suppresses a second WebKit call.
+        return ProfileDeletionCleanupOrchestrator(participants: [
+            BrowsingDataProfileCleanupParticipant(
+                clearAllData: removePersistentDataStore
+            ),
             ApplicationDataProfileCleanupParticipant { profileID in
                 try await dependencies.applicationDataCleanupService.cleanup(
                     profileID: profileID
@@ -52,16 +53,9 @@ enum ProfileRetirementCleanupComposition {
             VisitedLinksProfileCleanupParticipant { profileID in
                 dependencies.visitedLinkStore.discardStore(for: profileID)
             },
-            PersistentWebsiteDataStoreCleanupParticipant { profileID in
-                guard profile.id == profileID,
-                      await profile.removePersistentDataStore(
-                          cleanupService: dependencies.websiteDataCleanupService
-                      )
-                else {
-                    throw ProfileRetirementCleanupCompositionError
-                        .persistentStoreRemovalFailed
-                }
-            },
+            PersistentWebsiteDataStoreCleanupParticipant(
+                removeDataStore: removePersistentDataStore
+            ),
         ])
     }
 }

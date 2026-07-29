@@ -195,6 +195,10 @@ final class ProfileAssignmentPolicy {
         fallbackProfileID: UUID,
         using lease: TabRuntimePortLease
     ) -> DeletedProfileTabAssignment {
+        if let spaceID = tab.spaceId,
+           spaces.profileId(for: spaceID) == deletedProfileID {
+            return .none
+        }
         if tab.profileId == deletedProfileID {
             if let spaceID = tab.spaceId,
                let inheritedProfileID = spaces.profileId(

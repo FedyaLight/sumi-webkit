@@ -59,9 +59,9 @@ final class TabCreationSpaceResolver {
             "Default Space provisioning requires an empty catalog"
         )
         return catalog.createSpaceIfAdmitted(
-            name: "Space",
-            icon: SumiPersistentGlyph.spaceDefaultIconValue,
-            workspaceTheme: .default,
+            name: DefaultSpaceConfiguration.name,
+            icon: DefaultSpaceConfiguration.icon,
+            workspaceTheme: DefaultSpaceConfiguration.makeTheme(),
             profileId: defaultProfileID
         )
     }

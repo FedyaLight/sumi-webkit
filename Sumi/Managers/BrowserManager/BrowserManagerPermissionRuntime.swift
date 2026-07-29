@@ -229,6 +229,17 @@ final class BrowserManagerPermissionRuntime {
         return notificationRetired && permissionRuntimeRetired
     }
 
+    func rehydrateRetiredProfile(profilePartitionId: String) async -> Bool {
+        let profileID = await autoplayStore.sealProfile(profilePartitionId)
+        await notificationService.rehydrateRetiredProfile(
+            profilePartitionId: profileID
+        )
+        let permissionRuntimeRetired = await permissionLifecycleController
+            .prepareForProfileRetirement(profilePartitionId: profileID)
+        await autoplayStore.waitForProfileDrain(profileID)
+        return permissionRuntimeRetired
+    }
+
     isolated deinit {
         permissionEventOwner?.cancel()
     }

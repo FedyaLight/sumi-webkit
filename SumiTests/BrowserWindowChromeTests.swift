@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SumiDomain
 import XCTest
 
@@ -489,6 +490,37 @@ final class BrowserWindowChromeTests: XCTestCase {
 
         XCTAssertFalse(themeContext.hasCurrentSpace)
         XCTAssertNil(nativeModalContext.presentation)
+    }
+
+    func testWindowNativeModalContextObservesTransactionDismissal() {
+        let browserManager = BrowserManager()
+        let windowState = BrowserWindowState()
+        browserManager.windowRegistry.register(windowState)
+        browserManager.windowRegistry.setActive(windowState)
+        let context = WindowNativeModalContext.make(
+            browserManager: browserManager
+        )
+        var presentedIDs: [UUID?] = []
+        let observation = context.presentationState.$presentation
+            .dropFirst()
+            .sink { presentedIDs.append($0?.id) }
+
+        XCTAssertTrue(
+            browserManager.chromeBundle.nativeDialogPresentationOwner
+                .presentNoticeSheet(
+                    BrowserNoticeSheetModel(
+                        title: "Notice",
+                        message: "Dismiss me"
+                    )
+                )
+        )
+        let presentedID = context.presentation?.id
+
+        context.dismiss()
+
+        XCTAssertEqual(presentedIDs, [presentedID, nil])
+        XCTAssertNil(context.presentation)
+        withExtendedLifetime(observation) {}
     }
 
     func testSplitPaneControlsOnlyHitTestWhenVisible() {

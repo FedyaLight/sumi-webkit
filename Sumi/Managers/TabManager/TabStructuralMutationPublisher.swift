@@ -8,6 +8,8 @@ final class TabStructuralMutationPublisher {
     private let lookup: TabStructuralLookupCoordinator
     private let changes: ObservableObjectPublisher
     private let regularTabs: RegularTabCollectionStateOwner
+    private var stateChangeAnnouncementQueued = false
+    private var tabsSnapshotPublicationQueued = false
 
     init(
         persistence: TabStructuralPersistenceService,
@@ -24,11 +26,19 @@ final class TabStructuralMutationPublisher {
     }
 
     func announceStateChange() {
-        lookup.runBeforeCurrentBatchPublication { [changes] in changes.send() }
+        guard stateChangeAnnouncementQueued == false else { return }
+        stateChangeAnnouncementQueued = true
+        lookup.runBeforeCurrentBatchPublication { [weak self, changes] in
+            self?.stateChangeAnnouncementQueued = false
+            changes.send()
+        }
     }
 
     func publishTabsSnapshot() {
-        lookup.runBeforeCurrentBatchPublication { [regularTabs] in
+        guard tabsSnapshotPublicationQueued == false else { return }
+        tabsSnapshotPublicationQueued = true
+        lookup.runBeforeCurrentBatchPublication { [weak self, regularTabs] in
+            self?.tabsSnapshotPublicationQueued = false
             regularTabs.publishTabsBySpaceSnapshot()
         }
     }

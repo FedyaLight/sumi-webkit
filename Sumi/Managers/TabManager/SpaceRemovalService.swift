@@ -4,10 +4,7 @@ import Foundation
 /// structural collections disappear, and window-local references are repaired.
 @MainActor
 final class SpaceRemovalService {
-    private let transactions: TabStructuralLookupCoordinator
-    private let contentRetirement: SpaceContentRetirementService
-    private let windowStates: DeletedSpaceWindowStateReconciler
-    private let catalog: SpaceRemovalCatalogCommitter
+    private let transaction: SpaceRemovalBatchTransaction
 
     init(
         transactions: TabStructuralLookupCoordinator,
@@ -15,45 +12,26 @@ final class SpaceRemovalService {
         windowStates: DeletedSpaceWindowStateReconciler,
         catalog: SpaceRemovalCatalogCommitter
     ) {
-        self.transactions = transactions
-        self.contentRetirement = contentRetirement
-        self.windowStates = windowStates
-        self.catalog = catalog
+        transaction = SpaceRemovalBatchTransaction(
+            transactions: transactions,
+            contentRetirement: contentRetirement,
+            windowStates: windowStates,
+            catalog: catalog
+        )
     }
 
     func removeSpace(_ spaceId: UUID) {
-        var preparedRetirement: PreparedSpaceContentRetirement?
-        var changedWindows: [BrowserWindowState] = []
-        transactions.withTransaction {
-            guard let index = catalog.removalIndex(for: spaceId) else {
-                return
-            }
+        _ = transaction.removeSpaces(
+            [spaceId],
+            allowingEmptyCatalog: false
+        )
+    }
 
-            guard let runtime = windowStates.runtimeLease(),
-                  let plan = contentRetirement.plan(
-                spaceId: spaceId,
-                using: runtime
-            ), windowStates.accepts(runtime),
-                  let retirement = contentRetirement.commit(plan) else {
-                return
-            }
-            preparedRetirement = retirement
-            catalog.commitRemoval(spaceID: spaceId, at: index)
-            transactions.requestPublish(scope: .space(spaceId, catalog: true))
-            changedWindows = windowStates.reconcile(
-                retirement.footprint,
-                using: runtime
-            )
-        }
-        if let retirement = preparedRetirement {
-            let windowsToPersist = changedWindows
-            transactions.runAfterCurrentBatch { [contentRetirement, windowStates] in
-                contentRetirement.finish(retirement)
-                windowStates.finish(
-                    changedWindows: windowsToPersist,
-                    using: retirement.runtime
-                )
-            }
-        }
+    @discardableResult
+    func removeSpacesForProfileRetirement(_ spaceIDs: [UUID]) -> Bool {
+        transaction.removeSpaces(
+            spaceIDs,
+            allowingEmptyCatalog: true
+        )
     }
 }

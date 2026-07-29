@@ -100,6 +100,10 @@ struct SumiApp: App {
             Self.startBrowserRuntime(browserManager)
             startupRecovery = SumiStartupRecoveryTransaction(state: .ready)
             preparesInitialWindow = true
+        case .retirementStateRehydrationRequired:
+            browserManager.prepareRuntimeForStartupRecovery()
+            startupRecovery = SumiStartupRecoveryTransaction(state: .preparing)
+            preparesInitialWindow = false
         case .recoveryRequired:
             browserManager.prepareRuntimeForStartupRecovery()
             startupRecovery = SumiStartupRecoveryTransaction()
@@ -143,6 +147,9 @@ struct SumiApp: App {
         WindowGroup {
             Group {
                 switch startupRecovery.state {
+                case .preparing, .rehydrating:
+                    Color.clear
+                        .frame(minWidth: 520, minHeight: 240)
                 case .pending, .recovering:
                     VStack(spacing: 12) {
                         ProgressView()

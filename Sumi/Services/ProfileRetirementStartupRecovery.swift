@@ -81,7 +81,10 @@ final class ProfileRetirementStartupRecovery {
     private let migrateReferences: @MainActor (
         ProfileRetirementRecord
     ) async throws -> Void
-    private let prepareCleanup: @MainActor (
+    private let prepareRuntimeRetirement: @MainActor (
+        ProfileRetirementRecord
+    ) async throws -> Void
+    private let rehydrateRetirementState: @MainActor (
         ProfileRetirementRecord
     ) async throws -> Void
     private let sanitizeDeferredReferences: @MainActor (
@@ -98,7 +101,10 @@ final class ProfileRetirementStartupRecovery {
                     profileID: record.snapshot.id
                 )
         },
-        prepareCleanup: @escaping @MainActor (
+        prepareRuntimeRetirement: @escaping @MainActor (
+            ProfileRetirementRecord
+        ) async throws -> Void = { _ in },
+        rehydrateRetirementState: @escaping @MainActor (
             ProfileRetirementRecord
         ) async throws -> Void = { _ in },
         sanitizeDeferredReferences: @escaping @MainActor (
@@ -108,7 +114,8 @@ final class ProfileRetirementStartupRecovery {
     ) {
         self.ledger = ledger
         self.migrateReferences = migrateReferences
-        self.prepareCleanup = prepareCleanup
+        self.prepareRuntimeRetirement = prepareRuntimeRetirement
+        self.rehydrateRetirementState = rehydrateRetirementState
         self.sanitizeDeferredReferences = sanitizeDeferredReferences
         self.cleanupFactory = cleanupFactory
     }
@@ -177,17 +184,13 @@ final class ProfileRetirementStartupRecovery {
             }
         case .migratingReferences:
             try await migrateReferencesForRecovery(initialRecord)
-            guard try ledger.commitLogicalDeletion(initialRecord.token),
-                  let logicallyDeletedRecord = ledger.record(
-                      for: initialRecord.token
-                  )
-            else {
+            try await prepareRuntimeForRetirement(initialRecord)
+            guard try ledger.commitLogicalDeletion(initialRecord.token) else {
                 throw ProfileRetirementStartupRecoveryError.staleRecord(
                     profileID: initialRecord.snapshot.id,
                     operation: "commit recovered logical deletion"
                 )
             }
-            try await prepareCleanupForRecovery(logicallyDeletedRecord)
             guard try ledger.beginCleaning(initialRecord.token),
                   let cleaningRecord = ledger.record(for: initialRecord.token)
             else {
@@ -198,7 +201,7 @@ final class ProfileRetirementStartupRecovery {
             }
             try await resumeCleanup(cleaningRecord)
         case .logicallyDeleted:
-            try await prepareCleanupForRecovery(initialRecord)
+            try await prepareRuntimeForRetirement(initialRecord)
             guard try ledger.beginCleaning(initialRecord.token),
                   let cleaningRecord = ledger.record(for: initialRecord.token)
             else {
@@ -209,7 +212,7 @@ final class ProfileRetirementStartupRecovery {
             }
             try await resumeCleanup(cleaningRecord)
         case .cleaning:
-            try await prepareCleanupForRecovery(initialRecord)
+            try await rehydrateRuntimeState(initialRecord)
             try await resumeCleanup(initialRecord)
         case .retired:
             guard initialRecord.nextCleanupStep == .completed else {
@@ -217,7 +220,7 @@ final class ProfileRetirementStartupRecovery {
                     profileID: initialRecord.snapshot.id
                 )
             }
-            try await prepareCleanupForRecovery(initialRecord)
+            try await rehydrateRuntimeState(initialRecord)
         }
     }
 
@@ -235,11 +238,26 @@ final class ProfileRetirementStartupRecovery {
         }
     }
 
-    private func prepareCleanupForRecovery(
+    private func prepareRuntimeForRetirement(
         _ record: ProfileRetirementRecord
     ) async throws {
         do {
-            try await prepareCleanup(record)
+            try await prepareRuntimeRetirement(record)
+        } catch let error as ProfileRetirementStartupRecoveryError {
+            throw error
+        } catch {
+            throw ProfileRetirementStartupRecoveryError.cleanupDeferred(
+                profileID: record.snapshot.id,
+                reason: error.localizedDescription
+            )
+        }
+    }
+
+    private func rehydrateRuntimeState(
+        _ record: ProfileRetirementRecord
+    ) async throws {
+        do {
+            try await rehydrateRetirementState(record)
         } catch let error as ProfileRetirementStartupRecoveryError {
             throw error
         } catch {

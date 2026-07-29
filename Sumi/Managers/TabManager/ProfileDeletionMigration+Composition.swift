@@ -6,27 +6,28 @@ extension ProfileDeletionMigration {
         runtimeConnection: TabRuntimePortConnection,
         spaces: TabSpaceCollectionStateOwner,
         tabTransitions: TabProfileTransitionService,
-        spaceTransitions: SpaceProfileTransitionService,
         spaceTransitionLifecycle: SpaceProfileTransitionRepository,
+        spaceCatalog: SpaceCatalogCommands,
+        spaceRemoval: SpaceRemovalService,
         shortcutReferences: ShortcutProfileReferenceRetirementService,
         selection: ProfileSelectionCoordinator
     ) -> ProfileDeletionMigration {
         ProfileDeletionMigration(
             policy: policy,
             runtimeConnection: runtimeConnection,
-            operations: ProfileDeletionOperationPlanner(
+            spaces: ProfileSpaceRetirementService(
                 spaces: spaces,
+                catalog: spaceCatalog,
+                removal: spaceRemoval,
+                transitions: spaceTransitionLifecycle
+            ),
+            operations: ProfileDeletionOperationPlanner(
                 policy: policy,
-                tabTransitions: tabTransitions,
-                spaceTransitions: spaceTransitions,
-                spaceTransitionLifecycle: spaceTransitionLifecycle
+                tabTransitions: tabTransitions
             ),
             settlement: ProfileDeletionSettlementCoordinator(),
-            finalizer: ProfileDeletionFinalizer(
-                references: shortcutReferences,
-                runtimeConnection: runtimeConnection,
-                selection: selection
-            )
+            shortcutReferences: shortcutReferences,
+            selection: selection
         )
     }
 }

@@ -10,6 +10,7 @@ import SwiftUI
 struct ProfileRowView: View {
     let profile: Profile
     let usage: ProfileUsage
+    let isDeleting: Bool
     let canDelete: Bool
     let onEdit: () -> Void
     let onDelete: () -> Void
@@ -36,6 +37,7 @@ struct ProfileRowView: View {
                         .font(SettingsThemeTokens.Typography.profileRowActionIcon)
                 }
                 .buttonStyle(NavButtonStyle(size: .small))
+                .disabled(isDeleting)
                 .help("Edit Profile")
                 .accessibilityLabel("Edit \(profile.name)")
 
@@ -56,6 +58,7 @@ struct ProfileRowView: View {
             Button("Edit Profile...") {
                 onEdit()
             }
+            .disabled(isDeleting)
 
             Divider()
 
@@ -69,6 +72,12 @@ struct ProfileRowView: View {
     }
 
     private var profileDetailText: String {
-        "\(usage.spacesText) - \(usage.tabsText)"
+        guard isDeleting == false else {
+            return String(
+                localized: "Deleting…",
+                comment: "Status shown while a browser profile is being permanently deleted."
+            )
+        }
+        return ProfileRetirementImpactPresentation.summary(for: usage)
     }
 }

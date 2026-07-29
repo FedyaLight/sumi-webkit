@@ -10,6 +10,7 @@ actor RuntimeStateCoalescer {
         case enqueue(RuntimeTabState)
         case cancel(UUID)
         case flushImmediately(CheckedContinuation<Int, Never>)
+        case discardPending(CheckedContinuation<Int, Never>)
     }
 
     private let debounceNanoseconds: UInt64
@@ -61,6 +62,14 @@ actor RuntimeStateCoalescer {
         }
     }
 
+    /// Drops runtime UPDATEs already represented by an imminent full snapshot.
+    @discardableResult
+    nonisolated func discardPending() async -> Int {
+        await withCheckedContinuation { continuation in
+            commandContinuation.yield(.discardPending(continuation))
+        }
+    }
+
     private func handle(_ command: Command) async {
         switch command {
         case .enqueue(let runtimeState):
@@ -72,6 +81,8 @@ actor RuntimeStateCoalescer {
                 signpostName: "RuntimeStateCoalescer.immediateRuntimeStateFlush"
             )
             continuation.resume(returning: count)
+        case .discardPending(let continuation):
+            continuation.resume(returning: discardPendingOnActor())
         }
     }
 
@@ -88,6 +99,15 @@ actor RuntimeStateCoalescer {
         scheduledDeadline = nil
         scheduledFlushTask?.cancel()
         scheduledFlushTask = nil
+    }
+
+    private func discardPendingOnActor() -> Int {
+        let count = pendingByTabID.count
+        pendingByTabID.removeAll(keepingCapacity: true)
+        scheduledDeadline = nil
+        scheduledFlushTask?.cancel()
+        scheduledFlushTask = nil
+        return count
     }
 
     private func ensureScheduledFlushTask() {

@@ -4,6 +4,38 @@ import XCTest
 
 @MainActor
 final class ProfileRetirementDatabaseTests: XCTestCase {
+    func testProfileManagerPublishesRemovalOnlyAfterLogicalCommit() throws {
+        let browser = BrowserManager()
+        let retiring = try XCTUnwrap(browser.currentProfile)
+        let fallback = try browser.profileManager.createProfile(
+            name: "Fallback"
+        )
+        let token = try browser.profileReferenceAdmission.reserve(
+            profile: retiring,
+            fallbackID: fallback.id
+        )
+
+        XCTAssertTrue(try browser.profileManager.beginReferenceMigration(token))
+        XCTAssertTrue(
+            browser.profileManager.profiles.contains {
+                $0.id == retiring.id
+            }
+        )
+        XCTAssertEqual(
+            browser.profileManager.retiringProfileIDs,
+            [retiring.id]
+        )
+
+        XCTAssertTrue(try browser.profileManager.commitLogicalDeletion(token))
+        XCTAssertFalse(
+            browser.profileManager.profiles.contains {
+                $0.id == retiring.id
+            }
+        )
+        XCTAssertTrue(browser.profileManager.retiringProfileIDs.isEmpty)
+        XCTAssertEqual(browser.profileManager.profiles.map(\.id), [fallback.id])
+    }
+
     func testRetirementJournalAndProfileDeletionShareDatabaseTransaction() throws {
         let database = try SumiDatabase.inMemory()
         let retiring = ProfileRecord(id: UUID(), name: "Retiring", index: 0)
@@ -16,10 +48,19 @@ final class ProfileRetirementDatabaseTests: XCTestCase {
             index: 0,
             workspaceThemeData: nil
         )
+        let fallbackSpace = SpaceRecord(
+            id: UUID(),
+            profileID: fallback.id,
+            name: "Fallback Space",
+            icon: "🌐",
+            index: 1,
+            workspaceThemeData: nil
+        )
         try database.transaction {
             try $0.profiles.save(retiring)
             try $0.profiles.save(fallback)
             try $0.workspace.save(space)
+            try $0.workspace.save(fallbackSpace)
         }
 
         let store = ProfileRetirementStore(database: database)
@@ -40,7 +81,7 @@ final class ProfileRetirementDatabaseTests: XCTestCase {
         }
         XCTAssertEqual(result.profiles.map(\.id), [fallback.id])
         XCTAssertEqual(result.profiles.first?.index, 0)
-        XCTAssertTrue(result.spaces.isEmpty)
+        XCTAssertEqual(result.spaces.map(\.id), [fallbackSpace.id])
         XCTAssertEqual(result.retirement?.phaseRawValue, ProfileRetirementPhase.logicallyDeleted.rawValue)
     }
 

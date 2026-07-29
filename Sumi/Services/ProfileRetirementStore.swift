@@ -31,7 +31,7 @@ enum ProfileRetirementCleanupStep: String, CaseIterable, Sendable {
         .persistentDataStore,
     ]
 
-    fileprivate var successor: Self? {
+    var successor: Self? {
         switch self {
         case .websiteData: .applicationData
         case .applicationData: .favicons
@@ -66,6 +66,10 @@ struct ProfileRetirementRecord: Equatable, Sendable {
     let token: ProfileRetirementToken
     let phase: ProfileRetirementPhase
     let nextCleanupStep: ProfileRetirementCleanupStep
+
+    var isCompletedTombstone: Bool {
+        phase == .retired && nextCleanupStep == .completed
+    }
 }
 
 struct ProfileRetirementQuarantine: Equatable, Sendable {

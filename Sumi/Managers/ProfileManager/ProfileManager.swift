@@ -21,6 +21,7 @@ final class ProfileManager: ObservableObject {
     let database: SumiDatabase
     let profileReferenceAdmission: ProfileReferenceAdmissionLedger
     @Published var profiles: [Profile] = []
+    @Published private(set) var retiringProfileIDs: Set<UUID> = []
     private(set) var profileStoreIsAvailable = true
     private let faviconService: any BrowserFaviconServicing
     private let visitedLinkStore: any BrowserVisitedLinkStoreManaging
@@ -114,8 +115,45 @@ final class ProfileManager: ObservableObject {
         return profile
     }
 
-    /// Deletes the canonical profile row and advances the exact retirement
-    /// journal in the same transaction before publishing runtime removal.
+    /// Reverses only the empty fallback created synchronously while preparing
+    /// a last-profile retirement that never reached reference migration.
+    @discardableResult
+    func rollbackRetirementFallbackCreation(_ profile: Profile) throws -> Bool {
+        guard profileStoreIsAvailable,
+              profiles.count > 1,
+              profiles.last === profile,
+              retiringProfileIDs.contains(profile.id) == false,
+              profileReferenceAdmission.records().contains(where: {
+                  $0.snapshot.id == profile.id
+                      || $0.fallbackProfileID == profile.id
+              }) == false
+        else {
+            return false
+        }
+
+        let removed = try database.transaction { transaction in
+            let persistedProfiles = try transaction.profiles.all()
+            guard persistedProfiles.last?.id == profile.id,
+                  try transaction.workspace.spaces().contains(where: {
+                      $0.profileID == profile.id
+                  }) == false,
+                  try transaction.workspace.tabs().contains(where: {
+                      $0.profileID == profile.id
+                          || $0.executionProfileID == profile.id
+                  }) == false
+            else {
+                return false
+            }
+            try transaction.profiles.delete(id: profile.id)
+            return true
+        }
+        guard removed else { return false }
+        profiles.removeLast()
+        return true
+    }
+
+    /// Blocks new references while keeping the profile visible until the
+    /// logical deletion transaction commits.
     func beginReferenceMigration(_ token: ProfileRetirementToken) throws -> Bool {
         guard profileStoreIsAvailable,
               profiles.count > 1,
@@ -127,16 +165,16 @@ final class ProfileManager: ObservableObject {
         else {
             return false
         }
-        profiles.removeAll { $0.id == token.profileID }
+        retiringProfileIDs.insert(token.profileID)
         return true
     }
 
     func commitLogicalDeletion(_ token: ProfileRetirementToken) throws -> Bool {
         guard profileStoreIsAvailable,
-              profiles.isEmpty == false,
+              profiles.count > 1,
               let record = profileReferenceAdmission.record(for: token),
               record.phase == .migratingReferences,
-              profiles.contains(where: { $0.id == token.profileID }) == false,
+              profiles.contains(where: { $0.id == token.profileID }),
               profiles.contains(where: { $0.id == record.fallbackProfileID })
         else {
             return false
@@ -144,6 +182,8 @@ final class ProfileManager: ObservableObject {
 
         let committed = try profileReferenceAdmission.commitLogicalDeletion(token)
         guard committed else { return false }
+        retiringProfileIDs.remove(token.profileID)
+        profiles.removeAll { $0.id == token.profileID }
         return true
     }
 
@@ -246,7 +286,7 @@ final class ProfileManager: ObservableObject {
            profiles.isEmpty,
            profileReferenceAdmission.isAvailable {
             do {
-                try createProfile(name: "Default")
+                try createProfile(name: Self.defaultProfileName)
             } catch {
                 RuntimeDiagnostics.emit(
                     "[ProfileManager] Failed to create default profile: \(error)"
@@ -254,6 +294,8 @@ final class ProfileManager: ObservableObject {
             }
         }
     }
+
+    static let defaultProfileName = "Default"
 
     // MARK: - Ephemeral Profile Management
 

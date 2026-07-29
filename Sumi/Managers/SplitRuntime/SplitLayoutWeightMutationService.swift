@@ -37,7 +37,7 @@ final class SplitLayoutWeightMutationService {
             return false
         }
         persistence.markSplitGroupsStructurallyDirty()
-        persistence.scheduleStructuralPersistenceFromMain()
+        persistence.scheduleStructuralPersistence()
         return true
     }
 }

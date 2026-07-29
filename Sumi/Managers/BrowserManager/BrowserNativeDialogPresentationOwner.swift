@@ -7,21 +7,20 @@ final class BrowserNativeDialogPresentationOwner {
     private let commandPalette: CommandPalettePresentationService
     private let themes: BrowserWorkspaceThemeEditorOwner
     private let sharing: BrowserSharingPickerPresentationOwner
+    private let alerts: BrowserNativeAlertPresenter
 
     init(
         modal: BrowserNativeModalTransaction,
         commandPalette: CommandPalettePresentationService,
         themes: BrowserWorkspaceThemeEditorOwner,
-        sharing: BrowserSharingPickerPresentationOwner
+        sharing: BrowserSharingPickerPresentationOwner,
+        alerts: BrowserNativeAlertPresenter
     ) {
         self.modal = modal
         self.commandPalette = commandPalette
         self.themes = themes
         self.sharing = sharing
-    }
-
-    var currentPresentation: BrowserNativeModalPresentation? {
-        modal.currentPresentation
+        self.alerts = alerts
     }
 
     func requestCollapsedSidebarOverlayDismissal() {
@@ -63,6 +62,36 @@ final class BrowserNativeDialogPresentationOwner {
     ) -> Bool {
         prepareForNativeModalPresentation()
         return modal.present(.notice(notice), source: source)
+    }
+
+    @discardableResult
+    func presentDestructiveConfirmationAlert(
+        title: String,
+        message: String,
+        confirmButtonTitle: String,
+        onConfirm: @escaping @MainActor () -> Void
+    ) -> Bool {
+        prepareForNativeModalPresentation()
+        return alerts.presentDestructiveConfirmation(
+            title: title,
+            message: message,
+            confirmButtonTitle: confirmButtonTitle,
+            onConfirm: onConfirm
+        )
+    }
+
+    @discardableResult
+    func presentNoticeAlert(
+        title: String,
+        subtitle: String?,
+        message: String
+    ) -> Bool {
+        prepareForNativeModalPresentation()
+        return alerts.presentNotice(
+            title: title,
+            subtitle: subtitle,
+            message: message
+        )
     }
 
     func dismissNativeModalPresentation() {

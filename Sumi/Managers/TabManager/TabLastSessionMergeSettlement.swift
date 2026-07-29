@@ -15,6 +15,6 @@ final class TabLastSessionMergeSettlement {
 
     func settle(_ plan: TabLastSessionMergePlan) {
         lazyRestore.reset(restoredTabIDs: plan.lazyRestoredTabIds)
-        persistence.scheduleStructuralPersistenceFromMain()
+        persistence.scheduleStructuralPersistence()
     }
 }

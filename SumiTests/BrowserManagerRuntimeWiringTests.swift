@@ -968,7 +968,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
 
         XCTAssertTrue(browserContext.profileManager === browserManager.profileManager)
         XCTAssertEqual(
-            browserContext.profileInventory.usage(profile.id),
+            browserContext.profileInventory.snapshot()[profile.id] ?? .none,
             ProfileUsage(spaces: 1, tabs: 1)
         )
         XCTAssertTrue(browserContext.extensionsModule === browserManager.optionalModules.extensions)
@@ -989,7 +989,24 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             activate: false
         )
         XCTAssertEqual(inventoryUpdateCount, 1)
-        XCTAssertEqual(browserContext.profileInventory.usage(profile.id).tabs, 2)
+        XCTAssertEqual(
+            browserContext.profileInventory.snapshot()[profile.id]?.tabs,
+            2
+        )
+        let profilePin = ShortcutPin(
+            id: UUID(),
+            role: .essential,
+            profileId: profile.id,
+            index: 0,
+            launchURL: URL(string: "https://profile-pin.example")!,
+            title: "Profile Pin"
+        )
+        browserManager.shortcutPinCollectionStateOwner
+            .replacePinnedByProfile([profile.id: [profilePin]])
+        XCTAssertEqual(
+            browserContext.profileInventory.snapshot()[profile.id],
+            ProfileUsage(spaces: 1, tabs: 3)
+        )
 
         var browserManagerChangeCount = 0
         var publishedProfileIDs: [UUID?] = []

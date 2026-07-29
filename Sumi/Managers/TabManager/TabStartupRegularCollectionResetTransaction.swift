@@ -25,6 +25,6 @@ final class TabStartupRegularCollectionResetTransaction {
             }
         }
         state.selection.replaceCurrentTab(nil)
-        persistence.scheduleStructuralPersistenceFromMain()
+        persistence.scheduleStructuralPersistence()
     }
 }

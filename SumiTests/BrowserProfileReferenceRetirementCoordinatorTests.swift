@@ -94,11 +94,18 @@ final class BrowserProfileReferenceRetirementCoordinatorTests: XCTestCase {
         )
 
         XCTAssertTrue(coordinator.containsReference(to: deleted.id))
+        var didPrepareTabReferences = false
         let didMigrate = await coordinator.migrateReferences(
             from: deleted.id,
-            to: fallback
+            to: fallback,
+            migrateTabReferences: {
+                XCTAssertEqual(currentProfile?.id, fallback.id)
+                didPrepareTabReferences = true
+                return true
+            }
         )
         XCTAssertTrue(didMigrate)
+        XCTAssertTrue(didPrepareTabReferences)
         XCTAssertEqual(switchedProfiles, [fallback.id])
         XCTAssertEqual(reentrantMutationError, .mutationInProgress)
         XCTAssertEqual(firstWindow.currentProfileId, fallback.id)
@@ -174,11 +181,17 @@ final class BrowserProfileReferenceRetirementCoordinatorTests: XCTestCase {
                 extensionRuntimeContainsReference: { _ in false }
         )
 
+        var didAttemptTabMigration = false
         let didMigrate = await coordinator.migrateReferences(
             from: deleted.id,
-            to: fallback
+            to: fallback,
+            migrateTabReferences: {
+                didAttemptTabMigration = true
+                return true
+            }
         )
         XCTAssertFalse(didMigrate)
+        XCTAssertFalse(didAttemptTabMigration)
         XCTAssertEqual(currentProfile?.id, deleted.id)
         XCTAssertTrue(coordinator.containsReference(to: deleted.id))
     }

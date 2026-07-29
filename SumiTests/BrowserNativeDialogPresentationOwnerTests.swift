@@ -152,7 +152,11 @@ private final class NativeDialogOwnerHarness {
         ),
         commandPalette: browser.commandPalettePresentation,
         themes: browser.workspaceThemeEditorOwner,
-        sharing: BrowserSharingPickerPresentationOwner(windows: windowRegistry)
+        sharing: BrowserSharingPickerPresentationOwner(windows: windowRegistry),
+        alerts: BrowserNativeAlertPresenter(
+            windows: windowRegistry,
+            settings: browser.settingsState
+        )
     )
 
     init(windowRegistry: WindowRegistry = WindowRegistry()) {

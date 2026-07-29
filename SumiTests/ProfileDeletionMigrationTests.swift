@@ -17,10 +17,10 @@ final class ProfileDeletionMigrationTests: XCTestCase {
                     deletedProfileID: deletedProfileID,
                     fallbackProfileID: fallbackProfileID,
                     operations: [
-                        deferredOperation(id: .space(UUID())) {
+                        deferredOperation(id: UUID()) {
                             callbacks.append($0)
                         },
-                        deferredOperation(id: .tab(UUID())) {
+                        deferredOperation(id: UUID()) {
                             callbacks.append($0)
                         },
                     ],
@@ -52,7 +52,7 @@ final class ProfileDeletionMigrationTests: XCTestCase {
                 fallbackProfileID: UUID(),
                 operations: [
                     .init(
-                        id: .tab(UUID()),
+                        id: UUID(),
                         start: { callback in
                             callback(.rejected(.failed))
                             return .failed
@@ -79,7 +79,7 @@ final class ProfileDeletionMigrationTests: XCTestCase {
                 fallbackProfileID: fallbackProfileID,
                 operations: [
                     .init(
-                        id: .space(UUID()),
+                        id: UUID(),
                         start: { _ in .deferred },
                         cancelPending: { cancelCount += 1 }
                     ),
@@ -100,7 +100,7 @@ final class ProfileDeletionMigrationTests: XCTestCase {
     }
 
     private func deferredOperation(
-        id: ProfileDeletionOperationID,
+        id: UUID,
         capture: @escaping (
             @escaping ProfileTransitionService.Settlement
         ) -> Void

@@ -6,6 +6,163 @@ import XCTest
 
 @MainActor
 final class ProfileDeletionFinalizationTests: XCTestCase {
+    func testMigrationCreatesFallbackSpaceBeforeRemovingLastOwnedSpace()
+        async throws {
+        let deletedProfile = Profile(name: "Deleted")
+        let fallbackProfile = Profile(name: "Default")
+        let profiles = [
+            deletedProfile.id: deletedProfile,
+            fallbackProfile.id: fallbackProfile,
+        ]
+        let fixture = try makeProfileDeletionFixture(
+            currentProfileId: { fallbackProfile.id },
+            defaultProfileId: { fallbackProfile.id },
+            profileExists: { profiles[$0] != nil },
+            profile: { profiles[$0] }
+        )
+        let browser = fixture.browser
+        try persistProfiles(
+            [deletedProfile, fallbackProfile],
+            in: browser.database
+        )
+        let deletedSpace = try makeSpace(
+            in: browser,
+            name: "Deleted",
+            profileId: deletedProfile.id
+        )
+        let token = try fixture.admission.reserve(
+            profile: deletedProfile,
+            fallbackID: fallbackProfile.id
+        )
+        XCTAssertTrue(try fixture.admission.beginReferenceMigration(token))
+        XCTAssertTrue(
+            browser.profileDeletion.ensureFallbackSpace(
+                for: fallbackProfile.id
+            )
+        )
+
+        let outcome = await browser.profileDeletion.migrate(
+            deletedProfileID: deletedProfile.id,
+            fallbackProfileID: fallbackProfile.id
+        )
+
+        XCTAssertEqual(outcome, .committed)
+        XCTAssertNil(browser.spaceStateOwner.space(with: deletedSpace.id))
+        let fallbackSpaces = browser.spaceStateOwner.spaces.filter {
+            $0.profileId == fallbackProfile.id
+        }
+        XCTAssertEqual(fallbackSpaces.count, 1)
+        XCTAssertEqual(fallbackSpaces.first?.name, "Space")
+        XCTAssertEqual(
+            fallbackSpaces.first?.workspaceTheme.gradientTheme.colors
+                .first?.hex,
+            "#F4EFDF"
+        )
+    }
+
+    func testMigrationDeletesSpacesOwnedByRetiringProfile() async throws {
+        let deletedProfile = Profile(name: "Deleted")
+        let fallbackProfile = Profile(name: "Fallback")
+        let profiles = [
+            deletedProfile.id: deletedProfile,
+            fallbackProfile.id: fallbackProfile,
+        ]
+        var unloadedTabIDs: [UUID] = []
+        let transition = DeferredSpaceProfileTransition(
+            unloadTab: { unloadedTabIDs.append($0.id) }
+        )
+        let fixture = try makeProfileDeletionFixture(
+            currentProfileId: { fallbackProfile.id },
+            defaultProfileId: { fallbackProfile.id },
+            profileExists: { profiles[$0] != nil },
+            profile: { profiles[$0] },
+            webViewLifecycle: transition.makeLifecycle()
+        )
+        let browser = fixture.browser
+        let deletedSpace = try makeSpace(
+            in: browser,
+            name: "Deleted",
+            profileId: deletedProfile.id
+        )
+        let fallbackSpace = try makeSpace(
+            in: browser,
+            name: "Fallback",
+            profileId: fallbackProfile.id
+        )
+        let deletedTab = browser.regularTabLifecycleOwner.createNewTab(
+            in: deletedSpace,
+            activate: false
+        )
+        deletedTab.profileId = deletedProfile.id
+
+        let outcome = await browser.profileDeletion.migrate(
+            deletedProfileID: deletedProfile.id,
+            fallbackProfileID: fallbackProfile.id
+        )
+
+        XCTAssertEqual(outcome, .committed)
+        XCTAssertNil(browser.spaceStateOwner.space(with: deletedSpace.id))
+        XCTAssertIdentical(
+            browser.spaceStateOwner.space(with: fallbackSpace.id),
+            fallbackSpace
+        )
+        XCTAssertNil(browser.tabCollectionMembershipOwner.tab(for: deletedTab.id))
+        XCTAssertNil(transition.tabIntent)
+        XCTAssertEqual(unloadedTabIDs, [deletedTab.id])
+        XCTAssertTrue(
+            browser.structuralPersistence.dirtySet.deletedSpaceIds
+                .contains(deletedSpace.id)
+        )
+    }
+
+    func testMigrationWaitsForLiveProfileRuntimeReplacement() async throws {
+        let deletedProfile = Profile(name: "Deleted")
+        let fallbackProfile = Profile(name: "Fallback")
+        let profiles = [
+            deletedProfile.id: deletedProfile,
+            fallbackProfile.id: fallbackProfile,
+        ]
+        let transition = DeferredSpaceProfileTransition()
+        let fixture = try makeProfileDeletionFixture(
+            currentProfileId: { fallbackProfile.id },
+            defaultProfileId: { fallbackProfile.id },
+            profileExists: { profiles[$0] != nil },
+            profile: { profiles[$0] },
+            webViewLifecycle: transition.makeLifecycle()
+        )
+        let browser = fixture.browser
+        let liveTab = Tab()
+        liveTab.profileId = deletedProfile.id
+        browser.tabStateStore.transientTabs
+            .registerAuxiliaryMiniWindowTab(liveTab)
+        var completedOutcome: ProfileDeletionMigrationOutcome?
+
+        let migration = Task { @MainActor in
+            let outcome = await browser.profileDeletion.migrate(
+                deletedProfileID: deletedProfile.id,
+                fallbackProfileID: fallbackProfile.id
+            )
+            completedOutcome = outcome
+            return outcome
+        }
+        for _ in 0..<20 where transition.tabIntent == nil {
+            await Task.yield()
+        }
+
+        XCTAssertNil(completedOutcome)
+        let intent = try XCTUnwrap(transition.tabIntent)
+        XCTAssertTrue(liveTab.profileAssignment.stage(intent))
+        XCTAssertTrue(liveTab.profileAssignment.finish(intent))
+        transition.tabSettlement?(.committed)
+
+        let outcome = await migration.value
+        XCTAssertEqual(outcome, .committed)
+        XCTAssertEqual(liveTab.profileId, fallbackProfile.id)
+        XCTAssertFalse(
+            browser.profileDeletion.containsReference(to: deletedProfile.id)
+        )
+    }
+
     func testFinalizationMigratesPendingAndLiveSplitReferencesUnderRetirementLease()
         async throws {
         let deletedProfile = Profile(name: "Deleted")
@@ -70,6 +227,13 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
             )
         )
         XCTAssertTrue(tabManager.splitGroupMutations.insert(group))
+        let fixturePersisted = await tabManager.structuralPersistence
+            .persistFullReconcileAwaitingResult(
+                reason: "profile retirement fixture"
+            )
+        XCTAssertTrue(
+            fixturePersisted
+        )
         let token = try fixture.admission.reserve(
             profile: deletedProfile,
             fallbackID: fallbackProfile.id
@@ -85,6 +249,16 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
         )
 
         XCTAssertEqual(outcome, .committed)
+        let migrationPersisted = await tabManager.structuralPersistence
+            .persistPendingStructuralChangesAwaitingResult()
+        XCTAssertTrue(migrationPersisted)
+        let persistedTabs = try tabManager.database.read {
+            try $0.workspace.tabs()
+        }
+        XCTAssertFalse(persistedTabs.contains {
+            $0.profileID == deletedProfile.id
+                || $0.executionProfileID == deletedProfile.id
+        })
         XCTAssertTrue(
             tabManager.shortcutPinCollectionStateOwner
                 .pendingPinnedWithoutProfileSnapshot().isEmpty
@@ -121,7 +295,6 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
                 to: deletedProfile.id
             )
         )
-        tabManager.structuralPersistence.cancelPendingPersistence()
     }
 
     func testFinalizationRejectsReentrantOldProfileSplitPublication()
@@ -139,6 +312,11 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
             profile: { profiles[$0] }
         )
         let tabManager = fixture.browser
+        let retiringSpace = try makeSpace(
+            in: tabManager,
+            name: "Retiring",
+            profileId: deletedProfile.id
+        )
         try persistProfiles(
             [deletedProfile, fallbackProfile],
             in: tabManager.database
@@ -199,6 +377,10 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
             tabManager.profileDeletion.containsReference(
                 to: deletedProfile.id
             )
+        )
+        XCTAssertIdentical(
+            tabManager.spaceStateOwner.space(with: retiringSpace.id),
+            retiringSpace
         )
         withExtendedLifetime(observation) {}
         tabManager.structuralPersistence.cancelPendingPersistence()
@@ -290,118 +472,6 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
         XCTAssertEqual(outcome, .committed)
         XCTAssertEqual(observedTerminalStates, [true])
         withExtendedLifetime(observation) {}
-    }
-
-    func testFinalizationRejectsRuntimeReplacementWithoutMutatingReferences()
-        async throws {
-        let deletedProfile = Profile(name: "Deleted")
-        let fallbackProfile = Profile(name: "Fallback")
-        let profiles = [
-            deletedProfile.id: deletedProfile,
-            fallbackProfile.id: fallbackProfile,
-        ]
-        let transition = DeferredSpaceProfileTransition()
-        let fixture = try makeProfileDeletionFixture(
-            currentProfileId: { fallbackProfile.id },
-            defaultProfileId: { fallbackProfile.id },
-            profileExists: { profiles[$0] != nil },
-            profile: { profiles[$0] },
-            webViewLifecycle: transition.makeLifecycle()
-        )
-        let tabManager = fixture.browser
-        let deletedSpace = try makeSpace(
-            in: tabManager,
-            name: "Deleted",
-            profileId: deletedProfile.id
-        )
-        let pin = ShortcutPin(
-            id: UUID(),
-            role: .essential,
-            profileId: deletedProfile.id,
-            index: 0,
-            launchURL: URL(string: "https://deleted.example")!,
-            title: "Deleted"
-        )
-        tabManager.structuralCollectionMutationOwner.setPinnedTabs(
-            [pin],
-            for: deletedProfile.id
-        )
-        let migration = Task { @MainActor in
-            await tabManager.profileDeletion.migrate(
-                deletedProfileID: deletedProfile.id,
-                fallbackProfileID: fallbackProfile.id
-            )
-        }
-        await Task.yield()
-
-        XCTAssertTrue(try XCTUnwrap(transition.stageModel)())
-        XCTAssertEqual(try XCTUnwrap(transition.sealModel)(), .sealed)
-        try XCTUnwrap(transition.publishCommit)()
-        XCTAssertEqual(deletedSpace.profileId, fallbackProfile.id)
-
-        let replacement = TestRuntimePorts.make(
-            currentProfileId: { fallbackProfile.id },
-            defaultProfileId: { fallbackProfile.id },
-            profileExists: { profiles[$0] != nil },
-            profile: { profiles[$0] }
-        )
-        tabManager.tabRuntimeLifecycle.replaceRuntimePortsForTests(replacement)
-        defer { tabManager.tabRuntimeLifecycle.shutdown() }
-        try XCTUnwrap(transition.settlement)(.committed)
-
-        let outcome = await migration.value
-        XCTAssertEqual(outcome, .rejected)
-        XCTAssertEqual(
-            tabManager.shortcutPinCollectionStateOwner
-                .pinnedByProfileSnapshot()[deletedProfile.id],
-            [pin]
-        )
-    }
-
-    func testMigrationRejectsReferenceCreatedWhileSettlementIsDeferred()
-        async throws {
-        let deletedProfile = Profile(name: "Deleted")
-        let fallbackProfile = Profile(name: "Fallback")
-        let profiles = [
-            deletedProfile.id: deletedProfile,
-            fallbackProfile.id: fallbackProfile,
-        ]
-        let transition = DeferredSpaceProfileTransition()
-        let fixture = try makeProfileDeletionFixture(
-            currentProfileId: { fallbackProfile.id },
-            defaultProfileId: { fallbackProfile.id },
-            profileExists: { profiles[$0] != nil },
-            profile: { profiles[$0] },
-            webViewLifecycle: transition.makeLifecycle()
-        )
-        let tabManager = fixture.browser
-        let originalSpace = try makeSpace(
-            in: tabManager,
-            name: "Original",
-            profileId: deletedProfile.id
-        )
-        let migration = Task { @MainActor in
-            await tabManager.profileDeletion.migrate(
-                deletedProfileID: deletedProfile.id,
-                fallbackProfileID: fallbackProfile.id
-            )
-        }
-        await Task.yield()
-
-        let lateSpace = try makeSpace(
-            in: tabManager,
-            name: "Late",
-            profileId: deletedProfile.id
-        )
-        XCTAssertTrue(try XCTUnwrap(transition.stageModel)())
-        XCTAssertEqual(try XCTUnwrap(transition.sealModel)(), .sealed)
-        try XCTUnwrap(transition.publishCommit)()
-        try XCTUnwrap(transition.settlement)(.committed)
-
-        let outcome = await migration.value
-        XCTAssertEqual(outcome, .rejected)
-        XCTAssertEqual(originalSpace.profileId, fallbackProfile.id)
-        XCTAssertEqual(lateSpace.profileId, deletedProfile.id)
     }
 
     func testFinalizationRejectsShortcutReferenceCreatedDuringPublication()

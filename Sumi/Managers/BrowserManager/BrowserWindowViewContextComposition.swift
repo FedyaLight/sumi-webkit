@@ -55,6 +55,7 @@ extension WindowNativeModalContext {
 
         return WindowNativeModalContext(
             presentationOwner: presentationOwner,
+            presentationState: browserManager.nativeModalPresentationState,
             browsingDataDialogContext: SumiBrowsingDataDialogContext(
                 cleanupService: browserManager.browsingDataCleanupService,
                 profileSnapshot: { [profileManager] in

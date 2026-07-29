@@ -7,13 +7,8 @@ enum ProfileDeletionMigrationOutcome: Equatable {
     case alreadyRunning
 }
 
-enum ProfileDeletionOperationID: Hashable {
-    case space(UUID)
-    case tab(UUID)
-}
-
 struct ProfileDeletionOperation {
-    let id: ProfileDeletionOperationID
+    let id: UUID
     let start: @MainActor (
         @escaping ProfileTransitionService.Settlement
     ) -> TabProfileAssignmentExecutionOutcome
@@ -36,13 +31,13 @@ final class ProfileDeletionSettlementCoordinator {
         let id = UUID()
         let plan: ProfileDeletionSettlementPlan
         let operationsByID: [
-            ProfileDeletionOperationID: ProfileDeletionOperation
+            UUID: ProfileDeletionOperation
         ]
         let continuation: CheckedContinuation<
             ProfileDeletionMigrationOutcome,
             Never
         >
-        var pending: Set<ProfileDeletionOperationID>
+        var pending: Set<UUID>
         var didReject = false
         var timeoutTask: Task<Void, Never>?
 
@@ -112,7 +107,7 @@ final class ProfileDeletionSettlementCoordinator {
                         runID: run.id
                     )
                 }
-        if let settlement = outcome.immediateSettlement {
+                if let settlement = outcome.immediateSettlement {
                     record(
                         settlement,
                         operationID: operation.id,
@@ -125,7 +120,7 @@ final class ProfileDeletionSettlementCoordinator {
 
     private func record(
         _ settlement: ProfileTransitionSettlement,
-        operationID: ProfileDeletionOperationID,
+        operationID: UUID,
         runID: UUID
     ) {
         guard let run = activeRun,
@@ -156,27 +151,11 @@ final class ProfileDeletionSettlementCoordinator {
         _ = run.plan.abortTransitions(
             [run.plan.deletedProfileID, run.plan.fallbackProfileID]
         )
-        for operationID in run.pending.sorted(by: operationOrder) {
+        for operationID in run.pending.sorted(by: {
+            $0.uuidString < $1.uuidString
+        }) {
             run.operationsByID[operationID]?.cancelPending()
         }
         run.continuation.resume(returning: .timedOut)
-    }
-
-    private func operationOrder(
-        _ lhs: ProfileDeletionOperationID,
-        _ rhs: ProfileDeletionOperationID
-    ) -> Bool {
-        operationSortKey(lhs) < operationSortKey(rhs)
-    }
-
-    private func operationSortKey(
-        _ operation: ProfileDeletionOperationID
-    ) -> String {
-        switch operation {
-        case .space(let id):
-            return "0-\(id.uuidString)"
-        case .tab(let id):
-            return "1-\(id.uuidString)"
-        }
     }
 }

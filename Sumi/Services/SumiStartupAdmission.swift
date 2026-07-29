@@ -2,6 +2,7 @@ import Foundation
 
 enum SumiStartupAdmission {
     case ready
+    case retirementStateRehydrationRequired
     case recoveryRequired
     case failed(message: String)
 
@@ -19,13 +20,22 @@ enum SumiStartupAdmission {
         }
 
         do {
-            let hasProfileRetirement =
-                profileReferenceAdmission.records().isEmpty == false
-                || profileReferenceAdmission.quarantinedRetirements.isEmpty
+            let retirementRecords = profileReferenceAdmission.records()
+            let hasQuarantinedRetirement =
+                profileReferenceAdmission.quarantinedRetirements.isEmpty
                     == false
+            let hasProfileRetirementRecovery = retirementRecords.contains {
+                $0.isCompletedTombstone == false
+            } || hasQuarantinedRetirement
+            let hasCompletedRetirementTombstones = retirementRecords.contains(
+                where: \.isCompletedTombstone
+            )
             let hasImportRecovery = try importJournal.hasPendingRecovery()
-            return hasProfileRetirement || hasImportRecovery
-                ? .recoveryRequired
+            if hasProfileRetirementRecovery || hasImportRecovery {
+                return .recoveryRequired
+            }
+            return hasCompletedRetirementTombstones
+                ? .retirementStateRehydrationRequired
                 : .ready
         } catch {
             return .failed(

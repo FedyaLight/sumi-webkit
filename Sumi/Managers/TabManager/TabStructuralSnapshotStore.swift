@@ -1,9 +1,21 @@
 import Foundation
 import OSLog
 
+protocol TabStructuralSnapshotPersisting: Sendable {
+    func persistFullReconcile(
+        snapshot: TabPersistenceSnapshot,
+        generation: Int
+    ) async -> Bool
+
+    func persistIncremental(
+        delta: TabStructuralPersistenceDelta,
+        generation: Int
+    ) async -> Bool
+}
+
 /// Orders structural generations and owns recovery for full snapshot writes.
 /// Selection and runtime-state writes deliberately live on separate capabilities.
-actor TabStructuralSnapshotStore {
+actor TabStructuralSnapshotStore: TabStructuralSnapshotPersisting {
     private static let log = Logger.sumi(category: "TabPersistence")
 
     private let writes: TabStoreWriteExecutor

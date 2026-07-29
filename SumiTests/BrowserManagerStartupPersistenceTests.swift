@@ -227,7 +227,8 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
         XCTAssertTrue(browserManager.permissionRuntime.isObservingPermissionEvents)
     }
 
-    func testFailedRetiredProfileRecoveryDoesNotStartRuntime() async throws {
+    func testCompletedTombstoneRehydratesWithoutRepeatingExternalCleanup()
+        async throws {
         let container = try makeInMemoryStartupContainer()
         let target = Profile(name: "Retired")
         let retained = Profile(name: "Retained")
@@ -237,17 +238,104 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
             fallbackID: retained.id,
             in: container
         )
+        let notificationService = FailingRetirementNotificationService()
         let browserManager = BrowserManager(
             startupPersistence: BrowserManagerStartupPersistence(database: container),
-            notificationService: FailingRetirementNotificationService()
+            notificationService: notificationService
         )
 
         XCTAssertFalse(browserManager.permissionRuntime.isObservingPermissionEvents)
         let report = try await browserManager.profileLifecycleBundle
             .retirementStartupRecovery.recover()
-        XCTAssertEqual(report.issues.map(\.profileID), [target.id])
-        XCTAssertTrue(report.hasDeferredRecovery)
+        let externalRetirementCount = await notificationService
+            .externalRetirementCount()
+        let rehydrationCount = await notificationService.rehydrationCount()
+        XCTAssertTrue(report.issues.isEmpty)
+        XCTAssertFalse(report.hasDeferredRecovery)
+        XCTAssertEqual(externalRetirementCount, 0)
+        XCTAssertEqual(rehydrationCount, 1)
         XCTAssertFalse(browserManager.permissionRuntime.isObservingPermissionEvents)
+    }
+
+    func testStartupRecoveryDoesNotCommitBeforeRuntimeRetirement() async throws {
+        let container = try makeInMemoryStartupContainer()
+        let retiring = Profile(name: "Retiring")
+        let fallback = Profile(name: "Fallback")
+        try persistProfiles([retiring, fallback], in: container)
+        let ledger = try ProfileReferenceAdmissionLedger(database: container)
+        let token = try ledger.reserve(
+            profile: retiring,
+            fallbackID: fallback.id
+        )
+        XCTAssertTrue(try ledger.beginReferenceMigration(token))
+        var profileExistedWhenRuntimeRetirementBegan = false
+
+        let report = try await ProfileRetirementStartupRecovery(
+            ledger: ledger,
+            migrateReferences: { _ in },
+            prepareRuntimeRetirement: { _ in
+                profileExistedWhenRuntimeRetirementBegan = try container.read {
+                    try $0.profiles.all().contains { $0.id == retiring.id }
+                }
+                throw StartupRuntimeRetirementFailure.injected
+            },
+            cleanupFactory: { _ in
+                preconditionFailure(
+                    "Cleanup must not begin before runtime retirement succeeds"
+                )
+            }
+        ).recover()
+
+        XCTAssertTrue(profileExistedWhenRuntimeRetirementBegan)
+        XCTAssertTrue(report.hasDeferredRecovery)
+        XCTAssertTrue(try container.read {
+            try $0.profiles.all().contains { $0.id == retiring.id }
+        })
+        XCTAssertEqual(
+            try XCTUnwrap(ledger.record(for: token)).phase,
+            .migratingReferences
+        )
+    }
+
+    func testCleaningRecoveryOnlyRehydratesRuntimeState() async throws {
+        let container = try makeInMemoryStartupContainer()
+        let retiring = Profile(name: "Retiring")
+        let fallback = Profile(name: "Fallback")
+        try persistProfiles([retiring, fallback], in: container)
+        let ledger = try ProfileReferenceAdmissionLedger(database: container)
+        let token = try ledger.reserve(
+            profile: retiring,
+            fallbackID: fallback.id
+        )
+        XCTAssertTrue(try ledger.beginReferenceMigration(token))
+        XCTAssertTrue(try ledger.commitLogicalDeletion(token))
+        XCTAssertTrue(try ledger.beginCleaning(token))
+        var externalPreparationCount = 0
+        var rehydrationCount = 0
+
+        let report = try await ProfileRetirementStartupRecovery(
+            ledger: ledger,
+            prepareRuntimeRetirement: { _ in
+                externalPreparationCount += 1
+            },
+            rehydrateRetirementState: { _ in
+                rehydrationCount += 1
+                throw StartupRuntimeRetirementFailure.injected
+            },
+            cleanupFactory: { _ in
+                preconditionFailure(
+                    "Cleanup must wait for runtime-state rehydration"
+                )
+            }
+        ).recover()
+
+        XCTAssertEqual(externalPreparationCount, 0)
+        XCTAssertEqual(rehydrationCount, 1)
+        XCTAssertTrue(report.hasDeferredRecovery)
+        XCTAssertEqual(
+            try XCTUnwrap(ledger.record(for: token)).phase,
+            .cleaning
+        )
     }
 
     func testStartupRecoveryTransactionClaimsConcurrentScenesExactlyOnce() async {
@@ -305,6 +393,53 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
         XCTAssertEqual(runtimeStartCount, 1)
         guard case .ready = transaction.state else {
             return XCTFail("Successful startup recovery did not become ready")
+        }
+    }
+
+    func testRetirementRehydrationClaimsConcurrentScenesExactlyOnce() async {
+        let transaction = SumiStartupRecoveryTransaction(state: .preparing)
+        let suspension = StartupRecoverySuspension()
+        var rehydrationCount = 0
+        var runtimeStartCount = 0
+
+        let first = Task { @MainActor in
+            await transaction.recoverIfNeeded(
+                preflight: .ready,
+                recoverProfileRetirement: {
+                    rehydrationCount += 1
+                    await suspension.wait()
+                    return ProfileRetirementStartupRecoveryReport()
+                },
+                recoverImport: { nil },
+                startRuntime: {
+                    runtimeStartCount += 1
+                }
+            )
+        }
+        await suspension.waitUntilSuspended()
+
+        let second = await transaction.recoverIfNeeded(
+            preflight: .ready,
+            recoverProfileRetirement: {
+                rehydrationCount += 1
+                return ProfileRetirementStartupRecoveryReport()
+            },
+            recoverImport: { nil },
+            startRuntime: {
+                runtimeStartCount += 1
+            }
+        )
+        guard case .notClaimed = second else {
+            return XCTFail("A second scene claimed active retirement rehydration")
+        }
+
+        suspension.resume()
+        _ = await first.value
+
+        XCTAssertEqual(rehydrationCount, 1)
+        XCTAssertEqual(runtimeStartCount, 1)
+        guard case .ready = transaction.state else {
+            return XCTFail("Retirement rehydration did not become ready")
         }
     }
 
@@ -544,7 +679,14 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
     }
 }
 
+private enum StartupRuntimeRetirementFailure: Error {
+    case injected
+}
+
 private actor FailingRetirementNotificationService: SumiNotificationServicing {
+    private var externalRetirements = 0
+    private var rehydrations = 0
+
     func post(
         _ payload: SumiNotificationPayload
     ) async -> SumiNotificationDeliveryResult {
@@ -554,7 +696,20 @@ private actor FailingRetirementNotificationService: SumiNotificationServicing {
     func close(identifier _: SumiNotificationIdentifier) async {}
 
     func retireProfile(profilePartitionId _: String) async -> Bool {
-        false
+        externalRetirements += 1
+        return false
+    }
+
+    func rehydrateRetiredProfile(profilePartitionId _: String) {
+        rehydrations += 1
+    }
+
+    func externalRetirementCount() -> Int {
+        externalRetirements
+    }
+
+    func rehydrationCount() -> Int {
+        rehydrations
     }
 }
 

@@ -69,6 +69,31 @@ final class RuntimeStateCoalescerTests: XCTestCase {
         XCTAssertEqual(batches.first?.first?.id, tabID)
     }
 
+    func testDiscardConsumesPendingUpdatesWithoutWritingThem() async {
+        let recorder = RuntimeStateBatchRecorder()
+        let coalescer = RuntimeStateCoalescer(
+            debounceNanoseconds: 60_000_000_000,
+            persistBatch: { states in
+                await recorder.record(states)
+            }
+        )
+        coalescer.enqueue(
+            makeRuntimeState(
+                id: UUID(),
+                urlString: "https://example.com/discard",
+                name: "Discard"
+            )
+        )
+
+        let discardedCount = await coalescer.discardPending()
+        let flushedCount = await coalescer.flushImmediately()
+        let batches = await recorder.allBatches()
+
+        XCTAssertEqual(discardedCount, 1)
+        XCTAssertEqual(flushedCount, 0)
+        XCTAssertTrue(batches.isEmpty)
+    }
+
     private func makeRuntimeState(
         id: UUID,
         urlString: String,
@@ -85,7 +110,6 @@ final class RuntimeStateCoalescerTests: XCTestCase {
             canGoForward: canGoForward
         )
     }
-
 }
 
 private actor RuntimeStateBatchRecorder {

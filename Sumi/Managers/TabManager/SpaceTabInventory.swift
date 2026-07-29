@@ -1,39 +1,40 @@
 import Foundation
 
-/// Complete live-tab snapshot for one Space. Keeping the four storage
-/// categories explicit prevents new transient surfaces from being mistaken
-/// for regular persisted tabs during destructive operations.
 @MainActor
 struct SpaceTabInventory {
     let regular: [Tab]
     let transientShortcutEntries: [LiveShortcutTabEntry]
     let transientExtensions: [Tab]
     let auxiliaryMiniWindows: [Tab]
-
+    let all: [Tab]
+    let tabIds: Set<UUID>
+    let retiredShortcutPinIDsByWindow: [UUID: Set<UUID>]
     init(spaceId: UUID, state: TabStateStore) {
-        regular = state.regularTabs.tabs(in: spaceId)
-        transientShortcutEntries = state.transientTabs
+        let regular = state.regularTabs.tabs(in: spaceId)
+        let transientShortcutEntries = state.transientTabs
             .liveShortcutEntries(presentedInSpace: spaceId)
-        transientExtensions = state.transientTabs
+        let transientExtensions = state.transientTabs
             .transientExtensionTabsByID.values.filter { $0.spaceId == spaceId }
-        auxiliaryMiniWindows = state.transientTabs
+        let auxiliaryMiniWindows = state.transientTabs
             .auxiliaryMiniWindowTabsByID.values.filter { $0.spaceId == spaceId }
-    }
-
-    var all: [Tab] {
         var seen = Set<UUID>()
-        return (
+        let all = (
             regular
                 + transientShortcutEntries.map(\.tab)
                 + transientExtensions
                 + auxiliaryMiniWindows
         ).filter { seen.insert($0.id).inserted }
-    }
 
-    var tabIds: Set<UUID> { Set(all.map(\.id)) }
-
-    var retiredShortcutPinIDsByWindow: [UUID: Set<UUID>] {
-        Dictionary(grouping: transientShortcutEntries, by: \.windowId)
+        self.regular = regular
+        self.transientShortcutEntries = transientShortcutEntries
+        self.transientExtensions = transientExtensions
+        self.auxiliaryMiniWindows = auxiliaryMiniWindows
+        self.all = all
+        self.tabIds = Set(all.map(\.id))
+        self.retiredShortcutPinIDsByWindow = Dictionary(
+            grouping: transientShortcutEntries,
+            by: \.windowId
+        )
             .mapValues { Set($0.map(\.pinId)) }
     }
 }

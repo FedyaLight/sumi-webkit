@@ -259,16 +259,6 @@ extension BrowserCompositionRoot {
             runtimeConnection: runtimeConnection,
             profileReferenceAdmission: profileReferenceAdmission
         )
-        let profileDeletion = ProfileDeletionMigration.compose(
-            policy: profileAssignmentPolicy,
-            runtimeConnection: runtimeConnection,
-            spaces: state.spaces,
-            tabTransitions: tabProfileTransitions,
-            spaceTransitions: spaceProfileGraph.service,
-            spaceTransitionLifecycle: spaceProfileGraph.lifecycle,
-            shortcutReferences: shortcutReferences,
-            selection: profileSelection
-        )
         let spaceProfileReconciliation = SpaceProfileReconciliationService(
             spaces: state.spaces,
             runtimeConnection: runtimeConnection,
@@ -338,9 +328,19 @@ extension BrowserCompositionRoot {
             windowStates: deletedSpaceWindowStates,
             catalog: SpaceRemovalCatalogCommitter(
                 state: state,
-                persistence: structuralPersistence,
-                changes: tabManager.objectWillChange
+                persistence: structuralPersistence
             )
+        )
+        let profileDeletion = ProfileDeletionMigration.compose(
+            policy: profileAssignmentPolicy,
+            runtimeConnection: runtimeConnection,
+            spaces: state.spaces,
+            tabTransitions: tabProfileTransitions,
+            spaceTransitionLifecycle: spaceProfileGraph.lifecycle,
+            spaceCatalog: spaceCatalog,
+            spaceRemoval: spaceRemoval,
+            shortcutReferences: shortcutReferences,
+            selection: profileSelection
         )
         let spaceClearing = SpaceClearingService(
             transactions: structuralLookupCoordinator,

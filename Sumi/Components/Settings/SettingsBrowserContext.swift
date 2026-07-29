@@ -4,7 +4,7 @@ import SumiDomain
 
 @MainActor
 struct ProfileSettingsInventory {
-    let usage: (UUID) -> ProfileUsage
+    let snapshot: () -> [UUID: ProfileUsage]
     let updates: AnyPublisher<Void, Never>
 }
 
@@ -20,7 +20,7 @@ struct SettingsBrowserContext {
     let currentProfile: () -> Profile?
     let currentProfileUpdates: AnyPublisher<Profile?, Never>
     let currentTab: (BrowserWindowState) -> Tab?
-    let deleteProfile: (Profile) -> Void
+    let requestProfileDeletion: (Profile, String) -> Void
     let scheduleRuntimeStatePersistence: (Tab) -> Void
     let makePermissionRepository: () -> SumiPermissionSettingsRepository
     let dataRecoveryActions: SumiDataRecoveryActions

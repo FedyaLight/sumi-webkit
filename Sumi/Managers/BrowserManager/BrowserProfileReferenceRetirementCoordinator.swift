@@ -1,7 +1,8 @@
 import Foundation
 
-/// Seals browser-shell profile references after the tab domain has completed
-/// its own migration. It owns no profile, cleanup, or retirement-store state.
+/// Prepares the browser runtime, lets the tab domain migrate, then seals every
+/// browser-shell profile reference. It owns no profile, cleanup, or retirement
+/// store state.
 @MainActor
 final class BrowserProfileReferenceRetirementCoordinator {
     private let preflight: BrowserProfileRetirementPreflight
@@ -20,12 +21,15 @@ final class BrowserProfileReferenceRetirementCoordinator {
 
     func migrateReferences(
         from deletedProfileID: UUID,
-        to fallbackProfile: Profile
+        to fallbackProfile: Profile,
+        migrateTabReferences: @MainActor () async -> Bool = { true }
     ) async -> Bool {
         guard await preflight.prepare(
             deletedProfileID: deletedProfileID,
             fallbackProfile: fallbackProfile
-        ) else { return false }
+        ), await migrateTabReferences() else {
+            return false
+        }
 
         return migration.migrate(
             from: deletedProfileID,

@@ -27,11 +27,13 @@ final class SpaceClearingService {
         var changedWindows: [BrowserWindowState] = []
         transactions.withTransaction {
             guard let runtime = windowStates.runtimeLease(),
-                  let plan = contentRetirement.plan(
-                spaceId: spaceId,
-                using: runtime
-            ), windowStates.accepts(runtime),
-                  let retirement = contentRetirement.commit(plan) else {
+                  let plans = contentRetirement.plan(
+                      spaceIds: [spaceId],
+                      using: runtime
+                  ), windowStates.accepts(runtime),
+                  let retirements = contentRetirement.commit(plans),
+                  let retirement = retirements.first
+            else {
                 return
             }
             preparedRetirement = retirement
