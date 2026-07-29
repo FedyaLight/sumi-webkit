@@ -754,12 +754,13 @@ final class CommandPaletteSearchSessionOwner {
         if let publishedQuery = searchManager.suggestionSourceQuery {
             searchSuggestionSourceQuery = publishedQuery
         }
-        if !searchSuggestionsMatchCurrentQuery {
+        let shouldClearSuggestions = !searchSuggestionsMatchCurrentQuery
+        retainedSearchSuggestions = []
+        self.requestedSearchSuggestionQuery = nil
+        if shouldClearSuggestions {
             searchManager.clearSuggestions()
             searchSuggestionSourceQuery = nil
         }
-        retainedSearchSuggestions = []
-        self.requestedSearchSuggestionQuery = nil
         rebuildSuggestionSnapshot()
     }
 

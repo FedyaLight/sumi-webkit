@@ -184,6 +184,26 @@ final class SearchManagerHistorySuggestionTests: XCTestCase {
         searchManager.clearSuggestions()
     }
 
+    func testClearingSuggestionsPublishesOneFinalClearedState() {
+        let searchManager = SearchManager(
+            suggestionDataProvider: StaticSearchSuggestionDataProvider(
+                payload: "[]"
+            )
+        )
+        searchManager.searchSuggestions(for: "example.com")
+        var publicationCount = 0
+        searchManager.onStateChange = {
+            publicationCount += 1
+            XCTAssertFalse(searchManager.isLoadingSuggestions)
+            XCTAssertNil(searchManager.suggestionSourceQuery)
+            XCTAssertTrue(searchManager.suggestions.isEmpty)
+        }
+
+        searchManager.clearSuggestions()
+
+        XCTAssertEqual(publicationCount, 1)
+    }
+
     func testBookmarkSuggestionsAreIncludedInLocalResults() async throws {
         let bookmarkManager = makeBookmarkManager()
         let bookmark = try bookmarkManager.createBookmark(

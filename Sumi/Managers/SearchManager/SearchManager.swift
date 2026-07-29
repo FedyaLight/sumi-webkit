@@ -522,21 +522,37 @@ class SearchManager {
         if !suggestions.isEmpty {
             suggestions = []
         }
-        notifyStateChange()
+    }
+
+    private func cancelSuggestionWork() {
+        webSuggestionTask?.cancel()
+        historySuggestionTask?.cancel()
+        webSuggestionRequestGeneration &+= 1
+        activeWebSuggestionGeneration = webSuggestionRequestGeneration
     }
 
     func cancelSuggestionRequests() {
-        webSuggestionTask?.cancel()
-        historySuggestionTask?.cancel()
+        let stateChanged =
+            isLoadingSuggestions || !suggestionPublicationIsSettled
+        cancelSuggestionWork()
         isLoadingSuggestions = false
-        webSuggestionRequestGeneration &+= 1
-        activeWebSuggestionGeneration = webSuggestionRequestGeneration
-        notifyStateChange()
+        if stateChanged {
+            notifyStateChange()
+        }
     }
 
     func clearSuggestions() {
-        cancelSuggestionRequests()
+        let stateChanged =
+            isLoadingSuggestions
+                || !suggestions.isEmpty
+                || suggestionSourceQuery != nil
+                || !suggestionPublicationIsSettled
+        cancelSuggestionWork()
+        isLoadingSuggestions = false
         clearSuggestionResults()
+        if stateChanged {
+            notifyStateChange()
+        }
     }
 
     private func notifyStateChange() {

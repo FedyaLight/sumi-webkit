@@ -49,6 +49,55 @@ final class CommandPaletteSearchSessionOwnerTests: XCTestCase {
         }
     }
 
+    func testClearingActiveRequestDoesNotRecursivelyClearAgain() async throws {
+        let manager = SearchManager(
+            suggestionDataProvider: QuerySearchSuggestionDataProvider(
+                payloads: [
+                    "old": #"[{"phrase":"old result","is_nav":false}]"#,
+                ]
+            )
+        )
+        let owner = CommandPaletteSearchSessionOwner(searchManager: manager)
+        let windowState = BrowserWindowState()
+
+        owner.text = "old"
+        owner.handleTextChanged(
+            "old",
+            isCommandPaletteVisible: true,
+            presentationReason: .keyboard,
+            windowState: windowState
+        )
+        await waitUntil {
+            owner.visibleRows.contains { $0.title == "old result" }
+        }
+
+        let forwardStateChange = try XCTUnwrap(manager.onStateChange)
+        var didClearActiveRequest = false
+        manager.onStateChange = {
+            forwardStateChange()
+            guard manager.isLoadingSuggestions,
+                  !didClearActiveRequest else { return }
+            didClearActiveRequest = true
+            manager.clearSuggestions()
+        }
+
+        owner.text = "new"
+        owner.handleTextChanged(
+            "new",
+            isCommandPaletteVisible: true,
+            presentationReason: .keyboard,
+            windowState: windowState
+        )
+        await waitUntil {
+            didClearActiveRequest
+                && !manager.isLoadingSuggestions
+                && !owner.isWaitingForSearchDebounce
+        }
+
+        XCTAssertFalse(manager.isLoadingSuggestions)
+        XCTAssertNil(manager.suggestionSourceQuery)
+    }
+
     func testNavigationKeepsQueryAndClampsAtBothEnds() {
         let owner = CommandPaletteSearchSessionOwner()
         owner.updateAvailableBrowserActions([
