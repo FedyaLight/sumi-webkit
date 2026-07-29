@@ -15,6 +15,9 @@ native shell authority.
   selection, and geometry projection before SwiftUI mounts the shell.
   Registration completes runtime restoration; it does not perform a second
   visible chrome projection.
+- Startup presents either the browser shell, explicit pending-recovery UI, or
+  a terminal recovery error. Completed maintenance never mounts a transparent
+  placeholder window; it runs against the already-present browser shell.
 - Normal windows share durable browser data but keep selection, sidebar,
   transient chrome, split focus, and WebView residence window-local.
 - Incognito windows never enter the durable snapshot or recently-closed window

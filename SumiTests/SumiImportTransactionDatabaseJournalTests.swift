@@ -16,9 +16,10 @@ final class SumiImportTransactionDatabaseJournalTests: XCTestCase {
             )
         )
 
-        guard case .ready = admission else {
+        guard case .ready(let completedRetirements) = admission else {
             return XCTFail("A clean database should start immediately")
         }
+        XCTAssertTrue(completedRetirements.isEmpty)
     }
 
     func testPendingImportJournalRequiresStartupRecovery() async throws {
@@ -39,7 +40,7 @@ final class SumiImportTransactionDatabaseJournalTests: XCTestCase {
         }
     }
 
-    func testCompletedRetirementTombstoneDoesNotPresentRecoveryChrome() throws {
+    func testCompletedRetirementTombstoneAdmitsBrowserImmediately() throws {
         let database = try SumiDatabase.inMemory()
         let retired = Profile(name: "Retired")
         let retained = Profile(name: "Retained")
@@ -60,11 +61,12 @@ final class SumiImportTransactionDatabaseJournalTests: XCTestCase {
             )
         )
 
-        guard case .retirementStateRehydrationRequired = admission else {
+        guard case .ready(let completedRetirements) = admission else {
             return XCTFail(
-                "Completed retirement history must use silent state rehydration"
+                "Completed retirement history must not delay browser presentation"
             )
         }
+        XCTAssertEqual(completedRetirements.map(\.snapshot.id), [retired.id])
     }
 
     func testActiveRetirementStillRequiresRecoveryChrome() throws {

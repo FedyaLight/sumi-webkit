@@ -96,6 +96,12 @@ browser database. A launch enters recovery only when the profile-retirement
 ledger or import journal contains durable pending work. The common empty-ledger
 path starts the browser directly and never mounts recovery UI.
 
+Completed profile-retirement tombstones are protective history, not pending
+recovery. Admission publishes the browser immediately and passes the exact
+completed records to a one-shot post-mount rehydration task. That task seeds
+runtime denial state without rescanning or claiming newer retirement work, so
+completed history never creates an intermediate launch window.
+
 `BrowserRuntimeLifecycle` is passive until admission explicitly prepares it
 for recovery or starts it for ordinary use. Recovery preparation attaches the
 ports required by durable cleanup but does not start permission, retention, or

@@ -5,6 +5,8 @@ import XCTest
 
 enum SumiSmokeFixtureIDs {
     static let profile = "00000000000000000000000000000601"
+    static let retiredProfile = "00000000000000000000000000000602"
+    static let retirementGeneration = "00000000000000000000000000000603"
     static let personalSpace = "0000000000000000000000000000a001"
     static let topLevelLauncher = "0000000000000000000000000000a002"
     static let regularTab = "0000000000000000000000000000a003"
@@ -171,6 +173,35 @@ extension SumiLaunchSmokeUITestCase {
             windowSessionSnapshotData: snapshotData,
             additionalPreferences: additionalPreferences
         )
+    }
+
+    func prepareCompletedRetirementTombstonePreferencesHome() throws -> URL {
+        let storeURL = try requiredSmokeStoreURL()
+        let fallbackProfileID = try requiredScalar(
+            sql: """
+            SELECT lower(hex(id)) AS value
+            FROM profiles
+            ORDER BY position
+            LIMIT 1;
+            """,
+            storeURL: storeURL,
+            description: "Smoke store has no fallback profile"
+        )
+        try executeSQLite(
+            sql: """
+            INSERT INTO profile_retirements (
+                profile_id, profile_name, profile_position,
+                fallback_profile_id, generation, phase, next_cleanup_step
+            ) VALUES (
+                \(sqlBlob(SumiSmokeFixtureIDs.retiredProfile)),
+                'Retired Smoke Profile', 1, \(sqlBlob(fallbackProfileID)),
+                \(sqlBlob(SumiSmokeFixtureIDs.retirementGeneration)),
+                'retired', 'completed'
+            );
+            """,
+            storeURL: storeURL
+        )
+        return try prepareSmokePreferencesHome()
     }
 
     func prepareEmptyDockedSidebarPreferencesHome() throws -> URL {

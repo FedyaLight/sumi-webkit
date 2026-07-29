@@ -148,7 +148,7 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
         )
     }
 
-    func testRetiredProfileTombstoneSealsPermissionsBeforeRuntimeStarts() async throws {
+    func testRetiredProfileTombstoneSealsPermissionsAfterRuntimeStarts() async throws {
         let container = try makeInMemoryStartupContainer()
         let target = Profile(name: "Retired")
         let retained = Profile(name: "Retained")
@@ -165,14 +165,19 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
         )
 
         XCTAssertNotNil(browserManager.runtimePortConnection.current)
-        XCTAssertFalse(browserManager.permissionRuntime.isObservingPermissionEvents)
+        browserManager.startRuntimeAfterStartupRecovery()
+        XCTAssertTrue(browserManager.permissionRuntime.isObservingPermissionEvents)
         XCTAssertEqual(browserManager.currentProfile?.id, retained.id)
         XCTAssertFalse(
             browserManager.profileManager.profiles.contains { $0.id == target.id }
         )
 
-        _ = try await browserManager.profileLifecycleBundle
-            .retirementStartupRecovery.recover()
+        let completedRetirements = browserManager.profileReferenceAdmission
+            .records().filter(\.isCompletedTombstone)
+        _ = await browserManager.profileLifecycleBundle
+            .retirementStartupRecovery.rehydrateCompletedRetirements(
+                completedRetirements
+            )
 
         let targetKey = permissionKey(
             profilePartitionId: target.id.uuidString
@@ -222,8 +227,6 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
             for: autoplayURL,
             profile: retained
         )
-
-        browserManager.startRuntimeAfterStartupRecovery()
         XCTAssertTrue(browserManager.permissionRuntime.isObservingPermissionEvents)
     }
 
@@ -244,9 +247,14 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
             notificationService: notificationService
         )
 
-        XCTAssertFalse(browserManager.permissionRuntime.isObservingPermissionEvents)
-        let report = try await browserManager.profileLifecycleBundle
-            .retirementStartupRecovery.recover()
+        browserManager.startRuntimeAfterStartupRecovery()
+        XCTAssertTrue(browserManager.permissionRuntime.isObservingPermissionEvents)
+        let completedRetirements = browserManager.profileReferenceAdmission
+            .records().filter(\.isCompletedTombstone)
+        let report = await browserManager.profileLifecycleBundle
+            .retirementStartupRecovery.rehydrateCompletedRetirements(
+                completedRetirements
+            )
         let externalRetirementCount = await notificationService
             .externalRetirementCount()
         let rehydrationCount = await notificationService.rehydrationCount()
@@ -254,7 +262,50 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
         XCTAssertFalse(report.hasDeferredRecovery)
         XCTAssertEqual(externalRetirementCount, 0)
         XCTAssertEqual(rehydrationCount, 1)
-        XCTAssertFalse(browserManager.permissionRuntime.isObservingPermissionEvents)
+        XCTAssertTrue(browserManager.permissionRuntime.isObservingPermissionEvents)
+    }
+
+    func testCompletedRehydrationDoesNotClaimNewRetirementWork() async throws {
+        let container = try makeInMemoryStartupContainer()
+        let completed = Profile(name: "Completed")
+        let newlyRetiring = Profile(name: "Newly Retiring")
+        let retained = Profile(name: "Retained")
+        try persistProfiles([completed, newlyRetiring, retained], in: container)
+        try persistRetiredTombstone(
+            for: completed,
+            fallbackID: retained.id,
+            in: container
+        )
+
+        let ledger = try ProfileReferenceAdmissionLedger(database: container)
+        let admittedRetirements = ledger.records().filter(
+            \.isCompletedTombstone
+        )
+        let activeToken = try ledger.reserve(
+            profile: newlyRetiring,
+            fallbackID: retained.id
+        )
+        XCTAssertTrue(try ledger.beginReferenceMigration(activeToken))
+        var rehydratedProfileIDs: [UUID] = []
+
+        let report = await ProfileRetirementStartupRecovery(
+            ledger: ledger,
+            rehydrateRetirementState: { record in
+                rehydratedProfileIDs.append(record.snapshot.id)
+            },
+            cleanupFactory: { _ in
+                preconditionFailure(
+                    "Completed rehydration must not claim newer cleanup work"
+                )
+            }
+        ).rehydrateCompletedRetirements(admittedRetirements)
+
+        XCTAssertTrue(report.issues.isEmpty)
+        XCTAssertEqual(rehydratedProfileIDs, [completed.id])
+        XCTAssertEqual(
+            ledger.record(for: activeToken)?.phase,
+            .migratingReferences
+        )
     }
 
     func testStartupRecoveryDoesNotCommitBeforeRuntimeRetirement() async throws {
@@ -393,53 +444,6 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
         XCTAssertEqual(runtimeStartCount, 1)
         guard case .ready = transaction.state else {
             return XCTFail("Successful startup recovery did not become ready")
-        }
-    }
-
-    func testRetirementRehydrationClaimsConcurrentScenesExactlyOnce() async {
-        let transaction = SumiStartupRecoveryTransaction(state: .preparing)
-        let suspension = StartupRecoverySuspension()
-        var rehydrationCount = 0
-        var runtimeStartCount = 0
-
-        let first = Task { @MainActor in
-            await transaction.recoverIfNeeded(
-                preflight: .ready,
-                recoverProfileRetirement: {
-                    rehydrationCount += 1
-                    await suspension.wait()
-                    return ProfileRetirementStartupRecoveryReport()
-                },
-                recoverImport: { nil },
-                startRuntime: {
-                    runtimeStartCount += 1
-                }
-            )
-        }
-        await suspension.waitUntilSuspended()
-
-        let second = await transaction.recoverIfNeeded(
-            preflight: .ready,
-            recoverProfileRetirement: {
-                rehydrationCount += 1
-                return ProfileRetirementStartupRecoveryReport()
-            },
-            recoverImport: { nil },
-            startRuntime: {
-                runtimeStartCount += 1
-            }
-        )
-        guard case .notClaimed = second else {
-            return XCTFail("A second scene claimed active retirement rehydration")
-        }
-
-        suspension.resume()
-        _ = await first.value
-
-        XCTAssertEqual(rehydrationCount, 1)
-        XCTAssertEqual(runtimeStartCount, 1)
-        guard case .ready = transaction.state else {
-            return XCTFail("Retirement rehydration did not become ready")
         }
     }
 

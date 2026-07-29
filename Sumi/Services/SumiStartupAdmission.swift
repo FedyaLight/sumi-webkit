@@ -1,8 +1,7 @@
 import Foundation
 
 enum SumiStartupAdmission {
-    case ready
-    case retirementStateRehydrationRequired
+    case ready(completedRetirements: [ProfileRetirementRecord])
     case recoveryRequired
     case failed(message: String)
 
@@ -27,16 +26,15 @@ enum SumiStartupAdmission {
             let hasProfileRetirementRecovery = retirementRecords.contains {
                 $0.isCompletedTombstone == false
             } || hasQuarantinedRetirement
-            let hasCompletedRetirementTombstones = retirementRecords.contains(
-                where: \.isCompletedTombstone
-            )
             let hasImportRecovery = try importJournal.hasPendingRecovery()
             if hasProfileRetirementRecovery || hasImportRecovery {
                 return .recoveryRequired
             }
-            return hasCompletedRetirementTombstones
-                ? .retirementStateRehydrationRequired
-                : .ready
+            return .ready(
+                completedRetirements: retirementRecords.filter(
+                    \.isCompletedTombstone
+                )
+            )
         } catch {
             return .failed(
                 message: "Sumi could not inspect startup recovery state. "

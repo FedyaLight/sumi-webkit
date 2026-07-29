@@ -15,6 +15,25 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
         )
     }
 
+    func testCompletedRetirementHistoryLaunchesBrowserWithoutPlaceholder()
+        throws {
+        let preferencesHome = try prepareCompletedRetirementTombstonePreferencesHome()
+        let fixture = try loadPersonalSidebarFixture()
+        let app = try launchApp(preferencesHomeURL: preferencesHome)
+        let window = app.windows.element(boundBy: 0)
+
+        XCTAssertTrue(window.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.windows.count, 1)
+        XCTAssertTrue(
+            element(
+                withIdentifier: "space-icon-\(fixture.personalSpaceID)",
+                in: app
+            ).waitForExistence(timeout: 5),
+            "Completed retirement history must project browser chrome instead of an empty launch shell."
+        )
+        XCTAssertFalse(app.staticTexts["Recovering browser data…"].exists)
+    }
+
     func testClosingNewWindowKeepsOriginalBrowserWindowAlive() throws {
         let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
         let originalWindow = app.windows.element(boundBy: 0)

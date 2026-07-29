@@ -173,6 +173,30 @@ final class ProfileRetirementStartupRecovery {
         return report
     }
 
+    func rehydrateCompletedRetirements(
+        _ records: [ProfileRetirementRecord]
+    ) async -> ProfileRetirementStartupRecoveryReport {
+        var report = ProfileRetirementStartupRecoveryReport()
+        for record in records where record.isCompletedTombstone {
+            do {
+                try await rehydrateRuntimeState(record)
+            } catch let error as ProfileRetirementStartupRecoveryError {
+                report.issues.append(issue(for: record, error: error))
+            } catch {
+                report.issues.append(
+                    issue(
+                        for: record,
+                        error: .cleanupDeferred(
+                            profileID: record.snapshot.id,
+                            reason: error.localizedDescription
+                        )
+                    )
+                )
+            }
+        }
+        return report
+    }
+
     private func recover(_ initialRecord: ProfileRetirementRecord) async throws {
         switch initialRecord.phase {
         case .reserved:

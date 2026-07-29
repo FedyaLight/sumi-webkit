@@ -33,6 +33,7 @@ struct SumiApp: App {
     @State private var appOrchestrationOwner = BrowserAppOrchestrationOwner()
     @State private var startupRecovery: SumiStartupRecoveryTransaction
     @State private var initialWindowState: BrowserWindowState
+    @State private var pendingCompletedRetirements: [ProfileRetirementRecord]
     @State private var pendingProfileRetirementNotice:
         ProfileRetirementStartupRecoveryReport?
     @State private var isPresentingProfileRetirementNotice = false
@@ -95,24 +96,24 @@ struct SumiApp: App {
         )
         let startupRecovery: SumiStartupRecoveryTransaction
         let preparesInitialWindow: Bool
+        let pendingCompletedRetirements: [ProfileRetirementRecord]
         switch startupAdmission {
-        case .ready:
+        case .ready(let completedRetirements):
             Self.startBrowserRuntime(browserManager)
             startupRecovery = SumiStartupRecoveryTransaction(state: .ready)
             preparesInitialWindow = true
-        case .retirementStateRehydrationRequired:
-            browserManager.prepareRuntimeForStartupRecovery()
-            startupRecovery = SumiStartupRecoveryTransaction(state: .preparing)
-            preparesInitialWindow = false
+            pendingCompletedRetirements = completedRetirements
         case .recoveryRequired:
             browserManager.prepareRuntimeForStartupRecovery()
             startupRecovery = SumiStartupRecoveryTransaction()
             preparesInitialWindow = false
+            pendingCompletedRetirements = []
         case .failed(let message):
             startupRecovery = SumiStartupRecoveryTransaction(
                 state: .failed(message: message, backupURL: nil)
             )
             preparesInitialWindow = false
+            pendingCompletedRetirements = []
         }
         let initialWindowState = browserManager.makeInitialWindowState(
             preparesForLaunch: preparesInitialWindow
@@ -140,6 +141,9 @@ struct SumiApp: App {
         )
         _startupRecovery = State(initialValue: startupRecovery)
         _initialWindowState = State(initialValue: initialWindowState)
+        _pendingCompletedRetirements = State(
+            initialValue: pendingCompletedRetirements
+        )
         _browserManager = StateObject(wrappedValue: browserManager)
     }
 
@@ -147,9 +151,6 @@ struct SumiApp: App {
         WindowGroup {
             Group {
                 switch startupRecovery.state {
-                case .preparing, .rehydrating:
-                    Color.clear
-                        .frame(minWidth: 520, minHeight: 240)
                 case .pending, .recovering:
                     VStack(spacing: 12) {
                         ProgressView()
@@ -184,7 +185,7 @@ struct SumiApp: App {
                 }
             }
             .task {
-                await recoverStartupDataIfNeeded()
+                await performStartupWorkIfNeeded()
             }
         }
         .windowStyle(.hiddenTitleBar)
@@ -203,6 +204,26 @@ struct SumiApp: App {
     }
 
     // MARK: - Application Lifecycle Setup
+
+    private func performStartupWorkIfNeeded() async {
+        if pendingCompletedRetirements.isEmpty == false {
+            let retirements = pendingCompletedRetirements
+            pendingCompletedRetirements = []
+            await rehydrateCompletedRetirementState(retirements)
+            return
+        }
+        await recoverStartupDataIfNeeded()
+    }
+
+    private func rehydrateCompletedRetirementState(
+        _ retirements: [ProfileRetirementRecord]
+    ) async {
+        let report = await browserManager.profileLifecycleBundle
+            .retirementStartupRecovery.rehydrateCompletedRetirements(
+                retirements
+            )
+        handleProfileRetirementReport(report)
+    }
 
     private func recoverStartupDataIfNeeded() async {
         let outcome = await startupRecovery.recoverIfNeeded(
@@ -258,15 +279,7 @@ struct SumiApp: App {
         case .notClaimed:
             return
         case .recovered(let importReport, let profileRetirement):
-            if profileRetirement.hasDeferredRecovery {
-                pendingProfileRetirementNotice = profileRetirement
-                for issue in profileRetirement.issues {
-                    Self.startupRecoveryLog.error(
-                        "Deferred profile retirement; profile=\(issue.profileID.uuidString, privacy: .public); phase=\(issue.phase, privacy: .public); kind=\(issue.kind.rawValue, privacy: .public); reason=\(issue.reason, privacy: .public)"
-                    )
-                }
-                presentPendingProfileRetirementNoticeIfPossible()
-            }
+            handleProfileRetirementReport(profileRetirement)
             if let importReport {
                 let backupPath = importReport.preRestoreBackupURL?.path ?? "none"
                 Self.startupRecoveryLog.notice(
@@ -279,6 +292,19 @@ struct SumiApp: App {
                 "Startup recovery failed: \(failure.message, privacy: .public); preRestoreBackup=\(backupPath, privacy: .public)"
             )
         }
+    }
+
+    private func handleProfileRetirementReport(
+        _ report: ProfileRetirementStartupRecoveryReport
+    ) {
+        guard report.hasDeferredRecovery else { return }
+        pendingProfileRetirementNotice = report
+        for issue in report.issues {
+            Self.startupRecoveryLog.error(
+                "Deferred profile retirement; profile=\(issue.profileID.uuidString, privacy: .public); phase=\(issue.phase, privacy: .public); kind=\(issue.kind.rawValue, privacy: .public); reason=\(issue.reason, privacy: .public)"
+            )
+        }
+        presentPendingProfileRetirementNoticeIfPossible()
     }
 
     private func presentPendingProfileRetirementNoticeIfPossible() {

@@ -51,7 +51,8 @@
           "selection": [
             "SumiTests/BrowserManagerLifecycleWiringTests",
             "SumiTests/BrowserManagerStartupPersistenceTests/testStartupRecoveryTransactionRunsStagesInOrder",
-            "SumiTests/PersistenceFixtureTests"
+            "SumiTests/PersistenceFixtureTests",
+            "SumiTests/SumiImportTransactionDatabaseJournalTests/testCompletedRetirementTombstoneAdmitsBrowserImmediately"
           ]
         },
         {
