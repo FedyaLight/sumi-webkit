@@ -422,7 +422,11 @@ banned_fanout_types = {
     "BrowserManager", "TabManager", "ProfileManager", "SumiLiveFolderManager",
     "SplitLayoutService", "EmptySplitCreationWorkflow", "SidebarSplitCommands",
 }
-precise_favicon_leaves = {"SpacePinnedShortcutEntryView", "TabFolderShortcutEntryView"}
+precise_favicon_leaves = {
+    "SpacePinnedShortcutEntryView",
+    "TabFolderShortcutEntryView",
+    "TabFolderLiveItemEntryView",
+}
 guarded_filenames = set(roots)
 fanout_guard_views = {
     name for name, (path, _) in view_structs.items() if path.name in guarded_filenames

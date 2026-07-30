@@ -6,10 +6,11 @@ The current Alpha channel is distributed outside the Mac App Store. Developer ID
 
 ## First Install
 
-1. Download the latest Alpha archive from [GitHub Releases](https://github.com/FedyaLight/sumi-webkit/releases).
-2. Unzip the archive.
-3. Move `Sumi.app` to `/Applications`.
-4. Launch Sumi.
+For `v0.1.0-alpha.1`:
+
+1. Download the matching DMG from [GitHub Releases](https://github.com/FedyaLight/sumi-webkit/releases/tag/v0.1.0-alpha.1): `arm64` for Apple silicon or `x86_64` for Intel.
+2. Open the DMG and drag `Sumi.app` to Applications.
+3. Launch Sumi.
 
 If macOS blocks the first launch, use System Settings > Privacy & Security > Open Anyway for Sumi.
 
@@ -46,7 +47,9 @@ If the public key in the app does not match the private key used to generate app
 
 The earlier localhost appcast workflow was development-only infrastructure and is no longer a supported Sumi runtime path. The app runtime must not contain local feed overrides, loopback appcast arguments, or hidden Debug-only appcast replacement.
 
-Release validation should use the hosted Alpha flow: a GitHub Release archive, a signed `appcast-alpha.xml`, and a real installed older Alpha build.
+Release validation should use the hosted Alpha flow: a GitHub Release update artifact, a signed `appcast-alpha.xml`, and a real installed older Alpha build.
+
+The appcast for the first release is intentionally empty. Publishing the two DMGs proves first installation; a full updater E2E requires a subsequent controlled build with a higher build number and an architecture-aware update artifact strategy. Do not put both same-version, single-architecture DMGs into one generated appcast without verifying Sparkle's selection behavior.
 
 ## Future Signed Builds
 
@@ -56,5 +59,5 @@ Developer ID signing and notarization can be added later without replacing Spark
 - Sign the app with Developer ID Application.
 - Enable hardened runtime as required by the release configuration.
 - Notarize and staple the app or disk image as part of release packaging.
-- Publish the signed and notarized archive in GitHub Releases.
-- Regenerate and publish the signed appcast after the archive URL is final.
+- Publish the signed and notarized update artifact in GitHub Releases.
+- Regenerate and publish the signed appcast after the artifact URL is final.

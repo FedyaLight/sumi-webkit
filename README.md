@@ -1,97 +1,112 @@
 <div align="center">
-  <img width="230" height="230" src="./assets/icon.png" alt="Sumi Browser logo">
-  <h1><b>Sumi Browser</b></h1>
+  <img width="180" height="180" src="./assets/icon.png" alt="Sumi Browser logo">
+  <h1>Sumi Browser</h1>
   <p>
-    Sumi Browser is a native performance-first macOS browser.
+    A native, performance-first macOS browser built with SwiftUI, AppKit, and system WebKit.
     <br>
-    It is built with WebKit and SwiftUI for users who like workspace-oriented browsers
-    such as Arc and Zen, but want a leaner native macOS app with optional modules.
+    Workspace-oriented organization without a Chromium runtime or always-on product modules.
   </p>
 </div>
 
 <p align="center">
   <a href="https://www.apple.com/macos/"><img src="https://img.shields.io/badge/macOS-15.5+-blue" alt="macOS 15.5+"></a>
-  <a href="https://swift.org/"><img src="https://img.shields.io/badge/Swift-6_language-orange" alt="Swift 6 language mode"></a>
-  <img src="https://img.shields.io/badge/Xcode-27_preview-blueviolet" alt="Xcode 27 preview">
+  <a href="https://swift.org/"><img src="https://img.shields.io/badge/Swift-6-orange" alt="Swift 6"></a>
   <a href="https://www.gnu.org/licenses/gpl-3.0.html"><img src="https://img.shields.io/badge/License-GPL--3.0-green" alt="GPL-3.0"></a>
-  <img src="https://img.shields.io/badge/Status-ALPHA-orange" alt="ALPHA">
+  <a href="https://github.com/FedyaLight/sumi-webkit/releases/tag/v0.1.0-alpha.1"><img src="https://img.shields.io/badge/Release-v0.1.0--alpha.1-orange" alt="v0.1.0-alpha.1"></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/FedyaLight/sumi-webkit/actions/workflows/sumi-ci.yml"><img src="https://github.com/FedyaLight/sumi-webkit/actions/workflows/sumi-ci.yml/badge.svg?branch=main" alt="Sumi CI"></a>
-  <a href="https://github.com/FedyaLight/sumi-webkit/actions/workflows/architecture-guardrails.yml"><img src="https://github.com/FedyaLight/sumi-webkit/actions/workflows/architecture-guardrails.yml/badge.svg?branch=main" alt="Architecture Guardrails"></a>
+  <img width="960" src="./assets/browser-preview.webp" alt="Sumi Browser showing spaces, pinned pages, tabs, and Wikipedia on macOS">
 </p>
 
 ## Status
 
-Sumi is in alpha. The browser shell builds and runs locally, but it is not recommended as a primary browser yet.
+`v0.1.0-alpha.1` is Sumi's first public alpha. The app builds and runs as a working browser, but it is not yet recommended as a primary browser. Download the build for your Mac from [GitHub Releases](https://github.com/FedyaLight/sumi-webkit/releases/tag/v0.1.0-alpha.1): `arm64` for Apple silicon or `x86_64` for Intel.
 
-Alpha hardening is focused on the remaining user-safety pieces:
+The first alpha is intentionally narrow about its guarantees:
 
-- Safari password-manager extension compatibility.
+- Separate Apple-silicon (`arm64`) and Intel (`x86_64`) DMGs are build- and package-verified on macOS 15.5+ with Xcode 27 preview. The Intel artifact has not yet had a hardware test pass on an Intel Mac.
+- The current distribution path is outside the Mac App Store and is not yet Developer ID signed or notarized.
+- Safari Web Extension support is experimental and verified per extension/workflow, not as blanket Safari compatibility.
+- End-to-end updating from this first alpha and Apple Passwords/iCloud Keychain AutoFill validation remain follow-up release work.
 
-Completed user-safety pieces:
+See the [roadmap](docs/roadmap.md), [update behavior](docs/UPDATES.md), and [maintainer release process](docs/RELEASES.md).
 
-- [x] Multi-browser import, Zen-compatible export, and Sumi backup/restore through Settings > Data & Recovery.
-- [x] Sparkle-based Alpha update flow with GitHub Releases and static appcast infrastructure.
+## What Makes Sumi Different
 
-See [docs/roadmap.md](docs/roadmap.md) for the current Alpha status and planned work.
+Sumi is an independent open-source browser application around system WebKit. It is inspired by the workspace organization of Arc and Zen, but is not a clone of either. The project focuses on:
 
-Alpha update and release documentation:
+- Native macOS chrome and interaction through SwiftUI and AppKit.
+- Spaces, profiles, saved launchers, and multi-page layouts as browser-owned concepts.
+- Explicit ownership of physical WebViews, navigation, restoration, and profile data.
+- Optional features that stay runtime-inactive when disabled: no observers, timers, polling, or eager caches.
+- User-controlled customization and privacy surfaces rather than an always-on AI layer.
 
-- [Alpha install and update behavior](docs/UPDATES.md)
-- [Maintainer release process](docs/RELEASES.md)
+Sumi implements the browser application layer. WebKit still owns HTML/CSS rendering, JavaScript execution, networking, web processes, and the underlying `WKWebExtension` runtime.
 
-## Demo
+## Working in the First Alpha
 
-A short [Alpha demo video](https://youtu.be/7Wl-LCqUWbQ) shows the browser shell,
-sidebar organization, Glance, split view, the command palette, and memory-oriented
-runtime behavior.
+### Browsing and organization
 
-[![Sumi browser preview — watch the Alpha demo](assets/browser-preview.png)](https://youtu.be/7Wl-LCqUWbQ)
+- Tabs, multiple windows, profiles, spaces, pinned items, Essentials, nested folders, and drag-and-drop organization.
+- Durable split groups with two to four pages and Glance previews that can become tabs or split members.
+- Live Folders backed by RSS and GitHub feeds; the module is optional and off by default.
+- Incognito windows backed by a non-persistent private partition.
+- Command palette/address field with local actions, history, bookmarks, spaces, site search, and split-aware results.
+- Session restoration, closed-tab restoration, downloads, find in page, Reader presentation, page zoom, and custom keyboard shortcuts.
 
-## What Sumi Is
+### Media, performance, and appearance
 
-Sumi is an independent open-source macOS browser. It is not a commercial product, not an AI browser, and not an attempt to replace Chromium for every use case.
+- Sidebar Mini Player for jumping to, pausing, and muting active media.
+- Memory Saver, Energy Saver, and inactive-tab unloading while saved sidebar identity remains visible.
+- Custom workspace themes.
+- Optional Boosts for per-site color, typography, zoom, CSS, and element-hiding changes.
 
-The project focuses on:
+### Privacy and permissions
 
-- Native macOS behavior through Swift, SwiftUI, AppKit where appropriate, and system WebKit.
-- Arc/Zen-style organization without cloning either project.
-- A performance-first browser shell with tabs, spaces, profiles, Glance, split view, and sidebar organization.
-- Optional extension, customization, and privacy-cleanup modules that should not impose background runtime cost when disabled.
-- User-controlled features instead of always-on product surfaces.
+- Profile-specific `WKWebsiteDataStore` partitions and a fully ephemeral private partition.
+- Browser permission surfaces for camera, microphone, location, notifications, popups, autoplay, screen sharing, and related site settings.
+- Manual tracking-protection and ad-blocking levels backed by prepared, verified WebKit content-rule bundles. Raw filter lists are not downloaded or compiled in the browser process.
+- Manual and scheduled cleanup for history, site data, and caches, plus Global Privacy Control.
 
-## Scope And WebKit Boundary
+### Extensions
 
-Sumi implements the **browser application layer**. It does not implement a
-browser engine.
+The experimental extension module imports installed Safari Web Extensions from their containing macOS apps. Current maintainer-verified workflows are:
 
-| Sumi owns in this repository | System WebKit owns |
+| Extension | Alpha status |
 | --- | --- |
-| Native SwiftUI/AppKit browser chrome | HTML and CSS parsing and rendering |
-| Tabs, spaces, profiles, Glance, split view, and window behavior | JavaScript execution |
-| `WKWebView` creation, placement, lifecycle, and product-level navigation coordination | Web content, networking, and rendering processes |
-| Browser persistence, recovery, permissions UX, and update integration | Web platform implementation and process sandboxing |
-| Extension management and compatibility bridges around WebKit APIs | The underlying `WKWebExtension` and `WKWebView` runtime |
+| Bitwarden | Import, popup, sign-in, inline autofill, and tested native/biometric paths work. |
+| Proton Pass | Import, popup sign-in, permissions, dynamic scripting, and inline autofill work. |
+| Raindrop.io | Import, sign-in, save-page flow, persistence, and profile isolation work. |
+| Userscripts | The tested Userscripts Safari-extension and companion-library workflow works. |
+| 1Password for Safari | Partial only; its native-core host path is blocked by a macOS entitlement boundary outside Safari. |
+| Apple Passwords / iCloud Keychain | Sumi-specific integration is absent; system WebKit behavior exists, but release E2E is not yet verified. |
 
-The detailed ownership and module map lives in
-[docs/architecture.md](docs/architecture.md).
+The exact scope, caveats, and verification basis are in [Extension Compatibility](docs/extensions.md). Sumi does not claim compatibility with every Safari extension or every future version of the entries above.
 
-## Build And Run
+## Import, Export, and Recovery
+
+Settings → Data & Recovery includes:
+
+- Import from Arc, Brave, Chrome/Chromium, Edge, Firefox, Opera/Opera GX, Safari, Vivaldi, Yandex, and Zen.
+- Source-aware migration of profiles/workspaces, tabs, bookmarks, history, folders, favicons, and cookies where the source format and encryption permit it.
+- Browser2zen-compatible `.zenbackup` export for Zen.
+- Logical `.sumibackup` backup and Merge/Replace restore for Sumi-owned profiles, spaces, themes, bookmarks, Essentials, pinned launchers, folders, and regular tabs.
+- An automatic pre-restore backup before Replace mode, with bounded retention.
+
+Backup v1 intentionally excludes passwords, cookies, WebKit website data, history, permission decisions, extension packages/state, downloads, caches, and preferences. It is a portable browser-model backup, not a byte-for-byte copy of the local installation.
+
+## Build and Verify
+
+### Install an Alpha
+
+Download the matching DMG from [v0.1.0-alpha.1](https://github.com/FedyaLight/sumi-webkit/releases/tag/v0.1.0-alpha.1), open it, and drag Sumi to Applications. Choose `arm64` for Apple silicon or `x86_64` for Intel. The alpha is development-signed rather than Developer ID signed or notarized, so macOS may require **System Settings → Privacy & Security → Open Anyway** on first launch.
 
 ### Requirements
 
 - macOS 15.5 or newer.
-- Xcode 27 preview, matching the repository-owned CI toolchain manifest.
-- Apple Silicon for the currently validated build, test, and Alpha packaging
-  path. Intel is not a claimed release target.
-
-The project uses the Swift 6 language mode. The compiler version selected by
-the current Xcode 27 preview toolchain is reported by CI and may advance while
-the preview runner is updated.
-
-### Open In Xcode
+- Xcode 27 preview matching `scripts/ci/test-manifest.json`.
+- Apple silicon or Intel. Release tooling produces and verifies a separate app bundle and DMG for each architecture.
 
 ```sh
 git clone https://github.com/FedyaLight/sumi-webkit.git
@@ -100,178 +115,72 @@ xcodebuild -resolvePackageDependencies -project Sumi.xcodeproj -scheme Sumi
 open Sumi.xcodeproj
 ```
 
-Select the `Sumi` scheme and run the app. If Xcode cannot use the development
-team stored in the project, select your own team under **Signing &
-Capabilities** for the local checkout. Do not commit that local signing change.
+Select the `Sumi` scheme and run the app. If the stored development team is unavailable, select your own team under Signing & Capabilities for the local checkout and do not commit that change.
 
-### Verify The Checkout
+Repository checks are grouped by cost:
 
 ```sh
-# Text, shell, JSON, and CI-manifest validation
-scripts/ci/preflight.sh fast
-
-# Fast checks plus all portable architecture guardrails
-scripts/ci/preflight.sh portable
-
-# Portable checks plus the complete PR test profile; requires Xcode 27
-scripts/ci/preflight.sh full
+scripts/ci/preflight.sh fast      # text, shell, JSON, and CI manifest
+scripts/ci/preflight.sh portable  # fast checks plus architecture guardrails
+scripts/ci/preflight.sh full      # complete PR profile; requires Xcode 27
 ```
 
-The CI manifest is the source of truth for package tests, app-test roles,
-Xcode schemes, and toolchain selection. To inspect the live test inventory:
+The live test inventory and its owning CI lanes are available through:
 
 ```sh
 scripts/ci/run_tests.sh inventory
 ```
 
-## Working Browser Features
+## Architecture
 
-Current Alpha builds include:
+Sumi uses a modular, state-driven architecture inspired by MVVM-C, with explicit state ownership, feature-scoped contexts, application services, and typed ports around WebKit and persistence.
 
-- Native macOS browser shell using WebKit and SwiftUI.
-- Tabs, sidebar, profiles, and spaces.
-- Essentials, pinned items, nested folders, and drag-and-drop sidebar organization.
-- Essentials shared across spaces that belong to the same profile.
-- Pinned items that live in a single space and appear like normal tabs.
-- Pinned and essential items that keep their visible sidebar identity while the live WebView/runtime instance is unloaded to reduce memory use.
-- Glance, which opens over the current tab or from pinned, essential, and launcher-style items, closes quickly, can expand into a normal tab, and can move into split view.
-- Split view with up to four views.
-- Incognito windows backed by an ephemeral profile and ephemeral tabs.
-- Command palette search/address field with contextual local results, site search, history and bookmark suggestions, and split-aware actions.
-- Bookmarks, history, and search inside bookmarks, history, and settings.
-- Custom themes.
-- Data & Recovery settings for importing Arc, Chromium-family browsers, Firefox, Safari, and Zen; browser2zen-compatible `.zenbackup` export to Zen; and logical Sumi `.sumibackup` backup/restore.
-- Session restore setting for restoring the previous session or starting clean.
-- Mini Player at the bottom of the sidebar for jumping to playing media, pausing media, and muting media.
-- Memory modes and inactive tab unloading that preserve visible organization after a live WebView/runtime instance is unloaded.
-- Manual Tracking Protection and Adblock levels backed by prepared WebKit content-rule bundles from `sumi-protection-bundles`; the browser does not fetch raw filter lists or generate rules at runtime.
-- Automatic history/site-data cleanup modules.
+The short [Architecture Overview](docs/architecture-overview.md) explains the module graph, UI-to-runtime flow, source-of-truth map, role vocabulary, and feature template. [Architecture Case Studies](docs/architecture/case-studies.md) explain three seams that are unusual outside browser engineering:
 
-## Extensions And Safari
+- Durable page identity versus physical WebView residence.
+- Profile-isolated Web Extension runtimes.
+- Snapshot-based session restoration.
 
-Safari Extension compatibility is the active engineering milestone. Sumi is targeting Safari Extensions because they are supported natively by WebKit and match the project's performance and energy goals.
+The exhaustive invariants remain in the [runtime architecture reference](docs/architecture.md). The [documentation index](docs/README.md) separates product, architecture, subsystem, and release material.
 
-The current direction is:
+## Quality and Performance
 
-- Safari extensions on top of `WKWebExtensions`.
-- Current installation paths for development: scanning and importing installed `.app` / `.appex` extensions.
-- Near-term validation target: real-world password-manager extensions.
+Pull requests run independent `SumiDomain` and `SumiWebRuntime` package lanes plus app shards for policy, persistence/migration, UI-free services, and WebKit-heavy behavior. Nightly validation owns the exhaustive app inventory and UI launch smoke.
 
-Sumi does not currently claim that Bitwarden, Proton Pass, 1Password, or other password managers work. The near-term target is that a user can import Safari password-manager extensions and use them from the browser UI.
-
-See [docs/SumiSafariExtensionCompatibility.md](docs/SumiSafariExtensionCompatibility.md) for the current capability and status summary.
-
-## Architecture Principles
-
-Sumi WebKit is a native macOS application. The current target is macOS 15.5+.
-
-The project prefers:
-
-- System WebKit for page rendering.
-- SwiftUI and AppKit for native browser chrome and platform integration.
-- Native platform surfaces over heavy web/JavaScript-based browser UI where possible.
-- Lazy optional modules and no runtime work when a module is disabled.
-- Avoiding background services, timers, and long-running tasks unless they are necessary and visible in the product design.
-- Extension-based AI tools later, once extension compatibility matures, instead of a built-in AI panel.
-
-The high-level architecture notes live in [docs/architecture.md](docs/architecture.md).
-
-## Verification And Performance Work
-
-Pull requests run independent lanes for the `SumiDomain` and `SumiWebRuntime`
-packages plus app-test shards covering pure policy, persistence and migration,
-UI-free services, and WebKit-heavy behavior. Nightly validation additionally
-owns the exhaustive app inventory and UI launch smoke.
-
-`Performance-first` is a design constraint, not an unqualified claim that Sumi
-outperforms another browser. The repository includes a repeatable unsigned
-Debug/Release regression harness and documented Instruments scenarios:
+“Performance-first” is a design constraint, not an unsupported claim that Sumi beats another browser. The repo includes a repeatable regression harness and documented Instruments scenarios:
 
 ```sh
 scripts/run_perf_regression.sh verify
 ```
 
-See [docs/performance-profiling.md](docs/performance-profiling.md) for trace
-templates, signposts, and manual comparison requirements. Comparative numbers
-should only be published together with their fixtures, hardware, OS, and
-reproduction method.
+See [Performance Profiling](docs/performance-profiling.md). Comparative results should include fixtures, hardware, OS, build configuration, and reproduction steps.
 
-## Roadmap Summary
-
-Near-term work:
-
-- Safari password-manager extension compatibility.
-
-Later work under consideration:
-
-- Live folders.
-- Site customization/boosts.
-- Fully encrypted sync without data collection.
-- Multi-window workflows.
-- Improved profile isolation.
-- Broader migration of browser-specific data that platform APIs or source
-  encryption do not currently make portable.
-
-## Project Structure
-
-Paths below are relative to the repository root.
+## Repository Map
 
 ```text
-.
-├── Sumi.xcodeproj          # Xcode project for the Sumi target and tests
-├── App/                    # Entry point, window/content shell, commands
-├── Sumi/                   # Primary app target
-│   ├── Managers/           # BrowserManager, TabManager, ExtensionManager, ...
-│   ├── Models/             # Tab, Space, Profile, BrowserConfig, ...
-│   ├── Components/         # SwiftUI UI: Sidebar, Browser, Settings, Glance, ...
-│   ├── Services/           # Cross-cutting services
-│   ├── Theme/              # Theming and chrome styling
-│   ├── Utils/              # Helpers and WebKit wrappers
-│   └── Resources/          # Bundled scripts and related assets
-├── CommandPalette/            # Command palette UI and accessories
-├── SidebarChrome/          # Sidebar chrome (spaces sidebar shell)
-├── Settings/               # Settings-related helpers
-├── UI/                     # Shared lightweight UI helpers
-├── Vendor/                 # Vendored third-party components
-├── SumiTests/              # Unit tests
-├── SumiUITests/            # UI tests
-├── assets/                 # Logo and public visual assets
-├── docs/                   # Public and maintainer documentation
-└── scripts/                # Development scripts
+Sumi.xcodeproj              Xcode project and shared schemes
+App/                        App entry point, composition, windows, commands
+Packages/SumiDomain/        Foundation-only domain values and policies
+Packages/SumiWebRuntime/    WebKit session/navigation runtime, no SwiftUI
+Sumi/                       App features, browser state, services, persistence
+CommandPalette/             Command palette UI and search session
+SidebarChrome/              Sidebar presentation and interaction
+SumiTests/                  App unit and integration tests
+SumiUITests/                UI smoke tests
+docs/                       Public, architecture, and maintainer documentation
+scripts/                    CI, guardrails, performance, and release tooling
 ```
 
-Some maintainer-only docs and local artifacts may exist in a full checkout, but public documentation under `docs/` is intended to be tracked.
+## Contributing and Security
 
-## Contributing
+Contributions should preserve native macOS/WebKit behavior, narrow ownership boundaries, zero-cost disabled modules, and honest compatibility claims. Start with [CONTRIBUTING.md](CONTRIBUTING.md).
 
-Sumi is experimental. Contributions should preserve the native macOS/WebKit direction, performance-first design, optional module boundaries, and honest status of incomplete features.
+Do not report vulnerabilities or include credentials, cookies, private browsing data, or password-manager vault contents in public issues. Follow [SECURITY.md](SECURITY.md).
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## License And Attribution
+## License and Provenance
 
 Sumi is licensed under the GNU General Public License v3.0. See [LICENSE](LICENSE).
 
-The project is independent, but it was not written entirely from scratch. The codebase started from the open-source Nook browser and has been heavily reworked toward Sumi's goals. Sumi also includes vendored or adapted open-source components from DuckDuckGo's Apple browser projects, including BrowserServicesKit and URLPredictor, under their applicable licenses.
+The codebase began from the GPL-licensed Nook browser and has since been substantially reworked around Sumi's product and runtime architecture. It also contains vendored or adapted components from DuckDuckGo's Apple browser projects under their applicable licenses. Prepared protection bundles are built in [`FedyaLight/sumi-protection-bundles`](https://github.com/FedyaLight/sumi-protection-bundles) from attributed upstream datasets and filter lists.
 
-Sumi's prepared protection bundles are generated outside the browser in [`FedyaLight/sumi-protection-bundles`](https://github.com/FedyaLight/sumi-protection-bundles). The tracking-protection group is derived from DuckDuckGo Tracker Radar / Tracker Data Set metadata under CC BY-NC-SA 4.0 terms. The adblock groups are generated from source lists such as AdGuard and uBlock filter lists; their upstream source-list terms remain separate and are tracked through bundle manifests/source metadata.
-
-The Arc/Zen migration work is compatible with [browser2zen](https://github.com/tarikbc/browser2zen) export data and was informed by that project's public MIT-licensed behavior and schema shape. Sumi does not vendor browser2zen or arc2zen code and does not add a Python/runtime dependency on them.
-
-See [NOTICE.md](NOTICE.md) for attribution and affiliation details.
-
-### Code Provenance At A Glance
-
-| Area | Provenance |
-| --- | --- |
-| Repository foundation | Started from the GPL-licensed Nook browser and subsequently reworked around Sumi's product and architecture goals. |
-| Current Sumi-specific product and runtime architecture | Developed in this repository; line-level upstream notices remain authoritative where code was retained or adapted. |
-| `Vendor/DDG/BrowserServicesKit` | Pinned DuckDuckGo snapshot containing only the `Common` and `Navigation` source targets. |
-| Bookmark import/storage and persistent-container helpers | Ported or adapted from Apache-2.0 DuckDuckGo sources with notices retained in the affected files. |
-| Permission implementation, UI, and tests | Sumi-owned except for the explicitly documented adapted geolocation ABI header. |
-| Protection rule data | Prepared outside the app from attributed upstream datasets and filter lists; source terms are recorded in bundle metadata. |
-
-The complete attribution and copied/adapted-code inventory is maintained in
-[NOTICE.md](NOTICE.md), [LICENSE_NOTES.md](LICENSE_NOTES.md),
-[Vendor/DDG/README.md](Vendor/DDG/README.md), and
-[docs/permissions/LICENSE_NOTES.md](docs/permissions/LICENSE_NOTES.md).
+The complete attribution and copied/adapted-code inventory is maintained in [NOTICE.md](NOTICE.md), [LICENSE_NOTES.md](LICENSE_NOTES.md), [Vendor/DDG/README.md](Vendor/DDG/README.md), and [docs/permissions/LICENSE_NOTES.md](docs/permissions/LICENSE_NOTES.md).

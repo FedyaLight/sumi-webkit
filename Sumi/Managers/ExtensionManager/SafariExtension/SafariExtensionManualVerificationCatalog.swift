@@ -59,12 +59,12 @@ enum SafariExtensionManualVerificationCatalog {
                 saveFlow: .notApplicable,
                 profileIsolation: .pending,
                 desktopLaunchLoop: .no,
-                nativeMessagingProtocol: .unknown,
-                autofill: .fixed,
-                popupAnchoring: .fixed,
+                nativeMessagingProtocol: .yes,
+                autofill: .yes,
+                popupAnchoring: .yes,
                 notes: """
-                Inline UI: manifest content_scripts CSS + overlay iframes; tab-reconcile fix applied — \
-                fixtures expected, GUI retest pending. NM companionAppProtocolUnknown; does not block overlay.
+                2026-07-30 maintainer verification: import, popup, sign-in, inline autofill, and tested \
+                local biometric/native-messaging paths work. Profile-isolation release retest pending.
                 """
             )
         case "1password":
@@ -86,20 +86,19 @@ enum SafariExtensionManualVerificationCatalog {
             )
         case "proton-pass":
             return SafariExtensionManualVerificationRow(
-                importEnable: .notVerified,
+                importEnable: .yes,
                 mv2WarningObserved: .notApplicable,
-                popup: .notVerified,
-                signInSession: .notVerified,
+                popup: .yes,
+                signInSession: .yes,
                 saveFlow: .notApplicable,
-                profileIsolation: .notVerified,
-                desktopLaunchLoop: .notVerified,
-                nativeMessagingProtocol: .unknown,
-                autofill: .classified,
-                popupAnchoring: .notVerified,
+                profileIsolation: .pending,
+                desktopLaunchLoop: .no,
+                nativeMessagingProtocol: .yes,
+                autofill: .yes,
+                popupAnchoring: .yes,
                 notes: """
-                Inline UI: orchestrator manifest content_script + dropdown.html; scripting granted — \
-                worker-driven client.js bootstrap unblocked (SafariExtensionScriptingRuntimeTests). \
-                Manual GUI retest pending.
+                2026-07-30 maintainer verification: import, popup sign-in, permissions, worker-driven \
+                scripting, and inline autofill work. Profile-isolation release retest pending.
                 """
             )
         default:

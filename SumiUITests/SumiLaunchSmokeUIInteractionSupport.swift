@@ -1628,19 +1628,16 @@ extension SumiLaunchSmokeUITestCase {
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
-        let root: XCUIElement = searchRoot ?? app
-        let closeButton = element(
-            withIdentifier: BrowserWindowControlIdentifiers.closeButton,
-            inSearchRoot: root
-        )
-        let minimizeButton = element(
-            withIdentifier: BrowserWindowControlIdentifiers.minimizeButton,
-            inSearchRoot: root
-        )
-        let zoomButton = element(
-            withIdentifier: BrowserWindowControlIdentifiers.zoomButton,
-            inSearchRoot: root
-        )
+        let root: XCUIElement = searchRoot ?? window
+        let closeButton = root.buttons[
+            BrowserWindowControlIdentifiers.closeButton
+        ]
+        let minimizeButton = root.buttons[
+            BrowserWindowControlIdentifiers.minimizeButton
+        ]
+        let zoomButton = root.buttons[
+            BrowserWindowControlIdentifiers.zoomButton
+        ]
 
         for (identifier, element) in [
             (BrowserWindowControlIdentifiers.closeButton, closeButton),

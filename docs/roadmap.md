@@ -1,87 +1,55 @@
 # Roadmap
 
-Sumi Browser is an Alpha project. This roadmap is a planning snapshot, not a release promise.
+`v0.1.0-alpha.1` is Sumi's first public alpha. This document records its boundaries and the direction after release; it is not a promise of dates or blanket compatibility.
 
-## Current Status
+## First Alpha Scope
 
-- Sumi builds and runs locally as a working native macOS browser shell.
-- It is not recommended as a primary browser yet.
-- Alpha hardening is focused on Safari password-manager compatibility and update-path validation.
+The first alpha includes:
 
-## Current Milestone
+- A native macOS browser shell with tabs, multiple windows, profiles, spaces, pinned items, Essentials, nested folders, Glance, and durable split groups.
+- Session and closed-tab restoration, downloads, Reader presentation, command palette, bookmarks, history, themes, keyboard shortcuts, and media controls.
+- Memory and Energy Saver behavior with inactive-page unloading.
+- Profile-specific website-data partitions and ephemeral private browsing.
+- Permission/site-settings UI, Global Privacy Control, prepared tracking-protection/ad-block bundles, and data cleanup.
+- Browser import, Zen export, and Sumi backup/restore through Data & Recovery.
+- Experimental Safari Web Extension support with maintainer-verified Bitwarden, Proton Pass, Raindrop.io, and Userscripts workflows.
+- Optional, off-by-default Live Folders and Boosts modules.
+- Sparkle-based alpha update infrastructure using GitHub Releases and a static signed appcast.
 
-Safari password-manager extension compatibility.
+The detailed feature and compatibility boundaries are in the [README](../README.md) and [extension matrix](extensions.md).
 
-The near-term target is that a user can install an unpacked or zipped password-manager extension and use it from the browser UI. Sumi does not currently claim that Bitwarden, Proton Pass, or 1Password already work.
+## Release Gates for `v0.1.0-alpha.1`
 
-## Completed Milestone: Browser Import And Backup/Restore
+- Run the complete release gate suite with the repository-owned Xcode 27 toolchain.
+- Repeat the documented manual extension checks on the packaged build.
+- Validate first install on a clean macOS user account.
+- Publish separate Apple-silicon and Intel DMGs with release notes.
+- Prove an update from the published first alpha to a newer controlled alpha artifact.
+- Verify and document Apple Passwords/iCloud Keychain behavior in Sumi; do not claim full AutoFill support before the E2E result exists.
 
-Sumi now has multi-browser migration and Sumi backup/restore surfaces in Settings > Data & Recovery.
+## Known Alpha Boundaries
 
-- Arc and Zen imports preserve Sumi's own model: essentials remain profile-scoped launchers, pinned items remain space launchers, regular tabs remain regular tabs, and nested sidebar folder hierarchy is preserved instead of flattened.
-- Arc, Chrome/Chromium, Edge, Brave, Firefox, Safari, Zen, Vivaldi, Opera/Opera GX, and Yandex imports include the source data each browser exposes: profiles/workspaces, tabs, bookmarks, history, favicons where available, and cookies when the source encryption permits them to be moved.
-- Export for Zen writes a browser2zen v1-compatible `.zenbackup` with workspaces, tabs, folders, bookmarks, history, containers, and cookies.
-- Sumi backup/restore uses `.sumibackup` logical JSON archives. Backup v1 includes profiles, spaces and themes, bookmarks, essentials, pinned launchers, folders, and regular tabs. It excludes history, permission decisions, extension metadata and payloads, cookies, passwords, WebKit website data, caches, downloads, preferences, and session settings.
-- Restore supports explicit Merge and Replace modes. Replace writes an automatic pre-restore backup and prunes old automatic pre-restore files so the feature does not accumulate unbounded app-support data.
+- The Apple-silicon and Intel artifacts are independently compiled and package-verified. Intel hardware behavior still needs a pass on a physical Intel Mac.
+- The initial DMGs are distributed outside the Mac App Store and are not yet Developer ID signed or notarized.
+- Safari Web Extension compatibility remains extension- and workflow-specific.
+- 1Password 8 native-core integration is blocked by a macOS host-entitlement boundary outside Safari.
+- Backup v1 is a logical Sumi-model backup, not a copy of passwords, cookies, WebKit data, history, extensions, downloads, or preferences.
+- Sumi is not yet recommended as a primary browser.
 
-## Done In Alpha
+## After the First Alpha
 
-- Working native macOS browser shell.
-- Tabs, sidebar, spaces, and profiles.
-- Glance.
-- Split view up to four views.
-- Incognito windows backed by an ephemeral profile and ephemeral tabs.
-- Command palette.
-- Bookmarks and history.
-- Sidebar drag-and-drop organization.
-- Pinned items, essentials, nested folders, and folder ungroup/delete actions.
-- Custom themes.
-- Session restore setting.
-- Mini Player jump-to-media / pause / mute.
-- Memory modes and inactive tab unloading.
-- Automatic cleanup settings.
-- Extension manager UI.
-- Safari extension compatibility report UI.
-- Real password-manager package trials.
-- Data & Recovery import/export/backup/restore.
-- Sparkle Alpha updates through GitHub Releases and a static HTTPS appcast.
+Priorities will be driven by reproducible alpha feedback rather than speculative feature breadth:
 
-## Experimental Or In Validation
+- Crash, data-safety, restoration, and update-path hardening.
+- Broader extension compatibility only where public WebKit and macOS APIs permit a generic solution.
+- Improved multi-window workflows and profile isolation diagnostics.
+- Accessibility and interaction-quality passes for sidebar, drag-and-drop, focus, and native window behavior.
+- Developer ID signing, hardened runtime, notarization, and stapling for a wider distribution path.
 
-- Safari extension scripting API.
-- Safari extension service-worker lifecycle.
-- Native messaging.
-- Automatic history and site-data cleanup.
-- Extension compatibility reporting.
+## Later Exploration
 
-Additional details:
-- Automatic cleanup intervals include 1, 7, 30, and 90 days. Cleanup is intended to remove browser leftovers and site data where possible, not only history.
-- The Mini Player does not currently include next/previous track controls or a timeline.
+- End-to-end encrypted sync without collecting browsing data.
+- Broader migration of browser data that source APIs and encryption currently make non-portable.
+- Additional optional browser tools when they can remain zero-cost while disabled.
 
-## Remaining Safari Extension Blockers
-
-- Service-worker lifecycle on real extension events.
-- MAIN world bridge.
-- Multi-frame, `about_blank`, and `match_origin_as_fallback` behavior.
-- Native messaging fixture exchange and trusted host configuration.
-- Offscreen, webRequest, and DNR product behavior.
-- Arbitrary `scripting.executeScript` and `insertCSS`.
-
-## Remaining Alpha Hardening
-
-- Safari password-manager compatibility.
-- End-to-end published update validation for each Alpha release.
-
-## Near-Term
-
-- Safari password-manager support.
-- Alpha release validation and documentation hardening.
-
-## Later
-
-- Live folders.
-- Site customization/boosts.
-- Fully encrypted sync without data collection.
-- Multi-window workflows.
-- Improved profile isolation redesign.
-- Broader migration of browser-specific data that platform APIs or source encryption do not currently make portable.
+No built-in AI panel is planned for the first alpha. AI tools can arrive through extensions after the extension runtime is mature enough.

@@ -9,8 +9,10 @@ guard_initialize "$repo_root"
 
 sources=(
   Sumi/Managers/TabManager/ShortcutPinMovePreparer.swift
+  Sumi/Managers/TabManager/ShortcutPinMoveCommitter.swift
   Sumi/Managers/TabManager/ShortcutPinMoveTransaction.swift
   Sumi/Managers/TabManager/ShortcutPinReorderTransaction.swift
+  Sumi/Managers/TabManager/ShortcutLiveFolderPlacementReconciler.swift
   Sumi/Managers/TabManager/ShortcutPinPlacementCommandService.swift
   Sumi/Managers/TabManager/RegularTabShortcutConversionCommand.swift
   Sumi/Managers/TabManager/RegularTabEssentialPinningService.swift
@@ -46,8 +48,10 @@ sources=(
 )
 physical_role_files=(
   Sumi/Managers/TabManager/ShortcutPinMovePreparer.swift
+  Sumi/Managers/TabManager/ShortcutPinMoveCommitter.swift
   Sumi/Managers/TabManager/ShortcutPinMoveTransaction.swift
   Sumi/Managers/TabManager/ShortcutPinReorderTransaction.swift
+  Sumi/Managers/TabManager/ShortcutLiveFolderPlacementReconciler.swift
   Sumi/Managers/TabManager/ShortcutPinPlacementCommandService.swift
   Sumi/Managers/TabManager/RegularTabShortcutConversionCommand.swift
   Sumi/Managers/TabManager/RegularTabEssentialPinningService.swift
@@ -131,8 +135,10 @@ guard_exact \
 
 declare -a type_limits=(
   'ShortcutPinMovePreparer|4'
+  'ShortcutPinMoveCommitter|3'
   'ShortcutPinMoveTransaction|5'
   'ShortcutPinReorderTransaction|4'
+  'ShortcutLiveFolderPlacementReconciler|2'
   'ShortcutPinPlacementCommandService|2'
   'RegularTabShortcutConversionCommand|3'
   'RegularTabEssentialPinningService|4'

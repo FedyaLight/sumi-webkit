@@ -22,6 +22,17 @@ Document user-visible behavior changes, new settings, compatibility changes,
 and any intentional limitations. Avoid benchmark claims unless the benchmark
 methodology and reproduction steps are documented.
 
+Start with the [documentation index](docs/README.md). New architecture prose
+should enter through the short [architecture overview](docs/architecture-overview.md);
+put exact runtime invariants in [docs/architecture.md](docs/architecture.md) only
+when they are genuinely maintainer-level contracts. Use the role vocabulary in
+the overview and the browser language in [CONTEXT.md](CONTEXT.md) instead of
+introducing a synonym for an existing concept.
+
+For a new UI feature, add only the roles it needs: a View, a narrow Context when
+the UI needs one, feature-owned State when there is mutable truth, and a Service
+only when one cohesive operation crosses owners or runtime ports.
+
 ## Pull Requests
 
 Before opening a pull request:

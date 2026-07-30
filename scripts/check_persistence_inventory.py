@@ -148,7 +148,7 @@ def validate_architecture(inventory: dict[str, object]) -> None:
         "DatabasePool(",
         "PRAGMA foreign_keys = ON",
         "PRAGMA user_version",
-        "PRAGMA user_version = 1",
+        "PRAGMA user_version = 2",
         "unsupportedSchemaVersion",
     )
     for fragment in required_database_fragments:

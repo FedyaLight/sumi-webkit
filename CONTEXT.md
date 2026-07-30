@@ -32,6 +32,14 @@ _Avoid_: Rule cache, blocker manifest
 
 ## Split View Language
 
+**Durable Page Identity**:
+The stable identity of a page in browser state, independent of whether its live web content is currently materialized, unloaded, or presented in more than one window.
+_Avoid_: WebView identity, loaded tab
+
+**WebView Residence**:
+The exact window-scoped placement of one materialized page instance. A Durable Page Identity may outlive every residence and may have distinct residences in different windows.
+_Avoid_: Tab-owned WebView, global page view
+
 **Split Group**:
 A durable sidebar item containing two to four ordered page identities and one layout. The group keeps its identity when moved between Regular, Pinned, Folder, and Essentials.
 _Avoid_: Split placeholder row, ghost row

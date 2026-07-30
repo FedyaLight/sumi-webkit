@@ -6,6 +6,10 @@ the WebKit direction, but the public product name is Sumi Browser.
 
 The current target is macOS 15.5+.
 
+For the module map, state flow, source-of-truth table, and role vocabulary,
+start with [Architecture Overview](architecture-overview.md). This document is
+the maintainer reference for exact runtime invariants.
+
 ## Target Module Graph
 
 The repository keeps only two package boundaries with independent tests and
@@ -485,7 +489,7 @@ preserve user organization while reducing unnecessary live runtime state.
 
 ## Optional Modules
 
-Extensions, site customization, and privacy cleanup are feature areas that should
+Extensions, Live Folders, Boosts, and privacy cleanup are feature areas that
 remain optional. When disabled, they should avoid background runtime cost.
 
 ## Protection
@@ -499,8 +503,9 @@ run `adblock-rust`, or convert DuckDuckGo Tracker Radar data at runtime.
 
 ## Extensions
 
-Safari extension support is built around `WKWebExtensions`. The active milestone
-is real-world password-manager extension compatibility.
+Safari extension support is built around `WKWebExtensions`. Release claims are
+extension- and workflow-specific; the current matrix is maintained in
+[Extension Compatibility](extensions.md).
 
 Normal browsing views are the default extension participation surface. Helper
 surfaces such as favicon downloads, previews, and mini windows should not

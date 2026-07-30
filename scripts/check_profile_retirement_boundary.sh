@@ -88,12 +88,12 @@ guard_expect_no_matches \
   '\bBrowserProfileSwitchTransitionHost\b|host:[[:space:]]*browserManager' \
   --glob '*.swift' "${production_roots[@]}"
 
-schema_version_count="$({
+schema_version_write_count="$({
   guard_count_matches \
-    'PRAGMA user_version = 1' \
+    'PRAGMA user_version = 2' \
     "$database_schema"
 })"
-guard_exact 'unified database schema version declaration' "$schema_version_count" 1
+guard_exact 'unified database schema version writes' "$schema_version_write_count" 2
 
 retirement_table_count="$({
   guard_count_matches \

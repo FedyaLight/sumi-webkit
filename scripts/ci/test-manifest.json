@@ -529,6 +529,7 @@
         "SumiTests/SidebarListIdentityTransferTests",
         "SumiTests/SidebarListPresentationTests",
         "SumiTests/SidebarListSurfaceMaterializationTests",
+        "SumiTests/SidebarLiveFolderCreationTests",
         "SumiTests/SidebarPinCommandIdentityTests",
         "SumiTests/SidebarPointerInteractionRegressionTests",
         "SumiTests/SidebarPresentationStateOwnerTests",

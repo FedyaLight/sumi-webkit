@@ -13,24 +13,29 @@ enum ShortcutPinCommandComposition {
         bindings: ShortcutTabBindingSynchronizer,
         essentialsVisualOrder: EssentialsVisualOrderTransaction
     ) -> ShortcutPinPlacementCommandService {
-        ShortcutPinPlacementCommandService(
+        let liveFolders = ShortcutLiveFolderPlacementReconciler(
+            pins: pins,
+            runtimeConnection: runtimeConnection
+        )
+        return ShortcutPinPlacementCommandService(
             moves: ShortcutPinMoveTransaction(
                 structuralLookup: structuralLookup,
                 preparer: ShortcutPinMovePreparer(
-                    runtimeConnection: runtimeConnection,
+                    liveFolders: liveFolders,
                     pins: pins,
                     store: store,
                     bindings: bindings
                 ),
-                runtimeConnection: runtimeConnection,
-                store: store,
-                bindings: bindings,
-                structuralMutations: structuralMutations
+                liveFolders: liveFolders,
+                committer: ShortcutPinMoveCommitter(
+                    store: store,
+                    bindings: bindings,
+                    structuralMutations: structuralMutations
+                )
             ),
             reorders: ShortcutPinReorderTransaction(
                 structuralLookup: structuralLookup,
-                pins: pins,
-                runtimeConnection: runtimeConnection,
+                liveFolders: liveFolders,
                 spacePinnedVisualOrder: spacePinnedVisualOrder,
                 essentialsVisualOrder: essentialsVisualOrder
             )

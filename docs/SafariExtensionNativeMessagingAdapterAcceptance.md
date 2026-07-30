@@ -1,6 +1,8 @@
 # Safari Extension Native Messaging Adapter — Manual Acceptance
 
-Last updated: 2026-06-11 (native WebKit cleanup; stale externally-connectable bridge removed)
+Last updated: 2026-07-30 (first-alpha documentation pass)
+
+This checklist covers the `WKWebExtensionControllerDelegate` native-messaging adapter path. Proton Pass also uses a separate Safari containing-application (`application.id`) backend implemented by `ProtonPassSafariApplicationIDAdapter`; describing Proton as adapter-unavailable below refers only to the native-messaging adapter registry, not to the verified Proton Pass product workflow. See [Extension Compatibility](extensions.md) for release status.
 
 Use with Extensions module enabled. Automated regression coverage lives in
 `SumiNativeMessagingAdapterRegressionGuardTests`; clean-import audits run through
@@ -31,9 +33,9 @@ and DuckDuckGo [`apple-browsers`](https://github.com/duckduckgo/apple-browsers).
   popup lifecycle, or manual password-manager verification.
 - Bitwarden's `desktop_proxy` adapter is a bounded desktop-integration path for
   native messaging / biometrics probes. It is not required for base Safari-like
-  extension import, popup, or autofill UI readiness. 1Password and Proton Pass
-  intentionally remain adapter-unavailable / protocol-unknown until a documented
-  companion-app protocol exists.
+  extension import, popup, or autofill UI readiness. 1Password remains
+  adapter-unavailable / protocol-unknown. Proton Pass has a documented, separate
+  containing-application message backend; it is not registered as a native-messaging adapter.
 - Diagnostics may record identifiers, routing buckets, launch/suppression flags,
   retry buckets, and session state. They must not record credentials, tokens,
   cookies, form values, or native-message payload bodies.

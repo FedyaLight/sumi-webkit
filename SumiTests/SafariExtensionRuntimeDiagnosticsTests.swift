@@ -32,9 +32,9 @@ final class SafariExtensionRuntimeDiagnosticsTests: XCTestCase {
         XCTAssertEqual(row.popup, .yes)
         XCTAssertEqual(row.signInSession, .yes)
         XCTAssertEqual(row.desktopLaunchLoop, .no)
-        XCTAssertEqual(row.nativeMessagingProtocol, .unknown)
-        XCTAssertEqual(row.autofill, .fixed)
-        XCTAssertEqual(row.popupAnchoring, .fixed)
+        XCTAssertEqual(row.nativeMessagingProtocol, .yes)
+        XCTAssertEqual(row.autofill, .yes)
+        XCTAssertEqual(row.popupAnchoring, .yes)
     }
 
     func testManualVerificationCatalogOnePasswordPending() {
@@ -45,12 +45,12 @@ final class SafariExtensionRuntimeDiagnosticsTests: XCTestCase {
         XCTAssertTrue(row.notes.contains("inject-content-scripts"))
     }
 
-    func testManualVerificationCatalogProtonPassScriptingGranted() {
+    func testManualVerificationCatalogProtonPassStatuses() {
         let row = SafariExtensionManualVerificationCatalog.row(forTargetKey: "proton-pass")
-        XCTAssertEqual(row.importEnable, .notVerified)
-        XCTAssertEqual(row.autofill, .classified)
-        XCTAssertEqual(row.nativeMessagingProtocol, .unknown)
-        XCTAssertTrue(row.notes.contains("scripting granted"))
+        XCTAssertEqual(row.importEnable, .yes)
+        XCTAssertEqual(row.autofill, .yes)
+        XCTAssertEqual(row.nativeMessagingProtocol, .yes)
+        XCTAssertTrue(row.notes.contains("worker-driven scripting"))
     }
 
     func testInlineUIClassificationCatalogPasswordManagers() {

@@ -177,11 +177,13 @@ final class SumiCommandPaletteFocusUITests: SumiLaunchSmokeUITestCase {
                 )
             ).firstMatch
             XCTAssertTrue(result.waitForExistence(timeout: 5))
-            result.click()
+            result.coordinate(
+                withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)
+            ).click()
 
             XCTAssertTrue(
                 app.splitGroups.firstMatch.waitForExistence(timeout: 5),
-                "Split Vertical dismissed the palette without creating a split"
+                "Add Right Split did not create a browser content split"
             )
         }
     }
@@ -214,13 +216,24 @@ final class SumiCommandPaletteFocusUITests: SumiLaunchSmokeUITestCase {
                 )
             ).firstMatch
             XCTAssertTrue(splitCommand.waitForExistence(timeout: 5))
-            splitCommand.click()
+            splitCommand.coordinate(
+                withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)
+            ).click()
 
             input = element(
                 withIdentifier: "command-palette-input",
                 in: app
             )
             XCTAssertTrue(waitForKeyboardFocus(in: input, timeout: 5))
+            let clearedSplitPicker = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "value == %@", ""),
+                object: input
+            )
+            XCTAssertEqual(
+                XCTWaiter.wait(for: [clearedSplitPicker], timeout: 5),
+                .completed,
+                "Split picker did not clear the command query"
+            )
             input.typeText("https://example.com/sumi-split-partner")
             input.typeKey(.return, modifierFlags: [])
             XCTAssertTrue(app.splitGroups.firstMatch.waitForExistence(timeout: 5))

@@ -3,18 +3,18 @@ import SumiDomain
 
 @MainActor
 final class ShortcutPinMovePreparer {
-    private let runtimeConnection: TabRuntimePortConnection
+    private let liveFolders: ShortcutLiveFolderPlacementReconciler
     private let pins: ShortcutPinCollectionStateOwner
     private let store: ShortcutPinStoreOwner
     private let bindings: ShortcutTabBindingSynchronizer
 
     init(
-        runtimeConnection: TabRuntimePortConnection,
+        liveFolders: ShortcutLiveFolderPlacementReconciler,
         pins: ShortcutPinCollectionStateOwner,
         store: ShortcutPinStoreOwner,
         bindings: ShortcutTabBindingSynchronizer
     ) {
-        self.runtimeConnection = runtimeConnection
+        self.liveFolders = liveFolders
         self.pins = pins
         self.store = store
         self.bindings = bindings
@@ -30,7 +30,7 @@ final class ShortcutPinMovePreparer {
     ) -> LiveShortcutPresentationRefreshAdmission? {
         guard pins.shortcutPin(by: pin.id) === pin else { return nil }
         if let folderID,
-           runtimeConnection.current?.isLiveFolder(folderID) == true {
+           liveFolders.isLiveFolder(folderID) {
             return nil
         }
         guard let preview = store.previewMove(

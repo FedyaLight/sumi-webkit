@@ -21,8 +21,9 @@ enum SumiGPCNavigationRewriteResult: Equatable {
 }
 
 /// Enables WebKit's native GPC navigation preference when the runtime exposes
-/// it. On older WebKit versions, attaches `Sec-GPC: 1` to outgoing main-frame
-/// navigation requests, mirroring the DOM signal from `SumiGPCUserScript`.
+/// it and attaches `Sec-GPC: 1` to eligible outgoing main-frame requests.
+/// WebKit's preference exposes the DOM signal but does not guarantee the HTTP
+/// header, so the request rewrite remains necessary on current runtimes.
 ///
 /// The compatibility path cannot mutate an in-flight `WKNavigationAction`, so
 /// it cancels and reissues eligible requests via `webView.load(_:)`.
@@ -65,7 +66,6 @@ final class SumiGPCNavigationResponder: SumiNavigationActionTargetContextRespond
         let isGPCEnabled = isGPCEnabledProvider()
         if preferences.globalPrivacyControlEnabled != nil {
             preferences.globalPrivacyControlEnabled = isGPCEnabled
-            return .next
         }
 
         guard let targetWebView,

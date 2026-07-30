@@ -4,28 +4,25 @@ import SumiDomain
 @MainActor
 final class ShortcutPinReorderTransaction {
     private let structuralLookup: TabStructuralLookupCoordinator
-    private let pins: ShortcutPinCollectionStateOwner
-    private let runtimeConnection: TabRuntimePortConnection
+    private let liveFolders: ShortcutLiveFolderPlacementReconciler
     private let spacePinnedVisualOrder: SpacePinnedVisualOrderTransaction
     private let essentialsVisualOrder: EssentialsVisualOrderTransaction
 
     init(
         structuralLookup: TabStructuralLookupCoordinator,
-        pins: ShortcutPinCollectionStateOwner,
-        runtimeConnection: TabRuntimePortConnection,
+        liveFolders: ShortcutLiveFolderPlacementReconciler,
         spacePinnedVisualOrder: SpacePinnedVisualOrderTransaction,
         essentialsVisualOrder: EssentialsVisualOrderTransaction
     ) {
         self.structuralLookup = structuralLookup
-        self.pins = pins
-        self.runtimeConnection = runtimeConnection
+        self.liveFolders = liveFolders
         self.spacePinnedVisualOrder = spacePinnedVisualOrder
         self.essentialsVisualOrder = essentialsVisualOrder
     }
 
     func reorderEssential(_ pin: ShortcutPin, to index: Int) -> Bool {
         structuralLookup.withTransaction {
-            guard self.pins.shortcutPin(by: pin.id) === pin else { return false }
+            guard self.liveFolders.isCurrent(pin) else { return false }
             guard let profileID = pin.profileId else { return false }
             return essentialsVisualOrder.reorder(
                 .shortcut(pin.id),
@@ -41,7 +38,7 @@ final class ShortcutPinReorderTransaction {
         to index: Int
     ) -> Bool {
         structuralLookup.withTransaction {
-            guard self.pins.shortcutPin(by: pin.id) === pin else { return false }
+            guard self.liveFolders.isCurrent(pin) else { return false }
             if pin.folderId == nil {
                 return self.spacePinnedVisualOrder.reorder(
                     .shortcut(pin.id),
@@ -50,7 +47,7 @@ final class ShortcutPinReorderTransaction {
                 )
             }
             guard let folderID = pin.folderId,
-                  self.runtimeConnection.current?.isLiveFolder(folderID) == true
+                  self.liveFolders.isLiveFolder(folderID)
             else {
                 return self.spacePinnedVisualOrder.reorder(
                     .shortcut(pin.id),
@@ -65,17 +62,10 @@ final class ShortcutPinReorderTransaction {
                 folderID: folderID,
                 to: index
             ) else { return false }
-            guard let targetIndex = self.pins.folderPinnedPins(
-                for: folderID,
-                in: spaceID
-            ).firstIndex(where: { $0.id == pin.id }) else {
-                return true
-            }
-            self.runtimeConnection.current?.reconcileLiveFolderItemMove(
-                shortcutPinID: pin.id,
-                fromFolderID: folderID,
-                toFolderID: folderID,
-                targetIndex: targetIndex
+            self.liveFolders.reconcileReorder(
+                pin,
+                in: folderID,
+                spaceID: spaceID
             )
             return true
         }

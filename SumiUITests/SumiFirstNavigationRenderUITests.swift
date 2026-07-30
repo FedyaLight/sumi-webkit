@@ -103,14 +103,33 @@ final class SumiFirstNavigationRenderUITests: SumiLaunchSmokeUITestCase {
             message: "The first navigation did not reach the loopback fixture; url bar: \(urlBar.debugDescription)"
         )
 
-        let renderedMarker = window.descendants(matching: .any).matching(
-            NSPredicate(format: "value == %@ OR label == %@", bodyMarker, bodyMarker)
+        let renderedDocument = window.descendants(matching: .any).matching(
+            NSPredicate(
+                format: "value IN %@ OR label IN %@",
+                [
+                    bodyMarker,
+                    "GPC-DOM-SIGNAL-MISSING",
+                    "Required request header was missing.",
+                ],
+                [
+                    bodyMarker,
+                    "GPC-DOM-SIGNAL-MISSING",
+                    "Required request header was missing.",
+                ]
+            )
         ).firstMatch
         wait(
             for: NSPredicate(format: "exists == true"),
-            on: renderedMarker,
+            on: renderedDocument,
             timeout: 30,
             message: "The first HTTP document did not load without a reload"
+        )
+        XCTAssertEqual(
+            renderedDocument.label.isEmpty
+                ? renderedDocument.value as? String
+                : renderedDocument.label,
+            bodyMarker,
+            "The first HTTP document loaded without the expected GPC signal"
         )
 
         let renderedBlackRatio = try dominantBlackPixelRatio(in: window.screenshot())

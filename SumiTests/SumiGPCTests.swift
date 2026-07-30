@@ -161,6 +161,7 @@ final class SumiGPCNavigationResponderTests: XCTestCase {
             isGPCEnabledProvider: { true }
         )
         var preferences = sumiPreferences()
+        preferences.globalPrivacyControlEnabled = false
         let originalNavigation = NSObject()
 
         let policy = await responder.decidePolicy(
@@ -174,6 +175,7 @@ final class SumiGPCNavigationResponderTests: XCTestCase {
         )
 
         XCTAssertEqual(policy, .cancel)
+        XCTAssertEqual(preferences.globalPrivacyControlEnabled, true)
         XCTAssertEqual(webView.loadedRequests.count, 1)
         XCTAssertEqual(webView.loadedRequests.first?.value(forHTTPHeaderField: "Sec-GPC"), "1")
     }
@@ -496,26 +498,35 @@ final class SumiGPCNavigationResponderTests: XCTestCase {
         XCTAssertTrue(webView.loadedRequests.isEmpty)
     }
 
-    func testUsesNativeWebKitGPCWithoutRewritingNavigation() async {
+    func testNativeWebKitGPCAlsoRewritesMissingHeader() async {
         let webView = SumiGPCLoadRecordingWebView()
+        let tab = makeTab()
+        _ = tab.installNavigationDelegate(on: webView)
         let responder = SumiGPCNavigationResponder(
-            tab: makeTab(),
+            tab: tab,
             isGPCEnabledProvider: { true }
         )
         var preferences = sumiPreferences()
         preferences.globalPrivacyControlEnabled = false
+        let originalNavigation = NSObject()
 
         let policy = await responder.decidePolicy(
             for: mainFrameAction(url: URL(string: "https://example.com/")!),
             targetWebView: webView,
+            context: SumiNavigationActionContext(
+                navigationID: ObjectIdentifier(originalNavigation),
+                navigationLifetime: originalNavigation
+            ),
             preferences: &preferences
         )
 
-        XCTAssertNil(policy)
+        XCTAssertEqual(policy, .cancel)
         XCTAssertEqual(preferences.globalPrivacyControlEnabled, true)
-        XCTAssertTrue(
-            webView.loadedRequests.isEmpty,
-            "Native WebKit GPC must not cancel and reissue the page navigation."
+        XCTAssertEqual(
+            webView.loadedRequests.first?.value(
+                forHTTPHeaderField: "Sec-GPC"
+            ),
+            "1"
         )
     }
 

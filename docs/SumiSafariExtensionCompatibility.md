@@ -1,6 +1,23 @@
 # Sumi Safari Web Extension Compatibility
 
-Last updated: 2026-07-03 (1Password runtime envelope + native-core OS boundary)
+Last updated: 2026-07-30 (first-alpha release-candidate status)
+
+This is the detailed engineering log and evidence trail. The concise public matrix lives in [Extension Compatibility](extensions.md); the release checklist lives in [SafariExtensionManualE2E.md](SafariExtensionManualE2E.md). Older cycle notes below describe the state at the time of each investigation and can be superseded by the release-candidate snapshot.
+
+## First-Alpha Release-Candidate Snapshot
+
+Maintainer manual testing for the current alpha candidate confirms the core tested workflows for Bitwarden, Proton Pass, Raindrop.io, and Userscripts. Automated suites cover their generic WebKit seams and the Sumi-owned companion/native-message adapters. These are scoped compatibility statements, not blanket support for every extension feature or future version.
+
+| Target | Current result | Important boundary |
+| --- | --- | --- |
+| Bitwarden | Import, popup, sign-in, inline autofill, and tested local biometric/native-messaging paths work. | Profile isolation remains on the pre-release manual retest. |
+| Proton Pass | Import, popup sign-in, site access, worker-driven scripting, and inline autofill work. | Profile isolation remains on the pre-release manual retest. |
+| Raindrop.io | Import, sign-in, save-page flow, persistence, and profile isolation work. | No native companion relay is required. |
+| Userscripts | The tested Safari-extension and companion-library workflow works. | This is extension compatibility, not a built-in arbitrary-script installer. |
+| 1Password for Safari | Partial Web Extension runtime only. | 1Password 8's native-core handler requires a private Safari host entitlement, so end-to-end vault/unlock support is not claimed. |
+| Apple Passwords / iCloud Keychain | System WebKit behavior, not release-verified. | No Sumi-specific integration or completed manual AutoFill/passkey E2E exists in the repo. |
+
+The repository intentionally keeps vendor behavior behind generic WebKit/profile/runtime mechanisms. Product-specific code is limited to documented companion protocols that cannot be expressed through the generic Web Extension APIs.
 
 ## Cycle 27 1Password for Safari: Achievable Runtime + Native-Core OS Wall (2026-07-03)
 
