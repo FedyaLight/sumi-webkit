@@ -71,7 +71,10 @@ struct CommandPaletteRowItem: View {
             ? (selectedChipForeground ?? tokens.primaryText)
             : tokens.tertiaryText
 
-        HStack(alignment: .center, spacing: 9) {
+        HStack(
+            alignment: .center,
+            spacing: CommandPaletteLayoutPolicy.suggestionRowIconSpacing
+        ) {
             CommandPaletteFaviconContainer(size: iconContainerSize) {
                 rowIcon(foreground: foreground, tokens: tokens)
             }

@@ -143,7 +143,12 @@ final class CommandPaletteTextFieldView: ChromeTextFieldFocusHostView {
 
     private func setup() {
         wantsLayer = true
-        layer?.masksToBounds = true
+        // Never mask to bounds. `NSTextField.alignmentRectInsets` places the
+        // field 2pt outside this host on each side, so the text — and the
+        // insertion point at offset 0 — sit exactly on the leading edge. A mask
+        // here shaves the caret while the field is empty. The field editor
+        // still clips the string to its own bounds.
+        layer?.masksToBounds = false
 
         textField.isBordered = false
         textField.isBezeled = false

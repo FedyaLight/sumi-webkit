@@ -114,7 +114,7 @@ struct CommandPaletteView: View {
                     Spacer()
                     VStack {
                         VStack(alignment: .center, spacing: 0) {
-                            HStack(spacing: 15) {
+                            HStack(spacing: CommandPaletteLayoutPolicy.inputRowIconSpacing) {
                                 Image(
                                     systemName: searchSession.mode == .actions
                                         ? "terminal"
@@ -135,7 +135,7 @@ struct CommandPaletteView: View {
                                 .transition(CommandPaletteMotionPolicy.chromeElementTransition(for: motionMode))
                                 .font(ChromeThemeTypography.commandPaletteLeadingIcon)
                                 .foregroundStyle(tokens.secondaryText)
-                                .frame(width: 15)
+                                .frame(width: CommandPaletteLayoutPolicy.inputRowLeadingIconWidth)
 
                                 if let site = searchSession.activeSiteSearch {
                                     Text(site.name)
@@ -251,7 +251,7 @@ struct CommandPaletteView: View {
                             }
                             .frame(height: CommandPaletteLayoutPolicy.inputRowHeight)
                             .padding(.vertical, CommandPaletteLayoutPolicy.inputRowVerticalPadding)
-                            .padding(.horizontal, 8)
+                            .padding(.horizontal, CommandPaletteLayoutPolicy.inputRowHorizontalPadding)
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 focusSearchField(selectAll: false)
