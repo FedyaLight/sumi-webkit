@@ -3,8 +3,7 @@ import WebKit
 
 @MainActor
 final class SumiWebPageContextMenuUserScript: NSObject, SumiPageScript,
-    WKScriptMessageHandlerWithReply
-{
+    WKScriptMessageHandlerWithReply {
     private let context: String
 
     let source: String
@@ -13,8 +12,8 @@ final class SumiWebPageContextMenuUserScript: NSObject, SumiPageScript,
     let requiresRunInPageContentWorld = false
     let messageNames: [String]
 
-    init(contextID: UUID = UUID()) {
-        self.context = "sumiWebPageContextMenu_\(contextID.uuidString)"
+    init(contextID _: UUID = UUID()) {
+        self.context = "sumiWebPageContextMenu"
         self.messageNames = [context]
         self.source = Self.makeSource(context: context)
         super.init()

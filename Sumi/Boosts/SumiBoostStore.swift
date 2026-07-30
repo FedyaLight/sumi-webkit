@@ -52,6 +52,10 @@ final class SumiBoostStore: ObservableObject {
         changesSubject.eraseToAnyPublisher()
     }
 
+    func prefetch() {
+        diskWorker.prefetch()
+    }
+
     init(
         rootDirectory: URL? = nil,
         fileManager: FileManager = .default,
@@ -341,5 +345,4 @@ final class SumiBoostStore: ObservableObject {
         retiredProfileIDs.contains(profileID) == false
             && profileReferenceAdmission.isReferenceAllowed(profileID)
     }
-
 }

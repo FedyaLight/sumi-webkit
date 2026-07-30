@@ -40,9 +40,12 @@ final class TabWebViewConfigurationOwner {
         isEphemeral: Bool
     ) -> SumiNormalTabUserScripts {
         SumiNormalTabUserScripts(
-            managedUserScripts: normalTabManagedUserScripts(
-                for: targetURL,
+            staticManagedUserScripts: normalTabStaticManagedUserScripts(
                 coreUserScripts: coreUserScripts,
+                context: context
+            ),
+            navigationUserScripts: normalTabNavigationUserScripts(
+                for: targetURL,
                 profileIdProvider: profileIdProvider,
                 context: context,
                 isEphemeral: isEphemeral
@@ -57,20 +60,36 @@ final class TabWebViewConfigurationOwner {
         context: TabWebViewConfigurationContext,
         isEphemeral: Bool
     ) -> [SumiPageScript] {
-        var scripts = coreUserScripts
-        scripts.append(contentsOf: context.extensionNormalTabUserScripts())
+        normalTabStaticManagedUserScripts(
+            coreUserScripts: coreUserScripts,
+            context: context
+        ) + normalTabNavigationUserScripts(
+            for: targetURL,
+            profileIdProvider: profileIdProvider,
+            context: context,
+            isEphemeral: isEphemeral
+        )
+    }
 
-        if let targetURL {
-            scripts.append(
-                contentsOf: context.boostsNormalTabUserScripts(
-                    targetURL,
-                    profileIdProvider(),
-                    isEphemeral
-                )
-            )
-        }
+    func normalTabStaticManagedUserScripts(
+        coreUserScripts: [SumiPageScript],
+        context: TabWebViewConfigurationContext
+    ) -> [SumiPageScript] {
+        coreUserScripts + context.extensionNormalTabUserScripts()
+    }
 
-        return scripts
+    func normalTabNavigationUserScripts(
+        for targetURL: URL?,
+        profileIdProvider: () -> UUID?,
+        context: TabWebViewConfigurationContext,
+        isEphemeral: Bool
+    ) -> [SumiPageScript] {
+        guard let targetURL else { return [] }
+        return context.boostsNormalTabUserScripts(
+            targetURL,
+            profileIdProvider(),
+            isEphemeral
+        )
     }
 
     func normalTabWebViewConfiguration(
@@ -217,9 +236,8 @@ final class TabWebViewConfigurationOwner {
         guard let provider = webView.configuration.userContentController.sumiNormalTabUserScriptsProvider else {
             return false
         }
-        let suspensionContext = "sumiTabSuspension_\(tabId.uuidString)"
         return provider.userScripts.contains { script in
-            script.source.contains(suspensionContext)
+            (script as? SumiTabSuspensionUserScript)?.tabID == tabId
         }
     }
 

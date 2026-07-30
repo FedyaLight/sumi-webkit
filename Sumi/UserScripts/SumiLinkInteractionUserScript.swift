@@ -15,8 +15,8 @@ final class SumiLinkInteractionUserScript: NSObject, SumiPageScript {
     let requiresRunInPageContentWorld = false
     let messageNames: [String]
 
-    init(contextID: UUID) {
-        self.context = "sumiLinkInteraction_\(contextID.uuidString)"
+    init(contextID _: UUID) {
+        self.context = "sumiLinkInteraction"
         self.messageNames = [context]
         self.source = Self.makeSource(context: context)
         super.init()

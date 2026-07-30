@@ -9,18 +9,21 @@ final class PageActivationPerformanceMonitor {
         case cold
     }
 
+    #if DEBUG || SUMI_DIAGNOSTICS
     private struct PendingActivation {
         let tabID: UUID
         let residency: Residency
         let startedAt: TimeInterval
-        let interval: OSSignpostIntervalState
+        let interval: PerformanceTrace.IntervalState
     }
 
     private static let logger = Logger.sumi(category: "PageActivation")
-    private let onFirstPaint: @MainActor () -> Void
     private var pendingByWindowID: [UUID: PendingActivation] = [:]
     private var paintHooksByWindowID: [UUID: PageActivationPaintHook] = [:]
     private var timeoutsByWindowID: [UUID: DispatchWorkItem] = [:]
+    #endif
+
+    private let onFirstPaint: @MainActor () -> Void
     private var initialPaintHook: PageActivationPaintHook?
     private var initialPaintTimeout: DispatchWorkItem?
     private var observedInitialPaint = false
@@ -30,6 +33,7 @@ final class PageActivationPerformanceMonitor {
     }
 
     func begin(tabID: UUID, in windowID: UUID, residency: Residency) {
+        #if DEBUG || SUMI_DIAGNOSTICS
         cancel(in: windowID)
         let interval = switch residency {
         case .live:
@@ -51,6 +55,7 @@ final class PageActivationPerformanceMonitor {
             deadline: .now() + 2,
             execute: timeout
         )
+        #endif
     }
 
     func hostDidAttach(
@@ -58,6 +63,7 @@ final class PageActivationPerformanceMonitor {
         in windowID: UUID,
         window: NSWindow?
     ) {
+        #if DEBUG || SUMI_DIAGNOSTICS
         let hasPendingActivation =
             pendingByWindowID[windowID]?.tabID == tabID
         if hasPendingActivation == false {
@@ -83,17 +89,27 @@ final class PageActivationPerformanceMonitor {
                 )
             }
         }
+        #else
+        _ = tabID
+        _ = windowID
+        observeInitialPaintIfNeeded(window: window)
+        #endif
     }
 
     func cancel(in windowID: UUID) {
+        #if DEBUG || SUMI_DIAGNOSTICS
         timeoutsByWindowID.removeValue(forKey: windowID)?.cancel()
         paintHooksByWindowID.removeValue(forKey: windowID)?.stop()
         guard let pending = pendingByWindowID.removeValue(forKey: windowID) else {
             return
         }
         endInterval(for: pending)
+        #else
+        _ = windowID
+        #endif
     }
 
+    #if DEBUG || SUMI_DIAGNOSTICS
     private func finish(in windowID: UUID, frameTime: TimeInterval) {
         timeoutsByWindowID.removeValue(forKey: windowID)?.cancel()
         paintHooksByWindowID.removeValue(forKey: windowID)?.stop()
@@ -109,6 +125,7 @@ final class PageActivationPerformanceMonitor {
         )
         publishPaintObservation()
     }
+    #endif
 
     private func observeInitialPaintIfNeeded(window: NSWindow?) {
         guard observedInitialPaint == false, initialPaintHook == nil else {
@@ -151,6 +168,7 @@ final class PageActivationPerformanceMonitor {
         onFirstPaint()
     }
 
+    #if DEBUG || SUMI_DIAGNOSTICS
     private func endInterval(for pending: PendingActivation) {
         switch pending.residency {
         case .live:
@@ -165,6 +183,7 @@ final class PageActivationPerformanceMonitor {
             )
         }
     }
+    #endif
 }
 
 @MainActor

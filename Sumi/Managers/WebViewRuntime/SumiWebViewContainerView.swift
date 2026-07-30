@@ -23,7 +23,14 @@ final class HostedWebViewPresentationObservation {
 @MainActor
 final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
     let tabID: UUID
-    let webView: WKWebView
+    private var retainedWebView: WKWebView?
+
+    var webView: WKWebView {
+        guard let retainedWebView else {
+            preconditionFailure("An evicted WebView host has no presentation target")
+        }
+        return retainedWebView
+    }
 
     private var preservesDisplayedContentOnNextRemoval = false
     private let overlayScrollChrome = WebContentOverlayScrollChrome()
@@ -35,7 +42,7 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
 
     init(tabID: UUID, webView: WKWebView) {
         self.tabID = tabID
-        self.webView = webView
+        retainedWebView = webView
         super.init(frame: .zero)
 
         configure(webView: webView)
@@ -204,7 +211,15 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
     func evictFromRuntime() {
         runtimeEvictionHandler?(self)
         runtimeEvictionHandler = nil
+        preservesDisplayedContentOnNextRemoval = false
+        dismissReader()
         removeFromSuperview()
+        if let focusable = retainedWebView as? FocusableWKWebView,
+           focusable.overlayScrollChrome === overlayScrollChrome {
+            focusable.overlayScrollChrome = nil
+        }
+        overlayScrollChrome.uninstall()
+        retainedWebView = nil
     }
 
     private func addDisplayedContent(_ displayedView: NSView) {
@@ -270,6 +285,7 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
 
     override func layout() {
         super.layout()
+        guard let webView = retainedWebView else { return }
         let displayedView = webView.sumiFullscreenPresentation.tabContentView
         displayedView.frame = bounds
         readerPresentationSession?.webView.frame = bounds
@@ -289,7 +305,7 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
     deinit {
         MainActor.assumeIsolated {
             dismissReader()
-            if let focusable = webView as? FocusableWKWebView,
+            if let focusable = retainedWebView as? FocusableWKWebView,
                focusable.overlayScrollChrome === overlayScrollChrome {
                 focusable.overlayScrollChrome = nil
             }
@@ -300,7 +316,7 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
     override func removeFromSuperview() {
         if preservesDisplayedContentOnNextRemoval {
             preservesDisplayedContentOnNextRemoval = false
-        } else {
+        } else if let webView = retainedWebView {
             let displayedContent = webView.sumiFullscreenPresentation.tabContentView
             if displayedContent.superview === self {
                 dismissReader()

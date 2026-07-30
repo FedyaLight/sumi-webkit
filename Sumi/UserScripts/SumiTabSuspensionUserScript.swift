@@ -5,8 +5,8 @@ import WebKit
 /// native document tokens and PiP observation live in isolated-world sensors.
 @MainActor
 final class SumiTabSuspensionUserScript: NSObject, SumiPageScript,
-    WKScriptMessageHandlerWithReply
-{
+    WKScriptMessageHandlerWithReply {
+    let tabID: UUID
     private let context: String
 
     let source: String
@@ -16,7 +16,8 @@ final class SumiTabSuspensionUserScript: NSObject, SumiPageScript,
     let messageNames: [String]
 
     init(tabID: UUID) {
-        context = "sumiTabSuspension_\(tabID.uuidString)"
+        self.tabID = tabID
+        context = "sumiTabSuspension"
         messageNames = [context]
         source = Self.makeSource(context: context)
         super.init()

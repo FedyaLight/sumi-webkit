@@ -45,9 +45,9 @@ final class ExtensionActionRuntimeResolver {
         currentTab: Tab?,
         popupTargetRequest: ExtensionActionPopupTargetRequest = .implicit
     ) async -> ExtensionActionRuntimeResolution {
-        guard let extensionRecord = environment.installedExtensions.records.first(where: {
-            $0.id == extensionID
-        }) else {
+        guard let extensionRecord = environment.installedExtensions.record(
+            for: extensionID
+        ) else {
             return .blocked(
                 .blocked(
                     .extensionNotInstalled,

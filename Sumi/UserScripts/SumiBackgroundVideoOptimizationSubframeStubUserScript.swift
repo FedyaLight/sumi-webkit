@@ -67,7 +67,7 @@ final class SumiBackgroundVideoOptimizationSubframeStubUserScript: NSObject, Sum
         });
 
         let bootstrapRequested = false;
-        document.addEventListener("play", (event) => {
+        const handleVideoPlay = event => {
             if (window[apiName] || bootstrapRequested) {
                 return;
             }
@@ -78,7 +78,10 @@ final class SumiBackgroundVideoOptimizationSubframeStubUserScript: NSObject, Sum
             try {
                 window.webkit.messageHandlers.sumiBackgroundVideoOptimizerBootstrap.postMessage({});
             } catch {}
-        }, true);
+        };
+        if (!window.__sumiMediaPlaybackBroker?.subscribe(handleVideoPlay)) {
+            document.addEventListener("play", handleVideoPlay, true);
+        }
     })();
     """
 }

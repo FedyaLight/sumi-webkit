@@ -279,6 +279,9 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         }
         departingWebViews.forEach {
             navigationRuntime.webViewRouting.cancelWebContentProcessRecovery($0)
+            unbindAudioState(from: $0)
+            removeNavigationStateObservers(from: $0)
+            removeNavigationDelegateBundle(for: $0)
         }
         let result = mainFrameRuntimeTransaction.webViewsDidLeaveRuntime(
             departingWebViews,

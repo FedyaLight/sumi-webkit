@@ -55,9 +55,9 @@ class BrowserConfiguration {
         "__sumiSubframePictureInPicture",
         SumiTransientChromeInteractionShieldUserScript.sourceMarker,
         "sumiFavicons",
-        "sumiLinkInteraction_",
-        "sumiTabSuspension_",
-        "sumiWebNotifications_",
+        "sumiLinkInteraction",
+        "sumiTabSuspension",
+        "sumiWebNotifications",
     ]
 
     init(

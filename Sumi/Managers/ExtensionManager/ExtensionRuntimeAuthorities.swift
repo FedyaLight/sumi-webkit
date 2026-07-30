@@ -174,20 +174,6 @@ final class ExtensionRuntimeResidencyAuthority {
         state.touch(extensionId: extensionID, profileId: profileID)
     }
 
-    func evictionCandidates(
-        loadedContextCount: Int,
-        limit: Int,
-        keepingExtensionID: String,
-        keepingProfileID: UUID
-    ) -> [ExtensionRuntimeResidencyState.ScopedKey] {
-        state.touchAndEvictionCandidates(
-            loadedContextCount: loadedContextCount,
-            limit: limit,
-            keepingExtensionId: keepingExtensionID,
-            keepingProfileId: keepingProfileID
-        )
-    }
-
     func remove(extensionID: String, profileID: UUID) {
         state.remove(extensionId: extensionID, profileId: profileID)
     }

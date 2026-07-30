@@ -6,55 +6,67 @@ import SumiDomain
 final class SafariContentBlockerRuntimeOwner {
     private static let log = Logger.sumi(category: "SafariContentBlocker")
 
-    private let database: SumiDatabase?
+    private let metadataStore: SafariContentBlockerMetadataStore
+    private let inventoryStore: SafariContentBlockerPreparedInventoryStore
     private let isModuleEnabled: @MainActor () -> Bool
+    private let onPreparedInventoryRefresh: @MainActor () -> Void
     private let compiledRuleListCatalog: SumiCompiledContentRuleListCataloging
 
+    private var installedRecords: [InstalledSafariContentBlockerRecord]
+    private var recordsByBundleIdentifier:
+        [String: InstalledSafariContentBlockerRecord]
     private var service: SumiContentBlockingService?
     private var serviceCacheKey: String?
+    private var preparationTask: Task<Void, Never>?
+    private var runtimeGeneration: UInt64 = 0
     private var siteOverrides: [String: SumiSafariContentBlockerSiteOverride]
-
-    private struct MaterializedContentBlockerRules {
-        let record: InstalledSafariContentBlockerRecord
-        let locatedRules: SafariContentBlockerLocatedRules
-    }
+    private var sourceMonitor: SafariContentBlockerSourceMonitor?
 
     init(
         database: SumiDatabase?,
         compiledRuleListCatalog: SumiCompiledContentRuleListCataloging,
-        isModuleEnabled: @escaping @MainActor () -> Bool
+        isModuleEnabled: @escaping @MainActor () -> Bool,
+        onPreparedInventoryRefresh: @escaping @MainActor () -> Void = {}
     ) {
-        self.database = database
+        let metadataStore = SafariContentBlockerMetadataStore(
+            database: database
+        )
+        self.metadataStore = metadataStore
+        self.inventoryStore = SafariContentBlockerPreparedInventoryStore(
+            database: database
+        )
         self.compiledRuleListCatalog = compiledRuleListCatalog
         self.isModuleEnabled = isModuleEnabled
-        self.siteOverrides = (try? database?.read {
-            try $0.safariContentBlockers.siteOverrides()
-        }) ?? [:]
+        self.onPreparedInventoryRefresh = onPreparedInventoryRefresh
+        let installedRecords = metadataStore.installedRecords()
+        self.installedRecords = installedRecords
+        self.recordsByBundleIdentifier = Dictionary(
+            installedRecords.map { ($0.extensionBundleIdentifier, $0) },
+            uniquingKeysWith: { _, latest in latest }
+        )
+        self.siteOverrides = metadataStore.siteOverrides()
+        sourceMonitor = makeSourceMonitor()
+
+        if isModuleEnabled(),
+           installedRecords.contains(where: Self.isRuntimeEnabledRecord) {
+            prepareRuntimeIfNeeded()
+        }
+        sourceMonitor?.reconcileObservation()
+    }
+
+    isolated deinit {
+        preparationTask?.cancel()
+        sourceMonitor?.stop()
     }
 
     func installedContentBlockers() -> [InstalledSafariContentBlockerRecord] {
-        guard let database else { return [] }
-        do {
-            return try database.read { try $0.safariContentBlockers.all() }
-                .map(InstalledSafariContentBlockerRecord.init)
-                .sorted {
-                    if $0.containingAppName == $1.containingAppName {
-                        return $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
-                    }
-                    return $0.containingAppName.localizedCaseInsensitiveCompare($1.containingAppName) == .orderedAscending
-                }
-        } catch {
-            Self.log.error("Failed to fetch Safari content blocker records: \(error.localizedDescription, privacy: .public)")
-            return []
-        }
+        installedRecords
     }
 
     func contentBlockerRecord(
         forBundleIdentifier bundleIdentifier: String
     ) -> InstalledSafariContentBlockerRecord? {
-        installedContentBlockers().first {
-            $0.extensionBundleIdentifier == bundleIdentifier
-        }
+        recordsByBundleIdentifier[bundleIdentifier]
     }
 
     func enableContentBlocker(
@@ -65,24 +77,29 @@ final class SafariContentBlockerRuntimeOwner {
                 "Only Safari Content Blocker bundles can be enabled as content blockers."
             )
         }
-        guard isModuleEnabled(), database != nil else {
+        guard isModuleEnabled(), metadataStore.isAvailable else {
             throw ExtensionError.unsupportedOS
         }
 
         let locatedRules: SafariContentBlockerLocatedRules
         do {
-            locatedRules = try SafariContentBlockerRuleLocator.locateRules(in: candidate)
+            locatedRules = try await Self.locateRules(in: candidate)
         } catch let error as SafariContentBlockerRuleLocatorError {
-            _ = try upsertEntity(
-                from: candidate,
-                resourceFingerprint: SafariContentBlockerRuleLocator.resourceFingerprint(
-                    appexURL: candidate.appexURL
-                ),
+            let fingerprint = await Self.resourceFingerprint(
+                appexURL: candidate.appexURL
+            )
+            _ = try metadataStore.upsert(
+                candidate: candidate,
+                resourceFingerprint: fingerprint,
                 isEnabled: false,
                 compileStatus: error.persistedCompileStatus,
                 lastError: error.localizedDescription,
                 ruleListCount: 0,
                 ignoredEmptyRuleListCount: 0
+            )
+            reloadInstalledRecords()
+            inventoryStore.remove(
+                blockerID: candidate.extensionBundleIdentifier
             )
             clearRuntime()
             throw ExtensionError.installationFailed(error.localizedDescription)
@@ -99,8 +116,8 @@ final class SafariContentBlockerRuntimeOwner {
             )
             validationService.commitPreparedContentBlockingUpdate(preparedUpdate)
         } catch {
-            _ = try upsertEntity(
-                from: candidate,
+            _ = try metadataStore.upsert(
+                candidate: candidate,
                 resourceFingerprint: locatedRules.resourceFingerprint,
                 isEnabled: false,
                 compileStatus: .compileFailed,
@@ -108,12 +125,16 @@ final class SafariContentBlockerRuntimeOwner {
                 ruleListCount: locatedRules.definitions.count,
                 ignoredEmptyRuleListCount: locatedRules.ignoredEmptyRuleListCount
             )
+            reloadInstalledRecords()
+            inventoryStore.remove(
+                blockerID: candidate.extensionBundleIdentifier
+            )
             clearRuntime()
             throw ExtensionError.installationFailed(error.localizedDescription)
         }
 
-        let entity = try upsertEntity(
-            from: candidate,
+        let entity = try metadataStore.upsert(
+            candidate: candidate,
             resourceFingerprint: locatedRules.resourceFingerprint,
             isEnabled: true,
             compileStatus: .available,
@@ -121,16 +142,24 @@ final class SafariContentBlockerRuntimeOwner {
             ruleListCount: locatedRules.definitions.count,
             ignoredEmptyRuleListCount: locatedRules.ignoredEmptyRuleListCount
         )
-        clearRuntime()
-        return InstalledSafariContentBlockerRecord(entity: entity)
+        let record = InstalledSafariContentBlockerRecord(entity: entity)
+        reloadInstalledRecords()
+        inventoryStore.upsert(record: record, locatedRules: locatedRules)
+        replaceRuntimeService(
+            validationService,
+            cacheKey: runtimeCacheKey(for: enabledRuntimeRecords())
+        )
+        return record
     }
 
     func setContentBlockerEnabled(
         _ enabled: Bool,
         bundleIdentifier: String
     ) async throws -> InstalledSafariContentBlockerRecord? {
-        guard let database else { return nil }
-        guard let entity = try entity(forBundleIdentifier: bundleIdentifier) else {
+        guard metadataStore.isAvailable else { return nil }
+        guard let entity = try metadataStore.entity(
+            forBundleIdentifier: bundleIdentifier
+        ) else {
             return nil
         }
         if enabled {
@@ -151,11 +180,8 @@ final class SafariContentBlockerRuntimeOwner {
             return try await enableContentBlocker(from: candidate)
         }
 
-        entity.isEnabled = false
-        entity.lastUpdateDate = Date()
-        try database.transaction {
-            try $0.safariContentBlockers.save(entity)
-        }
+        try metadataStore.setEnabled(false, entity: entity)
+        reloadInstalledRecords()
         clearRuntime()
         return InstalledSafariContentBlockerRecord(entity: entity)
     }
@@ -171,31 +197,9 @@ final class SafariContentBlockerRuntimeOwner {
               siteOverrides[siteHost] != .disabled
         else { return [] }
 
-        let materializedRecords = materializedEnabledContentBlockerRules()
-        guard materializedRecords.isEmpty == false else { return [] }
-
-        var definitions: [SumiContentRuleListDefinition] = []
-        var cacheParts: [String] = []
-        for materialized in materializedRecords {
-            let record = materialized.record
-            let located = materialized.locatedRules
-            definitions.append(contentsOf: located.definitions)
-            cacheParts.append("\(record.id):\(located.resourceFingerprint):\(located.definitions.count)")
-        }
-
-        guard definitions.isEmpty == false else { return [] }
-        let cacheKey = cacheParts.sorted().joined(separator: "|")
-        if let service,
-           serviceCacheKey == cacheKey {
-            return [service]
-        }
-
-        let service = SumiContentBlockingService(
-            policy: .enabled(ruleLists: definitions),
-            compiledRuleListCatalog: compiledRuleListCatalog
-        )
-        self.service = service
-        serviceCacheKey = cacheKey
+        guard enabledRuntimeRecords().isEmpty == false else { return [] }
+        let service = preparedService()
+        prepareRuntimeIfNeeded()
         return [service]
     }
 
@@ -207,8 +211,8 @@ final class SafariContentBlockerRuntimeOwner {
             return .disabled(siteHost: siteHost)
         }
 
-        let materializedRecords = materializedEnabledContentBlockerRules()
-        guard materializedRecords.isEmpty == false,
+        let enabledRecords = enabledRuntimeRecords()
+        guard enabledRecords.isEmpty == false,
               let siteHost
         else {
             return .disabled(siteHost: siteHost)
@@ -217,9 +221,9 @@ final class SafariContentBlockerRuntimeOwner {
         return SumiSafariContentBlockerAttachmentState(
             siteHost: siteHost,
             isEnabledForSite: siteOverride != .disabled,
-            enabledContentBlockerIds: materializedRecords.map(\.record.id).sorted(),
-            enabledContentBlockerRuleIdentities: materializedRecords
-                .map { "\($0.record.id):\($0.locatedRules.resourceFingerprint)" }
+            enabledContentBlockerIds: enabledRecords.map(\.id).sorted(),
+            enabledContentBlockerRuleIdentities: enabledRecords
+                .map { "\($0.id):\($0.resourceFingerprint)" }
                 .sorted()
         )
     }
@@ -238,7 +242,7 @@ final class SafariContentBlockerRuntimeOwner {
             )
         }
 
-        let enabledRecords = materializedEnabledContentBlockerRules()
+        let enabledRecords = enabledRuntimeRecords()
         return SumiSafariContentBlockerSiteState(
             siteHost: siteHost,
             isGloballyAvailable: !enabledRecords.isEmpty,
@@ -265,9 +269,7 @@ final class SafariContentBlockerRuntimeOwner {
         guard updated != siteOverrides else { return }
         siteOverrides = updated
         do {
-            try database?.transaction {
-                try $0.safariContentBlockers.replaceSiteOverrides(updated)
-            }
+            try metadataStore.replaceSiteOverrides(updated)
         } catch {
             Self.log.error(
                 "Failed to persist Safari content blocker site overrides: \(error.localizedDescription, privacy: .public)"
@@ -276,218 +278,301 @@ final class SafariContentBlockerRuntimeOwner {
     }
 
     func clearRuntime() {
+        runtimeGeneration &+= 1
+        preparationTask?.cancel()
+        preparationTask = nil
+        service?.stopRuntime()
         service = nil
         serviceCacheKey = nil
+        sourceMonitor?.reconcileObservation()
     }
 
     #if DEBUG
         func drainRuntimeForTests(cancel: Bool = false) async {
+            if cancel {
+                preparationTask?.cancel()
+            }
+            await sourceMonitor?.drainForTests(cancel: cancel)
+            await preparationTask?.value
             await service?.drainScheduledTasksForTests(cancel: cancel)
         }
     #endif
 
-    private func entity(
-        forBundleIdentifier bundleIdentifier: String
-    ) throws -> SafariContentBlockerMetadata? {
-        guard let database else { return nil }
-        return try database.read {
-            try $0.safariContentBlockers.find(bundleID: bundleIdentifier)
+    private func preparedService() -> SumiContentBlockingService {
+        if let service {
+            return service
         }
-    }
-
-    private func materializedEnabledContentBlockerRules() -> [MaterializedContentBlockerRules] {
-        guard database != nil else { return [] }
-        let enabledRecords = installedContentBlockers()
-            .filter { $0.isEnabled && $0.compileStatus == .available }
-        guard enabledRecords.isEmpty == false else { return [] }
-
-        var materializedRecords: [MaterializedContentBlockerRules] = []
-        var didMutateStoredRecords = false
-
-        for record in enabledRecords {
-            let appexURL = URL(fileURLWithPath: record.appexPath, isDirectory: true)
-            do {
-                let locatedRules = try SafariContentBlockerRuleLocator.locateRules(
-                    appexURL: appexURL,
-                    extensionBundleIdentifier: record.extensionBundleIdentifier,
-                    displayName: record.displayName
-                )
-                materializedRecords.append(
-                    MaterializedContentBlockerRules(
-                        record: record,
-                        locatedRules: locatedRules
-                    )
-                )
-                didMutateStoredRecords = updateStoredMetadataIfNeeded(
-                    for: record,
-                    locatedRules: locatedRules
-                ) || didMutateStoredRecords
-            } catch {
-                didMutateStoredRecords = markStoredRecordUnavailable(
-                    record,
-                    error: error
-                ) || didMutateStoredRecords
-            }
-        }
-
-        if didMutateStoredRecords {
-            clearRuntime()
-        }
-
-        return materializedRecords
-    }
-
-    private func updateStoredMetadataIfNeeded(
-        for record: InstalledSafariContentBlockerRecord,
-        locatedRules: SafariContentBlockerLocatedRules
-    ) -> Bool {
-        guard locatedRules.resourceFingerprint != record.resourceFingerprint
-                || locatedRules.definitions.count != record.ruleListCount
-                || locatedRules.ignoredEmptyRuleListCount != record.ignoredEmptyRuleListCount
-        else { return false }
-
-        let storedEntity: SafariContentBlockerMetadata?
-        do {
-            storedEntity = try entity(forBundleIdentifier: record.extensionBundleIdentifier)
-        } catch {
-            Self.log.error("Failed to fetch Safari content blocker metadata for \(record.extensionBundleIdentifier, privacy: .public): \(error.localizedDescription, privacy: .public)")
-            return false
-        }
-        guard let entity = storedEntity else {
-            return false
-        }
-
-        entity.resourceFingerprint = locatedRules.resourceFingerprint
-        entity.ruleListCount = locatedRules.definitions.count
-        entity.ignoredEmptyRuleListCount = locatedRules.ignoredEmptyRuleListCount
-        entity.compileStatus = .available
-        entity.lastError = nil
-        entity.lastUpdateDate = Date()
-        return persistMetadataRepair(entity)
-    }
-
-    private func markStoredRecordUnavailable(
-        _ record: InstalledSafariContentBlockerRecord,
-        error: Error
-    ) -> Bool {
-        let storedEntity: SafariContentBlockerMetadata?
-        do {
-            storedEntity = try entity(forBundleIdentifier: record.extensionBundleIdentifier)
-        } catch {
-            Self.log.error("Failed to fetch unavailable Safari content blocker record \(record.extensionBundleIdentifier, privacy: .public): \(error.localizedDescription, privacy: .public)")
-            return false
-        }
-        guard let entity = storedEntity else {
-            return false
-        }
-
-        let compileStatus = (error as? SafariContentBlockerRuleLocatorError)?
-            .persistedCompileStatus ?? SafariContentBlockerCompileStatus.rulesUnavailable
-        var didMutate = false
-
-        func update<T: Equatable>(_ keyPath: ReferenceWritableKeyPath<SafariContentBlockerMetadata, T>, _ value: T) {
-            guard entity[keyPath: keyPath] != value else { return }
-            entity[keyPath: keyPath] = value
-            didMutate = true
-        }
-
-        update(\.isEnabled, false)
-        update(\.compileStatus, compileStatus)
-        update(\.lastError, error.localizedDescription)
-        update(\.ruleListCount, 0)
-        update(\.ignoredEmptyRuleListCount, 0)
-        if didMutate {
-            entity.lastUpdateDate = Date()
-        }
-        return didMutate && persistMetadataRepair(entity)
-    }
-
-    private func upsertEntity(
-        from candidate: DiscoveredSafariExtensionCandidate,
-        resourceFingerprint: String,
-        isEnabled: Bool,
-        compileStatus: SafariContentBlockerCompileStatus,
-        lastError: String?,
-        ruleListCount: Int,
-        ignoredEmptyRuleListCount: Int
-    ) throws -> SafariContentBlockerMetadata {
-        guard let database else {
-            throw ExtensionError.unsupportedOS
-        }
-
-        if let existing = try entity(
-            forBundleIdentifier: candidate.extensionBundleIdentifier
-        ) {
-            existing.displayName = candidate.displayName
-            existing.version = candidate.version
-            existing.containingAppName = candidate.containingAppName
-            existing.containingAppBundleIdentifier = candidate.containingAppBundleIdentifier
-            existing.appexPath = candidate.appexURL.path
-            existing.containingAppPath = candidate.containingAppURL.path
-            existing.resourceFingerprint = resourceFingerprint
-            existing.isEnabled = isEnabled
-            existing.lastUpdateDate = Date()
-            existing.compileStatus = compileStatus
-            existing.lastError = lastError
-            existing.ruleListCount = ruleListCount
-            existing.ignoredEmptyRuleListCount = ignoredEmptyRuleListCount
-            try database.transaction {
-                try $0.safariContentBlockers.save(existing)
-            }
-            return existing
-        }
-
-        let entity = SafariContentBlockerMetadata(
-            id: candidate.extensionBundleIdentifier,
-            extensionBundleIdentifier: candidate.extensionBundleIdentifier,
-            displayName: candidate.displayName,
-            version: candidate.version,
-            containingAppName: candidate.containingAppName,
-            containingAppBundleIdentifier: candidate.containingAppBundleIdentifier,
-            appexPath: candidate.appexURL.path,
-            containingAppPath: candidate.containingAppURL.path,
-            resourceFingerprint: resourceFingerprint,
-            isEnabled: isEnabled,
-            compileStatus: compileStatus,
-            lastError: lastError,
-            ruleListCount: ruleListCount,
-            ignoredEmptyRuleListCount: ignoredEmptyRuleListCount
+        let service = SumiContentBlockingService(
+            pendingCompiledRuleListCatalog: compiledRuleListCatalog
         )
-        try database.transaction {
-            try $0.safariContentBlockers.save(entity)
-        }
-        return entity
+        self.service = service
+        return service
     }
 
-    private func persistMetadataRepair(
-        _ metadata: SafariContentBlockerMetadata
-    ) -> Bool {
-        guard let database else { return false }
-        do {
-            try database.transaction {
-                try $0.safariContentBlockers.save(metadata)
+    private func refreshPreparedInventory() async {
+        clearRuntime()
+        prepareRuntimeIfNeeded(forceSourceRefresh: true)
+        await preparationTask?.value
+    }
+
+    private func prepareRuntimeIfNeeded(
+        forceSourceRefresh: Bool = false
+    ) {
+        guard isModuleEnabled() else { return }
+        let records = enabledRuntimeRecords()
+        guard records.isEmpty == false else { return }
+        let cacheKey = runtimeCacheKey(for: records)
+        guard serviceCacheKey != cacheKey, preparationTask == nil else {
+            return
+        }
+
+        let service = preparedService()
+        runtimeGeneration &+= 1
+        let generation = runtimeGeneration
+        preparationTask = Task { [weak self, service] in
+            await self?.prepareRuntime(
+                generation: generation,
+                records: records,
+                cacheKey: cacheKey,
+                forceSourceRefresh: forceSourceRefresh,
+                service: service
+            )
+        }
+    }
+
+    private func prepareRuntime(
+        generation: UInt64,
+        records: [InstalledSafariContentBlockerRecord],
+        cacheKey: String,
+        forceSourceRefresh: Bool,
+        service: SumiContentBlockingService
+    ) async {
+        defer {
+            if runtimeGeneration == generation {
+                preparationTask = nil
             }
-            return true
+        }
+
+        if forceSourceRefresh == false,
+           let blockers = inventoryStore.preparedBlockers(
+            matching: records
+        ) {
+            let definitions = blockers.flatMap {
+                $0.ruleLists.map(\.definition)
+            }
+            do {
+                let prepared = try await service
+                    .prepareExistingRuleListUpdate(ruleLists: definitions)
+                guard canCommit(
+                    generation: generation,
+                    service: service
+                ) else { return }
+                service.commitPreparedContentBlockingUpdate(prepared)
+                serviceCacheKey = cacheKey
+                return
+            } catch {
+                Self.log.notice(
+                    "Compiled Safari content blocker inventory missed WebKit storage; refreshing source rules: \(error.localizedDescription, privacy: .public)"
+                )
+            }
+        }
+
+        var located: [(
+            record: InstalledSafariContentBlockerRecord,
+            rules: SafariContentBlockerLocatedRules
+        )] = []
+        var unavailableBlockerIDs = Set<String>()
+        var didMutateStoredRecords = false
+        for record in records {
+            guard Task.isCancelled == false else { return }
+            do {
+                let rules = try await Self.locateRules(for: record)
+                located.append((record, rules))
+                didMutateStoredRecords =
+                    metadataStore.repair(
+                        record: record,
+                        locatedRules: rules
+                    ) || didMutateStoredRecords
+            } catch {
+                unavailableBlockerIDs.insert(record.id)
+                didMutateStoredRecords =
+                    metadataStore.markUnavailable(record, error: error)
+                    || didMutateStoredRecords
+            }
+        }
+
+        guard canCommit(generation: generation, service: service) else {
+            return
+        }
+        if didMutateStoredRecords {
+            reloadInstalledRecords()
+        }
+        inventoryStore.replace(
+            with: located.map {
+                SafariContentBlockerPreparedInventory.Blocker(
+                    record: $0.record,
+                    locatedRules: $0.rules
+                )
+            },
+            removing: unavailableBlockerIDs
+        )
+
+        let definitions = located.flatMap(\.rules.definitions)
+        guard definitions.isEmpty == false else {
+            service.setPolicy(.disabled)
+            serviceCacheKey = nil
+            return
+        }
+
+        do {
+            let prepared = try await service.prepareRuleListUpdate(
+                ruleLists: definitions,
+                retainEncodedRuleListsInPreparedPolicy: false
+            )
+            guard canCommit(generation: generation, service: service) else {
+                return
+            }
+            service.commitPreparedContentBlockingUpdate(prepared)
+            serviceCacheKey = runtimeCacheKey(
+                for: enabledRuntimeRecords()
+            )
         } catch {
             Self.log.error(
-                "Failed to persist Safari content blocker metadata repair: \(error.localizedDescription, privacy: .public)"
+                "Failed to prepare Safari content blocker runtime: \(error.localizedDescription, privacy: .public)"
             )
-            return false
+            service.setPolicy(.disabled)
+            serviceCacheKey = nil
         }
+    }
+
+    private func canCommit(
+        generation: UInt64,
+        service: SumiContentBlockingService
+    ) -> Bool {
+        Task.isCancelled == false
+            && runtimeGeneration == generation
+            && self.service === service
+            && isModuleEnabled()
+    }
+
+    private func enabledRuntimeRecords()
+        -> [InstalledSafariContentBlockerRecord] {
+        installedRecords.filter(Self.isRuntimeEnabledRecord)
+    }
+
+    private static func isRuntimeEnabledRecord(
+        _ record: InstalledSafariContentBlockerRecord
+    ) -> Bool {
+        record.isEnabled && record.compileStatus == .available
+    }
+
+    private func runtimeCacheKey(
+        for records: [InstalledSafariContentBlockerRecord]
+    ) -> String {
+        records
+            .map {
+                "\($0.id):\($0.resourceFingerprint):\($0.ruleListCount)"
+            }
+            .sorted()
+            .joined(separator: "|")
+    }
+
+    private func replaceRuntimeService(
+        _ replacement: SumiContentBlockingService,
+        cacheKey: String
+    ) {
+        runtimeGeneration &+= 1
+        preparationTask?.cancel()
+        preparationTask = nil
+        if let service, service !== replacement {
+            service.stopRuntime()
+        }
+        service = replacement
+        serviceCacheKey = cacheKey
+    }
+
+    private func reloadInstalledRecords() {
+        let records = metadataStore.installedRecords()
+        installedRecords = records
+        recordsByBundleIdentifier = Dictionary(
+            records.map { ($0.extensionBundleIdentifier, $0) },
+            uniquingKeysWith: { _, latest in latest }
+        )
+        sourceMonitor?.reconcileObservation()
+    }
+
+    private func makeSourceMonitor() -> SafariContentBlockerSourceMonitor {
+        SafariContentBlockerSourceMonitor(
+            shouldObserve: { [weak self] in
+                guard let self else { return false }
+                return isModuleEnabled()
+                    && enabledRuntimeRecords().isEmpty == false
+            },
+            sources: { [weak self] in
+                self?.enabledRuntimeRecords().map {
+                    SafariContentBlockerSourceMonitor.Source(
+                        id: $0.id,
+                        appexPath: $0.appexPath
+                    )
+                } ?? []
+            },
+            sourceStampsMatch: { [weak self] stamps in
+                guard let self else { return true }
+                return inventoryStore.sourceStampsMatch(
+                    stamps,
+                    records: enabledRuntimeRecords()
+                )
+            },
+            onStale: { [weak self] in
+                guard let self else { return }
+                await refreshPreparedInventory()
+                onPreparedInventoryRefresh()
+            }
+        )
+    }
+
+    private static func locateRules(
+        in candidate: DiscoveredSafariExtensionCandidate
+    ) async throws -> SafariContentBlockerLocatedRules {
+        let appexURL = candidate.appexURL
+        let extensionBundleIdentifier = candidate.extensionBundleIdentifier
+        let displayName = candidate.displayName
+        return try await Task.detached(priority: .utility) {
+            try SafariContentBlockerRuleLocator.locateRules(
+                appexURL: appexURL,
+                extensionBundleIdentifier: extensionBundleIdentifier,
+                displayName: displayName
+            )
+        }.value
+    }
+
+    private static func locateRules(
+        for record: InstalledSafariContentBlockerRecord
+    ) async throws -> SafariContentBlockerLocatedRules {
+        let appexURL = URL(
+            fileURLWithPath: record.appexPath,
+            isDirectory: true
+        )
+        let extensionBundleIdentifier = record.extensionBundleIdentifier
+        let displayName = record.displayName
+        return try await Task.detached(priority: .utility) {
+            try SafariContentBlockerRuleLocator.locateRules(
+                appexURL: appexURL,
+                extensionBundleIdentifier: extensionBundleIdentifier,
+                displayName: displayName
+            )
+        }.value
+    }
+
+    private static func resourceFingerprint(appexURL: URL) async -> String {
+        await Task.detached(priority: .utility) {
+            SafariContentBlockerRuleLocator.resourceFingerprint(
+                appexURL: appexURL
+            )
+        }.value
     }
 
     private static func normalizedSiteHost(for url: URL?) -> String? {
         SumiSiteNormalizer().normalizedHost(for: url)
-    }
-}
-
-private extension SafariContentBlockerRuleLocatorError {
-    var persistedCompileStatus: SafariContentBlockerCompileStatus {
-        switch self {
-        case .resourcesDirectoryMissing, .staticRulesUnavailable:
-            return .rulesUnavailable
-        case .invalidJSON, .invalidRuleListShape:
-            return .compileFailed
-        }
     }
 }

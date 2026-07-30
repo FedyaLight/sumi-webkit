@@ -21,17 +21,13 @@ final class ExtensionContextResidencyOwner {
         self.settlement = settlement
     }
 
-    func touchLiveExtensionContext(extensionId: String, profileId: UUID) {
-        retention.touch(extensionID: extensionId, profileID: profileId)
-    }
-
-    func enforceBoundedLiveExtensionContexts(
-        keepingProfileId: UUID,
-        keepingExtensionId: String
+    func retainActiveExtensionContext(
+        extensionId: String,
+        profileId: UUID
     ) {
-        retention.enforceLimit(
-            keepingProfileID: keepingProfileId,
-            keepingExtensionID: keepingExtensionId
+        retention.retainActiveContext(
+            extensionID: extensionId,
+            profileID: profileId
         )
     }
 

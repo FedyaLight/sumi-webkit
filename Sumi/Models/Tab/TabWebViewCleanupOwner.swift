@@ -16,14 +16,12 @@ enum SumiWebViewShutdown {
     @MainActor
     static func perform(
         on webView: WKWebView,
-        runtime: NormalTabRuntime,
-        additionalTabCleanup: (() -> Void)? = nil
+        runtime: NormalTabRuntime
     ) {
         performLifecycle(
             on: webView,
             scope: .normal,
-            normalTabRuntime: runtime,
-            additionalTabCleanup: additionalTabCleanup
+            normalTabRuntime: runtime
         )
     }
 
@@ -37,8 +35,7 @@ enum SumiWebViewShutdown {
         performLifecycle(
             on: webView,
             scope: .normal,
-            normalTabRuntime: runtime,
-            prepareForRelease: false
+            normalTabRuntime: runtime
         )
     }
 
@@ -57,9 +54,7 @@ enum SumiWebViewShutdown {
     private static func performLifecycle(
         on webView: WKWebView,
         scope: Scope,
-        normalTabRuntime: NormalTabRuntime?,
-        additionalTabCleanup: (() -> Void)? = nil,
-        prepareForRelease: Bool = true
+        normalTabRuntime: NormalTabRuntime?
     ) {
         webView.stopLoading()
         stopNativeMedia(on: webView)
@@ -67,11 +62,6 @@ enum SumiWebViewShutdown {
         if let controller = webView.configuration.userContentController.sumiNormalTabUserContentController {
             controller.cleanUpBeforeClosing()
         }
-
-        if prepareForRelease {
-            prepareForReleaseIfNeeded(webView, scope: scope)
-        }
-        additionalTabCleanup?()
 
         webView.navigationDelegate = nil
         webView.uiDelegate = nil
@@ -98,12 +88,6 @@ enum SumiWebViewShutdown {
         }
     }
 
-    @MainActor
-    private static func prepareForReleaseIfNeeded(_ webView: WKWebView, scope: Scope) {
-        guard case .normal = scope else { return }
-        guard webView.url?.absoluteString != SumiSurface.emptyTabURL.absoluteString else { return }
-        _ = webView.load(URLRequest(url: SumiSurface.emptyTabURL))
-    }
 }
 
 enum SumiAuxiliaryWebViewShutdown {
@@ -135,9 +119,6 @@ enum TabWebViewCleanupOwner {
         let currentPermissionPageId: () -> String
         let profilePartitionId: () -> String?
         let invalidatePermissionPageForReplacement: (String) -> Void
-        let unbindAudioState: (WKWebView) -> Void
-        let removeNavigationStateObservers: (WKWebView) -> Void
-        let removeNavigationDelegateBundle: (WKWebView) -> Void
         let webViewDidLeaveRuntime: (WKWebView) -> Void
         let resetPlaybackActivity: () -> Void
         let setLoadingIdle: () -> Void
@@ -177,11 +158,7 @@ enum TabWebViewCleanupOwner {
         SumiWebViewShutdown.perform(
             on: webView,
             runtime: context.shutdownRuntime
-        ) {
-            context.unbindAudioState(webView)
-            context.removeNavigationStateObservers(webView)
-            context.removeNavigationDelegateBundle(webView)
-        }
+        )
         return true
     }
 

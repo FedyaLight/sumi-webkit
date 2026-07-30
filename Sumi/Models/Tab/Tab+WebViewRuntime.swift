@@ -223,6 +223,27 @@ extension Tab {
         )
     }
 
+    func normalTabStaticManagedUserScripts() -> [SumiPageScript] {
+        webViewConfigurationOwner.normalTabStaticManagedUserScripts(
+            coreUserScripts: normalTabCoreUserScripts(),
+            context: webViewConfigurationContext()
+        )
+    }
+
+    func normalTabNavigationUserScripts(
+        for targetURL: URL?,
+        profileIDOverride: UUID? = nil
+    ) -> [SumiPageScript] {
+        webViewConfigurationOwner.normalTabNavigationUserScripts(
+            for: targetURL,
+            profileIdProvider: {
+                profileIDOverride ?? self.resolveProfile()?.id ?? self.profileId
+            },
+            context: webViewConfigurationContext(),
+            isEphemeral: isEphemeral
+        )
+    }
+
     func replaceNormalTabUserScripts(
         on userContentController: WKUserContentController,
         for targetURL: URL?
@@ -231,8 +252,12 @@ extension Tab {
               let provider = controller.normalTabUserScriptsProvider
         else { return }
 
-        let managedUserScripts = normalTabManagedUserScripts(for: targetURL)
-        guard provider.replaceManagedUserScriptsIfChanged(managedUserScripts) else {
+        guard provider.replaceUserScriptPlanIfChanged(
+            staticManagedUserScripts: normalTabStaticManagedUserScripts(),
+            navigationUserScripts: normalTabNavigationUserScripts(
+                for: targetURL
+            )
+        ) else {
             return
         }
 

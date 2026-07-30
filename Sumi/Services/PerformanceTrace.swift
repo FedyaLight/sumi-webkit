@@ -1,6 +1,8 @@
 import OSLog
 
 enum PerformanceTrace {
+    #if DEBUG || SUMI_DIAGNOSTICS
+    typealias IntervalState = OSSignpostIntervalState
     static let category = "PerformanceTrace"
     private static let signposter = OSSignposter(
         logger: .sumi(category: category)
@@ -34,4 +36,27 @@ enum PerformanceTrace {
         defer { endInterval(name, state) }
         return try operation()
     }
+    #else
+    struct IntervalState {}
+
+    @inline(__always)
+    static func beginInterval(_: StaticString) -> IntervalState {
+        IntervalState()
+    }
+
+    @inline(__always)
+    static func endInterval(_: StaticString, _: IntervalState) {}
+
+    @inline(__always)
+    static func emitEvent(_: StaticString) {}
+
+    @discardableResult
+    @inline(__always)
+    static func withInterval<T>(
+        _: StaticString,
+        _ operation: () throws -> T
+    ) rethrows -> T {
+        try operation()
+    }
+    #endif
 }

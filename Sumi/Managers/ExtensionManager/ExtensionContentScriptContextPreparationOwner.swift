@@ -128,14 +128,14 @@ final class ExtensionContentScriptContextPreparationOwner {
     }
 
     private func contentScriptExtensions() -> [InstalledExtension] {
-        installedExtensions.records.filter {
-            $0.isEnabled && $0.hasContentScripts
-        }
+        installedExtensions.enabledContentScriptRecords
     }
 
     nonisolated static func runtimeTask(
         _ operation: @escaping @MainActor @Sendable () async -> Void
     ) -> Task<Void, Never> {
-        Task.detached { await operation() }
+        Task { @MainActor in
+            await operation()
+        }
     }
 }

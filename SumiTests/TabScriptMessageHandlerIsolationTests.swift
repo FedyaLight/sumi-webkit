@@ -1,6 +1,6 @@
 import Foundation
-import SumiDomain
 @testable import Sumi
+import SumiDomain
 import WebKit
 import XCTest
 
@@ -445,12 +445,12 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         XCTAssertEqual(tab.committedDocumentRuntime.suspensionDecision, .allowed)
     }
 
-    private func linkContext(for tab: Tab) -> String {
-        "sumiLinkInteraction_\(tab.id.uuidString)"
+    private func linkContext(for _: Tab) -> String {
+        "sumiLinkInteraction"
     }
 
-    private func tabSuspensionContext(for tab: Tab) -> String {
-        "sumiTabSuspension_\(tab.id.uuidString)"
+    private func tabSuspensionContext(for _: Tab) -> String {
+        "sumiTabSuspension"
     }
 
     private func scriptShapes(_ scripts: [SumiPageScript]) -> [ScriptShape] {

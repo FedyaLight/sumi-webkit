@@ -81,9 +81,9 @@ final class ExtensionContextPreparation {
                 extensionID: request.extensionId,
                 profileID: request.profileId,
                 policy: policyResult.policy,
-                installedExtension: installedExtensions.records.first {
-                    $0.id == request.extensionId
-                },
+                installedExtension: installedExtensions.record(
+                    for: request.extensionId
+                ),
                 manifest: request.manifest
             )
         )

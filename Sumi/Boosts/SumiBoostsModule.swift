@@ -78,6 +78,7 @@ final class SumiBoostsModule: ObservableObject {
     /// Stores a factory used when the module is enabled after BrowserManager wiring.
     func bindRuntimeProvider(_ provider: @escaping @MainActor () -> Runtime) {
         runtimeProvider = provider
+        prefetchStoreIfEnabledAndWired()
     }
 
     func attach(runtime: Runtime) {
@@ -101,6 +102,7 @@ final class SumiBoostsModule: ObservableObject {
             clearAttachedRuntime()
         } else {
             attachRuntimeFromProviderIfNeeded()
+            prefetchStoreIfEnabledAndWired()
         }
 
         changesSubject.send(())
@@ -114,6 +116,13 @@ final class SumiBoostsModule: ObservableObject {
     private func clearAttachedRuntime() {
         runtime = .empty
         hasAttachedRuntime = false
+    }
+
+    private func prefetchStoreIfEnabledAndWired() {
+        guard isEnabled, hasAttachedRuntime || runtimeProvider != nil else {
+            return
+        }
+        loadStore().prefetch()
     }
 
     func canBoost(url: URL?) -> Bool {

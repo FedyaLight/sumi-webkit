@@ -86,6 +86,66 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
         XCTAssertEqual(installedScriptCount(containing: "__sumiFaviconTransportInstalled", in: controller), 1)
     }
 
+    func testNavigationOnlyReplacementKeepsStaticWKUserScriptsInstalled() async throws {
+        let staticScript = PassiveParityUserScript(
+            sourceMarker: "__sumiParityStatic"
+        )
+        let provider = SumiNormalTabUserScripts(
+            staticManagedUserScripts: [staticScript],
+            navigationUserScripts: [
+                PassiveParityUserScript(
+                    sourceMarker: "__sumiParityNavigationFirst"
+                ),
+            ]
+        )
+        let controller: WKUserContentController =
+            SumiNormalTabUserContentControllerFactory.makeController(
+                scriptsProvider: provider
+            )
+        let normalTabController = try XCTUnwrap(
+            controller.sumiNormalTabUserContentController
+        )
+        await normalTabController.waitForContentBlockingAssetsInstalled()
+        let installedStaticScript = try XCTUnwrap(
+            controller.userScripts.first {
+                $0.source.contains("__sumiParityStatic")
+            }
+        )
+
+        XCTAssertTrue(
+            provider.replaceUserScriptPlanIfChanged(
+                staticManagedUserScripts: [staticScript],
+                navigationUserScripts: [
+                    PassiveParityUserScript(
+                        sourceMarker: "__sumiParityNavigationSecond"
+                    ),
+                ]
+            )
+        )
+        await normalTabController.replaceNormalTabUserScripts(with: provider)
+
+        let retainedStaticScript = try XCTUnwrap(
+            controller.userScripts.first {
+                $0.source.contains("__sumiParityStatic")
+            }
+        )
+        XCTAssertIdentical(retainedStaticScript, installedStaticScript)
+        XCTAssertEqual(
+            installedScriptCount(
+                containing: "__sumiParityNavigationFirst",
+                in: controller
+            ),
+            0
+        )
+        XCTAssertEqual(
+            installedScriptCount(
+                containing: "__sumiParityNavigationSecond",
+                in: controller
+            ),
+            1
+        )
+    }
+
     func testEquivalentReplacementDoesNotDuplicateInstalledScripts() async throws {
         let provider = SumiNormalTabUserScripts(
             managedUserScripts: [
@@ -655,6 +715,25 @@ private final class ParityUserScript: NSObject, SumiPageScript {
         _ = userContentController
         onMessage?(message)
     }
+}
+
+@MainActor
+private final class PassiveParityUserScript: NSObject, SumiPageScript {
+    let source: String
+    let injectionTime: WKUserScriptInjectionTime = .atDocumentStart
+    let forMainFrameOnly = true
+    let requiresRunInPageContentWorld = true
+    let messageNames: [String] = []
+
+    init(sourceMarker: String) {
+        source = "window.\(sourceMarker) = true;"
+        super.init()
+    }
+
+    func userContentController(
+        _: WKUserContentController,
+        didReceive _: WKScriptMessage
+    ) {}
 }
 
 @MainActor

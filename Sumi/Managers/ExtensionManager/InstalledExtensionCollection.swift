@@ -14,6 +14,7 @@ final class InstalledExtensionCollection: ObservableObject {
     private var didChangeRecords: (() -> Void)?
     private let revisions = InstalledExtensionRecordRevisions()
     private var durabilityByID: [String: RecordDurability] = [:]
+    private let catalogIndex = InstalledExtensionCatalogIndex()
 
     func connectRecordChanges(_ handler: @escaping () -> Void) {
         precondition(
@@ -27,12 +28,25 @@ final class InstalledExtensionCollection: ObservableObject {
         revisions.revision(for: id)
     }
 
+    func record(for id: String) -> InstalledExtension? {
+        catalogIndex.record(for: id)
+    }
+
+    var enabledRecords: [InstalledExtension] { catalogIndex.enabledRecords }
+    var enabledContentScriptRecords: [InstalledExtension] {
+        catalogIndex.enabledContentScriptRecords
+    }
+
+    var hasEnabledRecords: Bool {
+        catalogIndex.enabledRecords.isEmpty == false
+    }
+
     func recordDurability(for id: String) -> RecordDurability? {
         durabilityByID[id]
     }
 
     func markRecordDurable(_ id: String) {
-        guard records.contains(where: { $0.id == id }) else { return }
+        guard record(for: id) != nil else { return }
         durabilityByID[id] = .durable
     }
 
@@ -42,7 +56,10 @@ final class InstalledExtensionCollection: ObservableObject {
     ) {
         let advancesRevision: Bool
         if let index = records.firstIndex(where: { $0.id == record.id }) {
-            advancesRevision = Self.sameCatalogRecord(records[index], record) == false
+            advancesRevision = InstalledExtensionCatalogIdentity.matches(
+                records[index],
+                record
+            ) == false
             records[index] = record
         } else {
             advancesRevision = true
@@ -53,6 +70,7 @@ final class InstalledExtensionCollection: ObservableObject {
             revisions.bump(record.id)
         }
         sortRecords()
+        rebuildIndexes()
         notifyRecordChanges()
     }
 
@@ -66,6 +84,7 @@ final class InstalledExtensionCollection: ObservableObject {
             durabilityByID.removeValue(forKey: previousID)
             revisions.bump(record.id)
         }
+        rebuildIndexes()
         notifyRecordChanges()
     }
 
@@ -75,6 +94,7 @@ final class InstalledExtensionCollection: ObservableObject {
         guard records.count != originalCount else { return }
         durabilityByID.removeValue(forKey: id)
         revisions.bump(id)
+        rebuildIndexes()
         notifyRecordChanges()
     }
 
@@ -92,7 +112,10 @@ final class InstalledExtensionCollection: ObservableObject {
             case (nil, .some), (.some, nil):
                 revisions.bump(id)
             case (.some(let previous), .some(let replacement)):
-                if Self.sameCatalogRecord(previous, replacement) == false {
+                if InstalledExtensionCatalogIdentity.matches(
+                    previous,
+                    replacement
+                ) == false {
                     revisions.bump(id)
                 }
             case (nil, nil):
@@ -104,39 +127,25 @@ final class InstalledExtensionCollection: ObservableObject {
             records.map { ($0.id, .durable) },
             uniquingKeysWith: { _, current in current }
         )
+        sortRecords()
+        rebuildIndexes()
         notifyRecordChanges()
     }
 
     func sort() {
         sortRecords()
+        rebuildIndexes()
         notifyRecordChanges()
-    }
-
-    /// Value identity used only to keep idempotent catalog reloads from
-    /// invalidating in-flight exact authority. The fingerprints cover package
-    /// content; the remaining fields cover install/enable state.
-    private static func sameCatalogRecord(
-        _ lhs: InstalledExtension,
-        _ rhs: InstalledExtension
-    ) -> Bool {
-        lhs.id == rhs.id
-            && lhs.version == rhs.version
-            && lhs.manifestVersion == rhs.manifestVersion
-            && lhs.isEnabled == rhs.isEnabled
-            && lhs.installDate == rhs.installDate
-            && lhs.packagePath == rhs.packagePath
-            && lhs.sourceKind == rhs.sourceKind
-            && lhs.incognitoMode == rhs.incognitoMode
-            && lhs.sourcePathFingerprint == rhs.sourcePathFingerprint
-            && lhs.manifestRootFingerprint == rhs.manifestRootFingerprint
-            && lhs.sourceBundlePath == rhs.sourceBundlePath
-            && lhs.safariRuntimeIdentity == rhs.safariRuntimeIdentity
     }
 
     private func sortRecords() {
         records.sort {
             $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
         }
+    }
+
+    private func rebuildIndexes() {
+        catalogIndex.rebuild(from: records)
     }
 
     private func notifyRecordChanges() {

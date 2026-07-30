@@ -1,5 +1,4 @@
 import Foundation
-import OSLog
 
 @MainActor
 final class TabStructuralPublishOwner {
@@ -9,7 +8,8 @@ final class TabStructuralPublishOwner {
     private var pendingLivePageResidenceScopes = Set<LivePageResidenceScope>()
     private var actionsBeforeStructuralPublication: [@MainActor () -> Void] = []
     private var actionsAfterStructuralBatch: [@MainActor () -> Void] = []
-    private var structuralTransactionSignpostState: OSSignpostIntervalState?
+    private var structuralTransactionSignpostState:
+        PerformanceTrace.IntervalState?
     private(set) var mutationRevision: UInt64 = 0
 
     init(eventBus: TabStructureEventBus) {

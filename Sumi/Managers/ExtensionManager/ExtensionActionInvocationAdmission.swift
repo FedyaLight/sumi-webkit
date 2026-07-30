@@ -80,9 +80,9 @@ final class ExtensionActionInvocationAdmission {
            sameRuntimeBinding(bindingAtClick, binding) == false {
             return nil
         }
-        guard let record = installedExtensions.records.first(where: {
-            $0.id == request.extensionID
-        }), record.isEnabled else {
+        guard let record = installedExtensions.record(
+            for: request.extensionID
+        ), record.isEnabled else {
             return nil
         }
         return ExtensionActionInvocationEvidence(
@@ -159,9 +159,8 @@ final class ExtensionActionInvocationAdmission {
     ) -> Bool {
         requestAdmission.isCurrent(evidence.request)
             && runtimeBindingAdmission.isCurrent(evidence.runtimeBinding)
-            && installedExtensions.records.contains {
-                $0.id == evidence.extensionID && $0.isEnabled
-            }
+            && installedExtensions.record(for: evidence.extensionID)?
+                .isEnabled == true
     }
 
     private func sameRuntimeBinding(

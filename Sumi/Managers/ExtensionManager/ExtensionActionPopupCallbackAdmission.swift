@@ -59,9 +59,9 @@ final class ExtensionActionPopupCallbackAdmission {
                   context: context,
                   controller: controller
               ),
-              installedExtensions.records.contains(where: {
-                  $0.id == runtimeBinding.extensionID && $0.isEnabled
-              })
+              installedExtensions.record(
+                  for: runtimeBinding.extensionID
+              )?.isEnabled == true
         else {
             return nil
         }
@@ -78,8 +78,7 @@ final class ExtensionActionPopupCallbackAdmission {
         runtimeBindingAdmission.isCurrent(evidence.runtimeBinding)
             && installedExtensions.recordRevision(for: evidence.extensionID)
                 == evidence.installedRecordRevision
-            && installedExtensions.records.contains {
-                $0.id == evidence.extensionID && $0.isEnabled
-            }
+            && installedExtensions.record(for: evidence.extensionID)?
+                .isEnabled == true
     }
 }

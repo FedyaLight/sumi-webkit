@@ -1,12 +1,11 @@
 import Foundation
-import OSLog
 
 struct TabSuspensionState {
     var isSuspended = false
     var lastSuspendedURL: URL?
     var isRestoreInProgress = false
     private(set) var interactionStateData: Data?
-    private var restoreTraceState: OSSignpostIntervalState?
+    private var restoreTraceState: PerformanceTrace.IntervalState?
 
     mutating func markSuspended(
         url: URL,

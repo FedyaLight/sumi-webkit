@@ -17,8 +17,6 @@ final class ExtensionManager: NSObject {
         ExtensionContextPreparation.webExtensionURLScheme
     static let registerSafariWebExtensionURLScheme: Void =
         ExtensionContextPreparation.registerWebExtensionURLScheme
-    nonisolated static let maxLiveExtensionContexts = 8
-
     private let controllerGraph: ExtensionControllerGraph
     private let contextLifecycleGraph: ExtensionContextLifecycleGraph
     private let normalTabGraph: ExtensionNormalTabGraph

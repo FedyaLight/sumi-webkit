@@ -61,7 +61,7 @@ final class ExtensionContextLoadingOwner {
     func ensureEnabledExtensionsLoaded(profileID: UUID) async {
         guard runtimeIsEnabled() else { return }
         guard runtimeAccess.ensureExtensionController(profileID) else { return }
-        for record in installedExtensions.records where record.isEnabled {
+        for record in installedExtensions.enabledRecords {
             guard runtimeAccess.getExtensionContext(record.id, profileID) == nil
             else { continue }
             do {
@@ -81,10 +81,9 @@ final class ExtensionContextLoadingOwner {
     }
 
     private func retain(extensionID: String, profileID: UUID) {
-        retention.touch(extensionID: extensionID, profileID: profileID)
-        retention.enforceLimit(
-            keepingProfileID: profileID,
-            keepingExtensionID: extensionID
+        retention.retainActiveContext(
+            extensionID: extensionID,
+            profileID: profileID
         )
     }
 }

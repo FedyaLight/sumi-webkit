@@ -129,6 +129,21 @@ final class TabRuntimeRoutingTests: XCTestCase {
         XCTAssertFalse(tab.webContentRecoveryMarkers.isRecoveryRequired(on: webView))
     }
 
+    func testWebViewDepartureReleasesAudioStateSubscription() {
+        let tab = Tab(loadsCachedFaviconOnInit: false)
+        let webView = WKWebView()
+        tab.bindAudioState(to: webView)
+
+        XCTAssertEqual(tab.mediaRuntime.audioStateCancellables.count, 1)
+
+        tab.webViewDidLeaveNavigationRuntime(webView)
+
+        XCTAssertTrue(
+            tab.mediaRuntime.audioStateCancellables.isEmpty,
+            "A retired WebView must not remain owned by its audio-state subscription"
+        )
+    }
+
     func testRecoveryAdmissionIsOwnedByExactLifecycleResponderCallback() {
         let targetURL = URL(string: "https://example.com/admission-boundary")!
         let transaction = TabMainFrameRuntimeTransaction(initialURL: targetURL)

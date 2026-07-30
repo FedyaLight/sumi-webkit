@@ -28,7 +28,12 @@ final class SumiSafariContentBlockerAPIOwner {
             runtimeOwner: SafariContentBlockerRuntimeOwner(
                 database: database,
                 compiledRuleListCatalog: compiledRuleListCatalog,
-                isModuleEnabled: isModuleEnabled
+                isModuleEnabled: isModuleEnabled,
+                onPreparedInventoryRefresh: {
+                    liveTabs().forEach {
+                        $0.updateSafariContentBlockerReloadRequirementForCurrentSite()
+                    }
+                }
             ),
             liveTabs: liveTabs
         )

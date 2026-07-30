@@ -53,13 +53,9 @@ final class ExtensionLoadedContextFinalizer {
             }
         }
         let key = loadedContext.bindingReceipt.key
-        retention.touch(
+        retention.retainActiveContext(
             extensionID: key.extensionId,
             profileID: key.profileId
-        )
-        retention.enforceLimit(
-            keepingProfileID: key.profileId,
-            keepingExtensionID: key.extensionId
         )
         try authority.validate(loadedContext)
 

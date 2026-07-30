@@ -473,7 +473,9 @@ final class SumiBackgroundVideoOptimizationUserScript: NSObject, SumiPageScript 
 
         if (!viewportActivationListenerInstalled) {
             viewportActivationListenerInstalled = true;
-            document.addEventListener("play", handleVideoPlay, true);
+            if (!window.__sumiMediaPlaybackBroker?.subscribe(handleVideoPlay)) {
+                document.addEventListener("play", handleVideoPlay, true);
+            }
         }
 
         window[apiName] = {

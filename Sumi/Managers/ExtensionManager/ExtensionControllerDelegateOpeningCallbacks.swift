@@ -76,9 +76,9 @@ final class ExtensionControllerDelegateOpeningCallbacks {
     ) {
         guard bootstrapChromeAdmission.isActiveGlobalBootstrapOwner(
             evidence: evidence
-        ), let manifest = installedExtensions.records.first(where: {
-            $0.id == evidence.extensionID
-        })?.manifest
+        ), let manifest = installedExtensions.record(
+            for: evidence.extensionID
+        )?.manifest
         else {
             completion()
             return

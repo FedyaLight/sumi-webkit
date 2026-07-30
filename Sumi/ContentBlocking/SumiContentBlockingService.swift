@@ -49,7 +49,35 @@ final class SumiContentBlockingService {
                     compiler: compiler,
                     catalog: compiledRuleListCatalog,
                     startupDiagnostics: startupDiagnostics
-                )
+                ),
+                publishesInitialDisabledUpdate: true,
+                schedulesInitialCompilation: true
+            )
+        }
+
+        convenience init(
+            pendingCompiledRuleListCatalog:
+                SumiCompiledContentRuleListCataloging,
+            compiler: SumiContentRuleListCompiling =
+                SumiWKContentRuleListCompiler(),
+            startupDiagnostics: any SumiProtectionStartupRestoreDiagnosticsRecording =
+                SumiProtectionStartupRestoreDiagnosticsDefaults.recorder
+        ) {
+            let materializer = SumiContentRuleListMaterializer(
+                compiler: compiler,
+                startupDiagnostics: startupDiagnostics
+            )
+            self.init(
+                policy: .disabled,
+                ruleListProvider: nil,
+                ruleListMaterializer: materializer,
+                retirement: SumiCompiledContentRuleListRetirement(
+                    compiler: compiler,
+                    catalog: pendingCompiledRuleListCatalog,
+                    startupDiagnostics: startupDiagnostics
+                ),
+                publishesInitialDisabledUpdate: false,
+                schedulesInitialCompilation: false
             )
         }
     #else
@@ -68,7 +96,31 @@ final class SumiContentBlockingService {
                 retirement: SumiCompiledContentRuleListRetirement(
                     compiler: compiler,
                     catalog: compiledRuleListCatalog
-                )
+                ),
+                publishesInitialDisabledUpdate: true,
+                schedulesInitialCompilation: true
+            )
+        }
+
+        convenience init(
+            pendingCompiledRuleListCatalog:
+                SumiCompiledContentRuleListCataloging,
+            compiler: SumiContentRuleListCompiling =
+                SumiWKContentRuleListCompiler()
+        ) {
+            let materializer = SumiContentRuleListMaterializer(
+                compiler: compiler
+            )
+            self.init(
+                policy: .disabled,
+                ruleListProvider: nil,
+                ruleListMaterializer: materializer,
+                retirement: SumiCompiledContentRuleListRetirement(
+                    compiler: compiler,
+                    catalog: pendingCompiledRuleListCatalog
+                ),
+                publishesInitialDisabledUpdate: false,
+                schedulesInitialCompilation: false
             )
         }
     #endif
@@ -77,7 +129,9 @@ final class SumiContentBlockingService {
         policy: SumiContentBlockingPolicy,
         ruleListProvider: SumiContentRuleListSetProviding?,
         ruleListMaterializer: SumiContentRuleListMaterializer,
-        retirement: SumiCompiledContentRuleListRetirement
+        retirement: SumiCompiledContentRuleListRetirement,
+        publishesInitialDisabledUpdate: Bool,
+        schedulesInitialCompilation: Bool
     ) {
         self.ruleListMaterializer = ruleListMaterializer
         let stateMachine = SumiContentBlockingStateMachine(policy: policy)
@@ -88,7 +142,8 @@ final class SumiContentBlockingService {
             )
         self.privacyConfigurationManager = privacyConfigurationManager
         let initialUpdate: SumiContentBlockerRulesUpdate? =
-            policy.ruleLists.isEmpty && ruleListProvider == nil
+            publishesInitialDisabledUpdate
+                && policy.ruleLists.isEmpty && ruleListProvider == nil
                 ? SumiContentBlockingPublication.emptyUpdate()
                 : nil
         let publication = SumiContentBlockingPublication(
@@ -102,7 +157,8 @@ final class SumiContentBlockingService {
                 provider: ruleListProvider,
                 updateTarget: self
             )
-        } else if let request = stateMachine.beginInitialCompilation() {
+        } else if schedulesInitialCompilation,
+                  let request = stateMachine.beginInitialCompilation() {
             scheduleCompilation(request)
         }
     }

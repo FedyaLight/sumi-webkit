@@ -194,8 +194,8 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         XCTAssertFalse(controller.contentBlockingAssetSummary.isContentBlockingFeatureEnabled)
         XCTAssertTrue(controller.contentBlockingAssetSummary.addedToUserContentControllerIdentifiers.isEmpty)
         XCTAssertNil(controller.contentBlockingAssetSummary.tabAttachmentDuration)
-        XCTAssertTrue(sources.contains("sumiLinkInteraction_\(tab.id.uuidString)"))
-        XCTAssertTrue(sources.contains("sumiTabSuspension_\(tab.id.uuidString)"))
+        XCTAssertTrue(sources.contains("sumiLinkInteraction"))
+        XCTAssertTrue(sources.contains("sumiTabSuspension"))
         XCTAssertTrue(sources.contains("__sumiTabSuspension"))
         XCTAssertNil(webView.configuration.webExtensionController)
         XCTAssertFalse(browserManager.adBlockingModule.hasLoadedRuntime)
@@ -244,7 +244,7 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         for marker in [
             "__sumiTabSuspension",
             SumiTransientChromeInteractionShieldUserScript.sourceMarker,
-            "sumiLinkInteraction_",
+            "sumiLinkInteraction",
         ] {
             sourceConfiguration.userContentController.addUserScript(
                 WKUserScript(

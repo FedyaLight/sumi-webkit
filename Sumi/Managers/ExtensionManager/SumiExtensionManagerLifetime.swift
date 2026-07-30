@@ -18,7 +18,7 @@ struct ExtensionManagerLifetimeControl {
     }
 
     func hasNormalTabRuntimeDemand() -> Bool {
-        installedExtensions.records.contains(where: \.isEnabled)
+        installedExtensions.hasEnabledRecords
             || runtimeDemand.hasRuntimeDemandWithoutEnabledExtensions
     }
 

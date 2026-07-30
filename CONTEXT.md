@@ -20,6 +20,12 @@ _Avoid_: Startup store, bookmark database, profile database
 A specialized store whose lifecycle is owned by macOS or WebKit, such as Keychain or `WKWebsiteDataStore`, and which is referenced but never reimplemented by the Browser Database.
 _Avoid_: Legacy store, auxiliary database
 
+## Content Blocking Language
+
+**Blocker Rule Inventory**:
+The Browser-Database-owned projection of which Safari content-blocker rule lists are enabled and the identity of each compiled WebKit rule list. Browser read paths answer from this projection; extension bundle contents are read only while installing, refreshing, or recovering a missing compiled list.
+_Avoid_: Rule cache, blocker manifest
+
 ## Split View Language
 
 **Split Group**:

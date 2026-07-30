@@ -57,4 +57,27 @@ final class WindowWebContentHostRegistryTests: XCTestCase {
             )
         )
     }
+
+    func testRuntimeEvictionDoesNotExtendWebViewLifetime() {
+        var retainedHost: SumiWebViewContainerView?
+        weak var releasedWebView: WKWebView?
+
+        autoreleasepool {
+            let webView = WKWebView()
+            let host = SumiWebViewContainerView(
+                tabID: UUID(),
+                webView: webView
+            )
+            retainedHost = host
+            releasedWebView = webView
+
+            host.evictFromRuntime()
+        }
+
+        XCTAssertNotNil(retainedHost)
+        XCTAssertNil(
+            releasedWebView,
+            "A SwiftUI-cached presentation host must not own a retired WKWebView"
+        )
+    }
 }

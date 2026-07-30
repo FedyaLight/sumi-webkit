@@ -39,29 +39,17 @@ final class ExtensionRuntimeResidencyStateTests: XCTestCase {
         )
     }
 
-    func testEvictionCandidatesKeepCurrentContextAndUseOldestResidencyOrder() throws {
+    func testResidencyTracksMoreThanEightContextsWithoutEviction() throws {
         let profileId = try XCTUnwrap(UUID(uuidString: "11111111-2222-3333-4444-555555555555"))
         var state = ExtensionRuntimeResidencyState()
 
-        state.touch(extensionId: "oldest", profileId: profileId)
-        state.touch(extensionId: "middle", profileId: profileId)
-        state.touch(extensionId: "current", profileId: profileId)
+        for index in 0..<12 {
+            state.touch(extensionId: "extension-\(index)", profileId: profileId)
+        }
 
-        let candidates = state.touchAndEvictionCandidates(
-            loadedContextCount: 4,
-            limit: 2,
-            keepingExtensionId: "current",
-            keepingProfileId: profileId
-        )
-
-        XCTAssertEqual(
-            candidates.map(\.extensionId),
-            ["oldest", "middle"]
-        )
-        XCTAssertEqual(
-            state.liveContextKeys.map(\.extensionId),
-            ["oldest", "middle", "current"]
-        )
+        XCTAssertEqual(state.liveContextKeys.count, 12)
+        XCTAssertEqual(state.liveContextKeys.first?.extensionId, "extension-0")
+        XCTAssertEqual(state.liveContextKeys.last?.extensionId, "extension-11")
     }
 
     func testRemovalByExtensionIdDropsAllProfileResidencyEntries() throws {

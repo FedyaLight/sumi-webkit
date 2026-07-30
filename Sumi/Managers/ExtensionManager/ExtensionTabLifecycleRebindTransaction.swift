@@ -7,6 +7,22 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionTabLifecycleRebindTransaction {
+    private struct UserGestureProbe: Equatable {
+        let profileID: UUID?
+        let documentBinding: TabExtensionDocumentBindingSnapshot
+        let contextBindingGeneration: UInt64?
+        let webViewID: ObjectIdentifier?
+        let webViewOwnsTab: Bool
+    }
+
+    private final class UserGestureProbeBox {
+        let probe: UserGestureProbe
+
+        init(_ probe: UserGestureProbe) {
+            self.probe = probe
+        }
+    }
+
     private weak var runtimePublicationEvidence:
         ExtensionRuntimePublicationEvidenceIssuer?
     private weak var runtimeLoadStatus: ExtensionRuntimeLoadStatusAuthority?
@@ -26,6 +42,11 @@ final class ExtensionTabLifecycleRebindTransaction {
         (any ExtensionDeferredTabRegistrationScheduling)?
     private weak var registration: ExtensionNormalTabRegistration?
     private let events: ExtensionTabLifecycleEmitter
+    private let settledUserGestureProbes =
+        NSMapTable<Tab, UserGestureProbeBox>(
+            keyOptions: .weakMemory,
+            valueOptions: .strongMemory
+        )
 
     init(
         runtimePublicationEvidence:
@@ -86,10 +107,36 @@ final class ExtensionTabLifecycleRebindTransaction {
 
     func reconcileOnUserGestureIfNeeded(_ tab: Tab, reason: String) {
         guard runtimeLoadStatus?.extensionsLoaded == true,
-              tab.isEphemeral == false,
-              needsContentScriptRebind(tab)
+              tab.isEphemeral == false
         else { return }
-        registration?.register(tab, reason: reason)
+        let probe = userGestureProbe(for: tab)
+        guard settledUserGestureProbes.object(forKey: tab)?.probe != probe
+        else { return }
+
+        if needsContentScriptRebind(tab) {
+            registration?.register(tab, reason: reason)
+            guard needsContentScriptRebind(tab) == false else { return }
+        }
+        settledUserGestureProbes.setObject(
+            UserGestureProbeBox(userGestureProbe(for: tab)),
+            forKey: tab
+        )
+    }
+
+    private func userGestureProbe(for tab: Tab) -> UserGestureProbe {
+        let profileID = profiles?.profileID(for: tab)
+        let webView = liveWebViews?.extensionLiveWebView(for: tab)
+        return UserGestureProbe(
+            profileID: profileID,
+            documentBinding:
+                tab.extensionPageRuntimeOwner.documentBindingSnapshot(),
+            contextBindingGeneration: profileID.flatMap {
+                profileRuntime?.contextBindingGeneration(for: $0)
+            },
+            webViewID: webView.map(ObjectIdentifier.init),
+            webViewOwnsTab:
+                (webView as? FocusableWKWebView)?.owningTab === tab
+        )
     }
 
     func prepareBeforeCommittedMainFrameNavigation(

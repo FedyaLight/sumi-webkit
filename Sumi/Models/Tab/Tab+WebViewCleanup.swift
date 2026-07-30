@@ -49,15 +49,6 @@ extension Tab {
             invalidatePermissionPageForReplacement: { reason in
                 self.invalidatePermissionPageForReplacement(reason: reason)
             },
-            unbindAudioState: { webView in
-                self.unbindAudioState(from: webView)
-            },
-            removeNavigationStateObservers: { webView in
-                self.removeNavigationStateObservers(from: webView)
-            },
-            removeNavigationDelegateBundle: { webView in
-                self.removeNavigationDelegateBundle(for: webView)
-            },
             webViewDidLeaveRuntime: { webView in
                 self.webViewDidLeaveNavigationRuntime(webView)
             },

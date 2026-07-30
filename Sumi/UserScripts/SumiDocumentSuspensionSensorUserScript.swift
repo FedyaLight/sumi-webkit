@@ -7,8 +7,7 @@ import WebKit
 /// state before publishing exact replica evidence.
 @MainActor
 final class SumiDocumentSuspensionSensorUserScript: NSObject, SumiPageScript,
-    WKScriptMessageHandlerWithReply
-{
+    WKScriptMessageHandlerWithReply {
     private let context: String
     private weak var committedDocumentRuntime: TabCommittedDocumentRuntime?
 
@@ -21,7 +20,7 @@ final class SumiDocumentSuspensionSensorUserScript: NSObject, SumiPageScript,
         tabID: UUID,
         committedDocumentRuntime: TabCommittedDocumentRuntime
     ) {
-        context = "sumiDocumentSuspensionSensor_\(tabID.uuidString)"
+        context = "sumiDocumentSuspensionSensor"
         self.committedDocumentRuntime = committedDocumentRuntime
         messageNames = [context]
         source = Self.makeSource(context: context)
@@ -152,12 +151,24 @@ final class SumiDocumentSuspensionSensorUserScript: NSObject, SumiPageScript,
                 }
             }
 
+            const unsubscribeVideoPlay =
+                window.__sumiMediaPlaybackBroker?.subscribe(handleVideoPlay);
             function handleVideoPlay(event) {
                 if (!(event.target instanceof HTMLVideoElement)) { return; }
-                document.removeEventListener("play", handleVideoPlay, true);
+                if (unsubscribeVideoPlay) {
+                    unsubscribeVideoPlay();
+                } else {
+                    document.removeEventListener(
+                        "play",
+                        handleVideoPlay,
+                        true
+                    );
+                }
                 installPictureInPictureListeners();
             }
-            document.addEventListener("play", handleVideoPlay, true);
+            if (!unsubscribeVideoPlay) {
+                document.addEventListener("play", handleVideoPlay, true);
+            }
 
             Object.defineProperty(window, "__sumiDocumentSuspensionSensor", {
                 value: Object.freeze({

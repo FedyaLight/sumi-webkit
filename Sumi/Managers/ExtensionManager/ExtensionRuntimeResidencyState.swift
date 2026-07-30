@@ -52,28 +52,6 @@ struct ExtensionRuntimeResidencyState {
         liveContextKeys.removeAll()
     }
 
-    mutating func touchAndEvictionCandidates(
-        loadedContextCount: Int,
-        limit: Int,
-        keepingExtensionId: String,
-        keepingProfileId: UUID
-    ) -> [ScopedKey] {
-        let keepKey = ScopedKey(
-            profileId: keepingProfileId,
-            extensionId: keepingExtensionId
-        )
-        touch(keepKey)
-
-        guard loadedContextCount > limit else { return [] }
-
-        return Array(
-            liveContextKeys
-                .lazy
-                .filter { $0 != keepKey }
-                .prefix(loadedContextCount - limit)
-        )
-    }
-
     private mutating func touch(_ key: ScopedKey) {
         remove(key)
         liveContextKeys.append(key)

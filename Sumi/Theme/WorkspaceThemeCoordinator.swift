@@ -1,6 +1,5 @@
 import SumiDomain
 import SwiftUI
-import OSLog
 
 private enum WorkspaceThemeTransitionUpdatePolicy {
     /// Keeps sub-pixel trackpad noise from invalidating the whole themed chrome tree.
@@ -9,7 +8,8 @@ private enum WorkspaceThemeTransitionUpdatePolicy {
 
 @MainActor
 final class WorkspaceThemeCoordinator {
-    private var transitionIntervals: [UUID: OSSignpostIntervalState] = [:]
+    private var transitionIntervals:
+        [UUID: PerformanceTrace.IntervalState] = [:]
     func restore(
         _ theme: WorkspaceTheme,
         in windowState: BrowserWindowState

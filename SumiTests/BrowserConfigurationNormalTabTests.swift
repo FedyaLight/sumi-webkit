@@ -837,8 +837,8 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let provider = try XCTUnwrap(controller.normalTabUserScriptsProvider)
         let sources = provider.userScripts.map(\.source).joined(separator: "\n")
 
-        XCTAssertTrue(sources.contains("sumiLinkInteraction_\(tab.id.uuidString)"))
-        XCTAssertTrue(sources.contains("sumiTabSuspension_\(tab.id.uuidString)"))
+        XCTAssertTrue(sources.contains("sumiLinkInteraction"))
+        XCTAssertTrue(sources.contains("sumiTabSuspension"))
         XCTAssertNil(webView.configuration.webExtensionController)
         XCTAssertEqual(probe.managerCount, 0)
         XCTAssertFalse(module.hasLoadedRuntime)
@@ -875,8 +875,8 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let provider = try XCTUnwrap(controller.normalTabUserScriptsProvider)
         let sources = provider.userScripts.map(\.source).joined(separator: "\n")
 
-        XCTAssertTrue(sources.contains("sumiLinkInteraction_\(tab.id.uuidString)"))
-        XCTAssertTrue(sources.contains("sumiTabSuspension_\(tab.id.uuidString)"))
+        XCTAssertTrue(sources.contains("sumiLinkInteraction"))
+        XCTAssertTrue(sources.contains("sumiTabSuspension"))
         XCTAssertFalse(sources.contains(SumiBoostCSSBuilder.styleAttribute))
         XCTAssertFalse(sources.contains(SumiBoostCSSBuilder.filterStyleAttribute))
         XCTAssertEqual(probe.storeCount, 0)
@@ -1130,8 +1130,8 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             "__sumiSubframePictureInPicture",
             SumiTransientChromeInteractionShieldUserScript.sourceMarker,
             "sumiFavicons",
-            "sumiLinkInteraction_",
-            "sumiTabSuspension_",
+            "sumiLinkInteraction",
+            "sumiTabSuspension",
         ].map { marker in
             WKUserScript(
                 source: "/* \(marker) */",
@@ -1162,8 +1162,8 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             "__sumiSubframePictureInPicture",
             SumiTransientChromeInteractionShieldUserScript.sourceMarker,
             "sumiFavicons",
-            "sumiLinkInteraction_",
-            "sumiTabSuspension_",
+            "sumiLinkInteraction",
+            "sumiTabSuspension",
         ] {
             XCTAssertFalse(sources.contains(blockedMarker), blockedMarker)
         }
@@ -1182,18 +1182,18 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let provider = try XCTUnwrap(configuration.userContentController.sumiNormalTabUserScriptsProvider)
         let sources = provider.userScripts.map(\.source).joined(separator: "\n")
 
-        XCTAssertTrue(sources.contains("sumiLinkInteraction_\(tab.id.uuidString)"))
-        XCTAssertTrue(sources.contains("sumiTabSuspension_\(tab.id.uuidString)"))
+        XCTAssertTrue(sources.contains("sumiLinkInteraction"))
+        XCTAssertTrue(sources.contains("sumiTabSuspension"))
         XCTAssertTrue(sources.contains("__sumiTabSuspension"))
 
         let linkInteractionScript = try XCTUnwrap(
-            provider.userScripts.first { $0.source.contains("sumiLinkInteraction_\(tab.id.uuidString)") }
+            provider.userScripts.first { $0.source.contains("sumiLinkInteraction") }
         )
         let contextMenuScript = try XCTUnwrap(
-            provider.userScripts.first { $0.source.contains("sumiWebPageContextMenu_\(tab.id.uuidString)") }
+            provider.userScripts.first { $0.source.contains("sumiWebPageContextMenu") }
         )
         let notificationScript = try XCTUnwrap(
-            provider.userScripts.first { $0.source.contains("sumiWebNotifications_\(tab.id.uuidString)") }
+            provider.userScripts.first { $0.source.contains("sumiWebNotifications") }
         )
 
         XCTAssertFalse(linkInteractionScript.requiresRunInPageContentWorld)
@@ -1228,7 +1228,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             }
         )
 
-        XCTAssertTrue(bridgeScript.source.contains("sumiTabSuspension_"))
+        XCTAssertTrue(bridgeScript.source.contains("sumiTabSuspension"))
         XCTAssertTrue(bridgeScript.source.contains("let pageAllowsSuspension = true"))
         XCTAssertTrue(
             bridgeScript.source.contains("pageAllowsSuspension = canBeSuspended")
@@ -1268,7 +1268,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             file: file,
             line: line
         )
-        XCTAssertFalse(source.contains("sumiTabSuspension_"), file: file, line: line)
+        XCTAssertFalse(source.contains("sumiTabSuspension"), file: file, line: line)
         XCTAssertFalse(source.contains("tabSuspension"), file: file, line: line)
     }
 

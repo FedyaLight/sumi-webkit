@@ -1,3 +1,4 @@
+import AppKit
 import WebKit
 import XCTest
 
@@ -119,6 +120,13 @@ final class SafariContentBlockerRuleLocatorTests: XCTestCase {
         let first = SafariContentBlockerRuleLocator.resourceFingerprint(
             appexURL: candidate.appexURL
         )
+        let located = try SafariContentBlockerRuleLocator.locateRules(
+            in: candidate
+        )
+        let firstStamp = SafariContentBlockerRuleLocator.resourceStamp(
+            appexURL: candidate.appexURL
+        )
+        XCTAssertEqual(firstStamp, located.resourceStamp)
         let ruleURL = candidate.appexURL
             .appendingPathComponent("Contents", isDirectory: true)
             .appendingPathComponent("Resources", isDirectory: true)
@@ -129,7 +137,11 @@ final class SafariContentBlockerRuleLocatorTests: XCTestCase {
         let second = SafariContentBlockerRuleLocator.resourceFingerprint(
             appexURL: candidate.appexURL
         )
+        let secondStamp = SafariContentBlockerRuleLocator.resourceStamp(
+            appexURL: candidate.appexURL
+        )
         XCTAssertNotEqual(first, second)
+        XCTAssertNotEqual(firstStamp, secondStamp)
     }
 
     func testSiteOverridePersistsAcrossModuleInstancesAndClearsToInherit() throws {
@@ -164,7 +176,7 @@ final class SafariContentBlockerRuleLocatorTests: XCTestCase {
         )
     }
 
-    func testMissingRuleResourcesDisableAttachmentStateAndStoredRecord() async throws {
+    func testAppActivationRefreshDisablesMissingRuleResources() async throws {
         let candidate = try makeContentBlockerCandidate(
             resourceFiles: [
                 .init(
@@ -184,6 +196,20 @@ final class SafariContentBlockerRuleLocatorTests: XCTestCase {
             .appendingPathComponent("Resources", isDirectory: true)
         try FileManager.default.removeItem(at: resourcesURL)
 
+        XCTAssertTrue(
+            module.safariContentBlockerAttachmentState(for: pageURL).isEnabled
+        )
+        XCTAssertTrue(
+            module.safariContentBlockerAttachmentState(for: pageURL).isEnabled
+        )
+
+        NotificationCenter.default.post(
+            name: NSApplication.didBecomeActiveNotification,
+            object: nil
+        )
+        await Task.yield()
+        await module.drainSafariContentBlockerRuntimeForTests()
+
         XCTAssertFalse(module.safariContentBlockerAttachmentState(for: pageURL).isEnabled)
         XCTAssertTrue(
             module.enabledSafariContentBlockingServices(
@@ -200,6 +226,65 @@ final class SafariContentBlockerRuleLocatorTests: XCTestCase {
         XCTAssertFalse(updatedRecord.isEnabled)
         XCTAssertEqual(updatedRecord.compileStatus, .rulesUnavailable)
         XCTAssertEqual(updatedRecord.ruleListCount, 0)
+    }
+
+    func testPreparedInventoryRestoresCompiledRulesWithoutReadingSourceBundle() async throws {
+        let candidate = try makeContentBlockerCandidate(
+            resourceFiles: [
+                .init(
+                    relativePath: "blockerList.json",
+                    data: Self.validRuleListData(
+                        blockedHost: "inventory.example"
+                    )
+                ),
+            ]
+        )
+        let defaults = UserDefaults(
+            suiteName: "SafariContentBlockerRuleLocatorTests.\(UUID().uuidString)"
+        )!
+        let database = try SumiDatabase.inMemory()
+        let firstModule = try makeModule(
+            defaults: defaults,
+            database: database
+        )
+        _ = try await firstModule.enableSafariContentBlocker(from: candidate)
+
+        let resourcesURL = candidate.appexURL
+            .appendingPathComponent("Contents", isDirectory: true)
+            .appendingPathComponent("Resources", isDirectory: true)
+        try FileManager.default.removeItem(at: resourcesURL)
+
+        let restoredModule = try makeModule(
+            defaults: defaults,
+            database: database
+        )
+        let pageURL = try XCTUnwrap(
+            URL(string: "https://inventory.example/article")
+        )
+        let services = restoredModule.enabledSafariContentBlockingServices(
+            for: pageURL,
+            profileId: UUID()
+        )
+        let controller: WKUserContentController =
+            SumiNormalTabUserContentControllerFactory.makeController(
+                contentBlockingServices: services
+            )
+        let normalTabController = try XCTUnwrap(
+            controller.sumiNormalTabUserContentController
+        )
+
+        await normalTabController.waitForContentBlockingAssetsInstalled()
+
+        XCTAssertEqual(services.count, 1)
+        XCTAssertEqual(
+            normalTabController.contentBlockingAssetSummary.globalRuleListCount,
+            1
+        )
+        XCTAssertTrue(
+            restoredModule.safariContentBlockerAttachmentState(
+                for: pageURL
+            ).isEnabled
+        )
     }
 
     private func makeContentBlockerCandidate(

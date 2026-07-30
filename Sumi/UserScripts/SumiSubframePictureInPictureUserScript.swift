@@ -7,8 +7,7 @@ import WebKit
 /// page world cannot access either its handler or the main-document token.
 @MainActor
 final class SumiSubframePictureInPictureUserScript: NSObject, SumiPageScript,
-    WKScriptMessageHandlerWithReply
-{
+    WKScriptMessageHandlerWithReply {
     private let bootstrapContext: String
     private let reportContext: String
     private weak var committedDocumentRuntime: TabCommittedDocumentRuntime?
@@ -22,8 +21,8 @@ final class SumiSubframePictureInPictureUserScript: NSObject, SumiPageScript,
         tabID: UUID,
         committedDocumentRuntime: TabCommittedDocumentRuntime
     ) {
-        bootstrapContext = "sumiSubframePiPBootstrap_\(tabID.uuidString)"
-        reportContext = "sumiSubframePiPReport_\(tabID.uuidString)"
+        bootstrapContext = "sumiSubframePiPBootstrap"
+        reportContext = "sumiSubframePiPReport"
         self.committedDocumentRuntime = committedDocumentRuntime
         messageNames = [bootstrapContext, reportContext]
         source = Self.makeBootstrapSource(context: bootstrapContext)
@@ -41,19 +40,32 @@ final class SumiSubframePictureInPictureUserScript: NSObject, SumiPageScript,
             }
             window.__sumiSubframePictureInPictureBootstrap = true;
             let requested = false;
+            let unsubscribe = window.__sumiMediaPlaybackBroker?.subscribe(
+                handleVideoPlay
+            );
             function handleVideoPlay(event) {
                 if (requested || !(event.target instanceof HTMLVideoElement)) {
                     return;
                 }
                 requested = true;
-                document.removeEventListener("play", handleVideoPlay, true);
+                if (unsubscribe) {
+                    unsubscribe();
+                } else {
+                    document.removeEventListener(
+                        "play",
+                        handleVideoPlay,
+                        true
+                    );
+                }
                 const reply = window.webkit?.messageHandlers?.["\(context)"]
                     ?.postMessage({ method: "activate" });
                 if (reply && typeof reply.catch === "function") {
                     reply.catch(() => {});
                 }
             }
-            document.addEventListener("play", handleVideoPlay, true);
+            if (!unsubscribe) {
+                document.addEventListener("play", handleVideoPlay, true);
+            }
         })();
         """
     }

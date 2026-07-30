@@ -26,23 +26,8 @@ final class ExtensionContextRetentionOwner {
         self.diagnostics = diagnostics
     }
 
-    func touch(extensionID: String, profileID: UUID) {
+    func retainActiveContext(extensionID: String, profileID: UUID) {
         runtimeResidency.touch(extensionID: extensionID, profileID: profileID)
-    }
-
-    func enforceLimit(keepingProfileID: UUID, keepingExtensionID: String) {
-        let candidates = runtimeResidency.evictionCandidates(
-            loadedContextCount: profileRuntime.countLoadedExtensionContexts(),
-            limit: ExtensionManager.maxLiveExtensionContexts,
-            keepingExtensionID: keepingExtensionID,
-            keepingProfileID: keepingProfileID
-        )
-        for candidate in candidates {
-            unloadIfLoaded(
-                extensionID: candidate.extensionId,
-                profileID: candidate.profileId
-            )
-        }
     }
 
     func unloadInactiveProfiles(keepingProfileID: UUID) {

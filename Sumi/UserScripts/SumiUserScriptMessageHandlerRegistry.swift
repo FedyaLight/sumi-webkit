@@ -68,9 +68,12 @@ final class SumiUserScriptMessageHandlerRegistry {
 
     private weak var userContentController: WKUserContentController?
     private let scriptMessageHandler = PermanentScriptMessageHandler()
-    private var installedUserScripts = [WKUserScript]()
+    private var installedStaticUserScripts = [WKUserScript]()
+    private var installedNavigationUserScripts = [WKUserScript]()
     private weak var installedProvider: SumiNormalTabUserScripts?
+    private var installedStaticProviderRevision: Int?
     private var installedProviderRevision: Int?
+    private var installedNavigationScriptsHaveHandlers = false
     private var handlerRegistrations = [HandlerRegistration]()
     private var isCleanedUp = false
 
@@ -83,6 +86,20 @@ final class SumiUserScriptMessageHandlerRegistry {
               let userContentController
         else { return }
         guard !hasInstalledUserScripts(for: provider) else { return }
+
+        if installedProvider === provider,
+           installedStaticProviderRevision == provider.staticScriptsRevision,
+           installedNavigationScriptsHaveHandlers == false,
+           provider.navigationScriptsHaveMessageHandlers == false {
+            let scripts = provider.preparedNavigationWKUserScripts()
+            guard removeInstalledNavigationUserScripts(
+                from: userContentController
+            ) else { return }
+            scripts.forEach(userContentController.addUserScript)
+            installedNavigationUserScripts = scripts
+            installedProviderRevision = provider.scriptsRevision
+            return
+        }
 
         let wkUserScripts = await provider.loadWKUserScripts()
         guard removeInstalledUserScripts(from: userContentController) else { return }
@@ -114,8 +131,11 @@ final class SumiUserScriptMessageHandlerRegistry {
 
     func hasInstalledUserScripts(for provider: SumiNormalTabUserScripts) -> Bool {
         installedProvider === provider
+            && installedStaticProviderRevision == provider.staticScriptsRevision
             && installedProviderRevision == provider.scriptsRevision
-            && installedUserScripts.count == provider.userScripts.count
+            && installedStaticUserScripts.count
+                + installedNavigationUserScripts.count
+                == provider.userScripts.count
     }
 
     func cleanUpBeforeClosing() {
@@ -127,6 +147,7 @@ final class SumiUserScriptMessageHandlerRegistry {
         _ = removeInstalledUserScripts(from: userContentController)
         removeInstalledScriptMessageHandlers(from: userContentController)
         installedProvider = nil
+        installedStaticProviderRevision = nil
         installedProviderRevision = nil
         isCleanedUp = true
     }
@@ -138,10 +159,18 @@ final class SumiUserScriptMessageHandlerRegistry {
         on userContentController: WKUserContentController
     ) {
         handlers.forEach { addHandler($0, to: userContentController) }
-        wkUserScripts.forEach(userContentController.addUserScript)
-        installedUserScripts.append(contentsOf: wkUserScripts)
+        let staticCount = provider.staticUserScripts.count
+        let staticScripts = Array(wkUserScripts.prefix(staticCount))
+        let navigationScripts = Array(wkUserScripts.dropFirst(staticCount))
+        staticScripts.forEach(userContentController.addUserScript)
+        navigationScripts.forEach(userContentController.addUserScript)
+        installedStaticUserScripts = staticScripts
+        installedNavigationUserScripts = navigationScripts
         installedProvider = provider
+        installedStaticProviderRevision = provider.staticScriptsRevision
         installedProviderRevision = provider.scriptsRevision
+        installedNavigationScriptsHaveHandlers =
+            provider.navigationScriptsHaveMessageHandlers
     }
 
     private func addHandler(
@@ -188,12 +217,40 @@ final class SumiUserScriptMessageHandlerRegistry {
         handlerRegistrations.removeAll(keepingCapacity: true)
         scriptMessageHandler.clear()
         installedProvider = nil
+        installedStaticProviderRevision = nil
         installedProviderRevision = nil
+        installedNavigationScriptsHaveHandlers = false
     }
 
     @discardableResult
     private func removeInstalledUserScripts(from userContentController: WKUserContentController) -> Bool {
-        guard !installedUserScripts.isEmpty else { return true }
+        let scripts =
+            installedStaticUserScripts + installedNavigationUserScripts
+        guard removeUserScripts(scripts, from: userContentController) else {
+            return false
+        }
+        installedStaticUserScripts.removeAll(keepingCapacity: true)
+        installedNavigationUserScripts.removeAll(keepingCapacity: true)
+        return true
+    }
+
+    @discardableResult
+    private func removeInstalledNavigationUserScripts(
+        from userContentController: WKUserContentController
+    ) -> Bool {
+        guard removeUserScripts(
+            installedNavigationUserScripts,
+            from: userContentController
+        ) else { return false }
+        installedNavigationUserScripts.removeAll(keepingCapacity: true)
+        return true
+    }
+
+    private func removeUserScripts(
+        _ scripts: [WKUserScript],
+        from userContentController: WKUserContentController
+    ) -> Bool {
+        guard scripts.isEmpty == false else { return true }
 #if os(macOS)
         guard userContentController.responds(to: Self.removeUserScriptSelector) else {
             RuntimeDiagnostics.debug(
@@ -203,10 +260,9 @@ final class SumiUserScriptMessageHandlerRegistry {
             return false
         }
 
-        for installedUserScript in installedUserScripts {
+        for installedUserScript in scripts {
             userContentController.perform(Self.removeUserScriptSelector, with: installedUserScript)
         }
-        installedUserScripts.removeAll(keepingCapacity: true)
         return true
 #else
         assertionFailure("Sumi normal-tab user-script replacement requires script removal.")

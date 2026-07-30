@@ -1,5 +1,6 @@
 import Combine
 import SumiWebRuntime
+import WebKit
 import XCTest
 
 @testable import Sumi
@@ -103,6 +104,37 @@ final class TabClosureServiceCompositionTests: XCTestCase {
         XCTAssertEqual(Set(captured.map(\.0)), [first.id, second.id])
         XCTAssertEqual(captured.map(\.1), [space.id, space.id])
         XCTAssertEqual(notifications.presentTabClosureNotificationCalls, [2])
+    }
+
+    func testConfirmedRegularRemovalReleasesRegisteredWebView() {
+        let tabManager = BrowserManager()
+        let space = makeSpace(in: tabManager, name: "WebView retirement")
+        weak var releasedWebView: WKWebView?
+        var closedTabID: UUID?
+
+        autoreleasepool {
+            let tab = tabManager.regularTabLifecycleOwner.createNewTab(
+                url: "https://memory.example",
+                in: space,
+                activate: true
+            )
+            let webView = WKWebView()
+            tab.replaceUntrackedWebView(webView)
+            tab.bindAudioState(to: webView)
+            releasedWebView = webView
+            closedTabID = tab.id
+
+            tabManager.tabClosureService.removeTab(tab.id)
+
+            XCTAssertNil(tabManager.regularTabCollectionOwner.tab(for: tab.id))
+            XCTAssertNil(tabManager.webViewSessions.residence(of: webView))
+        }
+
+        XCTAssertNotNil(closedTabID)
+        XCTAssertNil(
+            releasedWebView,
+            "Closing a regular tab must release Sumi's final strong WKWebView ownership"
+        )
     }
 
     func testNonexistentRegularCandidatesSkipPersistenceNotificationAndCapture() throws {

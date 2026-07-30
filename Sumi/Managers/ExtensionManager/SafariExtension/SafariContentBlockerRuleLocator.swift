@@ -6,9 +6,10 @@
 import CryptoKit
 import Foundation
 
-struct SafariContentBlockerLocatedRules: Equatable {
+struct SafariContentBlockerLocatedRules: Equatable, Sendable {
     let definitions: [SumiContentRuleListDefinition]
     let resourceFingerprint: String
+    let resourceStamp: String
     let ignoredEmptyRuleListCount: Int
 }
 
@@ -52,19 +53,32 @@ enum SafariContentBlockerRuleLocator {
             .appendingPathComponent("Contents", isDirectory: true)
             .appendingPathComponent("Resources", isDirectory: true)
         let jsonURLs = try ruleJSONURLs(in: resourcesURL)
-        let fingerprint = resourceFingerprint(for: jsonURLs, relativeTo: resourcesURL)
+        var resourceHasher = SHA256()
+        var resourceStampHasher = SHA256()
 
         var definitions: [SumiContentRuleListDefinition] = []
         var ignoredEmptyRuleListCount = 0
 
         for jsonURL in jsonURLs {
             let data = try Data(contentsOf: jsonURL)
+            let relativePath = displayPath(jsonURL, relativeTo: resourcesURL)
+            let digest = SHA256.hash(data: data)
+            resourceHasher.update(data: Data(relativePath.utf8))
+            resourceHasher.update(data: Data(digest))
+            updateResourceStamp(
+                &resourceStampHasher,
+                relativePath: relativePath,
+                fileSize: data.count,
+                modificationDate: (try? jsonURL.resourceValues(
+                    forKeys: [.contentModificationDateKey]
+                ))?.contentModificationDate
+            )
             let parsed: Any
             do {
                 parsed = try JSONSerialization.jsonObject(with: data)
             } catch {
                 throw SafariContentBlockerRuleLocatorError.invalidJSON(
-                    path: displayPath(jsonURL, relativeTo: resourcesURL),
+                    path: relativePath,
                     reason: error.localizedDescription
                 )
             }
@@ -78,28 +92,28 @@ enum SafariContentBlockerRuleLocator {
             }
             guard isValidRuleList(rules) else {
                 throw SafariContentBlockerRuleLocatorError.invalidRuleListShape(
-                    path: displayPath(jsonURL, relativeTo: resourcesURL)
+                    path: relativePath
                 )
             }
             guard let encoded = String(data: data, encoding: .utf8) else {
                 throw SafariContentBlockerRuleLocatorError.invalidJSON(
-                    path: displayPath(jsonURL, relativeTo: resourcesURL),
+                    path: relativePath,
                     reason: "The file is not valid UTF-8."
                 )
             }
 
-            let relativePath = displayPath(jsonURL, relativeTo: resourcesURL)
             let name = "\(displayName) \(relativePath)"
             let storeIdentifier = storeIdentifier(
                 extensionBundleIdentifier: extensionBundleIdentifier,
                 relativePath: relativePath,
-                encodedContentRuleList: encoded
+                digest: digest
             )
             definitions.append(
                 SumiContentRuleListDefinition(
                     name: name,
                     encodedContentRuleList: encoded,
-                    storeIdentifierOverride: storeIdentifier
+                    storeIdentifierOverride: storeIdentifier,
+                    contentHashOverride: shortHex(digest, byteCount: 12)
                 )
             )
         }
@@ -108,11 +122,47 @@ enum SafariContentBlockerRuleLocator {
             throw SafariContentBlockerRuleLocatorError.staticRulesUnavailable
         }
 
+        let fingerprint = shortHex(
+            resourceHasher.finalize(),
+            byteCount: 12
+        )
+        let stamp = shortHex(
+            resourceStampHasher.finalize(),
+            byteCount: 12
+        )
         return SafariContentBlockerLocatedRules(
             definitions: definitions.sorted { $0.webKitStoreIdentifier < $1.webKitStoreIdentifier },
             resourceFingerprint: fingerprint,
+            resourceStamp: stamp,
             ignoredEmptyRuleListCount: ignoredEmptyRuleListCount
         )
+    }
+
+    static func resourceStamp(appexURL: URL) -> String {
+        let resourcesURL = appexURL
+            .appendingPathComponent("Contents", isDirectory: true)
+            .appendingPathComponent("Resources", isDirectory: true)
+        let urls: [URL]
+        do {
+            urls = try ruleJSONURLs(in: resourcesURL)
+        } catch {
+            return "resources-unavailable"
+        }
+
+        var hasher = SHA256()
+        for url in urls {
+            let relativePath = displayPath(url, relativeTo: resourcesURL)
+            let values = try? url.resourceValues(
+                forKeys: [.contentModificationDateKey, .fileSizeKey]
+            )
+            updateResourceStamp(
+                &hasher,
+                relativePath: relativePath,
+                fileSize: values?.fileSize ?? -1,
+                modificationDate: values?.contentModificationDate
+            )
+        }
+        return shortHex(hasher.finalize(), byteCount: 12)
     }
 
     static func resourceFingerprint(appexURL: URL) -> String {
@@ -194,7 +244,7 @@ enum SafariContentBlockerRuleLocator {
             hasher.update(data: Data(relativePath.utf8))
             do {
                 let data = try Data(contentsOf: url)
-                hasher.update(data: data)
+                hasher.update(data: Data(SHA256.hash(data: data)))
             } catch {
                 RuntimeDiagnostics.debug(category: "SafariContentBlocker") {
                     "Content blocker resource fingerprint marked unreadable file: path=\(relativePath) error=\(error.localizedDescription)"
@@ -206,22 +256,45 @@ enum SafariContentBlockerRuleLocator {
         return digest.prefix(12).map { String(format: "%02x", $0) }.joined()
     }
 
+    private static func updateResourceStamp(
+        _ hasher: inout SHA256,
+        relativePath: String,
+        fileSize: Int,
+        modificationDate: Date?
+    ) {
+        let modificationBits = (
+            modificationDate?.timeIntervalSince1970
+                ?? -1
+        ).bitPattern
+        hasher.update(
+            data: Data(
+                "\(relativePath)\u{0}\(fileSize)\u{0}\(modificationBits)\u{0}"
+                    .utf8
+            )
+        )
+    }
+
     private static func storeIdentifier(
         extensionBundleIdentifier: String,
         relativePath: String,
-        encodedContentRuleList: String
+        digest: SHA256.Digest
     ) -> String {
-        let digest = SHA256.hash(data: Data(encodedContentRuleList.utf8))
-            .prefix(8)
-            .map { String(format: "%02x", $0) }
-            .joined()
-        return [
+        [
             "sumi",
             "safariContentBlocker",
             sanitizedIdentifierComponent(extensionBundleIdentifier),
             sanitizedIdentifierComponent(relativePath),
-            digest,
+            shortHex(digest, byteCount: 8),
         ].joined(separator: ".")
+    }
+
+    private static func shortHex<D: Sequence>(
+        _ digest: D,
+        byteCount: Int
+    ) -> String where D.Element == UInt8 {
+        digest.prefix(byteCount)
+            .map { String(format: "%02x", $0) }
+            .joined()
     }
 
     private static func sanitizedIdentifierComponent(_ raw: String) -> String {

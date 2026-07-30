@@ -208,9 +208,7 @@ final class ExtensionRuntimeLoader {
                 try metadataStore.save(entity)
                 installedRecords.upsert(refreshed)
                 publishedRecord = refreshed
-            } else if let current = installedRecords.records.first(where: {
-                $0.id == entity.id
-            }) {
+            } else if let current = installedRecords.record(for: entity.id) {
                 publishedRecord = current
             } else if let persisted = InstalledExtension(from: entity) {
                 installedRecords.upsert(persisted)

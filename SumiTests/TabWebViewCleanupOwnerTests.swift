@@ -7,6 +7,18 @@ import SumiWebRuntime
 
 @MainActor
 final class TabWebViewCleanupOwnerTests: XCTestCase {
+    func testCleanupDoesNotStartReplacementNavigation() {
+        let webView = LoadRecordingWKWebView()
+        let context = makeContext(tabId: UUID())
+
+        TabWebViewCleanupOwner.cleanupWebView(webView, context: context)
+
+        XCTAssertTrue(
+            webView.loadedRequests.isEmpty,
+            "Terminal WebView cleanup must destroy the current page instead of loading a replacement document"
+        )
+    }
+
     func testCleanupWebViewUsesScopedRuntimeInOrder() {
         let tabId = UUID()
         let webView = WKWebView(frame: .zero)
@@ -37,18 +49,6 @@ final class TabWebViewCleanupOwnerTests: XCTestCase {
             ),
             currentPermissionPageId: { "page-1" },
             profilePartitionId: { "profile-1" },
-            unbindAudioState: { candidateWebView in
-                XCTAssertIdentical(candidateWebView, webView)
-                events.append(.unbindAudio)
-            },
-            removeNavigationStateObservers: { candidateWebView in
-                XCTAssertIdentical(candidateWebView, webView)
-                events.append(.removeNavigationStateObservers)
-            },
-            removeNavigationDelegateBundle: { candidateWebView in
-                XCTAssertIdentical(candidateWebView, webView)
-                events.append(.removeNavigationDelegateBundle)
-            },
             webViewDidLeaveRuntime: { candidateWebView in
                 XCTAssertIdentical(candidateWebView, webView)
                 events.append(.leaveNavigationRuntime)
@@ -75,9 +75,6 @@ final class TabWebViewCleanupOwnerTests: XCTestCase {
                 .protectedCleanupCheck,
                 .permissionEvent,
                 .leaveNavigationRuntime,
-                .unbindAudio,
-                .removeNavigationStateObservers,
-                .removeNavigationDelegateBundle,
                 .removeFromContainers,
             ]
         )
@@ -102,15 +99,6 @@ final class TabWebViewCleanupOwnerTests: XCTestCase {
                     XCTFail("Deferred cleanup must not remove containers")
                 }
             ),
-            unbindAudioState: { _ in
-                XCTFail("Deferred cleanup must not unbind audio state")
-            },
-            removeNavigationStateObservers: { _ in
-                XCTFail("Deferred cleanup must not remove navigation observers")
-            },
-            removeNavigationDelegateBundle: { _ in
-                XCTFail("Deferred cleanup must not remove delegate bundle")
-            },
             webViewDidLeaveRuntime: { _ in
                 XCTFail("Deferred cleanup must not leave navigation runtime")
             }
@@ -180,9 +168,6 @@ final class TabWebViewCleanupOwnerTests: XCTestCase {
         ),
         currentPermissionPageId: @escaping () -> String = { "page" },
         profilePartitionId: @escaping () -> String? = { nil },
-        unbindAudioState: @escaping (WKWebView) -> Void = { _ in /* No-op. */ },
-        removeNavigationStateObservers: @escaping (WKWebView) -> Void = { _ in /* No-op. */ },
-        removeNavigationDelegateBundle: @escaping (WKWebView) -> Void = { _ in /* No-op. */ },
         webViewDidLeaveRuntime: @escaping (WKWebView) -> Void = { _ in /* No-op. */ },
         remainingOwnedWebViews: @escaping () -> [WKWebView] = { [] },
         clearDetachedWebViews: @escaping () -> Void = { /* No-op. */ },
@@ -204,9 +189,6 @@ final class TabWebViewCleanupOwnerTests: XCTestCase {
             currentPermissionPageId: currentPermissionPageId,
             profilePartitionId: profilePartitionId,
             invalidatePermissionPageForReplacement: { _ in /* No-op. */ },
-            unbindAudioState: unbindAudioState,
-            removeNavigationStateObservers: removeNavigationStateObservers,
-            removeNavigationDelegateBundle: removeNavigationDelegateBundle,
             webViewDidLeaveRuntime: webViewDidLeaveRuntime,
             resetPlaybackActivity: { /* No-op. */ },
             setLoadingIdle: { /* No-op. */ }
@@ -218,8 +200,14 @@ private enum Event: Equatable {
     case permissionEvent
     case protectedCleanupCheck
     case leaveNavigationRuntime
-    case unbindAudio
-    case removeNavigationStateObservers
-    case removeNavigationDelegateBundle
     case removeFromContainers
+}
+
+private final class LoadRecordingWKWebView: WKWebView {
+    private(set) var loadedRequests: [URLRequest] = []
+
+    override func load(_ request: URLRequest) -> WKNavigation? {
+        loadedRequests.append(request)
+        return nil
+    }
 }

@@ -109,10 +109,9 @@ final class ExtensionInitialDocumentNativeMessagingWarmupOwner {
 
     private func warmupExtensions(profileID: UUID) -> [InstalledExtension] {
         guard runtimeIsEnabled() else { return [] }
-        return installedExtensions.records.filter { record in
-            record.isEnabled
-                && record.hasContentScripts
-                && record.hasBackground
+        return installedExtensions.enabledContentScriptRecords.filter {
+            record in
+            record.hasBackground
                 && declaresNativeMessaging(record)
                 && backgroundState(record.id, profileID) != .loaded
         }
