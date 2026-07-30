@@ -8,7 +8,7 @@ destination="platform=macOS,arch=arm64"
 xcode_version="$(xcodebuild -version | awk '/^Xcode / { print $2; exit }')"
 xcode_major="${xcode_version%%.*}"
 if [[ -z "${xcode_version}" || -z "${xcode_major}" || "${xcode_major}" -lt 27 ]]; then
-  echo "error: Sumi alpha release gates require Xcode 27 or newer." >&2
+  echo "error: Sumi release gates require Xcode 27 or newer." >&2
   echo "       Active xcodebuild version: ${xcode_version:-unknown}" >&2
   exit 1
 fi

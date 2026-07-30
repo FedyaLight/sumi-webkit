@@ -1,6 +1,6 @@
 # Safari Extension Native Messaging Adapter — Manual Acceptance
 
-Last updated: 2026-07-30 (first-alpha documentation pass)
+Last updated: 2026-07-30 (first-release documentation pass)
 
 This checklist covers the `WKWebExtensionControllerDelegate` native-messaging adapter path. Proton Pass also uses a separate Safari containing-application (`application.id`) backend implemented by `ProtonPassSafariApplicationIDAdapter`; describing Proton as adapter-unavailable below refers only to the native-messaging adapter registry, not to the verified Proton Pass product workflow. See [Extension Compatibility](extensions.md) for release status.
 

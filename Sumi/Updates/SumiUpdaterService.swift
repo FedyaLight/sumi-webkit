@@ -6,12 +6,12 @@
 import Foundation
 
 enum SumiUpdateChannel: String, CaseIterable, Equatable, Sendable {
-    case alpha
+    case stable
 
     var displayName: String {
         switch self {
-        case .alpha:
-            return "Alpha"
+        case .stable:
+            return "Stable"
         }
     }
 }
@@ -485,7 +485,7 @@ final class SumiUpdaterService: ObservableObject {
     }
 
     init(
-        channel: SumiUpdateChannel = .alpha,
+        channel: SumiUpdateChannel = .stable,
         dismissalStore: SumiUpdateNoticeDismissalPersisting = SumiUpdateNoticeDismissalStore(),
         installedUpdateStore: SumiInstalledUpdateNoticePersisting = SumiInstalledUpdateNoticeStore(),
         currentVersion: SumiAppVersionMetadata = SumiAppVersionMetadata.resolve(),

@@ -1,171 +1,70 @@
-# Sumi Alpha Release Process
+# Sumi Release Process
 
-Sumi Alpha releases are built on a local release Mac with the checked-in Xcode project signing settings. GitHub-hosted runners only run portable guardrails; they do not build alpha artifacts because the hosted macOS image can lag the SDK required by Sumi's WebKit runtime.
+Sumi releases are built on a local release Mac with the checked-in Xcode project signing settings. GitHub-hosted runners run portable guardrails, but do not produce the public DMGs because their macOS image may lag the SDK required by Sumi's WebKit runtime.
 
-## First Alpha Identity
+## 0.0.1 Identity
 
-- Product version: `0.1.0`
+- Product version: `0.0.1`
 - Build number: `1`
-- Prerelease tag: `v0.1.0-alpha.1`
-- Apple silicon DMG: `Sumi-0.1.0-1-alpha-macos-arm64.dmg`
-- Intel DMG: `Sumi-0.1.0-1-alpha-macos-x86_64.dmg`
+- Tag: `v0.0.1`
+- Apple silicon DMG: `Sumi-0.0.1-macos-arm64.dmg`
+- Intel DMG: `Sumi-0.0.1-macos-x86_64.dmg`
+- Stable appcast: `https://fedyalight.github.io/sumi-webkit/appcast.xml`
 
-The app bundle uses the semantic product version and build number. The Git tag carries the alpha sequence. Do not put `-alpha.1` into `MARKETING_VERSION`; Sparkle ordering uses the bundle version/build and release metadata.
+## Build Both DMGs
 
-## Channel
-
-- Alpha appcast: `https://fedyalight.github.io/sumi-webkit/appcast-alpha.xml`
-- Reserved stable appcast: `https://fedyalight.github.io/sumi-webkit/appcast.xml`
-- Alpha DMG naming: `Sumi-<version>-<build>-alpha-macos-<architecture>.dmg`
-
-`Sumi/Info.plist` points the app at the Alpha appcast. Do not add alternate localhost or debug feed overrides to the runtime.
-
-## Sparkle Keys
-
-Generate the EdDSA key pair with Sparkle's `generate_keys` tool:
+Run:
 
 ```sh
-xcodebuild -resolvePackageDependencies -project Sumi.xcodeproj -scheme Sumi
-scripts/release/generate_sparkle_keys.sh
+scripts/release/package_stable_release.sh
 ```
 
-Rules:
+The command runs the repository release gates and independently builds each architecture. Packaging verifies the executable architecture and code signature before and after mounting each DMG.
 
-- Commit only the public key as `SUPublicEDKey` in `Sumi/Info.plist`.
-- Store the private key in the macOS Keychain, a password manager, or a secure release machine.
-- Do not commit the private key.
-- Do not paste private key material into GitHub Actions logs, release notes, appcasts, docs, or issue comments.
-- Rotate the key by shipping a Sumi build with the new public key before publishing archives signed with the new private key.
+Each DMG has a repository-owned Finder layout:
 
-For local release machines, prefer Sparkle's Keychain-backed key storage. If a file key is needed, keep it outside the repository and pass it with `SPARKLE_ED_KEY_FILE`.
+- only `Sumi.app` and the Applications link are visible;
+- the two `112 pt` icons are positioned symmetrically;
+- Finder toolbar and status bar are hidden for the DMG window;
+- the volume uses Sumi's application icon;
+- no script or quarantine workaround is embedded in the image.
 
-## Build the Alpha DMGs
+## Publish
 
-Run the release gates, then build and package both architectures:
+Create or update the ordinary GitHub Release:
 
 ```sh
-scripts/release/package_alpha_release.sh
+gh release create v0.0.1 \
+  release/artifacts/Sumi-0.0.1-macos-arm64.dmg \
+  release/artifacts/Sumi-0.0.1-macos-x86_64.dmg \
+  --title "Sumi 0.0.1" \
+  --notes-file docs/releases/0.0.1.md
 ```
 
-Before packaging, confirm `MARKETING_VERSION = 0.1.0`, `CURRENT_PROJECT_VERSION = 1`, and the release scope in `CHANGELOG.md`. A later alpha must increment at least the build number and use a new prerelease tag.
+Release notes must state that the artifacts are not Apple-notarized and include the exact quarantine workaround from `docs/releases/0.0.1.md`.
 
-The package script first runs the local release gates:
+## Appcast
 
-```sh
-scripts/release/run_alpha_release_gates.sh
-```
+The first stable appcast is empty because there is no older public build to update. Before publishing a later release:
 
-Those gates require Xcode 27 or newer, run the architecture guardrails, and run the full `Sumi` and `SumiSmoke` Xcode test schemes with the project's normal signing configuration.
+1. Increment at least `CURRENT_PROJECT_VERSION`.
+2. Choose and validate an architecture-aware Sparkle update payload.
+3. Generate the signed appcast with the private EdDSA key stored outside git.
+4. Test the update from an installed older release on the supported architectures.
+5. Publish the appcast only after the release artifact URL is final.
 
-The script independently builds each architecture and creates:
+Do not pass two same-version, single-architecture DMGs to Sparkle without proving that it selects the correct payload on both architectures.
 
-```text
-release/artifacts/Sumi-<version>-<build>-alpha-macos-arm64.dmg
-release/artifacts/Sumi-<version>-<build>-alpha-macos-x86_64.dmg
-```
+## Manual Verification
 
-Each DMG contains `Sumi.app` and an Applications link. Packaging verifies the app's exact executable architecture before and after mounting the DMG, verifies the disk image can be read, and verifies the app's code signature. The app is produced by the project signing settings on the release Mac; do not override release signing to ad hoc in the package command.
+- Open each DMG and confirm the Finder layout is intact.
+- Drag Sumi to Applications and launch it.
+- Confirm the bundle version and executable architecture.
+- Verify `codesign --verify --deep --strict`.
+- Test the Apple-silicon artifact on Apple silicon.
+- Test the Intel artifact on physical Intel hardware when available.
+- Confirm release notes, asset names, SHA-256 values, and the `latest` release link.
 
-## Upload the Release Assets
+## Future Distribution Hardening
 
-Create or update a GitHub prerelease and upload both DMGs:
-
-```sh
-gh release create v0.1.0-alpha.1 \
-  release/artifacts/Sumi-0.1.0-1-alpha-macos-arm64.dmg \
-  release/artifacts/Sumi-0.1.0-1-alpha-macos-x86_64.dmg \
-  --prerelease \
-  --title "Sumi 0.1.0 Alpha 1" \
-  --notes-file docs/releases/0.1.0-alpha.1.md
-```
-
-Use the `0.1.0-alpha.1` section of `CHANGELOG.md` as the basis for release notes, adding the exact macOS/Xcode build, signing/notarization state, and known limitations of the packaged artifact.
-
-## Generate the Alpha Appcast for a Later Build
-
-The first alpha's appcast intentionally remains empty: there is no older public build to update. Before publishing a later alpha, choose and test an architecture-aware update strategy. The two same-version, single-architecture DMGs must not be passed together to `generate_appcast` without proving Sparkle selects the correct payload on both architectures.
-
-Once the update payload strategy is established, generate the signed appcast from a directory containing only the intended update payload set:
-
-```sh
-DOWNLOAD_URL_PREFIX="https://github.com/FedyaLight/sumi-webkit/releases/download/v0.1.0-alpha.1" \
-SPARKLE_ED_KEY_FILE="/absolute/path/outside-the-repository/sparkle_ed_private_key" \
-scripts/release/generate_alpha_appcast.sh /absolute/path/to/update-payloads
-```
-
-The script writes `docs/appcast-alpha.xml` and validates that update enclosures contain `sparkle:edSignature` and `length`. If the private key is stored in the Keychain format Sparkle expects, omit `SPARKLE_ED_KEY_FILE` and let Sparkle read from supported local storage.
-
-## Publish the Appcast
-
-The appcast is a static file. GitHub Pages should serve:
-
-```text
-https://fedyalight.github.io/sumi-webkit/appcast-alpha.xml
-```
-
-Manual repository setup:
-
-1. Open repository Settings > Pages.
-2. Set Build and deployment Source to GitHub Actions.
-3. Ensure Actions are enabled for the repository.
-4. Push `docs/appcast-alpha.xml` or run the `Publish Appcasts to GitHub Pages` workflow.
-
-The Pages workflow publishes `docs/appcast-alpha.xml` and the reserved `docs/appcast.xml`.
-
-## Legacy URL Migration
-
-Some development builds may have pointed at the old `appcast-preview.xml` URL. New Sumi builds must use `appcast-alpha.xml`.
-
-If those older builds need to update in place, handle the migration at the hosting layer with a temporary static copy or redirect from the old URL to the Alpha appcast. Do not reintroduce Preview naming, channel selection, or local feed override code in Sumi.
-
-## Test a Published Alpha Update
-
-1. Build and install an older Alpha version in `/Applications/Sumi.app`.
-2. Confirm that older build has the same `SUPublicEDKey` as the appcast signatures.
-3. Publish a GitHub Release containing the newer Alpha artifacts.
-4. Generate and publish `docs/appcast-alpha.xml` with the tested architecture-aware update payload URL.
-5. Launch the older installed app.
-6. Use Sumi > Check for Updates..., or open Settings > About.
-7. Confirm Settings > About reports the Alpha channel and the newer version.
-8. Confirm the sidebar notice appears for the update.
-9. Dismiss the sidebar notice and confirm it stays dismissed for that version/build.
-10. Publish a still newer version/build and confirm the notice reappears.
-11. Click Update and confirm Sparkle performs the install and relaunch flow.
-12. Confirm the sidebar success notice appears after relaunching into the newer version/build.
-
-## What Remains Manual Today
-
-- Protecting and backing up the Sparkle private key outside git.
-- Creating release notes.
-- Choosing and validating architecture-aware Sparkle payload selection before the second alpha.
-- Generating the signed appcast after the update artifact URL is known.
-- Enabling GitHub Pages with GitHub Actions as the Pages source.
-- Manual first-install user steps for unsigned Alpha builds if macOS blocks launch.
-
-## Future Developer ID and Notarization
-
-Stable releases should add:
-
-- Developer ID Application signing.
-- Hardened runtime.
-- Notarization.
-- Stapling.
-- Optional CI secrets for Apple signing and notarization, configured only in GitHub repository settings.
-
-Those changes fit between archive build and appcast generation. Sparkle, GitHub Releases, and static appcast hosting stay the same.
-
-## Manual Verification Checklist
-
-- Build Sumi with Sparkle integrated.
-- Confirm Sumi > Check for Updates... exists.
-- Confirm Settings > About shows version/build and Alpha status.
-- Confirm a controlled Alpha appcast can create an update-available state.
-- Confirm the sidebar notice appears for an available update.
-- Confirm the close button dismisses the notice for that version/build.
-- Confirm the same version/build does not reappear after dismissal.
-- Confirm a newer version/build appears again.
-- Confirm the Update button invokes Sparkle's supported flow.
-- Confirm Sumi does not show Sparkle's standard update-available window.
-- Confirm no popup appears on normal launch just because an update exists.
-- Confirm browsing, sidebar, extensions, favicons, profile loading, and memory/performance modes still start normally.
-- Confirm build and tests pass.
+The current artifacts are development-signed and not notarized. A wider distribution path should add Developer ID Application signing, hardened runtime, notarization, and stapling before publication.

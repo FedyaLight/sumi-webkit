@@ -63,9 +63,15 @@ done
 
 temporary_root="$(mktemp -d /tmp/SumiReleaseDmg.XXXXXX)"
 verification_mount="$(mktemp -d /tmp/SumiReleaseDmgMount.XXXXXX)"
+volume_name="Sumi"
+layout_mount="/Volumes/${volume_name}"
 mounted=0
+layout_mounted=0
 
 cleanup() {
+  if [[ "${layout_mounted}" == "1" ]]; then
+    hdiutil detach "${layout_mount}" >/dev/null 2>&1 || true
+  fi
   if [[ "${mounted}" == "1" ]]; then
     diskutil eject "${verification_mount}" >/dev/null 2>&1 || true
   fi
@@ -101,20 +107,66 @@ codesign --verify --deep --strict --verbose=1 "${app_path}"
 info_plist="${app_path}/Contents/Info.plist"
 version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${info_plist}")"
 build="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${info_plist}")"
-archive_name="Sumi-${version}-${build}-${release_channel}-macos-${architecture}.dmg"
+if [[ "${release_channel}" == "release" ]]; then
+  archive_name="Sumi-${version}-macos-${architecture}.dmg"
+else
+  archive_name="Sumi-${version}-${build}-${release_channel}-macos-${architecture}.dmg"
+fi
 output_path="${OUTPUT_PATH:-${output_dir}/${archive_name}}"
 staging_dir="${temporary_root}/staging"
+rw_dmg="${temporary_root}/Sumi-release-rw.dmg"
 
 mkdir -p "${staging_dir}" "${output_dir}"
 ditto "${app_path}" "${staging_dir}/Sumi.app"
 ln -s /Applications "${staging_dir}/Applications"
 
+if [[ -e "${layout_mount}" ]]; then
+  echo "error: ${layout_mount} is already mounted. Eject it before packaging." >&2
+  exit 1
+fi
+
 rm -f "${output_path}"
-diskutil image create from \
-  --format UDZO \
-  --volumeName "Sumi ${architecture}" \
-  "${staging_dir}" \
-  "${output_path}" >/dev/null
+hdiutil create \
+  -volname "${volume_name}" \
+  -srcfolder "${staging_dir}" \
+  -ov \
+  -format UDRW \
+  "${rw_dmg}" >/dev/null
+
+hdiutil attach -readwrite -noverify -noautoopen "${rw_dmg}" >/dev/null
+layout_mounted=1
+
+osascript <<'OSA'
+tell application "Finder"
+  set theDisk to disk "Sumi"
+  open theDisk
+  delay 1
+  set theWindow to container window of theDisk
+  set current view of theWindow to icon view
+  set toolbar visible of theWindow to false
+  set statusbar visible of theWindow to false
+  set bounds of theWindow to {160, 140, 720, 400}
+  set theOptions to icon view options of theWindow
+  set arrangement of theOptions to not arranged
+  set icon size of theOptions to 112
+  set text size of theOptions to 13
+  set position of item "Sumi.app" of theDisk to {170, 95}
+  set position of item "Applications" of theDisk to {390, 95}
+  update theDisk without registering applications
+  delay 2
+  close theWindow
+end tell
+OSA
+
+cp "${app_path}/Contents/Resources/logo.icns" "${layout_mount}/.VolumeIcon.icns"
+SetFile -a V "${layout_mount}/.VolumeIcon.icns"
+SetFile -a C "${layout_mount}"
+rm -rf "${layout_mount}/.fseventsd"
+sync
+
+hdiutil detach "${layout_mount}" >/dev/null
+layout_mounted=0
+hdiutil convert "${rw_dmg}" -format UDZO -o "${output_path}" -ov >/dev/null
 
 diskutil image info "${output_path}" >/dev/null
 diskutil image attach \

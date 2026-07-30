@@ -5,7 +5,7 @@
   <channel>
     <title>Sumi Stable Updates</title>
     <link>https://fedyalight.github.io/sumi-webkit/appcast.xml</link>
-    <description>Sumi Stable update feed. Reserved for future Developer ID signed and notarized builds.</description>
+    <description>Sumi Stable update feed.</description>
     <language>en</language>
   </channel>
 </rss>

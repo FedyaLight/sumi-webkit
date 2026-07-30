@@ -1,6 +1,6 @@
 # Extension Compatibility
 
-Safari Web Extensions are an experimental, off-by-default module in the first Sumi alpha. Sumi imports an installed Safari extension from its containing `.app` / `.appex`, then runs it with WebKit's `WKWebExtension` APIs. It does not patch third-party manifests or inject compatibility shims into extension code.
+Safari Web Extensions are an experimental, off-by-default module in the first Sumi release. Sumi imports an installed Safari extension from its containing `.app` / `.appex`, then runs it with WebKit's `WKWebExtension` APIs. It does not patch third-party manifests or inject compatibility shims into extension code.
 
 ## Release-Candidate Matrix
 
@@ -8,8 +8,8 @@ Status reflects maintainer manual testing on 2026-07-30 plus automated coverage 
 
 | Extension or provider | Current status | Verified workflow / boundary |
 | --- | --- | --- |
-| Bitwarden | Works for the tested alpha workflow | Import and enable, action popup, sign-in, inline autofill, and local biometric/native-messaging paths. Profile-isolation retest remains part of the release checklist. |
-| Proton Pass | Works for the tested alpha workflow | Import and enable, popup sign-in, site permission flow, worker-driven scripting, and inline autofill. Profile-isolation retest remains part of the release checklist. |
+| Bitwarden | Works for the tested release workflow | Import and enable, action popup, sign-in, inline autofill, and local biometric/native-messaging paths. Profile-isolation retest remains part of the release checklist. |
+| Proton Pass | Works for the tested release workflow | Import and enable, popup sign-in, site permission flow, worker-driven scripting, and inline autofill. Profile-isolation retest remains part of the release checklist. |
 | Raindrop.io | Works | Import and enable, popup sign-in, save current page, persistence, and profile isolation. |
 | Userscripts | Works through the Userscripts Safari extension | The companion library bridge supports the tested Userscripts workflow. Sumi does not expose a separate built-in arbitrary-script installer. |
 | 1Password for Safari | Partial; not a release-supported workflow | Web extension pages and WebKit APIs can load, but 1Password 8 depends on a native Safari App Extension handler that macOS does not allow Sumi to host with public entitlements. Native unlock and end-to-end vault use are therefore not claimed. |

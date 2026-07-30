@@ -273,7 +273,7 @@ final class SumiUpdaterServiceTests: XCTestCase {
                 "CFBundleVersion": "345",
             ]
         )
-        var state = SumiUpdateState.initial(channel: .alpha)
+        var state = SumiUpdateState.initial(channel: .stable)
         state.canCheckForUpdates = true
         state.isSparkleAvailable = true
         state.isConfigured = true
@@ -286,7 +286,7 @@ final class SumiUpdaterServiceTests: XCTestCase {
         )
 
         XCTAssertEqual(viewModel.metadata.summaryLine, "Version 3.4.5 / Build 345")
-        XCTAssertEqual(viewModel.channelDisplayName, "Alpha")
+        XCTAssertEqual(viewModel.channelDisplayName, "Stable")
         XCTAssertTrue(viewModel.checkButtonIsEnabled)
         XCTAssertEqual(viewModel.panelState, .ready)
 
@@ -305,7 +305,7 @@ final class SumiUpdaterServiceTests: XCTestCase {
         )
         let update = update(displayVersion: "3.5.0", buildVersion: "350")
 
-        var state = SumiUpdateState.initial(channel: .alpha)
+        var state = SumiUpdateState.initial(channel: .stable)
         state.isSparkleAvailable = true
         state.isConfigured = true
 
@@ -337,11 +337,11 @@ final class SumiUpdaterServiceTests: XCTestCase {
         )
     }
 
-    func testInfoPlistUsesAlphaAppcastAndPublicEdDSAKey() throws {
+    func testInfoPlistUsesStableAppcastAndPublicEdDSAKey() throws {
         let plist = try infoPlist()
         XCTAssertEqual(
             plist["SUFeedURL"] as? String,
-            "https://fedyalight.github.io/sumi-webkit/appcast-alpha.xml"
+            "https://fedyalight.github.io/sumi-webkit/appcast.xml"
         )
         let publicKey = try XCTUnwrap(plist["SUPublicEDKey"] as? String)
         XCTAssertFalse(publicKey.isEmpty)
@@ -356,7 +356,7 @@ final class SumiUpdaterServiceTests: XCTestCase {
         backend: FakeUpdaterBackend = FakeUpdaterBackend()
     ) -> SumiUpdaterService {
         SumiUpdaterService(
-            channel: .alpha,
+            channel: .stable,
             dismissalStore: dismissalStore,
             installedUpdateStore: installedUpdateStore,
             currentVersion: SumiAppVersionMetadata(displayName: "Sumi", shortVersion: "1.0.0", buildNumber: "100"),

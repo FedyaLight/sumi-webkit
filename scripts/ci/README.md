@@ -99,7 +99,7 @@ performance suite or second ownership list.
   contract guard wired into both CI manifest jobs.
 - `scripts/run_perf_regression.sh` owns profiling/build mechanics, while its
   optimized-stack and UI-smoke selectors come from manifest profiles/suites.
-- `scripts/release/run_alpha_release_gates.sh` intentionally owns signed
+- `scripts/release/run_release_gates.sh` intentionally owns signed
   release validation against full Xcode schemes and requires Xcode 27+; it is
   not a CI shard or compatibility lane.
 

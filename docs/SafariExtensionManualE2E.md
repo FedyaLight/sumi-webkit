@@ -1,6 +1,6 @@
 # Safari Extension Release Checklist
 
-Run these checks on the packaged alpha build with the Extensions module enabled. Use test accounts and fixtures; never capture real passwords, tokens, cookies, form values, or vault contents in logs or screenshots.
+Run these checks on the packaged release build with the Extensions module enabled. Use test accounts and fixtures; never capture real passwords, tokens, cookies, form values, or vault contents in logs or screenshots.
 
 ## Common Checks
 

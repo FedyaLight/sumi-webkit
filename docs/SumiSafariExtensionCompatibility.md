@@ -1,12 +1,12 @@
 # Sumi Safari Web Extension Compatibility
 
-Last updated: 2026-07-30 (first-alpha release-candidate status)
+Last updated: 2026-07-30 (first-release status)
 
 This is the detailed engineering log and evidence trail. The concise public matrix lives in [Extension Compatibility](extensions.md); the release checklist lives in [SafariExtensionManualE2E.md](SafariExtensionManualE2E.md). Older cycle notes below describe the state at the time of each investigation and can be superseded by the release-candidate snapshot.
 
 ## First-Alpha Release-Candidate Snapshot
 
-Maintainer manual testing for the current alpha candidate confirms the core tested workflows for Bitwarden, Proton Pass, Raindrop.io, and Userscripts. Automated suites cover their generic WebKit seams and the Sumi-owned companion/native-message adapters. These are scoped compatibility statements, not blanket support for every extension feature or future version.
+Maintainer manual testing for the current release confirms the core tested workflows for Bitwarden, Proton Pass, Raindrop.io, and Userscripts. Automated suites cover their generic WebKit seams and the Sumi-owned companion/native-message adapters. These are scoped compatibility statements, not blanket support for every extension feature or future version.
 
 | Target | Current result | Important boundary |
 | --- | --- | --- |
