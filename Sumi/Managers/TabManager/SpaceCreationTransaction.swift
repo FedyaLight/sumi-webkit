@@ -3,11 +3,6 @@ import SumiDomain
 
 @MainActor
 final class SpaceCreationTransaction {
-    enum ProfileReferenceContext {
-        case regular
-        case profileRetirement
-    }
-
     private let transactions: TabStructuralLookupCoordinator
     private let spaces: TabSpaceCollectionStateOwner
     private let runtimeConnection: TabRuntimePortConnection
@@ -34,7 +29,7 @@ final class SpaceCreationTransaction {
         icon: String,
         workspaceTheme: WorkspaceTheme?,
         profileID: UUID?,
-        referenceContext: ProfileReferenceContext = .regular
+        referenceContext: ProfileReferenceMutationContext = .regular
     ) -> Space? {
         transactions.withTransaction {
             let runtimeLease = runtimeConnection.captureLease()
@@ -45,14 +40,11 @@ final class SpaceCreationTransaction {
             let profileIDs = Set([resolvedProfileID].compactMap { $0 })
             let mutationLease: ProfileReferenceMutationLease
             do {
-                switch referenceContext {
-                case .regular:
-                    mutationLease = try profileReferenceAdmission
-                        .beginReferenceMutation(to: profileIDs)
-                case .profileRetirement:
-                    mutationLease = try profileReferenceAdmission
-                        .beginRetirementReferenceMigration(to: profileIDs)
-                }
+                mutationLease = try profileReferenceAdmission
+                    .beginReferenceMutation(
+                        to: profileIDs,
+                        context: referenceContext
+                    )
             } catch {
                 return nil
             }

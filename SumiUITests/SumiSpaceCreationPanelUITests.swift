@@ -24,7 +24,7 @@ final class SumiSpaceCreationPanelUITests: SumiLaunchSmokeUITestCase {
             .firstMatch
         let nameField = window.textFields["sidebar-space-creation-name"]
         XCTAssertTrue(nameField.waitForExistence(timeout: 5))
-        try paste("Panel Smoke Space", into: nameField, in: app)
+        try pasteText("Panel Smoke Space", into: nameField, in: app)
         _ = panel
 
         XCTAssertTrue(window.staticTexts["Create a Space"].exists)
@@ -64,7 +64,7 @@ final class SumiSpaceCreationPanelUITests: SumiLaunchSmokeUITestCase {
             "Profile menu should offer New Profile…"
         )
         attachScreenshot(app, name: "space-creation-profile-menu")
-        app.typeKey(.escape, modifierFlags: [])
+        profileMenu.typeKey(.escape, modifierFlags: [])
 
         attachScreenshot(app, name: "space-creation-panel")
 
@@ -93,33 +93,5 @@ final class SumiSpaceCreationPanelUITests: SumiLaunchSmokeUITestCase {
                 .appendingPathComponent("\(name).png")
             try? app.screenshot().pngRepresentation.write(to: url)
         }
-    }
-
-    private func paste(
-        _ text: String,
-        into input: XCUIElement,
-        in app: XCUIApplication
-    ) throws {
-        let pasteboard = NSPasteboard.general
-        let previousContents = pasteboard.types?.compactMap { type in
-            pasteboard.data(forType: type).map { (type, $0) }
-        } ?? []
-        defer {
-            pasteboard.clearContents()
-            pasteboard.declareTypes(previousContents.map(\.0), owner: nil)
-            for (type, data) in previousContents {
-                pasteboard.setData(data, forType: type)
-            }
-        }
-
-        pasteboard.clearContents()
-        guard pasteboard.setString(text, forType: .string) else {
-            throw FixtureError.missingValue("Unable to seed the Space name pasteboard")
-        }
-        input.click()
-        app.menuBars.menuBarItems["Edit"].click()
-        let pasteItem = app.menuItems["Paste"].firstMatch
-        XCTAssertTrue(pasteItem.waitForExistence(timeout: 2))
-        pasteItem.click()
     }
 }

@@ -144,6 +144,9 @@ struct ExtensionCatalogDetailsPopover: View {
                         onOpenOptions()
                     }
                     .buttonStyle(.bordered)
+                    .accessibilityIdentifier(
+                        "extension-open-options-\(extensionRecord.id)"
+                    )
                     .disabled(isBusy || extensionRecord.isEnabled == false)
                 } else {
                     Text("No extension settings page.")

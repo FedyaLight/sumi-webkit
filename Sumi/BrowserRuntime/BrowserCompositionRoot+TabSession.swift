@@ -56,72 +56,22 @@ extension BrowserCompositionRoot {
         let state = tabManager.stateStore
         let runtimeConnection = tabManager.runtimePortConnection
         let structuralPersistence = tabManager.structuralPersistence
-        let runtimePreparationOwner = TabRuntimePreparationOwner(
-            runtimeConnection: runtimeConnection
-        )
-        let structuralLookupCoordinator = TabStructuralLookupCoordinator(
-            eventBus: tabManager.tabStructureEventBus,
-            stateStore: state
-        )
-        let structuralCollectionStore = TabStructuralCollectionStore(
-            regularTabs: state.regularTabs,
-            folders: state.folders,
-            shortcutPins: state.shortcutPins
-        )
-        let structuralCollectionSnapshots = TabStructuralCollectionSnapshotStore(
-            regularTabs: state.regularTabs,
-            folders: state.folders,
-            shortcutPins: state.shortcutPins
-        )
-        let structuralMutationPublisher = TabStructuralMutationPublisher(
-            persistence: structuralPersistence,
-            faviconService: dataServices.faviconService,
-            lookup: structuralLookupCoordinator,
-            changes: tabManager.objectWillChange,
-            regularTabs: state.regularTabs
-        )
-        let structuralCollectionMutationOwner = TabStructuralCollectionMutationOwner(
-                store: structuralCollectionStore,
-                snapshots: structuralCollectionSnapshots,
-                publisher: structuralMutationPublisher
-            )
-        let structuralInstallOwner = TabStructuralInstallOwner(
-            state: state,
-            structuralLookup: structuralLookupCoordinator,
-            persistence: structuralPersistence,
-            publication: TabStructuralInstallPublication(
-                changes: tabManager.objectWillChange,
-                faviconService: dataServices.faviconService
-            ),
+        let structuralGraph = BrowserTabStructuralGraph.make(
+            tabManager: tabManager,
+            webViewSessions: webViewSessions,
+            dataServices: dataServices,
             profileReferenceAdmission: profileReferenceAdmission
         )
-        let tabCollectionMembershipOwner = TabCollectionMembershipOwner(
-            structuralLookupOwner: structuralLookupCoordinator.lookupOwner,
-            state: state,
-            runtimePreparation: runtimePreparationOwner,
-            runtimeConnection: runtimeConnection
-        )
-        let lazyRestoreCoordinator = TabLazyRestoreCoordinator(
-            spaces: state.spaces,
-            regularTabs: state.regularTabs,
-            membership: tabCollectionMembershipOwner
-        )
-        let spacePinnedOrderTransaction = SpacePinnedOrderTransaction(
-            folders: state.folders,
-            pins: state.shortcutPins,
-            mutations: structuralCollectionMutationOwner
-        )
-        let spacePinnedStructureOwner = SpacePinnedStructureOwner(
-            folders: state.folders,
-            pins: state.shortcutPins,
-            splitGroups: state.splitGroups,
-            orderTransaction: spacePinnedOrderTransaction
-        )
-        let runtimeTeardown = TabRuntimeTeardownService(
-            persistence: structuralPersistence,
-            membership: tabCollectionMembershipOwner,
-            webViewSessions: webViewSessions
-        )
+        let runtimePreparationOwner = structuralGraph.runtimePreparation
+        let structuralLookupCoordinator = structuralGraph.lookup
+        let structuralMutationPublisher = structuralGraph.mutationPublisher
+        let structuralCollectionMutationOwner = structuralGraph.mutations
+        let structuralInstallOwner = structuralGraph.installer
+        let tabCollectionMembershipOwner = structuralGraph.membership
+        let lazyRestoreCoordinator = structuralGraph.lazyRestore
+        let spacePinnedOrderTransaction = structuralGraph.spacePinnedOrder
+        let spacePinnedStructureOwner = structuralGraph.spacePinnedStructure
+        let runtimeTeardown = structuralGraph.runtimeTeardown
         let liveShortcutTabs = LiveShortcutTabRegistry(
             storage: state.transientTabs,
             structuralLookup: structuralLookupCoordinator
@@ -337,7 +287,7 @@ extension BrowserCompositionRoot {
             spaces: state.spaces,
             tabTransitions: tabProfileTransitions,
             spaceTransitionLifecycle: spaceProfileGraph.lifecycle,
-            spaceCatalog: spaceCatalog,
+            spaceCreation: spaceCreation,
             spaceRemoval: spaceRemoval,
             shortcutReferences: shortcutReferences,
             selection: profileSelection

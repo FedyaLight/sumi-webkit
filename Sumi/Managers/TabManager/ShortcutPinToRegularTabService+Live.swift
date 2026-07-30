@@ -17,13 +17,20 @@ extension ShortcutPinToRegularTabService {
             persistence: persistence,
             structuralLookup: structuralLookup
         )
+        let admission = ShortcutPinPromotionAdmission(
+            splitGroups: splitGroups,
+            pins: pins
+        )
         return Self(
-            promotion: promotion,
-            admission: ShortcutPinPromotionAdmission(
-                splitGroups: splitGroups,
-                pins: pins
+            singlePin: ShortcutPinRegularPromotionService(
+                promotion: promotion,
+                admission: admission,
+                transaction: transaction
             ),
-            transaction: transaction
+            group: ShortcutPinGroupRegularConversionService(
+                admission: admission,
+                transaction: transaction
+            )
         )
     }
 }

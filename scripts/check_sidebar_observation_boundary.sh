@@ -54,11 +54,13 @@ url_bar="Sumi/Components/Sidebar/URLBarView.swift"
 url_hub="Sumi/Components/Sidebar/URLBarHubPopover.swift"
 live_folders="Sumi/LiveFolders/SumiLiveFolderManager.swift"
 live_folder_view="Sumi/Components/Sidebar/SpaceSection/SpaceSidebarListView.swift"
-pinned_section="Sumi/Components/Sidebar/SpaceSection/SpaceSidebarListView.swift"
+live_folder_reader="Sumi/Components/Sidebar/SpaceSection/SpaceSidebarListObservation.swift"
+pinned_section="Sumi/Components/Sidebar/SpaceSection/SpaceSidebarListObservation.swift"
 pinned_list="Sumi/Components/Sidebar/SpaceSection/SpaceSidebarListView.swift"
 space_section_views="Sumi/Components/Sidebar/SpaceSection"
 folder_render_views=(
   "Sumi/Components/Sidebar/SpaceSection/SpacePinnedListEntryViews.swift"
+  "Sumi/Components/Sidebar/SpaceSection/SpaceSidebarSceneBuilder.swift"
   "Sumi/Components/Sidebar/SpaceSection/SpaceSidebarListView.swift"
   "Sumi/Components/Sidebar/SpaceSection/TabFolderHeaderView.swift"
   "Sumi/Components/Sidebar/SpaceSection/TabFolderHeaderRow.swift"
@@ -118,8 +120,10 @@ require 'sourceIdentity: pinIDs' \
 forbid '\.id\(pinIDs\)' \
   "launcher runtime reader replaces the child list surface instead of rebinding its source" \
   "$sidebar_page"
-require 'SpaceSidebarLiveFolderReader' \
+require 'SpaceSidebarLiveFolderReader\(' \
   "live-folder leaf no longer uses a demand-scoped reader" "$live_folder_view"
+require 'struct SpaceSidebarLiveFolderReader' \
+  "live-folder demand-scoped reader is missing" "$live_folder_reader"
 require '@ObservedObject var listPresentation: SidebarListDragPresentation' \
   "pinned section lost its atomic drag-presentation boundary" "$pinned_section"
 forbid '@EnvironmentObject private var dragState: SidebarDragState' \

@@ -388,7 +388,7 @@ final class SumiImportTransactionTests: XCTestCase {
             warnings: []
         )
 
-        await XCTAssertThrowsErrorAsync {
+        await XCTAssertImportThrowsErrorAsync {
             _ = try await fixture.transaction.commit(plan)
         }
 
@@ -403,7 +403,7 @@ final class SumiImportTransactionTests: XCTestCase {
         let fixture = makeTransactionFixture()
         fixture.bookmarks.failuresRemaining = 1
 
-        await XCTAssertThrowsErrorAsync {
+        await XCTAssertImportThrowsErrorAsync {
             _ = try await fixture.transaction.commit(self.mutatingPlan())
         }
 
@@ -443,7 +443,7 @@ final class SumiImportTransactionTests: XCTestCase {
         let fixture = makeTransactionFixture()
         fixture.runtime.installFailuresRemaining = 1
 
-        await XCTAssertThrowsErrorAsync {
+        await XCTAssertImportThrowsErrorAsync {
             _ = try await fixture.transaction.commit(self.mutatingPlan())
         }
 
@@ -506,7 +506,7 @@ final class SumiImportTransactionTests: XCTestCase {
             warnings: []
         )
 
-        await XCTAssertThrowsErrorAsync {
+        await XCTAssertImportThrowsErrorAsync {
             _ = try await fixture.transaction.commit(plan)
         }
 
@@ -620,7 +620,7 @@ final class SumiImportTransactionTests: XCTestCase {
                 interrupting: .phasePersisted(phase)
             )
 
-            await XCTAssertThrowsErrorAsync {
+            await XCTAssertImportThrowsErrorAsync {
                 _ = try await interrupted.commit(self.mutatingPlan())
             }
 
@@ -668,7 +668,7 @@ final class SumiImportTransactionTests: XCTestCase {
         for (faultPoint, expectedPhase) in cases {
             let fixture = makeTransactionFixture()
 
-            await XCTAssertThrowsErrorAsync {
+            await XCTAssertImportThrowsErrorAsync {
                 _ = try await fixture.makeTransaction(interrupting: faultPoint)
                     .commit(self.mutatingPlan())
             }
@@ -688,7 +688,7 @@ final class SumiImportTransactionTests: XCTestCase {
             interrupting: .phasePersisted(.compensating)
         )
 
-        await XCTAssertThrowsErrorAsync {
+        await XCTAssertImportThrowsErrorAsync {
             _ = try await interrupted.commit(self.mutatingPlan())
         }
 
@@ -715,12 +715,12 @@ final class SumiImportTransactionTests: XCTestCase {
 
         for faultPoint in faultPoints {
             let fixture = makeTransactionFixture()
-            await XCTAssertThrowsErrorAsync {
+            await XCTAssertImportThrowsErrorAsync {
                 _ = try await fixture.makeTransaction(interrupting: .runtimeInstalled)
                     .commit(self.mutatingPlan())
             }
 
-            await XCTAssertThrowsErrorAsync {
+            await XCTAssertImportThrowsErrorAsync {
                 _ = try await fixture.makeTransaction(interrupting: faultPoint)
                     .recoverIfNeeded()
             }
@@ -735,7 +735,7 @@ final class SumiImportTransactionTests: XCTestCase {
         let fixture = makeTransactionFixture()
         fixture.bookmarks.failuresRemaining = 1
 
-        await XCTAssertThrowsErrorAsync {
+        await XCTAssertImportThrowsErrorAsync {
             _ = try await fixture.makeTransaction(
                 interrupting: .phasePersisted(.completed)
             ).commit(self.mutatingPlan())
@@ -795,7 +795,7 @@ final class SumiImportTransactionTests: XCTestCase {
             interrupting: .phasePersisted(.bookmarksCommitted)
         )
 
-        await XCTAssertThrowsErrorAsync {
+        await XCTAssertImportThrowsErrorAsync {
             _ = try await interrupted.commit(self.replaceMutatingPlan())
         }
         fixture.bookmarks.restoreError = TestImportFailure.bookmarkRollback
@@ -847,375 +847,7 @@ final class SumiImportTransactionTests: XCTestCase {
         }
     }
 
-    func testFreshDatabaseJournalRecoveryRestoresCompleteDurableRuntimeCheckpoint() async throws {
-        let database = try SumiDatabase.inMemory()
-        let journal = SumiImportTransactionDatabaseJournal(database: database)
-
-        let browserManager = BrowserManager()
-        let firstProfile = Profile(name: "First")
-        let selectedProfile = Profile(name: "Selected")
-        let space = Space(name: "Baseline Space", icon: "circle", profileId: selectedProfile.id)
-        let firstTab = browserManager.tabFactory.makeTab(
-            url: URL(string: "https://first.example")!,
-            name: "First",
-            spaceId: space.id,
-            loadsCachedFaviconOnInit: false
-        )
-        let selectedTab = browserManager.tabFactory.makeTab(
-            url: URL(string: "https://selected.example")!,
-            name: "Selected",
-            spaceId: space.id,
-            loadsCachedFaviconOnInit: false
-        )
-        let pendingPin = ShortcutPin(
-            id: UUID(),
-            role: .essential,
-            index: 0,
-            launchURL: URL(string: "https://pending.example")!,
-            title: "Pending"
-        )
-        let splitGroup = try XCTUnwrap(SplitGroup.make(
-            members: [.regularTab(firstTab.id), .regularTab(selectedTab.id)],
-            layoutKind: .vertical,
-            container: .regularTabs(spaceId: space.id)
-        ))
-        let baselineState = SumiImportRuntimeState(
-            profiles: [firstProfile, selectedProfile],
-            currentProfile: selectedProfile,
-            spaces: [space],
-            tabsBySpace: [space.id: [firstTab, selectedTab]],
-            foldersBySpace: [space.id: []],
-            pinnedByProfile: [:],
-            spacePinnedShortcuts: [:],
-            pendingPinnedWithoutProfile: [pendingPin],
-            splitGroups: [splitGroup],
-            currentSpace: space,
-            currentTab: selectedTab
-        )
-        let materializedBaseline = SumiImportRuntimeState(
-            profiles: baselineState.profiles,
-            currentProfile: firstProfile,
-            spaces: baselineState.spaces,
-            tabsBySpace: baselineState.tabsBySpace,
-            foldersBySpace: baselineState.foldersBySpace,
-            pinnedByProfile: baselineState.pinnedByProfile,
-            spacePinnedShortcuts: baselineState.spacePinnedShortcuts,
-            pendingPinnedWithoutProfile: [],
-            splitGroups: [],
-            currentSpace: space,
-            currentTab: firstTab
-        )
-        let importedProfile = Profile(id: firstProfile.id, name: "Imported")
-        let importedState = SumiImportRuntimeState(
-            profiles: [importedProfile, selectedProfile],
-            currentProfile: importedProfile,
-            spaces: baselineState.spaces,
-            tabsBySpace: baselineState.tabsBySpace,
-            foldersBySpace: baselineState.foldersBySpace,
-            pinnedByProfile: baselineState.pinnedByProfile,
-            spacePinnedShortcuts: baselineState.spacePinnedShortcuts,
-            pendingPinnedWithoutProfile: [],
-            splitGroups: [],
-            currentSpace: space,
-            currentTab: firstTab
-        )
-        let baselineData = SumiPortableData(
-            profiles: [
-                portableProfile(id: firstProfile.id.uuidString, name: firstProfile.name),
-                portableProfile(id: selectedProfile.id.uuidString, name: selectedProfile.name),
-            ],
-            spaces: [portableSpace(
-                id: space.id.uuidString,
-                profileId: selectedProfile.id.uuidString
-            )],
-            regularTabs: [
-                portableTab(id: firstTab.id.uuidString, spaceId: space.id.uuidString),
-                portableTab(id: selectedTab.id.uuidString, spaceId: space.id.uuidString),
-            ]
-        )
-        let targetData = SumiPortableData(
-            profiles: [
-                portableProfile(id: firstProfile.id.uuidString, name: importedProfile.name),
-                portableProfile(id: selectedProfile.id.uuidString, name: selectedProfile.name),
-            ],
-            spaces: baselineData.spaces,
-            regularTabs: baselineData.regularTabs
-        )
-        let plan = SumiImportPlan(
-            baseline: baselineData,
-            targetRuntimeData: targetData,
-            bookmarkMutation: .merge([bookmarkNode("Imported")]),
-            categories: [.profiles, .bookmarks],
-            mode: .merge,
-            warnings: []
-        )
-        let bookmarks = RecordingImportBookmarks()
-        let firstRuntime = StateTrackingImportRuntime(state: baselineState)
-        let materializer = PlanStateImportMaterializer(
-            rollbackData: baselineData,
-            importedState: importedState,
-            rollbackState: materializedBaseline
-        )
-        let firstTransaction = SumiImportTransaction(
-            materializer: materializer,
-            runtime: firstRuntime,
-            bookmarks: bookmarks,
-            backupWriter: RecordingImportBackup(),
-            journal: journal,
-            executionGate: SumiImportTransactionExecutionGate(),
-            shouldInterrupt: { $0 == .bookmarksMutated }
-        )
-
-        await XCTAssertThrowsErrorAsync {
-            _ = try await firstTransaction.commit(plan)
-        }
-
-        let launchRuntime = StateTrackingImportRuntime(state: importedState)
-        let launchTransaction = SumiImportTransaction(
-            materializer: materializer,
-            runtime: launchRuntime,
-            bookmarks: bookmarks,
-            backupWriter: RecordingImportBackup(),
-            journal: SumiImportTransactionDatabaseJournal(database: database),
-            executionGate: SumiImportTransactionExecutionGate()
-        )
-
-        _ = try await launchTransaction.recoverIfNeeded()
-
-        XCTAssertEqual(launchRuntime.state.profiles.map(\.name), ["First", "Selected"])
-        XCTAssertIdentical(launchRuntime.state.currentProfile, selectedProfile)
-        XCTAssertIdentical(launchRuntime.state.currentSpace, space)
-        XCTAssertIdentical(launchRuntime.state.currentTab, selectedTab)
-        XCTAssertEqual(launchRuntime.state.pendingPinnedWithoutProfile.count, 1)
-        XCTAssertEqual(launchRuntime.state.pendingPinnedWithoutProfile.first?.id, pendingPin.id)
-        XCTAssertEqual(launchRuntime.state.splitGroups, [splitGroup])
-        XCTAssertEqual(bookmarks.storedIDs, ["before-id"])
-        let clearedJournal = try await journal.load()
-        XCTAssertNil(clearedJournal)
-    }
-
-    func testNoOpPlanDoesNotMaterializeCheckpointBackupOrMutate() async throws {
-        let fixture = makeTransactionFixture()
-        let baseline = SumiPortableData()
-        let plan = SumiImportPlan(
-            baseline: baseline,
-            targetRuntimeData: baseline,
-            bookmarkMutation: .none,
-            categories: [],
-            mode: .merge,
-            warnings: []
-        )
-
-        let report = try await fixture.transaction.commit(plan)
-
-        XCTAssertTrue(fixture.runtime.events.isEmpty)
-        XCTAssertEqual(fixture.materializer.callCount, 0)
-        XCTAssertEqual(fixture.backup.callCount, 0)
-        XCTAssertEqual(fixture.bookmarks.commitCount, 0)
-        XCTAssertTrue(report.appliedCategories.isEmpty)
-    }
-
-    func testCommittedReplaceRetiresProfilesAfterRuntimeLeaseEnds() async throws {
-        let fixture = makeTransactionFixture()
-        let retirement = RecordingImportProfileRetirement()
-        retirement.onRetire = {
-            XCTAssertFalse(fixture.runtime.isMutationActive)
-        }
-        let basePlan = mutatingPlan()
-        let retiringID = try XCTUnwrap(
-            UUID(uuidString: basePlan.baseline.profiles[0].id)
-        )
-        let fallbackID = try XCTUnwrap(
-            UUID(uuidString: basePlan.targetRuntimeData.profiles[0].id)
-        )
-        let plan = SumiImportPlan(
-            baseline: basePlan.baseline,
-            targetRuntimeData: basePlan.targetRuntimeData,
-            bookmarkMutation: basePlan.bookmarkMutation,
-            categories: basePlan.categories,
-            mode: .replace,
-            warnings: [],
-            profileTransition: SumiImportProfileTransition(
-                sourceToTargetProfileID: [:],
-                createdProfileIDs: [fallbackID],
-                retiringProfileIDs: [retiringID],
-                fallbackProfileID: fallbackID
-            )
-        )
-        let transaction = SumiImportTransaction(
-            materializer: fixture.materializer,
-            runtime: fixture.runtime,
-            bookmarks: fixture.bookmarks,
-            backupWriter: fixture.backup,
-            journal: fixture.journal,
-            profileRetirement: retirement,
-            executionGate: fixture.executionGate
-        )
-
-        _ = try await transaction.commit(plan)
-
-        XCTAssertEqual(retirement.calls.count, 1)
-        XCTAssertEqual(retirement.calls[0].profileIDs, [retiringID])
-        XCTAssertEqual(retirement.calls[0].fallbackProfileID, fallbackID)
-        XCTAssertTrue(fixture.journal.savedPhases.contains(.retiringProfiles))
-        XCTAssertNil(fixture.journal.record)
-    }
-
-    func testRetiringProfilesPhaseResumesForwardWithoutRollback() async throws {
-        let fixture = makeTransactionFixture()
-        let retirement = RecordingImportProfileRetirement()
-        retirement.error = TestImportFailure.rollback
-        let basePlan = mutatingPlan()
-        let retiringID = try XCTUnwrap(
-            UUID(uuidString: basePlan.baseline.profiles[0].id)
-        )
-        let fallbackID = try XCTUnwrap(
-            UUID(uuidString: basePlan.targetRuntimeData.profiles[0].id)
-        )
-        let plan = SumiImportPlan(
-            baseline: basePlan.baseline,
-            targetRuntimeData: basePlan.targetRuntimeData,
-            bookmarkMutation: basePlan.bookmarkMutation,
-            categories: basePlan.categories,
-            mode: .replace,
-            warnings: [],
-            profileTransition: SumiImportProfileTransition(
-                sourceToTargetProfileID: [:],
-                createdProfileIDs: [fallbackID],
-                retiringProfileIDs: [retiringID],
-                fallbackProfileID: fallbackID
-            )
-        )
-        let transaction = SumiImportTransaction(
-            materializer: fixture.materializer,
-            runtime: fixture.runtime,
-            bookmarks: fixture.bookmarks,
-            backupWriter: fixture.backup,
-            journal: fixture.journal,
-            profileRetirement: retirement,
-            executionGate: fixture.executionGate
-        )
-
-        await XCTAssertThrowsErrorAsync {
-            _ = try await transaction.commit(plan)
-        }
-        XCTAssertEqual(fixture.journal.record?.phase, .retiringProfiles)
-        XCTAssertFalse(fixture.runtime.events.contains("restore"))
-
-        retirement.error = nil
-        _ = try await transaction.recoverIfNeeded()
-
-        XCTAssertEqual(retirement.calls.count, 2)
-        XCTAssertNil(fixture.journal.record)
-        XCTAssertFalse(fixture.runtime.events.contains("restore"))
-    }
-
-    func testRollbackRetiresProfilesCreatedByFailedImport() async throws {
-        let fixture = makeTransactionFixture()
-        fixture.bookmarks.failuresRemaining = 1
-        let retirement = RecordingImportProfileRetirement()
-        let basePlan = mutatingPlan()
-        let createdID = try XCTUnwrap(
-            UUID(uuidString: basePlan.targetRuntimeData.profiles[0].id)
-        )
-        let fallbackID = try XCTUnwrap(
-            UUID(uuidString: basePlan.baseline.profiles[0].id)
-        )
-        let plan = SumiImportPlan(
-            baseline: basePlan.baseline,
-            targetRuntimeData: basePlan.targetRuntimeData,
-            bookmarkMutation: basePlan.bookmarkMutation,
-            categories: basePlan.categories,
-            mode: .merge,
-            warnings: [],
-            profileTransition: SumiImportProfileTransition(
-                sourceToTargetProfileID: [:],
-                createdProfileIDs: [createdID],
-                retiringProfileIDs: [],
-                fallbackProfileID: createdID
-            )
-        )
-        let transaction = SumiImportTransaction(
-            materializer: fixture.materializer,
-            runtime: fixture.runtime,
-            bookmarks: fixture.bookmarks,
-            backupWriter: fixture.backup,
-            journal: fixture.journal,
-            profileRetirement: retirement,
-            executionGate: fixture.executionGate
-        )
-
-        await XCTAssertThrowsErrorAsync {
-            _ = try await transaction.commit(plan)
-        }
-
-        XCTAssertTrue(fixture.runtime.events.contains("restore"))
-        XCTAssertEqual(retirement.calls.count, 1)
-        XCTAssertEqual(retirement.calls[0].profileIDs, [createdID])
-        XCTAssertEqual(retirement.calls[0].fallbackProfileID, fallbackID)
-        XCTAssertTrue(
-            fixture.journal.savedPhases.contains(.compensatingProfiles)
-        )
-        XCTAssertNil(fixture.journal.record)
-    }
-
-    func testCompensatingProfileRetirementResumesAfterJournalInterruption() async throws {
-        let fixture = makeTransactionFixture()
-        fixture.bookmarks.failuresRemaining = 1
-        let retirement = RecordingImportProfileRetirement()
-        let basePlan = mutatingPlan()
-        let createdID = try XCTUnwrap(
-            UUID(uuidString: basePlan.targetRuntimeData.profiles[0].id)
-        )
-        let plan = SumiImportPlan(
-            baseline: basePlan.baseline,
-            targetRuntimeData: basePlan.targetRuntimeData,
-            bookmarkMutation: basePlan.bookmarkMutation,
-            categories: basePlan.categories,
-            mode: .merge,
-            warnings: [],
-            profileTransition: SumiImportProfileTransition(
-                sourceToTargetProfileID: [:],
-                createdProfileIDs: [createdID],
-                retiringProfileIDs: [],
-                fallbackProfileID: createdID
-            )
-        )
-        let interrupted = SumiImportTransaction(
-            materializer: fixture.materializer,
-            runtime: fixture.runtime,
-            bookmarks: fixture.bookmarks,
-            backupWriter: fixture.backup,
-            journal: fixture.journal,
-            profileRetirement: retirement,
-            executionGate: fixture.executionGate,
-            shouldInterrupt: {
-                $0 == .phasePersisted(.compensatingProfiles)
-            }
-        )
-
-        await XCTAssertThrowsErrorAsync {
-            _ = try await interrupted.commit(plan)
-        }
-
-        XCTAssertEqual(fixture.journal.record?.phase, .compensatingProfiles)
-        XCTAssertTrue(retirement.calls.isEmpty)
-
-        _ = try await SumiImportTransaction(
-            materializer: fixture.materializer,
-            runtime: fixture.runtime,
-            bookmarks: fixture.bookmarks,
-            backupWriter: fixture.backup,
-            journal: fixture.journal,
-            profileRetirement: retirement,
-            executionGate: fixture.executionGate
-        ).recoverIfNeeded()
-
-        XCTAssertEqual(retirement.calls.first?.profileIDs, [createdID])
-        XCTAssertNil(fixture.journal.record)
-    }
-
-    private func makeMergeRequest() -> SumiImportRequest {
+    func makeMergeRequest() -> SumiImportRequest {
         let profileId = "source-profile"
         let spaceId = "source-space"
         let folderId = "source-folder"
@@ -1254,7 +886,7 @@ final class SumiImportTransactionTests: XCTestCase {
         )
     }
 
-    private func mutatingPlan() -> SumiImportPlan {
+    func mutatingPlan() -> SumiImportPlan {
         let baselineBookmarks = [bookmarkNode("Before")]
         let baseline = SumiPortableData(
             profiles: [portableProfile(id: UUID().uuidString, name: "Before")],
@@ -1279,7 +911,7 @@ final class SumiImportTransactionTests: XCTestCase {
         )
     }
 
-    private func replaceMutatingPlan() -> SumiImportPlan {
+    func replaceMutatingPlan() -> SumiImportPlan {
         let plan = mutatingPlan()
         return SumiImportPlan(
             baseline: plan.baseline,
@@ -1291,7 +923,7 @@ final class SumiImportTransactionTests: XCTestCase {
         )
     }
 
-    private func bookmarkNode(_ name: String) -> SumiPortableBookmarkNode {
+    func bookmarkNode(_ name: String) -> SumiPortableBookmarkNode {
         SumiPortableBookmarkNode(
             name: name,
             kind: .bookmark,
@@ -1300,11 +932,11 @@ final class SumiImportTransactionTests: XCTestCase {
         )
     }
 
-    private func portableProfile(id: String, name: String) -> SumiPortableProfile {
+    func portableProfile(id: String, name: String) -> SumiPortableProfile {
         SumiPortableProfile(id: id, name: name, index: 0)
     }
 
-    private func portableSpace(id: String, profileId: String) -> SumiPortableSpace {
+    func portableSpace(id: String, profileId: String) -> SumiPortableSpace {
         SumiPortableSpace(
             id: id,
             name: "Space",
@@ -1316,7 +948,7 @@ final class SumiImportTransactionTests: XCTestCase {
         )
     }
 
-    private func portableTab(id: String, spaceId: String) -> SumiPortableRegularTab {
+    func portableTab(id: String, spaceId: String) -> SumiPortableRegularTab {
         SumiPortableRegularTab(
             id: id,
             title: "Tab",
@@ -1328,7 +960,7 @@ final class SumiImportTransactionTests: XCTestCase {
         )
     }
 
-    private func makeTransactionFixture() -> TransactionFixture {
+    func makeTransactionFixture() -> TransactionFixture {
         let checkpoint = emptyRuntimeState()
         let target = emptyRuntimeState()
         let materializer = RecordingImportMaterializer(state: target)
@@ -1355,7 +987,7 @@ final class SumiImportTransactionTests: XCTestCase {
         )
     }
 
-    private func emptyRuntimeState() -> SumiImportRuntimeState {
+    func emptyRuntimeState() -> SumiImportRuntimeState {
         SumiImportRuntimeState(
             profiles: [],
             currentProfile: nil,
@@ -1371,12 +1003,12 @@ final class SumiImportTransactionTests: XCTestCase {
         )
     }
 
-    private static let currentThemeFixtureBase64 =
+    static let currentThemeFixtureBase64 =
         "eyJncmFkaWVudFRoZW1lIjp7ImNvbG9ycyI6W3siYWxnb3JpdGhtIjoiZmxvYXRpbmciLCJoZXgiOiIjNDQ1NTY2IiwiaWQiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDEiLCJpc0N1c3RvbSI6ZmFsc2UsImlzUHJpbWFyeSI6dHJ1ZSwibGlnaHRuZXNzIjowLjM1LCJwb3NpdGlvbiI6eyJ4IjowLjY2LCJ5IjowLjV9LCJ0eXBlIjoiZXhwbGljaXQtbGlnaHRuZXNzIn1dLCJvcGFjaXR5IjowLjc0LCJ0ZXh0dXJlIjowLjE4NzUsInR5cGUiOiJncmFkaWVudCJ9LCJ1c2VzRXhwbGljaXRDb2xvclNjaGVtZSI6dHJ1ZX0="
 }
 
 @MainActor
-private struct TransactionFixture {
+struct TransactionFixture {
     let transaction: SumiImportTransaction
     let materializer: RecordingImportMaterializer
     let runtime: RecordingImportRuntime
@@ -1401,7 +1033,7 @@ private struct TransactionFixture {
 }
 
 @MainActor
-private final class RecordingImportMaterializer: SumiImportRuntimeMaterializing {
+final class RecordingImportMaterializer: SumiImportRuntimeMaterializing {
     let state: SumiImportRuntimeState
     private(set) var callCount = 0
 
@@ -1419,7 +1051,7 @@ private final class RecordingImportMaterializer: SumiImportRuntimeMaterializing 
 }
 
 @MainActor
-private final class PlanStateImportMaterializer: SumiImportRuntimeMaterializing {
+final class PlanStateImportMaterializer: SumiImportRuntimeMaterializing {
     let rollbackData: SumiPortableData
     let importedState: SumiImportRuntimeState
     let rollbackState: SumiImportRuntimeState
@@ -1444,9 +1076,9 @@ private final class PlanStateImportMaterializer: SumiImportRuntimeMaterializing 
 }
 
 @MainActor
-private final class StateTrackingImportRuntime: SumiImportRuntimeMutating {
+final class StateTrackingImportRuntime: SumiImportRuntimeMutating {
     private(set) var state: SumiImportRuntimeState
-    private var activeSession: SumiImportRuntimeMutationSession?
+    var activeSession: SumiImportRuntimeMutationSession?
 
     init(state: SumiImportRuntimeState) {
         self.state = state
@@ -1490,14 +1122,14 @@ private final class StateTrackingImportRuntime: SumiImportRuntimeMutating {
 }
 
 @MainActor
-private final class RecordingImportRuntime: SumiImportRuntimeMutating {
+final class RecordingImportRuntime: SumiImportRuntimeMutating {
     let savedCheckpoint: SumiImportRuntimeState
     var events: [String] = []
     var installFailuresRemaining = 0
     var restoreError: Error?
-    private var suspendedInstall: CheckedContinuation<Void, Never>?
-    private var onInstallSuspended: (() -> Void)?
-    private var activeSession: SumiImportRuntimeMutationSession?
+    var suspendedInstall: CheckedContinuation<Void, Never>?
+    var onInstallSuspended: (() -> Void)?
+    var activeSession: SumiImportRuntimeMutationSession?
 
     var isMutationActive: Bool {
         activeSession != nil
@@ -1567,7 +1199,7 @@ private final class RecordingImportRuntime: SumiImportRuntimeMutating {
 }
 
 @MainActor
-private final class RecordingImportBookmarks: SumiImportBookmarkMutating {
+final class RecordingImportBookmarks: SumiImportBookmarkMutating {
     var failuresRemaining = 0
     var restoreError: Error?
     var onCommit: (() -> Void)?
@@ -1639,7 +1271,7 @@ private final class RecordingImportBookmarks: SumiImportBookmarkMutating {
 }
 
 @MainActor
-private final class RecordingImportBackup: SumiImportBackupWriting {
+final class RecordingImportBackup: SumiImportBackupWriting {
     var error: Error?
     private(set) var callCount = 0
 
@@ -1651,7 +1283,7 @@ private final class RecordingImportBackup: SumiImportBackupWriting {
 }
 
 @MainActor
-private final class RecordingImportProfileRetirement: SumiImportProfileRetiring {
+final class RecordingImportProfileRetirement: SumiImportProfileRetiring {
     struct Call: Equatable {
         let profileIDs: Set<UUID>
         let fallbackProfileID: UUID
@@ -1677,7 +1309,7 @@ private final class RecordingImportProfileRetirement: SumiImportProfileRetiring 
 }
 
 @MainActor
-private final class RecordingImportJournal: SumiImportTransactionJournal {
+final class RecordingImportJournal: SumiImportTransactionJournal {
     var record: SumiImportTransactionJournalRecord?
     var saveErrors: [SumiImportTransactionPhase: Error] = [:]
     var clearError: Error?
@@ -1703,7 +1335,7 @@ private final class RecordingImportJournal: SumiImportTransactionJournal {
     }
 }
 
-private enum TestImportFailure: LocalizedError, Equatable {
+enum TestImportFailure: LocalizedError, Equatable {
     case install
     case bookmarks
     case backup
@@ -1714,7 +1346,7 @@ private enum TestImportFailure: LocalizedError, Equatable {
 }
 
 @MainActor
-private func XCTAssertThrowsErrorAsync(
+func XCTAssertImportThrowsErrorAsync(
     _ expression: @MainActor () async throws -> Void,
     file: StaticString = #filePath,
     line: UInt = #line

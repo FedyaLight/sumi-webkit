@@ -4,15 +4,15 @@ import XCTest
 
 @MainActor
 final class SumiCommandPaletteFocusUITests: SumiLaunchSmokeUITestCase {
-    func testCommandTMakesCommandPaletteInputKeyboardFocusOwner() throws {
+    func testNewTabCommandMakesCommandPaletteInputKeyboardFocusOwner() throws {
         let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
         let window = app.windows.element(boundBy: 0)
         XCTAssertTrue(window.waitForExistence(timeout: 5))
 
-        app.typeKey("t", modifierFlags: [.command])
+        openNewTabCommandPalette(in: app)
         XCTAssertTrue(
             waitForCommandPalette(in: app, timeout: 5),
-            "Command palette did not appear after Cmd+T"
+            "Command palette did not appear after the New Tab command"
         )
 
         let input = element(withIdentifier: "command-palette-input", in: app)
@@ -23,7 +23,7 @@ final class SumiCommandPaletteFocusUITests: SumiLaunchSmokeUITestCase {
         XCTAssertEqual(
             XCTWaiter().wait(for: [focusExpectation], timeout: 5),
             .completed,
-            "Cmd+T did not make the command palette input the keyboard focus owner"
+            "The New Tab command did not make the command palette input the keyboard focus owner"
         )
     }
 
@@ -35,7 +35,7 @@ final class SumiCommandPaletteFocusUITests: SumiLaunchSmokeUITestCase {
             let window = app.windows.element(boundBy: 0)
             XCTAssertTrue(window.waitForExistence(timeout: 5))
 
-            app.typeKey("t", modifierFlags: [.command])
+            openNewTabCommandPalette(in: app)
             XCTAssertTrue(waitForCommandPalette(in: app, timeout: 5))
 
             let input = element(
@@ -44,7 +44,7 @@ final class SumiCommandPaletteFocusUITests: SumiLaunchSmokeUITestCase {
             )
             XCTAssertTrue(input.waitForExistence(timeout: 5))
             XCTAssertTrue(waitForKeyboardFocus(in: input, timeout: 5))
-            app.typeText("YouTube")
+            input.typeText("YouTube")
 
             let siteSearchOffer = app.staticTexts.matching(
                 NSPredicate(
@@ -55,7 +55,7 @@ final class SumiCommandPaletteFocusUITests: SumiLaunchSmokeUITestCase {
             ).firstMatch
             XCTAssertTrue(siteSearchOffer.waitForExistence(timeout: 5))
 
-            app.typeKey(.tab, modifierFlags: [])
+            input.typeKey(.tab, modifierFlags: [])
 
             XCTAssertTrue(
                 waitForValue("", in: input, timeout: 5),
@@ -67,8 +67,8 @@ final class SumiCommandPaletteFocusUITests: SumiLaunchSmokeUITestCase {
             )
             XCTAssertFalse(siteSearchOffer.exists)
 
-            app.typeText("music")
-            app.typeKey(.escape, modifierFlags: [])
+            input.typeText("music")
+            input.typeKey(.escape, modifierFlags: [])
 
             XCTAssertTrue(
                 waitForValue("", in: input, timeout: 5),
@@ -92,14 +92,14 @@ final class SumiCommandPaletteFocusUITests: SumiLaunchSmokeUITestCase {
                 app.windows.element(boundBy: 0).waitForExistence(timeout: 5)
             )
 
-            app.typeKey("t", modifierFlags: [.command])
+            openNewTabCommandPalette(in: app)
             XCTAssertTrue(waitForCommandPalette(in: app, timeout: 5))
             let input = element(
                 withIdentifier: "command-palette-input",
                 in: app
             )
             XCTAssertTrue(waitForKeyboardFocus(in: input, timeout: 5))
-            app.typeKey(.tab, modifierFlags: [])
+            input.typeKey(.tab, modifierFlags: [])
 
             let results = app.scrollViews[
                 "command-palette-results"
@@ -111,7 +111,7 @@ final class SumiCommandPaletteFocusUITests: SumiLaunchSmokeUITestCase {
                 "Scrolling results transferred keyboard focus from the input"
             )
 
-            app.typeText("Settings")
+            input.typeText("Settings")
 
             let settings = app.buttons.matching(
                 NSPredicate(
@@ -161,14 +161,14 @@ final class SumiCommandPaletteFocusUITests: SumiLaunchSmokeUITestCase {
             )
             try activateSmokeLauncher(id: launcherID, app: app)
 
-            app.typeKey("t", modifierFlags: [.command])
+            openNewTabCommandPalette(in: app)
             XCTAssertTrue(waitForCommandPalette(in: app, timeout: 5))
             let input = element(
                 withIdentifier: "command-palette-input",
                 in: app
             )
             XCTAssertTrue(waitForKeyboardFocus(in: input, timeout: 5))
-            app.typeText("Add Right Split")
+            input.typeText("Add Right Split")
 
             let result = app.buttons.matching(
                 NSPredicate(
@@ -198,14 +198,14 @@ final class SumiCommandPaletteFocusUITests: SumiLaunchSmokeUITestCase {
             )
             try activateSmokeLauncher(id: launcherID, app: app)
 
-            app.typeKey("t", modifierFlags: [.command])
+            openNewTabCommandPalette(in: app)
             XCTAssertTrue(waitForCommandPalette(in: app, timeout: 5))
             var input = element(
                 withIdentifier: "command-palette-input",
                 in: app
             )
             XCTAssertTrue(waitForKeyboardFocus(in: input, timeout: 5))
-            app.typeText("Add Right Split")
+            input.typeText("Add Right Split")
 
             let splitCommand = app.buttons.matching(
                 NSPredicate(
@@ -221,18 +221,18 @@ final class SumiCommandPaletteFocusUITests: SumiLaunchSmokeUITestCase {
                 in: app
             )
             XCTAssertTrue(waitForKeyboardFocus(in: input, timeout: 5))
-            app.typeText("https://example.com/sumi-split-partner")
-            app.typeKey(.return, modifierFlags: [])
+            input.typeText("https://example.com/sumi-split-partner")
+            input.typeKey(.return, modifierFlags: [])
             XCTAssertTrue(app.splitGroups.firstMatch.waitForExistence(timeout: 5))
 
-            app.typeKey("t", modifierFlags: [.command])
+            openNewTabCommandPalette(in: app)
             XCTAssertTrue(waitForCommandPalette(in: app, timeout: 5))
             input = element(
                 withIdentifier: "command-palette-input",
                 in: app
             )
             XCTAssertTrue(waitForKeyboardFocus(in: input, timeout: 5))
-            app.typeText("Example Domain")
+            input.typeText("Example Domain")
 
             let splitResult = app.buttons.matching(
                 NSPredicate(
@@ -247,7 +247,7 @@ final class SumiCommandPaletteFocusUITests: SumiLaunchSmokeUITestCase {
                 "Split results must identify their member tabs, not only their count"
             )
 
-            app.typeKey(.downArrow, modifierFlags: [])
+            input.typeKey(.downArrow, modifierFlags: [])
 
             let screenshot = XCTAttachment(screenshot: app.screenshot())
             screenshot.name = "Command Palette split member presentation"
@@ -269,14 +269,14 @@ final class SumiCommandPaletteFocusUITests: SumiLaunchSmokeUITestCase {
             )
             try activateSmokeLauncher(id: launcherID, app: app)
 
-            app.typeKey("t", modifierFlags: [.command])
+            openNewTabCommandPalette(in: app)
             XCTAssertTrue(waitForCommandPalette(in: app, timeout: 5))
             let input = element(
                 withIdentifier: "command-palette-input",
                 in: app
             )
             XCTAssertTrue(waitForKeyboardFocus(in: input, timeout: 5))
-            app.typeText("Close Tab")
+            input.typeText("Close Tab")
 
             let unloadResult = app.buttons.matching(
                 NSPredicate(
@@ -401,7 +401,7 @@ final class SumiCommandPaletteFocusUITests: SumiLaunchSmokeUITestCase {
         id launcherID: String,
         app: XCUIApplication
     ) throws {
-        app.typeKey("t", modifierFlags: [.command])
+        openNewTabCommandPalette(in: app)
         XCTAssertTrue(waitForCommandPalette(in: app, timeout: 5))
 
         let input = element(
@@ -409,7 +409,7 @@ final class SumiCommandPaletteFocusUITests: SumiLaunchSmokeUITestCase {
             in: app
         )
         XCTAssertTrue(waitForKeyboardFocus(in: input, timeout: 5))
-        app.typeText("Smoke Launcher")
+        input.typeText("Smoke Launcher")
 
         let result = app.buttons.matching(
             NSPredicate(

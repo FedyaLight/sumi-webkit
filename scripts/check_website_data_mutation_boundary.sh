@@ -14,6 +14,7 @@ guard_initialize "$repo_root"
 # in the extension residency boundary.
 production_roots=(App Sumi SidebarChrome CommandPalette Settings UI Packages)
 canonical_cleanup_source="Sumi/Services/SumiWebsiteDataCleanupService.swift"
+canonical_cleanup_support_source="Sumi/Services/SumiWebsiteDataCleanupSupport.swift"
 extension_cleanup_source="Sumi/Managers/ExtensionManager/WebExtensionControllerDataCleanupOwner.swift"
 profile_mutation_source="Sumi/Services/SumiProfileWebsiteDataMutationService.swift"
 mutation_gate_source="Sumi/Managers/WebViewRuntime/WebsiteDataMutationGate.swift"
@@ -28,6 +29,7 @@ cookie_installation_source="Sumi/Services/SumiProfileCookieInstallationService.s
 
 for source in \
   "$canonical_cleanup_source" \
+  "$canonical_cleanup_support_source" \
   "$extension_cleanup_source" \
   "$profile_mutation_source" \
   "$mutation_gate_source" \
@@ -49,6 +51,7 @@ while IFS= read -r match; do
   [[ -n "$match" ]] || continue
   case "${match%%:*}" in
     "$canonical_cleanup_source") ;;
+    "$canonical_cleanup_support_source") ;;
     "$cookie_installation_source") ;;
     *) guard_record_failure "cookies are written outside the profile cookie installation service: $match" ;;
   esac
@@ -96,7 +99,7 @@ while IFS= read -r match; do
   [[ -n "$match" ]] || continue
   file="${match%%:*}"
   case "$file" in
-    "$canonical_cleanup_source"|"$extension_cleanup_source")
+    "$canonical_cleanup_source"|"$canonical_cleanup_support_source"|"$extension_cleanup_source")
       ;;
     # The cookie installation service deletes only the cookies it has just
     # written, to compensate a failed import. That is undoing its own mutation,

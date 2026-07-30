@@ -20,7 +20,7 @@ final class SumiSidebarContextMenuOracleUITests: SumiLaunchSmokeUITestCase {
         XCTAssertTrue(spaceIcon.waitForExistence(timeout: 5), "The sidebar space surface is missing")
 
         openSpaceMenu(on: spaceIcon, in: app)
-        app.typeKey(.escape, modifierFlags: [])
+        window.typeKey(.escape, modifierFlags: [])
         waitForSpaceMenu(toExist: false, in: app)
 
         openSpaceMenu(on: spaceIcon, in: app)

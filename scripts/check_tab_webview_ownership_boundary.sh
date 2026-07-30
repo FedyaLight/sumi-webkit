@@ -258,7 +258,7 @@ SumiTests/TabNavigationCommandsTests.swift
 SumiTests/TabRuntimeRoutingTests.swift
 SumiTests/TabScriptMessageHandlerIsolationTests.swift
 SumiTests/TabSuspensionArchitectureTests.swift
-SumiTests/TabWebViewMaterializationAndRebuildTests.swift
+SumiTests/TabWebViewReplacementSettlementTests.swift
 SumiTests/WebViewRuntimeTabRegistryTests.swift
 EOF
 )"

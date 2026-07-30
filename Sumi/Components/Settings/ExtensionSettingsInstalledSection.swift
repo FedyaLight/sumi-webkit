@@ -276,6 +276,9 @@ private struct ExtensionCatalogRow: View {
                 }
                 .buttonStyle(NavButtonStyle(size: .small))
                 .help("Extension information and permissions")
+                .accessibilityIdentifier(
+                    "extension-details-\(extensionRecord.id)"
+                )
                 .popover(isPresented: $isDetailsPresented, arrowEdge: .trailing) {
                     ExtensionCatalogDetailsPopover(
                         extensionRecord: extensionRecord,

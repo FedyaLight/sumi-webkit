@@ -21,6 +21,11 @@ struct ProfileReferenceMutationLease: Equatable, Sendable {
     fileprivate let receipts: [ProfileReferenceAdmissionReceipt]
 }
 
+enum ProfileReferenceMutationContext {
+    case regular
+    case retirementMigration
+}
+
 enum ProfileReferenceAdmissionLedgerError: Error, Equatable {
     case unavailable
     case referenceBlocked(UUID)
@@ -150,6 +155,18 @@ final class ProfileReferenceAdmissionLedger {
             to: profileIDs,
             requiresQuiescentRetirement: true
         )
+    }
+
+    func beginReferenceMutation(
+        to profileIDs: Set<UUID>,
+        context: ProfileReferenceMutationContext
+    ) throws -> ProfileReferenceMutationLease {
+        switch context {
+        case .regular:
+            try beginReferenceMutation(to: profileIDs)
+        case .retirementMigration:
+            try beginRetirementReferenceMigration(to: profileIDs)
+        }
     }
 
     func beginRetirementReferenceMigration(

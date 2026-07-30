@@ -20,6 +20,7 @@ extension URLBarView {
                 .foregroundStyle(textColor)
                 .lineLimit(1)
                 .truncationMode(.tail)
+                .accessibilityIdentifier(urlTextAccessibilityIdentifier)
         } else {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: presentationMode.fontSize))
@@ -28,7 +29,12 @@ extension URLBarView {
             Text("Search or Enter URL...")
                 .font(.system(size: presentationMode.fontSize, weight: .medium))
                 .foregroundStyle(textColor)
+                .accessibilityIdentifier(urlTextAccessibilityIdentifier)
         }
+    }
+
+    private var urlTextAccessibilityIdentifier: String {
+        presentationMode == .sidebar ? "sidebar-urlbar" : "topbar-urlbar"
     }
 
     var backgroundColor: Color {

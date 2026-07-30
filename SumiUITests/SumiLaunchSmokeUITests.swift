@@ -52,7 +52,8 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
             "Wait for startup recovery and command routing before sending Cmd+N."
         )
 
-        originalWindow.typeKey("n", modifierFlags: .command)
+        app.menuBars.menuBarItems["File"].click()
+        app.menuItems["New Window"].click()
 
         XCTAssertTrue(waitForWindowCount(2, in: app, timeout: 5))
         let newWindow = app.windows.element(boundBy: 0)
@@ -146,7 +147,7 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
             duration: SmokeUITiming.trafficLightHoverStabilityWindow
         ))
 
-        app.typeKey(.escape, modifierFlags: [])
+        window.typeKey(.escape, modifierFlags: [])
         XCTAssertTrue(waitForTrafficLightElementToBeVisibleAndEnabled(zoomButton, timeout: 2))
     }
 
@@ -253,7 +254,7 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
 
-        app.typeKey("t", modifierFlags: [.command])
+        openNewTabCommandPalette(in: app)
         XCTAssertTrue(
             waitForCommandPalette(in: app, timeout: 10),
             "URL Hub did not appear before opening example.com"
@@ -261,7 +262,7 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
         let input = element(withIdentifier: "command-palette-input", in: app)
         XCTAssertTrue(input.isHittable, "URL Hub input is not hittable")
         try pasteText("https://example.com", into: input, in: app)
-        app.typeKey(.return, modifierFlags: [])
+        input.typeKey(.return, modifierFlags: [])
 
         let urlBar = app.staticTexts.matching(identifier: "sidebar-urlbar").firstMatch
         let exampleDotComIsActive = XCTNSPredicateExpectation(

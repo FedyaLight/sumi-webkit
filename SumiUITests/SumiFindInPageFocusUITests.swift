@@ -11,7 +11,7 @@ final class SumiFindInPageFocusUITests: SumiLaunchSmokeUITestCase {
         let window = app.windows.element(boundBy: 0)
         XCTAssertTrue(window.waitForExistence(timeout: 5))
 
-        app.typeKey("t", modifierFlags: [.command])
+        openNewTabCommandPalette(in: app)
         XCTAssertTrue(waitForCommandPalette(in: app, timeout: 5))
         let paletteInput = element(
             withIdentifier: "command-palette-input",
@@ -20,7 +20,7 @@ final class SumiFindInPageFocusUITests: SumiLaunchSmokeUITestCase {
         XCTAssertTrue(paletteInput.waitForExistence(timeout: 5))
         paletteInput.click()
         paletteInput.typeText(fixture.url.absoluteString)
-        app.typeKey(.return, modifierFlags: [])
+        paletteInput.typeKey(.return, modifierFlags: [])
         XCTAssertTrue(
             waitForNonExistence(paletteInput, timeout: 20),
             "Fixture navigation did not dismiss the command palette"
@@ -38,7 +38,7 @@ final class SumiFindInPageFocusUITests: SumiLaunchSmokeUITestCase {
             "Fixture page did not finish loading before the shortcut"
         )
 
-        app.typeKey("f", modifierFlags: [.command])
+        window.typeKey("f", modifierFlags: [.command])
 
         let input = element(
             withIdentifier: "FindInPageController.textField",
@@ -49,7 +49,7 @@ final class SumiFindInPageFocusUITests: SumiLaunchSmokeUITestCase {
             "Find in Page did not appear after its browser command"
         )
 
-        app.typeText("sumi")
+        input.typeText("sumi")
 
         XCTAssertTrue(
             waitForValue("sumi", in: input, timeout: 5),

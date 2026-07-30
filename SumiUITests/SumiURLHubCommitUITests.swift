@@ -2,7 +2,7 @@ import Foundation
 import XCTest
 
 /// End-to-end oracle for the URL Hub (command palette) commit contract: opening
-/// the hub with the standard keyboard command, typing a destination, and
+/// the hub with the native New Tab command, typing a destination, and
 /// confirming with Return must navigate the active tab to exactly that
 /// destination. The destination is a local `file://` fixture page, so the
 /// test proves a real page load without any network dependency.
@@ -19,19 +19,17 @@ final class SumiURLHubCommitUITests: SumiLaunchSmokeUITestCase {
         let window = app.windows.element(boundBy: 0)
         XCTAssertTrue(window.waitForExistence(timeout: 5))
 
-        app.typeKey("t", modifierFlags: [.command])
+        openNewTabCommandPalette(in: app)
         XCTAssertTrue(
             waitForCommandPalette(in: app, timeout: 10),
-            "URL Hub (command palette) did not appear after Cmd+T"
+            "URL Hub (command palette) did not appear after the New Tab command"
         )
 
         let input = element(withIdentifier: "command-palette-input", in: app)
         XCTAssertTrue(input.exists, "URL Hub input is missing from the hub surface")
         XCTAssertTrue(input.isHittable, "URL Hub input is not hittable")
 
-        // Type without clicking: the characters landing in the input proves
-        // the hub received keyboard focus as part of its standard opening.
-        app.typeText(fixture.urlString)
+        try pasteText(fixture.urlString, into: input, in: app)
         // Accessibility snapshots stall for several seconds while the smoke
         // theme animates, so waits need generous ceilings; the expectation
         // still completes as soon as the predicate matches.
@@ -42,7 +40,7 @@ final class SumiURLHubCommitUITests: SumiLaunchSmokeUITestCase {
             message: "URL Hub input did not receive the typed fixture URL; value: \(String(describing: input.value))"
         )
 
-        app.typeKey(.return, modifierFlags: [])
+        input.typeKey(.return, modifierFlags: [])
 
         // The hub must dismiss after a successful commit.
         wait(

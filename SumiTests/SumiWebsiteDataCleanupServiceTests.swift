@@ -67,7 +67,7 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
             storeIdentifier: "coalesced-store"
         )
         await operationGate.waitUntilStarted()
-        let secondRequestStarted = CleanupTestSignal()
+        let secondRequestStarted = WebsiteDataCleanupTestSignal()
         async let second: Void = { @MainActor in
             secondRequestStarted.signal()
             await service.clearAllProfileWebsiteData(
@@ -107,7 +107,7 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
             storeIdentifier: "coalesced-domain-store"
         )
         await operationGate.waitUntilStarted()
-        let secondRequestStarted = CleanupTestSignal()
+        let secondRequestStarted = WebsiteDataCleanupTestSignal()
         async let second: Void = { @MainActor in
             secondRequestStarted.signal()
             await service.removeWebsiteDataForDomains(
@@ -490,7 +490,7 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         )
     }
 
-    private func persistedSiteDataPolicies(
+    func persistedSiteDataPolicies(
         in database: SumiDatabase
     ) throws -> [String: [String: SumiSiteDataPolicyState]]? {
         try database.read {
@@ -520,7 +520,7 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         profileWebsiteDataMutationService.attachDestructiveCleanupPreparer(
             FakeDestructiveCleanupPreparer()
         )
-        let faviconService = FakeBrowserFaviconService()
+        let faviconService = WebsiteDataCleanupBrowserFaviconServiceStub()
         let viewModel = URLBarSiteDataDetailsViewModel(
             cleanupService: cleanupService,
             profileWebsiteDataMutationService: profileWebsiteDataMutationService,
@@ -572,7 +572,7 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
                 policyStore: policyStore,
                 cleanupService: cleanupService
             ),
-            faviconService: FakeBrowserFaviconService()
+            faviconService: WebsiteDataCleanupBrowserFaviconServiceStub()
         )
         let profile = Profile(
             name: "Primary",
@@ -874,380 +874,10 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         XCTAssertTrue(basicAuthStore.deleteCalls.isEmpty)
     }
 
-    func testBrowsingDataAllProfilesClearsAllHistoryAndAllProfileStores() async throws {
-        let harness = try makeHistoryHarness()
-        let cleanupService = FakeCleanupService()
-        let appResidueCleaner = FakeAppResidueCleaner()
-        let destructiveCleanupPreparer = FakeDestructiveCleanupPreparer()
-        let visitedLinkStore = FakeVisitedLinkStore()
-        let otherProfileID = UUID()
-        try installHistoryTestProfile(
-            id: otherProfileID,
-            in: harness.container
-        )
-        let service = makeBrowsingDataCleanupService(
-            websiteDataCleanupService: cleanupService,
-            appResidueCleaner: appResidueCleaner,
-            visitedLinkStore: visitedLinkStore,
-            destructiveCleanupPreparer: destructiveCleanupPreparer,
-            sharedWebsiteDataStoreProvider: { .nonPersistent() },
-            referenceDateProvider: { historyTestDate("2026-04-23T12:00:00Z") }
-        )
-        let currentProfile = Profile(
-            id: harness.profileID,
-            name: "Current",
-            dataStore: .nonPersistent()
-        )
-        let otherProfile = Profile(
-            id: otherProfileID,
-            name: "Other",
-            dataStore: .nonPersistent()
-        )
-
-        try await harness.historyManager.store.recordVisit(
-            url: URL(string: "https://current.example")!,
-            title: "Current",
-            visitedAt: historyTestDate("2026-04-23T11:45:00Z"),
-            profileId: harness.profileID
-        )
-        try await harness.historyManager.store.recordVisit(
-            url: URL(string: "https://other.example")!,
-            title: "Other",
-            visitedAt: historyTestDate("2026-04-23T11:30:00Z"),
-            profileId: otherProfileID
-        )
-
-        await service.clear(
-            range: .allTime,
-            categories: SumiBrowsingDataCategory.defaultSelection,
-            historyManager: harness.historyManager,
-            profiles: [currentProfile, otherProfile],
-            includeAllProfiles: true
-        )
-
-        let currentProfileRemaining = await harness.historyManager.historyPage(
-            query: .rangeFilter(.all),
-            limit: 10
-        ).items
-        let otherProfileVisits = try await harness.historyManager.store.fetchVisitRecordsForExplicitAction(
-            matching: .rangeFilter(.all),
-            profileId: otherProfileID,
-            referenceDate: historyTestDate("2026-04-23T12:00:00Z"),
-            calendar: .autoupdatingCurrent
-        )
-        XCTAssertTrue(currentProfileRemaining.isEmpty)
-        XCTAssertTrue(otherProfileVisits.isEmpty)
-        XCTAssertEqual(cleanupService.clearedProfileStores, 3)
-        XCTAssertEqual(
-            destructiveCleanupPreparer.preparedProfileIDSets,
-            [Set([harness.profileID, otherProfileID])]
-        )
-        XCTAssertEqual(cleanupService.prunedKeepSets, [Set([harness.profileID, otherProfileID])])
-        XCTAssertEqual(
-            Set(visitedLinkStore.replaceCalls.map(\.profileID)),
-            Set([harness.profileID, otherProfileID])
-        )
-        XCTAssertTrue(visitedLinkStore.replaceCalls.allSatisfy(\.urls.isEmpty))
-        XCTAssertEqual(appResidueCleaner.clearSharedURLCacheCallCount, 1)
-        XCTAssertEqual(appResidueCleaner.clearFaviconNegativeCacheCallCount, 1)
-    }
-
-    func testBrowsingDataFiniteRangePreparesLiveWebViewsForCleanup() async throws {
-        let harness = try makeHistoryHarness()
-        let cleanupService = FakeCleanupService()
-        let destructiveCleanupPreparer = FakeDestructiveCleanupPreparer()
-        let service = makeBrowsingDataCleanupService(
-            websiteDataCleanupService: cleanupService,
-            destructiveCleanupPreparer: destructiveCleanupPreparer,
-            referenceDateProvider: { historyTestDate("2026-04-23T12:00:00Z") }
-        )
-
-        try await harness.historyManager.store.recordVisit(
-            url: URL(string: "https://www.reddit.com/r/browsers")!,
-            title: "Recent",
-            visitedAt: historyTestDate("2026-04-23T11:45:00Z"),
-            profileId: harness.profileID
-        )
-
-        await service.clear(
-            range: .lastHour,
-            categories: [.siteData, .cache],
-            historyManager: harness.historyManager,
-            profiles: [testProfile(id: harness.profileID)],
-            includeAllProfiles: false
-        )
-
-        XCTAssertEqual(
-            destructiveCleanupPreparer.preparedProfileIDSets,
-            [Set([harness.profileID])]
-        )
-        XCTAssertEqual(cleanupService.removedDomainSets.count, 1)
-    }
-
-    func testBrowsingDataSiteDataOnlyClearInvalidatesFaviconsForAffectedDomains() async throws {
-        let harness = try makeHistoryHarness()
-        let cleanupService = FakeCleanupService()
-        let faviconCleaner = FakeFaviconCleaner()
-        let service = makeBrowsingDataCleanupService(
-            websiteDataCleanupService: cleanupService,
-            faviconCacheCleaner: faviconCleaner,
-            referenceDateProvider: { historyTestDate("2026-04-23T12:00:00Z") }
-        )
-
-        try await harness.historyManager.store.recordVisit(
-            url: URL(string: "https://www.reddit.com/r/browsers")!,
-            title: "Recent",
-            visitedAt: historyTestDate("2026-04-23T11:45:00Z"),
-            profileId: harness.profileID
-        )
-
-        await service.clear(
-            range: .lastHour,
-            categories: [.siteData],
-            historyManager: harness.historyManager,
-            profiles: [testProfile(id: harness.profileID)],
-            includeAllProfiles: false
-        )
-
-        XCTAssertEqual(cleanupService.removedDomainSets.count, 1)
-        XCTAssertEqual(cleanupService.removedDomainSets[0].domains, ["reddit.com"])
-        XCTAssertEqual(faviconCleaner.invalidateSiteCalls.count, 1)
-        XCTAssertEqual(faviconCleaner.invalidateSiteCalls[0].domain, "reddit.com")
-        XCTAssertEqual(
-            faviconCleaner.invalidateSiteCalls[0].partition,
-            SumiFaviconPartition.regular(harness.profileID)
-        )
-        XCTAssertTrue(faviconCleaner.burnDomainsCalls.isEmpty)
-        XCTAssertTrue(faviconCleaner.burnAfterHistoryClearSavedLogins.isEmpty)
-    }
-
-    func testBrowsingDataAllTimeSiteDataOnlyInvalidatesDiscoveredWebsiteDataDomains() async throws {
-        let harness = try makeHistoryHarness()
-        let cleanupService = FakeCleanupService()
-        cleanupService.recordResponses = [
-            [FakeWKWebsiteDataRecord(displayName: "reddit.com", dataTypes: WKWebsiteDataStore.sumiSiteDataTypes)],
-        ]
-        let faviconCleaner = FakeFaviconCleaner()
-        let service = makeBrowsingDataCleanupService(
-            websiteDataCleanupService: cleanupService,
-            faviconCacheCleaner: faviconCleaner,
-            referenceDateProvider: { historyTestDate("2026-04-23T12:00:00Z") }
-        )
-
-        await service.clear(
-            range: .allTime,
-            categories: [.siteData],
-            historyManager: harness.historyManager,
-            profiles: [testProfile(id: harness.profileID)],
-            includeAllProfiles: false
-        )
-
-        XCTAssertEqual(cleanupService.removedWebsiteDataTypes.count, 1)
-        XCTAssertEqual(
-            cleanupService.removedWebsiteDataTypes[0],
-            WKWebsiteDataStore.sumiSiteDataTypes
-        )
-        XCTAssertEqual(cleanupService.cookieRemovalSelections, [.all])
-        XCTAssertEqual(faviconCleaner.invalidateSiteCalls.count, 1)
-        XCTAssertEqual(faviconCleaner.invalidateSiteCalls[0].domain, "reddit.com")
-        XCTAssertEqual(
-            faviconCleaner.invalidateSiteCalls[0].partition,
-            SumiFaviconPartition.regular(harness.profileID)
-        )
-        XCTAssertTrue(faviconCleaner.burnDomainsCalls.isEmpty)
-        XCTAssertTrue(faviconCleaner.burnAfterHistoryClearSavedLogins.isEmpty)
-    }
-
-    func testBrowsingDataFiniteCacheClearBurnsAffectedFaviconsWithoutHistorySelection() async throws {
-        let harness = try makeHistoryHarness()
-        let cleanupService = FakeCleanupService()
-        let faviconCleaner = FakeFaviconCleaner()
-        let service = makeBrowsingDataCleanupService(
-            websiteDataCleanupService: cleanupService,
-            faviconCacheCleaner: faviconCleaner,
-            referenceDateProvider: { historyTestDate("2026-04-23T12:00:00Z") }
-        )
-
-        try await harness.historyManager.store.recordVisit(
-            url: URL(string: "https://www.reddit.com/r/browsers")!,
-            title: "Recent",
-            visitedAt: historyTestDate("2026-04-23T11:45:00Z"),
-            profileId: harness.profileID
-        )
-
-        await service.clear(
-            range: .lastHour,
-            categories: [.cache],
-            historyManager: harness.historyManager,
-            profiles: [testProfile(id: harness.profileID)],
-            includeAllProfiles: false
-        )
-
-        XCTAssertEqual(cleanupService.removedDomainSets.count, 1)
-        XCTAssertEqual(cleanupService.removedDomainSets[0].domains, ["reddit.com"])
-        XCTAssertEqual(faviconCleaner.burnDomainsCalls.count, 1)
-        XCTAssertEqual(faviconCleaner.burnDomainsCalls[0].domains, ["reddit.com"])
-        XCTAssertTrue(faviconCleaner.burnDomainsCalls[0].remainingHistoryHosts.isEmpty)
-        XCTAssertTrue(faviconCleaner.burnAfterHistoryClearSavedLogins.isEmpty)
-    }
-
-    func testAutomaticBrowsingDataCleanupDeletesExpiredHistoryAndSafeWebsiteData() async throws {
-        let harness = try makeHistoryHarness()
-        let cleanupService = FakeCleanupService()
-        let suiteName = "SumiBrowsingDataCleanupTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let referenceDate = historyTestDate("2026-04-23T12:00:00Z")
-        let service = makeAutomaticBrowsingDataCleanupService(
-            websiteDataCleanupService: cleanupService,
-            userDefaults: defaults,
-            referenceDateProvider: { referenceDate }
-        )
-        let profile = Profile(
-            id: harness.profileID,
-            name: "Primary",
-            dataStore: .nonPersistent()
-        )
-
-        try await harness.historyManager.store.recordVisit(
-            url: URL(string: "https://old.example")!,
-            title: "Old",
-            visitedAt: historyTestDate("2026-04-01T12:00:00Z"),
-            profileId: harness.profileID
-        )
-        try await harness.historyManager.store.recordVisit(
-            url: URL(string: "https://recent.example")!,
-            title: "Recent",
-            visitedAt: historyTestDate("2026-04-22T12:00:00Z"),
-            profileId: harness.profileID
-        )
-
-        let result = await service.runIfNeeded(
-            retentionPeriod: .sevenDays,
-            historyManager: harness.historyManager,
-            profiles: [profile],
-            currentProfileId: harness.profileID,
-            force: true,
-            reason: "unit-test"
-        )
-
-        let remaining = await harness.historyManager.historyPage(
-            query: .rangeFilter(.all),
-            limit: 10
-        ).items
-        XCTAssertTrue(result.didRun)
-        XCTAssertEqual(result.deletedHistoryVisitCount, 1)
-        XCTAssertEqual(result.cleanedWebsiteDataProfileCount, 1)
-        XCTAssertEqual(remaining.map(\.domain), ["recent.example"])
-        XCTAssertEqual(cleanupService.removedWebsiteDataTypes, [WKWebsiteDataStore.sumiAutomaticCleanupDataTypes])
-    }
-
-    func testAutomaticBrowsingDataCleanupOffDoesNotRunEvenWhenForced() async throws {
-        XCTAssertEqual(SumiBrowsingDataRetentionPeriod.persistedValue(nil), .off)
-
-        let harness = try makeHistoryHarness()
-        let cleanupService = FakeCleanupService()
-        let suiteName = "SumiBrowsingDataCleanupTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let service = makeAutomaticBrowsingDataCleanupService(
-            websiteDataCleanupService: cleanupService,
-            userDefaults: defaults,
-            referenceDateProvider: { historyTestDate("2026-04-23T12:00:00Z") }
-        )
-        let profile = Profile(
-            id: harness.profileID,
-            name: "Primary",
-            dataStore: .nonPersistent()
-        )
-
-        try await harness.historyManager.store.recordVisit(
-            url: URL(string: "https://old.example")!,
-            title: "Old",
-            visitedAt: historyTestDate("2026-04-01T12:00:00Z"),
-            profileId: harness.profileID
-        )
-
-        let result = await service.runIfNeeded(
-            retentionPeriod: .off,
-            historyManager: harness.historyManager,
-            profiles: [profile],
-            currentProfileId: harness.profileID,
-            force: true,
-            reason: "unit-test"
-        )
-
-        let remaining = await harness.historyManager.historyPage(
-            query: .rangeFilter(.all),
-            limit: 10
-        ).items
-        XCTAssertFalse(result.didRun)
-        XCTAssertEqual(remaining.map(\.domain), ["old.example"])
-        XCTAssertTrue(cleanupService.removedWebsiteDataTypes.isEmpty)
-    }
-
-    func testAutomaticCleanupDataTypesAvoidAuthCapableStorage() {
-        let types = WKWebsiteDataStore.sumiAutomaticCleanupDataTypes
-
-        XCTAssertFalse(types.contains(WKWebsiteDataTypeCookies))
-        XCTAssertFalse(types.contains(WKWebsiteDataTypeLocalStorage))
-        XCTAssertFalse(types.contains(WKWebsiteDataTypeIndexedDBDatabases))
-        XCTAssertFalse(types.contains(WKWebsiteDataTypeSessionStorage))
-        XCTAssertFalse(types.contains(WKWebsiteDataTypeWebSQLDatabases))
-        XCTAssertFalse(types.contains(WKWebsiteDataTypeFileSystem))
-        XCTAssertFalse(types.contains(WKWebsiteDataTypeMediaKeys))
-        XCTAssertFalse(types.contains("_WKWebsiteDataTypeCredentials"))
-        XCTAssertTrue(types.contains(WKWebsiteDataTypeDiskCache))
-        XCTAssertTrue(types.contains(WKWebsiteDataTypeMemoryCache))
-    }
-
-    func testAutomaticBrowsingDataCleanupThrottlesUntilRetentionChanges() async throws {
-        let harness = try makeHistoryHarness()
-        let cleanupService = FakeCleanupService()
-        let suiteName = "SumiBrowsingDataCleanupTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let service = makeAutomaticBrowsingDataCleanupService(
-            websiteDataCleanupService: cleanupService,
-            userDefaults: defaults,
-            referenceDateProvider: { historyTestDate("2026-04-23T12:00:00Z") }
-        )
-        let profile = Profile(
-            id: harness.profileID,
-            name: "Primary",
-            dataStore: .nonPersistent()
-        )
-
-        _ = await service.runIfNeeded(
-            retentionPeriod: .thirtyDays,
-            historyManager: harness.historyManager,
-            profiles: [profile],
-            currentProfileId: harness.profileID,
-            reason: "first"
-        )
-        let throttled = await service.runIfNeeded(
-            retentionPeriod: .thirtyDays,
-            historyManager: harness.historyManager,
-            profiles: [profile],
-            currentProfileId: harness.profileID,
-            reason: "second"
-        )
-        let afterRetentionChange = await service.runIfNeeded(
-            retentionPeriod: .sevenDays,
-            historyManager: harness.historyManager,
-            profiles: [profile],
-            currentProfileId: harness.profileID,
-            reason: "changed"
-        )
-
-        XCTAssertFalse(throttled.didRun)
-        XCTAssertTrue(afterRetentionChange.didRun)
-        XCTAssertEqual(cleanupService.removedWebsiteDataTypes.count, 2)
-    }
 }
 
 @MainActor
-private func makeHistoryHarness() throws -> (
+func makeHistoryHarness() throws -> (
     container: SumiDatabase,
     historyManager: HistoryManager,
     profileID: UUID
@@ -1259,12 +889,12 @@ private func makeHistoryHarness() throws -> (
     let historyManager = HistoryManager(database: context,
         profileId: profileID,
         faviconCleaner: FakeFaviconCleaner(),
-        visitedLinkStore: FakeVisitedLinkStore()
+        visitedLinkStore: WebsiteDataCleanupVisitedLinkStoreStub()
     )
     return (container, historyManager, profileID)
 }
 
-private func installHistoryTestProfile(
+func installHistoryTestProfile(
     id: UUID,
     in database: SumiDatabase
 ) throws {
@@ -1276,12 +906,12 @@ private func installHistoryTestProfile(
     }
 }
 
-private func historyTestDate(_ value: String) -> Date {
+func historyTestDate(_ value: String) -> Date {
     ISO8601DateFormatter().date(from: value)!
 }
 
 @MainActor
-private func testProfile(id: UUID) -> Profile {
+func testProfile(id: UUID) -> Profile {
     Profile(
         id: id,
         name: "Current",
@@ -1290,12 +920,12 @@ private func testProfile(id: UUID) -> Profile {
 }
 
 @MainActor
-private func makeBrowsingDataCleanupService(
+func makeBrowsingDataCleanupService(
     websiteDataCleanupService: FakeCleanupService,
     faviconCacheCleaner: FakeFaviconCleaner? = nil,
     appResidueCleaner: FakeAppResidueCleaner? = nil,
     basicAuthCredentialStore: FakeBasicAuthCredentialStore? = nil,
-    visitedLinkStore: FakeVisitedLinkStore? = nil,
+    visitedLinkStore: WebsiteDataCleanupVisitedLinkStoreStub? = nil,
     destructiveCleanupPreparer: FakeDestructiveCleanupPreparer? =
         FakeDestructiveCleanupPreparer(),
     sharedWebsiteDataStoreProvider: @escaping @MainActor () -> WKWebsiteDataStore = {
@@ -1308,7 +938,7 @@ private func makeBrowsingDataCleanupService(
         faviconCacheCleaner: faviconCacheCleaner ?? FakeFaviconCleaner(),
         appResidueCleaner: appResidueCleaner ?? FakeAppResidueCleaner(),
         basicAuthCredentialStore: basicAuthCredentialStore ?? FakeBasicAuthCredentialStore(),
-        visitedLinkStore: visitedLinkStore ?? FakeVisitedLinkStore(),
+        visitedLinkStore: visitedLinkStore ?? WebsiteDataCleanupVisitedLinkStoreStub(),
         destructiveCleanupPreparer: destructiveCleanupPreparer,
         sharedWebsiteDataStoreProvider: sharedWebsiteDataStoreProvider,
         referenceDateProvider: referenceDateProvider
@@ -1316,7 +946,7 @@ private func makeBrowsingDataCleanupService(
 }
 
 @MainActor
-private func makeAutomaticBrowsingDataCleanupService(
+func makeAutomaticBrowsingDataCleanupService(
     websiteDataCleanupService: FakeCleanupService,
     faviconCacheCleaner: FakeFaviconCleaner? = nil,
     basicAuthCredentialStore: FakeBasicAuthCredentialStore? = nil,
@@ -1336,7 +966,7 @@ private func makeAutomaticBrowsingDataCleanupService(
 }
 
 @MainActor
-private final class FakeDDGWebsiteDataStore: SumiWebsiteDataStore {
+final class FakeDDGWebsiteDataStore: SumiWebsiteDataStore {
     typealias Record = FakeDDGWebsiteDataRecord
 
     var httpCookieStore: any SumiHTTPCookieStore {
@@ -1350,7 +980,7 @@ private final class FakeDDGWebsiteDataStore: SumiWebsiteDataStore {
     var modifiedSinceRemovalGate: CleanupOperationGate?
     var recordFetchGate: CleanupOperationGate?
 
-    private let cookieStore: FakeDDGCookieStore
+    let cookieStore: FakeDDGCookieStore
 
     init(
         cookieStore: FakeDDGCookieStore? = nil,
@@ -1380,7 +1010,7 @@ private final class FakeDDGWebsiteDataStore: SumiWebsiteDataStore {
 }
 
 @MainActor
-private final class FakeDDGCookieStore: SumiHTTPCookieStore {
+final class FakeDDGCookieStore: SumiHTTPCookieStore {
     var cookies: [HTTPCookie]
     private(set) var deletedCookies: [HTTPCookie] = []
 
@@ -1402,12 +1032,12 @@ private final class FakeDDGCookieStore: SumiHTTPCookieStore {
     }
 }
 
-private struct FakeDDGWebsiteDataRecord: SumiWebsiteDataRecord, Hashable {
+struct FakeDDGWebsiteDataRecord: SumiWebsiteDataRecord, Hashable {
     let displayName: String
 }
 
 @MainActor
-private final class FakeCleanupService: SumiWebsiteDataCleanupServicing {
+final class FakeCleanupService: SumiWebsiteDataCleanupServicing {
     var cookieResponses: [[HTTPCookie]] = []
     var recordResponses: [[WKWebsiteDataRecord]] = []
     private(set) var cookieFetchCount = 0
@@ -1521,10 +1151,10 @@ private final class FakeCleanupService: SumiWebsiteDataCleanupServicing {
 }
 
 @MainActor
-private final class CleanupOperationGate {
-    private let started = CleanupTestSignal()
-    private var releaseContinuation: CheckedContinuation<Void, Never>?
-    private var isOpen = false
+final class CleanupOperationGate {
+    let started = WebsiteDataCleanupTestSignal()
+    var releaseContinuation: CheckedContinuation<Void, Never>?
+    var isOpen = false
 
     func wait() async {
         started.signal()
@@ -1545,9 +1175,9 @@ private final class CleanupOperationGate {
 }
 
 @MainActor
-private final class CleanupTestSignal {
-    private var count = 0
-    private var waiters: [(
+final class WebsiteDataCleanupTestSignal {
+    var count = 0
+    var waiters: [(
         targetCount: Int,
         continuation: CheckedContinuation<Void, Never>
     )] = []
@@ -1568,7 +1198,7 @@ private final class CleanupTestSignal {
 }
 
 @MainActor
-private final class FakeFaviconCleaner: SumiBrowsingDataFaviconCleaning, HistoryFaviconCleaning {
+final class FakeFaviconCleaner: SumiBrowsingDataFaviconCleaning, HistoryFaviconCleaning {
     private(set) var burnAfterHistoryClearSavedLogins: [Set<String>] = []
     private(set) var burnDomainsCalls: [(
         domains: Set<String>,
@@ -1595,7 +1225,7 @@ private final class FakeFaviconCleaner: SumiBrowsingDataFaviconCleaning, History
 }
 
 @MainActor
-private final class FakeVisitedLinkStore: SumiVisitedLinkStoreReplacing, HistoryVisitedLinkStoring {
+final class WebsiteDataCleanupVisitedLinkStoreStub: SumiVisitedLinkStoreReplacing, HistoryVisitedLinkStoring {
     struct Call: Equatable {
         let urls: [URL]
         let profileID: UUID
@@ -1614,7 +1244,7 @@ private final class FakeVisitedLinkStore: SumiVisitedLinkStoreReplacing, History
 }
 
 @MainActor
-private final class FakeBrowserFaviconService: BrowserFaviconServicing {
+final class WebsiteDataCleanupBrowserFaviconServiceStub: BrowserFaviconServicing {
     private(set) var invalidatedSites: [(domain: String, profileId: UUID?)] = []
 
     func partition(profile: Profile?) -> SumiFaviconPartition {
@@ -1648,7 +1278,7 @@ private final class FakeBrowserFaviconService: BrowserFaviconServicing {
 }
 
 @MainActor
-private final class FakeAppResidueCleaner: SumiBrowsingDataAppResidueCleaning {
+final class FakeAppResidueCleaner: SumiBrowsingDataAppResidueCleaning {
     private(set) var clearSharedURLCacheCallCount = 0
     private(set) var clearFaviconNegativeCacheCallCount = 0
 
@@ -1662,7 +1292,7 @@ private final class FakeAppResidueCleaner: SumiBrowsingDataAppResidueCleaning {
 }
 
 @MainActor
-private final class FakeBasicAuthCredentialStore: SumiBasicAuthCredentialCleaning {
+final class FakeBasicAuthCredentialStore: SumiBasicAuthCredentialCleaning {
     struct DeleteCall: Equatable {
         let profilePartitionId: UUID?
         let isEphemeralProfile: Bool?
@@ -1687,7 +1317,7 @@ private final class FakeBasicAuthCredentialStore: SumiBasicAuthCredentialCleanin
 }
 
 @MainActor
-private final class FakeDestructiveCleanupPreparer: SumiDestructiveBrowsingDataCleanupPreparing {
+final class FakeDestructiveCleanupPreparer: SumiDestructiveBrowsingDataCleanupPreparing {
     private(set) var preparedProfileIDSets: [Set<UUID>] = []
     var result = true
 
@@ -1701,9 +1331,9 @@ private final class FakeDestructiveCleanupPreparer: SumiDestructiveBrowsingDataC
     }
 }
 
-private final class FakeWKWebsiteDataRecord: WKWebsiteDataRecord {
-    private let recordDisplayName: String
-    private let recordDataTypes: Set<String>
+final class FakeWKWebsiteDataRecord: WKWebsiteDataRecord {
+    let recordDisplayName: String
+    let recordDataTypes: Set<String>
 
     init(
         displayName: String,
@@ -1722,7 +1352,7 @@ private final class FakeWKWebsiteDataRecord: WKWebsiteDataRecord {
     }
 }
 
-private extension HTTPCookie {
+extension HTTPCookie {
     static func make(
         name: String = "cookie",
         domain: String,
@@ -1743,7 +1373,7 @@ private extension HTTPCookie {
     }
 }
 
-private extension Array {
+extension Array {
     subscript(safe index: Int) -> Element? {
         guard indices.contains(index) else { return nil }
         return self[index]

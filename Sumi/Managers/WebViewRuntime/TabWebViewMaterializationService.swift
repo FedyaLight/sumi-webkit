@@ -44,7 +44,6 @@ final class TabWebViewMaterializationService {
         case .useExisting(let webView):
             return webView
         case .adoptExistingPrimary(let webView):
-            TabWebViewProcessPrewarmingService.checkOut(webView)
             adopt(webView, for: tab, in: windowID)
             return webView
         case .deferForInitialDocumentWarmup(let deferral):

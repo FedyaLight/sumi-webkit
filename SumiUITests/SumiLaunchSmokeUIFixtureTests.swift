@@ -151,6 +151,25 @@ final class SumiLaunchSmokeUIFixtureTests: SumiLaunchSmokeUITestCase {
                 SumiSmokeFixtureIDs.essential,
             ].sorted()
         )
+        XCTAssertEqual(
+            try requiredScalar(
+                sql: """
+                SELECT COUNT(*) AS value
+                FROM (
+                    SELECT position FROM spaces
+                    UNION ALL
+                    SELECT position FROM folders
+                    UNION ALL
+                    SELECT position FROM tabs
+                )
+                WHERE position < 0;
+                """,
+                storeURL: storeURL,
+                description: "Unable to validate smoke fixture positions"
+            ),
+            "0",
+            "The smoke fixture must satisfy production's nonnegative position invariant"
+        )
     }
 
     private func makeMutableFixtureCopy(

@@ -25,12 +25,17 @@ extension RegularTabShortcutConversionService {
             authorizer: TabShortcutConversionAuthorizer(windows: windows),
             pinFactory: resolution
         )
-        return Self(
+        let sidebar = RegularTabShortcutSidebarConversionService(
             candidates: candidates,
             sidebarCandidates: RegularTabShortcutSidebarCandidatePreparer(
                 conversions: candidates
             ),
             replacementValidator: ShortcutSidebarDropReplacementValidator(),
+            transaction: transaction
+        )
+        return Self(
+            candidates: candidates,
+            sidebar: sidebar,
             transaction: transaction
         )
     }

@@ -659,7 +659,7 @@ final class RegularTabShortcutConversionServiceTests: XCTestCase {
         try assertDisplayedForeignABA(target: .source)
     }
 
-    private func assertDisplayedForeignABA(
+    func assertDisplayedForeignABA(
         target: DisplayedForeignABATarget
     ) throws {
         let primary = BrowserWindowState()
@@ -796,7 +796,7 @@ final class RegularTabShortcutConversionServiceTests: XCTestCase {
         _ = cancellable
     }
 
-    private enum DisplayedForeignABATarget {
+    enum DisplayedForeignABATarget {
         case source, fresh
     }
 
@@ -1038,292 +1038,7 @@ final class RegularTabShortcutConversionServiceTests: XCTestCase {
         fixture.input.tab.profileAssignment.abort(intent)
     }
 
-    func testShortcutSidebarDropMovesStableMemberAndEveryWindowToTargetGroup() throws {
-        let first = BrowserWindowState()
-        let second = BrowserWindowState()
-        let profile = Profile(name: "Runtime")
-        let states = [first.id: first, second.id: second]
-        let tabManager = BrowserManager(runtimePorts: TestRuntimePorts.make(
-            currentProfileId: { profile.id },
-            defaultProfileId: { profile.id },
-            profile: { $0 == profile.id ? profile : nil },
-            windowState: { states[$0] },
-            windows: { states.map { ($0.key, $0.value) } },
-            webViewLifecycle: TestRuntimePorts.webViewLifecycle(
-                retirement: .rejecting,
-                primaryTrackedWindowId: { _ in first.id }
-            )
-        ))
-        let space = Space(
-            name: "Space",
-            profileId: profile.id
-        )
-        tabManager.spaceStateOwner.append(space)
-        let source = tabManager.regularTabLifecycleOwner.createNewTab(
-            url: "https://sidebar-drop.example/source",
-            in: space,
-            activate: false
-        )
-        let companion = tabManager.regularTabLifecycleOwner.createNewTab(
-            url: "https://sidebar-drop.example/companion",
-            in: space,
-            activate: false
-        )
-        let firstPin = Self.pin(spaceID: space.id, index: 0)
-        let secondPin = Self.pin(spaceID: space.id, index: 1)
-        tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts(
-            [firstPin, secondPin],
-            for: space.id
-        )
-        let sourceGroup = try XCTUnwrap(SplitGroup.make(
-            members: [.regularTab(source.id), .regularTab(companion.id)],
-            layoutKind: .vertical,
-            container: .regularTabs(spaceId: space.id)
-        ))
-        let targetGroup = try XCTUnwrap(SplitGroup.make(
-            members: [
-                .shortcutPin(firstPin.id),
-                .shortcutPin(secondPin.id),
-            ],
-            layoutKind: .vertical,
-            container: .shortcutSidebar(
-                spaceId: space.id,
-                profileId: nil,
-                folderId: nil,
-                index: 0
-            )
-        ))
-        XCTAssertTrue(tabManager.splitGroupMutations.replaceAll(
-            expected: [],
-            with: [sourceGroup, targetGroup],
-            persist: false
-        ))
-        for state in [first, second] {
-            state.currentSpaceId = space.id
-            state.currentTabId = source.id
-            state.splitSelection = WindowSplitSelection(
-                groupID: sourceGroup.id,
-                activeMemberID: .regularTab(source.id)
-            )
-        }
-
-        let prepared = try XCTUnwrap(
-            tabManager.regularTabShortcutConversion
-                .prepareShortcutSidebarDrop(
-                    source,
-                    into: targetGroup,
-                    preferredWindowId: second.id
-                )
-        )
-        let replacementTarget = try XCTUnwrap(targetGroup.inserting(
-            prepared.member,
-            relativeTo: .shortcutPin(firstPin.id),
-            side: .right
-        ))
-        let replacement = prepared.expectedSplitGroups.compactMap { group in
-            if group.id == sourceGroup.id {
-                return group.removingMember(.regularTab(source.id))
-            }
-            return group.id == targetGroup.id ? replacementTarget : group
-        }
-        let effect = SplitDropCommitEffect.resolving(
-            callerWindowID: second.id,
-            sourceGroup: sourceGroup,
-            targetGroup: targetGroup,
-            committedTargetGroupID: replacementTarget.id,
-            movingMemberID: .regularTab(source.id),
-            activatedMemberID: prepared.member.memberID,
-            replacementGroups: replacement
-        )
-        let presentation = makePresentationPreparation(
-            effect,
-            sourceGroups: prepared.expectedSplitGroups,
-            replacementGroups: replacement,
-            requiredWindow: second,
-            windows: [first, second],
-            tabManager: tabManager
-        )
-        let acceptance = try XCTUnwrap(
-            tabManager.regularTabShortcutConversion
-                .commitShortcutSidebarDrop(
-                    prepared,
-                    replacingSplitGroupsWith: replacement,
-                    sidebarMutation: .noChange,
-                    presentation: presentation
-                )
-        )
-
-        XCTAssertEqual(acceptance.pinID, prepared.candidatePin.id)
-        XCTAssertNil(tabManager.splitGroupStore.group(id: sourceGroup.id))
-        XCTAssertEqual(
-            tabManager.splitGroupStore.group(id: targetGroup.id),
-            replacementTarget
-        )
-        XCTAssertEqual(
-            replacementTarget.member(for: prepared.member.memberID),
-            prepared.member
-        )
-        for state in [first, second] {
-            XCTAssertEqual(state.splitSelection?.groupID, targetGroup.id)
-            XCTAssertEqual(
-                state.splitSelection?.activeMemberID,
-                prepared.member.memberID
-            )
-            XCTAssertNotNil(
-                tabManager.liveShortcutTabs.tab(
-                    for: acceptance.pinID,
-                    in: state.id
-                )
-            )
-        }
-    }
-
-    func testStaleShortcutSidebarDropDoesNotInsertCandidatePin() throws {
-        let tabManager = BrowserManager()
-        let space = Space(name: "Space")
-        tabManager.spaceStateOwner.append(space)
-        let source = tabManager.regularTabLifecycleOwner.createNewTab(
-            url: "https://sidebar-drop.example/stale",
-            in: space,
-            activate: false
-        )
-        let firstPin = Self.pin(spaceID: space.id, index: 0)
-        let secondPin = Self.pin(spaceID: space.id, index: 1)
-        tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts(
-            [firstPin, secondPin],
-            for: space.id
-        )
-        let target = try XCTUnwrap(SplitGroup.make(
-            members: [
-                .shortcutPin(firstPin.id),
-                .shortcutPin(secondPin.id),
-            ],
-            layoutKind: .vertical,
-            container: .shortcutSidebar(
-                spaceId: space.id,
-                profileId: nil,
-                folderId: nil,
-                index: 0
-            )
-        ))
-        XCTAssertTrue(tabManager.splitGroupMutations.insert(target, persist: false))
-        let prepared = try XCTUnwrap(
-            tabManager.regularTabShortcutConversion
-                .prepareShortcutSidebarDrop(
-                    source,
-                    into: target,
-                    preferredWindowId: UUID()
-                )
-        )
-        let replacementTarget = try XCTUnwrap(target.inserting(
-            prepared.member,
-            relativeTo: .shortcutPin(firstPin.id),
-            side: .right
-        ))
-        let replacement = prepared.expectedSplitGroups.map {
-            $0.id == target.id ? replacementTarget : $0
-        }
-        let requiredWindow = BrowserWindowState()
-        requiredWindow.currentSpaceId = space.id
-        let effect = SplitDropCommitEffect.resolving(
-            callerWindowID: requiredWindow.id,
-            sourceGroup: nil,
-            targetGroup: target,
-            committedTargetGroupID: replacementTarget.id,
-            movingMemberID: .regularTab(source.id),
-            activatedMemberID: prepared.member.memberID,
-            replacementGroups: replacement
-        )
-        let presentation = makePresentationPreparation(
-            effect,
-            sourceGroups: prepared.expectedSplitGroups,
-            replacementGroups: replacement,
-            requiredWindow: requiredWindow,
-            windows: [requiredWindow],
-            tabManager: tabManager
-        )
-        let staleTarget = try XCTUnwrap(target.changingLayout(to: .horizontal))
-        XCTAssertTrue(tabManager.splitGroupMutations.replace(
-            target,
-            with: staleTarget,
-            persist: false
-        ))
-
-        XCTAssertNil(
-            tabManager.regularTabShortcutConversion
-                .commitShortcutSidebarDrop(
-                    prepared,
-                    replacingSplitGroupsWith: replacement,
-                    sidebarMutation: .noChange,
-                    presentation: presentation
-                )
-        )
-        XCTAssertNil(
-            tabManager.shortcutPinCollectionStateOwner.shortcutPin(
-                by: prepared.candidatePin.id
-            )
-        )
-        XCTAssertTrue(tabManager.regularTabCollectionOwner.contains(source))
-        XCTAssertEqual(tabManager.splitGroupStore.group(id: target.id), staleTarget)
-    }
-
-    private static func pin(spaceID: UUID, index: Int) -> ShortcutPin {
-        ShortcutPin(
-            id: UUID(),
-            role: .spacePinned,
-            spaceId: spaceID,
-            index: index,
-            launchURL: URL(string: "https://sidebar-pin-\(index).example")!,
-            title: "Pin \(index)"
-        )
-    }
-
-    func makePresentationPreparation(
-        _ effect: SplitDropCommitEffect,
-        sourceGroups: [SplitGroup],
-        replacementGroups: [SplitGroup],
-        requiredWindow: BrowserWindowState,
-        windows: [BrowserWindowState],
-        tabManager: BrowserManager
-    ) -> RegularTabShortcutSplitPresentationPreparation {
-        let currentWindows = { @MainActor in windows }
-        let presentations = WindowSplitPresentationSynchronizer(
-            preparation: WindowSplitPresentationPreparationService(
-                drafts: WindowSplitPresentationDraftPlanner(
-                    splitGroups: tabManager.splitGroupStore,
-                    regularTabs: tabManager.regularTabCollectionOwner,
-                    pins: tabManager.shortcutPinCollectionStateOwner
-                ),
-                activation: tabManager.shortcutPresentationActivation,
-                regularTabs: tabManager.regularTabCollectionOwner,
-                validator: WindowSplitPresentationSettlementValidator(
-                    splitGroups: tabManager.splitGroupStore,
-                    regularTabs: tabManager.regularTabCollectionOwner,
-                    liveShortcuts: tabManager.liveShortcutTabs,
-                    currentWindows: currentWindows
-                ),
-                windows: currentWindows
-            ),
-            splitGroups: tabManager.splitGroupStore,
-            members: tabManager.splitMembers,
-            materialization: tabManager.splitMaterialization,
-            terminalEffects: WindowSplitPresentationEffectExecutor(
-                selection: tabManager.browserTabSelection,
-                updates: tabManager.splitUpdateChannel,
-                visuals: tabManager.shellRuntime.windowVisuals,
-                persistence: tabManager.windowSessionPersistenceCoordinator
-            )
-        )
-        return RegularTabShortcutSplitPresentationPreparation(
-            presentations: presentations,
-            effect: effect,
-            sourceGroups: sourceGroups,
-            replacementGroups: replacementGroups,
-            requiredWindow: requiredWindow
-        )
-    }
-
-    private func makeNilRuntimeFixture() -> NilRuntimeConversionFixture {
+    func makeNilRuntimeFixture() -> NilRuntimeConversionFixture {
         let browser = BrowserManager()
         let space = Space(name: "Space")
         browser.spaceStateOwner.append(space)
@@ -1349,7 +1064,7 @@ final class RegularTabShortcutConversionServiceTests: XCTestCase {
         )
     }
 
-    private func makeMembershipDriftFixture() -> MembershipDriftFixture {
+    func makeMembershipDriftFixture() -> MembershipDriftFixture {
         let browser = BrowserManager()
         let space = Space(name: "Space")
         browser.spaceStateOwner.append(space)
@@ -1386,7 +1101,7 @@ final class RegularTabShortcutConversionServiceTests: XCTestCase {
         )
     }
 
-    private func makeForeignPlanFixture() throws -> ForeignPlanFixture {
+    func makeForeignPlanFixture() throws -> ForeignPlanFixture {
         let window = BrowserWindowState()
         var sourceTabID: UUID?
         var persistedWindowIDs: [UUID] = []
@@ -1441,7 +1156,7 @@ final class RegularTabShortcutConversionServiceTests: XCTestCase {
         )
     }
 
-    private func makeHiddenConversionFixture() -> HiddenConversionFixture {
+    func makeHiddenConversionFixture() -> HiddenConversionFixture {
         let browser = BrowserManager()
         let space = Space(name: "Space")
         browser.spaceStateOwner.append(space)
@@ -1463,7 +1178,7 @@ final class RegularTabShortcutConversionServiceTests: XCTestCase {
         )
     }
 
-    private func makeUnsettledProfileFixture() -> UnsettledProfileFixture {
+    func makeUnsettledProfileFixture() -> UnsettledProfileFixture {
         let browser = BrowserManager()
         let space = Space(name: "Space")
         browser.spaceStateOwner.append(space)
@@ -1489,7 +1204,7 @@ final class RegularTabShortcutConversionServiceTests: XCTestCase {
 }
 
 @MainActor
-private struct NilRuntimeConversionFixture {
+struct NilRuntimeConversionFixture {
     struct Input {
         let space: Space
         let tab: Tab
@@ -1508,7 +1223,7 @@ private struct NilRuntimeConversionFixture {
 }
 
 @MainActor
-private struct MembershipDriftFixture {
+struct MembershipDriftFixture {
     struct Input {
         let space: Space
         let source: Tab
@@ -1528,7 +1243,7 @@ private struct MembershipDriftFixture {
 }
 
 @MainActor
-private struct ForeignPlanFixture {
+struct ForeignPlanFixture {
     struct Input {
         let window: BrowserWindowState
         let space: Space
@@ -1549,7 +1264,7 @@ private struct ForeignPlanFixture {
 }
 
 @MainActor
-private struct HiddenConversionFixture {
+struct HiddenConversionFixture {
     struct Input {
         let space: Space
         let tab: Tab
@@ -1566,7 +1281,7 @@ private struct HiddenConversionFixture {
 }
 
 @MainActor
-private struct UnsettledProfileFixture {
+struct UnsettledProfileFixture {
     struct Input {
         let space: Space
         let tab: Tab
@@ -1583,24 +1298,24 @@ private struct UnsettledProfileFixture {
     let state: @MainActor () -> State
 }
 
-private final class ConversionLifecycleCounter: @unchecked Sendable {
-    private let lock = NSLock()
-    private var value = 0
+final class ConversionLifecycleCounter: @unchecked Sendable {
+    let lock = NSLock()
+    var value = 0
 
     func increment() { lock.withLock { value += 1 } }
     var count: Int { lock.withLock { value } }
 }
 
-private final class ConversionPublicationOrderOracle: @unchecked Sendable {
-    private let lock = NSLock()
-    private var values: [String] = []
+final class ConversionPublicationOrderOracle: @unchecked Sendable {
+    let lock = NSLock()
+    var values: [String] = []
 
     func record(_ value: String) { lock.withLock { values.append(value) } }
     var events: [String] { lock.withLock { values } }
 }
 
-private final class MainActorTestAction: @unchecked Sendable {
-    private let action: @MainActor () -> Void
+final class MainActorTestAction: @unchecked Sendable {
+    let action: @MainActor () -> Void
 
     init(_ action: @escaping @MainActor () -> Void) {
         self.action = action

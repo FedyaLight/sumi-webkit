@@ -22,10 +22,9 @@ final class SumiSessionRestoreUITests: SumiLaunchSmokeUITestCase {
             "The persisted current space was not restored"
         )
 
-        let selectedTab = element(
-            withIdentifier: "space-regular-tab-\(restored.sidebar.regularTabID)",
-            in: app
-        )
+        let selectedTab = app.buttons.matching(
+            identifier: "tab-row-\(restored.sidebar.regularTabID)"
+        ).firstMatch
         XCTAssertTrue(selectedTab.waitForExistence(timeout: 10), "The persisted current tab is missing")
         wait(
             for: NSPredicate(format: "value == %@", "selected"),

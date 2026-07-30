@@ -198,8 +198,8 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
             XCTWaiter.wait(for: [focusExpectation], timeout: 2),
             .completed
         )
-        app.typeKey(.delete, modifierFlags: .command)
-        app.typeText("x")
+        titleField.typeKey(.delete, modifierFlags: .command)
+        titleField.typeText("x")
         XCTAssertEqual(titleField.value as? String, "x")
         app.buttons["Done"].click()
         XCTAssertTrue(
@@ -911,7 +911,6 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
             collapsedSidebar: true
         )
     }
-
 
     func testPersonalVisibleDriftedLauncherDragRecoversAfterResetToLauncherURLContextMenuAction() throws {
         let fixture = try loadPersonalSidebarFixture()

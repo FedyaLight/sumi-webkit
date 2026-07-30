@@ -94,14 +94,15 @@ final class HistoryManagerDependencyInjectionTests: XCTestCase {
             visitedLinkStore: visitedLinks,
             automaticallyStarts: false
         )
+        defer { withExtendedLifetime(manager) {} }
 
         await Task.yield()
         XCTAssertTrue(visitedLinks.preloadCalls.isEmpty)
 
         manager.start()
         manager.start()
-        for _ in 0..<20 where visitedLinks.preloadCalls.isEmpty {
-            await Task.yield()
+        for _ in 0..<100 where visitedLinks.preloadCalls.isEmpty {
+            try await Task.sleep(for: .milliseconds(10))
         }
 
         XCTAssertEqual(visitedLinks.preloadCalls.count, 1)

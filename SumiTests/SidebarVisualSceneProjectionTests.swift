@@ -5,6 +5,69 @@ import XCTest
 
 @MainActor
 final class SidebarVisualSceneProjectionTests: XCTestCase {
+    func testSceneKeepsSnapshotSplitGroupWhenLiveStoreHasAdvanced() throws {
+        let browser = BrowserManager()
+        let space = Space(name: "Work")
+        let tabs = [
+            Tab(spaceId: space.id, loadsCachedFaviconOnInit: false),
+            Tab(spaceId: space.id, loadsCachedFaviconOnInit: false),
+        ]
+        let group = try XCTUnwrap(SplitGroup.make(
+            members: tabs.map { .regularTab($0.id) },
+            layoutKind: .horizontal,
+            container: .regularTabs(spaceId: space.id)
+        ))
+        let inventory = makeInventory(
+            spaceID: space.id,
+            regularTabs: tabs,
+            splitGroups: [group]
+        )
+        let window = BrowserWindowState()
+        window.currentSpaceId = space.id
+        let dragFrame = SidebarListDragPresentationFrame()
+
+        let output = SpaceSidebarSceneBuilder(
+            space: space,
+            inventory: inventory,
+            launcherRuntime: .empty,
+            selection: makeSelection(browser: browser),
+            tabs: inventory.regularTabs,
+            inventoryTraversal: SpaceSidebarInventoryTraversal(
+                inventory: inventory,
+                includesVisibleFolders: true,
+                isLiveFolder: { _ in false }
+            ),
+            windowState: window,
+            hasPersistedTabs: true,
+            showsNewTab: false,
+            newTabAtTop: false,
+            selectionSnapshot: SidebarWindowSelectionSnapshot(
+                windowState: window
+            ),
+            liveSnapshots: [:],
+            dragSnapshots: SpaceSidebarDragSnapshots(
+                pinned: SpacePinnedDragSnapshot(
+                    frame: dragFrame,
+                    geometryGeneration: 0,
+                    spaceID: space.id
+                ),
+                regular: SpaceRegularDragSnapshot(
+                    frame: dragFrame,
+                    geometryGeneration: 0
+                )
+            ),
+            isInteractive: true,
+            hasPinnedContent: false,
+            isPinnedCollapsed: false,
+            pinnedStickyItemIDs: []
+        ).build()
+        let ids = output.scene.structure.layouts.map(\.id)
+
+        XCTAssertTrue(ids.contains(.splitGroup(group.id)))
+        XCTAssertFalse(ids.contains(.regularTab(tabs[0].id)))
+        XCTAssertFalse(ids.contains(.regularTab(tabs[1].id)))
+    }
+
     func testSelectedRegularTabProjectsToItsOwnVisualRow() {
         let tab = makeTab()
         let browser = BrowserManager()

@@ -542,22 +542,46 @@ final class BrowserWindowChromeTests: XCTestCase {
             )
         )
         let spaceID = UUID()
+        let profileID = UUID()
         let windowState = BrowserWindowState()
         let presentedTab = Tab(loadsCachedFaviconOnInit: false)
-        let containers: [SplitGroupContainer] = [
-            .shortcutSidebar(
-                spaceId: spaceID,
-                profileId: nil,
-                folderId: nil,
-                index: 0
+        let cases: [(container: SplitGroupContainer, isEssential: Bool)] = [
+            (
+                .shortcutSidebar(
+                    spaceId: spaceID,
+                    profileId: nil,
+                    folderId: nil,
+                    index: 0
+                ),
+                false
             ),
-            .essentialSidebar(profileId: nil, index: 0),
+            (.essentialSidebar(profileId: profileID, index: 0), true),
         ]
 
-        for container in containers {
-            let memberID = SplitMemberID.shortcutPin(UUID())
+        for (container, isEssential) in cases {
+            let pins = (0..<2).map { index in
+                ShortcutPin(
+                    id: UUID(),
+                    role: isEssential ? .essential : .spacePinned,
+                    profileId: isEssential ? profileID : nil,
+                    spaceId: isEssential ? nil : spaceID,
+                    index: index,
+                    launchURL: URL(string: "https://split-\(index).example")!,
+                    title: "Split \(index)"
+                )
+            }
+            if isEssential {
+                browser.structuralCollectionMutationOwner.setPinnedTabs(
+                    pins,
+                    for: profileID
+                )
+            } else {
+                browser.structuralCollectionMutationOwner
+                    .setSpacePinnedShortcuts(pins, for: spaceID)
+            }
+            let memberID = SplitMemberID.shortcutPin(pins[0].id)
             let group = try XCTUnwrap(SplitGroup.make(
-                members: [memberID, .shortcutPin(UUID())],
+                members: pins.map { .shortcutPin($0.id) },
                 layoutKind: .vertical,
                 container: container
             ))

@@ -1,22 +1,18 @@
 import Foundation
 import SumiDomain
 
-/// Converts a canonical pin through a preflighted promotion plan and an exact
-/// split transition. Transaction mechanics live in a dedicated collaborator.
+/// Adapts regular and split-drop callers to exact pin-promotion services.
 @MainActor
 final class ShortcutPinToRegularTabService {
-    private let promotion: ShortcutTabPromotionService
-    private let admission: ShortcutPinPromotionAdmission
-    private let transaction: ShortcutPinRegularConversionTransaction
+    private let singlePin: ShortcutPinRegularPromotionService
+    private let group: ShortcutPinGroupRegularConversionService
 
     init(
-        promotion: ShortcutTabPromotionService,
-        admission: ShortcutPinPromotionAdmission,
-        transaction: ShortcutPinRegularConversionTransaction
+        singlePin: ShortcutPinRegularPromotionService,
+        group: ShortcutPinGroupRegularConversionService
     ) {
-        self.promotion = promotion
-        self.admission = admission
-        self.transaction = transaction
+        self.singlePin = singlePin
+        self.group = group
     }
 
     @discardableResult
@@ -26,7 +22,7 @@ final class ShortcutPinToRegularTabService {
         at targetIndex: Int? = nil,
         preferredWindowId: UUID? = nil
     ) -> Bool {
-        promote(
+        singlePin.promote(
             candidatePin,
             into: targetSpaceId,
             at: targetIndex,
@@ -39,41 +35,11 @@ final class ShortcutPinToRegularTabService {
         into targetSpaceID: UUID,
         preferredWindowID: UUID
     ) -> Tab? {
-        promote(
+        singlePin.promote(
             candidatePin,
             into: targetSpaceID,
             preferredWindowId: preferredWindowID
         )?.tab
-    }
-
-    private func promote(
-        _ candidatePin: ShortcutPin,
-        into targetSpaceId: UUID,
-        at targetIndex: Int? = nil,
-        preferredWindowId: UUID? = nil
-    ) -> ShortcutTabPromotionResult? {
-        guard let pin = admission.canonicalPin(for: candidatePin),
-              let plan = promotion.preparePromotion(
-                  pin,
-                  into: targetSpaceId,
-                  at: targetIndex,
-                  preferredWindowId: preferredWindowId,
-                  allowsGroupedPin: true
-              ) else { return nil }
-
-        guard case .admitted(let split) = admission.splitOutcome(
-            pinID: pin.id,
-            promotedTabID: plan.tab.id,
-            targetSpaceID: targetSpaceId
-        ) else {
-            _ = plan.placement.cancel()
-            return nil
-        }
-        return transaction.commit(
-            pin: pin,
-            plan: plan,
-            split: split
-        )
     }
 
     func convertGroup(
@@ -82,11 +48,8 @@ final class ShortcutPinToRegularTabService {
         at targetIndex: Int,
         preferredWindowID: UUID?
     ) -> Bool {
-        guard let groupPins = admission.canonicalGroupPins(for: group)
-        else { return false }
-        return transaction.commitGroup(
+        self.group.convert(
             group,
-            pins: groupPins,
             into: targetSpaceID,
             at: targetIndex,
             preferredWindowID: preferredWindowID

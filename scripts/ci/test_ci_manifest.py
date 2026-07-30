@@ -349,7 +349,7 @@ class RepositoryContractTests(unittest.TestCase):
                     self.data, self.suites, "pr", "xcode-test"
                 )
             ),
-            23,
+            24,
         )
         for matrix in (pr, nightly):
             self.assertEqual(len({item["role"] for item in matrix}), len(matrix))
@@ -491,8 +491,30 @@ class RunnerWorkingDirectoryTests(unittest.TestCase):
             )
             for invocation in invocations:
                 self.assertIn("arg=-parallel-testing-enabled\narg=NO\n", invocation)
+                self.assertIn("arg=CODE_SIGNING_ALLOWED=NO\n", invocation)
+                self.assertIn("arg=CODE_SIGNING_REQUIRED=NO\n", invocation)
             self.assertIn(f"arg={temporary_path / 'build.xcresult'}\n", build)
             self.assertIn(f"arg={temporary_path / 'test.xcresult'}\n", test)
+
+            command_log.write_text("")
+            subprocess.run(
+                [RUNNER, "run", "nightly", "ui-smoke"],
+                cwd=foreign_cwd,
+                env=environment,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            ui_invocations = command_log.read_text().split("invocation\n")[1:]
+            self.assertEqual(len(ui_invocations), 2)
+            for invocation in ui_invocations:
+                self.assertIn("arg=CODE_SIGNING_ALLOWED=YES\n", invocation)
+                self.assertIn("arg=CODE_SIGNING_REQUIRED=YES\n", invocation)
+                self.assertIn("arg=CODE_SIGN_IDENTITY=-\n", invocation)
+                self.assertIn("arg=CODE_SIGN_STYLE=Manual\n", invocation)
+                self.assertIn("arg=DEVELOPMENT_TEAM=\n", invocation)
+                self.assertIn("arg=PROVISIONING_PROFILE_SPECIFIER=\n", invocation)
+                self.assertNotIn("arg=CODE_SIGNING_ALLOWED=NO\n", invocation)
 
     def test_xcode_suite_fails_when_build_changes_localization_catalog(self):
         with tempfile.TemporaryDirectory() as temporary_directory:

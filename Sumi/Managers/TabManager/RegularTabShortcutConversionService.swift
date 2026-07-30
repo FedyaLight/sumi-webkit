@@ -6,19 +6,16 @@ import SumiDomain
 @MainActor
 final class RegularTabShortcutConversionService {
     private let candidates: RegularTabShortcutCandidatePreparer
-    private let sidebarCandidates: RegularTabShortcutSidebarCandidatePreparer
-    private let replacementValidator: ShortcutSidebarDropReplacementValidator
+    private let sidebar: RegularTabShortcutSidebarConversionService
     private let transaction: RegularTabShortcutCommitTransaction
 
     init(
         candidates: RegularTabShortcutCandidatePreparer,
-        sidebarCandidates: RegularTabShortcutSidebarCandidatePreparer,
-        replacementValidator: ShortcutSidebarDropReplacementValidator,
+        sidebar: RegularTabShortcutSidebarConversionService,
         transaction: RegularTabShortcutCommitTransaction
     ) {
         self.candidates = candidates
-        self.sidebarCandidates = sidebarCandidates
-        self.replacementValidator = replacementValidator
+        self.sidebar = sidebar
         self.transaction = transaction
     }
 
@@ -46,7 +43,7 @@ final class RegularTabShortcutConversionService {
         into targetGroup: SumiDomain.SplitGroup,
         preferredWindowId: UUID
     ) -> PreparedRegularTabShortcutSidebarDrop? {
-        sidebarCandidates.prepare(
+        sidebar.prepare(
             tab: tab,
             targetGroup: targetGroup,
             preferredWindowID: preferredWindowId
@@ -59,7 +56,7 @@ final class RegularTabShortcutConversionService {
         target: SplitDropTarget,
         preferredWindowId: UUID
     ) -> PreparedRegularTabShortcutSidebarDrop? {
-        sidebarCandidates.prepare(
+        sidebar.prepare(
             tab: tab,
             standaloneTargetPin: standaloneTargetPin,
             target: target,
@@ -74,14 +71,9 @@ final class RegularTabShortcutConversionService {
         sidebarMutation: RegularTabShortcutSidebarMutationPreparation,
         presentation: RegularTabShortcutSplitPresentationPreparation
     ) -> RegularTabShortcutConversionAcceptance? {
-        guard replacementValidator.accepts(replacement, for: prepared),
-              let authorization = candidates.authorization(
-                  for: prepared.conversion
-              ) else { return nil }
-        return transaction.commit(
+        sidebar.commit(
             prepared,
             replacement: replacement,
-            authorization: authorization,
             sidebarMutation: sidebarMutation,
             presentation: presentation
         )

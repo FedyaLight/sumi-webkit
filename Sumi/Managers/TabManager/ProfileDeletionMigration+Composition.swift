@@ -7,7 +7,7 @@ extension ProfileDeletionMigration {
         spaces: TabSpaceCollectionStateOwner,
         tabTransitions: TabProfileTransitionService,
         spaceTransitionLifecycle: SpaceProfileTransitionRepository,
-        spaceCatalog: SpaceCatalogCommands,
+        spaceCreation: SpaceCreationTransaction,
         spaceRemoval: SpaceRemovalService,
         shortcutReferences: ShortcutProfileReferenceRetirementService,
         selection: ProfileSelectionCoordinator
@@ -17,7 +17,7 @@ extension ProfileDeletionMigration {
             runtimeConnection: runtimeConnection,
             spaces: ProfileSpaceRetirementService(
                 spaces: spaces,
-                catalog: spaceCatalog,
+                creation: spaceCreation,
                 removal: spaceRemoval,
                 transitions: spaceTransitionLifecycle
             ),

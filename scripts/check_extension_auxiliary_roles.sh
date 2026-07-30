@@ -78,6 +78,8 @@ ui_delegate='Sumi/AuxiliaryWindows/AuxiliaryWindowUIDelegate.swift'
 extension_opening='Sumi/AuxiliaryWindows/ExtensionAuxiliaryWindowOpeningService.swift'
 popup_opening='Sumi/AuxiliaryWindows/AuxiliaryPopupOpeningService.swift'
 extension_bridge='Sumi/Managers/ExtensionManager/ExtensionBridge.swift'
+extension_window_adapter='Sumi/Managers/ExtensionManager/ExtensionWindowAdapter.swift'
+extension_mini_window_adapter='Sumi/Managers/ExtensionManager/ExtensionMiniWindowAdapter.swift'
 state_coordinator='Sumi/Managers/ExtensionManager/ExtensionWindowStateTransitionCoordinator.swift'
 manager_support='Sumi/Managers/ExtensionManager/ExtensionManagerSupport.swift'
 extension_control='Sumi/Managers/ExtensionManager/BrowserExtensionAuxiliaryWindowAdapter.swift'
@@ -93,6 +95,7 @@ for file in "$bridge" "$opening" "$opening_runtime" "$initial" "$content" "$nati
   "$residency" "$retention" "$loading" "$settlement" "$deferred" \
   "$weak_events" "$browser_aux" "$session_registry" "$teardown" \
   "$ui_delegate" "$extension_opening" "$popup_opening" "$extension_bridge" \
+  "$extension_window_adapter" "$extension_mini_window_adapter" \
   "$state_coordinator" "$manager_support" \
   "$extension_control" "$tab_commands" "$presentation" \
   "$page_resolution" "$window_presentation" "$close_router" \
@@ -122,6 +125,7 @@ require_matches -F 'sessions.remove(receipt)' "$teardown"
 if scan_has_matches -U \
   'func (teardown|receipt|remove)\(\s*(for )?webView|closeAuxiliaryWindowWebView|containsAuxiliaryWebView|closeAuxiliaryWindowSession\(\s*_ session:|recordAuxiliaryWindowSessionFocus\(\s*_ sessionId:|focusAuxiliaryWindowSession\(\s*_ sessionId:' \
   "$session_registry" "$teardown" "$extension_control" "$extension_bridge" \
+  "$extension_window_adapter" "$extension_mini_window_adapter" \
   "$tab_commands" "$close_router"; then
   echo 'error: auxiliary destructive/focus control regained mutable WebView, session, or UUID authority' >&2
   exit 1
@@ -130,21 +134,21 @@ require_matches -U 'protocol ExtensionAuxiliaryTabClosing[^}]+auxiliaryWindowSes
   "$extension_bridge"
 require_matches -F 'miniWindowAdapter?.bind(receipt)' "$presentation"
 require_matches -F 'private var sessionReceipt: AuxiliaryWindowSessionReceipt?' \
-  "$extension_bridge"
+  "$extension_mini_window_adapter"
 require_matches -F 'func bind(_ receipt: AuxiliaryWindowSessionReceipt)' \
-  "$extension_bridge"
+  "$extension_mini_window_adapter"
 require_matches -F 'auxiliaryWindows?.focusAuxiliaryWindowSession(sessionReceipt)' \
-  "$extension_bridge"
+  "$extension_mini_window_adapter"
 require_matches -F 'private let stateTransitions = ExtensionWindowStateTransitionCoordinator(' \
-  "$extension_bridge"
-require_matches -F 'stateTransitions.transition(' "$extension_bridge"
-require_matches -F 'self.sessionReceipt == expectedReceipt' "$extension_bridge"
-require_matches -F 'ObjectIdentifier(current) == sessionIdentity' "$extension_bridge"
-require_matches -F 'current.window === window' "$extension_bridge"
-require_matches -F 'isRetired = true' "$extension_bridge"
-require_matches -F 'stateTransitions.invalidateActiveTransition()' "$extension_bridge"
+  "$extension_mini_window_adapter"
+require_matches -F 'stateTransitions.transition(' "$extension_mini_window_adapter"
+require_matches -F 'self.sessionReceipt == expectedReceipt' "$extension_mini_window_adapter"
+require_matches -F 'ObjectIdentifier(current) == sessionIdentity' "$extension_mini_window_adapter"
+require_matches -F 'current.window === window' "$extension_mini_window_adapter"
+require_matches -F 'isRetired = true' "$extension_mini_window_adapter"
+require_matches -F 'stateTransitions.invalidateActiveTransition()' "$extension_mini_window_adapter"
 require_matches -U 'isRetired = true[[:space:]]+stateTransitions\.invalidateActiveTransition\(\)[[:space:]]+auxiliaryWindows\.closeAuxiliaryWindowSession\(sessionReceipt\)' \
-  "$extension_bridge"
+  "$extension_mini_window_adapter"
 require_matches -U 'case \.zoomed:[[:space:]]+return \.maximized' "$extension_bridge"
 require_matches -F 'previous.ownsWindow(with: windowIdentity)' "$state_coordinator"
 require_matches -F 'admissionGeneration == requestGeneration' "$state_coordinator"

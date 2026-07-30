@@ -78,9 +78,12 @@
 				Sidebar/SpaceSidebarRenderPolicy.swift,
 				Sidebar/SpaceSidebarShellActions.swift,
 				Sidebar/SpaceSidebarSnapshots.swift,
+				Sidebar/SpaceSidebarSnapshotItemViews.swift,
 				Sidebar/SpaceSidebarSnapshotViews.swift,
 				Sidebar/SpaceSidebarTransitionCoordinator.swift,
 				Sidebar/SpaceSidebarTransitionLayers.swift,
+				Sidebar/SpaceSidebarTransitionItemSnapshotBuilder.swift,
+				Sidebar/SpaceSidebarTransitionSnapshotBuilder.swift,
 				Sidebar/SpaceSidebarTransitionState.swift,
 				Sidebar/SpacesList/HoverLabel/SpaceHoverLabel.swift,
 				Sidebar/SpacesList/HoverLabel/SpaceHoverLabelPalette.swift,
@@ -447,6 +450,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_ENTITLEMENTS = SumiUITests/SumiUITests.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 2ZJ6H8V8AZ;
@@ -469,6 +473,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_ENTITLEMENTS = SumiUITests/SumiUITests.entitlements;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 2ZJ6H8V8AZ;
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;

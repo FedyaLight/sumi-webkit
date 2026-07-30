@@ -457,217 +457,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         XCTAssertEqual(fixture.input.tab.shortcutPinId, fixture.input.source.id)
     }
 
-    func testPublicConversionCommitsCrossWindowSelectionAtomically() throws {
-        let fixture = try makeCrossWindowConversionFixture()
-        XCTAssertTrue(fixture.regularTabs.contains(fixture.input.tab))
-        XCTAssertFalse(fixture.input.tab.isShortcutLiveInstance)
-        XCTAssertFalse(
-            fixture.input.tab.profileAssignment.hasUnsettledAssignment
-        )
-        let preparation = fixture.conversion.prepare(
-            fixture.input.tab,
-            preferredWindowId: fixture.input.selectedWindowID
-        )
-        switch preparation {
-        case .displayed:
-            break
-        case .detached:
-            return XCTFail("Cross-window selection was not visible to runtime")
-        case .rejected:
-            return XCTFail("Cross-window conversion structure was rejected")
-        }
-
-        let converted = fixture.conversion.commit(
-            fixture.input.tab,
-            preparation: preparation,
-            destination: TabShortcutPinDestination(
-                role: .spacePinned,
-                profileId: nil,
-                spaceId: fixture.input.space.id,
-                folderId: nil,
-                index: 0,
-                opensFolder: false
-            )
-        )?.canonicalPin
-
-        let pin = try XCTUnwrap(converted)
-        XCTAssertFalse(fixture.regularTabs.contains(fixture.input.tab))
-        XCTAssertTrue(fixture.input.tab.isShortcutLiveInstance)
-        XCTAssertIdentical(
-            fixture.liveTabs.tab(
-                for: pin.id,
-                in: fixture.input.selectedWindowID
-            ),
-            fixture.input.tab
-        )
-        XCTAssertNotNil(
-            fixture.liveTabs.tab(
-                for: pin.id,
-                in: fixture.input.secondaryWindowID
-            )
-        )
-        XCTAssertNotNil(fixture.pins.shortcutPin(by: pin.id))
-    }
-
-    func testPublicConversionRejectsMixedSelectedSplitWithoutMutation() throws {
-        let fixture = try makeSelectedSplitConversionFixture()
-        let input = fixture.input
-        let group = input.group
-        var structuralEvents = 0
-        let cancellable = fixture.events
-            .structureChangedPublisher.sink { structuralEvents += 1 }
-        structuralEvents = 0
-        let preparation = fixture.conversion.prepare(
-            input.tab,
-            preferredWindowId: input.window.id
-        )
-        guard case .displayed = preparation else {
-            return XCTFail("Expected a displayed selected-split conversion plan")
-        }
-
-        let converted = fixture.conversion.commit(
-            input.tab,
-            preparation: preparation,
-            destination: TabShortcutPinDestination(
-                role: .spacePinned,
-                profileId: nil,
-                spaceId: input.space.id,
-                folderId: nil,
-                index: 0,
-                opensFolder: false
-            )
-        )?.canonicalPin
-
-        XCTAssertNil(converted)
-        XCTAssertEqual(structuralEvents, 0)
-        XCTAssertTrue(fixture.state().regularTabs.contains(input.tab))
-        XCTAssertNil(fixture.state().liveTabs.entry(tabId: input.tab.id))
-        XCTAssertEqual(fixture.state().groups.group(id: group.id), group)
-        _ = cancellable
-    }
-
-    func testStaleSplitPlanRejectsBeforePinInsertionOrFolderOpening() throws {
-        let fixture = try makeStaleSplitPlanFixture()
-        let input = fixture.input
-        let preparation = fixture.conversion
-            .prepare(
-                input.tab,
-                preferredWindowId: input.window.id
-            )
-        guard case .displayed = preparation else {
-            return XCTFail("Expected a valid single-window split plan")
-        }
-        let changedGroup = try XCTUnwrap(
-            input.group.changingLayout(to: .horizontal)
-        )
-        var structuralEvents = 0
-        let cancellable = fixture.events
-            .structureChangedPublisher.sink { structuralEvents += 1 }
-        XCTAssertTrue(fixture.splitMutations.replace(
-            input.group,
-            with: changedGroup,
-            persist: false
-        ))
-        structuralEvents = 0
-        let windowSession = ShortcutConversionWindowSessionState(input.window)
-
-        let converted = fixture.conversion
-            .commit(
-                input.tab,
-                preparation: preparation,
-                destination: TabShortcutPinDestination(
-                    role: .spacePinned,
-                    profileId: nil,
-                    spaceId: input.space.id,
-                    folderId: input.folder.id,
-                    index: 0,
-                    opensFolder: true
-                )
-            )
-
-        XCTAssertNil(converted)
-        XCTAssertFalse(input.folder.isOpen)
-        XCTAssertEqual(structuralEvents, 0)
-        XCTAssertTrue(fixture.state().persistedWindowIDs.isEmpty)
-        XCTAssertTrue(fixture.state().regularTabs.contains(input.tab))
-        XCTAssertFalse(input.tab.isShortcutLiveInstance)
-        XCTAssertTrue(
-            fixture.state().pins.spacePinnedPins(for: input.space.id).isEmpty
-        )
-        XCTAssertEqual(
-            fixture.state().groups.group(id: input.group.id),
-            changedGroup
-        )
-        XCTAssertEqual(
-            ShortcutConversionWindowSessionState(input.window),
-            windowSession
-        )
-        _ = cancellable
-    }
-
-    func testHeadlessConversionRejectsMixedSplitWithoutMutation() throws {
-        let fixture = try makeHeadlessSplitConversionFixture()
-        let converted = fixture.conversion.convert(
-            fixture.input.tab,
-            destination: TabShortcutPinDestination(
-                role: .spacePinned,
-                profileId: nil,
-                spaceId: fixture.input.space.id,
-                folderId: nil,
-                index: 0,
-                opensFolder: false
-            )
-        )
-
-        XCTAssertNil(converted)
-        XCTAssertTrue(fixture.input.tab.webViewSession.allKnownWebViews.isEmpty)
-        XCTAssertTrue(fixture.state().regularTabs.contains(fixture.input.tab))
-        XCTAssertTrue(
-            fixture.state().pins.spacePinnedPins(for: fixture.input.space.id)
-                .isEmpty
-        )
-        XCTAssertEqual(
-            fixture.state().groups.group(id: fixture.input.group.id),
-            fixture.input.group
-        )
-    }
-
-    func testPublicConversionRepairsNonDisplayingWindowAfterCommit() throws {
-        let fixture = try makeWindowRepairFixture()
-        let cancellable = fixture.events.structureChangedPublisher.sink {
-            fixture.oracle.structuralEvents += 1
-        }
-        fixture.oracle.structuralEvents = 0
-
-        let preparation = fixture.prepare()
-        guard case .displayed = preparation else {
-            return XCTFail("Expected a displayed window-repair conversion plan")
-        }
-        let pin = fixture.commit(preparation)
-
-        XCTAssertNotNil(pin)
-        XCTAssertEqual(fixture.oracle.structuralEvents, 1)
-        XCTAssertEqual(
-            fixture.input.stale.activeTabForSpace[fixture.input.space.id],
-            fixture.input.fallback.id
-        )
-        XCTAssertEqual(
-            fixture.input.stale.selectionHistory
-                .recentRegularTabIdsBySpace[fixture.input.space.id]?
-                .contains(fixture.input.tab.id),
-            false
-        )
-        let persisted = try XCTUnwrap(fixture.persistedStaleSnapshot())
-        XCTAssertEqual(
-            persisted.activeTabsBySpace.first {
-                $0.spaceId == fixture.input.space.id
-            }?.tabId,
-            fixture.input.fallback.id
-        )
-        _ = cancellable
-    }
-
-    private func makeSpacePin(
+    func makeSpacePin(
         spaceId: UUID,
         folderId: UUID? = nil,
         executionProfileId: UUID? = nil
@@ -684,7 +474,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         )
     }
 
-    private func makeRetirementFixture() throws -> RetirementFixture {
+    func makeRetirementFixture() throws -> ShortcutPinRetirementFixture {
         let browser = try makeIsolatedBrowser()
         let retiringProfile = Profile(name: "Retiring")
         let fallbackProfile = Profile(name: "Fallback")
@@ -704,7 +494,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
                 )
             )
         }
-        return RetirementFixture(
+        return ShortcutPinRetirementFixture(
             store: browser.shortcutPinStoreOwner,
             pins: browser.shortcutPinCollectionStateOwner,
             context: .init(
@@ -730,7 +520,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         )
     }
 
-    private func makeIsolatedBrowser() throws -> BrowserManager {
+    func makeIsolatedBrowser() throws -> BrowserManager {
         let browser = BrowserManager(
             startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupDatabase()
             )
@@ -740,7 +530,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         return browser
     }
 
-    private func register(
+    func register(
         _ window: BrowserWindowState,
         in browser: BrowserManager
     ) {
@@ -748,7 +538,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         XCTAssertEqual(browser.windowRegistry.register(window), .registered)
     }
 
-    private func install(
+    func install(
         _ profile: Profile,
         in browser: BrowserManager
     ) throws {
@@ -767,7 +557,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         )
     }
 
-    private func makePinMetadataFixture() throws -> PinMetadataFixture {
+    func makePinMetadataFixture() throws -> PinMetadataFixture {
         let browser = try makeIsolatedBrowser()
         return PinMetadataFixture(
             store: browser.shortcutPinStoreOwner,
@@ -788,7 +578,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         )
     }
 
-    private func makePinMoveFixture() throws -> PinMoveFixture {
+    func makePinMoveFixture() throws -> PinMoveFixture {
         let browser = try makeIsolatedBrowser()
         return PinMoveFixture(
             store: browser.shortcutPinStoreOwner,
@@ -809,7 +599,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         )
     }
 
-    private func makePinExecutionFixture(
+    func makePinExecutionFixture(
         targetProfile: Profile
     ) throws -> PinExecutionFixture {
         let browser = try makeIsolatedBrowser()
@@ -839,7 +629,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         )
     }
 
-    private func makePinPresentationFixture() throws -> PinPresentationFixture {
+    func makePinPresentationFixture() throws -> PinPresentationFixture {
         let browser = try makeIsolatedBrowser()
         let space = Space(
             name: "Space",
@@ -902,7 +692,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         )
     }
 
-    private func makePinRemovalFixture() throws -> PinRemovalFixture {
+    func makePinRemovalFixture() throws -> PinRemovalFixture {
         let browser = try makeIsolatedBrowser()
         let space = Space(
             name: "Space",
@@ -959,7 +749,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         )
     }
 
-    private func makePinFolderFixture() throws -> PinFolderFixture {
+    func makePinFolderFixture() throws -> PinFolderFixture {
         let browser = try makeIsolatedBrowser()
         return PinFolderFixture(
             store: browser.shortcutPinStoreOwner,
@@ -978,7 +768,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         )
     }
 
-    private func makePinFolderMutationFixture() throws -> PinFolderMutationFixture {
+    func makePinFolderMutationFixture() throws -> PinFolderMutationFixture {
         let browser = try makeIsolatedBrowser()
         return PinFolderMutationFixture(
             store: browser.shortcutPinStoreOwner,
@@ -1007,7 +797,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         )
     }
 
-    private func makePinEssentialMoveFixture() throws -> PinEssentialMoveFixture {
+    func makePinEssentialMoveFixture() throws -> PinEssentialMoveFixture {
         let browser = try makeIsolatedBrowser()
         return PinEssentialMoveFixture(
             store: browser.shortcutPinStoreOwner,
@@ -1036,7 +826,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         )
     }
 
-    private func makePinEssentialLiveFixture(
+    func makePinEssentialLiveFixture(
         profileID: UUID
     ) throws -> PinEssentialLiveFixture {
         let browser = try makeIsolatedBrowser()
@@ -1074,7 +864,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         )
     }
 
-    private func makeCrossWindowConversionFixture()
+    func makeCrossWindowConversionFixture()
         throws -> CrossWindowConversionFixture {
         let selected = BrowserWindowState()
         let splitOnly = BrowserWindowState()
@@ -1111,7 +901,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         )
     }
 
-    private func makeSelectedSplitConversionFixture()
+    func makeSelectedSplitConversionFixture()
         throws -> SelectedSplitConversionFixture {
         let window = BrowserWindowState()
         let profile = Profile(name: "Conversion")
@@ -1159,7 +949,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         )
     }
 
-    private func makeHeadlessSplitConversionFixture()
+    func makeHeadlessSplitConversionFixture()
         throws -> HeadlessSplitConversionFixture {
         let browser = try makeIsolatedBrowser()
         let space = Space(name: "Space")
@@ -1195,7 +985,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         )
     }
 
-    private func makeStaleSplitPlanFixture() throws -> StaleSplitPlanFixture {
+    func makeStaleSplitPlanFixture() throws -> StaleSplitPlanFixture {
         let window = BrowserWindowState()
         let browser = try makeIsolatedBrowser()
         let space = Space(
@@ -1241,7 +1031,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         )
     }
 
-    private func makeWindowRepairFixture() throws -> WindowRepairFixture {
+    func makeWindowRepairFixture() throws -> WindowRepairFixture {
         let displayed = BrowserWindowState()
         let stale = BrowserWindowState()
         let profile = Profile(name: "Conversion")
@@ -1308,7 +1098,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
 }
 
 @MainActor
-private struct RetirementFixture {
+struct ShortcutPinRetirementFixture {
     struct Context {
         let admission: ProfileReferenceAdmissionLedger
         let profiles: Profiles
@@ -1327,7 +1117,7 @@ private struct RetirementFixture {
 }
 
 @MainActor
-private struct PinMetadataFixture {
+struct PinMetadataFixture {
     let store: ShortcutPinStoreOwner
     let pins: ShortcutPinCollectionStateOwner
     let createSpace: @MainActor (String, UUID?) -> Space
@@ -1335,7 +1125,7 @@ private struct PinMetadataFixture {
 }
 
 @MainActor
-private struct PinMoveFixture {
+struct PinMoveFixture {
     let store: ShortcutPinStoreOwner
     let pins: ShortcutPinCollectionStateOwner
     let createSpace: @MainActor (String, UUID?) -> Space
@@ -1343,7 +1133,7 @@ private struct PinMoveFixture {
 }
 
 @MainActor
-private struct PinExecutionFixture {
+struct PinExecutionFixture {
     let store: ShortcutPinStoreOwner
     let pins: ShortcutPinCollectionStateOwner
     let createSpace: @MainActor (String, UUID?) -> Space
@@ -1352,7 +1142,7 @@ private struct PinExecutionFixture {
 }
 
 @MainActor
-private struct PinPresentationFixture {
+struct PinPresentationFixture {
     let lifetime: BrowserManager
     let source: ShortcutPin
     let events: TabStructureEventBus
@@ -1362,7 +1152,7 @@ private struct PinPresentationFixture {
 }
 
 @MainActor
-private struct PinRemovalFixture {
+struct PinRemovalFixture {
     let lifetime: BrowserManager
     let pin: ShortcutPin
     let liveTab: Tab
@@ -1373,7 +1163,7 @@ private struct PinRemovalFixture {
 }
 
 @MainActor
-private struct PinFolderFixture {
+struct PinFolderFixture {
     let store: ShortcutPinStoreOwner
     let pins: ShortcutPinCollectionStateOwner
     let createSpace: @MainActor (String, UUID?) -> Space
@@ -1381,7 +1171,7 @@ private struct PinFolderFixture {
 }
 
 @MainActor
-private struct PinFolderMutationFixture {
+struct PinFolderMutationFixture {
     let store: ShortcutPinStoreOwner
     let pins: ShortcutPinCollectionStateOwner
     let createSpace: @MainActor (String, UUID?) -> Space
@@ -1390,7 +1180,7 @@ private struct PinFolderMutationFixture {
 }
 
 @MainActor
-private struct PinEssentialMoveFixture {
+struct PinEssentialMoveFixture {
     let store: ShortcutPinStoreOwner
     let pins: ShortcutPinCollectionStateOwner
     let createSpace: @MainActor (String, UUID?) -> Space
@@ -1399,7 +1189,7 @@ private struct PinEssentialMoveFixture {
 }
 
 @MainActor
-private struct PinEssentialLiveFixture {
+struct PinEssentialLiveFixture {
     struct Input {
         let source: ShortcutPin
         let tab: Tab
@@ -1413,7 +1203,7 @@ private struct PinEssentialLiveFixture {
 }
 
 @MainActor
-private struct CrossWindowConversionFixture {
+struct CrossWindowConversionFixture {
     struct Input {
         let space: Space
         let tab: Tab
@@ -1430,7 +1220,7 @@ private struct CrossWindowConversionFixture {
 }
 
 @MainActor
-private struct SelectedSplitConversionFixture {
+struct SelectedSplitConversionFixture {
     struct Input {
         let space: Space
         let tab: Tab
@@ -1451,7 +1241,7 @@ private struct SelectedSplitConversionFixture {
 }
 
 @MainActor
-private struct HeadlessSplitConversionFixture {
+struct HeadlessSplitConversionFixture {
     struct Input {
         let space: Space
         let tab: Tab
@@ -1470,7 +1260,7 @@ private struct HeadlessSplitConversionFixture {
 }
 
 @MainActor
-private struct StaleSplitPlanFixture {
+struct StaleSplitPlanFixture {
     struct Input {
         let space: Space
         let folder: TabFolder
@@ -1494,7 +1284,7 @@ private struct StaleSplitPlanFixture {
 }
 
 @MainActor
-private struct WindowRepairFixture {
+struct WindowRepairFixture {
     struct Input {
         let stale: BrowserWindowState
         let space: Space
@@ -1513,6 +1303,6 @@ private struct WindowRepairFixture {
 }
 
 @MainActor
-private final class WindowRepairOracle {
+final class WindowRepairOracle {
     var structuralEvents = 0
 }

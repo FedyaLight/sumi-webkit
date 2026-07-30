@@ -53,22 +53,6 @@ final class SpaceCatalogCommands {
         )
     }
 
-    func ensureProfileRetirementFallbackSpace(
-        profileID: UUID
-    ) -> Bool {
-        if spaces.spaces.contains(where: { $0.profileId == profileID }) {
-            return true
-        }
-        return creation.create(
-            id: UUID(),
-            name: DefaultSpaceConfiguration.name,
-            icon: DefaultSpaceConfiguration.icon,
-            workspaceTheme: DefaultSpaceConfiguration.makeTheme(),
-            profileID: profileID,
-            referenceContext: .profileRetirement
-        ) != nil
-    }
-
     @discardableResult
     func reorderSpace(spaceId: UUID, to targetIndex: Int) -> Bool {
         transactions.withTransaction {

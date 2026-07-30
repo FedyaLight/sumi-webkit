@@ -1,5 +1,5 @@
-import SwiftUI
 import SumiDomain
+import SwiftUI
 
 struct SumiPermissionPromptView: View {
     @ObservedObject var viewModel: SumiPermissionPromptViewModel
@@ -37,6 +37,7 @@ struct SumiPermissionPromptView: View {
             viewModel.perform(.dismiss)
         }
         .accessibilityElement(children: .contain)
+        .accessibilityLabel(viewModel.title)
         .accessibilityIdentifier("permission-authorization-popover")
     }
 

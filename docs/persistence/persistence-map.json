@@ -93,6 +93,7 @@
         "downloads",
         "bookmark HTML exports",
         "logical Sumi backup archives",
+        "Zen backup archives with foreign-format SQLite artifacts",
         "files selected through save panels"
       ],
       "location": "User-selected URLs",

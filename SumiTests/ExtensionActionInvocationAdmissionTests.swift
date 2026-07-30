@@ -14,8 +14,8 @@ import XCTest
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionActionInvocationAdmissionTests: XCTestCase {
-    private static let clickedPageURL = URL(string: "https://clicked.example/path")!
-    private static let clickedHostPattern = "https://clicked.example/*"
+    static let clickedPageURL = URL(string: "https://clicked.example/path")!
+    static let clickedHostPattern = "https://clicked.example/*"
 
     // MARK: - 1. Exact current invocation dispatches once
 
@@ -775,594 +775,8 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
 
     // MARK: - 20. Popup invocation settlement and exact recovery
 
-    func testPendingPopupInvocationRequiresRecoveryOnlyAfterDeadline()
-        async throws {
-        let harness = try await makeHarness(name: "PopupDeadline")
-        let (evidence, action) = try exactInvocation(
-            in: harness
-        )
-        let clock = ExtensionActionInvocationTestClock(now: 10)
-        let ledger = ExtensionActionPopupInvocationLedger(
-            recoveryInterval: 5,
-            now: { clock.now() }
-        )
-        let target = ExtensionActionPopupInvocationTarget(
-            anchorSessionToken: UUID(),
-            windowID: UUID()
-        )
-
-        guard case .registered = ledger.register(
-            evidence: evidence,
-            action: action,
-            target: target
-        ) else {
-            return XCTFail("first exact invocation must register")
-        }
-        clock.set(14.9)
-        guard case .awaitingSettlement = ledger.register(
-            evidence: evidence,
-            action: action,
-            target: target
-        ) else {
-            return XCTFail("a live request inside the deadline must stay single-flight")
-        }
-        clock.set(15)
-        guard case .recoveryRequired(let receipt) = ledger.register(
-            evidence: evidence,
-            action: action,
-            target: target
-        ) else {
-            return XCTFail("a user retry after the deadline must request exact binding recovery")
-        }
-
-        XCTAssertEqual(
-            receipt,
-            harness.inspection.contextState.profiles.contextBindingReceipt(
-                extensionId: harness.extensionID,
-                profileId: harness.profileID
-            )
-        )
-    }
-
-    func testCanceledInvocationIsQuarantinedAndLateCallbackIsRejected()
-        async throws {
-        let harness = try await makeHarness(name: "PopupQuarantine")
-        let (evidence, action) = try exactInvocation(in: harness)
-        let ledger = ExtensionActionPopupInvocationLedger(
-            recoveryInterval: 60,
-            now: { 0 }
-        )
-        let target = ExtensionActionPopupInvocationTarget(
-            anchorSessionToken: UUID(),
-            windowID: UUID()
-        )
-        guard case .registered(let registration) = ledger.register(
-            evidence: evidence,
-            action: action,
-            target: target
-        ) else {
-            return XCTFail("first exact invocation must register")
-        }
-        ledger.cancel(registration)
-        guard case .recoveryRequired = ledger.register(
-            evidence: evidence,
-            action: action,
-            target: target
-        ) else {
-            return XCTFail("canceled dispatch must require a fresh binding")
-        }
-        let callbackEvidence = try XCTUnwrap(
-            harness.inspection.popups.callbackAdmission.capture(
-                context: harness.context,
-                controller: evidence.runtimeBinding.controller
-            )
-        )
-
-        guard case .staleBrowserInvocation = ledger.claim(
-            action: action,
-            evidence: callbackEvidence
-        ) else {
-            return XCTFail("late callback from a quarantined dispatch must fail closed")
-        }
-    }
-
-    func testCoalescedPopupInvocationAdoptsNewestExactClickTarget()
-        async throws {
-        let harness = try await makeHarness(name: "PopupRetarget")
-        let (evidence, action) = try exactInvocation(in: harness)
-        let ledger = ExtensionActionPopupInvocationLedger(
-            recoveryInterval: 60,
-            now: { 0 }
-        )
-        let firstTarget = ExtensionActionPopupInvocationTarget(
-            anchorSessionToken: UUID(),
-            windowID: UUID()
-        )
-        let newestTarget = ExtensionActionPopupInvocationTarget(
-            anchorSessionToken: UUID(),
-            windowID: UUID()
-        )
-        guard case .registered = ledger.register(
-            evidence: evidence,
-            action: action,
-            target: firstTarget
-        ) else {
-            return XCTFail("first exact invocation must register")
-        }
-        guard case .awaitingSettlement = ledger.register(
-            evidence: evidence,
-            action: action,
-            target: newestTarget
-        ) else {
-            return XCTFail("a coalesced click must keep one WebKit invocation")
-        }
-        let callbackEvidence = try XCTUnwrap(
-            harness.inspection.popups.callbackAdmission.capture(
-                context: harness.context,
-                controller: evidence.runtimeBinding.controller
-            )
-        )
-
-        guard case .claimed(let receipt) = ledger.claim(
-            action: action,
-            evidence: callbackEvidence
-        ) else {
-            return XCTFail("the current callback must claim the coalesced invocation")
-        }
-        XCTAssertEqual(receipt.target, newestTarget)
-    }
-
-    func testCatalogRevisionChangeReplacesUnclaimablePendingInvocation()
-        async throws {
-        let harness = try await makeHarness(name: "PopupCatalogRevision")
-        let (firstEvidence, firstAction) = try exactInvocation(in: harness)
-        let ledger = ExtensionActionPopupInvocationLedger(
-            recoveryInterval: 60,
-            now: { 0 }
-        )
-        guard case .registered = ledger.register(
-            evidence: firstEvidence,
-            action: firstAction,
-            target: .init(anchorSessionToken: UUID(), windowID: UUID())
-        ) else {
-            return XCTFail("first catalog revision must register")
-        }
-
-        let installed = try XCTUnwrap(
-            harness.inspection.actionSurfaces.installedExtensions.records.first {
-                $0.id == harness.extensionID
-            }
-        )
-        harness.inspection.actionSurfaces.installedExtensions.upsert(
-            Self.copyRecord(
-                installed,
-                isEnabled: true,
-                manifestRootFingerprint: "replacement-\(installed.manifestRootFingerprint)"
-            )
-        )
-        let (currentEvidence, currentAction) = try exactInvocation(in: harness)
-        XCTAssertIdentical(firstAction, currentAction)
-        let currentTarget = ExtensionActionPopupInvocationTarget(
-            anchorSessionToken: UUID(),
-            windowID: UUID()
-        )
-        guard case .registered = ledger.register(
-            evidence: currentEvidence,
-            action: currentAction,
-            target: currentTarget
-        ) else {
-            return XCTFail("new catalog authority must replace the stale entry")
-        }
-        let callbackEvidence = try XCTUnwrap(
-            harness.inspection.popups.callbackAdmission.capture(
-                context: harness.context,
-                controller: currentEvidence.runtimeBinding.controller
-            )
-        )
-
-        guard case .claimed(let receipt) = ledger.claim(
-            action: currentAction,
-            evidence: callbackEvidence
-        ) else {
-            return XCTFail("callback must claim current catalog authority")
-        }
-        XCTAssertEqual(receipt.target, currentTarget)
-    }
-
-    func testContextRetirementQuarantinesBeforeUnloadAndPreservesFailure()
-        async throws {
-        let harness = try await makeHarness(name: "PopupRetirementOrdering")
-        let (evidence, action) = try exactInvocation(in: harness)
-        let target = ExtensionActionPopupInvocationTarget(
-            anchorSessionToken: UUID(),
-            windowID: UUID()
-        )
-        guard case .registered = harness.inspection.popups.invocations
-            .register(evidence: evidence, action: action, target: target)
-        else {
-            return XCTFail("popup invocation must register before retirement")
-        }
-        let receipt = try XCTUnwrap(
-            harness.inspection.contextState.profiles.contextBindingReceipt(
-                extensionId: harness.extensionID,
-                profileId: harness.profileID
-            )
-        )
-        var observedQuarantineInsideUnload = false
-        let retirement = ExtensionContextRetirement(
-            profileRuntime: harness.inspection.contextState.profiles,
-            backgroundRuntimeState: harness.inspection.contextState.background,
-            runtimeResidency: harness.inspection.runtimeAuthorities.residency,
-            errorObservation: harness.inspection.contextState.errors,
-            diagnostics: harness.inspection.contextCoordination.diagnostics,
-            actionPopups: harness.inspection.popups.runtimeRetirement,
-            unloadContext: { _, _ in
-                guard case .recoveryRequired(let observed) = harness.inspection
-                    .popups.invocations.register(
-                        evidence: evidence,
-                        action: action,
-                        target: target
-                    )
-                else {
-                    return XCTFail(
-                        "invocation must be quarantined before WebKit unload"
-                    )
-                }
-                XCTAssertEqual(observed, receipt)
-                observedQuarantineInsideUnload = true
-                throw NSError(
-                    domain: "ExtensionActionInvocationAdmissionTests",
-                    code: 1
-                )
-            }
-        )
-
-        XCTAssertEqual(retirement.retire(receipt), .unloadFailed)
-        XCTAssertTrue(observedQuarantineInsideUnload)
-        guard case .recoveryRequired(let preserved) = harness.inspection
-            .popups.invocations.register(
-                evidence: evidence,
-                action: action,
-                target: target
-            )
-        else {
-            return XCTFail("failed unload must preserve the quarantine")
-        }
-        XCTAssertEqual(preserved, receipt)
-    }
-
-    func testSuccessfulBindingRecoveryRetriesInvocationServiceOnce()
-        async throws {
-        let harness = try await makeHarness(name: "PopupServiceRecovery")
-        let receipt = try XCTUnwrap(
-            harness.inspection.contextState.profiles.contextBindingReceipt(
-                extensionId: harness.extensionID,
-                profileId: harness.profileID
-            )
-        )
-        let dispatch = RecoveringActionDispatch(stalledBinding: receipt)
-        let recovery = SuccessfulBindingRecovery()
-        var dispatches = 0
-        harness.manager.testHooks.permissionPromptDecision = { _, _, _ in
-            .allow(expirationDate: nil)
-        }
-        defer { clearHooks(harness) }
-
-        let service = makeInvocationService(
-            inspection: harness.inspection,
-            attachedRuntime: harness.attachedRuntime,
-            actionDispatch: dispatch,
-            bindingRecovery: recovery,
-            actionDispatchProbe: { _ in dispatches += 1 }
-        )
-        let result = await service.openPopup(
-            extensionID: harness.extensionID,
-            currentTab: harness.tab
-        )
-        XCTAssertTrue(
-            result.opened,
-            "unexpected blocker: \(result.blocker?.rawValue ?? "nil") \(result.message)"
-        )
-        XCTAssertEqual(recovery.receipts, [receipt])
-        XCTAssertEqual(dispatch.contexts.count, 2)
-        XCTAssertIdentical(dispatch.contexts.first, harness.context)
-        XCTAssertIdentical(dispatch.contexts.last, harness.context)
-        XCTAssertEqual(dispatches, 1)
-        XCTAssertEqual(harness.actionPopupMetricCount(), 1)
-    }
-
-    // MARK: - Harness
-
-    private struct Harness {
-        let manager: ExtensionManager
-        let inspection: ExtensionManagerTestInspection
-        let attachedRuntime: ExtensionAttachedBrowserRuntimeInspection
-        let browserManager: BrowserManager
-        let profileID: UUID
-        let extensionID: String
-        let tab: Tab
-        let context: WKWebExtensionContext
-        let windowRegistry: WindowRegistry
-        let windowState: BrowserWindowState
-
-        @MainActor
-        func openPopup() async -> BrowserExtensionActionPopupRequestResult {
-            let anchor = ExtensionActionPopupAnchor(
-                extensionID: extensionID,
-                profileID: profileID,
-                windowID: UUID(),
-                tabID: tab.id,
-                sessionToken: UUID(),
-                capturedAt: Date(),
-                buttonView: nil
-            )
-            inspection.popups.anchors.store(anchor)
-            return await inspection.actionSurfaces.invocation.openPopup(
-                extensionID: extensionID,
-                currentTab: tab,
-                popupTargetRequest: .explicitAnchor(anchor.sessionToken)
-            )
-        }
-
-        @MainActor
-        func storedDecision() -> ExtensionManager.ExtensionStoredPermissionDecision? {
-            inspection.actionPolicy.permissionDecisions.storedExtensionPermissionDecision(
-                extensionId: extensionID,
-                profileId: profileID,
-                targetKind: .matchPattern,
-                target: ExtensionActionInvocationAdmissionTests.clickedHostPattern
-            )
-        }
-
-        @MainActor
-        func configuredLevel() -> SafariExtensionSiteAccessLevel {
-            inspection.actionPolicy.siteAccess.configuredSiteAccessLevel(
-                for: ExtensionActionInvocationAdmissionTests.clickedPageURL,
-                extensionId: extensionID,
-                profileId: profileID
-            )
-        }
-
-        @MainActor
-        func pageURLStatus() -> WKWebExtensionContext.PermissionStatus {
-            context.permissionStatus(
-                for: ExtensionActionInvocationAdmissionTests.clickedPageURL
-            )
-        }
-
-        @MainActor
-        func actionPopupMetricCount() -> Int {
-            let metrics = inspection.runtimeAuthorities.metrics.metrics(
-                for: extensionID
-            )
-            guard let metrics, metrics.lastBackgroundWakeReason == .actionPopup
-            else {
-                return 0
-            }
-            return metrics.backgroundWakeCount
-        }
-    }
-
-    func testPresentationQueryIsolatesSameExtensionAcrossTwoPublishedPages()
-        async throws {
-        let harness = try await makeHarness(name: "PresentationTwoPages")
-        let secondWindow = BrowserWindowState()
-        harness.browserManager.tabResidenceAuthority.establishResidenceSession(on: secondWindow)
-        XCTAssertEqual(
-            harness.windowRegistry.register(secondWindow),
-            .registered
-        )
-        addTeardownBlock { @MainActor in
-            harness.windowRegistry.unregister(secondWindow.id)
-        }
-        let firstTab = makePublishedPresentationTab(
-            url: Self.clickedPageURL,
-            profileID: harness.profileID,
-            harness: harness,
-            windowState: harness.windowState
-        )
-        let secondTab = makePublishedPresentationTab(
-            url: URL(string: "https://second.example/")!,
-            profileID: harness.profileID,
-            harness: harness,
-            windowState: secondWindow
-        )
-        let query = makePresentationQuery(harness: harness)
-        let firstTarget = try XCTUnwrap(query.target(
-            extensionID: harness.extensionID,
-            tab: firstTab,
-            window: harness.windowState
-        ))
-        let secondTarget = try XCTUnwrap(query.target(
-            extensionID: harness.extensionID,
-            tab: secondTab,
-            window: secondWindow
-        ))
-        let firstAdapter = try XCTUnwrap(
-            harness.attachedRuntime.adapters.stableAdapter(for: firstTab)
-        )
-        let secondAdapter = try XCTUnwrap(
-            harness.attachedRuntime.adapters.stableAdapter(for: secondTab)
-        )
-        let firstAction = try XCTUnwrap(
-            harness.context.action(for: firstAdapter)
-        )
-        let secondAction = try XCTUnwrap(
-            harness.context.action(for: secondAdapter)
-        )
-        XCTAssertNotEqual(firstTarget.tabIdentifier, secondTarget.tabIdentifier)
-        XCTAssertEqual(
-            firstTarget.adapterIdentifier,
-            ObjectIdentifier(firstAdapter)
-        )
-        XCTAssertEqual(
-            secondTarget.adapterIdentifier,
-            ObjectIdentifier(secondAdapter)
-        )
-        XCTAssertNotEqual(firstTarget.adapterIdentifier, secondTarget.adapterIdentifier)
-        XCTAssertIdentical(
-            firstAction.associatedTab as? ExtensionTabAdapter,
-            firstAdapter
-        )
-        XCTAssertIdentical(
-            secondAction.associatedTab as? ExtensionTabAdapter,
-            secondAdapter
-        )
-        XCTAssertNotNil(query.snapshot(for: firstTarget))
-        XCTAssertNotNil(query.snapshot(for: secondTarget))
-    }
-
-    func testPresentationQueryUsesAccountForkExecutionContextNotPresentationProfile()
-        async throws {
-        let harness = try await makeHarness(name: "PresentationAccountFork")
-        let executionProfile = Profile(name: "Presentation Execution")
-        harness.browserManager.profileManager.profiles.append(executionProfile)
-        let executionProfileID = executionProfile.id
-        let executionContext = WKWebExtensionContext(
-            for: harness.context.webExtension
-        )
-        harness.inspection.contextState.profiles.setContext(
-            executionContext,
-            extensionId: harness.extensionID,
-            profileId: executionProfileID
-        )
-        let executionController = harness.inspection.controller.provisioning
-            .ensureExtensionController(
-            for: executionProfileID
-        )
-        try executionController.load(executionContext)
-        addTeardownBlock {
-            try? executionController.unload(executionContext)
-        }
-        let forkedTab = makePublishedPresentationTab(
-            url: URL(string: "https://account-fork.example/")!,
-            profileID: executionProfileID,
-            harness: harness
-        )
-        let query = makePresentationQuery(harness: harness)
-
-        let target = try XCTUnwrap(query.target(
-            extensionID: harness.extensionID,
-            tab: forkedTab,
-            window: harness.windowState
-        ))
-
-        XCTAssertNotEqual(executionProfileID, harness.profileID)
-        XCTAssertEqual(
-            harness.inspection.contextState.profiles.currentProfileId,
-            harness.profileID
-        )
-        XCTAssertFalse(executionContext === harness.context)
-        XCTAssertEqual(target.profileID, executionProfileID)
-        XCTAssertEqual(
-            target.contextReceipt.key.profileId,
-            executionProfileID
-        )
-        XCTAssertNotNil(query.snapshot(for: target))
-    }
-
-    func testPresentationQueryRejectsAmbiguousContextBinding() async throws {
-        let harness = try await makeHarness(name: "PresentationAmbiguous")
-        let publishedTab = makePublishedPresentationTab(
-            url: Self.clickedPageURL,
-            profileID: harness.profileID,
-            harness: harness
-        )
-        let query = makePresentationQuery(harness: harness)
-        XCTAssertNotNil(query.target(
-            extensionID: harness.extensionID,
-            tab: publishedTab,
-            window: harness.windowState
-        ))
-
-        _ = harness.inspection.contextState.profiles.setContext(
-            harness.context,
-            extensionId: harness.extensionID,
-            profileId: UUID()
-        )
-
-        XCTAssertNil(query.target(
-            extensionID: harness.extensionID,
-            tab: publishedTab,
-            window: harness.windowState
-        ))
-    }
-
-    func testPresentationQueryRejectsSameIDWindowReplacement() async throws {
-        let harness = try await makeHarness(name: "PresentationWindowABA")
-        let tab = makePublishedPresentationTab(
-            url: Self.clickedPageURL,
-            profileID: harness.profileID,
-            harness: harness
-        )
-        let query = makePresentationQuery(harness: harness)
-        let staleTarget = try XCTUnwrap(query.target(
-            extensionID: harness.extensionID,
-            tab: tab,
-            window: harness.windowState
-        ))
-        XCTAssertNotNil(query.snapshot(for: staleTarget))
-
-        harness.windowRegistry.unregister(harness.windowState.id)
-        let replacement = BrowserWindowState(id: harness.windowState.id)
-        harness.browserManager.tabResidenceAuthority.establishResidenceSession(on: replacement)
-        replacement.currentProfileId = harness.profileID
-        replacement.currentSpaceId = tab.spaceId
-        replacement.currentTabId = tab.id
-        XCTAssertEqual(
-            harness.windowRegistry.register(replacement),
-            .registered
-        )
-
-        XCTAssertNil(query.snapshot(for: staleTarget))
-        XCTAssertNil(query.target(
-            extensionID: harness.extensionID,
-            tab: tab,
-            window: harness.windowState
-        ))
-        XCTAssertNil(query.target(
-            extensionID: harness.extensionID,
-            tab: tab,
-            window: replacement
-        ))
-    }
-
-    func testPresentationQueryRejectsSameRegularTabClaimedByTwoWindows()
-        async throws {
-        let harness = try await makeHarness(name: "PresentationTwoWindows")
-        let tab = makePublishedPresentationTab(
-            url: Self.clickedPageURL,
-            profileID: harness.profileID,
-            harness: harness
-        )
-        let secondWindow = BrowserWindowState()
-        harness.browserManager.tabResidenceAuthority.establishResidenceSession(on: secondWindow)
-        secondWindow.currentProfileId = harness.profileID
-        secondWindow.currentSpaceId = tab.spaceId
-        secondWindow.currentTabId = tab.id
-        XCTAssertEqual(
-            harness.windowRegistry.register(secondWindow),
-            .registered
-        )
-        addTeardownBlock { @MainActor in
-            harness.windowRegistry.unregister(secondWindow.id)
-        }
-        let query = makePresentationQuery(harness: harness)
-
-        XCTAssertNil(query.target(
-            extensionID: harness.extensionID,
-            tab: tab,
-            window: harness.windowState
-        ))
-        XCTAssertNil(query.target(
-            extensionID: harness.extensionID,
-            tab: tab,
-            window: secondWindow
-        ))
-    }
-
-    private func makePresentationQuery(
-        harness: Harness
+    func makePresentationQuery(
+        harness: ExtensionActionInvocationHarness
     ) -> ExtensionActionPresentationQuery {
         let profiles = harness.inspection.contextState.profiles
         let adapters = harness.attachedRuntime.adapters
@@ -1398,10 +812,10 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         )
     }
 
-    private func makePublishedPresentationTab(
+    func makePublishedPresentationTab(
         url: URL,
         profileID: UUID,
-        harness: Harness,
+        harness: ExtensionActionInvocationHarness,
         windowState: BrowserWindowState? = nil
     ) -> Tab {
         let windowState = windowState ?? harness.windowState
@@ -1444,12 +858,12 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         return tab
     }
 
-    private func clearHooks(_ harness: Harness) {
+    func clearHooks(_ harness: ExtensionActionInvocationHarness) {
         harness.manager.testHooks.permissionPromptDecision = nil
         harness.manager.testHooks.didDispatchExtensionAction = nil
     }
 
-    private func makeAdmission(
+    func makeAdmission(
         inspection: ExtensionManagerTestInspection,
         attachedRuntime: ExtensionAttachedBrowserRuntimeInspection
     ) -> (
@@ -1479,7 +893,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         return (request, invocation)
     }
 
-    private func makeInvocationService(
+    func makeInvocationService(
         inspection: ExtensionManagerTestInspection,
         attachedRuntime: ExtensionAttachedBrowserRuntimeInspection,
         actionDispatch: any ExtensionActionDispatching,
@@ -1567,8 +981,8 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         )
     }
 
-    private func exactInvocation(
-        in harness: Harness
+    func exactInvocation(
+        in harness: ExtensionActionInvocationHarness
     ) throws -> (ExtensionActionInvocationEvidence, WKWebExtension.Action) {
         harness.attachedRuntime.normalTabs.tabRegistration.register(
             harness.tab,
@@ -1604,7 +1018,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         return (evidence, action)
     }
 
-    private func makeHarness(name: String) async throws -> Harness {
+    func makeHarness(name: String) async throws -> ExtensionActionInvocationHarness {
         let container = try makeTestContainer()
         let profile = Profile(name: name)
         let attachedRuntime = ExtensionAttachedRuntimeCapture()
@@ -1651,7 +1065,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         addTeardownBlock { @MainActor in
             windowRegistry.unregister(windowState.id)
         }
-        return Harness(
+        return ExtensionActionInvocationHarness(
             manager: manager,
             inspection: inspection.inspection,
             attachedRuntime: attachedRuntime.runtime,
@@ -1668,7 +1082,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
     /// Installs an extension whose page access must be resolved through the
     /// action-click permission prompt: a concrete host permission for the
     /// clicked page, no `activeTab`.
-    private func installPromptingExtension(
+    func installPromptingExtension(
         inspection: ExtensionManagerTestInspection,
         name: String
     ) async throws -> InstalledExtension {
@@ -1710,19 +1124,19 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         )
     }
 
-    private func makeTestContainer() throws -> SumiDatabase {
+    func makeTestContainer() throws -> SumiDatabase {
         try SumiDatabase.inMemory()
     }
 
     /// Gives any stray continuation of the settled invocation a chance to
     /// run, so a late effect would be observed by the assertions.
-    private func drainMainActorTurns() async {
+    func drainMainActorTurns() async {
         for _ in 0..<10 {
             await Task.yield()
         }
     }
 
-    private static func copyRecord(
+    static func copyRecord(
         _ record: InstalledExtension,
         isEnabled: Bool,
         manifestRootFingerprint: String? = nil
@@ -1757,7 +1171,7 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
         )
     }
 
-    private static func makeSyntheticRecord(id: String) -> InstalledExtension {
+    static func makeSyntheticRecord(id: String) -> InstalledExtension {
         InstalledExtension(
             id: id,
             name: "Unrelated",
@@ -1795,9 +1209,9 @@ final class ExtensionActionInvocationAdmissionTests: XCTestCase {
     }
 }
 
-private final class ExtensionActionInvocationTestClock: @unchecked Sendable {
-    private let lock = NSLock()
-    private var value: TimeInterval
+final class ExtensionActionInvocationTestClock: @unchecked Sendable {
+    let lock = NSLock()
+    var value: TimeInterval
 
     init(now: TimeInterval) {
         value = now
@@ -1816,7 +1230,7 @@ private final class ExtensionActionInvocationTestClock: @unchecked Sendable {
 
 @available(macOS 15.5, *)
 @MainActor
-private final class RecoveringActionDispatch: ExtensionActionDispatching {
+final class RecoveringActionDispatch: ExtensionActionDispatching {
     let stalledBinding: ExtensionContextBindingReceipt
     private(set) var contexts: [WKWebExtensionContext] = []
 
@@ -1841,7 +1255,7 @@ private final class RecoveringActionDispatch: ExtensionActionDispatching {
 
 @available(macOS 15.5, *)
 @MainActor
-private final class SuccessfulBindingRecovery:
+final class SuccessfulBindingRecovery:
     ExtensionActionPopupBindingRecovering {
     private(set) var receipts: [ExtensionContextBindingReceipt] = []
 
@@ -1853,9 +1267,9 @@ private final class SuccessfulBindingRecovery:
 
 /// Fires a main-actor mutation exactly once from a synchronous observer;
 /// the attempt closure reports whether its firing condition was met.
-private final class ReentrantMutationTrigger: @unchecked Sendable {
+final class ReentrantMutationTrigger: @unchecked Sendable {
     private(set) var didFire = false
-    private let attempt: @MainActor () -> Bool
+    let attempt: @MainActor () -> Bool
 
     init(attempt: @escaping @MainActor () -> Bool) {
         self.attempt = attempt

@@ -121,9 +121,19 @@ def validate_architecture(inventory: dict[str, object]) -> None:
         for runtime_name in FORBIDDEN_RUNTIME_NAMES:
             if runtime_name in source:
                 violations.append(f"{relative}: obsolete runtime name {runtime_name}")
+        creates_database = "DatabasePool(" in source or "DatabaseQueue(" in source
+        is_canonical_database = (
+            relative == "Sumi/Persistence/SumiDatabase.swift"
+        )
+        is_external_sqlite_artifact = (
+            relative.startswith("Sumi/ImportExport/")
+            and relative.endswith("SQLiteArtifactWriter.swift")
+            and "Sumi.sqlite" not in source
+        )
         if (
-            ("DatabasePool(" in source or "DatabaseQueue(" in source)
-            and relative != "Sumi/Persistence/SumiDatabase.swift"
+            creates_database
+            and not is_canonical_database
+            and not is_external_sqlite_artifact
         ):
             violations.append(
                 f"{relative}: creates a database outside SumiDatabase"

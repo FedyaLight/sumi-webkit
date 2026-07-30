@@ -228,6 +228,7 @@ extension SumiLaunchSmokeUITestCase {
             "isShowingEmptyState": true,
             "activeTabsBySpace": [],
             "activeShortcutsBySpace": [],
+            "collapsedPinnedSpaceIDs": [],
             "sidebarWidth": 250.0,
             "savedSidebarWidth": 250.0,
             "sidebarContentWidth": 234.0,
@@ -271,6 +272,7 @@ extension SumiLaunchSmokeUITestCase {
                 "tabId": sidebar.regularTabID,
             ]],
             "activeShortcutsBySpace": [],
+            "collapsedPinnedSpaceIDs": [],
             "sidebarWidth": 250.0,
             "savedSidebarWidth": 250.0,
             "sidebarContentWidth": 234.0,
@@ -365,6 +367,7 @@ extension SumiLaunchSmokeUITestCase {
             "isShowingEmptyState": false,
             "activeTabsBySpace": [],
             "activeShortcutsBySpace": [],
+            "collapsedPinnedSpaceIDs": [],
             "sidebarWidth": 250.0,
             "savedSidebarWidth": 250.0,
             "sidebarContentWidth": 234.0,
@@ -505,13 +508,6 @@ extension SumiLaunchSmokeUITestCase {
             folderID: nil,
             indexWhereClause: regularTabWhereClause
         )
-        try moveSmokeRegularTabsToTop(
-            storeURL: storeURL,
-            personalSpaceID: SumiSmokeFixtureIDs.personalSpace,
-            primaryTabID: SumiSmokeFixtureIDs.regularTab,
-            secondaryTabID: SumiSmokeFixtureIDs.secondaryRegularTab
-        )
-
         try insertSmokeFolder(
             storeURL: storeURL,
             id: SumiSmokeFixtureIDs.folder,
@@ -627,42 +623,6 @@ extension SumiLaunchSmokeUITestCase {
                 \(sqlString(name)), \(isPinned ? 1 : 0), \(isSpacePinned ? 1 : 0),
                 \(index), \(sqlString("globe")), 0, \(sqlString(urlString)), 0, 0
             );
-            """,
-            storeURL: storeURL
-        )
-    }
-
-    func moveSmokeRegularTabsToTop(
-        storeURL: URL,
-        personalSpaceID: String,
-        primaryTabID: String,
-        secondaryTabID: String
-    ) throws {
-        let existingMinimum = try requiredScalar(
-            sql: """
-            SELECT COALESCE(MIN(position), 0) AS value
-            FROM tabs
-            WHERE lower(hex(space_id)) = '\(personalSpaceID)'
-              AND is_space_pinned = 0
-              AND is_pinned = 0
-              AND folder_id IS NULL
-              AND lower(hex(id)) NOT IN (\(sqlString(primaryTabID)), \(sqlString(secondaryTabID)));
-            """,
-            storeURL: storeURL,
-            description: "Unable to determine regular tab order for Personal space \(personalSpaceID)"
-        )
-        let firstIndex = (Int(existingMinimum) ?? 0) - 2
-        let secondIndex = firstIndex + 1
-
-        try executeSQLite(
-            sql: """
-            UPDATE tabs
-            SET position = CASE lower(hex(id))
-                WHEN \(sqlString(primaryTabID)) THEN \(firstIndex)
-                WHEN \(sqlString(secondaryTabID)) THEN \(secondIndex)
-                ELSE position
-            END
-            WHERE lower(hex(id)) IN (\(sqlString(primaryTabID)), \(sqlString(secondaryTabID)));
             """,
             storeURL: storeURL
         )
@@ -796,7 +756,7 @@ extension SumiLaunchSmokeUITestCase {
     }
 
     func smokeScratchBaseURL() throws -> URL {
-        FileManager.default.temporaryDirectory
+        URL(fileURLWithPath: "/private/tmp", isDirectory: true)
     }
 
     func openSQLiteDatabase(

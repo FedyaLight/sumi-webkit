@@ -30,7 +30,7 @@ final class SumiExtensionPopupOptionsUITests: SumiLaunchSmokeUITestCase {
             message: "The real extension action popup did not render its managed-package page"
         )
 
-        app.typeKey(.escape, modifierFlags: [])
+        browserWindow.typeKey(.escape, modifierFlags: [])
         wait(
             for: NSPredicate(format: "exists == false"),
             on: marker,
@@ -39,18 +39,31 @@ final class SumiExtensionPopupOptionsUITests: SumiLaunchSmokeUITestCase {
         )
     }
 
-    func testExtensionOptionsOpensExactManagedPackagePage() throws {
+    func testExtensionSettingsOpensExactManagedPackagePage() throws {
         let fixture = try prepareExtensionFixture()
         defer { fixture.landingServer.stop() }
         let app = try launchExtensionFixture(fixture)
         let browserWindow = app.windows.element(boundBy: 0)
         XCTAssertTrue(browserWindow.waitForExistence(timeout: 10), "The browser window did not appear")
 
-        let action = openExtensionHub(in: app, fixture: fixture)
-        action.rightClick()
-        let options = app.menuItems["Options"]
-        XCTAssertTrue(options.waitForExistence(timeout: 5), "The extension action menu has no Options command")
-        options.click()
+        app.menuBars.menuBarItems["Extensions"].click()
+        app.menuItems["Manage Extensions..."].click()
+
+        let details = app.buttons["extension-details-\(Self.extensionID)"]
+        XCTAssertTrue(
+            details.waitForExistence(timeout: 20),
+            "The exact managed extension is missing from extension settings"
+        )
+        details.click()
+
+        let openOptions = app.buttons[
+            "extension-open-options-\(Self.extensionID)"
+        ]
+        XCTAssertTrue(
+            openOptions.waitForExistence(timeout: 5),
+            "Extension settings do not expose the managed options page"
+        )
+        openOptions.click()
 
         let optionsWindow = app.windows[Self.optionsWindowTitle]
         XCTAssertTrue(
@@ -65,7 +78,12 @@ final class SumiExtensionPopupOptionsUITests: SumiLaunchSmokeUITestCase {
             message: "The options window did not render the exact managed-package page"
         )
 
-        app.typeKey("w", modifierFlags: [.command])
+        let closeButton = optionsWindow.buttons[XCUIIdentifierCloseWindow]
+        XCTAssertTrue(
+            closeButton.waitForExistence(timeout: 5),
+            "The native close control is missing from the options window"
+        )
+        closeButton.click()
         wait(
             for: NSPredicate(format: "exists == false"),
             on: optionsWindow,
@@ -96,10 +114,7 @@ final class SumiExtensionPopupOptionsUITests: SumiLaunchSmokeUITestCase {
 
         let preferencesHomeURL = try prepareSelectedRegularTabPreferencesHome(
             tabURLString: landingServer.pageURL.absoluteString,
-            tabName: "Extension UI Oracle",
-            additionalPreferences: [
-                "settings.modules.extensions.enabled": true,
-            ]
+            tabName: "Extension UI Oracle"
         )
 
         let packageURL = preferencesHomeURL
@@ -216,6 +231,10 @@ final class SumiExtensionPopupOptionsUITests: SumiLaunchSmokeUITestCase {
             additionalEnvironment: [
                 "AppleLanguages": "(en)",
                 "AppleLocale": "en_US",
+            ],
+            additionalArguments: [
+                "-settings.modules.extensions.enabled",
+                "YES",
             ]
         )
     }
@@ -236,9 +255,7 @@ final class SumiExtensionPopupOptionsUITests: SumiLaunchSmokeUITestCase {
         XCTAssertTrue(siteControls.waitForExistence(timeout: 20), "The Site Controls button is missing")
         siteControls.click()
 
-        let action = app.buttons.matching(
-            NSPredicate(format: "label == %@", Self.extensionName)
-        ).firstMatch
+        let action = app.buttons["extension-action-\(Self.extensionID)"]
         XCTAssertTrue(
             action.waitForExistence(timeout: 20),
             "The enabled extension did not reach the production action surface"

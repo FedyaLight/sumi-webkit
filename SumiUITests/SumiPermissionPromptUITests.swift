@@ -63,11 +63,8 @@ final class SumiPermissionPromptUITests: SumiLaunchSmokeUITestCase {
             timeout: 10,
             message: "Sumi did not present its permission authorization popover"
         )
-        let promptTitle = app.staticTexts.matching(
-            NSPredicate(format: "label CONTAINS[c] %@", "wants to open")
-        ).firstMatch
         XCTAssertTrue(
-            promptTitle.waitForExistence(timeout: 5),
+            prompt.label.localizedCaseInsensitiveContains("wants to open"),
             "The visible permission prompt is not the requested external-app decision"
         )
         let deny = app.buttons["Don't allow"]
@@ -82,12 +79,13 @@ final class SumiPermissionPromptUITests: SumiLaunchSmokeUITestCase {
         )
         XCTAssertTrue(pageMarker.exists, "Denying the external scheme navigated away from the source page")
 
+        let expectedHost = try XCTUnwrap(server.pageURL.host)
         let urlBar = app.staticTexts.matching(identifier: "sidebar-urlbar").firstMatch
         wait(
-            for: NSPredicate(format: "value == %@", server.pageURL.absoluteString),
+            for: NSPredicate(format: "value == %@", expectedHost),
             on: urlBar,
             timeout: 10,
-            message: "Denying the permission changed the exact active-page URL"
+            message: "Denying the permission changed the visible active-page host"
         )
     }
 

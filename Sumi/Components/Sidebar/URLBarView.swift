@@ -118,11 +118,6 @@ struct URLBarView: View {
                 }
             )
             .contentShape(Rectangle())
-            .accessibilityIdentifier(
-                presentationMode == .sidebar
-                    ? "sidebar-urlbar"
-                    : "topbar-urlbar"
-            )
             .sidebarHover { hovering in
                 withAnimation(.easeInOut(duration: 0.1)) {
                     isHovering = hovering

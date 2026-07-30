@@ -65,7 +65,7 @@ struct SumiSafariImportParser {
         return SumiSafariImportResult(
             data: SumiPortableData(
                 profiles: [
-                    SumiPortableProfile(id: profileId, name: browserName, index: 0, sourceDirectoryKey: "default")
+                    SumiPortableProfile(id: profileId, name: browserName, index: 0, sourceDirectoryKey: "default"),
                 ],
                 spaces: [
                     SumiPortableSpace(
@@ -76,7 +76,7 @@ struct SumiSafariImportParser {
                         profileId: profileId,
                         themeDataBase64: nil,
                         color: nil
-                    )
+                    ),
                 ],
                 folders: [],
                 essentials: [],
@@ -107,7 +107,7 @@ struct SumiSafariImportParser {
                 fileURL: fileURL,
                 kind: .safariPlist
             ).readBookmarks()
-            let converted = try SumiBookmarkPortableBridge.portableNodes(from: nodes)
+            let converted = SumiBookmarkPortableBridge.portableNodes(from: nodes)
             guard converted.isEmpty == false else { return [] }
             return [SumiPortableBookmarkNode(name: browserName, kind: .folder, urlString: nil, children: converted)]
         } catch {

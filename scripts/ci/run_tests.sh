@@ -46,6 +46,7 @@ run_xcode_suite() {
   local parallel_testing
   local scheme
   local configuration
+  local role
   local stem="${profile}-${suite}"
   local derived_data="${SUMI_CI_DERIVED_DATA:-$repo_root/build/ci-derived-data/$stem}"
   local build_result_bundle="${SUMI_CI_BUILD_RESULT_BUNDLE:-$repo_root/build/BuildResults/${stem}-build.xcresult}"
@@ -60,6 +61,7 @@ run_xcode_suite() {
   parallel_testing="$(manifest xcode-field parallel_testing_enabled)"
   scheme="$(manifest suite-field "$suite" scheme)"
   configuration="$(manifest suite-field "$suite" configuration)"
+  role="$(manifest suite-field "$suite" role)"
   selector_output="$(manifest selectors "$suite" "$profile")"
   localization_hash_before="$(git hash-object "$localization_catalog")"
   while IFS= read -r selector; do
@@ -75,9 +77,22 @@ run_xcode_suite() {
     -destination "$destination"
     -derivedDataPath "$derived_data"
     -parallel-testing-enabled "$parallel_testing"
-    CODE_SIGNING_ALLOWED=NO
-    CODE_SIGNING_REQUIRED=NO
   )
+  if [[ "$role" == "ui-test" ]]; then
+    common_arguments+=(
+      CODE_SIGNING_ALLOWED=YES
+      CODE_SIGNING_REQUIRED=YES
+      CODE_SIGN_IDENTITY=-
+      CODE_SIGN_STYLE=Manual
+      DEVELOPMENT_TEAM=
+      PROVISIONING_PROFILE_SPECIFIER=
+    )
+  else
+    common_arguments+=(
+      CODE_SIGNING_ALLOWED=NO
+      CODE_SIGNING_REQUIRED=NO
+    )
+  fi
   xcodebuild \
     "${common_arguments[@]}" \
     -resultBundlePath "$build_result_bundle" \

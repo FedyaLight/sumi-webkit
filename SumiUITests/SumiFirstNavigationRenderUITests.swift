@@ -72,7 +72,7 @@ final class SumiFirstNavigationRenderUITests: SumiLaunchSmokeUITestCase {
         let window = app.windows.element(boundBy: 0)
         XCTAssertTrue(window.waitForExistence(timeout: 10), "The browser window did not appear")
 
-        app.typeKey("t", modifierFlags: [.command])
+        openNewTabCommandPalette(in: app)
         XCTAssertTrue(
             waitForCommandPalette(in: app, timeout: 10),
             "URL Hub did not appear for the first navigation"
@@ -86,7 +86,7 @@ final class SumiFirstNavigationRenderUITests: SumiLaunchSmokeUITestCase {
             timeout: 10,
             message: "URL Hub did not receive the loopback fixture URL; value: \(String(describing: input.value))"
         )
-        app.typeKey(.return, modifierFlags: [])
+        input.typeKey(.return, modifierFlags: [])
         wait(
             for: NSPredicate(format: "exists == false"),
             on: element(withIdentifier: "command-palette-input", in: app),

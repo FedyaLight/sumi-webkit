@@ -104,13 +104,18 @@ class SumiLaunchSmokeUITestCase: XCTestCase {
     @MainActor
     func launchApp(
         preferencesHomeURL: URL? = nil,
-        additionalEnvironment: [String: String] = [:]
+        additionalEnvironment: [String: String] = [:],
+        additionalArguments: [String] = []
     ) throws -> XCUIApplication {
         if smokeAppSupportURL == nil {
             _ = try prepareSmokeStoreURL()
         }
         let app = XCUIApplication()
         app.launchArguments.append(contentsOf: ["-ApplePersistenceIgnoreState", "YES"])
+        app.launchArguments.append(
+            contentsOf: ["-settings.startup.mode", "restorePreviousSession"]
+        )
+        app.launchArguments.append(contentsOf: additionalArguments)
         app.launchArguments.append("--uitest-smoke")
         app.launchArguments.append("--uitest-sidebar-drag-marker=\(sidebarDragMarkerFileURL().path)")
         // Keeps automatic downloads out of the real ~/Downloads so macOS TCC does not prompt every run.
@@ -154,5 +159,10 @@ class SumiLaunchSmokeUITestCase: XCTestCase {
             .appendingPathComponent("SumiSidebarDrag-\(UUID().uuidString).marker", isDirectory: false)
         sidebarDragMarkerURL = url
         return url
+    }
+
+    func openNewTabCommandPalette(in app: XCUIApplication) {
+        app.menuBars.menuBarItems["File"].click()
+        app.menuItems["New Tab"].click()
     }
 }

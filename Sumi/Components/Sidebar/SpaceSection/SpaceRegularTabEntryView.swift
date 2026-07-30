@@ -45,6 +45,7 @@ struct SpaceRegularTabEntryView: View {
             isCurrentTab: isCurrentTab
         )
         .opacity(opacity)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("space-regular-tab-\(tab.id.uuidString)")
         .accessibilityValue(isCurrentTab ? "selected" : "not selected")
     }

@@ -216,7 +216,7 @@ extension SumiLaunchSmokeUITestCase {
             file: file,
             line: line
         )
-        app.typeKey(.escape, modifierFlags: [])
+        window.typeKey(.escape, modifierFlags: [])
         _ = waitForNonExistence(element(withIdentifier: "command-palette", in: app), timeout: 2)
     }
 
@@ -408,17 +408,14 @@ extension SumiLaunchSmokeUITestCase {
         in app: XCUIApplication
     ) throws {
         let pasteboard = NSPasteboard.general
-        let previousContents: [(type: NSPasteboard.PasteboardType, data: Data)] =
-            pasteboard.types?.compactMap { type in
-                pasteboard.data(forType: type).map { (type, $0) }
-            } ?? []
+        let previousContents = pasteboard.types?.compactMap { type in
+            pasteboard.data(forType: type).map { (type, $0) }
+        } ?? []
         defer {
             pasteboard.clearContents()
-            if previousContents.isEmpty == false {
-                pasteboard.declareTypes(previousContents.map(\.type), owner: nil)
-                for content in previousContents {
-                    pasteboard.setData(content.data, forType: content.type)
-                }
+            pasteboard.declareTypes(previousContents.map(\.0), owner: nil)
+            for (type, data) in previousContents {
+                pasteboard.setData(data, forType: type)
             }
         }
 
@@ -426,8 +423,12 @@ extension SumiLaunchSmokeUITestCase {
         guard pasteboard.setString(text, forType: .string) else {
             throw FixtureError.missingValue("Unable to seed the pasteboard")
         }
+
         input.click()
-        app.typeKey("v", modifierFlags: [.command])
+        app.menuBars.menuBarItems["Edit"].click()
+        let pasteItem = app.menuItems["Paste"].firstMatch
+        XCTAssertTrue(pasteItem.waitForExistence(timeout: 2), "Edit > Paste is unavailable")
+        pasteItem.click()
     }
 
     @MainActor
@@ -1390,7 +1391,7 @@ extension SumiLaunchSmokeUITestCase {
             if waitForMenuItem(expectedMenuItem, in: app, hittable: true, timeout: 2) {
                 return
             }
-            app.typeKey(.escape, modifierFlags: [])
+            element.typeKey(.escape, modifierFlags: [])
             RunLoop.current.run(until: Date().addingTimeInterval(0.15))
         }
 
@@ -1456,7 +1457,7 @@ extension SumiLaunchSmokeUITestCase {
             item.click()
         }
         if !waitForMenuItem(expectedSubmenuItem, in: app, hittable: true, timeout: 0.6) {
-            app.typeKey(XCUIKeyboardKey.rightArrow.rawValue, modifierFlags: [])
+            item.typeKey(XCUIKeyboardKey.rightArrow.rawValue, modifierFlags: [])
         }
         XCTAssertTrue(
             waitForMenuItem(expectedSubmenuItem, in: app, hittable: true, timeout: 2.5),
@@ -1476,7 +1477,7 @@ extension SumiLaunchSmokeUITestCase {
     ) {
         window.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.2)).click()
         if !waitForMenuItem(expectedMenuItem, in: app, hittable: false, timeout: 0.3) {
-            app.typeKey(.escape, modifierFlags: [])
+            window.typeKey(.escape, modifierFlags: [])
         }
         RunLoop.current.run(until: Date().addingTimeInterval(0.25))
     }
