@@ -260,7 +260,10 @@ enum WebsiteViewContextFactory {
                     }
                     return report
                 }
-            )
+            ),
+            presentNotification: { [weak browserManager] notification in
+                browserManager?.notificationPresenter.presentNotification(notification)
+            }
         )
     }
 

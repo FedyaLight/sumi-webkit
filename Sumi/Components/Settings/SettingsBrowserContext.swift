@@ -24,4 +24,6 @@ struct SettingsBrowserContext {
     let scheduleRuntimeStatePersistence: (Tab) -> Void
     let makePermissionRepository: () -> SumiPermissionSettingsRepository
     let dataRecoveryActions: SumiDataRecoveryActions
+    /// Routes transient settings feedback into the window's in-app notification stack.
+    let presentNotification: (BrowserNotification) -> Void
 }

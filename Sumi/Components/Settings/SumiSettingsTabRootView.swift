@@ -334,7 +334,8 @@ struct SumiSettingsTabRootView: View {
         case .privacy:
             PrivacySettingsView(
                 repository: browserContext.makePermissionRepository(),
-                activeProfile: activeSettingsProfile
+                activeProfile: activeSettingsProfile,
+                presentNotification: browserContext.presentNotification
             )
         case .profiles:
             SumiProfilesSettingsPane(

@@ -12,6 +12,7 @@ struct PrivacySettingsView: View {
     @Environment(\.sumiProtectionCoordinator) private var protectionCoordinator
     let repository: SumiPermissionSettingsRepository
     let activeProfile: Profile?
+    let presentNotification: (BrowserNotification) -> Void
 
     var body: some View {
         @Bindable var settings = sumiSettings
@@ -43,7 +44,8 @@ struct PrivacySettingsView: View {
 
                     if let protectionCoordinator {
                         AdblockProtectionSettingsView(
-                            coordinator: protectionCoordinator
+                            coordinator: protectionCoordinator,
+                            presentNotification: presentNotification
                         )
                     } else {
                         SettingsSection(title: "Adblock & Protection") {
@@ -91,15 +93,18 @@ private struct GlobalPrivacyControlSettingsView: View {
 
 private struct AdblockProtectionSettingsView: View {
     let coordinator: SumiProtectionCoordinator
+    let presentNotification: (BrowserNotification) -> Void
     @ObservedObject private var settings: SumiProtectionSettings
     @ObservedObject private var bundleUpdateStatus: SumiProtectionBundleUpdateStatusStore
     @State private var isApplying = false
     @State private var isUpdatingBundles = false
 
     init(
-        coordinator: SumiProtectionCoordinator
+        coordinator: SumiProtectionCoordinator,
+        presentNotification: @escaping (BrowserNotification) -> Void
     ) {
         self.coordinator = coordinator
+        self.presentNotification = presentNotification
         _settings = ObservedObject(wrappedValue: coordinator.settings)
         _bundleUpdateStatus = ObservedObject(wrappedValue: coordinator.bundleUpdateStatusStore)
     }
@@ -111,11 +116,6 @@ private struct AdblockProtectionSettingsView: View {
     private var protectionSettingsSection: some View {
         SettingsSection(title: "Adblock & Protection") {
             levelControls
-
-            if settings.browserRestartRequired {
-                SettingsDivider()
-                restartRequiredWarning
-            }
 
             SettingsDivider()
 
@@ -135,7 +135,7 @@ private struct AdblockProtectionSettingsView: View {
     private var levelControls: some View {
         SettingsRow(
             title: "Protection level",
-            subtitle: coordinator.applyNeeded ? "Apply changes to use the selected level." : nil
+            subtitle: levelSubtitle
         ) {
             HStack(spacing: 8) {
                 Picker("", selection: levelBinding) {
@@ -196,29 +196,16 @@ private struct AdblockProtectionSettingsView: View {
         }
     }
 
-    private var restartRequiredWarning: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(SettingsTypography.protectionWarningIcon)
-                .foregroundStyle(SettingsSurfaceStyle.warningText)
-                .frame(width: 18, height: 18)
-
-            Text("Restart Sumi to apply this change.")
-                .font(.callout.weight(.medium))
-                .foregroundStyle(SettingsSurfaceStyle.warningText)
-                .fixedSize(horizontal: false, vertical: true)
+    /// Restart-required is announced as a toast when it happens; the row keeps a
+    /// quiet trace of it so the pending restart stays discoverable afterwards.
+    private var levelSubtitle: String? {
+        if coordinator.applyNeeded {
+            return "Apply changes to use the selected level."
         }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(SettingsSurfaceStyle.warningBackground)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(SettingsSurfaceStyle.warningBorder, lineWidth: 1)
-        )
-        .accessibilityElement(children: .combine)
+        if settings.browserRestartRequired {
+            return "Restart Sumi to finish applying this level."
+        }
+        return nil
     }
 
     private var globalDiagnostics: SumiProtectionGlobalDiagnostics {
@@ -243,9 +230,16 @@ private struct AdblockProtectionSettingsView: View {
         isApplying = true
         Task {
             do {
-                let _ = try await coordinator.applySelectedLevel()
+                let outcome = try await coordinator.applySelectedLevel()
                 await MainActor.run {
                     isApplying = false
+                    if settings.browserRestartRequired {
+                        presentNotification(
+                            .protectionLevelApplied(
+                                levelTitle: outcome.appliedLevel.displayTitle
+                            )
+                        )
+                    }
                 }
             } catch {
                 await MainActor.run {
@@ -260,9 +254,14 @@ private struct AdblockProtectionSettingsView: View {
         isUpdatingBundles = true
         Task {
             do {
-                let _ = try await coordinator.updatePreparedBundlesManually()
+                let outcome = try await coordinator.updatePreparedBundlesManually()
                 await MainActor.run {
                     isUpdatingBundles = false
+                    if outcome.activation == .installedRestartRequired {
+                        presentNotification(
+                            .protectionBundlesUpdated(releaseVersion: outcome.releaseVersion)
+                        )
+                    }
                 }
             } catch {
                 await MainActor.run {
