@@ -35,6 +35,7 @@ final class ExtensionControllerRuntimeRelease {
         }
         profileRuntime.replaceControllers([:])
         profileRuntime.removeAllWebsiteDataStores()
+        profileRuntime.unbindBrowserProfileQuery()
         runtimeDemand.reset()
         runtimeLifecycle.resetAfterShutdown()
     }

@@ -24,6 +24,7 @@ final class ExtensionBrowserAttachmentProfileCoordinator {
     }
 
     func rememberProfiles(in bridge: BrowserExtensionBridgeComposition) {
+        profileRuntime.bindBrowserProfileQuery(bridge.profiles)
         if let currentProfile = bridge.profiles.currentProfile() {
             profileRuntime.rememberProfile(currentProfile)
         }

@@ -107,6 +107,52 @@ final class ZoomManagerTests: XCTestCase {
         XCTAssertEqual(manager.getZoomLevel(for: domain, profileId: profileId), 2.0, accuracy: 0.001)
     }
 
+    func testPrivatePartitionZoomStaysInMemoryAndIsDiscarded() throws {
+        let manager = makeManager()
+        let profileId = UUID()
+        let key = scopedZoomKey(for: domain, profileId: profileId)
+
+        manager.saveZoomLevel(
+            1.5,
+            for: domain,
+            profileId: profileId,
+            isEphemeralProfile: true
+        )
+
+        XCTAssertEqual(
+            manager.getZoomLevel(
+                for: domain,
+                profileId: profileId,
+                isEphemeralProfile: true
+            ),
+            1.5,
+            accuracy: 0.001
+        )
+        XCTAssertNil(defaults.object(forKey: key))
+
+        try manager.deletePreferences(profileID: profileId)
+
+        XCTAssertEqual(
+            manager.getZoomLevel(
+                for: domain,
+                profileId: profileId,
+                isEphemeralProfile: true
+            ),
+            1,
+            accuracy: 0.001
+        )
+    }
+
+    func testDurableProfileZoomStillPersists() {
+        let manager = makeManager()
+        let profileId = UUID()
+        let key = scopedZoomKey(for: domain, profileId: profileId)
+
+        manager.saveZoomLevel(1.75, for: domain, profileId: profileId)
+
+        XCTAssertEqual(defaults.double(forKey: key), 1.75, accuracy: 0.001)
+    }
+
     private func makeManager() -> ZoomManager {
         ZoomManager(userDefaults: defaults)
     }

@@ -140,6 +140,18 @@ final class SumiAdblockZapperStore {
         statesByScopeAndHost = candidate
     }
 
+    /// Drops a private partition's in-memory Zapper state. Ephemeral scopes are
+    /// never persisted, so there is nothing to write and nothing to verify.
+    func discardPrivatePartition(profileID: UUID) {
+        guard let scope = Scope(
+            profilePartitionId: profileID.uuidString,
+            isEphemeralProfile: true
+        ) else {
+            return
+        }
+        statesByScopeAndHost.removeValue(forKey: scope.storageKey)
+    }
+
     private func updateState(
         forHost host: String,
         profilePartitionId: String,

@@ -6,6 +6,9 @@ struct BrowserZoomTarget {
     let webView: WKWebView
     let domain: String
     let profileID: UUID?
+    /// Whether `profileID` names a private partition, whose zoom preferences
+    /// must never be persisted.
+    let isEphemeralProfile: Bool
 }
 
 @MainActor
@@ -53,11 +56,13 @@ final class BrowserZoomTargetResolver {
     }
 
     func makeTarget(tab: Tab, webView: WKWebView) -> BrowserZoomTarget {
-        BrowserZoomTarget(
+        let profile = tab.resolveProfile()
+        return BrowserZoomTarget(
             tab: tab,
             webView: webView,
             domain: tab.url.host ?? tab.url.absoluteString,
-            profileID: tab.resolveProfile()?.id ?? tab.profileId
+            profileID: profile?.id ?? tab.profileId,
+            isEphemeralProfile: profile?.isEphemeral ?? tab.isEphemeral
         )
     }
 }

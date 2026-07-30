@@ -22,7 +22,7 @@
         "profile retirement state",
         "extension and content-blocker metadata",
         "window and last-session snapshots",
-        "site policies",
+        "site policies for durable profiles",
         "live folders",
         "download content-handler registry",
         "favicon metadata",
@@ -42,6 +42,7 @@
         "appearance choices",
         "search settings",
         "download directory bookmark",
+        "per-profile website zoom for durable profiles",
         "small scalar UI preferences"
       ],
       "location": "Runtime UserDefaults domain",
@@ -53,7 +54,7 @@
       "classification": "authoritative",
       "contents": [
         "cookies and website data owned by WKWebsiteDataStore",
-        "WebExtension website storage",
+        "persistent WebExtension website storage for durable profiles",
         "credentials owned by Keychain"
       ],
       "location": "Locations selected and managed by macOS and WebKit",
@@ -103,6 +104,7 @@
       "classification": "ephemeral",
       "contents": [
         "incognito browser state",
+        "private-partition site policies, zoom, adblock zaps, and non-persistent WebExtension controller state",
         "recently closed items",
         "live WKWebView objects",
         "in-flight import staging receipts"
@@ -122,6 +124,15 @@
         "write bulk history in bounded Sumi.sqlite batches",
         "apply WebKit data through platform APIs",
         "complete or compensate using the database journal"
+      ]
+    },
+    {
+      "operation": "private-partition teardown",
+      "ordering": [
+        "release the final private-window lease",
+        "discard visited links, private basic-auth credentials, and the favicon partition",
+        "best-effort sweep legacy site-policy, zoom, adblock-zapper, extension-document, Keychain, and controller-directory residue",
+        "destroy the non-persistent WebKit data store"
       ]
     },
     {

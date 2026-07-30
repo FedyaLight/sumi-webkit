@@ -52,6 +52,12 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
         let controller = try XCTUnwrap(
             inspection.contextState.profiles.controllerForCurrentProfile()
         )
+        XCTAssertTrue(controller.configuration.isPersistent)
+        XCTAssertEqual(
+            controller.configuration.identifier,
+            ExtensionControllerProvisioningOwner
+                .extensionControllerIdentifier(for: profile.id)
+        )
         let profileStore = profile.dataStore
         let controllerDefaultStore = try XCTUnwrap(
             controller.configuration.defaultWebsiteDataStore
@@ -202,6 +208,9 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
             configuration.webExtensionController?.configuration.defaultWebsiteDataStore,
             ephemeralProfile.dataStore
         )
+        let controller = try XCTUnwrap(configuration.webExtensionController)
+        XCTAssertFalse(controller.configuration.isPersistent)
+        XCTAssertNil(controller.configuration.identifier)
     }
 
     func testPrivateRuntimeProfileMarkerSurvivesWindowRegistryLoss() throws {
@@ -232,22 +241,22 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
         XCTAssertTrue(inspection.contextState.profiles.isPrivateRuntimeProfile(ephemeralProfile.id))
     }
 
-    func testProfileStoreCachePreservesCurrentProfileOnEviction() {
+    func testProfileStoreCachePreservesCurrentProfileOnEviction() throws {
         let cache = ExtensionProfileWebsiteDataStoreCache(limit: 2)
         let currentProfileId = UUID()
         let inactiveProfileId = UUID()
         let newestProfileId = UUID()
 
-        let currentStore = cache.store(
+        let currentStore = try XCTUnwrap(cache.store(
             for: currentProfileId,
             activeProfile: nil,
             currentProfileId: currentProfileId
-        )
-        let inactiveStore = cache.store(
+        ))
+        let inactiveStore = try XCTUnwrap(cache.store(
             for: inactiveProfileId,
             activeProfile: nil,
             currentProfileId: currentProfileId
-        )
+        ))
 
         XCTAssertIdentical(cache.cachedStore(for: currentProfileId), currentStore)
         XCTAssertIdentical(cache.cachedStore(for: inactiveProfileId), inactiveStore)
@@ -263,22 +272,22 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
         XCTAssertNotNil(cache.cachedStore(for: newestProfileId))
     }
 
-    func testProfileStoreCacheTouchRefreshesEvictionOrder() {
+    func testProfileStoreCacheTouchRefreshesEvictionOrder() throws {
         let cache = ExtensionProfileWebsiteDataStoreCache(limit: 2)
         let firstProfileId = UUID()
         let secondProfileId = UUID()
         let newestProfileId = UUID()
 
-        let firstStore = cache.store(
+        let firstStore = try XCTUnwrap(cache.store(
             for: firstProfileId,
             activeProfile: nil,
             currentProfileId: nil
-        )
-        let secondStore = cache.store(
+        ))
+        let secondStore = try XCTUnwrap(cache.store(
             for: secondProfileId,
             activeProfile: nil,
             currentProfileId: nil
-        )
+        ))
 
         XCTAssertIdentical(cache.cachedStore(for: firstProfileId), firstStore)
         XCTAssertIdentical(cache.cachedStore(for: secondProfileId), secondStore)
@@ -297,6 +306,132 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
         XCTAssertIdentical(cache.cachedStore(for: firstProfileId), firstStore)
         XCTAssertNil(cache.cachedStore(for: secondProfileId))
         XCTAssertNotNil(cache.cachedStore(for: newestProfileId))
+    }
+
+    func testPrivatePartitionSurvivesEvictionPressure() throws {
+        let cache = ExtensionProfileWebsiteDataStoreCache(limit: 2)
+        let privateProfile = Profile.createEphemeral()
+
+        cache.remember(privateProfile)
+        for _ in 0..<3 {
+            _ = cache.store(
+                for: UUID(),
+                activeProfile: nil,
+                currentProfileId: nil
+            )
+        }
+
+        XCTAssertIdentical(
+            cache.cachedStore(for: privateProfile.id),
+            privateProfile.dataStore
+        )
+        let resolved = try XCTUnwrap(cache.store(
+            for: privateProfile.id,
+            activeProfile: nil,
+            currentProfileId: nil
+        ))
+        XCTAssertFalse(resolved.isPersistent)
+    }
+
+    func testPrivatePartitionWithoutStoreFailsClosed() {
+        let cache = ExtensionProfileWebsiteDataStoreCache()
+        let privateProfile = Profile.createEphemeral()
+
+        cache.rememberPrivateRuntimeProfileIfNeeded(privateProfile)
+
+        XCTAssertNil(cache.cachedStore(for: privateProfile.id))
+        XCTAssertNil(cache.store(
+            for: privateProfile.id,
+            activeProfile: nil,
+            currentProfileId: nil
+        ))
+    }
+
+    func testRememberReplacesMintedStoreWithPrivatePartitionStore() throws {
+        let cache = ExtensionProfileWebsiteDataStoreCache()
+        let privateProfile = Profile.createEphemeral()
+
+        let minted = try XCTUnwrap(cache.store(
+            for: privateProfile.id,
+            activeProfile: nil,
+            currentProfileId: nil
+        ))
+        XCTAssertTrue(minted.isPersistent)
+
+        cache.remember(privateProfile)
+
+        XCTAssertIdentical(
+            cache.cachedStore(for: privateProfile.id),
+            privateProfile.dataStore
+        )
+        let resolved = try XCTUnwrap(cache.store(
+            for: privateProfile.id,
+            activeProfile: nil,
+            currentProfileId: nil
+        ))
+        XCTAssertFalse(resolved.isPersistent)
+    }
+
+    func testUnrememberedPrivateWindowResolvesNonPersistentStore() throws {
+        let container = try SumiDatabase.inMemory()
+        let persistentProfile = Profile(name: "Regular Profile")
+        let ephemeralProfile = Profile.createEphemeral()
+        let windowRegistry = WindowRegistry()
+        let browserManager = BrowserManager(windowRegistry: windowRegistry)
+        browserManager.profileManager.profiles = [persistentProfile]
+
+        let fixture = makeManager(
+            context: container,
+            initialProfile: persistentProfile
+        )
+        let inspection = fixture.inspection
+        fixture.manager.attach(browserManager: browserManager)
+
+        // Registered only after attachment, so the private partition was never
+        // remembered by the profile runtime.
+        let privateWindow = BrowserWindowState()
+        privateWindow.isIncognito = true
+        privateWindow.ephemeralProfile = ephemeralProfile
+        windowRegistry.register(privateWindow)
+
+        let store = try XCTUnwrap(
+            inspection.controller.provisioning.websiteDataStoreIfAdmitted(
+                for: ephemeralProfile.id
+            )
+        )
+
+        XCTAssertIdentical(store, ephemeralProfile.dataStore)
+        XCTAssertFalse(store.isPersistent)
+        XCTAssertTrue(
+            inspection.contextState.profiles
+                .isPrivateRuntimeProfile(ephemeralProfile.id)
+        )
+    }
+
+    func testUnresolvableProfileFailsClosedWhileAttached() throws {
+        let container = try SumiDatabase.inMemory()
+        let persistentProfile = Profile(name: "Regular Profile")
+        let windowRegistry = WindowRegistry()
+        let browserManager = BrowserManager(windowRegistry: windowRegistry)
+        browserManager.profileManager.profiles = [persistentProfile]
+
+        let fixture = makeManager(
+            context: container,
+            initialProfile: persistentProfile
+        )
+        let inspection = fixture.inspection
+        fixture.manager.attach(browserManager: browserManager)
+
+        XCTAssertNil(
+            inspection.controller.provisioning.websiteDataStoreIfAdmitted(
+                for: UUID()
+            )
+        )
+        XCTAssertNil(
+            inspection.controller.provisioning.controllerIfAdmitted(
+                for: UUID()
+            )
+        )
     }
 
     private func makeManager(

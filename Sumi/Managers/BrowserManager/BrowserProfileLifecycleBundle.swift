@@ -148,6 +148,13 @@ extension BrowserManager {
             adblockZapperStore: adblockZapperStore,
             database: database
         )
+        profileManager.privatePartitionResidueCleanup =
+            PrivatePartitionResidueCleanupComposition.make(
+                siteDataPolicyStore: dataServices.siteDataPolicyStore,
+                zoomManager: zoomManager,
+                adblockZapperStore: adblockZapperStore,
+                database: database
+            )
         let cleanupDependencies = ProfileRetirementCleanupDependencies(
             websiteDataCleanupService: dataServices.websiteDataCleanupService,
             faviconService: dataServices.faviconService,

@@ -35,6 +35,9 @@ final class SumiSiteDataPolicyStore {
     private static let documentKey = "site-data.policies"
     private let database: SumiDatabase?
     private var policies: [String: [String: SumiSiteDataPolicyState]]
+    /// Profile keys naming a private partition. Their policies stay in memory
+    /// for the lifetime of the window and are filtered out of every write.
+    private var privatePartitionKeys: Set<String> = []
     private let changesSubject = PassthroughSubject<Void, Never>()
     private(set) var diagnostics = SumiSiteDataPolicyStoreDiagnostics()
 
@@ -65,9 +68,14 @@ final class SumiSiteDataPolicyStore {
     func setBlockStorage(
         _ isEnabled: Bool,
         forHost host: String,
-        profileId: UUID?
+        profileId: UUID?,
+        isEphemeralProfile: Bool = false
     ) {
-        update(host: host, profileId: profileId) { state in
+        update(
+            host: host,
+            profileId: profileId,
+            isEphemeralProfile: isEphemeralProfile
+        ) { state in
             state.blockStorage = isEnabled
         }
     }
@@ -75,9 +83,14 @@ final class SumiSiteDataPolicyStore {
     func setDeleteWhenAllWindowsClosed(
         _ isEnabled: Bool,
         forHost host: String,
-        profileId: UUID?
+        profileId: UUID?,
+        isEphemeralProfile: Bool = false
     ) {
-        update(host: host, profileId: profileId) { state in
+        update(
+            host: host,
+            profileId: profileId,
+            isEphemeralProfile: isEphemeralProfile
+        ) { state in
             state.deleteWhenAllWindowsClosed = isEnabled
         }
     }
@@ -108,19 +121,22 @@ final class SumiSiteDataPolicyStore {
     func deletePolicies(profileId: UUID) throws {
         guard case .failedDecode = diagnostics.loadOutcome else {
             let profileKey = profileId.uuidString.lowercased()
-            guard policies[profileKey] != nil else { return }
+            guard policies[profileKey] != nil
+                || privatePartitionKeys.contains(profileKey)
+            else { return }
 
             var candidate = policies
             candidate.removeValue(forKey: profileKey)
             if let database {
-                try database.transaction {
+                try database.transaction { [persistable = persistableSnapshot(candidate)] in
                     try $0.documents.save(
-                        candidate,
+                        persistable,
                         forKey: Self.documentKey
                     )
                 }
             }
             policies = candidate
+            privatePartitionKeys.remove(profileKey)
             diagnostics.lastPersistFailure = nil
             changesSubject.send(())
             return
@@ -131,6 +147,7 @@ final class SumiSiteDataPolicyStore {
     private func update(
         host: String,
         profileId: UUID?,
+        isEphemeralProfile: Bool,
         mutate: (inout SumiSiteDataPolicyState) -> Void
     ) {
         guard
@@ -138,6 +155,10 @@ final class SumiSiteDataPolicyStore {
             let hostKey = normalizedHost(host)
         else {
             return
+        }
+
+        if isEphemeralProfile {
+            privatePartitionKeys.insert(profileKey)
         }
 
         var candidate = policies
@@ -157,18 +178,36 @@ final class SumiSiteDataPolicyStore {
             candidate[profileKey] = profilePolicies
         }
 
-        guard candidate != policies, persist(candidate) else { return }
+        guard candidate != policies else { return }
+        if isEphemeralProfile {
+            // A private partition owns no durable record, so there is nothing
+            // to persist and nothing to fail.
+            policies = candidate
+            changesSubject.send(())
+            return
+        }
+        guard persist(candidate) else { return }
         policies = candidate
         changesSubject.send(())
+    }
+
+    /// Drops every private partition from a snapshot bound for the database.
+    /// Durable writes carry the whole map, so this is what keeps a private
+    /// partition off disk once any other profile changes a policy.
+    private func persistableSnapshot(
+        _ candidate: [String: [String: SumiSiteDataPolicyState]]
+    ) -> [String: [String: SumiSiteDataPolicyState]] {
+        guard privatePartitionKeys.isEmpty == false else { return candidate }
+        return candidate.filter { privatePartitionKeys.contains($0.key) == false }
     }
 
     private func persist(
         _ candidate: [String: [String: SumiSiteDataPolicyState]]
     ) -> Bool {
         do {
-            try database?.transaction {
+            try database?.transaction { [persistable = persistableSnapshot(candidate)] in
                 try $0.documents.save(
-                    candidate,
+                    persistable,
                     forKey: Self.documentKey
                 )
             }

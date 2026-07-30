@@ -8,6 +8,10 @@ final class ExtensionProfileRuntime {
     private let websiteDataStoreCache: ExtensionProfileWebsiteDataStoreCache
     private let profileReferenceAdmission: ProfileReferenceAdmissionLedger
     private var knownProfilesByID: [UUID: Profile]
+    /// Browser-owned profile lookup, available only while a browser runtime is
+    /// attached. It is the evidence that lets store resolution distinguish a
+    /// durable profile from a private partition it has not met yet.
+    private var browserProfileQuery: ExtensionBrowserProfileQuery?
     var currentProfileId: UUID?
 
     init(
@@ -411,6 +415,11 @@ final class ExtensionProfileRuntime {
         }
     #endif
 
+    /// Resolves the profile's own website data store, remembering a profile the
+    /// browser can still resolve. A bare identifier that the attached browser
+    /// cannot resolve fails closed: it belongs to a retired profile or to a
+    /// private partition whose window is gone, and minting a persistent store
+    /// for either would write private browsing state to disk.
     func websiteDataStoreIfAdmitted(
         for profileId: UUID,
         mutationLease: ProfileReferenceMutationLease
@@ -421,11 +430,32 @@ final class ExtensionProfileRuntime {
         ) else {
             return nil
         }
+        if knownProfilesByID[profileId] == nil,
+           let browserProfileQuery {
+            guard let resolved = browserProfileQuery.anyProfile(profileId),
+                  rememberProfile(resolved)
+            else {
+                RuntimeDiagnostics.emit(
+                    "🔒 [ExtensionProfileRuntime] Refused website data store for unresolvable profile: \(profileId.uuidString)"
+                )
+                return nil
+            }
+        }
         return websiteDataStoreCache.store(
             for: profileId,
             activeProfile: knownProfilesByID[profileId],
             currentProfileId: currentProfileId
         )
+    }
+
+    /// Binds the browser-owned profile lookup for the lifetime of one browser
+    /// attachment.
+    func bindBrowserProfileQuery(_ profileQuery: ExtensionBrowserProfileQuery) {
+        browserProfileQuery = profileQuery
+    }
+
+    func unbindBrowserProfileQuery() {
+        browserProfileQuery = nil
     }
 
     @discardableResult

@@ -20,6 +20,10 @@ _Avoid_: Startup store, bookmark database, profile database
 A specialized store whose lifecycle is owned by macOS or WebKit, such as Keychain or `WKWebsiteDataStore`, and which is referenced but never reimplemented by the Browser Database.
 _Avoid_: Legacy store, auxiliary database
 
+**Private Partition**:
+A non-durable browsing partition shared only by explicitly related incognito windows. It pairs one non-persistent `WKWebsiteDataStore` with memory-only Sumi state keyed by the same UUID and is destroyed after its final window lease closes.
+_Avoid_: Incognito profile, temporary Browser Profile
+
 ## Content Blocking Language
 
 **Blocker Rule Inventory**:

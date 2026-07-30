@@ -25,6 +25,8 @@ final class ProfileManager: ObservableObject {
     private(set) var profileStoreIsAvailable = true
     private let faviconService: any BrowserFaviconServicing
     private let visitedLinkStore: any BrowserVisitedLinkStoreManaging
+    var privatePartitionResidueCleanup:
+        any PrivatePartitionResidueCleaning
 
     // MARK: - Ephemeral Profiles (Incognito)
     /// Active ephemeral profiles (one per incognito window)
@@ -34,7 +36,9 @@ final class ProfileManager: ObservableObject {
         database: SumiDatabase,
         profileReferenceAdmission: ProfileReferenceAdmissionLedger? = nil,
         faviconService: any BrowserFaviconServicing = TabDependencyIsolationDefaults.faviconService,
-        visitedLinkStore: any BrowserVisitedLinkStoreManaging = TabDependencyIsolationDefaults.visitedLinkStore
+        visitedLinkStore: any BrowserVisitedLinkStoreManaging = TabDependencyIsolationDefaults.visitedLinkStore,
+        privatePartitionResidueCleanup: any PrivatePartitionResidueCleaning =
+            TabDependencyIsolationDefaults.privatePartitionResidueCleanup
     ) {
         self.database = database
         if let profileReferenceAdmission {
@@ -53,6 +57,8 @@ final class ProfileManager: ObservableObject {
         }
         self.faviconService = faviconService
         self.visitedLinkStore = visitedLinkStore
+        self.privatePartitionResidueCleanup =
+            privatePartitionResidueCleanup
         loadProfiles()
     }
 
@@ -421,6 +427,7 @@ final class ProfileManager: ObservableObject {
                 "[ProfileManager] Failed to clear ephemeral favicon partition: \(error)"
             )
         }
+        privatePartitionResidueCleanup.cleanup(profileID: profile.id)
         profile.destroyEphemeralDataStore()
     }
 }

@@ -21,6 +21,11 @@ class ZoomManager: ObservableObject {
     // Current zoom state for each tab
     private var tabZoomLevels: [UUID: Double] = [:]
 
+    // Per-domain zoom for private partitions. A private partition's preferences
+    // live for the lifetime of its window only, so they are never written to
+    // UserDefaults.
+    private var privatePartitionZoomLevels: [String: Double] = [:]
+
     // Published properties for UI updates
     var currentZoomLevel: Double = 1.0
     var currentDomain: String?
@@ -32,21 +37,44 @@ class ZoomManager: ObservableObject {
     // MARK: - Public Methods
 
     /// Get zoom level for a specific domain
-    func getZoomLevel(for domain: String, profileId: UUID? = nil) -> Double {
+    func getZoomLevel(
+        for domain: String,
+        profileId: UUID? = nil,
+        isEphemeralProfile: Bool = false
+    ) -> Double {
         guard let key = zoomStorageKey(for: domain, profileId: profileId) else {
             return Self.defaultZoomLevel
+        }
+
+        if isEphemeralProfile {
+            return privatePartitionZoomLevels[key].map(clampZoom)
+                ?? Self.defaultZoomLevel
         }
 
         return zoomLevel(forKey: key).map(clampZoom) ?? Self.defaultZoomLevel
     }
 
     /// Save zoom level for a specific domain
-    func saveZoomLevel(_ zoomLevel: Double, for domain: String, profileId: UUID? = nil) {
+    func saveZoomLevel(
+        _ zoomLevel: Double,
+        for domain: String,
+        profileId: UUID? = nil,
+        isEphemeralProfile: Bool = false
+    ) {
         guard let key = zoomStorageKey(for: domain, profileId: profileId) else {
             return
         }
 
         let clampedZoom = clampZoom(zoomLevel)
+        if isEphemeralProfile {
+            if isDefaultZoom(clampedZoom) {
+                privatePartitionZoomLevels.removeValue(forKey: key)
+            } else {
+                privatePartitionZoomLevels[key] = clampedZoom
+            }
+            return
+        }
+
         if isDefaultZoom(clampedZoom) {
             userDefaults.removeObject(forKey: key)
         } else {
@@ -231,6 +259,9 @@ class ZoomManager: ObservableObject {
 
     func deletePreferences(profileID: UUID) throws {
         let prefix = "\(zoomKeyPrefix)\(profileID.uuidString.lowercased())."
+        for key in privatePartitionZoomLevels.keys where key.hasPrefix(prefix) {
+            privatePartitionZoomLevels.removeValue(forKey: key)
+        }
         let matchingKeys = userDefaults.dictionaryRepresentation().keys.filter {
             $0.hasPrefix(prefix)
         }

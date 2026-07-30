@@ -25,6 +25,9 @@ enum TabDependencyIsolationDefaults {
     private static let visitedLinkAuthority = NoOpBrowserVisitedLinkStore()
     static let visitedLinkStore: any BrowserVisitedLinkStoreManaging = visitedLinkAuthority
     static let historyVisitedLinkStore: any HistoryVisitedLinkStoring = visitedLinkAuthority
+    static let privatePartitionResidueCleanup:
+        any PrivatePartitionResidueCleaning =
+            NoOpPrivatePartitionResidueCleanup()
 }
 
 @MainActor
@@ -116,4 +119,10 @@ private final class NoOpBrowserVisitedLinkStore:
     ) {}
     func preloadVisitedLinks(_ _: [URL], for _: UUID) {}
     func discardStore(for _: UUID) {}
+}
+
+@MainActor
+private final class NoOpPrivatePartitionResidueCleanup:
+    PrivatePartitionResidueCleaning {
+    func cleanup(profileID _: UUID) {}
 }

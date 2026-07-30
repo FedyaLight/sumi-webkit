@@ -44,7 +44,8 @@ final class SumiSiteDataPolicyEnforcementService {
         policyStore.setBlockStorage(
             isEnabled,
             forHost: normalizedHost,
-            profileId: profile.id
+            profileId: profile.id,
+            isEphemeralProfile: profile.isEphemeral
         )
 
         if isEnabled {
@@ -61,7 +62,8 @@ final class SumiSiteDataPolicyEnforcementService {
         policyStore.setDeleteWhenAllWindowsClosed(
             isEnabled,
             forHost: host,
-            profileId: profile.id
+            profileId: profile.id,
+            isEphemeralProfile: profile.isEphemeral
         )
     }
 

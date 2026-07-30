@@ -586,6 +586,9 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         let harness = try makeHarness()
         let service = BrowserWindowShellService()
         let context = makeContext(harness: harness) { _, _ in /* No-op. */ }
+        let residueCleanup = RecordingPrivatePartitionResidueCleanup()
+        harness.browserManager.profileManager.privatePartitionResidueCleanup =
+            residueCleanup
         let windowState = BrowserWindowState()
         windowState.isIncognito = true
         harness.browserManager.tabResidenceAuthority
@@ -623,6 +626,58 @@ final class BrowserWindowShellServiceTests: XCTestCase {
                 reason: "incognito-profile-close"
             )
         )
+        XCTAssertEqual(residueCleanup.profileIDs, [ephemeralProfile.id])
+    }
+
+    func testSharedPrivatePartitionIsSweptOnlyAfterFinalWindowCloses()
+        async throws {
+        let harness = try makeHarness()
+        let service = BrowserWindowShellService()
+        let context = makeContext(harness: harness) { _, _ in /* No-op. */ }
+        let residueCleanup = RecordingPrivatePartitionResidueCleanup()
+        harness.browserManager.profileManager.privatePartitionResidueCleanup =
+            residueCleanup
+        let firstWindow = BrowserWindowState()
+        firstWindow.isIncognito = true
+        let secondWindow = BrowserWindowState()
+        secondWindow.isIncognito = true
+
+        let profile = harness.browserManager.profileManager
+            .createEphemeralProfile(for: firstWindow.id)
+        firstWindow.ephemeralProfile = profile
+        secondWindow.ephemeralProfile = try XCTUnwrap(
+            harness.browserManager.profileManager.shareEphemeralProfile(
+                from: firstWindow.id,
+                with: secondWindow.id
+            )
+        )
+
+        await service.closeIncognitoWindow(firstWindow, using: context)
+
+        XCTAssertTrue(residueCleanup.profileIDs.isEmpty)
+
+        await service.closeIncognitoWindow(secondWindow, using: context)
+
+        XCTAssertEqual(residueCleanup.profileIDs, [profile.id])
+    }
+
+    func testCancelledPrivatePartitionCreationSweepsResidue() throws {
+        let harness = try makeHarness()
+        let residueCleanup = RecordingPrivatePartitionResidueCleanup()
+        harness.browserManager.profileManager.privatePartitionResidueCleanup =
+            residueCleanup
+        let windowID = UUID()
+        let profile = harness.browserManager.profileManager
+            .createEphemeralProfile(for: windowID)
+
+        XCTAssertTrue(
+            harness.browserManager.profileManager
+                .cancelEphemeralProfileCreation(
+                    for: windowID,
+                    expected: profile
+                )
+        )
+        XCTAssertEqual(residueCleanup.profileIDs, [profile.id])
     }
 
     private struct Harness {
@@ -712,6 +767,16 @@ private final class WindowPresentationRecordingWindow: NSWindow {
     override func orderFront(_ sender: Any?) {
         orderFrontCallCount += 1
         _ = sender
+    }
+}
+
+@MainActor
+private final class RecordingPrivatePartitionResidueCleanup:
+    PrivatePartitionResidueCleaning {
+    private(set) var profileIDs: [UUID] = []
+
+    func cleanup(profileID: UUID) {
+        profileIDs.append(profileID)
     }
 }
 

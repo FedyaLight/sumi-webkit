@@ -19,20 +19,27 @@ final class ExtensionProfileWebsiteDataStoreCache {
     /// A profile is represented by one WKWebsiteDataStore object for the
     /// lifetime of the runtime; recreating a store with the same identifier
     /// still breaks WebKit's object-identity checks on configurations.
+    /// A cached store that disagrees with the profile's own store is replaced,
+    /// so a browser-owned store always wins over one this cache minted.
     func remember(_ profile: Profile) {
         let profileID = profile.id
-        if storesByProfile[profileID] == nil {
+        if storesByProfile[profileID] !== profile.dataStore {
             storesByProfile[profileID] = profile.dataStore
             touch(profileID)
         }
         rememberPrivateRuntimeProfileIfNeeded(profile)
     }
 
+    /// Resolves the one store object that represents this profile, minting a
+    /// persistent store only for a profile that can own one.
+    /// A private partition's store is non-persistent and therefore not
+    /// reconstructible from a UUID, so resolution fails closed rather than
+    /// minting persistent storage for a private browsing session.
     func store(
         for profileId: UUID,
         activeProfile: Profile?,
         currentProfileId: UUID?
-    ) -> WKWebsiteDataStore {
+    ) -> WKWebsiteDataStore? {
         if let activeProfile, activeProfile.id == profileId {
             remember(activeProfile)
             return activeProfile.dataStore
@@ -41,6 +48,13 @@ final class ExtensionProfileWebsiteDataStoreCache {
         if let store = storesByProfile[profileId] {
             touch(profileId)
             return store
+        }
+
+        guard isPrivateRuntimeProfile(profileId) == false else {
+            RuntimeDiagnostics.emit(
+                "🔒 [ExtensionProfileStoreCache] Refused persistent store for private partition: \(profileId.uuidString)"
+            )
+            return nil
         }
 
         let signpostState = PerformanceTrace.beginInterval(
@@ -98,11 +112,17 @@ final class ExtensionProfileWebsiteDataStoreCache {
         storeOrder.append(profileId)
     }
 
+    /// Evicts least recently used persistent stores, which resolution can mint
+    /// again on demand. The current profile and every private partition are
+    /// never evicted: a private partition's non-persistent store cannot be
+    /// recreated from its UUID, so dropping it would either fail resolution or
+    /// leak the session onto disk. The cache therefore exceeds `limit` while
+    /// enough private windows are open, which is the intended trade.
     private func evictIfNeeded(currentProfileId: UUID?) {
         while storesByProfile.count > limit {
             guard let evictionID = storeOrder.first(where: {
-                $0 != currentProfileId
-            }) ?? storeOrder.first else {
+                $0 != currentProfileId && isPrivateRuntimeProfile($0) == false
+            }) else {
                 return
             }
 

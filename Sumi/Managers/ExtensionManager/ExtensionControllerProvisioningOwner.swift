@@ -274,9 +274,15 @@ final class ExtensionControllerProvisioningOwner:
         defaultDataStore: WKWebsiteDataStore,
         profileId: UUID
     ) -> WKWebExtensionController {
-        let configuration = WKWebExtensionController.Configuration(
-            identifier: Self.extensionControllerIdentifier(for: profileId)
-        )
+        // A private partition must not own persistent controller storage:
+        // WebKit writes a unique on-disk directory for every identified
+        // configuration, so an incognito session would outlive its window.
+        let configuration = dependencies.profileRuntime
+            .isPrivateRuntimeProfile(profileId)
+            ? WKWebExtensionController.Configuration.nonPersistent()
+            : WKWebExtensionController.Configuration(
+                identifier: Self.extensionControllerIdentifier(for: profileId)
+            )
         let runtimeWebConfiguration = dependencies.browserConfiguration.webViewConfiguration
         let extensionPageConfiguration = makeExtensionPageBaseWebViewConfiguration(
             from: runtimeWebConfiguration,

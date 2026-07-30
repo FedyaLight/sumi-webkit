@@ -355,6 +355,74 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         XCTAssertEqual(store.hostsDeletingWhenAllWindowsClosed(profileId: profileB), ["accounts.youtube.com"])
     }
 
+    func testPrivateSiteDataPoliciesStayInMemoryAcrossDurableWrites() throws {
+        let database = try SumiDatabase.inMemory()
+        let store = SumiSiteDataPolicyStore(database: database)
+        let privateProfileID = UUID()
+        let durableProfileID = UUID()
+
+        store.setBlockStorage(
+            true,
+            forHost: "private.example",
+            profileId: privateProfileID,
+            isEphemeralProfile: true
+        )
+
+        XCTAssertTrue(
+            store.state(
+                forHost: "private.example",
+                profileId: privateProfileID
+            ).blockStorage
+        )
+        XCTAssertNil(try persistedSiteDataPolicies(in: database))
+
+        store.setDeleteWhenAllWindowsClosed(
+            true,
+            forHost: "durable.example",
+            profileId: durableProfileID
+        )
+
+        let persisted = try XCTUnwrap(
+            persistedSiteDataPolicies(in: database)
+        )
+        XCTAssertNil(
+            persisted[privateProfileID.uuidString.lowercased()]
+        )
+        XCTAssertTrue(
+            persisted[durableProfileID.uuidString.lowercased()]?[
+                "durable.example"
+            ]?.deleteWhenAllWindowsClosed == true
+        )
+    }
+
+    func testDeletePoliciesRemovesLegacyPersistedPrivatePartition() throws {
+        let database = try SumiDatabase.inMemory()
+        let privateProfileID = UUID()
+        let profileKey = privateProfileID.uuidString.lowercased()
+        try database.transaction {
+            try $0.documents.save(
+                [
+                    profileKey: [
+                        "private.example": SumiSiteDataPolicyState(
+                            blockStorage: true
+                        ),
+                    ],
+                ],
+                forKey: "site-data.policies"
+            )
+        }
+        let store = SumiSiteDataPolicyStore(database: database)
+
+        try store.deletePolicies(profileId: privateProfileID)
+
+        XCTAssertNil(
+            try persistedSiteDataPolicies(in: database)?[profileKey]
+        )
+        XCTAssertTrue(
+            store.hostsWithPolicies(profileId: privateProfileID).isEmpty
+        )
+    }
+
     func testSiteDataBlockStoragePolicyDeletesExactHostImmediately() async throws {
         let store = SumiSiteDataPolicyStore(
             database: try SumiDatabase.inMemory()
@@ -420,6 +488,17 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
             cleanupService.removedExactHosts[0].dataTypes,
             WKWebsiteDataStore.sumiManualFullCleanupDataTypes
         )
+    }
+
+    private func persistedSiteDataPolicies(
+        in database: SumiDatabase
+    ) throws -> [String: [String: SumiSiteDataPolicyState]]? {
+        try database.read {
+            try $0.documents.value(
+                [String: [String: SumiSiteDataPolicyState]].self,
+                forKey: "site-data.policies"
+            )
+        }
     }
 
     func testURLBarSiteDataDeleteUsesManualFullExactHostCleanup() async throws {

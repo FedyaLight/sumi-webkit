@@ -210,6 +210,11 @@ protocol BrowserSiteDataPolicyStoring: AnyObject {
 extension SumiSiteDataPolicyStore: BrowserSiteDataPolicyStoring {}
 
 @MainActor
+protocol PrivatePartitionResidueCleaning: AnyObject {
+    func cleanup(profileID: UUID)
+}
+
+@MainActor
 struct SumiBrowsingDataCleanupScheduleRequest {
     var retentionPeriod: SumiBrowsingDataRetentionPeriod
     var historyManager: HistoryManager

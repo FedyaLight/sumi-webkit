@@ -481,6 +481,7 @@
         "SumiTests/PerformanceSettingsTests",
         "SumiTests/PermissionSidebarPinningOwnerTests",
         "SumiTests/PinnedGridLayoutModelTests",
+        "SumiTests/PrivatePartitionResidueCleanupTests",
         "SumiTests/ProfileApplicationDataCleanupServiceTests",
         "SumiTests/ProfileDeletionCleanupOrchestratorTests",
         "SumiTests/ProfileSelectionCoordinatorTests",
