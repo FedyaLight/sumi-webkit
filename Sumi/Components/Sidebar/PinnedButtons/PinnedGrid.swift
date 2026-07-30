@@ -30,8 +30,6 @@ enum PinnedGridContextResolver {
 }
 
 struct PinnedGrid: View {
-    private static let collapsedRevealHeight: CGFloat = 6
-
     let width: CGFloat
     let browserContext: SidebarBrowserContext
     let inventory: SidebarSpaceInventorySnapshot
@@ -56,7 +54,13 @@ struct PinnedGrid: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
     @Environment(\.sidebarWindowSelectionSnapshot) private var sidebarSelection
+
+    private var tokens: ChromeThemeTokens {
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
+    }
+
     init(
         width: CGFloat,
         browserContext: SidebarBrowserContext,
@@ -106,9 +110,7 @@ struct PinnedGrid: View {
         let dragFrame = dragPresentation.frame
 
         // Use profile-filtered essentials
-        let effectiveProfileId = profileId
-            ?? windowState.currentProfileId
-            ?? browserContext.profileAuthority.currentProfile?.id
+        let effectiveProfileId = resolvedProfileId
         let visualItems = SidebarEssentialVisualProjection.make(
             pins: items,
             splitGroups: Array(inventory.splitGroupsByID.values),
@@ -121,6 +123,9 @@ struct PinnedGrid: View {
             dragGeometry: dragGeometry,
             geometrySpaceId: geometrySpaceId,
             effectiveProfileId: effectiveProfileId,
+            showsHint: sumiSettings.showsEssentialsPlaceholder(
+                profileId: effectiveProfileId
+            ),
             animateLayout: animateLayout,
             reportsGeometry: reportsGeometry,
             isActiveWindow: windowRegistry.activeWindow?.id == windowState.id,
@@ -131,8 +136,7 @@ struct PinnedGrid: View {
         let reportsDetailedGeometry = layout.reportsDetailedGeometry
         let shouldAnimateDropLayout = layout.shouldAnimateDropLayout
         let shouldAnimateContentLayout = layout.shouldAnimateContentLayout
-        let showsRevealGap = layout.showsRevealGap
-        let revealTileSize = layout.revealTileSize
+        let emptyPresentation = layout.emptyPresentation
         let revealHeight = layout.revealHeight
         let visibleRowCount = layout.visibleRowCount
         let maxDropRowCount = layout.maxDropRowCount
@@ -144,18 +148,12 @@ struct PinnedGrid: View {
 
         ZStack(alignment: .topLeading) {
             if visualItems.isEmpty {
-                VStack(spacing: 0) {
-                    if showsRevealGap {
-                        Color.clear
-                            .frame(width: revealTileSize.width, height: revealTileSize.height)
-                    } else {
-                        Color.clear
-                            .frame(height: Self.collapsedRevealHeight)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .top)
-                .frame(height: revealHeight, alignment: .top)
-                .animation(shouldAnimateDropLayout ? .easeInOut(duration: 0.18) : nil, value: showsRevealGap)
+                renderEmptyZone(
+                    presentation: emptyPresentation,
+                    isDismissible: layout.showsHint,
+                    revealHeight: revealHeight,
+                    animatesReveal: shouldAnimateDropLayout
+                )
             } else {
                 LazyVStack(spacing: PinnedTileMetrics.gridSpacing) {
                     ForEach(displayRows, id: \.stableID) { row in
@@ -223,6 +221,40 @@ struct PinnedGrid: View {
             }
         }
         .allowsHitTesting(!isTransitioningProfile)
+    }
+
+    @ViewBuilder
+    private func renderEmptyZone(
+        presentation: PinnedGridLayoutModel.EmptyPresentation,
+        isDismissible: Bool,
+        revealHeight: CGFloat,
+        animatesReveal: Bool
+    ) -> some View {
+        let dismiss: (() -> Void)? = isDismissible ? { dismissPlaceholder() } : nil
+
+        VStack(spacing: 0) {
+            switch presentation {
+            case .placeholder:
+                EssentialsPlaceholderView(
+                    tokens: tokens,
+                    cornerRadius: sumiSettings.resolvedCornerRadius(
+                        PinnedTileMetrics.cornerRadius
+                    ),
+                    onDismiss: dismiss
+                )
+            case .collapsed:
+                Color.clear
+                    .frame(height: PinnedTileMetrics.collapsedEssentialsRevealHeight)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .top)
+        .frame(height: revealHeight, alignment: .top)
+        .animation(
+            animatesReveal
+                ? .easeInOut(duration: EssentialsPlaceholderMetrics.revealAnimationDuration)
+                : nil,
+            value: presentation
+        )
     }
 
     @ViewBuilder
@@ -355,6 +387,22 @@ struct PinnedGrid: View {
             in: windowState,
             selection: selectionSnapshot
         )
+    }
+
+    /// Essentials are profile-scoped, so every profile-keyed read in this view
+    /// resolves through the same explicit → window → authority fallback.
+    private var resolvedProfileId: UUID? {
+        profileId
+            ?? windowState.currentProfileId
+            ?? browserContext.profileAuthority.currentProfile?.id
+    }
+
+    private func dismissPlaceholder() {
+        guard let resolvedProfileId else { return }
+
+        mutateContentLayout {
+            sumiSettings.dismissEssentialsPlaceholder(profileId: resolvedProfileId)
+        }
     }
 
     private func activate(_ pin: ShortcutPin) {

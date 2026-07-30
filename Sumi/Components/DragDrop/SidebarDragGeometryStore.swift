@@ -300,31 +300,20 @@ struct SidebarPageGeometryMetrics: Equatable {
 
 struct SidebarEssentialsLayoutMetrics: Equatable {
     let profileId: UUID?
-    var frame: CGRect
-    var dropFrame: CGRect
-    var dropSlotFrames: [SidebarEssentialsDropSlotMetrics]
-    var firstSyntheticRowSlot: Int
-    var visibleItemCount: Int
-    var visibleRowCount: Int
-    var maxDropRowCount: Int
-    var itemSize: CGSize
-    var canAcceptDrop: Bool
+    let frame: CGRect
+    let dropFrame: CGRect
+    let dropSlotFrames: [SidebarEssentialsDropSlotMetrics]
+    let firstSyntheticRowSlot: Int
+    let visibleItemCount: Int
+    let visibleRowCount: Int
+    let maxDropRowCount: Int
+    let itemSize: CGSize
+    let canAcceptDrop: Bool
 
-    var dropHitFrame: CGRect {
-        guard visibleItemCount == 0, canAcceptDrop else {
-            return dropFrame
-        }
-
-        let minimumEmptyFrame = CGRect(
-            x: dropFrame.minX,
-            y: dropFrame.minY,
-            width: max(dropFrame.width, frame.width, itemSize.width),
-            height: max(dropFrame.height, itemSize.height)
-        )
-        return dropSlotFrames.reduce(dropFrame.union(minimumEmptyFrame)) { partial, slot in
-            partial.union(slot.frame)
-        }
-    }
+    /// Pre-resolved by `SidebarEssentialsDropHitPolicy` when the metrics are
+    /// built, so `containsDropLocation` stays a single rect test on every
+    /// `draggingUpdated`.
+    let dropHitFrame: CGRect
 
     func containsDropLocation(_ location: CGPoint) -> Bool {
         dropHitFrame.contains(location)

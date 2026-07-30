@@ -252,7 +252,7 @@ enum SidebarEssentialsProjectionPolicy {
         return layoutItems
     }
 
-    private static func resolvedCapacityColumnCount(
+    static func resolvedCapacityColumnCount(
         for width: CGFloat
     ) -> Int {
         guard width > 0 else { return 1 }

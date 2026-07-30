@@ -520,6 +520,9 @@
     "Downloads" : {
 
     },
+    "Drag to add Favorites" : {
+
+    },
     "Drag to rearrange this split. Split Layout commands provide keyboard alternatives." : {
 
     },
@@ -607,6 +610,9 @@
     "Extensions" : {
 
     },
+    "Favorites keep your most used sites and apps close" : {
+
+    },
     "Filter search engines" : {
 
     },
@@ -666,6 +672,9 @@
 
     },
     "Hide Live Folder Item" : {
+
+    },
+    "Hide the Favorites hint" : {
 
     },
     "History" : {

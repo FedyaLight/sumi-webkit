@@ -39,6 +39,7 @@ class SumiSettingsService {
     let performance: PerformanceSettingsStore
     let startupPrivacy: StartupPrivacySettingsStore
     let downloads: DownloadSettingsStore
+    let essentialsHint: EssentialsHintSettingsStore
 
     /// Owns settings-surface UI routing (selected pane, privacy route, sub-pane,
     /// and URL translation). Kept separate from preference persistence.
@@ -171,6 +172,16 @@ class SumiSettingsService {
     var didFinishOnboarding: Bool {
         get { chrome.didFinishOnboarding }
         set { chrome.didFinishOnboarding = newValue }
+    }
+
+    // MARK: - Essentials hint façade
+
+    func showsEssentialsPlaceholder(profileId: UUID?) -> Bool {
+        essentialsHint.showsPlaceholder(profileId: profileId)
+    }
+
+    func dismissEssentialsPlaceholder(profileId: UUID) {
+        essentialsHint.dismissPlaceholder(profileId: profileId)
     }
 
     // MARK: - Performance façade
@@ -404,6 +415,10 @@ class SumiSettingsService {
             downloadsAlwaysAskWhereToSaveKey: "settings.downloads.alwaysAskWhereToSave",
             downloadsFallbackActionKey: "settings.downloads.fallbackAction",
             downloadApplicationsStore: downloadApplicationsStore
+        )
+        self.essentialsHint = EssentialsHintSettingsStore(
+            userDefaults: userDefaults,
+            dismissedProfileIdsKey: "settings.essentials.placeholderDismissedProfileIds"
         )
 
         chrome.enforceSumiChromeDefaults()

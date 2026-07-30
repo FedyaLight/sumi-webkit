@@ -244,6 +244,8 @@ struct EssentialsSnapshotGrid: View {
     let width: CGFloat
     let tokens: ChromeThemeTokens
 
+    @Environment(\.sumiSettings) private var sumiSettings
+
     private var rows: [EssentialsSnapshotRow] {
         let columns = capacityColumnCount
         guard !snapshot.items.isEmpty else { return [] }
@@ -257,21 +259,35 @@ struct EssentialsSnapshotGrid: View {
     }
 
     private var capacityColumnCount: Int {
-        guard width > 0 else { return 1 }
-
-        var columns = SidebarEssentialsProjectionPolicy.maxColumns
-        while columns > 1 {
-            let neededWidth = CGFloat(columns) * PinnedTileMetrics.minWidth
-                + CGFloat(columns - 1) * PinnedTileMetrics.gridSpacing
-            if neededWidth <= width {
-                break
-            }
-            columns -= 1
-        }
-        return max(1, columns)
+        SidebarEssentialsProjectionPolicy.resolvedCapacityColumnCount(for: width)
     }
 
     var body: some View {
+        Group {
+            if snapshot.items.isEmpty {
+                emptyState
+            } else {
+                tileRows
+            }
+        }
+        .frame(width: width, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var emptyState: some View {
+        if snapshot.showsPlaceholder {
+            EssentialsPlaceholderView(
+                tokens: tokens,
+                cornerRadius: sumiSettings.resolvedCornerRadius(PinnedTileMetrics.cornerRadius),
+                onDismiss: nil
+            )
+        } else {
+            Color.clear
+                .frame(height: PinnedTileMetrics.collapsedEssentialsRevealHeight)
+        }
+    }
+
+    private var tileRows: some View {
         VStack(alignment: .leading, spacing: PinnedTileMetrics.gridSpacing) {
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                 HStack(spacing: PinnedTileMetrics.gridSpacing) {
@@ -294,15 +310,13 @@ struct EssentialsSnapshotGrid: View {
                 }
             }
         }
-        .frame(width: width, alignment: .leading)
-        .frame(height: rows.isEmpty ? 6 : nil, alignment: .top)
     }
 
     private func visualTileSize(visualColumnCount: Int) -> CGSize {
-        let columns = max(visualColumnCount, 1)
-        let availableWidth = max(width - (CGFloat(columns - 1) * PinnedTileMetrics.gridSpacing), 0)
-        let tileWidth = max(availableWidth / CGFloat(columns), PinnedTileMetrics.minWidth)
-        return CGSize(width: tileWidth, height: PinnedTileMetrics.height)
+        SidebarEssentialsProjectionPolicy.visualTileSize(
+            width: width,
+            visualColumnCount: visualColumnCount
+        )
     }
 
     private struct EssentialsSnapshotRow {

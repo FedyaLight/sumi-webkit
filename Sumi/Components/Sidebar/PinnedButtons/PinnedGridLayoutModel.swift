@@ -14,7 +14,14 @@ import SwiftUI
 /// consumes, so that orchestration can be tested independently of SwiftUI.
 @MainActor
 struct PinnedGridLayoutModel {
-    private static let collapsedRevealHeight: CGFloat = 6
+    /// How the zone presents itself while it holds no Essentials.
+    enum EmptyPresentation: Equatable {
+        /// Invisible strip: the hint was dismissed and no drag is hovering.
+        case collapsed
+        /// The dashed placeholder — either the un-dismissed hint, or the
+        /// drag-hover reveal that replaces it once dismissed.
+        case placeholder
+    }
 
     let width: CGFloat
     let items: [SidebarEssentialVisualItem]
@@ -22,6 +29,7 @@ struct PinnedGridLayoutModel {
     let dragGeometry: SidebarDragGeometryModule
     let geometrySpaceId: UUID
     let effectiveProfileId: UUID?
+    let showsHint: Bool
     let shouldAnimateDropLayout: Bool
     let shouldAnimateContentLayout: Bool
     let reportsDetailedGeometry: Bool
@@ -36,6 +44,7 @@ struct PinnedGridLayoutModel {
         dragGeometry: SidebarDragGeometryModule,
         geometrySpaceId: UUID,
         effectiveProfileId: UUID?,
+        showsHint: Bool,
         animateLayout: Bool,
         reportsGeometry: Bool,
         isActiveWindow: Bool,
@@ -48,6 +57,7 @@ struct PinnedGridLayoutModel {
         self.dragGeometry = dragGeometry
         self.geometrySpaceId = geometrySpaceId
         self.effectiveProfileId = effectiveProfileId
+        self.showsHint = showsHint
 
         gridProjection = SidebarEssentialsGridProjection(width: width)
         projectedLayout = SidebarEssentialsProjectionPolicy.make(
@@ -74,8 +84,14 @@ struct PinnedGridLayoutModel {
         return true
     }
 
-    var showsRevealGap: Bool {
-        items.isEmpty && isHoveringThisEssentials && projectedLayout.canAcceptDrop
+    /// The hint stands in for the drag-hover reveal: while the placeholder is on
+    /// screen it already is the drop target, so there is no separate gap to open.
+    var emptyPresentation: EmptyPresentation {
+        guard items.isEmpty else { return .collapsed }
+        if showsHint { return .placeholder }
+        return isHoveringThisEssentials && projectedLayout.canAcceptDrop
+            ? .placeholder
+            : .collapsed
     }
 
     var revealTileSize: CGSize {
@@ -83,7 +99,9 @@ struct PinnedGridLayoutModel {
     }
 
     var revealHeight: CGFloat {
-        showsRevealGap ? revealTileSize.height : Self.collapsedRevealHeight
+        emptyPresentation == .placeholder
+            ? EssentialsPlaceholderMetrics.height
+            : PinnedTileMetrics.collapsedEssentialsRevealHeight
     }
 
     var visibleRowCount: Int {

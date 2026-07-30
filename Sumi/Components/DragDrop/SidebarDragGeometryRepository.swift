@@ -474,17 +474,27 @@ final class SidebarDragGeometryRepository {
                 return lhs.frame.minX < rhs.frame.minX
             }
 
+        let resolvedVisibleItemCount = input.visibleItemCount ?? input.itemCount
+
         return SidebarEssentialsLayoutMetrics(
             profileId: input.profileId,
             frame: input.frame,
             dropFrame: input.dropFrame,
             dropSlotFrames: resolvedDropSlotFrames,
             firstSyntheticRowSlot: resolvedFirstSyntheticRowSlot,
-            visibleItemCount: input.visibleItemCount ?? input.itemCount,
+            visibleItemCount: resolvedVisibleItemCount,
             visibleRowCount: resolvedVisibleRowCount,
             maxDropRowCount: resolvedMaxDropRowCount,
             itemSize: input.itemSize,
-            canAcceptDrop: input.canAcceptDrop
+            canAcceptDrop: input.canAcceptDrop,
+            dropHitFrame: SidebarEssentialsDropHitPolicy.resolvedDropHitFrame(
+                frame: input.frame,
+                dropFrame: input.dropFrame,
+                dropSlotFrames: resolvedDropSlotFrames,
+                visibleItemCount: resolvedVisibleItemCount,
+                itemSize: input.itemSize,
+                canAcceptDrop: input.canAcceptDrop
+            )
         )
     }
 

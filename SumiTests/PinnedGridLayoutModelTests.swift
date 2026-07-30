@@ -23,6 +23,7 @@ final class PinnedGridLayoutModelTests: XCTestCase {
         width: CGFloat = 300,
         items: [ShortcutPin] = [],
         dragState: SidebarDragState = SidebarDragState(),
+        showsHint: Bool = false,
         animateLayout: Bool = true,
         reportsGeometry: Bool = true,
         isActiveWindow: Bool = true,
@@ -36,6 +37,7 @@ final class PinnedGridLayoutModelTests: XCTestCase {
             dragGeometry: dragState.geometry,
             geometrySpaceId: UUID(),
             effectiveProfileId: UUID(),
+            showsHint: showsHint,
             animateLayout: animateLayout,
             reportsGeometry: reportsGeometry,
             isActiveWindow: isActiveWindow,
@@ -44,15 +46,82 @@ final class PinnedGridLayoutModelTests: XCTestCase {
         )
     }
 
+    /// Puts the essentials presentation into the state the resolver produces
+    /// while a drag hovers an empty zone.
+    private func makeHoveringDragState() -> SidebarDragState {
+        let dragState = SidebarDragState()
+        dragState.beginExternalDragSession(itemId: nil)
+        dragState.presentDropResolution(
+            SidebarDropResolution(
+                slot: .essentials(slot: 0),
+                folderIntent: .none,
+                activeHoveredFolderId: nil
+            )
+        )
+        return dragState
+    }
+
     // MARK: - Empty essentials
 
-    func testEmptyItemsWithoutHoverCollapsesToMinimalRevealHeight() {
-        let model = makeModel(items: [])
+    func testEmptyItemsWithoutHintOrHoverCollapsesToMinimalRevealHeight() {
+        let model = makeModel(items: [], showsHint: false)
 
-        XCTAssertFalse(model.showsRevealGap)
-        XCTAssertEqual(model.revealHeight, 6)
+        XCTAssertEqual(model.emptyPresentation, .collapsed)
+        XCTAssertEqual(model.revealHeight, PinnedTileMetrics.collapsedEssentialsRevealHeight)
         XCTAssertEqual(model.maxDropRowCount, 1)
-        XCTAssertEqual(model.dropFrame, CGRect(x: 0, y: 0, width: 300, height: 6))
+        XCTAssertEqual(
+            model.dropFrame,
+            CGRect(
+                x: 0,
+                y: 0,
+                width: 300,
+                height: PinnedTileMetrics.collapsedEssentialsRevealHeight
+            )
+        )
+    }
+
+    func testUndismissedHintShowsThePlaceholderWithoutADrag() {
+        let model = makeModel(items: [], showsHint: true)
+
+        XCTAssertEqual(model.emptyPresentation, .placeholder)
+        XCTAssertEqual(model.revealHeight, EssentialsPlaceholderMetrics.height)
+        XCTAssertEqual(
+            model.dropFrame,
+            CGRect(x: 0, y: 0, width: 300, height: EssentialsPlaceholderMetrics.height)
+        )
+    }
+
+    func testDismissedHintRevealsThePlaceholderWhileADragHoversTheZone() {
+        let model = makeModel(
+            items: [],
+            dragState: makeHoveringDragState(),
+            showsHint: false
+        )
+
+        XCTAssertEqual(model.emptyPresentation, .placeholder)
+        XCTAssertEqual(model.revealHeight, EssentialsPlaceholderMetrics.height)
+    }
+
+    func testDragHoveringAnotherZoneLeavesTheEmptyEssentialsCollapsed() {
+        let dragState = SidebarDragState()
+        dragState.beginExternalDragSession(itemId: nil)
+        dragState.presentDropResolution(
+            SidebarDropResolution(
+                slot: .spaceRegular(spaceId: UUID(), slot: 0),
+                folderIntent: .none,
+                activeHoveredFolderId: nil
+            )
+        )
+
+        let model = makeModel(items: [], dragState: dragState, showsHint: false)
+
+        XCTAssertEqual(model.emptyPresentation, .collapsed)
+    }
+
+    func testNonEmptyEssentialsNeverReportAnEmptyPresentation() {
+        let model = makeModel(items: [makePin(index: 0)], showsHint: true)
+
+        XCTAssertEqual(model.emptyPresentation, .collapsed)
     }
 
     // MARK: - Non-empty essentials

@@ -806,10 +806,9 @@ enum SidebarDropResolver {
             return nil
         }
 
-        // Clean handoff between Essentials and Pinned
-        let essentialsBoundaryY = state.essentialsLayoutMetricsBySpace[hoveredPage.spaceId]?.dropHitFrame.maxY
-            ?? (hoveredPage.frame.minY + 26) // fallback to legacy
-        guard location.y < essentialsBoundaryY else {
+        // Clean handoff between Essentials and Pinned. `metrics` is the same
+        // value the guard above resolved, so no second lookup is needed.
+        guard location.y < metrics.dropHitFrame.maxY else {
             return nil
         }
 

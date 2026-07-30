@@ -2211,7 +2211,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         let settings = makeIsolatedSettings()
         let tokens = ResolvedThemeContext.default.tokens(settings: settings)
         let root = EssentialsSnapshotGrid(
-            snapshot: EssentialsSnapshot(items: [.splitGroup(splitGroup)]),
+            snapshot: EssentialsSnapshot(items: [.splitGroup(splitGroup)], showsPlaceholder: false),
             width: tileWidth,
             tokens: tokens
         )

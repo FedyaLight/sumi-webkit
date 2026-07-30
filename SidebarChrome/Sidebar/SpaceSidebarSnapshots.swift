@@ -217,6 +217,10 @@ enum EssentialsSnapshotItem: Identifiable {
 
 struct EssentialsSnapshot {
     let items: [EssentialsSnapshotItem]
+    /// Mirrors the live grid's empty-state hint so it does not blink out of
+    /// existence for the duration of a space transition. Resolved once here
+    /// rather than read per frame by the snapshot view.
+    let showsPlaceholder: Bool
 }
 
 struct ExtensionActionSlotSnapshot: Identifiable {
@@ -405,7 +409,8 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                 pinProjection: pinProjection,
                 imageReader: browserContext.faviconImageReader,
                 backdropReader: browserContext.essentialBackdropReader,
-                windowState: windowState
+                windowState: windowState,
+                settings: settings
             )
             : nil
 
@@ -485,7 +490,8 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                     pinProjection: pinProjection,
                     imageReader: browserContext.faviconImageReader,
                     backdropReader: browserContext.essentialBackdropReader,
-                    windowState: windowState
+                    windowState: windowState,
+                    settings: settings
                 ),
             supportsPinnedContent: !windowState.isIncognito,
             hasPinnedContent: hasPinnedContent,
@@ -567,9 +573,13 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         pinProjection: SidebarPinFolderProjection,
         imageReader: any BrowserFaviconImageReading,
         backdropReader: any BrowserEssentialBackdropReading,
-        windowState: BrowserWindowState
+        windowState: BrowserWindowState,
+        settings: SumiSettingsService
     ) -> EssentialsSnapshot {
-        guard let profileId else { return EssentialsSnapshot(items: []) }
+        guard let profileId else {
+            return EssentialsSnapshot(items: [], showsPlaceholder: false)
+        }
+        let showsPlaceholder = settings.showsEssentialsPlaceholder(profileId: profileId)
         let pins = spaceCatalog.essentialPins(profileID: profileId)
         let visualItems = SidebarEssentialVisualProjection.make(
             pins: pins,
@@ -619,7 +629,8 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                         )
                     )
                 }
-            }
+            },
+            showsPlaceholder: showsPlaceholder
         )
     }
 
