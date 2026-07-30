@@ -197,7 +197,8 @@ final class PhysicalWebViewSourceResolver {
                       for: pin,
                       currentSpaceId: source.context.spaceID
                   ),
-                  tab.profileId == resolvedProfileID
+                  tab.profileId == shortcutResolution
+                    .desiredLiveTabProfileId(for: pin)
             else {
                 return nil
             }

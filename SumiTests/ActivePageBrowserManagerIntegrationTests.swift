@@ -6,6 +6,135 @@ import XCTest
 
 @MainActor
 final class ActivePageBrowserManagerIntegrationTests: XCTestCase {
+    func testPinnedSplitPhysicalPageFocusChangesURLBarContextToClickedPin() throws {
+        let registry = WindowRegistry()
+        let browserManager = BrowserManager(
+            windowRegistry: registry,
+            startupPersistence: BrowserManagerStartupPersistence(
+                database: try makeInMemoryStartupDatabase()
+            )
+        )
+        let profile = try XCTUnwrap(browserManager.currentProfile)
+        let space = installTestSpace(
+            in: browserManager.spaceStateOwner,
+            name: "Pinned split focus",
+            profileID: profile.id
+        )
+        let windowState = BrowserWindowState()
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
+        windowState.currentSpaceId = space.id
+        windowState.currentProfileId = profile.id
+        registry.register(windowState)
+        registry.setActive(windowState)
+        let folder = TabFolder(
+            name: "Pinned split folder",
+            spaceId: space.id,
+            index: 0
+        )
+        browserManager.folderCollectionStateOwner.replaceFoldersBySpace([
+            space.id: [folder],
+        ])
+
+        let firstPin = try XCTUnwrap(
+            browserManager.shortcutPinStoreOwner.insert(
+                ShortcutPin(
+                    id: UUID(),
+                    role: .spacePinned,
+                    executionProfileId: nil,
+                    spaceId: space.id,
+                    index: 0,
+                    folderId: folder.id,
+                    launchURL: URL(string: "https://first-pinned.example")!,
+                    title: "First pinned"
+                ),
+                at: 0
+            )
+        )
+        let secondPin = try XCTUnwrap(
+            browserManager.shortcutPinStoreOwner.insert(
+                ShortcutPin(
+                    id: UUID(),
+                    role: .spacePinned,
+                    executionProfileId: nil,
+                    spaceId: space.id,
+                    index: 1,
+                    folderId: folder.id,
+                    launchURL: URL(string: "https://second-pinned.example")!,
+                    title: "Second pinned"
+                ),
+                at: 1
+            )
+        )
+        let first = try XCTUnwrap(
+            browserManager.shortcutTabMaterializer.materialize(
+                firstPin,
+                in: windowState.id,
+                currentSpaceId: space.id
+            )
+        )
+        let second = try XCTUnwrap(
+            browserManager.shortcutTabMaterializer.materialize(
+                secondPin,
+                in: windowState.id,
+                currentSpaceId: space.id
+            )
+        )
+        let group = try XCTUnwrap(
+            SplitGroup.make(
+                members: [
+                    .shortcutPin(firstPin.id),
+                    .shortcutPin(secondPin.id),
+                ],
+                layoutKind: .vertical,
+                container: .shortcutSidebar(
+                    spaceId: space.id,
+                    profileId: nil,
+                    folderId: folder.id,
+                    index: 0
+                )
+            )
+        )
+        XCTAssertTrue(browserManager.splitGroupMutations.insert(group, persist: false))
+        windowState.currentTabId = first.id
+        windowState.currentShortcutPinRole = .spacePinned
+        windowState.splitSelection = WindowSplitSelection(
+            groupID: group.id,
+            activeMemberID: .shortcutPin(firstPin.id)
+        )
+
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = profile.dataStore
+        let secondWebView = FocusableWKWebView(
+            frame: .zero,
+            configuration: configuration
+        )
+        secondWebView.owningTab = second
+        XCTAssertTrue(
+            browserManager.testWebViewRuntime().trackedWebViewAdmission
+                .registerAuxiliaryTrackedWebView(
+                    secondWebView,
+                    for: second,
+                    in: windowState.id
+                )
+                .isAccepted
+        )
+        XCTAssertNil(second.profileId)
+        XCTAssertTrue(
+            second.linkPresentationCommands.activateSource(of: secondWebView)
+        )
+
+        let page = try XCTUnwrap(
+            browserManager.urlBarBundle.contextOwner.urlBarContext
+                .activePage(windowState)
+        )
+        XCTAssertIdentical(page.tab, second)
+        XCTAssertEqual(windowState.currentTabId, second.id)
+        XCTAssertEqual(
+            windowState.splitSelection?.activeMemberID,
+            .shortcutPin(secondPin.id)
+        )
+    }
+
     func testResolverUsesSelectedIncognitoTabAndExactWindowWebView() throws {
         let registry = WindowRegistry()
         let browserManager = BrowserManager(
