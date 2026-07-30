@@ -159,7 +159,7 @@ private struct SumiAboutVersionUpdatePanel: View {
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 
-                SumiAboutChannelBadge(title: viewModel.channelDisplayName.uppercased())
+                SettingsPillBadge(title: viewModel.channelDisplayName.uppercased())
 
                 Spacer(minLength: 16)
 
@@ -307,22 +307,5 @@ private struct SumiAboutStatusBadge: View {
                 Color(nsColor: .secondaryLabelColor)
             ]
         }
-    }
-}
-
-private struct SumiAboutChannelBadge: View {
-    let title: String
-
-    var body: some View {
-        Text(title)
-            .font(.caption2.weight(.bold))
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 3)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(SettingsSurfaceStyle.fieldBackground)
-            )
     }
 }

@@ -12,6 +12,7 @@ struct SumiSettingsModuleToggleDescriptor: Identifiable, Equatable {
     let title: String
     let toggleTitle: String
     let detail: String
+    var badgeTitle: String?
 
     var id: SumiModuleID { moduleID }
 
@@ -19,7 +20,8 @@ struct SumiSettingsModuleToggleDescriptor: Identifiable, Equatable {
         moduleID: .extensions,
         title: "Extensions",
         toggleTitle: "Enable Extensions",
-        detail: "When off, this module does not use system resources."
+        detail: "When off, this module does not use system resources.",
+        badgeTitle: "EXPERIMENTAL"
     )
 
 }
@@ -124,6 +126,10 @@ private struct SumiSettingsModuleToggleCard: View {
                 Text(descriptor.title)
                     .font(.headline)
                     .foregroundStyle(tokens.primaryText)
+
+                if let badgeTitle = descriptor.badgeTitle {
+                    SettingsPillBadge(title: badgeTitle)
+                }
 
                 Spacer(minLength: 16)
 

@@ -262,6 +262,23 @@ struct SettingsSectionFooter: View {
     }
 }
 
+struct SettingsPillBadge: View {
+    let title: String
+
+    var body: some View {
+        Text(title)
+            .font(.caption2.weight(.bold))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(SettingsSurfaceStyle.fieldBackground)
+            )
+    }
+}
+
 extension View {
     func settingsTrailingControl(width: CGFloat) -> some View {
         fixedSize(horizontal: true, vertical: false)
