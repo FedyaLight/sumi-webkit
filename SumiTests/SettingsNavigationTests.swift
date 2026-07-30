@@ -80,7 +80,7 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertEqual(settings.resolvedSearchEngineDisplayName, "YouTube")
         XCTAssertEqual(
             normalizeURL("sumi browser", queryTemplate: settings.resolvedSearchEngineTemplate),
-            "https://www.youtube.com/results?search_query=sumi%20browser"
+            "https://www.youtube.com/results?search_query=sumi+browser"
         )
     }
 
@@ -128,6 +128,34 @@ final class SettingsNavigationTests: XCTestCase {
 
         XCTAssertEqual(SumiSearchEngine.match(for: "g", in: [github, google])?.id, "github")
         XCTAssertEqual(SumiSearchEngine.match(for: "g", in: [google, github])?.id, "google")
+    }
+
+    func testTabSearchURLEncodesPerTokenPosition() {
+        let engines = SumiSearchEngine.defaultEngines()
+        func url(_ id: String, _ query: String) -> String? {
+            engines.first { $0.id == id }?.searchURL(for: query)?.absoluteString
+        }
+
+        // Query-position tokens get form encoding, matching what browsers send.
+        XCTAssertEqual(
+            url("site.youtube", "daft punk"),
+            "https://www.youtube.com/results?search_query=daft+punk"
+        )
+        // Spotify's token sits in the path, where `+` would be a literal plus.
+        XCTAssertEqual(
+            url("site.spotify", "daft punk"),
+            "https://open.spotify.com/search/daft%20punk"
+        )
+        // A `/` in the query must not open a new path segment.
+        XCTAssertEqual(
+            url("site.spotify", "ac/dc"),
+            "https://open.spotify.com/search/ac%2Fdc"
+        )
+        // A `&` in the query must not open a new parameter.
+        XCTAssertEqual(
+            url("site.github", "sort & filter"),
+            "https://github.com/search?q=sort+%26+filter"
+        )
     }
 
     func testStartupPageURLNormalizationAndValidation() {

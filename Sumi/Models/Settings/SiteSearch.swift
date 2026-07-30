@@ -5,6 +5,7 @@
 //  Site search (Tab-to-Search) data model and matching logic
 //
 
+import SumiDomain
 import SwiftUI
 
 // MARK: - Unified Search Engine
@@ -53,11 +54,11 @@ struct SumiSearchEngine: Codable, Identifiable, Equatable, Sendable {
     }
 
     func searchURL(for query: String) -> URL? {
-        guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
-            return nil
-        }
-
-        let urlString = normalizedSearchURLTemplate.replacingOccurrences(of: Self.queryToken, with: encoded)
+        let urlString = SumiSearchQueryEncoding.substitute(
+            query,
+            into: normalizedSearchURLTemplate,
+            token: Self.queryToken
+        )
         return URL(string: urlString)
     }
 

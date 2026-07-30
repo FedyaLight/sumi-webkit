@@ -30,8 +30,19 @@ final class SumiURLNormalizationTests: XCTestCase {
     }
 
     func testSearchBarQueryUsesTemplate() {
+        // A typed `+` is part of the search text, so it has to survive as
+        // `%2B`. Passing it through literally made the engine read it as a
+        // space, which is what `+` means in a query string.
         let normalized = SumiURLNormalization.normalize(
             "privacy+search",
+            context: .searchBar(queryTemplate: "https://duck.test/?q=%@")
+        )
+        XCTAssertEqual(normalized, "https://duck.test/?q=privacy%2Bsearch")
+    }
+
+    func testSearchBarQueryEncodesTypedSpaceAsPlus() {
+        let normalized = SumiURLNormalization.normalize(
+            "privacy search",
             context: .searchBar(queryTemplate: "https://duck.test/?q=%@")
         )
         XCTAssertEqual(normalized, "https://duck.test/?q=privacy+search")

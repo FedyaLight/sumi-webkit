@@ -143,7 +143,7 @@ final class GeneralSettingsBoundaryTests: XCTestCase {
         XCTAssertEqual(engine.searchURLTemplate, "example.com/search?q={query}")
         XCTAssertEqual(
             input.previewURLString,
-            "https://example.com/search?q=sumi%20browser"
+            "https://example.com/search?q=sumi+browser"
         )
     }
 

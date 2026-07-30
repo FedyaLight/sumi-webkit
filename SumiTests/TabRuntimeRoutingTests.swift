@@ -707,7 +707,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
         XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertEqual(
             tab.url.absoluteString,
-            "https://search.example/?q=sumi%20browser"
+            "https://search.example/?q=sumi+browser"
         )
     }
 }

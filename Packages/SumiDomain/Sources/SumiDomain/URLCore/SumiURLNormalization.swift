@@ -80,8 +80,9 @@ public enum SumiURLNormalization {
             return "https://\(trimmed)"
         }
 
-        let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? trimmed
-        return String(format: queryTemplate, encoded)
+        // Not `String(format:)`: it would also consume any other `%` sequence
+        // a custom engine template happens to contain.
+        return SumiSearchQueryEncoding.substitute(trimmed, into: queryTemplate, token: "%@")
     }
 }
 
