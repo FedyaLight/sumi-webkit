@@ -19,6 +19,11 @@ enum TabUntrackedWebViewEnsureOutcome {
     }
 }
 
+enum TabNormalWebViewInitialLoadPolicy {
+    case schedule
+    case deferUntilTracked
+}
+
 @MainActor
 final class TabNormalWebViewSetupService {
     private weak var tab: Tab?
@@ -46,7 +51,8 @@ final class TabNormalWebViewSetupService {
         policyTransaction: TabConfigurationPolicyTransaction,
         provisioningOwner: TabWebViewProvisioningOwner,
         reason: String,
-        registerTabWithExtensionRuntime: Bool = true
+        registerTabWithExtensionRuntime: Bool = true,
+        initialLoadPolicy: TabNormalWebViewInitialLoadPolicy = .schedule
     ) -> TabUntrackedWebViewEnsureOutcome {
         guard let tab else { return .failed }
         precondition(
@@ -200,7 +206,9 @@ final class TabNormalWebViewSetupService {
             return .available(committedWebView)
         }
 
-        if didCreateNormalWebView && request.isPopupHost == false {
+        if didCreateNormalWebView,
+           request.isPopupHost == false,
+           initialLoadPolicy == .schedule {
             if initialDocument.restoreSuspendedInteractionState(
                 committedWebView
             ) == false {

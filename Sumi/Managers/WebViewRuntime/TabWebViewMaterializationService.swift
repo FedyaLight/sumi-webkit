@@ -1,6 +1,6 @@
 import Foundation
-import WebKit
 import SumiWebRuntime
+import WebKit
 
 /// Materializes or adopts one normal-tab WebView for one window. Whole-session
 /// replacement is deliberately delegated to `WebViewReplacementPipeline`.
@@ -44,6 +44,7 @@ final class TabWebViewMaterializationService {
         case .useExisting(let webView):
             return webView
         case .adoptExistingPrimary(let webView):
+            TabWebViewProcessPrewarmingService.checkOut(webView)
             adopt(webView, for: tab, in: windowID)
             return webView
         case .deferForInitialDocumentWarmup(let deferral):

@@ -249,6 +249,63 @@ final class TabNormalWebViewSetupServiceTests: XCTestCase {
         XCTAssertNotNil(currentWebView)
     }
 
+    func testDeferredInitialLoadCreatesCandidateWithoutNavigationHandoff() {
+        let setup = TabNormalWebViewSetupService()
+        let tab = Tab()
+        let profile = Profile(name: "Process Prewarming")
+        var currentWebView: WKWebView?
+        var restoreCount = 0
+        var handoffCount = 0
+        setup.attach(
+            to: tab,
+            installation: TabNormalWebViewTestInstaller { webView, installedTab in
+                XCTAssertIdentical(installedTab, tab)
+                currentWebView = webView
+                return .committed
+            }
+        )
+
+        let outcome = setup.ensureUntrackedNormalWebView(
+            request: makeRequest(
+                tabID: tab.id,
+                url: URL(string: "https://example.com/prewarm")!,
+                profile: profile
+            ),
+            admission: makeAdmissionStage(),
+            residence: TabNormalWebViewResidenceStage(
+                currentWebView: { currentWebView },
+                parkedWebView: { nil },
+                clearParkedWebView: {},
+                retireParkedWebView: { _, _ in false },
+                cleanupRejectedWebView: { _ in }
+            ),
+            configuration: makeConfigurationStage(
+                prepareNormalConfiguration: { _, _, _ in
+                    Self.preparedConfiguration(for: profile)
+                }
+            ),
+            preparation: makePreparationStage(),
+            initialDocument: makeInitialDocumentStage(
+                restoreSuspendedInteractionState: { _ in
+                    restoreCount += 1
+                    return false
+                },
+                scheduleRuntimeHandoff: { _, _, _, _ in
+                    handoffCount += 1
+                }
+            ),
+            policyTransaction: tab.configurationPolicyTransaction,
+            provisioningOwner: TabWebViewProvisioningOwner(),
+            reason: "test.process-prewarming",
+            initialLoadPolicy: .deferUntilTracked
+        )
+
+        XCTAssertNotNil(outcome.webView)
+        XCTAssertIdentical(outcome.webView, currentWebView)
+        XCTAssertEqual(restoreCount, 0)
+        XCTAssertEqual(handoffCount, 0)
+    }
+
     func testInitialNormalTabRuntimeRegistrationDelaysForInitialHTTPDocuments() throws {
         let setup = TabNormalWebViewSetupService()
 

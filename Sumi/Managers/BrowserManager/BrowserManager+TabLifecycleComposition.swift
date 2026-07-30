@@ -78,6 +78,14 @@ extension BrowserManager {
 
     func composeTabOpening() -> BrowserTabOpeningOwner {
         let shellRuntime = shellRuntime
+        let detachedCleanup = webViewRuntime.detachedWebViewCleanup
+        let processPrewarming = TabWebViewProcessPrewarmingService.live {
+            [detachedCleanup] tab, webView in
+            guard tab.webViewSession.untrackedWebView === webView else {
+                return
+            }
+            detachedCleanup.releaseUntracked(for: tab)
+        }
         let destinations = BrowserTabOpenDestinationResolver(
             spaces: spaceStateOwner,
             regularTabs: regularTabCollectionOwner,
@@ -96,7 +104,10 @@ extension BrowserManager {
                 lifecycle: regularTabLifecycleOwner,
                 tabFactory: tabFactory,
                 destinations: destinations,
-                activation: activation
+                activation: activation,
+                prewarmWebViewProcess: { [processPrewarming] tab in
+                    processPrewarming.prepare(tab)
+                }
             ),
             ephemeralTabs: BrowserEphemeralTabOpeningTransaction(
                 lifecycle: ephemeralLifecycleOwner,

@@ -7,17 +7,20 @@ final class BrowserRegularTabOpeningTransaction {
     private let tabFactory: TabFactory
     private let destinations: BrowserTabOpenDestinationResolver
     private let activation: BrowserTabOpenActivation
+    private let prewarmWebViewProcess: @MainActor (Tab) -> Void
 
     init(
         lifecycle: TabRegularLifecycleOwner,
         tabFactory: TabFactory,
         destinations: BrowserTabOpenDestinationResolver,
-        activation: BrowserTabOpenActivation
+        activation: BrowserTabOpenActivation,
+        prewarmWebViewProcess: @escaping @MainActor (Tab) -> Void = { _ in }
     ) {
         self.lifecycle = lifecycle
         self.tabFactory = tabFactory
         self.destinations = destinations
         self.activation = activation
+        self.prewarmWebViewProcess = prewarmWebViewProcess
     }
 
     func createDefaultTab() -> Tab {
@@ -43,6 +46,9 @@ final class BrowserRegularTabOpeningTransaction {
             regularInsertionIndex: insertionIndex,
             prepareBeforePublication: prepareBeforePublication
         )
+        if case .foreground = context.activationPolicy {
+            prewarmWebViewProcess(tab)
+        }
         windowState?.markWebKitChildWindowAdopted(by: tab.id)
         activation.apply(
             context.activationPolicy,
@@ -69,6 +75,7 @@ final class BrowserRegularTabOpeningTransaction {
                 in: space
             )
         )
+        prewarmWebViewProcess(tab)
         windowState.markWebKitChildWindowAdopted(by: tab.id)
         return tab
     }

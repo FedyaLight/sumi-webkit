@@ -4,6 +4,32 @@ import XCTest
 
 @MainActor
 final class BrowserTabOpeningOwnerTests: XCTestCase {
+    func testSidebarInsertionPrewarmsExactWebViewBeforeDelayedSelection() throws {
+        let harness = makeHarness()
+
+        let opened = harness.browserManager.tabOpening
+            .createNewTabAfterSidebarInsertion(
+                in: harness.windowState,
+                url: "https://prewarm.example"
+            )
+
+        let webView = try XCTUnwrap(
+            opened.webViewSession.untrackedWebView
+        )
+        XCTAssertNil(webView.url)
+        XCTAssertTrue(
+            webView.configuration.sumiIsNormalTabWebViewConfiguration
+        )
+        XCTAssertIdentical(
+            webView.configuration.websiteDataStore,
+            harness.primaryProfile.dataStore
+        )
+        XCTAssertNotNil(
+            TabWebViewProcessPrewarmingService.stateForTesting(webView)
+        )
+        XCTAssertNil(harness.windowState.currentTabId)
+    }
+
     func testDelayedSidebarSelectionRejectsSameIDWindowReplacement() async throws {
         let harness = makeHarness()
         let staleWindow = harness.windowState
