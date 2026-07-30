@@ -586,7 +586,12 @@ final class WebViewPresentationRoutingTests: XCTestCase {
         XCTAssertEqual(targetWindow.currentProfileId, targetProfile.id)
         XCTAssertEqual(targetWindow.currentSpaceId, targetSpace.id)
         XCTAssertEqual(targetSpace.profileId, targetProfile.id)
+        XCTAssertEqual(targetSpace.name, "Private")
         XCTAssertTrue(targetSpace.isEphemeral)
+        XCTAssertEqual(
+            windowRegistry.appKitWindow(for: targetWindow)?.title,
+            "Private Window - Sumi"
+        )
 
         XCTAssertEqual(targetWindow.ephemeralTabs.count, 1)
         let targetTab = try XCTUnwrap(targetWindow.ephemeralTabs.first)

@@ -227,6 +227,13 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         XCTAssertFalse(windowState.commandPaletteDraftNavigatesCurrentTab)
 
         let ephemeralProfile = try XCTUnwrap(windowState.ephemeralProfile)
+        let ephemeralSpace = try XCTUnwrap(windowState.ephemeralSpaces.first)
+        let nativeWindow = try XCTUnwrap(
+            harness.windowRegistry.appKitWindow(for: windowState)
+        )
+        XCTAssertEqual(nativeWindow.title, "Private Window - Sumi")
+        XCTAssertEqual(ephemeralSpace.name, "Private")
+        XCTAssertEqual(ephemeralProfile.name, "Private")
         XCTAssertTrue(ephemeralProfile.isEphemeral)
         XCTAssertFalse(ephemeralProfile.dataStore.isPersistent)
         XCTAssertFalse(

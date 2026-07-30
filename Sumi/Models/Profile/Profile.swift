@@ -73,7 +73,7 @@ final class Profile: NSObject, Identifiable {
     static func createEphemeral() -> Profile {
         let profile = Profile(
             id: UUID(),
-            name: "Incognito",
+            name: "Private",
             dataStore: .nonPersistent()
         )
         profile.isEphemeral = true

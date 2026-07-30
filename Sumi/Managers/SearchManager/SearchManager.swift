@@ -197,12 +197,15 @@ class SearchManager {
         }
         let contextualSuggestions =
             navigationSuggestions?.suggestions() ?? []
+        let readsBrowserProfile = Self.readsBrowserProfile(in: windowState)
         let owner = ContextualEmptyStateSuggestionOwner(
             topVisitedSites: { [weak historyManager] limit in
-                await historyManager?.topVisitedSites(limit: limit) ?? []
+                guard readsBrowserProfile else { return [] }
+                return await historyManager?.topVisitedSites(limit: limit) ?? []
             },
             bookmarks: { [weak bookmarkManager] in
-                bookmarkManager?.allBookmarks() ?? []
+                guard readsBrowserProfile else { return [] }
+                return bookmarkManager?.allBookmarks() ?? []
             },
             navigationSuggestions: {
                 contextualSuggestions
@@ -262,6 +265,7 @@ class SearchManager {
         let generation = activeWebSuggestionGeneration
 
         let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let readsBrowserProfile = Self.readsBrowserProfile(in: windowState)
 
         // Clear suggestions if query is empty
         guard !normalizedQuery.isEmpty else {
@@ -292,14 +296,18 @@ class SearchManager {
         }
 
         let storeContext = currentSuggestionStoreContext(
-            navigationSnapshot: navigationSnapshot
+            navigationSnapshot: navigationSnapshot,
+            readsBrowserProfile: readsBrowserProfile
         )
 
         historySuggestionTask = Task { @MainActor [weak self] in
             guard let self else { return }
             let queryInterval = PerformanceTrace.beginInterval("Omnibox.queryToPublish")
             defer { PerformanceTrace.endInterval("Omnibox.queryToPublish", queryInterval) }
-            let historyEntries = await self.searchHistoryEntries(for: normalizedQuery)
+            let historyEntries = await self.searchHistoryEntries(
+                for: normalizedQuery,
+                readsBrowserProfile: readsBrowserProfile
+            )
             guard !Task.isCancelled,
                   generation == self.activeWebSuggestionGeneration
             else { return }
@@ -365,8 +373,11 @@ class SearchManager {
         }
     }
 
-    @MainActor private func searchHistoryEntries(for query: String) async -> [HistoryListItem] {
-        guard let historyManager else { return [] }
+    @MainActor private func searchHistoryEntries(
+        for query: String,
+        readsBrowserProfile: Bool
+    ) async -> [HistoryListItem] {
+        guard readsBrowserProfile, let historyManager else { return [] }
 
         async let visitMatches = historyManager.searchSuggestions(matching: query, limit: 20)
         async let siteMatches = historyManager.historyPage(
@@ -495,12 +506,21 @@ class SearchManager {
 
     private func currentSuggestionStoreContext(
         navigationSnapshot:
-            CommandPaletteNavigationTargetCatalog.Snapshot?
+            CommandPaletteNavigationTargetCatalog.Snapshot?,
+        readsBrowserProfile: Bool
     ) -> SuggestionStoreContext {
         SuggestionContextBuilder.storeContext(
-            bookmarks: bookmarkManager?.allBookmarks() ?? [],
+            bookmarks: readsBrowserProfile
+                ? bookmarkManager?.allBookmarks() ?? []
+                : [],
             tabs: navigationSnapshot?.eligibleRegularTabs ?? []
         )
+    }
+
+    private static func readsBrowserProfile(
+        in windowState: BrowserWindowState?
+    ) -> Bool {
+        windowState?.isIncognito != true
     }
 
     private func updateSuggestionsIfNeeded(

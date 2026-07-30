@@ -259,7 +259,7 @@ final class BrowserLinkWindowTransaction {
         window.currentProfileId = profile.id
         let space = Space(
             id: UUID(),
-            name: "Incognito",
+            name: "Private",
             icon: "🕶️",
             profileId: profile.id
         )

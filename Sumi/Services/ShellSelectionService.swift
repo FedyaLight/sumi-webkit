@@ -25,7 +25,13 @@ final class ShellSelectionService {
         tabStore: ShellSelectionTabStore
     ) -> Tab? {
         if windowState.isIncognito {
-            return windowState.ephemeralTabs.first { $0.id == windowState.currentTabId }
+            // `ephemeralTabs` is deliberately outside this window's Observation
+            // graph, so `currentTabId` must be read before the lookup. Reading
+            // it inside a `first(where:)` predicate would be skipped while the
+            // private window is still empty, and SwiftUI would never record a
+            // dependency on the selection that introduces the first page.
+            guard let currentTabId = windowState.currentTabId else { return nil }
+            return windowState.ephemeralTabs.first { $0.id == currentTabId }
         }
 
         if let tabId = windowState.currentTabId,

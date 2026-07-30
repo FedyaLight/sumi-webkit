@@ -198,7 +198,7 @@ struct SumiCommands: Commands {
             }
             .modifier(dynamicShortcut(.newWindow))
 
-            Button("New Incognito Window") {
+            Button("New Private Window") {
                 browserContext.createIncognitoWindow()
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])

@@ -329,6 +329,45 @@ final class SearchManagerHistorySuggestionTests: XCTestCase {
         harness.searchManager.clearSuggestions()
     }
 
+    func testPrivateWindowSuggestionsDoNotReadBrowserProfileData() async throws {
+        let harness = try makeHarness()
+        let bookmarkManager = makeBookmarkManager()
+        let privateWindow = BrowserWindowState()
+        privateWindow.isIncognito = true
+        try await recordVisit(
+            url: try XCTUnwrap(URL(string: "https://private-leak.example")),
+            title: "Private Leak History",
+            at: Date(),
+            harness: harness
+        )
+        _ = try bookmarkManager.createBookmark(
+            url: try XCTUnwrap(URL(string: "https://private-leak.example/bookmark")),
+            title: "Private Leak Bookmark"
+        )
+        harness.searchManager.setBookmarkManager(bookmarkManager)
+
+        await waitForSuggestionSettlement(in: harness.searchManager) {
+            harness.searchManager.searchSuggestions(
+                for: "private leak",
+                windowState: privateWindow
+            )
+        }
+        XCTAssertFalse(
+            harness.searchManager.suggestions.contains {
+                $0.isHistorySuggestion || $0.isBookmarkSuggestion
+            }
+        )
+
+        harness.searchManager.clearSuggestions()
+        await waitForSuggestionSettlement(in: harness.searchManager) {
+            harness.searchManager.showContextualSuggestions(
+                windowState: privateWindow
+            )
+        }
+        XCTAssertTrue(harness.searchManager.suggestions.isEmpty)
+        harness.searchManager.clearSuggestions()
+    }
+
     private func makeHarness(
         suggestionPayload: String = "[]"
     ) throws -> (
@@ -402,6 +441,25 @@ final class SearchManagerHistorySuggestionTests: XCTestCase {
             XCTFail("Search suggestions changed before settlement", file: file, line: line)
         }
         return searchManager.suggestions
+    }
+
+    private func waitForSuggestionSettlement(
+        in searchManager: SearchManager,
+        start: () -> Void
+    ) async {
+        let settled = expectation(description: "search suggestions settled")
+        var didSettle = false
+        searchManager.onStateChange = {
+            guard didSettle == false,
+                  searchManager.suggestionPublicationIsSettled,
+                  searchManager.isLoadingSuggestions == false
+            else { return }
+            didSettle = true
+            settled.fulfill()
+        }
+        start()
+        await fulfillment(of: [settled], timeout: 1)
+        searchManager.onStateChange = nil
     }
 }
 

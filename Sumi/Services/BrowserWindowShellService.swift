@@ -71,7 +71,7 @@ final class BrowserWindowShellService {
         }
 
         let newWindow = makeWindow(
-            title: windowState.isIncognito ? "Incognito - Sumi" : "Sumi",
+            title: windowState.isIncognito ? "Private Window - Sumi" : "Sumi",
             contentView: context.makeContentView(
                 context.windowRegistry,
                 windowState
@@ -160,7 +160,7 @@ final class BrowserWindowShellService {
 
         let ephemeralSpace = Space(
             id: UUID(),
-            name: "Incognito",
+            name: "Private",
             icon: "🕶️",
             profileId: ephemeralProfile.id
         )
@@ -170,7 +170,7 @@ final class BrowserWindowShellService {
         context.tabResidences.establishResidenceSession(on: windowState)
 
         let newWindow = makeWindow(
-            title: "Incognito - Sumi",
+            title: "Private Window - Sumi",
             contentView: context.makeContentView(
                 context.windowRegistry,
                 windowState
