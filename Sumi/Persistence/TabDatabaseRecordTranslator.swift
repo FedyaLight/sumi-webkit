@@ -25,12 +25,13 @@ enum TabDatabaseRecordTranslator {
             icon: SumiZenFolderIconCatalog.normalizedFolderIconValue(source.icon),
             color: source.color,
             isOpen: source.isOpen,
+            isLiveFolder: source.isLiveFolder,
             index: source.index
         )
     }
 
     static func tab(_ source: TabPersistenceTab) throws -> TabRecord {
-        return TabRecord(
+        TabRecord(
             id: source.id,
             profileID: source.profileId,
             executionProfileID: source.executionProfileId,

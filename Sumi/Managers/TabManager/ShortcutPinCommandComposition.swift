@@ -22,6 +22,7 @@ enum ShortcutPinCommandComposition {
                     store: store,
                     bindings: bindings
                 ),
+                runtimeConnection: runtimeConnection,
                 store: store,
                 bindings: bindings,
                 structuralMutations: structuralMutations
@@ -29,6 +30,7 @@ enum ShortcutPinCommandComposition {
             reorders: ShortcutPinReorderTransaction(
                 structuralLookup: structuralLookup,
                 pins: pins,
+                runtimeConnection: runtimeConnection,
                 spacePinnedVisualOrder: spacePinnedVisualOrder,
                 essentialsVisualOrder: essentialsVisualOrder
             )

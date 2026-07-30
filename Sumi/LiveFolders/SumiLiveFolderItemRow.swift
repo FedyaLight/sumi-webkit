@@ -2,7 +2,12 @@ import SwiftUI
 
 struct SumiLiveFolderItemRow: View {
     let item: SumiLiveFolderItem
+    let shortcutPin: ShortcutPin?
+    let faviconPartition: SumiFaviconPartition?
+    let faviconImageReader: (any BrowserFaviconImageReading)?
+    let folderID: UUID
     let isSelected: Bool
+    let isInteractionEnabled: Bool
     let accessibilityID: String
     let contextMenuEntries: () -> [SidebarContextMenuEntry]
     let action: () -> Void
@@ -14,6 +19,7 @@ struct SumiLiveFolderItemRow: View {
     @Environment(\.chromeThemeTokens) private var scopedChromeTokens
     @State private var isRowHovered = false
     @State private var isDismissHovered = false
+    @StateObject private var storedFaviconLoader = SidebarStoredFaviconLoader()
 
     var body: some View {
         HStack(spacing: 0) {
@@ -42,23 +48,113 @@ struct SumiLiveFolderItemRow: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(accessibilityID)
         .accessibilityValue(isSelected ? "selected" : "not selected")
-        .sidebarHover($isRowHovered, isEnabled: true)
+        .sidebarHover($isRowHovered, isEnabled: isInteractionEnabled)
         .sidebarZenPressEffect(sourceID: accessibilityID)
         .sidebarAppKitContextMenu(
-            isInteractionEnabled: true,
+            isInteractionEnabled: isInteractionEnabled,
+            dragSource: dragSourceConfiguration,
+            primaryActionExclusionZones: [.trailingStrip(40)],
             releaseAction: action,
             sourceID: accessibilityID,
             entries: contextMenuEntries
         )
+        .task(id: storedFaviconLoadKey) {
+            await loadStoredFavicon()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .faviconCacheUpdated)) { notification in
+            guard isRSSItem,
+                  let shortcutPin,
+                  let faviconPartition else { return }
+            storedFaviconLoader.invalidateIfNeeded(
+                for: notification,
+                launchURL: shortcutPin.launchURL,
+                partition: faviconPartition
+            )
+        }
     }
 
+    private var dragSourceConfiguration: SidebarDragSourceConfiguration? {
+        guard let shortcutPin else { return nil }
+        return SidebarDragSourceConfiguration(
+            item: .shortcutPin(
+                shortcutPin.id,
+                title: item.title,
+                urlString: item.urlString
+            ),
+            sourceZone: .folder(folderID),
+            previewKind: .row,
+            exclusionZones: [.trailingStrip(40)],
+            isEnabled: isInteractionEnabled
+        )
+    }
+
+    @ViewBuilder
     private var rowIcon: some View {
-        Image(systemName: item.iconSystemName ?? "link")
-            .font(.system(size: SidebarRowLayout.faviconSize * 0.78, weight: .medium))
-            .symbolRenderingMode(.monochrome)
-            .foregroundStyle(textColor)
+        Group {
+            if isRSSItem, let storedFavicon {
+                storedFavicon
+                    .resizable()
+                    .scaledToFit()
+            } else if let bundledIconName {
+                SumiZenBundledIconView(
+                    image: SumiZenFolderIconCatalog.bundledFolderImage(named: bundledIconName),
+                    size: SidebarRowLayout.faviconSize,
+                    tint: textColor
+                )
+            } else {
+                Image(systemName: item.iconSystemName ?? "link")
+                    .font(.system(size: SidebarRowLayout.faviconSize * 0.78, weight: .medium))
+                    .symbolRenderingMode(.monochrome)
+                    .foregroundStyle(textColor)
+            }
+        }
             .frame(width: SidebarRowLayout.faviconSize, height: SidebarRowLayout.faviconSize)
             .accessibilityHidden(true)
+    }
+
+    private var bundledIconName: String? {
+        guard let icon = item.iconSystemName,
+              icon.hasPrefix(SumiZenFolderIconCatalog.folderValuePrefix) else {
+            return nil
+        }
+        return String(icon.dropFirst(SumiZenFolderIconCatalog.folderValuePrefix.count))
+    }
+
+    private var isRSSItem: Bool {
+        bundledIconName == "logo-rss"
+    }
+
+    private var storedFavicon: Image? {
+        guard let shortcutPin, let faviconPartition else { return nil }
+        return storedFaviconLoader.image(
+            for: shortcutPin.launchURL,
+            partition: faviconPartition
+        )
+    }
+
+    private var storedFaviconLoadKey: String {
+        guard isRSSItem,
+              let shortcutPin,
+              let faviconPartition else {
+            return "disabled|\(item.id)"
+        }
+        return storedFaviconLoader.loadKey(
+            launchURL: shortcutPin.launchURL,
+            partition: faviconPartition
+        )
+    }
+
+    private func loadStoredFavicon() async {
+        guard isRSSItem,
+              let shortcutPin,
+              let faviconPartition,
+              let faviconImageReader else { return }
+        await storedFaviconLoader.load(
+            launchURL: shortcutPin.launchURL,
+            partition: faviconPartition,
+            imageReader: faviconImageReader,
+            isCurrentLaunchURL: { shortcutPin.launchURL == $0 }
+        )
     }
 
     private var titleStack: some View {
@@ -106,7 +202,7 @@ struct SumiLiveFolderItemRow: View {
         .sidebarHover($isDismissHovered, isEnabled: showsDismissButton)
         .sidebarAppKitPrimaryAction(
             isEnabled: showsDismissButton,
-            isInteractionEnabled: true,
+            isInteractionEnabled: isInteractionEnabled,
             action: onDismiss
         )
     }

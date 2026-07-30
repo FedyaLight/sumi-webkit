@@ -45,6 +45,7 @@ struct FolderRecord: Codable, Equatable, FetchableRecord, PersistableRecord {
     var icon: String
     var color: String
     var isOpen: Bool
+    var isLiveFolder: Bool
     var index: Int
 
     private enum CodingKeys: String, CodingKey {
@@ -55,6 +56,7 @@ struct FolderRecord: Codable, Equatable, FetchableRecord, PersistableRecord {
         case icon
         case color
         case isOpen = "is_open"
+        case isLiveFolder = "is_live"
         case index = "position"
     }
 }

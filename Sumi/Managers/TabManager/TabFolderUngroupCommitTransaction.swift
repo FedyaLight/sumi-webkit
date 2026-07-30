@@ -36,9 +36,11 @@ final class TabFolderUngroupCommitTransaction {
                 for: prepared.spaceID
             )
         }
-        runtimeConnection.current?.deleteLiveFolderState(
-            forFolderIds: [prepared.folderID]
-        )
+        if prepared.isLiveFolder {
+            runtimeConnection.current?.deleteLiveFolderState(
+                forFolderIds: [prepared.folderID]
+            )
+        }
         persistence.scheduleStructuralPersistence()
     }
 }

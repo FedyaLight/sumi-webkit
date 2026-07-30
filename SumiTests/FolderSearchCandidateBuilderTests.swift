@@ -66,6 +66,7 @@ final class FolderSearchCandidateBuilderTests: XCTestCase {
             sortDate: nil,
             stateBadge: nil,
             iconSystemName: "doc.text",
+            shortcutPinId: nil,
             firstSeenAt: Date(),
             lastSeenAt: Date()
         )

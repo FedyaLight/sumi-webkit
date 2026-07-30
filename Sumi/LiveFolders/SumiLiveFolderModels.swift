@@ -66,6 +66,11 @@ struct SumiGitHubLiveFolderFilters: Codable, Equatable, Sendable {
     var reviewRequested = false
 }
 
+enum SumiGitHubDashboardMode: String, Codable, Sendable {
+    case html
+    case json
+}
+
 struct SumiLiveFolderSource: Identifiable, Codable, Equatable, Sendable {
     var id: UUID
     var folderId: UUID
@@ -77,6 +82,7 @@ struct SumiLiveFolderSource: Identifiable, Codable, Equatable, Sendable {
     var maxItems: Int
     var timeRangeSeconds: TimeInterval?
     var githubFilters: SumiGitHubLiveFolderFilters
+    var githubDashboardMode: SumiGitHubDashboardMode?
     var excludedRepositories: Set<String>
     var activeRepositories: Set<String>
     var etag: String?
@@ -106,6 +112,7 @@ struct SumiLiveFolderSource: Identifiable, Codable, Equatable, Sendable {
         self.maxItems = 10
         self.timeRangeSeconds = nil
         self.githubFilters = SumiGitHubLiveFolderFilters()
+        self.githubDashboardMode = nil
         self.excludedRepositories = []
         self.activeRepositories = []
         self.etag = nil
@@ -143,13 +150,12 @@ struct SumiLiveFolderSource: Identifiable, Codable, Equatable, Sendable {
 
     mutating func markFailure(
         _ errorKind: SumiLiveFolderErrorKind,
-        retryAfter: Date? = nil,
+        retryAfter _: Date? = nil,
         at date: Date = Date()
     ) {
         lastErrorKind = errorKind
         consecutiveFailures += 1
-        let backoff = min(pow(2, Double(max(0, consecutiveFailures - 1))) * 60, 30 * 60)
-        nextRefreshAfter = retryAfter ?? date.addingTimeInterval(max(refreshIntervalSeconds, backoff))
+        nextRefreshAfter = date.addingTimeInterval(refreshIntervalSeconds)
     }
 }
 
@@ -164,6 +170,10 @@ struct SumiLiveFolderItem: Identifiable, Codable, Equatable, Hashable, Sendable 
     var sortDate: Date?
     var stateBadge: String?
     var iconSystemName: String?
+    /// Durable launcher backing this result in the normal pinned-tab runtime.
+    /// Provider metadata stays here; tab materialization and per-window live
+    /// residence stay with the existing shortcut runtime.
+    var shortcutPinId: UUID?
     var firstSeenAt: Date
     var lastSeenAt: Date
 
@@ -196,6 +206,17 @@ struct SumiLiveFolderDiskState: Codable, Equatable, Sendable {
         itemCaches: [],
         dismissals: []
     )
+
+    func removingSources(inFolderIDs folderIDs: Set<UUID>) -> Self {
+        guard !folderIDs.isEmpty else { return self }
+        let retainedSources = sources.filter { !folderIDs.contains($0.folderId) }
+        let retainedSourceIDs = Set(retainedSources.map(\.id))
+        return Self(
+            sources: retainedSources,
+            itemCaches: itemCaches.filter { retainedSourceIDs.contains($0.sourceId) },
+            dismissals: dismissals.filter { retainedSourceIDs.contains($0.sourceId) }
+        )
+    }
 }
 
 struct SumiLiveFolderProviderResponse: Sendable {
@@ -208,4 +229,5 @@ struct SumiLiveFolderProviderResponse: Sendable {
     var outcome: Outcome
     var etag: String?
     var lastModified: String?
+    var githubDashboardMode: SumiGitHubDashboardMode?
 }

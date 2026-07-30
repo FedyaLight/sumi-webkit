@@ -77,18 +77,6 @@ struct SidebarBottomBar: View {
                     Button("New Folder", systemImage: "folder.badge.plus") {
                         createFolderInCurrentSpace()
                     }
-
-                    Menu("New Live Folder", systemImage: "sparkles") {
-                        Button("RSS Feed", systemImage: "dot.radiowaves.left.and.right") {
-                            createRSSLiveFolderInCurrentSpace()
-                        }
-                        Button("GitHub Pull Requests", systemImage: "chevron.left.forwardslash.chevron.right") {
-                            createGitHubPRFolderInCurrentSpace()
-                        }
-                        Button("GitHub Issues", systemImage: "exclamationmark.circle") {
-                            createGitHubIssuesFolderInCurrentSpace()
-                        }
-                    }
                 } label: {
                     newSpaceButtonLabel
                 }
@@ -121,59 +109,11 @@ struct SidebarBottomBar: View {
                     onAction: createFolderInCurrentSpace
                 )
             ),
-            .submenu(
-                title: "New Live Folder",
-                systemImage: "sparkles",
-                children: [
-                    .action(
-                        .init(
-                            title: "RSS Feed",
-                            systemImage: "dot.radiowaves.left.and.right",
-                            classification: .structuralMutation,
-                            onAction: createRSSLiveFolderInCurrentSpace
-                        )
-                    ),
-                    .action(
-                        .init(
-                            title: "GitHub Pull Requests",
-                            systemImage: "chevron.left.forwardslash.chevron.right",
-                            classification: .structuralMutation,
-                            onAction: createGitHubPRFolderInCurrentSpace
-                        )
-                    ),
-                    .action(
-                        .init(
-                            title: "GitHub Issues",
-                            systemImage: "exclamationmark.circle",
-                            classification: .structuralMutation,
-                            onAction: createGitHubIssuesFolderInCurrentSpace
-                        )
-                    ),
-                ]
-            ),
         ]
     }
 
     private func createFolderInCurrentSpace() {
         browserContext.folderActions.createFolderInCurrentSpace(
-            in: windowState
-        )
-    }
-
-    private func createRSSLiveFolderInCurrentSpace() {
-        browserContext.folderActions.createRSSLiveFolderInCurrentSpace(
-            in: windowState
-        )
-    }
-
-    private func createGitHubPRFolderInCurrentSpace() {
-        browserContext.folderActions.createGitHubPRFolderInCurrentSpace(
-            in: windowState
-        )
-    }
-
-    private func createGitHubIssuesFolderInCurrentSpace() {
-        browserContext.folderActions.createGitHubIssuesFolderInCurrentSpace(
             in: windowState
         )
     }

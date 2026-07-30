@@ -42,6 +42,7 @@ enum TabRestoreRepair {
                     spaceId: folder.spaceId,
                     parentFolderId: nil,
                     isOpen: folder.isOpen,
+                    isLiveFolder: folder.isLiveFolder,
                     index: folder.index
                 )
             }

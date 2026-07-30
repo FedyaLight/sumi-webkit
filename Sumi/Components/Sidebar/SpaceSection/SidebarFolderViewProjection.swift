@@ -118,6 +118,7 @@ enum SidebarFolderDisplayProjection {
 
 @MainActor
 struct SidebarFolderViewProjection {
+    let isLiveFolder: Bool
     let liveFolderSource: SumiLiveFolderSource?
     let liveFolderItems: [SumiLiveFolderItem]
     let baseItems: [SidebarFolderListItem]
@@ -129,14 +130,10 @@ struct SidebarFolderViewProjection {
     let selectedPinIds: Set<UUID>
     let selectedCollapsedProjectionItemID: UUID?
     let currentTabURLString: String?
-
-    var isLiveFolder: Bool {
-        liveFolderSource != nil
-    }
+    let currentShortcutPinID: UUID?
 
     init(
         folder: TabFolder,
-        space: Space,
         shortcutPins: [ShortcutPin],
         inventory: SidebarSpaceInventorySnapshot,
         selection: SidebarWindowSelectionQuery,
@@ -182,11 +179,12 @@ struct SidebarFolderViewProjection {
             windowState: windowState
         ).launcherItems(descendantItems)
 
+        self.isLiveFolder = folder.isLiveFolder
         self.liveFolderSource = liveFolderSource
         self.liveFolderItems = liveFolderItems
         self.baseItems = Self.makeBaseItems(
             liveFolderItems: liveFolderItems,
-            isLiveFolder: liveFolderSource != nil,
+            isLiveFolder: folder.isLiveFolder,
             visualItems: visualItems
         )
         self.splitGroupsById = Dictionary(
@@ -220,18 +218,26 @@ struct SidebarFolderViewProjection {
                     in: windowState,
                     selection: selectionSnapshot
                 )
-                    ? pin.id
-                    : nil
-                }
+                ? pin.id
+                : nil
+            }
         )
         self.selectedCollapsedProjectionItemID = launcherItems.first(
             where: \.isSelected
         )?.id
         self.currentTabURLString = currentTab?.url.absoluteString
+        self.currentShortcutPinID = currentTab?.shortcutPinId
     }
 
     func liveFolderItem(with id: String) -> SumiLiveFolderItem? {
         liveFolderItems.first { $0.id == id }
+    }
+
+    func isLiveFolderItemSelected(_ item: SumiLiveFolderItem) -> Bool {
+        if let shortcutPinId = item.shortcutPinId {
+            return shortcutPinId == currentShortcutPinID
+        }
+        return currentTabURLString == item.urlString
     }
 
     func splitGroup(with id: UUID) -> SplitGroup? {

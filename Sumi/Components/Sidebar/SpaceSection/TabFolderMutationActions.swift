@@ -23,6 +23,12 @@ struct TabFolderMutationActions {
     }
 
     func deleteNestedFolder(_ childFolder: TabFolder) {
+        if childFolder.isLiveFolder {
+            mutateFolderContent {
+                _ = folderCommands.deleteFolder(childFolder.id)
+            }
+            return
+        }
         let childCount = folderCommands.recursiveChildCount(
             for: childFolder.id,
             in: space.id

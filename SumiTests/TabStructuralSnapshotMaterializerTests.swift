@@ -72,6 +72,7 @@ final class TabStructuralSnapshotMaterializerTests: XCTestCase {
             name: "Docs",
             spaceId: secondSpace.id,
             parentFolderId: nil,
+            isLiveFolder: true,
             icon: "zen:book",
             color: try XCTUnwrap(NSColor(hex: "#123456")),
             index: 0
@@ -118,6 +119,7 @@ final class TabStructuralSnapshotMaterializerTests: XCTestCase {
         XCTAssertEqual(delta.tabs.map(\.id), [secondPin.id, firstPin.id, spacePin.id, persistedTab.id])
         XCTAssertEqual(delta.tabs.map(\.index), [0, 1, 0, 2])
         XCTAssertEqual(delta.tabs.first?.profileId, profileId)
+        XCTAssertEqual(delta.folders.first?.isLiveFolder, true)
         XCTAssertEqual(delta.tabs[2].spaceId, secondSpace.id)
         XCTAssertEqual(delta.tabs[2].folderId, persistedTab.folderId)
         XCTAssertTrue(delta.tabs[2].titleIsCustom)

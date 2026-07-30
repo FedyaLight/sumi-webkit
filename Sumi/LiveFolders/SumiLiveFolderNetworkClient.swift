@@ -22,7 +22,7 @@ final class SumiLiveFolderNetworkClient: @unchecked Sendable {
 
     init(
         session: URLSession = SumiLiveFolderNetworkClient.makeSession(),
-        maxPayloadBytes: Int = 2 * 1024 * 1024
+        maxPayloadBytes: Int = 5 * 1024 * 1024
     ) {
         self.session = session
         self.maxPayloadBytes = maxPayloadBytes
@@ -61,6 +61,11 @@ final class SumiLiveFolderNetworkClient: @unchecked Sendable {
             guard let httpResponse = response as? HTTPURLResponse else {
                 throw FetchError.unsupportedResponse
             }
+            if !data.isEmpty,
+               let mimeType = httpResponse.mimeType?.lowercased(),
+               Self.isSupportedTextMIMEType(mimeType) == false {
+                throw FetchError.unsupportedResponse
+            }
             return SumiLiveFolderHTTPResponse(
                 data: data,
                 statusCode: httpResponse.statusCode,
@@ -83,6 +88,16 @@ final class SumiLiveFolderNetworkClient: @unchecked Sendable {
         configuration.urlCache = nil
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         return URLSession(configuration: configuration)
+    }
+
+    private static func isSupportedTextMIMEType(_ mimeType: String) -> Bool {
+        mimeType.hasPrefix("text/")
+            || mimeType == "application/json"
+            || mimeType.hasSuffix("+json")
+            || mimeType == "application/xml"
+            || mimeType.hasSuffix("+xml")
+            || mimeType == "application/rss+xml"
+            || mimeType == "application/atom+xml"
     }
 
     private static func retryAfterDate(from response: HTTPURLResponse) -> Date? {

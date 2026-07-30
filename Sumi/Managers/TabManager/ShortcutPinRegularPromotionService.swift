@@ -6,15 +6,18 @@ final class ShortcutPinRegularPromotionService {
     private let promotion: ShortcutTabPromotionService
     private let admission: ShortcutPinPromotionAdmission
     private let transaction: ShortcutPinRegularConversionTransaction
+    private let runtimeConnection: TabRuntimePortConnection
 
     init(
         promotion: ShortcutTabPromotionService,
         admission: ShortcutPinPromotionAdmission,
-        transaction: ShortcutPinRegularConversionTransaction
+        transaction: ShortcutPinRegularConversionTransaction,
+        runtimeConnection: TabRuntimePortConnection
     ) {
         self.promotion = promotion
         self.admission = admission
         self.transaction = transaction
+        self.runtimeConnection = runtimeConnection
     }
 
     func promote(
@@ -23,8 +26,13 @@ final class ShortcutPinRegularPromotionService {
         at targetIndex: Int? = nil,
         preferredWindowId: UUID? = nil
     ) -> ShortcutTabPromotionResult? {
-        guard let pin = admission.canonicalPin(for: candidatePin),
-              let plan = promotion.preparePromotion(
+        guard let pin = admission.canonicalPin(for: candidatePin) else { return nil }
+        let sourceLiveFolderID = pin.folderId.flatMap { folderID in
+            runtimeConnection.current?.isLiveFolder(folderID) == true
+                ? folderID
+                : nil
+        }
+        guard let plan = promotion.preparePromotion(
                   pin,
                   into: targetSpaceID,
                   at: targetIndex,
@@ -40,6 +48,19 @@ final class ShortcutPinRegularPromotionService {
             _ = plan.placement.cancel()
             return nil
         }
-        return transaction.commit(pin: pin, plan: plan, split: split)
+        guard let result = transaction.commit(
+            pin: pin,
+            plan: plan,
+            split: split
+        ) else { return nil }
+        if let sourceLiveFolderID {
+            runtimeConnection.current?.reconcileLiveFolderItemMove(
+                shortcutPinID: pin.id,
+                fromFolderID: sourceLiveFolderID,
+                toFolderID: nil,
+                targetIndex: nil
+            )
+        }
+        return result
     }
 }

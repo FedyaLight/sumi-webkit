@@ -35,6 +35,7 @@ final class TabLastSessionFolderMaterializer {
                     name: restored.name,
                     spaceId: restored.spaceId,
                     parentFolderId: restored.parentFolderId,
+                    isLiveFolder: restored.isLiveFolder,
                     icon: restored.icon,
                     color: NSColor(hex: restored.color) ?? .controlAccentColor,
                     index: restored.index
@@ -58,5 +59,6 @@ final class TabLastSessionFolderMaterializer {
             index: restored.index
         ))
         folder.isOpen = restored.isOpen
+        folder.isLiveFolder = restored.isLiveFolder
     }
 }

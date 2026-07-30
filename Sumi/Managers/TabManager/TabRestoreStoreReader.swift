@@ -45,6 +45,7 @@ actor TabRestoreStoreReader {
                     spaceId: record.spaceID,
                     parentFolderId: record.parentFolderID,
                     isOpen: record.isOpen,
+                    isLiveFolder: record.isLiveFolder,
                     index: record.index
                 )
             }

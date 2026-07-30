@@ -21,6 +21,7 @@ public class TabFolder: NSObject, Identifiable {
     var name: String
     @ObservationIgnored private var placement: TabFolderPlacement
     var isOpen: Bool = false
+    var isLiveFolder: Bool
     var icon: String = ""
     var color: NSColor
 
@@ -33,12 +34,14 @@ public class TabFolder: NSObject, Identifiable {
         name: String,
         spaceId: UUID,
         parentFolderId: UUID? = nil,
+        isLiveFolder: Bool = false,
         icon: String = "",
         color: NSColor = .controlAccentColor,
         index: Int = 0
     ) {
         self.id = id
         self.name = name
+        self.isLiveFolder = isLiveFolder
         placement = TabFolderPlacement(
             spaceID: spaceId,
             parentFolderID: parentFolderId,

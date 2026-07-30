@@ -7,7 +7,32 @@ struct SumiRSSLiveFolderProvider: Sendable {
         self.networkClient = networkClient
     }
 
-    func fetch(source: SumiLiveFolderSource) async -> SumiLiveFolderProviderResponse {
+    func fetchMetadata(
+        url: URL,
+        cookies: [HTTPCookie] = []
+    ) async -> String? {
+        do {
+            let response = try await networkClient.fetch(
+                url: url,
+                accept: "application/rss+xml,application/atom+xml,application/xml,text/xml,*/*;q=0.2",
+                etag: nil,
+                lastModified: nil,
+                cookies: cookies
+            )
+            guard (200..<300).contains(response.statusCode) else { return nil }
+            return SumiRSSFeedParser(data: response.data, sourceId: UUID())
+                .parse()?
+                .title?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        } catch {
+            return nil
+        }
+    }
+
+    func fetch(
+        source: SumiLiveFolderSource,
+        cookies: [HTTPCookie] = []
+    ) async -> SumiLiveFolderProviderResponse {
         guard let url = URL(string: source.urlString),
               ["http", "https"].contains(url.scheme?.lowercased()) else {
             return failure(.invalidURL)
@@ -18,14 +43,16 @@ struct SumiRSSLiveFolderProvider: Sendable {
                 url: url,
                 accept: "application/rss+xml,application/atom+xml,application/xml,text/xml,*/*;q=0.2",
                 etag: source.etag,
-                lastModified: source.lastModified
+                lastModified: source.lastModified,
+                cookies: cookies
             )
 
             if response.statusCode == 304 {
                 return SumiLiveFolderProviderResponse(
                     outcome: .notModified,
                     etag: response.etag,
-                    lastModified: response.lastModified
+                    lastModified: response.lastModified,
+                    githubDashboardMode: nil
                 )
             }
             guard (200..<300).contains(response.statusCode) else {
@@ -52,9 +79,6 @@ struct SumiRSSLiveFolderProvider: Sendable {
                     }
                     return cutoff.map { itemDate >= $0 } ?? true
                 }
-                .sorted { lhs, rhs in
-                    lhs.sortKeyDate > rhs.sortKeyDate
-                }
                 .prefix(max(1, source.maxItems))
 
             return SumiLiveFolderProviderResponse(
@@ -64,10 +88,13 @@ struct SumiRSSLiveFolderProvider: Sendable {
                     activeRepositories: []
                 ),
                 etag: response.etag,
-                lastModified: response.lastModified
+                lastModified: response.lastModified,
+                githubDashboardMode: nil
             )
         } catch SumiLiveFolderNetworkClient.FetchError.oversizedResponse {
             return failure(.oversizedResponse)
+        } catch SumiLiveFolderNetworkClient.FetchError.unsupportedResponse {
+            return failure(.unsupportedResponse)
         } catch {
             return failure(.network)
         }
@@ -81,7 +108,8 @@ struct SumiRSSLiveFolderProvider: Sendable {
         SumiLiveFolderProviderResponse(
             outcome: .failure(kind, retryAfter: retryAfter),
             etag: response?.etag,
-            lastModified: response?.lastModified
+            lastModified: response?.lastModified,
+            githubDashboardMode: nil
         )
     }
 }
@@ -220,7 +248,8 @@ final class SumiRSSFeedParser: NSObject, XMLParserDelegate {
                 updatedAt: draft.updatedAt,
                 sortDate: sortDate,
                 stateBadge: nil,
-                iconSystemName: "dot.radiowaves.left.and.right",
+                iconSystemName: "zen:logo-rss",
+                shortcutPinId: nil,
                 firstSeenAt: now,
                 lastSeenAt: now
             )

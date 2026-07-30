@@ -48,6 +48,7 @@ struct TabRestoreRuntimeStateBuilder {
                     name: dto.name,
                     spaceId: dto.spaceId,
                     parentFolderId: dto.parentFolderId,
+                    isLiveFolder: dto.isLiveFolder,
                     icon: dto.icon,
                     color: NSColor(hex: dto.color) ?? .controlAccentColor,
                     index: dto.index

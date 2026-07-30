@@ -60,6 +60,9 @@ final class TabFolderDeletionPreparationService {
         return TabFolderDeletionPreparation(
             spaceID: spaceID,
             deletedFolderIDs: deletedFolderIDs,
+            deletedLiveFolderIDs: Set(currentFolders.lazy.filter {
+                deletedFolderIDs.contains($0.id) && $0.isLiveFolder
+            }.map(\.id)),
             parentFolderID: folder.parentFolderId,
             remainingFolders: currentFolders.filter {
                 deletedFolderIDs.contains($0.id) == false

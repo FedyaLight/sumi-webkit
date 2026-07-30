@@ -31,6 +31,7 @@ enum BrowserTabManagerRuntimePortsFactory {
                 recentlyClosedManager: browserManager.recentlyClosedManager,
                 notificationPresenter: browserManager.notificationPresenter,
                 webViewCloseRouter: browserManager.webViewCloseRouter,
+                folders: browserManager.folderCollectionStateOwner,
                 liveFolderManager: browserManager.liveFolderManager
             ),
             webViewLifecycle: BrowserTabManagerWebViewLifecycleFactory.service(

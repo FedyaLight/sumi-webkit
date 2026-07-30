@@ -610,7 +610,8 @@ extension BrowserCompositionRoot {
             pinStore: shortcutPinStoreOwner,
             pins: state.shortcutPins,
             persistence: structuralPersistence,
-            structuralLookup: structuralLookupCoordinator
+            structuralLookup: structuralLookupCoordinator,
+            runtimeConnection: runtimeConnection
         )
         let shortcutPinMetadataMutations = ShortcutPinMetadataMutationService(
             pins: state.shortcutPins,

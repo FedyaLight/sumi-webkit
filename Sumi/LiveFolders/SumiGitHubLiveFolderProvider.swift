@@ -27,88 +27,242 @@ struct SumiGitHubLiveFolderProvider: Sendable {
             return failure(.invalidURL)
         }
 
+        var dashboardMode = source.githubDashboardMode
         do {
-            let queries = buildQueries(for: source)
-            var combinedItems: [String: SumiLiveFolderItem] = [:]
-            var activeRepositories = Set<String>()
-            var latestETag: String?
-            var latestLastModified: String?
+            dashboardMode = try await detectDashboardMode(
+                for: source,
+                baseURL: baseURL,
+                cookies: cookies
+            )
+            return try await fetchResults(
+                for: source,
+                baseURL: baseURL,
+                cookies: cookies,
+                dashboardMode: dashboardMode
+            )
+        } catch let providerFailure as ProviderFailure {
+            return failure(
+                providerFailure.kind,
+                retryAfter: providerFailure.retryAfter,
+                response: providerFailure.response,
+                githubDashboardMode: providerFailure.dashboardMode
+            )
+        } catch SumiLiveFolderNetworkClient.FetchError.oversizedResponse {
+            return failure(.oversizedResponse, githubDashboardMode: dashboardMode)
+        } catch SumiLiveFolderNetworkClient.FetchError.unsupportedResponse {
+            return failure(.unsupportedResponse, githubDashboardMode: dashboardMode)
+        } catch {
+            return failure(.network, githubDashboardMode: dashboardMode)
+        }
+    }
 
-            for query in queries {
-                var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
-                var items = components?.queryItems ?? []
-                items.removeAll { $0.name == "q" }
-                items.append(URLQueryItem(name: "q", value: query))
-                components?.queryItems = items
-                guard let url = components?.url else {
-                    return failure(.invalidURL)
-                }
+    private func detectDashboardMode(
+        for source: SumiLiveFolderSource,
+        baseURL: URL,
+        cookies: [HTTPCookie]
+    ) async throws -> SumiGitHubDashboardMode? {
+        guard source.kind == .githubPullRequests,
+              source.githubDashboardMode == nil else {
+            return source.githubDashboardMode
+        }
+        let response = try await networkClient.fetch(
+            url: baseURL,
+            accept: "application/json,text/html",
+            etag: nil,
+            lastModified: nil,
+            cookies: cookies
+        )
+        try validate(response, dashboardMode: nil)
+        return Self.isJSONPayload(response.data) ? .json : .html
+    }
 
-                let response = try await networkClient.fetch(
-                    url: url,
-                    accept: "application/json,text/html;q=0.9,*/*;q=0.2",
-                    etag: source.etag,
-                    lastModified: source.lastModified,
-                    cookies: cookies
-                )
-                latestETag = response.etag ?? latestETag
-                latestLastModified = response.lastModified ?? latestLastModified
+    private func fetchResults(
+        for source: SumiLiveFolderSource,
+        baseURL: URL,
+        cookies: [HTTPCookie],
+        dashboardMode initialDashboardMode: SumiGitHubDashboardMode?
+    ) async throws -> SumiLiveFolderProviderResponse {
+        let queries = buildQueries(for: source, dashboardMode: initialDashboardMode)
+        var dashboardMode = initialDashboardMode
+        var accumulator = FetchAccumulator()
 
-                if response.statusCode == 304 {
-                    return SumiLiveFolderProviderResponse(
-                        outcome: .notModified,
-                        etag: latestETag,
-                        lastModified: latestLastModified
+        for query in queries {
+            let url = try searchURL(baseURL: baseURL, query: query, dashboardMode: dashboardMode)
+            let response = try await networkClient.fetch(
+                url: url,
+                accept: "application/json,text/html;q=0.9,*/*;q=0.2",
+                etag: source.etag,
+                lastModified: source.lastModified,
+                cookies: cookies
+            )
+            accumulator.captureValidators(from: response)
+            if response.statusCode == 304 {
+                return accumulator.notModified(dashboardMode: dashboardMode)
+            }
+            try validate(response, dashboardMode: dashboardMode)
+
+            if source.kind == .githubPullRequests {
+                let responseIsJSON = Self.isJSONPayload(response.data)
+                if dashboardMode == .json, responseIsJSON == false {
+                    throw ProviderFailure(
+                        kind: .network,
+                        response: response,
+                        dashboardMode: .html
                     )
                 }
-                if response.statusCode == 401 || response.statusCode == 403 || response.statusCode == 404 {
-                    return failure(.notAuthenticated, response: response)
+                if responseIsJSON {
+                    dashboardMode = .json
                 }
-                if response.statusCode == 429 {
-                    return failure(.rateLimited, retryAfter: response.retryAfter, response: response)
-                }
-                guard (200..<300).contains(response.statusCode) else {
-                    return failure(.network, retryAfter: response.retryAfter, response: response)
-                }
+            }
 
-                let parsed = parseGitHubResponse(
+            accumulator.merge(
+                parseGitHubResponse(
                     data: response.data,
                     source: source,
                     baseURL: baseURL
                 )
-                for item in parsed.items {
-                    combinedItems[item.id] = item
-                }
-                activeRepositories.formUnion(parsed.activeRepositories)
-            }
+            )
+        }
 
-            let filteredItems = combinedItems.values
+        return accumulator.success(
+            excluding: source.excludedRepositories,
+            dashboardMode: dashboardMode
+        )
+    }
+
+    private func searchURL(
+        baseURL: URL,
+        query: String,
+        dashboardMode: SumiGitHubDashboardMode?
+    ) throws -> URL {
+        var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
+        var items = components?.queryItems ?? []
+        items.removeAll { $0.name == "q" }
+        items.append(URLQueryItem(name: "q", value: query))
+        components?.queryItems = items
+        guard let url = components?.url else {
+            throw ProviderFailure(kind: .invalidURL, dashboardMode: dashboardMode)
+        }
+        return url
+    }
+
+    private func validate(
+        _ response: SumiLiveFolderHTTPResponse,
+        dashboardMode: SumiGitHubDashboardMode?
+    ) throws {
+        if [401, 403, 404].contains(response.statusCode) {
+            throw ProviderFailure(
+                kind: .notAuthenticated,
+                response: response,
+                dashboardMode: dashboardMode
+            )
+        }
+        if response.statusCode == 429 {
+            throw ProviderFailure(
+                kind: .rateLimited,
+                retryAfter: response.retryAfter,
+                response: response,
+                dashboardMode: dashboardMode
+            )
+        }
+        guard (200..<300).contains(response.statusCode) else {
+            throw ProviderFailure(
+                kind: .network,
+                retryAfter: response.retryAfter,
+                response: response,
+                dashboardMode: dashboardMode
+            )
+        }
+    }
+
+    private struct ProviderFailure: Error {
+        let kind: SumiLiveFolderErrorKind
+        let retryAfter: Date?
+        let response: SumiLiveFolderHTTPResponse?
+        let dashboardMode: SumiGitHubDashboardMode?
+
+        init(
+            kind: SumiLiveFolderErrorKind,
+            retryAfter: Date? = nil,
+            response: SumiLiveFolderHTTPResponse? = nil,
+            dashboardMode: SumiGitHubDashboardMode?
+        ) {
+            self.kind = kind
+            self.retryAfter = retryAfter
+            self.response = response
+            self.dashboardMode = dashboardMode
+        }
+    }
+
+    private struct FetchAccumulator {
+        private var itemsByID: [String: SumiLiveFolderItem]
+        private var itemOrder: [String]
+        private var activeRepositories: Set<String>
+        private var latestETag: String?
+        private var latestLastModified: String?
+
+        init() {
+            itemsByID = [:]
+            itemOrder = []
+            activeRepositories = []
+            latestETag = nil
+            latestLastModified = nil
+        }
+
+        mutating func captureValidators(from response: SumiLiveFolderHTTPResponse) {
+            latestETag = response.etag ?? latestETag
+            latestLastModified = response.lastModified ?? latestLastModified
+        }
+
+        mutating func merge(
+            _ parsed: (items: [SumiLiveFolderItem], activeRepositories: Set<String>)
+        ) {
+            for item in parsed.items {
+                if itemsByID[item.id] == nil {
+                    itemOrder.append(item.id)
+                }
+                itemsByID[item.id] = item
+            }
+            activeRepositories.formUnion(parsed.activeRepositories)
+        }
+
+        func notModified(
+            dashboardMode: SumiGitHubDashboardMode?
+        ) -> SumiLiveFolderProviderResponse {
+            SumiLiveFolderProviderResponse(
+                outcome: .notModified,
+                etag: latestETag,
+                lastModified: latestLastModified,
+                githubDashboardMode: dashboardMode
+            )
+        }
+
+        func success(
+            excluding excludedRepositories: Set<String>,
+            dashboardMode: SumiGitHubDashboardMode?
+        ) -> SumiLiveFolderProviderResponse {
+            let items = itemOrder.compactMap { itemsByID[$0] }
                 .filter { item in
                     guard let repo = item.stateBadge else { return true }
-                    return !source.excludedRepositories.contains(repo)
+                    return !excludedRepositories.contains(repo)
                 }
-                .sorted { lhs, rhs in
-                    lhs.sortKeyDate > rhs.sortKeyDate
-                }
-                .prefix(max(1, source.maxItems))
-
             return SumiLiveFolderProviderResponse(
                 outcome: .success(
-                    items: Array(filteredItems),
+                    items: items,
                     title: nil,
                     activeRepositories: activeRepositories
                 ),
                 etag: latestETag,
-                lastModified: latestLastModified
+                lastModified: latestLastModified,
+                githubDashboardMode: dashboardMode
             )
-        } catch SumiLiveFolderNetworkClient.FetchError.oversizedResponse {
-            return failure(.oversizedResponse)
-        } catch {
-            return failure(.network)
         }
     }
 
-    private func buildQueries(for source: SumiLiveFolderSource) -> [String] {
+    func buildQueries(
+        for source: SumiLiveFolderSource,
+        dashboardMode: SumiGitHubDashboardMode?
+    ) -> [String] {
         var base = [
             source.kind == .githubPullRequests ? "is:pr" : "is:issue",
             "is:open",
@@ -132,7 +286,14 @@ struct SumiGitHubLiveFolderProvider: Sendable {
         guard filters.count > 1 else {
             return ["\(base.joined(separator: " ")) \(filters.first ?? "")"]
         }
+        if source.kind == .githubPullRequests, dashboardMode == .html {
+            return filters.map { "\(base.joined(separator: " ")) \($0)" }
+        }
         return ["\(base.joined(separator: " ")) (\(filters.joined(separator: " OR ")))"]
+    }
+
+    private static func isJSONPayload(_ data: Data) -> Bool {
+        (try? JSONSerialization.jsonObject(with: data)) != nil
     }
 
     func parseGitHubResponse(
@@ -210,7 +371,8 @@ struct SumiGitHubLiveFolderProvider: Sendable {
                 updatedAt: now,
                 sortDate: now,
                 stateBadge: repo,
-                iconSystemName: "chevron.left.forwardslash.chevron.right",
+                iconSystemName: "zen:logo-github",
+                shortcutPinId: nil,
                 firstSeenAt: now,
                 lastSeenAt: now
             )
@@ -222,51 +384,69 @@ struct SumiGitHubLiveFolderProvider: Sendable {
         source: SumiLiveFolderSource,
         baseURL: URL
     ) -> (items: [SumiLiveFolderItem], activeRepositories: Set<String>) {
+        if source.kind == .githubPullRequests {
+            return parsePullRequestsHTML(html, source: source, baseURL: baseURL)
+        }
+        return parseIssuesHTML(html, source: source, baseURL: baseURL)
+    }
+
+    private func parsePullRequestsHTML(
+        _ html: String,
+        source: SumiLiveFolderSource,
+        baseURL: URL
+    ) -> (items: [SumiLiveFolderItem], activeRepositories: Set<String>) {
         let now = Date()
         var activeRepositories = Set<String>()
         var items: [SumiLiveFolderItem] = []
-
-        if source.kind == .githubPullRequests {
-            let titleMatches = html.matches(
-                #"(?s)<a[^>]+id=["']issue_[^"']+["'][^>]+href=["']([^"']+)["'][^>]*>(.*?)</a>"#
-            )
-            let authorMatches = html.matches(#"(?s)<span[^>]*class=["'][^"']*opened-by[^"']*["'][^>]*>(.*?)</span>"#)
-            for (index, match) in titleMatches.enumerated() {
-                guard match.count >= 3 else { continue }
-                let href = match[1]
-                let title = match[2].strippingHTML.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !title.isEmpty,
-                      let url = URL(string: href, relativeTo: baseURL)?.absoluteURL else {
-                    continue
-                }
-                let repo = inferRepository(from: html, before: match[0]) ?? ""
-                if !repo.isEmpty {
-                    activeRepositories.insert(repo)
-                }
-                let author = authorMatches.indices.contains(index)
-                    ? authorMatches[index].last?.strippingHTML.trimmingCharacters(in: .whitespacesAndNewlines)
-                    : nil
-                let number = href.split(separator: "/").last.map(String.init) ?? title
-                items.append(
-                    SumiLiveFolderItem(
-                        id: repo.isEmpty ? url.absoluteString : "\(repo)#\(number)",
-                        sourceId: source.id,
-                        title: title,
-                        urlString: url.absoluteString,
-                        subtitle: author,
-                        publishedAt: nil,
-                        updatedAt: now,
-                        sortDate: now,
-                        stateBadge: repo.isEmpty ? nil : repo,
-                        iconSystemName: "chevron.left.forwardslash.chevron.right",
-                        firstSeenAt: now,
-                        lastSeenAt: now
-                    )
-                )
+        let titleMatches = html.matches(
+            #"(?s)<a[^>]+id=["']issue_[^"']+["'][^>]+href=["']([^"']+)["'][^>]*>(.*?)</a>"#
+        )
+        let authorMatches = html.matches(#"(?s)<span[^>]*class=["'][^"']*opened-by[^"']*["'][^>]*>(.*?)</span>"#)
+        for (index, match) in titleMatches.enumerated() {
+            guard match.count >= 3 else { continue }
+            let href = match[1]
+            let title = match[2].strippingHTML.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty,
+                  let url = URL(string: href, relativeTo: baseURL)?.absoluteURL else {
+                continue
             }
-            return (items, activeRepositories)
+            let repo = inferRepository(from: html, before: match[0]) ?? ""
+            if !repo.isEmpty {
+                activeRepositories.insert(repo)
+            }
+            let author = authorMatches.indices.contains(index)
+                ? authorMatches[index].last?.strippingHTML.trimmingCharacters(in: .whitespacesAndNewlines)
+                : nil
+            let number = href.split(separator: "/").last.map(String.init) ?? title
+            items.append(
+                SumiLiveFolderItem(
+                    id: repo.isEmpty ? url.absoluteString : "\(repo)#\(number)",
+                    sourceId: source.id,
+                    title: title,
+                    urlString: url.absoluteString,
+                    subtitle: author,
+                    publishedAt: nil,
+                    updatedAt: now,
+                    sortDate: now,
+                    stateBadge: repo.isEmpty ? nil : repo,
+                    iconSystemName: "zen:logo-github",
+                    shortcutPinId: nil,
+                    firstSeenAt: now,
+                    lastSeenAt: now
+                )
+            )
         }
+        return (items, activeRepositories)
+    }
 
+    private func parseIssuesHTML(
+        _ html: String,
+        source: SumiLiveFolderSource,
+        baseURL: URL
+    ) -> (items: [SumiLiveFolderItem], activeRepositories: Set<String>) {
+        let now = Date()
+        var activeRepositories = Set<String>()
+        var items: [SumiLiveFolderItem] = []
         let repoMatches = html.matches(
             #"(?s)<div[^>]+class=["'][^"']*IssueItem-module__defaultRepoContainer[^"']*["'][^>]*>\s*<[^>]+>(.*?)</[^>]+>\s*<[^>]+>#?([0-9]+)</[^>]+>"#
         )
@@ -312,7 +492,8 @@ struct SumiGitHubLiveFolderProvider: Sendable {
                     updatedAt: now,
                     sortDate: now,
                     stateBadge: repo,
-                    iconSystemName: "exclamationmark.circle",
+                    iconSystemName: "zen:logo-github",
+                    shortcutPinId: nil,
                     firstSeenAt: now,
                     lastSeenAt: now
                 )
@@ -332,12 +513,14 @@ struct SumiGitHubLiveFolderProvider: Sendable {
     private func failure(
         _ kind: SumiLiveFolderErrorKind,
         retryAfter: Date? = nil,
-        response: SumiLiveFolderHTTPResponse? = nil
+        response: SumiLiveFolderHTTPResponse? = nil,
+        githubDashboardMode: SumiGitHubDashboardMode? = nil
     ) -> SumiLiveFolderProviderResponse {
         SumiLiveFolderProviderResponse(
             outcome: .failure(kind, retryAfter: retryAfter),
             etag: response?.etag,
-            lastModified: response?.lastModified
+            lastModified: response?.lastModified,
+            githubDashboardMode: githubDashboardMode
         )
     }
 }

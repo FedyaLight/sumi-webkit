@@ -29,7 +29,7 @@ struct SpacePinnedActionOwner {
         let profiles = browserContext.profileManager.profiles
         let folderChoices = makeSidebarContextMenuFolderChoices(
             folders: inventory.foldersByID.values
-                .filter { !browserContext.liveFolderManager.isLiveFolder($0.id) },
+                .filter { !$0.isLiveFolder },
             selectedFolderId: pin.folderId
         )
         let spaceChoices = makeSidebarContextMenuSpaceChoices(

@@ -9,7 +9,7 @@ final class SumiStartupPersistenceTests: XCTestCase {
     func testKnownDatabaseFailuresHaveExactClassification() {
         XCTAssertEqual(
             SumiStartupPersistence.classifyStoreOpenFailure(
-                SumiDatabaseError.unsupportedSchemaVersion(2)
+                SumiDatabaseError.unsupportedSchemaVersion(3)
             ).reason,
             .schemaMismatch
         )
@@ -36,6 +36,43 @@ final class SumiStartupPersistenceTests: XCTestCase {
                 DatabaseError(resultCode: .SQLITE_NOTADB)
             ).reason,
             .localStoreCorruption
+        )
+    }
+
+    func testVersionOneDatabaseMigratesLiveFolderIdentity() throws {
+        let fixture = try Fixture()
+        let queue = try DatabaseQueue(path: fixture.storeURL.path)
+        try queue.write { database in
+            try database.create(table: "folders") { table in
+                table.column("id", .blob).primaryKey()
+                table.column("space_id", .blob).notNull()
+                table.column("parent_folder_id", .blob)
+                table.column("name", .text).notNull()
+                table.column("icon", .text).notNull()
+                table.column("color", .text).notNull()
+                table.column("is_open", .boolean).notNull()
+                table.column("position", .integer).notNull()
+            }
+            try database.execute(sql: "PRAGMA user_version = 1")
+        }
+
+        let database = try SumiDatabase.open(at: fixture.storeURL)
+        let folder = FolderRecord(
+            id: UUID(),
+            spaceID: UUID(),
+            parentFolderID: nil,
+            name: "Feed",
+            icon: "folder",
+            color: "#000000",
+            isOpen: true,
+            isLiveFolder: true,
+            index: 0
+        )
+        try database.transaction { try $0.workspace.save(folder) }
+
+        XCTAssertEqual(
+            try database.read { try $0.workspace.folders().first?.isLiveFolder },
+            true
         )
     }
 

@@ -127,6 +127,20 @@ struct RuntimePortRegistry {
         sessionSideEffects.isLiveFolder(folderId)
     }
 
+    func reconcileLiveFolderItemMove(
+        shortcutPinID: UUID,
+        fromFolderID: UUID,
+        toFolderID: UUID?,
+        targetIndex: Int?
+    ) {
+        sessionSideEffects.reconcileLiveFolderItemMove(
+            shortcutPinID: shortcutPinID,
+            fromFolderID: fromFolderID,
+            toFolderID: toFolderID,
+            targetIndex: targetIndex
+        )
+    }
+
     func deleteLiveFolderState(forFolderIds folderIds: Set<UUID>) {
         sessionSideEffects.deleteLiveFolderState(forFolderIds: folderIds)
     }

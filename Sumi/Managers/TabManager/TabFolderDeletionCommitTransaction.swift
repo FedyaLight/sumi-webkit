@@ -48,9 +48,11 @@ final class TabFolderDeletionCommitTransaction {
         }
         tabClosure.removeTabs(prepared.liveTabIDs)
         shortcutRetirement.finishAfterCurrentBatch(retirement)
-        runtime?.deleteLiveFolderState(
-            forFolderIds: prepared.deletedFolderIDs
-        )
+        if prepared.deletedLiveFolderIDs.isEmpty == false {
+            runtime?.deleteLiveFolderState(
+                forFolderIds: prepared.deletedLiveFolderIDs
+            )
+        }
         persistence.scheduleStructuralPersistence()
         if prepared.deletedPins.isEmpty == false {
             runtime?.notifications()?.presentSavedTabDeletionNotification(

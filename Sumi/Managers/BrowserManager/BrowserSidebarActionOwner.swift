@@ -43,11 +43,36 @@ final class BrowserSidebarActionOwner {
 
     func createRSSLiveFolderInCurrentSpace(in windowState: BrowserWindowState) {
         guard let space = spaceForSidebarActions(in: windowState),
-              let feedURLString = promptForLiveFolderFeedURL(in: windowState)
+              let feedURLString = promptForLiveFolderFeedURL(
+                  in: windowState,
+                  initialValue: "",
+                  title: "New RSS Live Folder"
+              )
         else {
             return
         }
-        liveFolderManager.createRSSFolder(in: space.id, feedURLString: feedURLString)
+        Task { [liveFolderManager] in
+            await liveFolderManager.createRSSFolder(
+                in: space.id,
+                feedURLString: feedURLString
+            )
+        }
+    }
+
+    func editRSSLiveFolder(_ folderId: UUID, in windowState: BrowserWindowState) {
+        guard let source = liveFolderManager.source(for: folderId),
+              source.kind == .rss,
+              let feedURLString = promptForLiveFolderFeedURL(
+                  in: windowState,
+                  initialValue: source.urlString,
+                  title: "RSS Feed URL"
+              ) else {
+            return
+        }
+        liveFolderManager.setRSSFeedURL(
+            folderId: folderId,
+            urlString: feedURLString
+        )
     }
 
     func createGitHubPRFolderInCurrentSpace(in windowState: BrowserWindowState) {
@@ -60,16 +85,21 @@ final class BrowserSidebarActionOwner {
         liveFolderManager.createGitHubFolder(in: space.id, kind: .githubIssues)
     }
 
-    private func promptForLiveFolderFeedURL(in windowState: BrowserWindowState) -> String? {
+    private func promptForLiveFolderFeedURL(
+        in windowState: BrowserWindowState,
+        initialValue: String,
+        title: String
+    ) -> String? {
         let alert = NSAlert()
-        alert.messageText = "New RSS Live Folder"
+        alert.messageText = title
         alert.informativeText = "Enter an RSS or Atom feed URL."
         alert.alertStyle = .informational
-        alert.addButton(withTitle: "Create")
+        alert.addButton(withTitle: initialValue.isEmpty ? "Create" : "Save")
         alert.addButton(withTitle: "Cancel")
 
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 360, height: 24))
         field.placeholderString = "https://example.com/feed.xml"
+        field.stringValue = initialValue
         alert.accessoryView = field
         alert.sumiApplyNativeSurfaceAppearance(
             windowState: windowState,

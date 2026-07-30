@@ -544,6 +544,18 @@ func makeFolderHeaderContextMenuEntries(actions: SidebarFolderHeaderMenuActions)
     )
 }
 
+func makeLiveFolderHeaderContextMenuEntries(
+    options: [SidebarContextMenuEntry],
+    folderEntries: [SidebarContextMenuEntry]
+) -> [SidebarContextMenuEntry] {
+    joinSidebarMenuSections(
+        [
+            [.submenu(title: "Live Folder Options", children: options)],
+            folderEntries,
+        ]
+    )
+}
+
 func makeSpaceContextMenuEntries(actions: SidebarSpaceMenuActions) -> [SidebarContextMenuEntry] {
     joinSidebarMenuSections(
         [
@@ -568,17 +580,38 @@ func makeSidebarShellContextMenuEntries(
     isCompactModeEnabled: Bool,
     actions: SidebarShellMenuActions
 ) -> [SidebarContextMenuEntry] {
+    let gitHubIcon = SidebarContextMenuIcon.folderIcon(
+        SumiZenFolderIconCatalog.storageValue(for: "logo-github")
+    )
+    let rssIcon = SidebarContextMenuIcon.folderIcon(
+        SumiZenFolderIconCatalog.storageValue(for: "logo-rss")
+    )
     let liveFolderChildren: [SidebarContextMenuEntry] = [
-        actions.newRSSLiveFolder.map {
-            .action(.init(title: "RSS Feed", systemImage: "dot.radiowaves.left.and.right", classification: .structuralMutation, onAction: $0))
-        },
         actions.newGitHubPullRequestsLiveFolder.map {
-            .action(.init(title: "GitHub Pull Requests", systemImage: "chevron.left.forwardslash.chevron.right", classification: .structuralMutation, onAction: $0))
+            .action(.init(
+                title: "Pull Requests",
+                icon: gitHubIcon,
+                classification: .structuralMutation,
+                action: $0
+            ))
         },
         actions.newGitHubIssuesLiveFolder.map {
-            .action(.init(title: "GitHub Issues", systemImage: "exclamationmark.circle", classification: .structuralMutation, onAction: $0))
+            .action(.init(
+                title: "Issues",
+                icon: gitHubIcon,
+                classification: .structuralMutation,
+                action: $0
+            ))
         },
-    ].compactMap { $0 }
+        actions.newRSSLiveFolder.map {
+            .action(.init(
+                title: "RSS Feed",
+                icon: rssIcon,
+                classification: .structuralMutation,
+                action: $0
+            ))
+        },
+    ].compactMap(\.self)
 
     let createSection: [SidebarContextMenuEntry] = [
         .action(.init(title: "New Tab", systemImage: "plus", classification: .presentationOnly, onAction: actions.newTab)),
@@ -587,8 +620,8 @@ func makeSidebarShellContextMenuEntries(
         },
         liveFolderChildren.isEmpty
             ? nil
-            : .submenu(title: "New Live Folder", systemImage: "sparkles", children: liveFolderChildren),
-    ].compactMap { $0 }
+            : .submenu(title: "Live Folder", children: liveFolderChildren),
+    ].compactMap(\.self)
 
     let appearanceSection: [SidebarContextMenuEntry] = [
         actions.changeTheme.map {
@@ -603,7 +636,7 @@ func makeSidebarShellContextMenuEntries(
             )
         ),
         .action(.init(title: "Sidebar Settings…", systemImage: "slider.horizontal.3", classification: .presentationOnly, onAction: actions.openSettings)),
-    ].compactMap { $0 }
+    ].compactMap(\.self)
 
     return joinSidebarMenuSections([createSection, appearanceSection])
 }

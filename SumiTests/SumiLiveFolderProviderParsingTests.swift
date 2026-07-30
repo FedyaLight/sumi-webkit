@@ -133,4 +133,34 @@ final class SumiLiveFolderProviderParsingTests: XCTestCase {
         XCTAssertEqual(parsed.items.map(\.title), ["Fix parser fallback"])
         XCTAssertEqual(parsed.items.map(\.urlString), ["https://github.com/apple/swift/pull/123"])
     }
+
+    func testGitHubPullRequestQueriesMatchZenForHTMLAndJSONDashboards() {
+        var source = SumiLiveFolderSource(
+            folderId: UUID(),
+            spaceId: UUID(),
+            kind: .githubPullRequests
+        )
+        source.githubFilters = SumiGitHubLiveFolderFilters(
+            authorMe: true,
+            assignedMe: true,
+            reviewRequested: true
+        )
+        let provider = SumiGitHubLiveFolderProvider(
+            networkClient: SumiLiveFolderNetworkClient()
+        )
+
+        let htmlQueries = provider.buildQueries(for: source, dashboardMode: .html)
+        let jsonQueries = provider.buildQueries(for: source, dashboardMode: .json)
+
+        XCTAssertEqual(htmlQueries.count, 3)
+        XCTAssertTrue(htmlQueries[0].hasSuffix("author:@me"))
+        XCTAssertTrue(htmlQueries[1].hasSuffix("assignee:@me"))
+        XCTAssertTrue(htmlQueries[2].hasSuffix("review-requested:@me"))
+        XCTAssertEqual(jsonQueries.count, 1)
+        XCTAssertTrue(
+            jsonQueries[0].hasSuffix(
+                "(author:@me OR assignee:@me OR review-requested:@me)"
+            )
+        )
+    }
 }

@@ -135,6 +135,7 @@ final class TabPersistenceArchitectureTests: XCTestCase {
                     spaceId: spaceId,
                     parentFolderId: UUID(),
                     isOpen: true,
+                    isLiveFolder: true,
                     index: 0
                 ),
             ],
@@ -162,6 +163,7 @@ final class TabPersistenceArchitectureTests: XCTestCase {
         XCTAssertEqual(payload.currentTabId, regularTabId)
         XCTAssertEqual(payload.currentSpaceId, spaceId)
         XCTAssertNil(payload.foldersBySpace[spaceId]?.first?.parentFolderId)
+        XCTAssertEqual(payload.foldersBySpace[spaceId]?.first?.isLiveFolder, true)
         XCTAssertEqual(payload.snapshot.tabs.map(\.id), [regularTabId])
         XCTAssertEqual(payload.snapshot.spaces.map(\.id), [spaceId, secondSpaceId])
         XCTAssertEqual(payload.snapshot.state.currentTabID, regularTabId)

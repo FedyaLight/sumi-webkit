@@ -348,7 +348,6 @@ struct SpaceSidebarSceneBuilder {
             ?? SidebarLiveFolderSnapshot(source: nil, items: [])
         let projection = SidebarFolderViewProjection(
             folder: folder,
-            space: space,
             shortcutPins: inventory.folderPinsByFolderID[folder.id] ?? [],
             inventory: inventory,
             selection: selection,
@@ -448,9 +447,8 @@ struct SpaceSidebarSceneBuilder {
                                 folder: folder,
                                 index: entry.dropIndex,
                                 nestingDepth: nestingDepth + 1,
-                                isSelected:
-                                    projection.currentTabURLString
-                                        == item.urlString
+                                isSelected: projection
+                                    .isLiveFolderItemSelected(item)
                             )
                         ),
                         targetExtent: SidebarRowLayout.rowHeight,

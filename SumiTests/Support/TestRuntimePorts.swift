@@ -355,6 +355,7 @@ enum TestRuntimePorts {
         syncWorkspaceThemeAcrossWindows: @escaping (Space, Bool) -> Void = { _, _ in /* No-op. */ },
         closeAuxiliaryMiniWindow: @escaping (Tab, AuxiliaryWindowCloseReason) -> Void = { _, _ in /* No-op. */ },
         isLiveFolder: @escaping (UUID) -> Bool = { _ in false },
+        reconcileLiveFolderItemMove: @escaping (UUID, UUID, UUID?, Int?) -> Void = { _, _, _, _ in /* No-op. */ },
         deleteLiveFolderState: @escaping (Set<UUID>) -> Void = { _ in /* No-op. */ }
     ) -> RuntimePortRegistry {
         RuntimePortRegistry(
@@ -392,6 +393,7 @@ enum TestRuntimePorts {
                 notifications: notifications,
                 closeAuxiliaryMiniWindow: closeAuxiliaryMiniWindow,
                 isLiveFolder: isLiveFolder,
+                reconcileLiveFolderItemMove: reconcileLiveFolderItemMove,
                 deleteLiveFolderState: deleteLiveFolderState
             ),
             webViewLifecycle: webViewLifecycle ?? self.webViewLifecycle(
@@ -597,6 +599,7 @@ private final class ClosureTabSessionSideEffectsPort: TabSessionSideEffectsPort 
     private let notificationsProvider: @MainActor () -> (any BrowserNotificationPresenting)?
     private let closeAuxiliaryMiniWindowHandler: (Tab, AuxiliaryWindowCloseReason) -> Void
     private let isLiveFolderProvider: (UUID) -> Bool
+    private let reconcileLiveFolderItemMoveHandler: (UUID, UUID, UUID?, Int?) -> Void
     private let deleteLiveFolderStateHandler: (Set<UUID>) -> Void
 
     init(
@@ -605,6 +608,7 @@ private final class ClosureTabSessionSideEffectsPort: TabSessionSideEffectsPort 
         notifications: @escaping @MainActor () -> (any BrowserNotificationPresenting)?,
         closeAuxiliaryMiniWindow: @escaping (Tab, AuxiliaryWindowCloseReason) -> Void,
         isLiveFolder: @escaping (UUID) -> Bool,
+        reconcileLiveFolderItemMove: @escaping (UUID, UUID, UUID?, Int?) -> Void,
         deleteLiveFolderState: @escaping (Set<UUID>) -> Void
     ) {
         self.captureClosedTabHandler = captureClosedTab
@@ -612,6 +616,7 @@ private final class ClosureTabSessionSideEffectsPort: TabSessionSideEffectsPort 
         self.notificationsProvider = notifications
         self.closeAuxiliaryMiniWindowHandler = closeAuxiliaryMiniWindow
         self.isLiveFolderProvider = isLiveFolder
+        self.reconcileLiveFolderItemMoveHandler = reconcileLiveFolderItemMove
         self.deleteLiveFolderStateHandler = deleteLiveFolderState
     }
 
@@ -633,6 +638,20 @@ private final class ClosureTabSessionSideEffectsPort: TabSessionSideEffectsPort 
 
     func isLiveFolder(_ folderId: UUID) -> Bool {
         isLiveFolderProvider(folderId)
+    }
+
+    func reconcileLiveFolderItemMove(
+        shortcutPinID: UUID,
+        fromFolderID: UUID,
+        toFolderID: UUID?,
+        targetIndex: Int?
+    ) {
+        reconcileLiveFolderItemMoveHandler(
+            shortcutPinID,
+            fromFolderID,
+            toFolderID,
+            targetIndex
+        )
     }
 
     func deleteLiveFolderState(forFolderIds folderIds: Set<UUID>) {

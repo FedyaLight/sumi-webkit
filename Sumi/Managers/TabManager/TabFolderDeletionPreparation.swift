@@ -4,6 +4,7 @@ import Foundation
 struct TabFolderDeletionPreparation {
     let spaceID: UUID
     let deletedFolderIDs: Set<UUID>
+    let deletedLiveFolderIDs: Set<UUID>
     let parentFolderID: UUID?
     let remainingFolders: [TabFolder]
     let existingPins: [ShortcutPin]

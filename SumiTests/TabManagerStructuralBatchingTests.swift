@@ -432,6 +432,31 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         XCTAssertEqual(validationRecorder.count, 1)
     }
 
+    func testFolderRemovalTouchesProviderStateOnlyForDurableLiveFolders() {
+        var deletedLiveFolderIDs: [Set<UUID>] = []
+        let tabManager = makeBrowser(runtimePorts: TestRuntimePorts.make(
+            deleteLiveFolderState: { deletedLiveFolderIDs.append($0) }
+        ))
+        let space = makeSpace(in: tabManager, name: "Workspace")
+        let ordinary = makeFolder(
+            in: tabManager,
+            spaceID: space.id,
+            name: "Ordinary"
+        )
+        let live = makeFolder(
+            in: tabManager,
+            spaceID: space.id,
+            name: "Live"
+        )
+        live.isLiveFolder = true
+
+        XCTAssertTrue(tabManager.sidebarFolderCommands.deleteFolder(ordinary.id))
+        XCTAssertTrue(deletedLiveFolderIDs.isEmpty)
+
+        XCTAssertTrue(tabManager.sidebarFolderCommands.ungroupFolder(live.id))
+        XCTAssertEqual(deletedLiveFolderIDs, [[live.id]])
+    }
+
     func testLookupIncludesTransientExtensionAndAuxiliaryTabs() throws {
         let tabManager = BrowserManager()
         let space = makeSpace(in: tabManager, name: "Workspace")
@@ -1179,6 +1204,243 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         XCTAssertEqual(expansionChanges.first?.spaceID, space.id)
         XCTAssertEqual(expansionChanges.first?.expansionByFolderID, [folder.id: true])
         withExtendedLifetime(expansionCancellable) {}
+    }
+
+    func testDraggingLiveFolderItemToPinnedDetachesProviderStateAfterMove() throws {
+        var liveFolderID: UUID?
+        var placements: [(pinID: UUID, folderID: UUID, targetFolderID: UUID?, index: Int?)] = []
+        let browser = makeBrowser(runtimePorts: TestRuntimePorts.make(
+            isLiveFolder: { $0 == liveFolderID },
+            reconcileLiveFolderItemMove: { placements.append(($0, $1, $2, $3)) }
+        ))
+        let space = makeSpace(in: browser, name: "Workspace")
+        let folder = try XCTUnwrap(browser.sidebarFolderCommands.createFolder(
+            in: space.id,
+            name: "Feed",
+            isLiveFolder: true
+        ))
+        liveFolderID = folder.id
+        let pin = try XCTUnwrap(browser.shortcutPinStoreOwner.insert(
+            ShortcutPin(
+                id: UUID(),
+                role: .spacePinned,
+                spaceId: space.id,
+                index: 0,
+                folderId: folder.id,
+                launchURL: URL(string: "https://example.test/item")!,
+                title: "Live item"
+            ),
+            at: 0,
+            openTargetFolder: false
+        ))
+        let windowState = BrowserWindowState()
+        windowState.currentSpaceId = space.id
+        browser.windowRegistry.register(windowState)
+        let scope = try XCTUnwrap(SidebarDragScope(
+            windowState: windowState,
+            sourceZone: .folder(folder.id),
+            item: .shortcutPin(pin.id, title: pin.title)
+        ))
+
+        XCTAssertTrue(browser.sidebarDragRouter.performSidebarDragOperation(
+            DragOperation(
+                payload: .pin(pin),
+                scope: scope,
+                fromContainer: .folder(folder.id),
+                toContainer: .spacePinned(space.id),
+                toIndex: 0
+            )
+        ))
+
+        XCTAssertNil(browser.shortcutPinCollectionStateOwner.shortcutPin(by: pin.id)?.folderId)
+        XCTAssertEqual(placements.map(\.pinID), [pin.id])
+        XCTAssertEqual(placements.map(\.folderID), [folder.id])
+        XCTAssertNil(placements.first?.targetFolderID)
+    }
+
+    func testDraggingLiveFolderItemWithinFolderCommitsProviderOrder() throws {
+        var liveFolderID: UUID?
+        var placements: [(pinID: UUID, folderID: UUID, targetFolderID: UUID?, index: Int?)] = []
+        let browser = makeBrowser(runtimePorts: TestRuntimePorts.make(
+            isLiveFolder: { $0 == liveFolderID },
+            reconcileLiveFolderItemMove: { placements.append(($0, $1, $2, $3)) }
+        ))
+        let space = makeSpace(in: browser, name: "Workspace")
+        let folder = try XCTUnwrap(browser.sidebarFolderCommands.createFolder(
+            in: space.id,
+            name: "Feed",
+            isLiveFolder: true
+        ))
+        liveFolderID = folder.id
+        let first = try XCTUnwrap(browser.shortcutPinStoreOwner.insert(
+            ShortcutPin(
+                id: UUID(),
+                role: .spacePinned,
+                spaceId: space.id,
+                index: 0,
+                folderId: folder.id,
+                launchURL: URL(string: "https://example.test/first")!,
+                title: "First"
+            ),
+            at: 0,
+            openTargetFolder: false
+        ))
+        let second = try XCTUnwrap(browser.shortcutPinStoreOwner.insert(
+            ShortcutPin(
+                id: UUID(),
+                role: .spacePinned,
+                spaceId: space.id,
+                index: 1,
+                folderId: folder.id,
+                launchURL: URL(string: "https://example.test/second")!,
+                title: "Second"
+            ),
+            at: 1,
+            openTargetFolder: false
+        ))
+        let windowState = BrowserWindowState()
+        windowState.currentSpaceId = space.id
+        browser.windowRegistry.register(windowState)
+        let scope = try XCTUnwrap(SidebarDragScope(
+            windowState: windowState,
+            sourceZone: .folder(folder.id),
+            item: .shortcutPin(second.id, title: second.title)
+        ))
+
+        XCTAssertTrue(browser.sidebarDragRouter.performSidebarDragOperation(
+            DragOperation(
+                payload: .pin(second),
+                scope: scope,
+                fromContainer: .folder(folder.id),
+                toContainer: .folder(folder.id),
+                toIndex: 0
+            )
+        ))
+
+        XCTAssertEqual(
+            browser.shortcutPinCollectionStateOwner.folderPinnedPins(
+                for: folder.id,
+                in: space.id
+            ).map(\.id),
+            [second.id, first.id]
+        )
+        XCTAssertEqual(placements.map(\.pinID), [second.id])
+        XCTAssertEqual(placements.first?.targetFolderID, folder.id)
+        XCTAssertEqual(placements.first?.index, 0)
+    }
+
+    func testDraggingLiveFolderItemToRegularDetachesOnlyAfterConversion() throws {
+        var liveFolderID: UUID?
+        var placements: [(pinID: UUID, folderID: UUID, targetFolderID: UUID?, index: Int?)] = []
+        var runtimeProfile: Profile?
+        let windowState = BrowserWindowState()
+        let browser = makeBrowser(runtimePorts: TestRuntimePorts.make(
+            currentProfileId: { runtimeProfile?.id },
+            defaultProfileId: { runtimeProfile?.id },
+            profile: { runtimeProfile?.id == $0 ? runtimeProfile : nil },
+            windowState: { $0 == windowState.id ? windowState : nil },
+            windows: { [(windowState.id, windowState)] },
+            isLiveFolder: { $0 == liveFolderID },
+            reconcileLiveFolderItemMove: { placements.append(($0, $1, $2, $3)) }
+        ))
+        runtimeProfile = browser.profileManager.profiles.first
+        let space = makeSpace(
+            in: browser,
+            name: "Workspace",
+            profileID: runtimeProfile?.id
+        )
+        let folder = try XCTUnwrap(browser.sidebarFolderCommands.createFolder(
+            in: space.id,
+            name: "Feed",
+            isLiveFolder: true
+        ))
+        liveFolderID = folder.id
+        let pin = try XCTUnwrap(browser.shortcutPinStoreOwner.insert(
+            ShortcutPin(
+                id: UUID(),
+                role: .spacePinned,
+                spaceId: space.id,
+                index: 0,
+                folderId: folder.id,
+                launchURL: URL(string: "https://example.test/item")!,
+                title: "Live item"
+            ),
+            at: 0,
+            openTargetFolder: false
+        ))
+        windowState.currentSpaceId = space.id
+        windowState.currentProfileId = runtimeProfile?.id
+        browser.windowRegistry.register(windowState)
+        let scope = try XCTUnwrap(SidebarDragScope(
+            windowState: windowState,
+            sourceZone: .folder(folder.id),
+            item: .shortcutPin(pin.id, title: pin.title)
+        ))
+
+        XCTAssertTrue(browser.sidebarDragRouter.performSidebarDragOperation(
+            DragOperation(
+                payload: .pin(pin),
+                scope: scope,
+                fromContainer: .folder(folder.id),
+                toContainer: .spaceRegular(space.id),
+                toIndex: 0
+            )
+        ))
+
+        XCTAssertNil(browser.shortcutPinCollectionStateOwner.shortcutPin(by: pin.id))
+        XCTAssertEqual(
+            browser.regularTabCollectionOwner.tabs(in: space.id).map(\.url),
+            [pin.launchURL]
+        )
+        XCTAssertEqual(placements.map(\.pinID), [pin.id])
+        XCTAssertEqual(placements.map(\.folderID), [folder.id])
+        XCTAssertNil(placements.first?.targetFolderID)
+    }
+
+    func testLiveFolderRejectsInboundDragWhenOptionalModuleHasNoRuntimeState() throws {
+        let browser = BrowserManager()
+        let space = makeSpace(
+            in: browser,
+            name: "Workspace",
+            profileID: browser.profileManager.profiles.first?.id
+        )
+        let folder = try XCTUnwrap(browser.sidebarFolderCommands.createFolder(
+            in: space.id,
+            name: "Feed",
+            isLiveFolder: true
+        ))
+        XCTAssertNil(browser.liveFolderManager.source(for: folder.id))
+        let pin = try XCTUnwrap(browser.shortcutPinStoreOwner.insert(
+            ShortcutPin(
+                id: UUID(),
+                role: .spacePinned,
+                spaceId: space.id,
+                index: 0,
+                launchURL: URL(string: "https://example.test/ordinary")!,
+                title: "Ordinary item"
+            ),
+            at: 0
+        ))
+        let windowState = BrowserWindowState()
+        windowState.currentSpaceId = space.id
+        windowState.currentProfileId = space.profileId
+        browser.windowRegistry.register(windowState)
+        let scope = try XCTUnwrap(SidebarDragScope(
+            windowState: windowState,
+            sourceZone: .spacePinned(space.id),
+            item: .shortcutPin(pin.id, title: pin.title)
+        ))
+
+        XCTAssertFalse(browser.sidebarDragRouter.performSidebarDragOperation(
+            DragOperation(
+                payload: .pin(pin),
+                scope: scope,
+                fromContainer: .spacePinned(space.id),
+                toContainer: .folder(folder.id),
+                toIndex: 0
+            )
+        ))
+        XCTAssertNil(browser.shortcutPinCollectionStateOwner.shortcutPin(by: pin.id)?.folderId)
     }
 
     func testFolderShortcutPlacementTargetUsesCanonicalPinAndAppendIndex() throws {

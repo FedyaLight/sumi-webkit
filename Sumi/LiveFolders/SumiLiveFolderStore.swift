@@ -33,6 +33,11 @@ actor SumiLiveFolderStore {
         }
     }
 
+    func deleteSources(inFolderIDs folderIDs: Set<UUID>) throws {
+        guard !folderIDs.isEmpty else { return }
+        try save(try load().removingSources(inFolderIDs: folderIDs))
+    }
+
     func verifyDurableState() throws {
         let state = try load()
         try save(state)

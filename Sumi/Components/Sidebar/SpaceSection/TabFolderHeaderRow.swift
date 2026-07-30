@@ -13,6 +13,7 @@ struct TabFolderHeaderRow: View {
     /// Zen parity: collapsed folders with sticky rows offer an unload/reset
     /// affordance on hover. Nil hides the affordance entirely.
     var onResetProjection: (() -> Void)?
+    var resetProjectionErrorTitle: String?
 
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
@@ -57,7 +58,7 @@ struct TabFolderHeaderRow: View {
     private func resetProjectionButton(action: @escaping () -> Void) -> some View {
         let showsButton = displayIsHovering && isInteractive
         return Button(action: action) {
-            Image(systemName: "minus")
+            Image(systemName: resetProjectionErrorTitle == nil ? "minus" : "arrow.clockwise")
                 .font(SidebarThemeTokens.Typography.trailingAction)
                 .foregroundColor(tokens.primaryText)
                 .frame(
@@ -71,8 +72,8 @@ struct TabFolderHeaderRow: View {
         .opacity(showsButton ? 1 : 0)
         .allowsHitTesting(showsButton)
         .accessibilityHidden(!showsButton)
-        .accessibilityLabel("Unload folder tabs")
-        .help("Unload tabs and collapse")
+        .accessibilityLabel(resetProjectionErrorTitle ?? "Unload folder tabs")
+        .help(resetProjectionErrorTitle ?? "Unload tabs and collapse")
         .sidebarHover($isResetHovered, isEnabled: showsButton)
         .sidebarAppKitPrimaryAction(
             isEnabled: showsButton,

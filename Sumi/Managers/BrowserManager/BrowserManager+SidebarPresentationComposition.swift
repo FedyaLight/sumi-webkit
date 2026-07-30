@@ -97,8 +97,7 @@ extension BrowserManager {
                     ordering: splitGroupSidebarOrdering,
                     conversion: splitGroupContainerConversion,
                     folders: folderCollectionStateOwner,
-                    regularTabs: regularTabCollectionOwner,
-                    liveFolders: liveFolderManager
+                    regularTabs: regularTabCollectionOwner
                 )
             ),
             shortcutCopy: sidebarPinCommands,

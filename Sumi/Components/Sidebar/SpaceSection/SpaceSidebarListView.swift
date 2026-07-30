@@ -33,7 +33,7 @@ struct SpaceSidebarListView: View {
                 !windowState.isIncognito
                     && !windowState.sidebarSpacePinnedCollapse
                         .isCollapsed(space.id),
-            isLiveFolder: browserContext.liveFolderManager.isLiveFolder
+            isLiveFolder: { inventory.foldersByID[$0]?.isLiveFolder == true }
         )
         SpaceSidebarDragSnapshotReader(
             spaceID: space.id,
@@ -261,8 +261,7 @@ private struct SpaceSidebarListContentView: View {
                 onSetPinnedContentCollapsed(false)
             }
         }
-        .onChange(of: dragSnapshots.pinned.isCompletingDrop) {
-            _, isCompletingDrop in
+        .onChange(of: dragSnapshots.pinned.isCompletingDrop) { _, isCompletingDrop in
             if isCompletingDrop,
                isPinnedCollapsed,
                dragSnapshots.pinned.isHoveringEmptySection {
@@ -359,7 +358,7 @@ private extension SpaceSidebarListContentView {
         let hasLiveSelection =
             row.projection.isLiveFolder
             && row.projection.liveFolderItems.contains {
-                $0.urlString == row.projection.currentTabURLString
+                row.projection.isLiveFolderItemSelected($0)
             }
         let mutationActions = folderMutationActions
         let contextOwner = folderContextOwner(
@@ -523,8 +522,17 @@ private extension SpaceSidebarListContentView {
         _ row: SpaceSidebarListElementPayload.LiveItem
     ) -> some View {
         let mutationActions = folderMutationActions
+        let shortcutPin = row.item.shortcutPinId.flatMap(inventory.pin(id:))
         return TabFolderLiveItemEntryView(
             item: row.item,
+            shortcutPin: shortcutPin,
+            faviconPartition: shortcutPin.map {
+                pinProjection.faviconPartition(
+                    for: $0,
+                    currentSpaceID: windowState.currentSpaceId
+                )
+            },
+            faviconImageReader: browserContext.faviconImageReader,
             folderID: row.folder.id,
             isSelected: row.isSelected,
             isInteractive: isInteractive,
@@ -697,17 +705,8 @@ private struct SpaceFlatFolderHeaderView: View {
                 mutationActions.toggleFolderOpenState(folder.model.id)
             },
             onActivateShortcutPin: mutationActions.activateShortcutPin,
-            onResetProjection:
-                !folder.presentation.isExpanded
-                    && !folder.contentProjection
-                        .visibleCollapsedProjectionIDs.isEmpty
-                ? {
-                    mutationActions.resetCollapsedProjection(
-                        folder.model,
-                        inventory: inventory
-                    )
-                }
-                : nil
+            onResetProjection: resetProjectionAction,
+            resetProjectionErrorTitle: liveFolderErrorTitle
         )
         .onAppear {
             stickyOwner.reconcileOnAppear()
@@ -733,6 +732,31 @@ private struct SpaceFlatFolderHeaderView: View {
         ) { _, _ in
             stickyOwner.prunePublish()
         }
+    }
+
+    private var resetProjectionAction: (() -> Void)? {
+        guard !folder.presentation.isExpanded else { return nil }
+        if browserContext.liveFolderManager.source(for: folder.model.id)?
+            .lastErrorKind != nil {
+            return {
+                browserContext.liveFolderManager.refresh(folderId: folder.model.id)
+            }
+        }
+        guard !folder.contentProjection.visibleCollapsedProjectionIDs.isEmpty else {
+            return nil
+        }
+        return {
+            mutationActions.resetCollapsedProjection(
+                folder.model,
+                inventory: inventory
+            )
+        }
+    }
+
+    private var liveFolderErrorTitle: String? {
+        browserContext.liveFolderManager.source(for: folder.model.id)?
+            .lastErrorKind?
+            .displayTitle
     }
 
     private func refreshLiveFolderIfNeeded() {

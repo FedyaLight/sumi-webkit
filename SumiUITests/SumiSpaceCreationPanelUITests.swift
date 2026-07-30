@@ -18,6 +18,11 @@ final class SumiSpaceCreationPanelUITests: SumiLaunchSmokeUITestCase {
 
         let newSpaceItem = app.menuItems["New Space"]
         XCTAssertTrue(newSpaceItem.waitForExistence(timeout: 3))
+        XCTAssertFalse(
+            app.menuItems["Live Folder"].exists,
+            "Zen keeps Live Folder creation out of the bottom Actions menu"
+        )
+        XCTAssertFalse(app.menuItems["New Live Folder"].exists)
         newSpaceItem.click()
 
         let panel = window.groups["sidebar-space-creation"]

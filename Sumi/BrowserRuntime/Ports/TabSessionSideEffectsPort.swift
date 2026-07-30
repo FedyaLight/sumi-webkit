@@ -7,6 +7,12 @@ protocol TabSessionSideEffectsPort {
     func notifications() -> (any BrowserNotificationPresenting)?
     func closeAuxiliaryMiniWindow(for tab: Tab, reason: AuxiliaryWindowCloseReason)
     func isLiveFolder(_ folderId: UUID) -> Bool
+    func reconcileLiveFolderItemMove(
+        shortcutPinID: UUID,
+        fromFolderID: UUID,
+        toFolderID: UUID?,
+        targetIndex: Int?
+    )
     func deleteLiveFolderState(forFolderIds folderIds: Set<UUID>)
 }
 
@@ -15,17 +21,20 @@ struct LiveTabSessionSideEffectsPort: TabSessionSideEffectsPort {
     private let recentlyClosedManager: RecentlyClosedManager
     private let notificationPresenter: any BrowserNotificationPresenting
     private let webViewCloseRouter: BrowserWebViewCloseRouter
+    private let folders: TabFolderCollectionStateOwner
     private let liveFolderManager: SumiLiveFolderManager
 
     init(
         recentlyClosedManager: RecentlyClosedManager,
         notificationPresenter: any BrowserNotificationPresenting,
         webViewCloseRouter: BrowserWebViewCloseRouter,
+        folders: TabFolderCollectionStateOwner,
         liveFolderManager: SumiLiveFolderManager
     ) {
         self.recentlyClosedManager = recentlyClosedManager
         self.notificationPresenter = notificationPresenter
         self.webViewCloseRouter = webViewCloseRouter
+        self.folders = folders
         self.liveFolderManager = liveFolderManager
     }
 
@@ -52,7 +61,21 @@ struct LiveTabSessionSideEffectsPort: TabSessionSideEffectsPort {
     }
 
     func isLiveFolder(_ folderId: UUID) -> Bool {
-        liveFolderManager.isLiveFolder(folderId)
+        folders.folder(by: folderId)?.isLiveFolder == true
+    }
+
+    func reconcileLiveFolderItemMove(
+        shortcutPinID: UUID,
+        fromFolderID: UUID,
+        toFolderID: UUID?,
+        targetIndex: Int?
+    ) {
+        liveFolderManager.reconcileExternalMove(
+            shortcutPinID: shortcutPinID,
+            fromFolderID: fromFolderID,
+            toFolderID: toFolderID,
+            targetIndex: targetIndex
+        )
     }
 
     func deleteLiveFolderState(forFolderIds folderIds: Set<UUID>) {

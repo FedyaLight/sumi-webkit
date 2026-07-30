@@ -7,20 +7,17 @@ final class SidebarRegularTabTargetQuery {
     private let splitGroups: SplitGroupStore
     private let pins: ShortcutPinCollectionStateOwner
     private let folders: TabFolderCollectionStateOwner
-    private let liveFolders: SumiLiveFolderManager
     private let essentials: EssentialsShortcutPlacementOwner
 
     init(
         splitGroups: SplitGroupStore,
         pins: ShortcutPinCollectionStateOwner,
         folders: TabFolderCollectionStateOwner,
-        liveFolders: SumiLiveFolderManager,
         essentials: EssentialsShortcutPlacementOwner
     ) {
         self.splitGroups = splitGroups
         self.pins = pins
         self.folders = folders
-        self.liveFolders = liveFolders
         self.essentials = essentials
     }
 
@@ -34,7 +31,7 @@ final class SidebarRegularTabTargetQuery {
 
     func userFolders(for spaceID: UUID) -> [TabFolder] {
         folders.folders(for: spaceID)
-            .filter { liveFolders.isLiveFolder($0.id) == false }
+            .filter { !$0.isLiveFolder }
     }
 
     func canAddToEssentials(

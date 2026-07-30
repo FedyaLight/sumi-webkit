@@ -26,6 +26,7 @@ struct TabFolderHeaderView: View {
     let onToggle: () -> Void
     let onActivateShortcutPin: (ShortcutPin) -> Void
     let onResetProjection: (() -> Void)?
+    let resetProjectionErrorTitle: String?
 
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(WindowRegistry.self) private var windowRegistry
@@ -78,7 +79,8 @@ struct TabFolderHeaderView: View {
             glyphPresentation: folderGlyphPresentation,
             glyphPalette: folderShellPalette,
             isInteractive: isInteractive,
-            onResetProjection: onResetProjection
+            onResetProjection: onResetProjection,
+            resetProjectionErrorTitle: resetProjectionErrorTitle
         )
         .sidebarAppKitContextMenu(
             isEnabled: true,
@@ -148,6 +150,7 @@ struct TabFolderHeaderView: View {
     }
 
     private func openFolderPreview(anchorView: NSView, anchorRect: CGRect) {
+        let candidates = folderPreviewCandidates
         guard folderPreviewHoverIsEnabled,
               SidebarFolderPreviewHoverPolicy.allowsOpen(
                   isSidebarDragging: isDragging,
@@ -157,7 +160,7 @@ struct TabFolderHeaderView: View {
                       in: anchorView.window
                   )
               ),
-              let candidates = folderPreviewCandidates
+              !candidates.isEmpty
         else { return }
 
         let source = windowState.sidebarTransientSessionCoordinator.preparedPresentationSource(
@@ -176,7 +179,7 @@ struct TabFolderHeaderView: View {
         )
     }
 
-    private var folderPreviewCandidates: [FolderSearchCandidate]? {
+    private var folderPreviewCandidates: [FolderSearchCandidate] {
         let builder = FolderSearchCandidateBuilder(
             inventory: inventory,
             selection: selection,
@@ -205,6 +208,6 @@ struct TabFolderHeaderView: View {
             in: space,
             excludingVisibleCollapsedProjectionIDs: Set(contentProjection.visibleCollapsedProjectionIDs)
         )
-        return candidates.isEmpty ? nil : candidates
+        return candidates
     }
 }

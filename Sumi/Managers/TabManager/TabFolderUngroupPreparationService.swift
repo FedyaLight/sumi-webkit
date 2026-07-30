@@ -44,6 +44,7 @@ final class TabFolderUngroupPreparationService {
         return TabFolderUngroupPreparation(
             spaceID: spaceID,
             folderID: folder.id,
+            isLiveFolder: folder.isLiveFolder,
             parentFolderID: folder.parentFolderId,
             remainingFolders: currentFolders,
             liftedParentItems: parentItems,

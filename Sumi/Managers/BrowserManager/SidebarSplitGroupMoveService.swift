@@ -14,20 +14,17 @@ final class SidebarSplitGroupMoveService {
     private let conversion: SplitGroupContainerConversion
     private let folders: TabFolderCollectionStateOwner
     private let regularTabs: RegularTabCollectionOwner
-    private let liveFolders: SumiLiveFolderManager
 
     init(
         ordering: SplitGroupSidebarOrderingService,
         conversion: SplitGroupContainerConversion,
         folders: TabFolderCollectionStateOwner,
-        regularTabs: RegularTabCollectionOwner,
-        liveFolders: SumiLiveFolderManager
+        regularTabs: RegularTabCollectionOwner
     ) {
         self.ordering = ordering
         self.conversion = conversion
         self.folders = folders
         self.regularTabs = regularTabs
-        self.liveFolders = liveFolders
     }
 
     func destinations(
@@ -54,7 +51,7 @@ final class SidebarSplitGroupMoveService {
         }
         result.append(contentsOf: folders.folders(for: spaceID).compactMap {
             folder in
-            guard !liveFolders.isLiveFolder(folder.id),
+            guard !folder.isLiveFolder,
                   group.container.shortcutSidebarFolderId != folder.id else {
                 return nil
             }

@@ -26,7 +26,8 @@ final class TabFolderContentMutationTransaction {
     func createFolder(
         for spaceID: UUID,
         parentFolderID: UUID?,
-        name: String
+        name: String,
+        isLiveFolder: Bool = false
     ) -> TabFolder? {
         structuralLookup.withTransaction {
             if let parentFolderID {
@@ -38,6 +39,7 @@ final class TabFolderContentMutationTransaction {
                 name: name,
                 spaceId: spaceID,
                 parentFolderId: parentFolderID,
+                isLiveFolder: isLiveFolder,
                 color: spaces.spaces.first(where: {
                     $0.id == spaceID
                 })?.color ?? .controlAccentColor,
@@ -49,6 +51,15 @@ final class TabFolderContentMutationTransaction {
             hierarchy.appendFolder(folder, in: spaceID)
             persistence.scheduleStructuralPersistence()
             return folder
+        }
+    }
+
+    func markFolderLive(_ folderID: UUID) {
+        structuralLookup.withTransaction {
+            guard let folder = folders.folder(by: folderID),
+                  !folder.isLiveFolder else { return }
+            folder.isLiveFolder = true
+            publishFolderObjectChange(in: folder.spaceId)
         }
     }
 

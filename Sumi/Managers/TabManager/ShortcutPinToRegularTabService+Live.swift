@@ -8,7 +8,8 @@ extension ShortcutPinToRegularTabService {
         pinStore: ShortcutPinStoreOwner,
         pins: ShortcutPinCollectionStateOwner,
         persistence: TabStructuralPersistenceService,
-        structuralLookup: TabStructuralLookupCoordinator
+        structuralLookup: TabStructuralLookupCoordinator,
+        runtimeConnection: TabRuntimePortConnection
     ) -> Self {
         let transaction = ShortcutPinRegularConversionTransaction(
             promotion: promotion,
@@ -25,7 +26,8 @@ extension ShortcutPinToRegularTabService {
             singlePin: ShortcutPinRegularPromotionService(
                 promotion: promotion,
                 admission: admission,
-                transaction: transaction
+                transaction: transaction,
+                runtimeConnection: runtimeConnection
             ),
             group: ShortcutPinGroupRegularConversionService(
                 admission: admission,

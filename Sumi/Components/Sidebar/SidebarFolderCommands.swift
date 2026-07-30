@@ -58,14 +58,21 @@ final class SidebarFolderCommands {
     func createFolder(
         in spaceID: UUID,
         parentFolderID: UUID? = nil,
-        name: String
+        name: String,
+        isLiveFolder: Bool = false
     ) -> TabFolder? {
         guard identity.runtimeIsAvailable else { return nil }
         return content.createFolder(
             for: spaceID,
             parentFolderID: parentFolderID,
-            name: name
+            name: name,
+            isLiveFolder: isLiveFolder
         )
+    }
+
+    func markFolderLive(_ folderID: UUID) {
+        guard isCurrent(folderID) else { return }
+        content.markFolderLive(folderID)
     }
 
     func renameFolder(_ folderID: UUID, to name: String) {

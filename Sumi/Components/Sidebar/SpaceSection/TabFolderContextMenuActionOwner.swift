@@ -30,7 +30,7 @@ struct TabFolderContextMenuActionOwner {
         let profiles = browserContext.profileManager.profiles
         let folderChoices = makeSidebarContextMenuFolderChoices(
             folders: inventory.foldersByID.values
-                .filter { !browserContext.liveFolderManager.isLiveFolder($0.id) },
+                .filter { !$0.isLiveFolder },
             selectedFolderId: pin.folderId
         )
         let spaceChoices = makeSidebarContextMenuSpaceChoices(
@@ -51,13 +51,7 @@ struct TabFolderContextMenuActionOwner {
         )
             ? { pinShortcutGlobally(pin) }
             : nil
-        let savedURLDriftActions: SidebarSavedURLDriftActions? =
-            selection.hasSavedURLDrift(pin, in: windowState)
-                ? .init(
-                    onBackToSavedURL: { resetShortcutPin(pin) },
-                    onUseCurrentPageAsSavedURL: { _ = pinCommands.replaceSavedURLWithCurrent(pin, in: windowState) }
-                )
-                : nil
+        let savedURLDriftActions = savedURLDriftActions(for: pin)
         let unloadAction: (() -> Void)? = presentationState.isOpenLive
             ? { unloadShortcutPin(pin) }
             : nil
@@ -113,6 +107,16 @@ struct TabFolderContextMenuActionOwner {
         )
     }
 
+    private func savedURLDriftActions(for pin: ShortcutPin) -> SidebarSavedURLDriftActions? {
+        guard selection.hasSavedURLDrift(pin, in: windowState) else {
+            return nil
+        }
+        return .init(
+            onBackToSavedURL: { resetShortcutPin(pin) },
+            onUseCurrentPageAsSavedURL: { _ = pinCommands.replaceSavedURLWithCurrent(pin, in: windowState) }
+        )
+    }
+
     func liveFolderItemContextMenuEntries(_ item: SumiLiveFolderItem) -> [SidebarContextMenuEntry] {
         guard let url = item.url else {
             return []
@@ -138,6 +142,9 @@ struct TabFolderContextMenuActionOwner {
                     }),
                 ],
                 [
+                    .action(.init(title: "Remove from Folder", systemImage: "rectangle.portrait.and.arrow.right", classification: .structuralMutation) {
+                        browserContext.liveFolderManager.detach(item: item)
+                    }),
                     .action(.init(title: "Hide Item", systemImage: "xmark", classification: .stateMutationNonStructural) {
                         browserContext.liveFolderManager.dismiss(item: item)
                     }),
@@ -147,10 +154,14 @@ struct TabFolderContextMenuActionOwner {
     }
 
     func folderHeaderContextMenuEntries() -> [SidebarContextMenuEntry] {
-        if currentLiveFolderSource() != nil {
-            return liveFolderHeaderContextMenuEntries()
+        let folderEntries = folderManagementContextMenuEntries()
+        guard currentLiveFolderSource() != nil else {
+            return folderEntries
         }
+        return liveFolderHeaderContextMenuEntries(followedBy: folderEntries)
+    }
 
+    func folderManagementContextMenuEntries() -> [SidebarContextMenuEntry] {
         let unloadActiveTabsAction: (() -> Void)?
         if folderHasLiveSavedTabs {
             unloadActiveTabsAction = unloadActiveFolderTabs
@@ -207,89 +218,6 @@ struct TabFolderContextMenuActionOwner {
         browserContext.liveFolderManager.dismiss(item: item)
     }
 
-    private func liveFolderHeaderContextMenuEntries() -> [SidebarContextMenuEntry] {
-        let source = currentLiveFolderSource()
-        let statusTitle: String = {
-            if let error = source?.lastErrorKind {
-                return error.displayTitle
-            }
-            if let lastSuccessAt = source?.lastSuccessAt {
-                return "Last Updated \(lastSuccessAt.formatted(date: .omitted, time: .shortened))"
-            }
-            return "Not Updated Yet"
-        }()
-
-        let githubLoginSection: [SidebarContextMenuEntry]
-        if source?.lastErrorKind == .notAuthenticated,
-           source?.kind == .githubPullRequests || source?.kind == .githubIssues {
-            githubLoginSection = [
-                .action(.init(title: "Sign in to GitHub", systemImage: "person.crop.circle.badge.exclamationmark", classification: .presentationOnly) {
-                    _ = browserContext.tabOpening.openNewTab(
-                        url: "https://github.com/login",
-                        context: .foreground(
-                            windowState: windowState,
-                            preferredSpaceId: space.id
-                        )
-                    )
-                }),
-            ]
-        } else {
-            githubLoginSection = []
-        }
-
-        return joinSidebarMenuSections(
-            [
-                [
-                    .action(.init(title: statusTitle, systemImage: "clock", isEnabled: false, classification: .presentationOnly) {}),
-                    .action(.init(title: "Refresh Now", systemImage: "arrow.clockwise", classification: .stateMutationNonStructural) {
-                        browserContext.liveFolderManager.refresh(folderId: folder.id)
-                    }),
-                    refreshIntervalSubmenu(for: source),
-                ],
-                githubLoginSection,
-                [
-                    .action(
-                        .init(
-                            title: "Delete Live Folder",
-                            systemImage: "trash",
-                            role: .destructive,
-                            classification: .structuralMutation,
-                            onAction: { mutationActions.deleteNestedFolder(folder) }
-                        )
-                    ),
-                ],
-            ]
-        )
-    }
-
-    private func refreshIntervalSubmenu(for source: SumiLiveFolderSource?) -> SidebarContextMenuEntry {
-        let options: [(title: String, seconds: TimeInterval)] = [
-            ("15 Minutes", 15 * 60),
-            ("30 Minutes", 30 * 60),
-            ("1 Hour", 60 * 60),
-            ("6 Hours", 6 * 60 * 60),
-        ]
-        let currentInterval = source?.refreshIntervalSeconds
-
-        return .submenu(
-            title: "Refresh Every",
-            systemImage: "timer",
-            children: options.map { option in
-                .action(
-                    .init(
-                        title: option.title,
-                        systemImage: nil,
-                        isEnabled: currentInterval != option.seconds,
-                        state: currentInterval == option.seconds ? .on : .off,
-                        classification: .stateMutationNonStructural
-                    ) {
-                        browserContext.liveFolderManager.setRefreshInterval(folderId: folder.id, seconds: option.seconds)
-                    }
-                )
-            }
-        )
-    }
-
     private func presentShortcutLinkEditor(
         for pin: ShortcutPin,
         source: SidebarTransientPresentationSource? = nil
@@ -302,10 +230,6 @@ struct TabFolderContextMenuActionOwner {
                 for: windowState
             )
         )
-    }
-
-    private func currentLiveFolderSource() -> SumiLiveFolderSource? {
-        browserContext.liveFolderManager.source(for: folder.id)
     }
 
     private func alphabetizeTabs() {

@@ -99,6 +99,7 @@ struct TabRestoreFolderRecord: Sendable {
     let spaceId: UUID
     let parentFolderId: UUID?
     let isOpen: Bool
+    var isLiveFolder: Bool = false
     let index: Int
 }
 

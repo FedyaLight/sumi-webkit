@@ -38,8 +38,15 @@ final class SumiDatabase: @unchecked Sendable {
             switch schemaVersion {
             case 0:
                 try Self.createSchema(in: database)
-                try database.execute(sql: "PRAGMA user_version = 1")
+                try database.execute(sql: "PRAGMA user_version = 2")
             case 1:
+                try database.alter(table: "folders") { table in
+                    table.add(column: "is_live", .boolean)
+                        .notNull()
+                        .defaults(to: false)
+                }
+                try database.execute(sql: "PRAGMA user_version = 2")
+            case 2:
                 break
             default:
                 throw SumiDatabaseError.unsupportedSchemaVersion(schemaVersion)
@@ -97,6 +104,7 @@ final class SumiDatabase: @unchecked Sendable {
                 table.column("icon", .text).notNull()
                 table.column("color", .text).notNull()
                 table.column("is_open", .boolean).notNull()
+                table.column("is_live", .boolean).notNull().defaults(to: false)
                 table.column("position", .integer).notNull()
                 table.uniqueKey(["space_id", "parent_folder_id", "position"])
             }

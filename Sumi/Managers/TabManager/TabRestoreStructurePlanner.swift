@@ -89,6 +89,7 @@ struct TabRestoreFolderPlanner: Sendable {
                     spaceId: record.spaceId,
                     parentFolderId: record.parentFolderId,
                     isOpen: record.isOpen,
+                    isLiveFolder: record.isLiveFolder,
                     index: record.index
                 )
             )

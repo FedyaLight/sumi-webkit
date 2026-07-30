@@ -47,6 +47,9 @@ struct TabFolderShortcutEntryView: View {
 /// One live-folder result. Live-folder behavior stays on its existing owner.
 struct TabFolderLiveItemEntryView: View {
     let item: SumiLiveFolderItem
+    let shortcutPin: ShortcutPin?
+    let faviconPartition: SumiFaviconPartition?
+    let faviconImageReader: (any BrowserFaviconImageReading)?
     let folderID: UUID
     let isSelected: Bool
     let isInteractive: Bool
@@ -55,7 +58,12 @@ struct TabFolderLiveItemEntryView: View {
     var body: some View {
         SumiLiveFolderItemRow(
             item: item,
+            shortcutPin: shortcutPin,
+            faviconPartition: faviconPartition,
+            faviconImageReader: faviconImageReader,
+            folderID: folderID,
             isSelected: isSelected,
+            isInteractionEnabled: isInteractive,
             accessibilityID: "live-folder-item-\(folderID.uuidString)-\(item.id)",
             contextMenuEntries: {
                 actionOwner.liveFolderItemContextMenuEntries(item)
@@ -124,5 +132,4 @@ struct TabFolderSplitGroupEntryView: View {
             )
         }
     }
-
 }

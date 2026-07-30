@@ -89,6 +89,7 @@ struct TabPersistenceFolder: Codable, Sendable {
     let spaceId: UUID
     let parentFolderId: UUID?
     let isOpen: Bool
+    let isLiveFolder: Bool
     let index: Int
 
     init(
@@ -99,6 +100,7 @@ struct TabPersistenceFolder: Codable, Sendable {
         spaceId: UUID,
         parentFolderId: UUID? = nil,
         isOpen: Bool,
+        isLiveFolder: Bool = false,
         index: Int
     ) {
         self.id = id
@@ -108,6 +110,7 @@ struct TabPersistenceFolder: Codable, Sendable {
         self.spaceId = spaceId
         self.parentFolderId = parentFolderId
         self.isOpen = isOpen
+        self.isLiveFolder = isLiveFolder
         self.index = index
     }
 
@@ -120,6 +123,10 @@ struct TabPersistenceFolder: Codable, Sendable {
         spaceId = try container.decode(UUID.self, forKey: .spaceId)
         parentFolderId = try container.decodeIfPresent(UUID.self, forKey: .parentFolderId)
         isOpen = try container.decode(Bool.self, forKey: .isOpen)
+        isLiveFolder = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .isLiveFolder
+        ) ?? false
         index = try container.decode(Int.self, forKey: .index)
     }
 }

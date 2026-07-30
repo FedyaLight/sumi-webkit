@@ -315,7 +315,8 @@ final class ShortcutTabPromotionServiceTests: XCTestCase {
                 pinStore: browser.shortcutPinStoreOwner,
                 pins: browser.shortcutPinCollectionStateOwner,
                 persistence: browser.structuralPersistence,
-                structuralLookup: browser.structuralLookupCoordinator
+                structuralLookup: browser.structuralLookupCoordinator,
+                runtimeConnection: browser.runtimePortConnection
             )
         )
     }

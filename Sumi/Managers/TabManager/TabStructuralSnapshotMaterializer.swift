@@ -300,6 +300,7 @@ struct TabStructuralSnapshotMaterializer {
             spaceId: spaceId,
             parentFolderId: folder.parentFolderId,
             isOpen: folder.isOpen,
+            isLiveFolder: folder.isLiveFolder,
             index: folder.index
         )
     }
