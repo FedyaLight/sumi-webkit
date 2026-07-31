@@ -286,7 +286,8 @@ final class PinnedTileVisualGeometryTests: XCTestCase {
             presentationState: presentationState,
             showsAudioButton: false,
             isMuted: false,
-            showsSplitOutline: false
+            showsSplitOutline: false,
+            showsChangedURLSlash: false
         )
     }
 

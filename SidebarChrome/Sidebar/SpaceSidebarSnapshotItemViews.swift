@@ -194,29 +194,37 @@ struct SpaceSnapshotShortcutRowView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            SpaceSnapshotIconView(
-                icon: shortcut.icon,
-                size: SidebarRowLayout.faviconSize,
-                foregroundColor: tokens.primaryText
-            )
-            .saturation(shortcut.presentationState.shouldDesaturateIcon ? 0.0 : 1.0)
-            .opacity(shortcut.presentationState.shouldDesaturateIcon ? 0.8 : 1.0)
-            .frame(width: SidebarRowLayout.faviconSize, height: SidebarRowLayout.faviconSize)
-            .padding(.leading, SidebarRowLayout.leadingInset)
-            .padding(.trailing, SidebarRowLayout.iconTrailingSpacing)
-
-            if shortcut.showsAudioButton {
-                SpaceSnapshotRowAudioGlyph(isMuted: shortcut.isMuted, tokens: tokens)
-                    .padding(.trailing, SidebarRowLayout.iconTrailingSpacing)
+            if shortcut.showsChangedURLSlash {
+                changedURLLeadingAction
             }
 
-            SidebarRowTitleLabel(
-                title: shortcut.title,
-                font: SidebarThemeTokens.Typography.rowTitle,
-                color: tokens.primaryText,
-                height: SidebarRowLayout.titleHeight
+            HStack(spacing: 0) {
+                if !shortcut.showsChangedURLSlash {
+                    shortcutIcon
+                        .padding(.leading, SidebarRowLayout.leadingInset)
+                        .padding(.trailing, SidebarRowLayout.iconTrailingSpacing)
+                }
+
+                if shortcut.showsAudioButton {
+                    SpaceSnapshotRowAudioGlyph(isMuted: shortcut.isMuted, tokens: tokens)
+                        .padding(.trailing, SidebarRowLayout.iconTrailingSpacing)
+                }
+
+                SidebarRowTitleLabel(
+                    title: shortcut.title,
+                    font: SidebarThemeTokens.Typography.rowTitle,
+                    color: tokens.primaryText,
+                    height: SidebarRowLayout.titleHeight
+                )
+                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(
+                .leading,
+                shortcut.showsChangedURLSlash
+                    ? SidebarRowLayout.changedLauncherTitleLeading
+                    : 0
             )
-                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         }
         .padding(.trailing, SidebarRowLayout.trailingInset)
         .frame(height: SidebarRowLayout.rowHeight)
@@ -228,6 +236,49 @@ struct SpaceSnapshotShortcutRowView: View {
             isVisible: shortcut.presentationState.isSelected,
             drawsSelectionShadow: shortcut.presentationState.isSelected
         )
+    }
+
+    private var shortcutIcon: some View {
+        SpaceSnapshotIconView(
+            icon: shortcut.icon,
+            size: SidebarRowLayout.faviconSize,
+            foregroundColor: tokens.primaryText
+        )
+        .saturation(shortcut.presentationState.shouldDesaturateIcon ? 0.0 : 1.0)
+        .opacity(shortcut.presentationState.shouldDesaturateIcon ? 0.8 : 1.0)
+        .frame(
+            width: SidebarRowLayout.faviconSize,
+            height: SidebarRowLayout.faviconSize
+        )
+    }
+
+    private var changedURLLeadingAction: some View {
+        ZStack(alignment: .trailing) {
+            HStack(spacing: 0) {
+                shortcutIcon
+                    .padding(.leading, SidebarRowLayout.changedLauncherResetIconLeading)
+                Spacer(minLength: 0)
+            }
+            .frame(
+                width: SidebarRowLayout.changedLauncherResetWidth,
+                height: SidebarRowLayout.changedLauncherResetHeight,
+                alignment: .leading
+            )
+
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(tokens.secondaryText.opacity(0.3))
+                .frame(
+                    width: SidebarRowLayout.changedLauncherSeparatorWidth,
+                    height: SidebarRowLayout.changedLauncherSeparatorHeight
+                )
+                .rotationEffect(.degrees(15))
+        }
+        .frame(
+            width: SidebarRowLayout.changedLauncherResetWidth,
+            height: SidebarRowLayout.changedLauncherResetHeight,
+            alignment: .leading
+        )
+        .padding(.trailing, SidebarRowLayout.changedLauncherResetTrailingGap)
     }
 }
 

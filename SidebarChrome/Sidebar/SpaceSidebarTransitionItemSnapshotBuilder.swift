@@ -462,6 +462,12 @@ enum SpaceSidebarTransitionItemSnapshotProjector {
         windowState: BrowserWindowState
     ) -> SpaceShortcutSnapshot {
         let presentationState = selection.presentationState(for: pin, in: windowState)
+        let runtimeAffordance = selection.runtimeAffordance(
+            for: pin,
+            liveTab: liveTab,
+            in: windowState,
+            selection: SidebarWindowSelectionSnapshot(windowState: windowState)
+        )
         let faviconPartition = pinProjection.faviconPartition(
             for: pin,
             currentSpaceID: pin.spaceId ?? windowState.currentSpaceId
@@ -496,7 +502,8 @@ enum SpaceSidebarTransitionItemSnapshotProjector {
             isMuted: liveTab?.audioState.isMuted ?? false,
             showsSplitOutline: isSplitPlaceholder
                 || essentialRuntimeState?.showsSplitProxyOutline == true
-                || isInVisibleSplit
+                || isInVisibleSplit,
+            showsChangedURLSlash: runtimeAffordance.showsChangedURLSlash
         )
     }
 

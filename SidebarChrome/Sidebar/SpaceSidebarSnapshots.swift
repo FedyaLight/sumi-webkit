@@ -136,6 +136,7 @@ struct SpaceShortcutSnapshot: Identifiable {
     let showsAudioButton: Bool
     let isMuted: Bool
     let showsSplitOutline: Bool
+    let showsChangedURLSlash: Bool
 }
 
 struct SpaceShortcutSnapshotAccentSource: Equatable {

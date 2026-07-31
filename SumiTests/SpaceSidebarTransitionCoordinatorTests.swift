@@ -1,4 +1,5 @@
 import CoreGraphics
+import Observation
 @testable import Sumi
 import SumiDomain
 import XCTest
@@ -182,6 +183,70 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         XCTAssertEqual(windowState.currentSpaceId, destination.id)
         XCTAssertEqual(coordinator.transitionState.phase, .idle)
         XCTAssertFalse(coordinator.transitionState.hasDestination)
+    }
+
+    func testSwipeCommitDoesNotExposeSourceAsCommittedAfterTransitionReset() async throws {
+        let windowState = BrowserWindowState()
+        let sourceProfileId = UUID()
+        let destinationProfileId = UUID()
+        let source = Space(name: "Source", profileId: sourceProfileId)
+        let destination = Space(name: "Destination", profileId: destinationProfileId)
+        let browserHarness = try TestSidebarBrowserContextHarness(spaces: [source, destination])
+        browserHarness.register(windowState)
+        let settingsHarness = TestDefaultsHarness()
+        let settings = SumiSettingsService(userDefaults: settingsHarness.defaults)
+        let dragState = SidebarDragState()
+        let delayedActions = ManualMainActorDelayedActionScheduler()
+        let coordinator = SpaceSidebarTransitionCoordinator(delayedActions: delayedActions.scheduler)
+
+        defer {
+            coordinator.cancelPendingSpaceTransition()
+            settingsHarness.reset()
+        }
+
+        windowState.currentProfileId = sourceProfileId
+        windowState.currentSpaceId = source.id
+        browserHarness.commitWorkspaceTheme(source.workspaceTheme, for: windowState)
+
+        let context = SpaceSidebarTransitionCoordinator.Context(
+            spaces: [source, destination],
+            currentSpaces: { browserHarness.browserManager.spaceStateOwner.spaces },
+            windowState: windowState,
+            browserContext: browserHarness.context,
+            spaceCatalog: browserHarness.sidebar.spaceCatalog,
+            inventory: browserHarness.sidebar.inventory,
+            selection: browserHarness.sidebar.selection,
+            pinProjection: browserHarness.sidebar.pinProjection,
+            dragState: dragState,
+            settings: settings,
+            allowsInteractiveWork: true,
+            reduceMotion: true
+        )
+
+        coordinator.handleSwipeEvent(
+            .init(phase: .changed, direction: 1, progress: 0.35),
+            context: context
+        )
+
+        let observer = SidebarTransitionRenderFrameObserver(
+            coordinator: coordinator,
+            windowState: windowState
+        )
+        observer.start()
+
+        coordinator.handleSwipeEvent(
+            .init(phase: .ended, direction: 1, progress: 0.35),
+            context: context
+        )
+        delayedActions.runNext()
+
+        XCTAssertFalse(observer.frames.isEmpty)
+        XCTAssertFalse(
+            observer.frames.contains {
+                $0.committedSpaceId == source.id && !$0.usesTransitionLayers
+            },
+            "transition reset must not render the source live page before the destination is committed"
+        )
     }
 
     func testScheduledClickCompletionStartsPendingGeometryEpochBeforePromotion() async throws {
@@ -842,6 +907,51 @@ private func applyRegularListGeometry(
         ),
         generation: generation
     )
+}
+
+private struct SidebarTransitionRenderFrame {
+    let committedSpaceId: UUID?
+    let usesTransitionLayers: Bool
+}
+
+@MainActor
+private final class SidebarTransitionRenderFrameObserver: @unchecked Sendable {
+    let coordinator: SpaceSidebarTransitionCoordinator
+    let windowState: BrowserWindowState
+    private(set) var frames: [SidebarTransitionRenderFrame] = []
+
+    init(
+        coordinator: SpaceSidebarTransitionCoordinator,
+        windowState: BrowserWindowState
+    ) {
+        self.coordinator = coordinator
+        self.windowState = windowState
+    }
+
+    func start() {
+        observe()
+    }
+
+    private func observe() {
+        withObservationTracking {
+            _ = coordinator.transitionState
+            _ = coordinator.transitionSnapshot
+            _ = windowState.currentSpaceId
+        } onChange: { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.frames.append(
+                    SidebarTransitionRenderFrame(
+                        committedSpaceId: self.windowState.currentSpaceId,
+                        usesTransitionLayers: SpaceSidebarRenderPolicy.shouldUseTransitionLayers(
+                            for: self.coordinator.transitionState
+                        )
+                    )
+                )
+                self.observe()
+            }
+        }
+    }
 }
 
 @MainActor

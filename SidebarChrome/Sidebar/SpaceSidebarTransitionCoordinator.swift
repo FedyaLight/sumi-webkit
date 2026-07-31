@@ -566,10 +566,10 @@ final class SpaceSidebarTransitionCoordinator {
             }
         }
 
-        // Reset the local render mode before publishing the committed space.
-        // Otherwise the destination can briefly rebuild as a transition snapshot,
-        // leaving non-drag-capable AppKit row owners under the visible sidebar.
-        let completedDestinationSpaceId = transitionState.finishTransition(commit: commit)
+        // Keep the snapshot mounted while the space service publishes the new
+        // committed space. Resetting first lets the old live page render for a
+        // frame while `currentSpaceId` still points at the source.
+        let completedDestinationSpaceId = transitionState.destinationSpaceId
         let currentSpaces = context.currentSpaces()
 
         if commit,
@@ -594,6 +594,8 @@ final class SpaceSidebarTransitionCoordinator {
                 identity: transitionIdentity
             )
         }
+
+        _ = transitionState.finishTransition(commit: commit)
 
         clearTransitionSnapshot()
         refreshCommittedSidebarDragGeometry(

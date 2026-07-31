@@ -548,6 +548,121 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         XCTAssertEqual(regularTabs.map(\.isSelected), [false, true])
     }
 
+    func testSnapshotBuilderCarriesChangedURLSlashForDriftedShortcut() throws {
+        let browserManager = BrowserManager()
+        let windowState = BrowserWindowState()
+        let settings = makeIsolatedSettings()
+        let profileId = UUID()
+        let source = Space(name: "Source", profileId: profileId)
+        let destination = Space(name: "Destination", profileId: profileId)
+        let pin = ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            spaceId: source.id,
+            index: 0,
+            launchURL: URL(string: "https://example.com/pinned")!,
+            title: "Pinned"
+        )
+
+        browserManager.spaceStateOwner.replaceSpaces([source, destination])
+        browserManager.structuralCollectionMutationOwner
+            .setSpacePinnedShortcuts([pin], for: source.id)
+        windowState.currentProfileId = profileId
+        windowState.currentSpaceId = source.id
+
+        let liveTab = try XCTUnwrap(
+            browserManager.shortcutTabMaterializer.materialize(
+                pin,
+                in: windowState.id,
+                currentSpaceId: source.id
+            )
+        )
+        liveTab.url = URL(string: "https://example.com/live")!
+
+        let snapshot = makeTransitionSnapshot(
+            sourceSpace: source,
+            destinationSpace: destination,
+            browserManager: browserManager,
+            windowState: windowState,
+            settings: settings
+        )
+
+        guard case .shortcut(let shortcut) = snapshot.source.pinnedItems.first
+        else {
+            return XCTFail("Expected one pinned shortcut snapshot")
+        }
+
+        XCTAssertTrue(shortcut.showsChangedURLSlash)
+    }
+
+    func testSnapshotShortcutRowRendersChangedURLSlash() throws {
+        let normal = try renderedSnapshotShortcutRow(
+            showsChangedURLSlash: false
+        )
+        let changed = try renderedSnapshotShortcutRow(
+            showsChangedURLSlash: true
+        )
+        let backingScale = CGFloat(changed.pixelsWide) / changed.size.width
+        let slashRegion = Int(34 * backingScale)..<Int(46 * backingScale)
+
+        func inkCount(in image: NSBitmapImageRep) -> Int {
+            slashRegion.reduce(into: 0) { count, x in
+                for y in 0..<image.pixelsHigh {
+                    guard let color = image.colorAt(x: x, y: y) else {
+                        continue
+                    }
+                    if color.alphaComponent > 0.02 {
+                        count += 1
+                    }
+                }
+            }
+        }
+
+        XCTAssertGreaterThan(
+            inkCount(in: changed),
+            inkCount(in: normal),
+            "A drifted shortcut snapshot must retain the live row's reset slash"
+        )
+    }
+
+    func testChangedURLSnapshotKeepsLiveTitleLeadingInset() throws {
+        let image = try renderedSnapshotShortcutRow(
+            showsChangedURLSlash: true,
+            title: "Pinned"
+        )
+        let backingScale = CGFloat(image.pixelsWide) / image.size.width
+        let titleStartX = Int(
+            (SidebarRowLayout.changedLauncherResetWidth
+                + SidebarRowLayout.changedLauncherResetTrailingGap)
+                * backingScale
+        )
+
+        let firstTitleInkX = (titleStartX..<image.pixelsWide).first { x in
+            (0..<image.pixelsHigh).contains { y in
+                guard let color = image.colorAt(x: x, y: y) else {
+                    return false
+                }
+                return color.alphaComponent > 0.05
+            }
+        }
+
+        let expectedTitleLeadingX = Int(
+            ceil(
+                (SidebarRowLayout.changedLauncherResetWidth
+                    + SidebarRowLayout.changedLauncherResetTrailingGap
+                    + SidebarRowLayout.changedLauncherTitleLeading)
+                    * backingScale
+            )
+        )
+
+        XCTAssertNotNil(firstTitleInkX)
+        XCTAssertGreaterThanOrEqual(
+            firstTitleInkX ?? 0,
+            expectedTitleLeadingX,
+            "Changed-URL snapshot title must keep the live row's leading inset"
+        )
+    }
+
     func testSelectedSnapshotRowSurfaceKeepsFixedHeightInsideViewportProposal() throws {
         let viewportSize = CGSize(width: 213, height: 240)
         let settings = makeIsolatedSettings()
@@ -1191,6 +1306,78 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             y: 0,
             width: rowWidth,
             height: SidebarRowLayout.rowHeight
+        )
+        let window = NSWindow(
+            contentRect: host.frame,
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.contentView = host
+        window.layoutIfNeeded()
+        host.layoutSubtreeIfNeeded()
+        host.displayIfNeeded()
+        let image = try XCTUnwrap(
+            host.bitmapImageRepForCachingDisplay(in: host.bounds)
+        )
+        host.cacheDisplay(in: host.bounds, to: image)
+        return image
+    }
+
+    private func renderedSnapshotShortcutRow(
+        showsChangedURLSlash: Bool,
+        title: String = ""
+    ) throws -> NSBitmapImageRep {
+        let rowWidth: CGFloat = 213
+        let rowHeight = SidebarRowLayout.rowHeight
+        let redIcon = NSImage(
+            size: CGSize(
+                width: SidebarRowLayout.faviconSize,
+                height: SidebarRowLayout.faviconSize
+            )
+        )
+        redIcon.lockFocus()
+        NSColor.red.setFill()
+        NSBezierPath(
+            rect: CGRect(
+                x: 0,
+                y: 0,
+                width: SidebarRowLayout.faviconSize,
+                height: SidebarRowLayout.faviconSize
+            )
+        ).fill()
+        redIcon.unlockFocus()
+
+        let shortcut = SpaceShortcutSnapshot(
+            id: UUID(),
+            title: title,
+            icon: .image(Image(nsImage: redIcon)),
+            accentSource: SpaceShortcutSnapshotAccentSource(
+                launchURL: URL(string: "https://example.com/pinned")!,
+                partition: .regular(nil)
+            ),
+            essentialBackdrop: nil,
+            presentationState: .launcherOnly,
+            showsAudioButton: false,
+            isMuted: false,
+            showsSplitOutline: false,
+            showsChangedURLSlash: showsChangedURLSlash
+        )
+        let settings = makeIsolatedSettings()
+        let tokens = ResolvedThemeContext.default.tokens(settings: settings)
+        let root = SpaceSnapshotShortcutRowView(
+            shortcut: shortcut,
+            rowCornerRadius: 0,
+            tokens: tokens
+        )
+        .frame(width: rowWidth, height: rowHeight)
+        let host = NSHostingView(rootView: root)
+        host.wantsLayer = true
+        host.frame = CGRect(
+            origin: .zero,
+            size: CGSize(width: rowWidth, height: rowHeight)
         )
         let window = NSWindow(
             contentRect: host.frame,
