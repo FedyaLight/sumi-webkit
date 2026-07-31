@@ -124,12 +124,20 @@ final class SumiBrowserWindow: NSWindow {
     }
 
     // Adapted from DuckDuckGo MainWindow.keyDown:
-    // To avoid beep sounds, route keyDown through performKeyEquivalent so the menu chain runs like Safari.
+    // Keep shortcut routing through the menu chain, while letting native text responders
+    // receive ordinary key events so key repeat and text editing behave normally.
     override func keyDown(with event: NSEvent) {
         if isFindInPageCmdF(event) {
             super.keyDown(with: event)
             return
         }
+
+        let shortcutModifiers = event.modifierFlags.intersection([.command, .control, .option])
+        if shortcutModifiers.isEmpty {
+            super.keyDown(with: event)
+            return
+        }
+
         _ = super.performKeyEquivalent(with: event)
     }
 

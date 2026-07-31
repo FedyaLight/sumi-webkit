@@ -5,7 +5,6 @@
 //
 
 import AppKit
-import Carbon
 import SumiDomain
 import SwiftUI
 
@@ -625,15 +624,11 @@ struct CommandPaletteView: View {
     private func installEventMonitorIfNeeded() {
         nativeInteraction.installEventMonitorIfNeeded(
             matching: [
-                .keyDown,
                 .leftMouseDown,
                 .rightMouseDown,
                 .otherMouseDown,
             ]
         ) { event in
-            if event.type == .keyDown {
-                return handlePaletteKeyDown(event) ? nil : event
-            }
             return nativeInteraction.routeMouseEvent(
                 event,
                 isCommandPaletteVisible: windowState.presentationState.isCommandPaletteVisible
@@ -646,26 +641,6 @@ struct CommandPaletteView: View {
                 }
             }
         }
-    }
-
-    private func handlePaletteKeyDown(_ event: NSEvent) -> Bool {
-        let modifiers = event.modifierFlags.intersection([
-            .command,
-            .control,
-            .option,
-            .shift,
-        ])
-        guard modifiers.isEmpty else { return false }
-
-        if event.keyCode == UInt16(kVK_Tab) {
-            return handleTab()
-        }
-
-        if event.keyCode == UInt16(kVK_Escape) {
-            handleEscape()
-            return true
-        }
-        return false
     }
 
     private func handleTab() -> Bool {

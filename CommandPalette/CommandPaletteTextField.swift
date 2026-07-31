@@ -157,6 +157,7 @@ final class CommandPaletteTextFieldView: ChromeTextFieldFocusHostView {
         textField.lineBreakMode = .byClipping
         textField.maximumNumberOfLines = 1
         textField.usesSingleLineMode = true
+        textField.cell?.isScrollable = true
         textField.setAccessibilityIdentifier("command-palette-input")
         textField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         textField.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -173,7 +174,6 @@ final class CommandPaletteTextFieldView: ChromeTextFieldFocusHostView {
             if editor.string != text {
                 editor.string = text
             }
-            textField.stringValue = text
             return
         }
 
