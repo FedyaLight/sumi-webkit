@@ -45,6 +45,9 @@ final class ExtensionSettingsSectionCommandRoutingTests: XCTestCase {
             },
             openOptions: { extensionID in
                 recorder.events.append(.openOptions(extensionID))
+            },
+            uninstall: { extensionID in
+                recorder.events.append(.uninstall(extensionID))
             }
         )
 
@@ -57,6 +60,7 @@ final class ExtensionSettingsSectionCommandRoutingTests: XCTestCase {
             matchPattern: "*://example.com/*"
         )
         await commands.openOptions(for: "extension-e")
+        try await commands.uninstall("extension-f")
 
         XCTAssertEqual(recorder.events, [
             .enabled("extension-a", true),
@@ -68,7 +72,28 @@ final class ExtensionSettingsSectionCommandRoutingTests: XCTestCase {
                 "deny"
             ),
             .openOptions("extension-e"),
+            .uninstall("extension-f"),
         ])
+    }
+
+    func testFindingsSectionAddCommandRouting() async throws {
+        let candidate = makeRoutingCandidate(
+            id: "web-extension",
+            bundleKind: .webExtension,
+            runtimeStatus: .webExtensionImportable
+        )
+        let expected = makeRoutingInstalledExtension(id: candidate.id)
+        var addedCandidateIDs: [String] = []
+        let commands = ExtensionSettingsFindingsCommands { candidate in
+            addedCandidateIDs.append(candidate.id)
+            return expected
+        }
+
+        let installed = try await commands.add(candidate)
+
+        XCTAssertEqual(addedCandidateIDs, [candidate.id])
+        XCTAssertEqual(installed.id, expected.id)
+        XCTAssertFalse(installed.isEnabled)
     }
 
     func testContentBlockerSectionCommandRouting() async throws {
@@ -117,6 +142,7 @@ private final class InstalledSectionCommandRecorder {
         case privateAccess(String, Bool)
         case configuredAccess(String, String, String)
         case openOptions(String)
+        case uninstall(String)
     }
 
     var events: [Event] = []
@@ -140,23 +166,63 @@ private final class ContentBlockerCommandRecorder {
 }
 
 private func makeRoutingCandidate(
-    id: String
+    id: String,
+    bundleKind: SafariExtensionBundleKind = .contentBlocker,
+    runtimeStatus: SafariExtensionRuntimeStatus = .contentBlockerImportable
 ) -> DiscoveredSafariExtensionCandidate {
     let appURL = URL(fileURLWithPath: "/Applications/\(id).app")
     return DiscoveredSafariExtensionCandidate(
         extensionBundleIdentifier: id,
         displayName: id,
         version: "1.0",
-        extensionPointIdentifier: SafariExtensionScanner
-            .safariContentBlockerExtensionPointIdentifier,
-        bundleKind: .contentBlocker,
-        runtimeStatus: .contentBlockerImportable,
+        extensionPointIdentifier: bundleKind == .webExtension
+            ? SafariExtensionScanner.safariWebExtensionPointIdentifier
+            : SafariExtensionScanner.safariContentBlockerExtensionPointIdentifier,
+        bundleKind: bundleKind,
+        runtimeStatus: runtimeStatus,
         containingAppName: id,
         containingAppBundleIdentifier: "test.\(id)",
         containingAppURL: appURL,
         appexURL: appURL.appendingPathComponent("Contents/PlugIns/\(id).appex"),
         manifestURL: nil,
         isReadable: true
+    )
+}
+
+private func makeRoutingInstalledExtension(id: String) -> InstalledExtension {
+    InstalledExtension(
+        id: id,
+        name: id,
+        version: "1.0",
+        manifestVersion: 3,
+        description: nil,
+        isEnabled: false,
+        installDate: .distantPast,
+        lastUpdateDate: .distantPast,
+        packagePath: "/Applications/\(id).app/Contents/PlugIns/\(id).appex",
+        iconPath: nil,
+        sourceKind: .safariAppExtension,
+        backgroundModel: .serviceWorker,
+        incognitoMode: .spanning,
+        sourcePathFingerprint: "source-\(id)",
+        manifestRootFingerprint: "manifest-\(id)",
+        sourceBundlePath: "/Applications/\(id).app/Contents/PlugIns/\(id).appex",
+        optionsPagePath: nil,
+        defaultPopupPath: nil,
+        hasBackground: true,
+        hasAction: true,
+        hasOptionsPage: false,
+        hasContentScripts: true,
+        hasExtensionPages: false,
+        activationSummary: ExtensionActivationSummary(
+            matchPatternStrings: [],
+            broadScope: false,
+            hasContentScripts: true,
+            hasAction: true,
+            hasOptionsPage: false,
+            hasExtensionPages: false
+        ),
+        manifest: [:]
     )
 }
 

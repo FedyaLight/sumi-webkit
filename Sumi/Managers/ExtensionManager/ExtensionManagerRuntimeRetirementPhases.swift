@@ -31,6 +31,7 @@ struct ExtensionRuntimeTerminationPhaseProduct {
 @MainActor
 extension ExtensionManagerAssembler {
     static func assembleRuntimeBookkeepingPhase(
+        installation: ExtensionInstallationGraphFoundation,
         runtime: ExtensionRuntimeAuthorityFoundation,
         contexts: ExtensionContextGraphFoundation,
         actions: ExtensionActionGraphFoundation,
@@ -53,6 +54,14 @@ extension ExtensionManagerAssembler {
             controllerStorageID: {
                 ExtensionControllerProvisioningOwner
                     .extensionControllerIdentifier(for: $0)
+            },
+            persistentProfileIDs: {
+                try installation.database.read {
+                    try $0.profiles.all().map(\.id)
+                }
+            },
+            controllerForProfile: {
+                controllerCore.provisioning.controllerIfAdmitted(for: $0)
             }
         )
         #if DEBUG

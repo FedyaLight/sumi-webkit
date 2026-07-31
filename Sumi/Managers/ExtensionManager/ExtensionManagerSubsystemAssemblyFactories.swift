@@ -80,6 +80,7 @@ enum ExtensionContextLifecycleAssemblyFactory {
             runtimeLifetime: runtimeLifetime,
             transactionLifetime: transactionLifetime,
             publicationLifetime: publicationLifetime,
+            runtimeDemand: coordination.demandCoordinator,
             contextPublications: contextLoading.publications,
             profileTransition: coordination.profileTransition,
             contextResidency: coordination.contextResidency,

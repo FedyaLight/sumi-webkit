@@ -32,79 +32,10 @@ final class SumiSafariWebExtensionImportOwner {
         )
     }
 
-    func syncDiscoveredWebExtensions(
-        _ candidates: [DiscoveredSafariExtensionCandidate]
-    ) async -> SafariWebExtensionSyncResult {
-        refreshDiscoveredCandidates(candidates)
-
-        guard let runtime = runtimeIfEnabled() else {
-            return SafariWebExtensionSyncResult(
-                addedExtensions: [],
-                failedMessages: [ExtensionError.unsupportedOS.localizedDescription],
-                skippedUnreadableCount: 0
-            )
-        }
-
-        var installedSourcePaths = Set(
-            runtime.installedExtensions.map {
-                Self.standardizedFilePath($0.sourceBundlePath)
-            }
-        )
-        let installedExtensionIDs = Set(runtime.installedExtensions.map(\.id))
-        let installedImportedBundleIDs = Set(
-            importStore.importedRecords()
-                .filter { installedExtensionIDs.contains($0.installedExtensionId) }
-                .map(\.extensionBundleIdentifier)
-        )
-        var knownSafariBundleIDs = installedExtensionIDs.union(installedImportedBundleIDs)
-
-        var addedExtensions: [InstalledExtension] = []
-        var failedMessages: [String] = []
-        var skippedUnreadableCount = 0
-
-        for candidate in candidates where candidate.bundleKind == .webExtension {
-            guard Task.isCancelled == false else { break }
-
-            guard candidate.isReadable else {
-                skippedUnreadableCount += 1
-                continue
-            }
-
-            let sourcePath = Self.standardizedFilePath(candidate.appexURL.path)
-            guard installedSourcePaths.contains(sourcePath) == false,
-                  knownSafariBundleIDs.contains(candidate.extensionBundleIdentifier) == false
-            else {
-                continue
-            }
-
-            do {
-                let installed = try await install(
-                    from: candidate,
-                    enableOnInstall: false
-                )
-                guard Task.isCancelled == false else { break }
-                addedExtensions.append(installed)
-                installedSourcePaths.insert(Self.standardizedFilePath(installed.sourceBundlePath))
-                knownSafariBundleIDs.insert(installed.id)
-                knownSafariBundleIDs.insert(candidate.extensionBundleIdentifier)
-            } catch is CancellationError {
-                break
-            } catch {
-                failedMessages.append("\(candidate.displayName): \(error.localizedDescription)")
-            }
-        }
-
-        return SafariWebExtensionSyncResult(
-            addedExtensions: addedExtensions,
-            failedMessages: failedMessages,
-            skippedUnreadableCount: skippedUnreadableCount
-        )
-    }
-
-    func enableAppExtension(
+    func addAppExtension(
         from candidate: DiscoveredSafariExtensionCandidate
     ) async throws -> InstalledExtension {
-        try await install(from: candidate, enableOnInstall: true)
+        try await install(from: candidate, enableOnInstall: false)
     }
 
     func install(
@@ -129,11 +60,5 @@ final class SumiSafariWebExtensionImportOwner {
             installedExtensionId: installed.id
         )
         return installed
-    }
-
-    private static func standardizedFilePath(_ path: String) -> String {
-        URL(fileURLWithPath: path, isDirectory: true)
-            .standardizedFileURL
-            .path
     }
 }

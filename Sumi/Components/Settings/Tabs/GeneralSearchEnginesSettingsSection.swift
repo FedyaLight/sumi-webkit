@@ -280,19 +280,16 @@ struct GeneralSearchEnginesSettingsSection: View {
                 .buttonStyle(NavButtonStyle(size: .small))
                 .help("Edit search engine")
 
-                Button(role: .destructive) {
+                SettingsDeleteButton(
+                    label: canDeleteSearchEngine(engine)
+                        ? "Delete search engine"
+                        : "At least one search engine is required",
+                    isDisabled: !canDeleteSearchEngine(engine)
+                ) {
                     if canDeleteSearchEngine(engine) {
                         searchEnginePendingRemoval = engine
                     }
-                } label: {
-                    Image(systemName: "trash")
-                        .font(SettingsTypography.searchEngineActionIcon)
                 }
-                .buttonStyle(NavButtonStyle(size: .small))
-                .disabled(!canDeleteSearchEngine(engine))
-                .help(canDeleteSearchEngine(engine)
-                    ? "Delete search engine"
-                    : "At least one search engine is required")
             }
             .frame(width: 68, alignment: .center)
         } else {

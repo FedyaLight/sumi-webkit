@@ -322,8 +322,7 @@ final class ExtensionRuntimeRecoveryTests:
 
         do {
             try await fixture.inspection.installation.lifecycle.disable(
-                fixture.installed.id,
-                releaseRuntimeIfIdle: false
+                fixture.installed.id
             )
             XCTFail("A partial retirement must still report disable failure")
         } catch {
@@ -381,8 +380,7 @@ final class ExtensionRuntimeRecoveryTests:
 
         do {
             try await fixture.inspection.installation.lifecycle.disable(
-                fixture.installed.id,
-                releaseRuntimeIfIdle: false
+                fixture.installed.id
             )
             XCTFail("Incomplete recovery must be returned to the caller")
         } catch {

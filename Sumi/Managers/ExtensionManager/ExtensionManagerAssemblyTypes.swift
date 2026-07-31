@@ -121,6 +121,7 @@ struct ExtensionContextLifecycleAssemblyProduct {
     let runtimeLifetime: ExtensionContextRuntimeLifetime
     let transactionLifetime: ExtensionContextTransactionResidenceOwner
     let publicationLifetime: ExtensionContextPublicationLifetime
+    let runtimeDemand: ExtensionRuntimeDemandCoordinator
     let contextPublications: ExtensionContextPublicationQuery
     let profileTransition: ExtensionProfileRuntimeTransition
     let contextResidency: ExtensionContextResidencyOwner

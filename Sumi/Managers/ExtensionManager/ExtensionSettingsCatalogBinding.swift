@@ -9,18 +9,25 @@ final class ExtensionSettingsCatalogBinding {
     private let installed: InstalledExtensionCollection
     private let lifecycle: InstalledExtensionLifecycleService
     private let installer: ExtensionInstallationService
+    private let prepareForExtensionActivation: @MainActor () -> Void
 
     init(
         installed: InstalledExtensionCollection,
         lifecycle: InstalledExtensionLifecycleService,
-        installer: ExtensionInstallationService
+        installer: ExtensionInstallationService,
+        prepareForExtensionActivation: @escaping @MainActor () -> Void
     ) {
         self.installed = installed
         self.lifecycle = lifecycle
         self.installer = installer
+        self.prepareForExtensionActivation = prepareForExtensionActivation
     }
 
     var installedExtensions: [InstalledExtension] { installed.records }
+
+    func prepareRuntimeForExtensionActivation() {
+        prepareForExtensionActivation()
+    }
 
     func enable(_ extensionID: String) async throws -> InstalledExtension {
         try await lifecycle.enable(extensionID)

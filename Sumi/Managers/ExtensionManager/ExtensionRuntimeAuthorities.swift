@@ -1,6 +1,7 @@
 import Foundation
 
 enum ExtensionRuntimeDemandReason: String {
+    case browserSession
     case webViewConfiguration
     case install
 }

@@ -160,7 +160,11 @@ enum ExtensionManagerGraphFinalizer {
         let settingsCatalog = ExtensionSettingsCatalogBinding(
             installed: f.contexts.installedExtensions,
             lifecycle: assembled.installation.lifecycle,
-            installer: assembled.installation.installer
+            installer: assembled.installation.installer,
+            prepareForExtensionActivation: {
+                [demand = assembled.contexts.runtimeDemand] in
+                _ = demand.requestRuntimeExplicitly(reason: .browserSession)
+            }
         )
 
         #if DEBUG

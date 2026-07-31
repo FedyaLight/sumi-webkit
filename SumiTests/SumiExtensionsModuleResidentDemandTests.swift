@@ -6,7 +6,7 @@ import XCTest
 @available(macOS 15.5, *)
 @MainActor
 final class SumiExtensionsModuleResidentDemandTests: XCTestCase {
-    func testEnabledModuleFailsClosedUntilExactRuntimeActivatesOnce()
+    func testEnabledModuleStartsOneBrowserSessionAfterRuntimeAttaches()
         throws {
         let container = try SumiDatabase.inMemory()
         let defaults = try XCTUnwrap(
@@ -68,16 +68,14 @@ final class SumiExtensionsModuleResidentDemandTests: XCTestCase {
             )
         )
         XCTAssertTrue(module.hasAttachedRuntime)
-        XCTAssertNil(createdManager)
-        XCTAssertTrue(browserAttachments.isEmpty)
-
-        module.pinToToolbar("missing-extension", profileId: profile.id)
-
         let manager = try XCTUnwrap(createdManager)
         XCTAssertIdentical(createdManager, manager)
         XCTAssertEqual(browserAttachments.count, 1)
         XCTAssertEqual(managerFactoryAdmissions, 1)
         XCTAssertEqual(scheduledUpdates.count, 3)
+        XCTAssertNotNil(
+            configuration.webViewConfiguration.webExtensionController
+        )
 
         module.pinToToolbar("missing-extension", profileId: profile.id)
 
@@ -111,7 +109,7 @@ final class SumiExtensionsModuleResidentDemandTests: XCTestCase {
         )
     }
 
-    func testResidentCatalogWithoutEnabledExtensionsStaysZeroCost() throws {
+    func testBrowserSessionWithoutEnabledExtensionsLoadsNoContexts() throws {
         let fixture = try makeFixture(hasEnabledExtension: false)
         let configuration = WKWebViewConfiguration()
 
@@ -121,11 +119,16 @@ final class SumiExtensionsModuleResidentDemandTests: XCTestCase {
             reason: #function
         )
 
-        XCTAssertNil(configuration.webExtensionController)
-        XCTAssertNil(
+        XCTAssertNotNil(configuration.webExtensionController)
+        XCTAssertNotNil(
             fixture.inspection.contextState.profiles.controller(
                 for: fixture.profile.id
             )
+        )
+        XCTAssertEqual(
+            fixture.inspection.contextState.profiles
+                .countLoadedExtensionContexts(),
+            0
         )
     }
 
@@ -144,10 +147,69 @@ final class SumiExtensionsModuleResidentDemandTests: XCTestCase {
         XCTAssertFalse(
             tab.extensionPageRuntimeOwner.isEligible(for: generation)
         )
-        XCTAssertNil(
+        XCTAssertNotNil(
             fixture.inspection.contextState.profiles.controller(
                 for: fixture.profile.id
             )
+        )
+        XCTAssertEqual(
+            fixture.inspection.contextState.profiles
+                .countLoadedExtensionContexts(),
+            0
+        )
+    }
+
+    func testAttachPreparesControllerBeforeFirstExtensionIsAdded() throws {
+        let container = try SumiDatabase.inMemory()
+        let defaults = try XCTUnwrap(
+            UserDefaults(suiteName: UUID().uuidString)
+        )
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: defaults)
+        )
+        registry.enable(.extensions)
+        let profile = Profile(name: "Empty Extension Browser Session")
+
+        let browserConfiguration = BrowserConfiguration()
+        let inspectionCapture = ExtensionManagerInspectionCapture()
+        let residentManager = makeSafariExtensionTestExtensionManager(
+            database: container,
+            initialProfile: profile,
+            browserConfiguration: browserConfiguration,
+            moduleRegistry: registry,
+            inspectionCapture: inspectionCapture
+        )
+        let module = SumiExtensionsModule(
+            moduleRegistry: registry,
+            database: container,
+            browserConfiguration: browserConfiguration,
+            initialProfileProvider: { profile },
+            managerFactory: { _, _, _, _ in residentManager }
+        )
+        defer { module.setEnabled(false) }
+        let browserManager = makeSafariExtensionTestBrowserManager(
+            moduleRegistry: registry,
+            profile: profile,
+            browserConfiguration: browserConfiguration
+        )
+
+        module.attach(
+            runtime: BrowserExtensionsModuleRuntimeFactory.runtime(
+                for: browserManager
+            )
+        )
+
+        XCTAssertTrue(module.hasLoadedRuntime)
+        XCTAssertNotNil(
+            inspectionCapture.inspection.contextState.profiles.controller(
+                for: profile.id
+            )
+        )
+        XCTAssertEqual(
+            inspectionCapture.inspection.contextState.profiles
+                .countLoadedExtensionContexts(),
+            0,
+            "Preparing browser lifecycle must not load extension contexts"
         )
     }
 

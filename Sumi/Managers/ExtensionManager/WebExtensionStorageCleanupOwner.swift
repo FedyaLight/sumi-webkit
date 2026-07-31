@@ -8,6 +8,7 @@
 //
 
 import Foundation
+import WebKit
 
 @available(macOS 15.5, *)
 @MainActor
@@ -18,6 +19,9 @@ final class WebExtensionStorageCleanupOwner {
     private let storageCleanupPlanner: WebExtensionStorageCleanupPlanner
     private let resolvedProfileID: @MainActor (UUID?) -> UUID?
     private let controllerStorageID: @MainActor (UUID) -> UUID
+    private let persistentProfileIDs: @MainActor () throws -> [UUID]
+    private let controllerForProfile:
+        @MainActor (UUID) -> WKWebExtensionController?
     #if DEBUG
         private var debugDataCleanup: (@MainActor ()
             -> (@MainActor (String) async -> Bool)?)?
@@ -29,7 +33,10 @@ final class WebExtensionStorageCleanupOwner {
         diagnostics: ExtensionRuntimeDiagnostics,
         storageCleanupPlanner: WebExtensionStorageCleanupPlanner,
         resolvedProfileID: @escaping @MainActor (UUID?) -> UUID?,
-        controllerStorageID: @escaping @MainActor (UUID) -> UUID
+        controllerStorageID: @escaping @MainActor (UUID) -> UUID,
+        persistentProfileIDs: @escaping @MainActor () throws -> [UUID],
+        controllerForProfile:
+            @escaping @MainActor (UUID) -> WKWebExtensionController?
     ) {
         self.profileRuntime = profileRuntime
         self.installedExtensions = installedExtensions
@@ -37,6 +44,8 @@ final class WebExtensionStorageCleanupOwner {
         self.storageCleanupPlanner = storageCleanupPlanner
         self.resolvedProfileID = resolvedProfileID
         self.controllerStorageID = controllerStorageID
+        self.persistentProfileIDs = persistentProfileIDs
+        self.controllerForProfile = controllerForProfile
     }
 
     #if DEBUG
@@ -145,6 +154,49 @@ final class WebExtensionStorageCleanupOwner {
             phase: "cleanup-finished",
             extensionId: extensionId
         )
+    }
+
+    func removeAllStoredData(for extensionId: String) async throws {
+        traceLifecycle(phase: "cleanup-all-start", extensionId: extensionId)
+
+        var profileIDs = Set(try persistentProfileIDs())
+        profileIDs.formUnion(profileRuntime.controllersByProfile.keys)
+        if let currentProfileID = resolvedProfileID(nil) {
+            profileIDs.insert(currentProfileID)
+        }
+
+        var controllers = profileRuntime.controllersByProfile
+        for profileID in profileIDs where controllers[profileID] == nil {
+            guard let controller = controllerForProfile(profileID) else {
+                throw ExtensionError.installationFailed(
+                    "Could not open extension storage for profile \(profileID.uuidString)"
+                )
+            }
+            controllers[profileID] = controller
+        }
+
+        let dataCleanupOwner = WebExtensionControllerDataCleanupOwner()
+        let matchingRecords = await dataCleanupOwner.matchingRecords(
+            for: extensionId,
+            controllersByProfile: controllers,
+            additionalUniqueIdentifiers: safariRuntimeIdentifiers(
+                for: extensionId
+            )
+        )
+        if matchingRecords.isEmpty == false {
+            await dataCleanupOwner.remove(
+                matchingRecords,
+                extensionId: extensionId,
+                using: controllers
+            )
+        }
+
+        for profileID in profileIDs {
+            try storageCleanupStore(profileId: profileID)
+                .deleteStorageDirectory(for: extensionId)
+        }
+
+        traceLifecycle(phase: "cleanup-all-finished", extensionId: extensionId)
     }
 
     /// Safari app extensions register their WebKit data under the composed

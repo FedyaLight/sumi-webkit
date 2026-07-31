@@ -6,7 +6,7 @@ import XCTest
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionSettingsRuntimeGateTests: XCTestCase {
-    func testUnavailablePartialRuntimeDoesNotConstructOrBeginScanSession() {
+    func testUnavailablePartialRuntimeDoesNotConstructScanSession() {
         let defaults = TestDefaultsHarness()
         defer { defaults.reset() }
         let registry = SumiModuleRegistry(
@@ -33,7 +33,6 @@ final class ExtensionSettingsRuntimeGateTests: XCTestCase {
         XCTAssertEqual(readiness, .unavailable)
         XCTAssertNil(module.managerForTesting())
         XCTAssertEqual(probe.sessionConstructionCount, 0)
-        XCTAssertEqual(probe.sessionBeginCount, 0)
         XCTAssertEqual(probe.scanCallCount, 0)
     }
 }
@@ -42,27 +41,17 @@ final class ExtensionSettingsRuntimeGateTests: XCTestCase {
 @MainActor
 private final class ExtensionSettingsRuntimeGateProbe {
     var sessionConstructionCount = 0
-    var sessionBeginCount = 0
     private(set) var scanCallCount = 0
 
     func makeSessionBackedContent() -> EmptyView {
         sessionConstructionCount += 1
-        let session = ExtensionSettingsScanSession(
+        _ = ExtensionSettingsScanSession(
             scan: {
                 await self.recordScan()
                 return .init(candidates: [], issues: [])
             },
-            synchronize: { _ in
-                .init(
-                    importedExtensionCount: 0,
-                    failedMessages: [],
-                    skippedUnreadableCount: 0
-                )
-            },
             loadContentBlockers: { [] }
         )
-        sessionBeginCount += 1
-        session.beginIfNeeded()
         return EmptyView()
     }
 

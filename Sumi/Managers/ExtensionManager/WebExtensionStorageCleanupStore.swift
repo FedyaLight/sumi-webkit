@@ -100,6 +100,29 @@ struct WebExtensionStorageCleanupStore {
         }
     }
 
+    func deleteStorageDirectory(for extensionId: String) throws {
+        guard let storageDirectory = directory(for: extensionId) else {
+            throw WebExtensionStorageCleanupError.storageRootUnavailable
+        }
+        guard fileManager.fileExists(atPath: storageDirectory.path) else {
+            return
+        }
+
+        do {
+            try fileManager.removeItem(at: storageDirectory)
+        } catch {
+            throw WebExtensionStorageCleanupError.removalFailed(
+                storageDirectory.path
+            )
+        }
+        guard fileManager.fileExists(atPath: storageDirectory.path) == false
+        else {
+            throw WebExtensionStorageCleanupError.removalVerificationFailed(
+                storageDirectory.path
+            )
+        }
+    }
+
     func hasStoredDataCandidate(for extensionId: String) -> Bool {
         planner.hasStoredDataCandidate(in: snapshot(for: extensionId))
     }

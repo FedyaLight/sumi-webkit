@@ -12,6 +12,7 @@ enum BrowserGlanceRuntimeService {
         let untrackedMaterialization = browserManager.webViewRuntime
             .untrackedWebViewMaterialization
         let detachedCleanup = browserManager.webViewRuntime.detachedWebViewCleanup
+        let extensions = browserManager.optionalModules.extensions
         let tabBrowserRuntime = TabBrowserRuntimeFactory.make(for: browserManager)
         let windowTabs = browserManager.shellRuntime.windowTabs
         let startupRestore = browserManager.startupRestoreLifecycle
@@ -127,8 +128,9 @@ enum BrowserGlanceRuntimeService {
                 untrackedMaterialization.webView(for: tab)
             },
             ownsPreviewWebView: { [weak browserManager] in browserManager?.webViewRoutingService.ownsLiveWebView($1, for: $0) ?? false },
-            releasePreviewWebView: { [detachedCleanup] in
-                detachedCleanup.releaseUntracked(for: $0)
+            releasePreviewWebView: { [detachedCleanup, extensions] tab in
+                extensions.notifyTabClosedIfLoaded(tab)
+                detachedCleanup.releaseUntracked(for: tab)
             }
         )
     }

@@ -102,9 +102,10 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         let registry = SumiModuleRegistry(
             settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
         )
+        let extensionsProbe = ExtensionsRuntimeProbe()
         let extensionsModule = try makeExtensionsModule(
             registry: registry,
-            probe: ExtensionsRuntimeProbe()
+            probe: extensionsProbe
         )
         let browserManager = BrowserManager(
             moduleRegistry: registry,
@@ -119,7 +120,8 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
 
         extensionsModule.setEnabled(true)
         XCTAssertTrue(extensionsModule.hasAttachedRuntime)
-        XCTAssertFalse(extensionsModule.hasLoadedRuntime)
+        XCTAssertTrue(extensionsModule.hasLoadedRuntime)
+        XCTAssertEqual(extensionsProbe.managerCount, 1)
 
         browserManager.optionalModules.boosts.setEnabled(false)
         XCTAssertFalse(browserManager.optionalModules.boosts.hasAttachedRuntime)

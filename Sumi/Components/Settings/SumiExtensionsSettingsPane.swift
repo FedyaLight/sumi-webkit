@@ -76,18 +76,6 @@ private struct ExtensionSettingsEnabledContent: View {
         _scanSession = State(
             initialValue: ExtensionSettingsScanSession(
                 scan: ExtensionSettingsSafariScanner.scanInstalledExtensions,
-                synchronize: { [weak extensionsModule] candidates in
-                    guard let extensionsModule else {
-                        throw ExtensionSettingsCapabilityError.unavailable
-                    }
-                    let result = await extensionsModule
-                        .syncDiscoveredSafariWebExtensions(candidates)
-                    return ExtensionSettingsImportResult(
-                        importedExtensionCount: result.addedExtensions.count,
-                        failedMessages: result.failedMessages,
-                        skippedUnreadableCount: result.skippedUnreadableCount
-                    )
-                },
                 loadContentBlockers: { [weak extensionsModule] in
                     guard let extensionsModule else {
                         throw ExtensionSettingsCapabilityError.unavailable
@@ -105,12 +93,21 @@ private struct ExtensionSettingsEnabledContent: View {
                 extensionSurfaceStore.siteAccessPoliciesByExtensionID
         )
         let snapshot = scanSession.snapshot
+        let findingsProjection = ExtensionSettingsFindingsProjection(
+            discoveredCandidates: snapshot.webExtensionCandidates,
+            installedExtensions: extensionSurfaceStore.installedExtensions
+        )
 
         VStack(alignment: .leading, spacing: 16) {
             ExtensionSettingsInstalledSection(
                 projection: projection,
+                commands: installedCommands
+            )
+
+            ExtensionSettingsFindingsSection(
+                candidates: findingsProjection.candidates,
                 scanState: scanSession.state,
-                commands: installedCommands,
+                commands: findingsCommands,
                 onRefresh: scanSession.refresh
             )
 
@@ -132,7 +129,13 @@ private struct ExtensionSettingsEnabledContent: View {
             }
         }
         .onAppear {
-            scanSession.beginIfNeeded()
+            extensionsModule.prepareForExtensionActivation()
+        }
+        .onChange(of: snapshot.webExtensionCandidates) {
+            _, candidates in
+            extensionsModule.refreshDiscoveredSafariWebExtensionCandidates(
+                candidates
+            )
         }
         .onChange(of: siteAccessPolicyRefreshKey, initial: true) { _, _ in
             extensionSurfaceStore.refreshSiteAccessPolicies(
@@ -194,6 +197,12 @@ private struct ExtensionSettingsEnabledContent: View {
                     extensionId: extensionID,
                     profileId: currentProfileID
                 )
+            },
+            uninstall: { [weak extensionsModule] extensionID in
+                guard let extensionsModule else {
+                    throw ExtensionSettingsCapabilityError.unavailable
+                }
+                try await extensionsModule.uninstallExtension(extensionID)
             }
         )
     }
@@ -216,6 +225,19 @@ private struct ExtensionSettingsEnabledContent: View {
                 return try await extensionsModule.setSafariContentBlockerEnabled(
                     isEnabled,
                     bundleIdentifier: bundleIdentifier
+                )
+            }
+        )
+    }
+
+    private var findingsCommands: ExtensionSettingsFindingsCommands {
+        ExtensionSettingsFindingsCommands(
+            add: { [weak extensionsModule] candidate in
+                guard let extensionsModule else {
+                    throw ExtensionSettingsCapabilityError.unavailable
+                }
+                return try await extensionsModule.addSafariAppExtension(
+                    from: candidate
                 )
             }
         )

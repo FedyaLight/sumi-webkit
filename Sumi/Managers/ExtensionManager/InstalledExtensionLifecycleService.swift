@@ -16,11 +16,8 @@ final class InstalledExtensionLifecycleService {
         let runtimeRetirement: ExtensionRuntimeRetirement
         let mutationRegistry: ExtensionRuntimeMutationRegistry
         let loadRegistry: ExtensionContextLoadRegistry
-        let shutDownRuntime: @MainActor (String) ->
-            ExtensionRuntimeShutdown.Result?
-        let removeStoredData: @MainActor (
-            String, ExtensionManager.WebExtensionStorageCleanupMode
-        ) async -> Void
+        let removeAllStoredData: @MainActor (String) async throws -> Void
+        let removeSumiOwnedState: @MainActor (String) throws -> Void
         let removeGlobalInstallLedger: @MainActor (String) -> Void
     }
 
@@ -139,10 +136,7 @@ final class InstalledExtensionLifecycleService {
         }
     }
 
-    func disable(
-        _ extensionID: String,
-        releaseRuntimeIfIdle: Bool = true
-    ) async throws {
+    func disable(_ extensionID: String) async throws {
         guard let mutationLease = environment.mutationRegistry.begin(
             extensionID: extensionID,
             operation: .disable
@@ -152,17 +146,11 @@ final class InstalledExtensionLifecycleService {
             )
         }
         do {
-            let shouldReleaseRuntime = try await disable(
+            try await disable(
                 extensionID,
-                mutationLease: mutationLease,
-                releaseRuntimeIfIdle: releaseRuntimeIfIdle
+                mutationLease: mutationLease
             )
             _ = environment.mutationRegistry.finish(mutationLease)
-            if shouldReleaseRuntime {
-                performIdleRuntimeRelease(
-                    "disableExtension.noEnabledExtensions"
-                )
-            }
         } catch {
             _ = environment.mutationRegistry.finish(mutationLease)
             throw error
@@ -171,9 +159,8 @@ final class InstalledExtensionLifecycleService {
 
     private func disable(
         _ extensionID: String,
-        mutationLease: ExtensionRuntimeMutationLease,
-        releaseRuntimeIfIdle: Bool
-    ) async throws -> Bool {
+        mutationLease: ExtensionRuntimeMutationLease
+    ) async throws {
         try environment.volatileRecords.reconcile(extensionID)
         let entity = try environment.metadataStore.extensionMetadata(
             for: extensionID
@@ -241,8 +228,6 @@ final class InstalledExtensionLifecycleService {
                     .joined(separator: ", ")
             )
         }
-
-        return releaseRuntimeIfIdle && hasEnabledExtensions == false
     }
 
     private func recoverIncompleteDisable(
@@ -306,10 +291,9 @@ final class InstalledExtensionLifecycleService {
             )
         }
         do {
-            _ = try await disable(
+            try await disable(
                 extensionID,
-                mutationLease: mutationLease,
-                releaseRuntimeIfIdle: false
+                mutationLease: mutationLease
             )
             try validate(mutationLease)
             guard environment.mutationRegistry.enterIrreversiblePhase(
@@ -317,10 +301,8 @@ final class InstalledExtensionLifecycleService {
             ) else {
                 throw CancellationError()
             }
-            await environment.removeStoredData(
-                extensionID,
-                .pruneDirectoryIfPossible
-            )
+            try await environment.removeAllStoredData(extensionID)
+            try environment.removeSumiOwnedState(extensionID)
             try validate(mutationLease)
 
             var copiedPackageURL: URL?
@@ -354,21 +336,11 @@ final class InstalledExtensionLifecycleService {
                     )
                 }
             }
-            let shouldReleaseRuntime = hasEnabledExtensions == false
             _ = environment.mutationRegistry.finish(mutationLease)
-            if shouldReleaseRuntime {
-                performIdleRuntimeRelease(
-                    "uninstallExtension.noEnabledExtensions"
-                )
-            }
         } catch {
             _ = environment.mutationRegistry.finish(mutationLease)
             throw error
         }
-    }
-
-    private var hasEnabledExtensions: Bool {
-        environment.installedRecords.records.contains { $0.isEnabled }
     }
 
     private func publish(
@@ -383,18 +355,6 @@ final class InstalledExtensionLifecycleService {
     ) throws {
         environment.metadataStore.update(entity, from: record)
         try environment.metadataStore.save(entity)
-    }
-
-    private func performIdleRuntimeRelease(_ reason: String) {
-        guard let result = environment.shutDownRuntime(reason) else { return }
-        switch result.completionStatus {
-        case .completed, .mutationInProgress:
-            break
-        case .contextsRemaining, .superseded:
-            ExtensionManager.logger.error(
-                "Idle extension runtime release did not complete for \(reason, privacy: .public): \(String(describing: result.completionStatus), privacy: .public)"
-            )
-        }
     }
 
     private func validate(_ lease: ExtensionRuntimeMutationLease) throws {

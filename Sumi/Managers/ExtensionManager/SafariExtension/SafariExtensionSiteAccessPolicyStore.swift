@@ -148,6 +148,16 @@ final class SafariExtensionSiteAccessPolicyStore {
         return savePolicies(policies)
     }
 
+    @discardableResult
+    func removePolicies(for extensionId: String) -> Bool {
+        let policies = loadPolicies()
+        let retained = policies.filter {
+            $0.value.extensionId != extensionId
+        }
+        guard retained.count != policies.count else { return true }
+        return savePolicies(retained)
+    }
+
     private func shouldSeedSafariAppExtensionDefaultAccess(
         _ policy: SafariExtensionSiteAccessPolicy
     ) -> Bool {

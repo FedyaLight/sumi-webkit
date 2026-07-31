@@ -44,6 +44,14 @@ final class BrowserExtensionBridgeComposition {
         let shortcutPresentation = browserManager
             .shortcutPresentationOwner
         let spaces = browserManager.spaceStateOwner
+        let currentGlanceSession: @MainActor () -> GlanceSession? = {
+            [weak browserManager] in
+            browserManager?.glanceManager.currentSession
+        }
+        let currentGlancePreviewTab: @MainActor () -> Tab? = {
+            [currentGlanceSession] in
+            currentGlanceSession()?.previewTab
+        }
         profiles = ExtensionBrowserProfileQuery(
             currentProfile: { [currentProfileAuthority] in
                 currentProfileAuthority.currentProfile
@@ -82,11 +90,18 @@ final class BrowserExtensionBridgeComposition {
             primaryTrackedWindowID: { [webViewOwnershipQuery] tabID in
                 webViewOwnershipQuery.primaryWindowID(for: tabID)
             },
-            tabs: { [windowSelection, tabStore] windowState in
-                windowSelection.tabsForWebExtensionWindow(
-                        in: windowState,
-                        tabStore: tabStore
-                    )
+            tabs: {
+                [windowSelection, tabStore, currentGlanceSession] windowState in
+                var tabs = windowSelection.tabsForWebExtensionWindow(
+                    in: windowState,
+                    tabStore: tabStore
+                )
+                if let session = currentGlanceSession(),
+                   session.windowId == windowState.id,
+                   tabs.contains(where: { $0 === session.previewTab }) == false {
+                    tabs.append(session.previewTab)
+                }
+                return tabs
             },
             currentTab: { [windowTabs] windowState in
                 windowTabs.currentTab(for: windowState)
@@ -97,24 +112,43 @@ final class BrowserExtensionBridgeComposition {
                 else { return nil }
                 return windowTabs.currentTab(for: activeWindow)
             },
-            windowContainingTab: { [windowTabs] tab in
-                windowTabs.windowState(containing: tab)
+            windowContainingTab: {
+                [weak browserManager, windowTabs, currentGlanceSession] tab in
+                if let window = windowTabs.windowState(containing: tab) {
+                    return window
+                }
+                guard let session = currentGlanceSession(),
+                      session.previewTab === tab
+                else { return nil }
+                return browserManager?.windowRegistry.windows[session.windowId]
             }
         )
 
         let tabs = BrowserExtensionTabQueryAdapter(
-            regularTab: { [membership] tabID in
-                membership.tab(for: tabID)
+            regularTab: { [membership, currentGlancePreviewTab] tabID in
+                if let tab = membership.tab(for: tabID) {
+                    return tab
+                }
+                guard let previewTab = currentGlancePreviewTab(),
+                      previewTab.id == tabID
+                else { return nil }
+                return previewTab
             },
-            allTabs: { [membership, windows] in
+            allTabs: { [membership, windows, currentGlancePreviewTab] in
                 membership.allTabs()
                     + windows.allExtensionWindowStates.flatMap(\.ephemeralTabs)
+                    + (currentGlancePreviewTab().map { [$0] } ?? [])
             },
             windows: { [windows] in
                 windows.allExtensionWindowStates
             },
-            isTransient: { [tabCommands] tab in
-                tabCommands.containsTransient(tab)
+            isTransient: {
+                [tabCommands, membership, currentGlancePreviewTab] tab in
+                if tabCommands.containsTransient(tab) {
+                    return true
+                }
+                return membership.tab(for: tab.id) !== tab
+                    && currentGlancePreviewTab() === tab
             },
             isAuxiliaryMiniWindow: { [auxiliaryTabs] tab in
                 auxiliaryTabs.containsExact(tab)

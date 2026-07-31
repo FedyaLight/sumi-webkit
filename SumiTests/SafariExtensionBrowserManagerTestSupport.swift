@@ -164,6 +164,7 @@ extension XCTestCase {
         extensionsModule: SumiExtensionsModule? = nil,
         profile: Profile? = nil,
         windowRegistry: WindowRegistry? = nil,
+        browserConfiguration: BrowserConfiguration? = nil,
         automaticallyStartPersistedStateLoad: Bool = false,
         retainUntilTestTeardown: Bool = true
     ) -> BrowserManager {
@@ -210,6 +211,7 @@ extension XCTestCase {
             windowRegistry: windowRegistry ?? WindowRegistry(),
             moduleRegistry: moduleRegistry,
             startupPersistence: startupPersistence,
+            browserConfiguration: browserConfiguration,
             adBlockingModule: adBlockingModule,
             protectionCoordinator: protectionCoordinator,
             extensionsModule: extensionsModule,
@@ -218,6 +220,8 @@ extension XCTestCase {
         if let profile {
             browserManager.profileManager.profiles = [profile]
             browserManager.currentProfile = profile
+            browserManager.optionalModules.extensions
+                .switchProfileIfLoaded(profile)
         }
         if retainUntilTestTeardown {
             let teardownBox = SafariExtensionBrowserManagerTeardownBox(

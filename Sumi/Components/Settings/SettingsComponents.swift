@@ -213,6 +213,23 @@ struct SettingsDivider: View {
     }
 }
 
+struct SettingsDeleteButton: View {
+    let label: LocalizedStringResource
+    var isDisabled = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(role: .destructive, action: action) {
+            Image(systemName: "trash")
+                .font(SettingsTypography.searchEngineActionIcon)
+        }
+        .buttonStyle(NavButtonStyle(size: .small))
+        .disabled(isDisabled)
+        .help(Text(label))
+        .accessibilityLabel(Text(label))
+    }
+}
+
 struct SettingsEmptyState: View {
     let systemImage: String
     let title: String

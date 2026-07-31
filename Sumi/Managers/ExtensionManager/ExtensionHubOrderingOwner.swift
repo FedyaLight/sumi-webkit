@@ -68,7 +68,22 @@ final class ExtensionHubOrderingOwner {
         return true
     }
 
-    private func persist() {
+    @discardableResult
+    func removeExtensionFromAllProfiles(_ extensionId: String) -> Bool {
+        var retainedByProfile: [String: [String]] = [:]
+        for (profileKey, ids) in idsByProfile {
+            let retained = ids.filter { $0 != extensionId }
+            if retained.isEmpty == false {
+                retainedByProfile[profileKey] = retained
+            }
+        }
+        guard retainedByProfile != idsByProfile else { return true }
+        idsByProfile = retainedByProfile
+        return persist()
+    }
+
+    @discardableResult
+    private func persist() -> Bool {
         do {
             try database.transaction {
                 try $0.documents.save(
@@ -80,7 +95,9 @@ final class ExtensionHubOrderingOwner {
             Self.logger.error(
                 "Failed to encode hub unpinned order: \(String(describing: error), privacy: .public)"
             )
+            return false
         }
+        return true
     }
 
     static func loadUnpinnedOrderByProfile(

@@ -109,6 +109,10 @@ final class SumiExtensionManagerLifetime {
         self.runtime = runtime
         if let resident {
             runtime.attachBrowser(resident.module.browserAttachment)
+            resident.module.settingsCatalog
+                .prepareRuntimeForExtensionActivation()
+        } else if let module = moduleIfEnabled() {
+            module.settingsCatalog.prepareRuntimeForExtensionActivation()
         }
     }
 

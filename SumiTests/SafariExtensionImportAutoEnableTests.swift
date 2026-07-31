@@ -2,26 +2,10 @@ import XCTest
 
 @testable import Sumi
 
+@available(macOS 15.5, *)
 @MainActor
-final class SafariExtensionImportAutoEnableTests: XCTestCase {
-    private var scratchDirectory: URL!
-
-    override func setUpWithError() throws {
-        scratchDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(
-            at: scratchDirectory,
-            withIntermediateDirectories: true
-        )
-    }
-
-    override func tearDownWithError() throws {
-        if let scratchDirectory, FileManager.default.fileExists(atPath: scratchDirectory.path) {
-            try FileManager.default.removeItem(at: scratchDirectory)
-        }
-        scratchDirectory = nil
-    }
-
+final class SafariExtensionImportAutoEnableTests:
+    SafariExtensionWebViewControllerWiringTestCase {
     func testImportSucceededEnableFailedErrorDescription() {
         let error = ExtensionError.importSucceededEnableFailed(
             "Raindrop was imported but could not be enabled: runtime unavailable"
@@ -63,7 +47,7 @@ final class SafariExtensionImportAutoEnableTests: XCTestCase {
     }
 
     @available(macOS 15.5, *)
-    func testSyncDiscoveredSafariWebExtensionAddsDisabledRecord() async throws {
+    func testAddSafariWebExtensionCreatesDisabledRecord() async throws {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
         let importStore = RecordingSafariExtensionImportStore()
@@ -74,14 +58,15 @@ final class SafariExtensionImportAutoEnableTests: XCTestCase {
             defaults: harness.defaults
         )
         let module = fixture.module
+        let scratchDirectory = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: scratchDirectory) }
         let candidate = try makeSafariWebExtensionCandidate(
-            bundleIdentifier: "com.example.sync-disabled"
+            bundleIdentifier: "com.example.sync-disabled",
+            in: scratchDirectory
         )
 
-        let result = await module.syncDiscoveredSafariWebExtensions([candidate])
+        let installed = try await module.addSafariAppExtension(from: candidate)
 
-        let installed = try XCTUnwrap(result.addedExtensions.first)
-        XCTAssertEqual(result.addedExtensions.count, 1)
         XCTAssertFalse(installed.isEnabled)
         XCTAssertEqual(installed.id, candidate.extensionBundleIdentifier)
         XCTAssertEqual(installed.sourceKind, .safariAppExtension)
@@ -90,7 +75,7 @@ final class SafariExtensionImportAutoEnableTests: XCTestCase {
     }
 
     @available(macOS 15.5, *)
-    func testSyncDiscoveredSafariWebExtensionSkipsExistingEnabledRecord() async throws {
+    func testEnablingExtensionDoesNotRefreshFindings() async throws {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
         let importStore = RecordingSafariExtensionImportStore()
@@ -100,36 +85,53 @@ final class SafariExtensionImportAutoEnableTests: XCTestCase {
             importStore: importStore,
             defaults: harness.defaults
         )
-        let module = fixture.module
-        let candidate = try makeSafariWebExtensionCandidate(
-            bundleIdentifier: "com.example.sync-existing-enabled"
+        let scratchDirectory = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: scratchDirectory) }
+        let installed = try await installUnpackedExtension(
+            manager: fixture.manager,
+            scratchDirectory: scratchDirectory,
+            name: "ManualScanOnly"
         )
-        let firstResult = await module.syncDiscoveredSafariWebExtensions([candidate])
-        let installed = try XCTUnwrap(firstResult.addedExtensions.first)
-        let entity = try XCTUnwrap(
-            try fixture.inspection.installation.metadata.extensionMetadata(
-                for: installed.id
-            )
-        )
-        try fixture.inspection.installation.metadata.setEnabled(true, for: entity)
-        let enabledRecord = fixture.inspection.installation.metadata.record(
-            installed,
-            withEnabledState: true
-        )
-        fixture.inspection.actionSurfaces.installedExtensions.setAll([enabledRecord])
 
-        let secondResult = await module.syncDiscoveredSafariWebExtensions([candidate])
+        _ = try await fixture.module.enableExtension(installed.id)
 
-        XCTAssertTrue(secondResult.addedExtensions.isEmpty)
-        XCTAssertEqual(
-            fixture.inspection.actionSurfaces.installedExtensions.records.first?.isEnabled,
-            true
-        )
-        XCTAssertEqual(importStore.markedImports.map { $0.candidate.id }, [candidate.id])
+        XCTAssertTrue(importStore.refreshedCandidateBatches.isEmpty)
     }
 
     @available(macOS 15.5, *)
-    func testSyncDiscoveredSafariWebExtensionsDoesNotMaterializeContentBlockers()
+    func testUninstallSafariWebExtensionPreservesOriginalAppex() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let importStore = RecordingSafariExtensionImportStore()
+        let container = try makeTestContainer()
+        let fixture = makeEnabledModule(
+            context: container,
+            importStore: importStore,
+            defaults: harness.defaults
+        )
+        let scratchDirectory = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: scratchDirectory) }
+        let candidate = try makeSafariWebExtensionCandidate(
+            bundleIdentifier: "com.example.preserved-source",
+            in: scratchDirectory
+        )
+        let originalAppexPath = candidate.appexURL.path
+
+        let installed = try await fixture.module.addSafariAppExtension(from: candidate)
+        try await fixture.module.uninstallExtension(installed.id)
+
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: originalAppexPath),
+            "Uninstall must not delete the original Safari app extension"
+        )
+        XCTAssertTrue(
+            fixture.inspection.actionSurfaces.installedExtensions.records.isEmpty
+        )
+        XCTAssertEqual(importStore.removedInstalledExtensionIds, [installed.id])
+    }
+
+    @available(macOS 15.5, *)
+    func testAddSafariWebExtensionRejectsContentBlocker()
         async throws {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -147,9 +149,13 @@ final class SafariExtensionImportAutoEnableTests: XCTestCase {
             runtimeStatus: .contentBlockerImportable
         )
 
-        let result = await module.syncDiscoveredSafariWebExtensions([contentBlocker])
+        do {
+            _ = try await module.addSafariAppExtension(from: contentBlocker)
+            XCTFail("Expected a non-WebExtension candidate to be rejected")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("Only Safari Web Extensions"))
+        }
 
-        XCTAssertTrue(result.addedExtensions.isEmpty)
         XCTAssertTrue(importStore.markedImports.isEmpty)
         XCTAssertTrue(
             fixture.inspection.actionSurfaces.installedExtensions.records.isEmpty
@@ -180,7 +186,6 @@ final class SafariExtensionImportAutoEnableTests: XCTestCase {
         )
     }
 
-    @available(macOS 15.5, *)
     @available(macOS 15.5, *)
     private func makeEnabledModule(
         context: SumiDatabase,
@@ -215,17 +220,15 @@ final class SafariExtensionImportAutoEnableTests: XCTestCase {
         )
         return EnabledModuleFixture(
             module: module,
+            manager: managerFixture.manager,
             inspection: managerFixture.inspection,
             browserManager: browserManager
         )
     }
 
-    private func makeTestContainer() throws -> SumiDatabase {
-        try SumiDatabase.inMemory()
-    }
-
     private func makeSafariWebExtensionCandidate(
-        bundleIdentifier: String
+        bundleIdentifier: String,
+        in scratchDirectory: URL
     ) throws -> DiscoveredSafariExtensionCandidate {
         let appexURL = try SafariExtensionScannerTestSupport.makeStandaloneAppex(
             in: scratchDirectory,
@@ -242,12 +245,14 @@ final class SafariExtensionImportAutoEnableTests: XCTestCase {
             appexURL: appexURL
         )
     }
+
 }
 
 @available(macOS 15.5, *)
 @MainActor
 private struct EnabledModuleFixture {
     let module: SumiExtensionsModule
+    let manager: ExtensionManager
     let inspection: ExtensionManagerTestInspection
     let browserManager: BrowserManager
 }

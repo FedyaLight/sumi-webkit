@@ -25,25 +25,29 @@ struct ExtensionSettingsInstalledCommands {
         _ access: SafariExtensionSiteAccessLevel
     ) -> Void
     typealias OpenOptions = @MainActor (_ extensionID: String) async -> Void
+    typealias Uninstall = @MainActor (_ extensionID: String) async throws -> Void
 
     private let setEnabledCommand: SetEnabled
     private let setDefaultSiteAccessCommand: SetDefaultSiteAccess
     private let setPrivateAccessCommand: SetPrivateAccess
     private let setConfiguredSiteAccessCommand: SetConfiguredSiteAccess
     private let openOptionsCommand: OpenOptions
+    private let uninstallCommand: Uninstall
 
     init(
         setEnabled: @escaping SetEnabled,
         setDefaultSiteAccess: @escaping SetDefaultSiteAccess,
         setPrivateAccess: @escaping SetPrivateAccess,
         setConfiguredSiteAccess: @escaping SetConfiguredSiteAccess,
-        openOptions: @escaping OpenOptions
+        openOptions: @escaping OpenOptions,
+        uninstall: @escaping Uninstall
     ) {
         setEnabledCommand = setEnabled
         setDefaultSiteAccessCommand = setDefaultSiteAccess
         setPrivateAccessCommand = setPrivateAccess
         setConfiguredSiteAccessCommand = setConfiguredSiteAccess
         openOptionsCommand = openOptions
+        uninstallCommand = uninstall
     }
 
     func setEnabled(_ isEnabled: Bool, for extensionID: String) async throws {
@@ -71,6 +75,29 @@ struct ExtensionSettingsInstalledCommands {
 
     func openOptions(for extensionID: String) async {
         await openOptionsCommand(extensionID)
+    }
+
+    func uninstall(_ extensionID: String) async throws {
+        try await uninstallCommand(extensionID)
+    }
+}
+
+@MainActor
+struct ExtensionSettingsFindingsCommands {
+    typealias Add = @MainActor (
+        _ candidate: DiscoveredSafariExtensionCandidate
+    ) async throws -> InstalledExtension
+
+    private let addCommand: Add
+
+    init(add: @escaping Add) {
+        addCommand = add
+    }
+
+    func add(
+        _ candidate: DiscoveredSafariExtensionCandidate
+    ) async throws -> InstalledExtension {
+        try await addCommand(candidate)
     }
 }
 

@@ -80,6 +80,21 @@ final class ExtensionToolbarPinningOwner {
         }
     }
 
+    @discardableResult
+    func removeExtensionFromAllProfiles(_ extensionId: String) -> Bool {
+        var retainedByProfile: [String: [String]] = [:]
+        for (profileKey, ids) in idsByProfile {
+            let retained = ids.filter { $0 != extensionId }
+            if retained.isEmpty == false {
+                retainedByProfile[profileKey] = retained
+            }
+        }
+        guard retainedByProfile != idsByProfile else { return true }
+        idsByProfile = retainedByProfile
+        reloadPinnedToolbarExtensionsForCurrentProfile()
+        return persistPinnedToolbarExtensionIDsByProfile()
+    }
+
     /// Move an already-pinned slot to a new index within the pinned order. The
     /// target index is interpreted against the array with the moved slot
     /// removed, matching `ReorderMove.targetIndex`.
@@ -158,7 +173,8 @@ final class ExtensionToolbarPinningOwner {
         return true
     }
 
-    private func persistPinnedToolbarExtensionIDsByProfile() {
+    @discardableResult
+    private func persistPinnedToolbarExtensionIDsByProfile() -> Bool {
         do {
             try database.transaction {
                 try $0.documents.save(
@@ -170,8 +186,9 @@ final class ExtensionToolbarPinningOwner {
             Self.logger.error(
                 "Failed to encode pinned toolbar extension IDs: \(String(describing: error), privacy: .public)"
             )
-            return
+            return false
         }
+        return true
     }
 
     static func loadPinnedToolbarExtensionIDsByProfile(

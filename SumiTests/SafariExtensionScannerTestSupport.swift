@@ -87,6 +87,12 @@ enum SafariExtensionScannerTestSupport {
             if specification.includeActionPopup {
                 manifest["action"] = ["default_popup": "popup.html"]
             }
+            if let backgroundPage = specification.backgroundPage {
+                manifest["background"] = [
+                    "page": backgroundPage,
+                    "persistent": true,
+                ]
+            }
             if specification.hostPermissions.isEmpty == false {
                 manifest["host_permissions"] = specification.hostPermissions
             }
@@ -112,6 +118,22 @@ enum SafariExtensionScannerTestSupport {
                 withIntermediateDirectories: true
             )
             try resource.data.write(to: resourceURL, options: [.atomic])
+        }
+
+        if specification.adHocSign {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+            process.arguments = [
+                "--force",
+                "--sign", "-",
+                "--timestamp=none",
+                appexURL.path,
+            ]
+            try process.run()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else {
+                throw CocoaError(.executableRuntimeMismatch)
+            }
         }
 
         return appexURL
@@ -162,6 +184,8 @@ enum SafariExtensionScannerTestSupport {
         var includeActionPopup: Bool = false
         var hostPermissions: [String] = []
         var resourceFiles: [SyntheticResourceFile] = []
+        var backgroundPage: String?
+        var adHocSign: Bool = false
     }
 
     struct SyntheticResourceFile {

@@ -1,11 +1,5 @@
 import Foundation
 
-struct SafariWebExtensionSyncResult {
-    let addedExtensions: [InstalledExtension]
-    let failedMessages: [String]
-    let skippedUnreadableCount: Int
-}
-
 @MainActor
 final class SumiExtensionSettingsCatalogSurface {
     private let lifetime: SumiExtensionManagerLifetime
@@ -34,6 +28,11 @@ final class SumiExtensionSettingsCatalogSurface {
         lifetime.loadedSettingsCatalogIfEnabled()?.installedExtensions ?? []
     }
 
+    func prepareForExtensionActivation() {
+        lifetime.settingsCatalogIfEnabled()?
+            .prepareRuntimeForExtensionActivation()
+    }
+
     func enableExtension(_ extensionID: String) async throws -> InstalledExtension {
         guard let runtime = lifetime.settingsCatalogIfEnabled() else {
             throw ExtensionError.unsupportedOS
@@ -48,16 +47,14 @@ final class SumiExtensionSettingsCatalogSurface {
 
     func uninstallExtension(_ extensionID: String) async throws {
         guard let runtime = lifetime.settingsCatalogIfEnabled() else { return }
-        safariImport.removeImportedRecord(forInstalledExtensionId: extensionID)
         try await runtime.uninstall(extensionID)
+        safariImport.removeImportedRecord(forInstalledExtensionId: extensionID)
     }
 
-    func enableSafariAppExtension(from candidate: DiscoveredSafariExtensionCandidate) async throws -> InstalledExtension {
-        try await safariImport.enableAppExtension(from: candidate)
-    }
-
-    func syncDiscoveredSafariWebExtensions(_ candidates: [DiscoveredSafariExtensionCandidate]) async -> SafariWebExtensionSyncResult {
-        await safariImport.syncDiscoveredWebExtensions(candidates)
+    func addSafariAppExtension(
+        from candidate: DiscoveredSafariExtensionCandidate
+    ) async throws -> InstalledExtension {
+        try await safariImport.addAppExtension(from: candidate)
     }
 
     func refreshDiscoveredSafariWebExtensionCandidates(_ candidates: [DiscoveredSafariExtensionCandidate]) {
@@ -79,10 +76,12 @@ extension SumiExtensionsModule {
         settingsCatalog.installedExtensionsIfLoaded()
     }
 
+    func prepareForExtensionActivation() {
+        settingsCatalog.prepareForExtensionActivation()
+    }
+
     func enableExtension(_ extensionId: String) async throws -> InstalledExtension {
-        let enabled = try await settingsCatalog.enableExtension(extensionId)
-        _ = compatibilityDiagnostics.compatibilityReport()
-        return enabled
+        try await settingsCatalog.enableExtension(extensionId)
     }
 
     func disableExtension(_ extensionId: String) async throws {
@@ -93,16 +92,10 @@ extension SumiExtensionsModule {
         try await settingsCatalog.uninstallExtension(extensionId)
     }
 
-    func enableSafariAppExtension(
+    func addSafariAppExtension(
         from candidate: DiscoveredSafariExtensionCandidate
     ) async throws -> InstalledExtension {
-        try await settingsCatalog.enableSafariAppExtension(from: candidate)
-    }
-
-    func syncDiscoveredSafariWebExtensions(
-        _ candidates: [DiscoveredSafariExtensionCandidate]
-    ) async -> SafariWebExtensionSyncResult {
-        await settingsCatalog.syncDiscoveredSafariWebExtensions(candidates)
+        try await settingsCatalog.addSafariAppExtension(from: candidate)
     }
 
     func refreshDiscoveredSafariWebExtensionCandidates(

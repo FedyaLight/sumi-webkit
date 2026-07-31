@@ -84,7 +84,8 @@ extension ExtensionManagerAssembler {
             runtimePopup: runtimePopup
         )
         let bookkeeping = assembleRuntimeBookkeepingPhase(
-            runtime: f.runtime, contexts: f.contexts, actions: f.actions,
+            installation: f.installation, runtime: f.runtime,
+            contexts: f.contexts, actions: f.actions,
             controller: f.controller, contextLoading: core.contextLoading,
             contextLifecycle: core.contextLifecycle,
             controllerCore: core.controller
@@ -113,6 +114,7 @@ extension ExtensionManagerAssembler {
         )
         let lifecycle = assembleRuntimeLifecyclePhase(
             installation: f.installation, contexts: f.contexts,
+            actions: f.actions,
             controller: core.controller, retirement: core.retirement,
             activation: activation, termination: termination,
             bootstrapChromeAdmission: core.bootstrapChromeAdmission

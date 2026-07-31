@@ -99,6 +99,7 @@ extension ExtensionManagerAssembler {
     static func assembleRuntimeLifecyclePhase(
         installation: ExtensionInstallationGraphFoundation,
         contexts: ExtensionContextGraphFoundation,
+        actions: ExtensionActionGraphFoundation,
         controller: ExtensionControllerCoreAssemblyProduct,
         retirement: ExtensionRuntimeRetirementAssemblyProduct,
         activation: ExtensionRuntimeActivationPhaseProduct,
@@ -122,26 +123,51 @@ extension ExtensionManagerAssembler {
                     runtimeRetirement: retirement.runtime,
                     mutationRegistry: contexts.runtimeMutationRegistry,
                     loadRegistry: contexts.contextLoadRegistry,
-                    shutDownRuntime: { [runtimeTermination = termination.termination] reason in
-                        let result = runtimeTermination.shutDown(
-                            reason: reason,
-                            admission: .ifNoScopedMutations
+                    removeAllStoredData: {
+                        [storageCleanup = termination.storageCleanup]
+                        extensionID in
+                        try await storageCleanup.removeAllStoredData(
+                            for: extensionID
                         )
-                        if result.completed {
-                            _ = runtimeTermination.executeRebuildPlan(
-                                result.tabRebuildPlan,
-                                reason: reason
+                    },
+                    removeSumiOwnedState: { extensionID in
+                        let results = [
+                            (
+                                "site access",
+                                actions.siteAccessPolicyStore.removePolicies(
+                                    for: extensionID
+                                )
+                            ),
+                            (
+                                "permission decisions",
+                                actions.permissionDecisions.removeDecisions(
+                                    for: extensionID
+                                )
+                            ),
+                            (
+                                "toolbar pins",
+                                actions.toolbarPinning
+                                    .removeExtensionFromAllProfiles(extensionID)
+                            ),
+                            (
+                                "hub order",
+                                actions.hubOrdering
+                                    .removeExtensionFromAllProfiles(extensionID)
+                            ),
+                        ]
+                        contexts.safariExtensionImportStore
+                            .removeImportedRecord(
+                                forInstalledExtensionId: extensionID
+                            )
+                        let failures = results.compactMap {
+                            $0.1 ? nil : $0.0
+                        }
+                        guard failures.isEmpty else {
+                            throw ExtensionError.installationFailed(
+                                "Could not remove Sumi extension state: "
+                                    + failures.joined(separator: ", ")
                             )
                         }
-                        return result
-                    },
-                    removeStoredData: {
-                        [storageCleanup = termination.storageCleanup]
-                        extensionID, mode in
-                        await storageCleanup.removeStoredData(
-                            for: extensionID,
-                            mode: mode
-                        )
                     },
                     removeGlobalInstallLedger: {
                         bootstrapChromeAdmission.removeFromLedger(

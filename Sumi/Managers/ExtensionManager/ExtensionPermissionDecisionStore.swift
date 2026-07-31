@@ -70,6 +70,16 @@ final class ExtensionPermissionDecisionStore {
         saveStoredExtensionPermissionDecisions(records)
     }
 
+    @discardableResult
+    func removeDecisions(for extensionId: String) -> Bool {
+        let records = loadStoredExtensionPermissionDecisions()
+        let retained = records.filter {
+            $0.value.extensionId != extensionId
+        }
+        guard retained.count != records.count else { return true }
+        return saveStoredExtensionPermissionDecisions(retained)
+    }
+
     func applyStoredExtensionPermissionDecisions(
         to extensionContext: WKWebExtensionContext,
         extensionId: String,
@@ -214,9 +224,10 @@ final class ExtensionPermissionDecisionStore {
         }
     }
 
+    @discardableResult
     private func saveStoredExtensionPermissionDecisions(
         _ decisions: [String: ExtensionManager.ExtensionStoredPermissionDecision]
-    ) {
+    ) -> Bool {
         do {
             try database.transaction {
                 try $0.documents.save(
@@ -226,7 +237,8 @@ final class ExtensionPermissionDecisionStore {
             }
         } catch {
             Self.log.error("Failed to persist extension permission decisions: \(error.localizedDescription, privacy: .public)")
-            return
+            return false
         }
+        return true
     }
 }

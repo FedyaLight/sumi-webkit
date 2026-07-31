@@ -51,33 +51,14 @@ enum ExtensionSettingsSiteAccessMutationAdmission {
 
 struct ExtensionSettingsInstalledSection: View {
     let projection: ExtensionSettingsInstalledProjection
-    let scanState: ExtensionSettingsScanState
     let commands: ExtensionSettingsInstalledCommands
-    let onRefresh: () -> Void
 
     @State private var actionSession = ExtensionSettingsInstalledActionSession()
 
     var body: some View {
-        SettingsSection(
-            title: "Extensions"
-        ) {
-            Button(action: onRefresh) {
-                HStack(spacing: 6) {
-                    if scanState.isScanning {
-                        ProgressView()
-                            .controlSize(.small)
-                    }
-                    Text("Rescan")
-                }
-                .frame(minWidth: 96)
-            }
-            .buttonStyle(.bordered)
-            .disabled(scanState.isScanning)
-        } content: {
-            ExtensionSettingsScanStatusView(state: scanState)
-
+        SettingsSection(title: "Extensions") {
             if projection.isEmpty {
-                Text("No extensions found.")
+                Text("No extensions added.")
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
@@ -102,54 +83,6 @@ struct ExtensionSettingsInstalledSection: View {
         .onDisappear {
             actionSession.cancelAll()
         }
-    }
-}
-
-private struct ExtensionSettingsScanStatusView: View {
-    let state: ExtensionSettingsScanState
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            switch state {
-            case .inert, .scanning, .cancelled:
-                EmptyView()
-            case .completed(_, let summary):
-                if let firstFailure = summary.failedMessages.first {
-                    if summary.failedMessages.count == 1 {
-                        Text("Could not add \(firstFailure).")
-                    } else {
-                        Text(
-                            "Could not add \(summary.failedMessages.count) Safari extensions. \(firstFailure)"
-                        )
-                    }
-                }
-
-                if summary.skippedUnreadableCount > 0 {
-                    if summary.skippedUnreadableCount == 1 {
-                        Text("Skipped 1 extension because it was unreadable.")
-                    } else {
-                        Text(
-                            "Skipped \(summary.skippedUnreadableCount) extensions because they were unreadable."
-                        )
-                    }
-                }
-
-                if summary.scannerIssues.isEmpty == false {
-                    if summary.scannerIssues.count == 1 {
-                        Text("Found 1 issue while scanning Safari extensions.")
-                    } else {
-                        Text(
-                            "Found \(summary.scannerIssues.count) issues while scanning Safari extensions."
-                        )
-                    }
-                }
-            case .failed(_, let message):
-                Text(message)
-            }
-        }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -205,6 +138,12 @@ private struct ExtensionSettingsInstalledGroup: View {
                                     extensionID: row.id,
                                     commands: commands
                                 )
+                            },
+                            onUninstall: {
+                                actionSession.uninstall(
+                                    extensionID: row.id,
+                                    commands: commands
+                                )
                             }
                         )
                     }
@@ -226,11 +165,13 @@ private struct ExtensionCatalogRow: View {
         SafariExtensionSiteAccessLevel
     ) -> Void
     let onOpenOptions: () -> Void
+    let onUninstall: () -> Void
 
     @State private var isEnabled = false
     @State private var defaultSiteAccess: SafariExtensionSiteAccessLevel = .ask
     @State private var privateAccessAllowed = false
     @State private var isDetailsPresented = false
+    @State private var isUninstallConfirmationPresented = false
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
@@ -310,6 +251,16 @@ private struct ExtensionCatalogRow: View {
                         else { return }
                         onToggleEnabled()
                     }
+
+                SettingsDeleteButton(
+                    label: "Delete extension",
+                    isDisabled: isBusy
+                ) {
+                    isUninstallConfirmationPresented = true
+                }
+                .accessibilityIdentifier(
+                    "extension-delete-\(extensionRecord.id)"
+                )
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -342,6 +293,17 @@ private struct ExtensionCatalogRow: View {
             else { return }
             onPrivateAccessChanged(newValue)
         }
+        .confirmationDialog(
+            "Delete Extension?",
+            isPresented: $isUninstallConfirmationPresented
+        ) {
+            Button("Delete", role: .destructive, action: onUninstall)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(
+                "This removes \(extensionRecord.name) and all of its data and settings from Sumi. The original extension files will not be changed."
+            )
+        }
     }
 
     @ViewBuilder
@@ -371,10 +333,12 @@ private final class ExtensionSettingsInstalledActionSession {
 
     @ObservationIgnored private var enablementTasks: [String: Task<Void, Never>] = [:]
     @ObservationIgnored private var optionsTasks: [String: Task<Void, Never>] = [:]
+    @ObservationIgnored private var uninstallTasks: [String: Task<Void, Never>] = [:]
 
     deinit {
         enablementTasks.values.forEach { $0.cancel() }
         optionsTasks.values.forEach { $0.cancel() }
+        uninstallTasks.values.forEach { $0.cancel() }
     }
 
     func setEnabled(
@@ -411,11 +375,34 @@ private final class ExtensionSettingsInstalledActionSession {
         }
     }
 
+    func uninstall(
+        extensionID: String,
+        commands: ExtensionSettingsInstalledCommands
+    ) {
+        uninstallTasks[extensionID]?.cancel()
+        busyExtensionIDs.insert(extensionID)
+        uninstallTasks[extensionID] = Task { @MainActor [weak self] in
+            do {
+                try await commands.uninstall(extensionID)
+            } catch is CancellationError {
+            } catch {
+                RuntimeDiagnostics.debug(category: "Extensions") {
+                    "Extension settings uninstall failed id=\(extensionID) error=\(error.localizedDescription)"
+                }
+            }
+            guard Task.isCancelled == false else { return }
+            self?.busyExtensionIDs.remove(extensionID)
+            self?.uninstallTasks[extensionID] = nil
+        }
+    }
+
     func cancelAll() {
         enablementTasks.values.forEach { $0.cancel() }
         enablementTasks.removeAll()
         optionsTasks.values.forEach { $0.cancel() }
         optionsTasks.removeAll()
+        uninstallTasks.values.forEach { $0.cancel() }
+        uninstallTasks.removeAll()
         busyExtensionIDs.removeAll()
     }
 }

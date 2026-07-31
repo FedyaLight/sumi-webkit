@@ -1,3 +1,4 @@
+import AppKit
 import WebKit
 import XCTest
 
@@ -6,7 +7,377 @@ import XCTest
 @available(macOS 15.5, *)
 @MainActor
 final class SafariExtensionAutofillRuntimeTests: XCTestCase {
-    func testModuleBootstrapsControllerBeforeManagerWasCached() async throws {
+    func testGlancePreviewRunsContentScriptsBeforeAndAfterReload() async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Glance Autofill Profile")
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(
+                userDefaults: UserDefaults(suiteName: UUID().uuidString)!
+            )
+        )
+        registry.enable(.extensions)
+        let browserConfiguration = BrowserConfiguration()
+        let fixture = makeSafariExtensionManagerTestFixture(
+            context: container,
+            initialProfile: profile,
+            browserConfiguration: browserConfiguration,
+            moduleRegistry: registry
+        )
+        let extensionsModule = SumiExtensionsModule(
+            moduleRegistry: registry,
+            database: container,
+            browserConfiguration: browserConfiguration,
+            initialProfileProvider: { profile },
+            managerFactory: { _, _, _, _ in fixture.manager }
+        )
+        let windowRegistry = WindowRegistry()
+        let browserManager = makeSafariExtensionTestBrowserManager(
+            moduleRegistry: registry,
+            extensionsModule: extensionsModule,
+            profile: profile,
+            windowRegistry: windowRegistry,
+            browserConfiguration: browserConfiguration
+        )
+        browserManager.startupRestoreLifecycle.markLoadFinished()
+        let space = browserManager.spaceStateOwner.currentSpace
+            ?? installTestSpace(
+                in: browserManager.spaceStateOwner,
+                name: "Glance Autofill",
+                profileID: profile.id
+            )
+        let sourceTab = browserManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://source.example/page",
+            in: space,
+            activate: false
+        )
+        sourceTab.profileId = profile.id
+        let windowState = BrowserWindowState()
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
+        windowState.currentProfileId = profile.id
+        windowState.currentSpaceId = space.id
+        windowState.currentTabId = sourceTab.id
+        windowState.activeTabForSpace[space.id] = sourceTab.id
+
+        let installed = try await installAutofillProbeExtension(
+            manager: fixture.manager,
+            scratchDirectory: makeScratchDirectory()
+        )
+        _ = try await fixture.inspection.installation.lifecycle.enable(installed.id)
+        fixture.inspection.actionPolicy.siteAccess.setDefaultSiteAccess(
+            .allow,
+            extensionId: installed.id,
+            profileId: profile.id
+        )
+        await fixture.inspection.normalTabs.deferredRuntime
+            .initialDocumentRuntimePreparationOwner
+            .ensureContentScriptContextsLoaded(for: profile.id)
+        fixture.inspection.actionSurfaces.publication.markRuntimePublicationReady()
+        XCTAssertTrue(
+            browserManager.selectTab(sourceTab, in: windowState).wasCommitted
+        )
+        browserManager.materializeVisibleTabWebViewIfNeeded(
+            sourceTab,
+            in: windowState
+        )
+        let sourceWebView = try XCTUnwrap(
+            browserManager.webViewRuntime.ownershipQuery.webView(
+                for: sourceTab.id,
+                in: windowState.id
+            ) as? FocusableWKWebView
+        )
+        let windowPublication = browserManager.windowExtensionPublication
+        windowPublication.prepareRegistration(windowState)
+        XCTAssertEqual(
+            windowPublication.stageInitialTab(
+                sourceTab,
+                webView: sourceWebView,
+                in: windowState,
+                reason: #function
+            ),
+            .extensionPrepared
+        )
+        let appKitWindow = NSWindow(
+            contentRect: NSRect(x: 140, y: 140, width: 900, height: 680),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        windowRegistry.bindAppKitWindow(appKitWindow, to: windowState)
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+        windowPublication.commitRegistration(windowState)
+        XCTAssertEqual(
+            windowPublication.initialPublicationResult(for: windowState),
+            .extensionPublished
+        )
+        addTeardownBlock {
+            withExtendedLifetime(appKitWindow) {
+                windowRegistry.unregister(windowState.id)
+            }
+        }
+
+        let server = try await AutofillPagesHTTPServer.start()
+        addTeardownBlock {
+            server.stop()
+        }
+        XCTAssertTrue(
+            browserManager.glanceManager.presentExternalURL(
+                server.loginBasicURL,
+                from: sourceTab,
+                in: windowState
+            )
+        )
+        let session = try XCTUnwrap(browserManager.glanceManager.currentSession)
+        let webView = try await waitForGlanceWebView(session.previewTab)
+        let extensionRuntime = fixture.attachedRuntime.runtime
+
+        XCTAssertIdentical(
+            webView.configuration.webExtensionController,
+            fixture.inspection.contextState.profiles.controller(for: profile.id)
+        )
+        XCTAssertTrue(
+            extensionRuntime.bridge.tabs.allExtensionTabs.contains {
+                $0 === session.previewTab
+            },
+            "Glance preview must be visible to the extension tab bridge"
+        )
+        XCTAssertTrue(
+            extensionRuntime.bridge.webViews
+                .extensionLiveWebViews(for: session.previewTab)
+                .contains { $0 === webView },
+            "Glance WebView must be visible to the extension bridge"
+        )
+        XCTAssertTrue(
+            extensionRuntime.normalTabs.preparedTabs
+                .containsPreparedTab(session.previewTab),
+            "Glance preview must reach extension runtime preparation"
+        )
+        let extensionContext = try XCTUnwrap(
+            fixture.inspection.contextState.profileState.context(
+                for: installed.id
+            )
+        )
+        let adapter = try XCTUnwrap(
+            extensionRuntime.adapters.stableAdapter(for: session.previewTab)
+        )
+        XCTAssertTrue(
+            extensionContext.openTabs.contains {
+                ($0 as AnyObject) === adapter
+            },
+            "Glance must cross WebKit's didOpenTab boundary"
+        )
+        XCTAssertIdentical(adapter.webView(for: extensionContext), webView)
+        XCTAssertIdentical(
+            extensionRuntime.bridge.windows.extensionWindowState(
+                containing: session.previewTab
+            ),
+            windowState,
+            "Glance must retain its owning browser-window identity"
+        )
+        XCTAssertTrue(
+            extensionRuntime.bridge.windows.tabsForExtensionWindow(windowState)
+                .contains { $0 === session.previewTab },
+            "The owning extension window must include its Glance preview"
+        )
+        XCTAssertNotNil(
+            adapter.window(for: extensionContext),
+            "WebKit must be able to project the Glance preview's window"
+        )
+
+        let initialDocumentHasProbe = await waitForAutofillProbe(in: webView)
+        XCTAssertTrue(
+            initialDocumentHasProbe,
+            "Glance must run extension content scripts on its initial document"
+        )
+
+        _ = try await webView.evaluateJavaScript(
+            "document.documentElement.dataset.sumiProbe = 'stale'"
+        )
+        let reloadOutcome = session.previewTab.navigationCommandOwner.refresh(
+            session.previewTab
+        )
+        XCTAssertNotEqual(reloadOutcome, .failed)
+
+        let reloadedDocumentHasProbe = await waitForAutofillProbe(in: webView)
+        XCTAssertTrue(
+            reloadedDocumentHasProbe,
+            "Reloading inside Glance must keep extension content scripts active"
+        )
+
+        let didClose = expectation(description: "Glance didCloseTab")
+        fixture.manager.testHooks.didCloseTab = { tabID in
+            if tabID == session.previewTab.id {
+                didClose.fulfill()
+            }
+        }
+        defer {
+            fixture.manager.testHooks.didCloseTab = nil
+        }
+
+        browserManager.glanceManager.dismissGlance()
+        await fulfillment(of: [didClose], timeout: 2)
+        XCTAssertFalse(
+            extensionRuntime.bridge.tabs.allExtensionTabs.contains {
+                $0 === session.previewTab
+            }
+        )
+        XCTAssertTrue(
+            extensionRuntime.bridge.webViews
+                .extensionLiveWebViews(for: session.previewTab)
+                .isEmpty
+        )
+    }
+
+    func testBrowserSessionAddThenEnableDeliversOnInstalledToExistingTab()
+        async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Cold Enable Profile")
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(
+                userDefaults: UserDefaults(suiteName: UUID().uuidString)!
+            )
+        )
+        registry.enable(.extensions)
+        let browserConfiguration = BrowserConfiguration()
+        let fixture = makeSafariExtensionManagerTestFixture(
+            context: container,
+            initialProfile: profile,
+            browserConfiguration: browserConfiguration,
+            moduleRegistry: registry
+        )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
+        let extensionsModule = SumiExtensionsModule(
+            moduleRegistry: registry,
+            database: container,
+            browserConfiguration: browserConfiguration,
+            initialProfileProvider: { profile },
+            managerFactory: { _, _, _, _ in manager }
+        )
+        let windowRegistry = WindowRegistry()
+        let browserManager = makeSafariExtensionTestBrowserManager(
+            moduleRegistry: registry,
+            extensionsModule: extensionsModule,
+            profile: profile,
+            windowRegistry: windowRegistry,
+            browserConfiguration: browserConfiguration
+        )
+        browserManager.startupRestoreLifecycle.markLoadFinished()
+        let space = browserManager.spaceStateOwner.currentSpace
+            ?? installTestSpace(
+                in: browserManager.spaceStateOwner,
+                name: "Cold Enable",
+                profileID: profile.id
+            )
+        let tab = browserManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://example.com/login",
+            in: space,
+            activate: false
+        )
+        tab.profileId = profile.id
+        let windowState = BrowserWindowState()
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
+        windowState.currentProfileId = profile.id
+        windowState.currentSpaceId = space.id
+        windowState.currentTabId = tab.id
+        windowState.activeTabForSpace[space.id] = tab.id
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+        addTeardownBlock {
+            windowRegistry.unregister(windowState.id)
+        }
+
+        let originalWebView = try XCTUnwrap(
+            tab.makeNormalTabWebView(
+                reason: "SafariExtensionAutofillRuntimeTests.coldEnable"
+            ) as? FocusableWKWebView
+        )
+        XCTAssertTrue(
+            browserManager.testWebViewRuntime().trackedWebViewAdmission
+                .attemptAssignment(
+                    originalWebView,
+                    to: tab,
+                    in: windowState.id,
+                    replaySemanticOperation: {
+                        XCTFail("Unexpected WebView assignment deferral")
+                    }
+                ).isAccepted
+        )
+        XCTAssertIdentical(extensionsModule.managerForTesting(), manager)
+        let preparedController = try XCTUnwrap(
+            inspection.contextState.profiles.controller(for: profile.id)
+        )
+        XCTAssertIdentical(
+            originalWebView.configuration.webExtensionController,
+            preparedController
+        )
+        XCTAssertIdentical(
+            browserConfiguration.webViewConfiguration.webExtensionController,
+            preparedController
+        )
+        XCTAssertTrue(
+            fixture.attachedRuntime.runtime.bridge.tabs.allExtensionTabs
+                .contains { $0 === tab }
+        )
+        XCTAssertTrue(
+            fixture.attachedRuntime.runtime.bridge.webViews
+                .extensionLiveWebViews(for: tab)
+                .contains { $0 === originalWebView }
+        )
+        let reconciliationCountBeforeEnable = fixture.attachedRuntime.runtime
+            .controller.reconciler.reconciliationRequestCount
+        try await Task.sleep(for: .seconds(5.2))
+
+        let candidate = try makeSafariAppExtensionCandidate(
+            scratchDirectory: makeScratchDirectory()
+        )
+        let added = try await extensionsModule.addSafariAppExtension(
+            from: candidate
+        )
+        XCTAssertFalse(added.isEnabled)
+        XCTAssertNil(
+            inspection.contextState.profiles.contexts(for: profile.id)[added.id]
+        )
+
+        let installed = try await extensionsModule.enableExtension(added.id)
+        XCTAssertTrue(installed.isEnabled)
+        XCTAssertEqual(installed.sourceKind, .safariAppExtension)
+        XCTAssertGreaterThan(
+            fixture.attachedRuntime.runtime.controller.reconciler
+                .reconciliationRequestCount,
+            reconciliationCountBeforeEnable
+        )
+
+        let currentWebView = try XCTUnwrap(tab.resolvedCurrentWebView())
+        let controller = try XCTUnwrap(
+            inspection.contextState.profiles.controller(for: profile.id)
+        )
+        XCTAssertIdentical(
+            currentWebView,
+            originalWebView,
+            "Enable must not rebuild a tab already bound to the browser-session controller"
+        )
+        XCTAssertIdentical(
+            currentWebView.configuration.webExtensionController,
+            controller,
+            "Enable must return only after the existing tab is bound to the ready profile controller"
+        )
+
+        for _ in 0..<40 where browserManager.regularTabCollectionOwner
+            .tabs(in: space.id)
+            .contains(where: { $0.url.path == "/onboarding.html" }) == false {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertTrue(
+            browserManager.regularTabCollectionOwner.tabs(in: space.id).contains {
+                $0.url.path == "/onboarding.html"
+            },
+            "First Safari App Extension enable must deliver runtime.onInstalled while the browser tab bridge is ready; backgroundLoaded=\(browserManager.regularTabCollectionOwner.tabs(in: space.id).contains { $0.url.path == "/background-loaded.html" })"
+        )
+    }
+
+    func testModulePreparesControllerForPersistedExtensionOnAttach()
+        async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Autofill Profile")
 
@@ -45,7 +416,10 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
                 for: browserManager
             )
         )
-        XCTAssertFalse(module.hasLoadedRuntime)
+        XCTAssertTrue(
+            module.hasLoadedRuntime,
+            "Persisted extensions need a browser-session controller before the first enable"
+        )
         _ = try await seedManager.settingsCatalogBinding().enable(installed.id)
 
         let configuration = BrowserConfiguration.shared.normalTabWebViewConfiguration(
@@ -410,6 +784,29 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
             .appendingPathComponent("Fixtures/Extensions/\(filename)")
     }
 
+    private func waitForGlanceWebView(_ tab: Tab) async throws -> WKWebView {
+        for _ in 0..<40 {
+            if let webView = tab.resolvedCurrentWebView() {
+                return webView
+            }
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        return try XCTUnwrap(tab.resolvedCurrentWebView())
+    }
+
+    private func waitForAutofillProbe(in webView: WKWebView) async -> Bool {
+        for _ in 0..<80 {
+            if let value = try? await webView.evaluateJavaScript(
+                "document.documentElement.dataset.sumiProbe"
+            ) as? String,
+               value == "1" {
+                return true
+            }
+            try? await Task.sleep(for: .milliseconds(25))
+        }
+        return false
+    }
+
     private func makeTab(profileId: UUID, url: URL) -> Tab {
         let tab = Tab(url: url, name: "Test")
         tab.profileId = profileId
@@ -470,6 +867,73 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         return try await manager.settingsCatalogBinding().install(
             from: directoryURL,
             enableOnInstall: false
+        )
+    }
+
+    private func makeSafariAppExtensionCandidate(
+        scratchDirectory: URL
+    ) throws -> DiscoveredSafariExtensionCandidate {
+        let bundleIdentifier = "com.example.sumi.autofill-safari-extension."
+            + UUID().uuidString
+        let backgroundHTML = SafariExtensionScannerTestSupport
+            .SyntheticResourceFile(
+                relativePath: "background.html",
+                data: Data(
+                    "<!doctype html><script src=\"background.js\"></script>"
+                        .utf8
+                )
+            )
+        let backgroundScript = SafariExtensionScannerTestSupport
+            .SyntheticResourceFile(
+                relativePath: "background.js",
+                data: Data(
+                    "browser.tabs.create({ url: browser.runtime.getURL('background-loaded.html') }); browser.runtime.onInstalled.addListener(() => setTimeout(() => browser.tabs.create({ url: browser.runtime.getURL('onboarding.html') }), 150));"
+                        .utf8
+                )
+            )
+        let onboardingHTML = SafariExtensionScannerTestSupport
+            .SyntheticResourceFile(
+                relativePath: "onboarding.html",
+                data: Data("<!doctype html><title>Onboarding</title>".utf8)
+            )
+        let backgroundLoadedHTML = SafariExtensionScannerTestSupport
+            .SyntheticResourceFile(
+                relativePath: "background-loaded.html",
+                data: Data("<!doctype html><title>Background loaded</title>".utf8)
+            )
+        let appexURL = try SafariExtensionScannerTestSupport.makeStandaloneAppex(
+            in: scratchDirectory,
+            specification: .init(
+                name: "SafariAutofillProbe",
+                bundleIdentifier: bundleIdentifier,
+                displayName: "Safari Autofill Probe",
+                manifestVersion: 2,
+                resourceFiles: [
+                    backgroundHTML,
+                    backgroundScript,
+                    onboardingHTML,
+                    backgroundLoadedHTML,
+                ],
+                backgroundPage: "background.html",
+                adHocSign: true
+            )
+        )
+        return DiscoveredSafariExtensionCandidate(
+            extensionBundleIdentifier: bundleIdentifier,
+            displayName: "Safari Autofill Probe",
+            version: "1.0",
+            extensionPointIdentifier:
+                SafariExtensionScanner.safariWebExtensionPointIdentifier,
+            bundleKind: .webExtension,
+            runtimeStatus: .webExtensionImportable,
+            containingAppName: "Safari Autofill Probe",
+            containingAppBundleIdentifier: "com.example.sumi.autofill",
+            containingAppURL: scratchDirectory,
+            appexURL: appexURL,
+            manifestURL: appexURL.appendingPathComponent(
+                "Contents/Resources/manifest.json"
+            ),
+            isReadable: true
         )
     }
 

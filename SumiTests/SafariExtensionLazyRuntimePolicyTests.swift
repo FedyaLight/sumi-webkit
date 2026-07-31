@@ -306,6 +306,9 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
             inspection.contextState.profiles.countLoadedExtensionContexts(),
             2
         )
+        let preparedController = try XCTUnwrap(
+            inspection.contextState.profiles.controller(for: profileA.id)
+        )
 
         try await inspection.installation.lifecycle.disable(installed.id)
 
@@ -315,6 +318,207 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
         )
         XCTAssertNil(
             inspection.contextState.sourceCache.entry(for: installed.id)
+        )
+        XCTAssertIdentical(
+            inspection.contextState.profiles.controller(for: profileA.id),
+            preparedController,
+            "Disable must keep browser-session identity while the extension remains installed"
+        )
+    }
+
+    func testUninstallKeepsControllerAndRemovesSumiOwnedState()
+        async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Uninstall Browser Session")
+        let secondProfile = Profile(name: "Uninstall Secondary Profile")
+        try container.transaction {
+            try $0.profiles.save(
+                ProfileRecord(id: profile.id, name: profile.name, index: 0)
+            )
+            try $0.profiles.save(
+                ProfileRecord(
+                    id: secondProfile.id,
+                    name: secondProfile.name,
+                    index: 1
+                )
+            )
+        }
+        let fixture = makeSafariExtensionManagerTestFixture(
+            context: container,
+            initialProfile: profile
+        )
+        let scratchDirectory = try makeScratchDirectory()
+        let first = try await installUnpackedExtension(
+            manager: fixture.manager,
+            scratchDirectory: scratchDirectory,
+            name: "FirstUninstallExtension"
+        )
+        _ = try await fixture.inspection.installation.lifecycle.enable(first.id)
+        let controller = try XCTUnwrap(
+            fixture.inspection.contextState.profiles.controller(for: profile.id)
+        )
+        fixture.inspection.actionPolicy.store.updatePolicy(
+            extensionId: first.id,
+            profileId: profile.id
+        ) {
+            $0.defaultAccess = .deny
+            $0.defaultAccessConfiguredByUser = true
+        }
+        fixture.inspection.actionPolicy.store.updatePolicy(
+            extensionId: first.id,
+            profileId: secondProfile.id
+        ) {
+            $0.defaultAccess = .deny
+            $0.defaultAccessConfiguredByUser = true
+        }
+        fixture.inspection.actionPolicy.permissionDecisions
+            .persistExtensionPermissionDecision(
+                extensionId: first.id,
+                profileId: profile.id,
+                targetKind: .permission,
+                target: "tabs",
+                state: .denied,
+                expiresAt: nil
+            )
+        fixture.inspection.actionPolicy.permissionDecisions
+            .persistExtensionPermissionDecision(
+                extensionId: first.id,
+                profileId: secondProfile.id,
+                targetKind: .permission,
+                target: "tabs",
+                state: .denied,
+                expiresAt: nil
+            )
+        fixture.inspection.actionSurfaces.toolbarPinning.pinToToolbar(
+            first.id,
+            profileId: profile.id
+        )
+        fixture.inspection.actionSurfaces.toolbarPinning.pinToToolbar(
+            first.id,
+            profileId: secondProfile.id
+        )
+        fixture.inspection.actionSurfaces.hubOrdering.moveUnpinnedExtension(
+            id: first.id,
+            to: 1,
+            within: [first.id, "retained-extension"],
+            profileId: profile.id
+        )
+        fixture.inspection.actionSurfaces.hubOrdering.moveUnpinnedExtension(
+            id: first.id,
+            to: 1,
+            within: [first.id, "retained-extension"],
+            profileId: secondProfile.id
+        )
+        let importStore = SafariExtensionImportStore(database: container)
+        importStore.markImported(
+            extensionBundleIdentifier: "test.\(first.id)",
+            appexPath: first.sourceBundlePath,
+            installedExtensionId: first.id
+        )
+        let runtimeIdentifier = SafariWebExtensionRuntimeIdentity
+            .webKitStorageIdentifier(
+                extensionId: first.id,
+                sourceKind: first.sourceKind,
+                sourceBundlePath: first.sourceBundlePath
+            )
+        let extensionStorageDirectories = try [profile.id, secondProfile.id]
+            .map { profileID in
+                let cleanupStore = WebExtensionStorageCleanupStore(
+                    controllerStorageId: ExtensionControllerProvisioningOwner
+                        .extensionControllerIdentifier(for: profileID),
+                    planner: WebExtensionStorageCleanupPlanner(),
+                    storageDirectoryNameResolver: { _ in runtimeIdentifier }
+                )
+                let directory = try XCTUnwrap(
+                    cleanupStore.directory(for: first.id)
+                )
+                try FileManager.default.createDirectory(
+                    at: directory,
+                    withIntermediateDirectories: true
+                )
+                try Data("extension state".utf8).write(
+                    to: directory.appendingPathComponent("ExtensionState.bin")
+                )
+                return directory
+            }
+        let originalSourceURL = URL(
+            fileURLWithPath: first.sourceBundlePath,
+            isDirectory: true
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: originalSourceURL.path))
+
+        try await fixture.inspection.installation.lifecycle.uninstall(first.id)
+
+        XCTAssertTrue(
+            fixture.inspection.actionSurfaces.installedExtensions.records.isEmpty
+        )
+        XCTAssertIdentical(
+            fixture.inspection.contextState.profiles.controller(for: profile.id),
+            controller,
+            "Uninstall must not restart the browser session controller"
+        )
+        XCTAssertEqual(
+            fixture.inspection.actionPolicy.store.policy(
+                extensionId: first.id,
+                profileId: profile.id
+            ).policy.defaultAccess,
+            .ask
+        )
+        XCTAssertEqual(
+            fixture.inspection.actionPolicy.store.policy(
+                extensionId: first.id,
+                profileId: secondProfile.id
+            ).policy.defaultAccess,
+            .ask
+        )
+        XCTAssertNil(
+            fixture.inspection.actionPolicy.permissionDecisions
+                .storedExtensionPermissionDecision(
+                    extensionId: first.id,
+                    profileId: profile.id,
+                    targetKind: .permission,
+                    target: "tabs"
+                )
+        )
+        XCTAssertNil(
+            fixture.inspection.actionPolicy.permissionDecisions
+                .storedExtensionPermissionDecision(
+                    extensionId: first.id,
+                    profileId: secondProfile.id,
+                    targetKind: .permission,
+                    target: "tabs"
+                )
+        )
+        XCTAssertFalse(
+            fixture.inspection.actionSurfaces.toolbarPinning
+                .pinnedToolbarExtensionIDs(profileId: profile.id)
+                .contains(first.id)
+        )
+        XCTAssertFalse(
+            fixture.inspection.actionSurfaces.toolbarPinning
+                .pinnedToolbarExtensionIDs(profileId: secondProfile.id)
+                .contains(first.id)
+        )
+        let persistedHubOrder = try container.read {
+            try $0.documents.value(
+                [String: [String]].self,
+                forKey: "extensions.hub-order"
+            ) ?? [:]
+        }
+        XCTAssertFalse(
+            persistedHubOrder.values.joined().contains(first.id)
+        )
+        XCTAssertTrue(importStore.importedRecords().isEmpty)
+        for extensionStorageDirectory in extensionStorageDirectories {
+            XCTAssertFalse(
+                FileManager.default.fileExists(
+                    atPath: extensionStorageDirectory.path
+                )
+            )
+        }
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: originalSourceURL.path),
+            "Uninstall must not touch the user-owned source extension"
         )
     }
 

@@ -15,32 +15,23 @@ struct ExtensionSettingsScanDiscovery: Equatable, Sendable {
     let issues: [SafariExtensionScannerIssue]
 }
 
-struct ExtensionSettingsImportResult: Equatable, Sendable {
-    let importedExtensionCount: Int
-    let failedMessages: [String]
-    let skippedUnreadableCount: Int
-}
-
 struct ExtensionSettingsScanSummary: Equatable, Sendable {
     let discoveredCandidateCount: Int
-    let importedExtensionCount: Int
     let scannerIssues: [SafariExtensionScannerIssue]
-    let failedMessages: [String]
-    let skippedUnreadableCount: Int
 
     var hasIssues: Bool {
         scannerIssues.isEmpty == false
-            || failedMessages.isEmpty == false
-            || skippedUnreadableCount > 0
     }
 }
 
 struct ExtensionSettingsScanSnapshot: Equatable, Sendable {
+    let webExtensionCandidates: [DiscoveredSafariExtensionCandidate]
     let contentBlockerCandidates: [DiscoveredSafariExtensionCandidate]
     let unsupportedCandidates: [DiscoveredSafariExtensionCandidate]
     var contentBlockerRecords: [InstalledSafariContentBlockerRecord]
 
     static let empty = ExtensionSettingsScanSnapshot(
+        webExtensionCandidates: [],
         contentBlockerCandidates: [],
         unsupportedCandidates: [],
         contentBlockerRecords: []
@@ -99,9 +90,6 @@ enum ExtensionSettingsSafariScanner {
 @Observable
 final class ExtensionSettingsScanSession {
     typealias Scan = @Sendable () async throws -> ExtensionSettingsScanDiscovery
-    typealias Synchronize = @MainActor @Sendable (
-        [DiscoveredSafariExtensionCandidate]
-    ) async throws -> ExtensionSettingsImportResult
     typealias LoadContentBlockers = @MainActor @Sendable () throws -> [
         InstalledSafariContentBlockerRecord
     ]
@@ -110,7 +98,6 @@ final class ExtensionSettingsScanSession {
     private(set) var snapshot: ExtensionSettingsScanSnapshot = .empty
 
     private let scan: Scan
-    private let synchronize: Synchronize
     private let loadContentBlockers: LoadContentBlockers
 
     @ObservationIgnored private var nextGeneration: UInt64 = 0
@@ -119,25 +106,14 @@ final class ExtensionSettingsScanSession {
 
     init(
         scan: @escaping Scan,
-        synchronize: @escaping Synchronize,
         loadContentBlockers: @escaping LoadContentBlockers
     ) {
         self.scan = scan
-        self.synchronize = synchronize
         self.loadContentBlockers = loadContentBlockers
     }
 
     deinit {
         scanTask?.cancel()
-    }
-
-    func beginIfNeeded() {
-        switch state {
-        case .inert, .cancelled:
-            refresh()
-        case .scanning, .completed, .failed:
-            return
-        }
     }
 
     func refresh() {
@@ -148,14 +124,10 @@ final class ExtensionSettingsScanSession {
         state = .scanning(attempt)
 
         let scan = scan
-        let synchronize = synchronize
         let loadContentBlockers = loadContentBlockers
         scanTask = Task { @MainActor [weak self] in
             do {
                 let discovery = try await scan()
-                try Task.checkCancellation()
-
-                let importResult = try await synchronize(discovery.candidates)
                 try Task.checkCancellation()
 
                 let contentBlockerRecords = try loadContentBlockers()
@@ -164,7 +136,6 @@ final class ExtensionSettingsScanSession {
                 self?.complete(
                     attempt: attempt,
                     discovery: discovery,
-                    importResult: importResult,
                     contentBlockerRecords: contentBlockerRecords
                 )
             } catch is CancellationError {
@@ -199,11 +170,13 @@ final class ExtensionSettingsScanSession {
     private func complete(
         attempt: ExtensionSettingsScanAttempt,
         discovery: ExtensionSettingsScanDiscovery,
-        importResult: ExtensionSettingsImportResult,
         contentBlockerRecords: [InstalledSafariContentBlockerRecord]
     ) {
         guard activeAttempt == attempt else { return }
 
+        let webExtensionCandidates = discovery.candidates.filter {
+            $0.bundleKind == .webExtension
+        }
         let contentBlockerCandidates = discovery.candidates.filter {
             $0.bundleKind == .contentBlocker
         }
@@ -212,13 +185,11 @@ final class ExtensionSettingsScanSession {
         }
         let summary = ExtensionSettingsScanSummary(
             discoveredCandidateCount: discovery.candidates.count,
-            importedExtensionCount: importResult.importedExtensionCount,
-            scannerIssues: discovery.issues,
-            failedMessages: importResult.failedMessages,
-            skippedUnreadableCount: importResult.skippedUnreadableCount
+            scannerIssues: discovery.issues
         )
 
         snapshot = ExtensionSettingsScanSnapshot(
+            webExtensionCandidates: webExtensionCandidates,
             contentBlockerCandidates: contentBlockerCandidates,
             unsupportedCandidates: unsupportedCandidates,
             contentBlockerRecords: contentBlockerRecords

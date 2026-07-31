@@ -11,8 +11,54 @@ final class ExtensionSettingsScanSessionTests: XCTestCase {
         _ = makeSession(scanner: scanner, capabilities: capabilities)
 
         XCTAssertEqual(scanner.callCount, 0)
-        XCTAssertEqual(capabilities.synchronizeCallCount, 0)
         XCTAssertEqual(capabilities.loadCallCount, 0)
+    }
+
+    func testScanDoesNotAddDiscoveredWebExtensions() async {
+        let scanner = ControlledExtensionSettingsScanner()
+        let capabilities = ExtensionSettingsCapabilityRecorder()
+        let session = makeSession(scanner: scanner, capabilities: capabilities)
+
+        session.refresh()
+        await scanner.waitUntilStarted(1)
+        scanner.resolve(
+            call: 1,
+            with: .init(
+                candidates: [makeCandidate(id: "discovered-web-extension")],
+                issues: []
+            )
+        )
+        await waitForState(session) {
+            if case .completed = $0 { return true }
+            return false
+        }
+
+        XCTAssertEqual(
+            session.snapshot.webExtensionCandidates.map(\.id),
+            ["discovered-web-extension"],
+            "Scanning must publish a finding without installing it"
+        )
+    }
+
+    func testFindingsExcludeAlreadyAddedSafariExtension() {
+        let added = makeCandidate(id: "already-added")
+        let relocated = makeCandidate(id: "relocated")
+        let available = makeCandidate(id: "available")
+        let projection = ExtensionSettingsFindingsProjection(
+            discoveredCandidates: [added, relocated, available],
+            installedExtensions: [
+                makeInstalledSafariExtension(
+                    id: added.id,
+                    sourceBundlePath: added.appexURL.path
+                ),
+                makeInstalledSafariExtension(
+                    id: relocated.id,
+                    sourceBundlePath: "/Applications/Old.app/Old.appex"
+                ),
+            ]
+        )
+
+        XCTAssertEqual(projection.candidates.map(\.id), [available.id])
     }
 
     func testFirstScanPublishesTypedTerminalSnapshot() async {
@@ -30,16 +76,11 @@ final class ExtensionSettingsScanSessionTests: XCTestCase {
         let webExtension = makeCandidate(id: "web-extension")
         let blockerRecord = makeContentBlockerRecord(id: contentBlocker.id)
         let capabilities = ExtensionSettingsCapabilityRecorder(
-            importResult: .init(
-                importedExtensionCount: 1,
-                failedMessages: [],
-                skippedUnreadableCount: 0
-            ),
             contentBlockerRecords: [blockerRecord]
         )
         let session = makeSession(scanner: scanner, capabilities: capabilities)
 
-        session.beginIfNeeded()
+        session.refresh()
         await scanner.waitUntilStarted(1)
         scanner.resolve(
             call: 1,
@@ -60,16 +101,11 @@ final class ExtensionSettingsScanSessionTests: XCTestCase {
         }
         XCTAssertEqual(attempt, .init(generation: 1))
         XCTAssertEqual(summary.discoveredCandidateCount, 3)
-        XCTAssertEqual(summary.importedExtensionCount, 1)
         XCTAssertFalse(summary.hasIssues)
+        XCTAssertEqual(session.snapshot.webExtensionCandidates, [webExtension])
         XCTAssertEqual(session.snapshot.contentBlockerCandidates, [contentBlocker])
         XCTAssertEqual(session.snapshot.unsupportedCandidates, [unsupported])
         XCTAssertEqual(session.snapshot.contentBlockerRecords, [blockerRecord])
-        XCTAssertEqual(capabilities.synchronizedCandidates, [
-            webExtension,
-            contentBlocker,
-            unsupported,
-        ])
         XCTAssertEqual(capabilities.loadCallCount, 1)
     }
 
@@ -78,7 +114,7 @@ final class ExtensionSettingsScanSessionTests: XCTestCase {
         let capabilities = ExtensionSettingsCapabilityRecorder()
         let session = makeSession(scanner: scanner, capabilities: capabilities)
 
-        session.beginIfNeeded()
+        session.refresh()
         await scanner.waitUntilStarted(1)
         session.refresh()
         await scanner.waitUntilCancellationObserved(for: 1)
@@ -95,80 +131,7 @@ final class ExtensionSettingsScanSessionTests: XCTestCase {
             return false
         }
 
-        XCTAssertEqual(capabilities.synchronizeCallCount, 1)
-    }
-
-    func testRefreshWhileSynchronizeIsSuspendedRejectsCancelledAttemptBeforeBlockerLoad() async {
-        let scanner = ControlledExtensionSettingsScanner()
-        let synchronizer = ControlledExtensionSettingsSynchronizer()
-        let blockerRecord = makeContentBlockerRecord(id: "current-blocker")
-        let capabilities = ExtensionSettingsCapabilityRecorder(
-            contentBlockerRecords: [blockerRecord]
-        )
-        let session = ExtensionSettingsScanSession(
-            scan: { await scanner.scan() },
-            synchronize: { candidates in
-                await synchronizer.synchronize(candidates)
-            },
-            loadContentBlockers: {
-                try capabilities.loadContentBlockers()
-            }
-        )
-        let staleCandidate = makeCandidate(id: "stale-synchronize")
-        let currentCandidate = makeCandidate(id: "current-synchronize")
-
-        session.beginIfNeeded()
-        await scanner.waitUntilStarted(1)
-        scanner.resolve(
-            call: 1,
-            with: .init(candidates: [staleCandidate], issues: [])
-        )
-        await synchronizer.waitUntilStarted(1)
-
-        session.refresh()
-        await synchronizer.waitUntilCancellationObserved(for: 1)
-        await scanner.waitUntilStarted(2)
-        scanner.resolve(
-            call: 2,
-            with: .init(candidates: [currentCandidate], issues: [])
-        )
-        await synchronizer.waitUntilStarted(2)
-
-        synchronizer.resolve(
-            call: 1,
-            with: .init(
-                importedExtensionCount: 99,
-                failedMessages: ["stale"],
-                skippedUnreadableCount: 99
-            )
-        )
-        synchronizer.resolve(
-            call: 2,
-            with: .init(
-                importedExtensionCount: 1,
-                failedMessages: [],
-                skippedUnreadableCount: 0
-            )
-        )
-        await waitForState(session) {
-            if case .completed(let attempt, _) = $0 {
-                return attempt.generation == 2
-            }
-            return false
-        }
-
-        guard case .completed(let attempt, let summary) = session.state else {
-            return XCTFail("Expected the newer synchronize attempt to complete")
-        }
-        XCTAssertEqual(attempt.generation, 2)
-        XCTAssertEqual(summary.importedExtensionCount, 1)
-        XCTAssertEqual(summary.failedMessages, [])
         XCTAssertEqual(capabilities.loadCallCount, 1)
-        XCTAssertEqual(session.snapshot.contentBlockerRecords, [blockerRecord])
-        XCTAssertEqual(synchronizer.candidateIDsByCall, [
-            1: [staleCandidate.id],
-            2: [currentCandidate.id],
-        ])
     }
 
     func testCancellationPublishesTerminalState() async {
@@ -176,27 +139,26 @@ final class ExtensionSettingsScanSessionTests: XCTestCase {
         let capabilities = ExtensionSettingsCapabilityRecorder()
         let session = makeSession(scanner: scanner, capabilities: capabilities)
 
-        session.beginIfNeeded()
+        session.refresh()
         await scanner.waitUntilStarted(1)
         session.cancel()
         await scanner.waitUntilCancellationObserved(for: 1)
 
         XCTAssertEqual(session.state, .cancelled(.init(generation: 1)))
-        XCTAssertEqual(capabilities.synchronizeCallCount, 0)
         scanner.resolve(call: 1, with: .init(candidates: [], issues: []))
     }
 
-    func testCancelledSessionBeginsAgainWhenPresented() async {
+    func testCancelledSessionCanBeScannedAgainManually() async {
         let scanner = ControlledExtensionSettingsScanner()
         let capabilities = ExtensionSettingsCapabilityRecorder()
         let session = makeSession(scanner: scanner, capabilities: capabilities)
 
-        session.beginIfNeeded()
+        session.refresh()
         await scanner.waitUntilStarted(1)
         session.cancel()
         await scanner.waitUntilCancellationObserved(for: 1)
 
-        session.beginIfNeeded()
+        session.refresh()
         await scanner.waitUntilStarted(2)
         scanner.resolve(call: 1, with: .init(candidates: [], issues: []))
         scanner.resolve(call: 2, with: .init(candidates: [], issues: []))
@@ -207,7 +169,7 @@ final class ExtensionSettingsScanSessionTests: XCTestCase {
             return false
         }
 
-        XCTAssertEqual(capabilities.synchronizeCallCount, 1)
+        XCTAssertEqual(capabilities.loadCallCount, 1)
     }
 
     func testTeardownCancelsAttemptAndReleasesSession() async {
@@ -219,13 +181,12 @@ final class ExtensionSettingsScanSessionTests: XCTestCase {
         )
         weak let weakSession = session
 
-        session?.beginIfNeeded()
+        session?.refresh()
         await scanner.waitUntilStarted(1)
         session = nil
         await scanner.waitUntilCancellationObserved(for: 1)
 
         XCTAssertNil(weakSession)
-        XCTAssertEqual(capabilities.synchronizeCallCount, 0)
         scanner.resolve(call: 1, with: .init(candidates: [], issues: []))
     }
 
@@ -236,7 +197,7 @@ final class ExtensionSettingsScanSessionTests: XCTestCase {
         let staleCandidate = makeCandidate(id: "stale")
         let currentCandidate = makeCandidate(id: "current")
 
-        session.beginIfNeeded()
+        session.refresh()
         await scanner.waitUntilStarted(1)
         session.refresh()
         await scanner.waitUntilStarted(2)
@@ -261,22 +222,16 @@ final class ExtensionSettingsScanSessionTests: XCTestCase {
         }
         XCTAssertEqual(attempt.generation, 2)
         XCTAssertEqual(summary.discoveredCandidateCount, 1)
-        XCTAssertEqual(capabilities.synchronizedCandidates, [currentCandidate])
+        XCTAssertEqual(session.snapshot.webExtensionCandidates, [currentCandidate])
     }
 
-    func testPartialResultAggregatesScannerAndImportIssues() async {
+    func testPartialResultReportsScannerIssues() async {
         let scanner = ControlledExtensionSettingsScanner()
         let unreadableURL = URL(fileURLWithPath: "/Applications/Unreadable.app")
-        let capabilities = ExtensionSettingsCapabilityRecorder(
-            importResult: .init(
-                importedExtensionCount: 2,
-                failedMessages: ["Import failed"],
-                skippedUnreadableCount: 1
-            )
-        )
+        let capabilities = ExtensionSettingsCapabilityRecorder()
         let session = makeSession(scanner: scanner, capabilities: capabilities)
 
-        session.beginIfNeeded()
+        session.refresh()
         await scanner.waitUntilStarted(1)
         scanner.resolve(
             call: 1,
@@ -294,30 +249,19 @@ final class ExtensionSettingsScanSessionTests: XCTestCase {
             return XCTFail("Expected a partial scan result")
         }
         XCTAssertTrue(summary.hasIssues)
-        XCTAssertEqual(summary.importedExtensionCount, 2)
         XCTAssertEqual(summary.scannerIssues, [.unreadableBundle(unreadableURL)])
-        XCTAssertEqual(summary.failedMessages, ["Import failed"])
-        XCTAssertEqual(summary.skippedUnreadableCount, 1)
     }
 
     func testCapabilityErrorPublishesTerminalFailure() async {
         let session = ExtensionSettingsScanSession(
             scan: { throw ExtensionSettingsTestError.scanFailed },
-            synchronize: { _ in
-                XCTFail("Synchronization must not run after a scan error")
-                return .init(
-                    importedExtensionCount: 0,
-                    failedMessages: [],
-                    skippedUnreadableCount: 0
-                )
-            },
             loadContentBlockers: {
                 XCTFail("Content blockers must not load after a scan error")
                 return []
             }
         )
 
-        session.beginIfNeeded()
+        session.refresh()
         await waitForState(session) {
             if case .failed = $0 { return true }
             return false
@@ -337,9 +281,6 @@ final class ExtensionSettingsScanSessionTests: XCTestCase {
     ) -> ExtensionSettingsScanSession {
         ExtensionSettingsScanSession(
             scan: { await scanner.scan() },
-            synchronize: { candidates in
-                await capabilities.synchronize(candidates)
-            },
             loadContentBlockers: {
                 try capabilities.loadContentBlockers()
             }
@@ -415,103 +356,14 @@ private final class ControlledExtensionSettingsScanner {
 
 @available(macOS 15.5, *)
 @MainActor
-private final class ControlledExtensionSettingsSynchronizer {
-    private var pendingResults: [
-        Int: CheckedContinuation<ExtensionSettingsImportResult, Never>
-    ] = [:]
-    private var startWaiters: [
-        (count: Int, continuation: CheckedContinuation<Void, Never>)
-    ] = []
-    private var cancelledCalls: Set<Int> = []
-    private var cancellationWaiters: [
-        (call: Int, continuation: CheckedContinuation<Void, Never>)
-    ] = []
-    private(set) var callCount = 0
-    private(set) var candidateIDsByCall: [Int: [String]] = [:]
-
-    func waitUntilStarted(_ expectedCallCount: Int) async {
-        guard callCount < expectedCallCount else { return }
-        await withCheckedContinuation { continuation in
-            startWaiters.append((expectedCallCount, continuation))
-        }
-    }
-
-    func waitUntilCancellationObserved(for call: Int) async {
-        guard cancelledCalls.contains(call) == false else { return }
-        await withCheckedContinuation { continuation in
-            cancellationWaiters.append((call, continuation))
-        }
-    }
-
-    func resolve(call: Int, with result: ExtensionSettingsImportResult) {
-        pendingResults.removeValue(forKey: call)?.resume(returning: result)
-    }
-
-    func synchronize(
-        _ candidates: [DiscoveredSafariExtensionCandidate]
-    ) async -> ExtensionSettingsImportResult {
-        callCount += 1
-        let call = callCount
-        candidateIDsByCall[call] = candidates.map(\.id)
-        resumeSatisfiedStartWaiters()
-        return await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
-                pendingResults[call] = continuation
-            }
-        } onCancel: {
-            Task { @MainActor [weak self] in
-                self?.recordCancellation(for: call)
-            }
-        }
-    }
-
-    private func recordCancellation(for call: Int) {
-        cancelledCalls.insert(call)
-        let satisfied = cancellationWaiters.filter { $0.call == call }
-        cancellationWaiters.removeAll { $0.call == call }
-        for waiter in satisfied {
-            waiter.continuation.resume()
-        }
-    }
-
-    private func resumeSatisfiedStartWaiters() {
-        let satisfied = startWaiters.filter { $0.count <= callCount }
-        startWaiters.removeAll { $0.count <= callCount }
-        for waiter in satisfied {
-            waiter.continuation.resume()
-        }
-    }
-}
-
-@available(macOS 15.5, *)
-@MainActor
 private final class ExtensionSettingsCapabilityRecorder {
-    private let importResult: ExtensionSettingsImportResult
     private let contentBlockerRecords: [InstalledSafariContentBlockerRecord]
-    private(set) var synchronizedCandidates: [
-        DiscoveredSafariExtensionCandidate
-    ] = []
-    private(set) var synchronizeCallCount = 0
     private(set) var loadCallCount = 0
 
     init(
-        importResult: ExtensionSettingsImportResult = .init(
-            importedExtensionCount: 0,
-            failedMessages: [],
-            skippedUnreadableCount: 0
-        ),
         contentBlockerRecords: [InstalledSafariContentBlockerRecord] = []
     ) {
-        self.importResult = importResult
         self.contentBlockerRecords = contentBlockerRecords
-    }
-
-    func synchronize(
-        _ candidates: [DiscoveredSafariExtensionCandidate]
-    ) async -> ExtensionSettingsImportResult {
-        synchronizeCallCount += 1
-        synchronizedCandidates = candidates
-        return importResult
     }
 
     func loadContentBlockers() throws -> [InstalledSafariContentBlockerRecord] {
@@ -620,5 +472,45 @@ private func makeContentBlockerRecord(
         lastError: nil,
         ruleListCount: 1,
         ignoredEmptyRuleListCount: 0
+    )
+}
+
+private func makeInstalledSafariExtension(
+    id: String,
+    sourceBundlePath: String
+) -> InstalledExtension {
+    InstalledExtension(
+        id: id,
+        name: id,
+        version: "1.0",
+        manifestVersion: 3,
+        description: nil,
+        isEnabled: false,
+        installDate: .distantPast,
+        lastUpdateDate: .distantPast,
+        packagePath: sourceBundlePath,
+        iconPath: nil,
+        sourceKind: .safariAppExtension,
+        backgroundModel: .serviceWorker,
+        incognitoMode: .spanning,
+        sourcePathFingerprint: "source-\(id)",
+        manifestRootFingerprint: "manifest-\(id)",
+        sourceBundlePath: sourceBundlePath,
+        optionsPagePath: nil,
+        defaultPopupPath: nil,
+        hasBackground: true,
+        hasAction: true,
+        hasOptionsPage: false,
+        hasContentScripts: true,
+        hasExtensionPages: false,
+        activationSummary: ExtensionActivationSummary(
+            matchPatternStrings: [],
+            broadScope: false,
+            hasContentScripts: true,
+            hasAction: true,
+            hasOptionsPage: false,
+            hasExtensionPages: false
+        ),
+        manifest: [:]
     )
 }
