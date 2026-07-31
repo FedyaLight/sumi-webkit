@@ -401,6 +401,98 @@ final class SumiImportExportTests: XCTestCase {
         func isRunning(bundleIdentifier: String) -> Bool { false }
     }
 
+    func testImportNormalizationKeepsOneRecordPerDurablePageIdentity() {
+        let profileId = UUID().uuidString
+        let spaceId = UUID().uuidString
+        func launcher(
+            id: String,
+            title: String,
+            url: String,
+            profileId: String? = nil,
+            spaceId: String? = nil
+        ) -> SumiPortableLauncher {
+            SumiPortableLauncher(
+                id: id,
+                title: title,
+                urlString: url,
+                index: 0,
+                profileId: profileId,
+                executionProfileId: profileId,
+                spaceId: spaceId,
+                folderId: nil,
+                iconAsset: nil,
+                sourceSpaceId: spaceId
+            )
+        }
+        let essentialId = UUID().uuidString
+        let pinnedId = UUID().uuidString
+        let tabId = UUID().uuidString
+        let normalized = SumiImportDataNormalizer.normalize(SumiPortableData(
+            profiles: [SumiPortableProfile(id: profileId, name: "Profile", index: 0)],
+            spaces: [SumiPortableSpace(
+                id: spaceId,
+                name: "Space",
+                icon: "circle",
+                index: 0,
+                profileId: profileId,
+                themeDataBase64: nil,
+                color: nil
+            )],
+            essentials: [
+                launcher(
+                    id: essentialId,
+                    title: "Existing Essential",
+                    url: "https://existing-essential.example",
+                    profileId: profileId
+                ),
+                launcher(
+                    id: essentialId,
+                    title: "Duplicate Essential",
+                    url: "https://duplicate-essential.example",
+                    profileId: profileId
+                ),
+            ],
+            pinnedLaunchers: [
+                launcher(
+                    id: pinnedId,
+                    title: "Existing Pin",
+                    url: "https://existing-pin.example",
+                    spaceId: spaceId
+                ),
+                launcher(
+                    id: pinnedId,
+                    title: "Duplicate Pin",
+                    url: "https://duplicate-pin.example",
+                    spaceId: spaceId
+                ),
+            ],
+            regularTabs: [
+                SumiPortableRegularTab(
+                    id: tabId,
+                    title: "Existing Tab",
+                    urlString: "https://existing-tab.example",
+                    index: 0,
+                    spaceId: spaceId,
+                    profileId: profileId,
+                    folderId: nil
+                ),
+                SumiPortableRegularTab(
+                    id: tabId,
+                    title: "Duplicate Tab",
+                    urlString: "https://duplicate-tab.example",
+                    index: 1,
+                    spaceId: spaceId,
+                    profileId: profileId,
+                    folderId: nil
+                ),
+            ]
+        ))
+
+        XCTAssertEqual(normalized.essentials.map(\.title), ["Existing Essential"])
+        XCTAssertEqual(normalized.pinnedLaunchers.map(\.title), ["Existing Pin"])
+        XCTAssertEqual(normalized.regularTabs.map(\.title), ["Existing Tab"])
+    }
+
     @MainActor
     func testImportNormalizationPreservesMixedFolderPinnedOrderWithinParent() {
         let spaceId = "space-a"

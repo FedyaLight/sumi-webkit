@@ -8,21 +8,29 @@ final class BrowserProfileReferenceRetirementRuntime {
     private let tabs: ProfileDeletionMigration
     private let persistence: TabStructuralPersistenceService
     private let browserReferences: BrowserProfileReferenceRetirementCoordinator
+    private let structuralStateIsSettled: @MainActor () async -> Bool
 
     init(
         tabs: ProfileDeletionMigration,
         persistence: TabStructuralPersistenceService,
-        browserReferences: BrowserProfileReferenceRetirementCoordinator
+        browserReferences: BrowserProfileReferenceRetirementCoordinator,
+        structuralStateIsSettled: @escaping @MainActor () async -> Bool = {
+            true
+        }
     ) {
         self.tabs = tabs
         self.persistence = persistence
         self.browserReferences = browserReferences
+        self.structuralStateIsSettled = structuralStateIsSettled
     }
 
     func migrateReferences(
         from deletedProfileID: UUID,
         to fallback: Profile
     ) async -> Bool {
+        guard await structuralStateIsSettled() else {
+            return false
+        }
         guard tabs.ensureFallbackSpace(for: fallback.id) else {
             return false
         }

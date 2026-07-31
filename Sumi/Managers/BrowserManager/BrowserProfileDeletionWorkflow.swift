@@ -72,9 +72,21 @@ final class BrowserProfileDeletionWorkflow {
                 message: message
             )
         case .migrationPending:
-            break
+            presentNotice(
+                title: String(localized: "Couldn't Finish Deleting Profile"),
+                profile: profile,
+                message: String(
+                    localized: "The profile is still in use. Sumi will retry deletion the next time it starts."
+                )
+            )
         case .cleanupPending:
-            break
+            presentNotice(
+                title: String(localized: "Profile Deleted"),
+                profile: profile,
+                message: String(
+                    localized: "Sumi will finish removing this profile's private data the next time it starts."
+                )
+            )
         }
     }
 

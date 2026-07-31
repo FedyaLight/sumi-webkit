@@ -272,7 +272,8 @@ final class ProfileManager: ObservableObject {
             let all = try transaction.profiles.all()
             let existingIDs = Set(all.map(\.id))
             let keep = Set(snapshot.map(\.id))
-            for id in existingIDs.subtracting(keep) {
+            for id in existingIDs.subtracting(keep)
+            where profileReferenceAdmission.isReferenceAllowed(id) {
                 try transaction.profiles.delete(id: id)
             }
             for (index, profile) in snapshot.enumerated() {

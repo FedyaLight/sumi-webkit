@@ -22,6 +22,39 @@ final class SumiImportTransactionTests: XCTestCase {
         XCTAssertEqual(first.targetRuntimeData.regularTabs.count, 1)
     }
 
+    func testMergeReimportDoesNotDuplicatePinnedLauncherWhenSourceRecordChanges() throws {
+        let firstRequest = makeMergeRequest()
+        let builder = SumiImportPlanBuilder()
+        let first = builder.makePlan(
+            request: firstRequest,
+            baseline: SumiPortableData()
+        )
+        let existingFolderID = try XCTUnwrap(
+            first.targetRuntimeData.pinnedLaunchers.first?.folderId
+        )
+        var changedData = firstRequest.data
+        changedData.pinnedLaunchers[0].title = "Updated Pin"
+        changedData.pinnedLaunchers[0].urlString = "https://updated-pin.example"
+        changedData.pinnedLaunchers[0].folderId = nil
+        let changedRequest = SumiImportRequest(
+            sourceKind: firstRequest.sourceKind,
+            data: changedData,
+            categories: firstRequest.categories,
+            mode: .merge
+        )
+
+        let reimported = builder.makePlan(
+            request: changedRequest,
+            baseline: first.targetRuntimeData
+        )
+        let launchers = reimported.targetRuntimeData.pinnedLaunchers
+
+        XCTAssertEqual(launchers.count, 1)
+        XCTAssertEqual(Set(launchers.map(\.id)).count, launchers.count)
+        XCTAssertEqual(try XCTUnwrap(launchers.first).title, "Pinned")
+        XCTAssertEqual(try XCTUnwrap(launchers.first).folderId, existingFolderID)
+    }
+
     func testExternalReplaceAndSubsequentMergeUseTheSameIdentities() {
         let mergeRequest = makeMergeRequest()
         let replaceRequest = SumiImportRequest(
@@ -89,7 +122,7 @@ final class SumiImportTransactionTests: XCTestCase {
         )
         let replacement = portableProfile(id: "source-profile", name: "New")
         let request = SumiImportRequest(
-            sourceKind: .arc,
+            sourceKind: .sumiBackup,
             data: SumiPortableData(profiles: [replacement]),
             categories: [.profiles],
             mode: .replace
@@ -149,7 +182,7 @@ final class SumiImportTransactionTests: XCTestCase {
             )]
         )
         let request = SumiImportRequest(
-            sourceKind: .arc,
+            sourceKind: .sumiBackup,
             data: SumiPortableData(profiles: [
                 portableProfile(id: profile.id.uuidString, name: profile.name),
             ]),

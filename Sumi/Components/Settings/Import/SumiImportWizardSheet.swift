@@ -123,7 +123,7 @@ struct SumiImportWizardSheet: View {
             default:
                 Button("Cancel", action: onClose)
                     .keyboardShortcut(.cancelAction)
-                Button(model.applyMode == .replace ? "Replace" : "Import") {
+                Button("Import") {
                     model.apply()
                 }
                 .keyboardShortcut(.defaultAction)
@@ -248,13 +248,6 @@ struct SumiImportCategoryStepView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                Picker("Mode", selection: $model.applyMode) {
-                    ForEach(SumiImportApplyMode.allCases) { mode in
-                        Text(mode.title).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
-
                 LazyVGrid(
                     columns: [GridItem(.adaptive(minimum: 150), spacing: 10)],
                     alignment: .leading,
@@ -265,7 +258,7 @@ struct SumiImportCategoryStepView: View {
                             .toggleStyle(.checkbox)
                             .disabled(
                                 preview.suggestedCategories.contains(category) == false
-                                    || (category == .profiles && model.requiresProfilesForBrowsingData)
+                                    || (category == .profiles && model.requiresProfiles)
                             )
                     }
                 }
@@ -303,17 +296,6 @@ struct SumiImportCategoryStepView: View {
                     }
                     .frame(maxHeight: 110)
                 }
-
-                if model.applyMode == .replace, model.selectedCategories.contains(.profiles) {
-                    Label(
-                        "Replace retires local profiles that are not in the import and removes their "
-                            + "website data, which backups do not include.",
-                        systemImage: "exclamationmark.shield"
-                    )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                }
             }
         }
     }
@@ -330,7 +312,7 @@ struct SumiImportCategoryStepView: View {
         case .history: return nil
         case .favicons: return "Site icons appear immediately instead of loading in over time."
         case .cookies:
-            return "macOS may ask for your password. Cookies are not included in Sumi backups. Merge keeps existing Sumi cookies; Replace overwrites matching cookies."
+            return "macOS may ask for your password. Cookies are not included in Sumi backups."
         }
     }
 

@@ -175,7 +175,13 @@ struct SumiDataRecoverySettingsPane: View {
                 guard !Task.isCancelled, previewGeneration == generation else { return }
                 importPreview = preview
                 selectedCategories = preview.suggestedCategories
-                applyMode = preview.defaultMode
+                if selectedCategories.contains(.spaces)
+                    || selectedCategories.contains(.essentials) {
+                    selectedCategories.insert(.profiles)
+                }
+                applyMode = preview.sourceKind.allowsReplaceMode
+                    ? preview.defaultMode
+                    : .merge
             } catch is CancellationError {
                 return
             } catch {
@@ -335,12 +341,14 @@ private struct SumiImportPreviewSheet: View {
                 Spacer()
             }
 
-            Picker("Mode", selection: $applyMode) {
-                ForEach(SumiImportApplyMode.allCases) { mode in
-                    Text(mode.title).tag(mode)
+            if preview.sourceKind.allowsReplaceMode {
+                Picker("Mode", selection: $applyMode) {
+                    ForEach(SumiImportApplyMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
                 }
+                .pickerStyle(.segmented)
             }
-            .pickerStyle(.segmented)
 
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], alignment: .leading, spacing: 10) {
                 ForEach(SumiImportCategory.allCases) { category in
@@ -348,7 +356,10 @@ private struct SumiImportPreviewSheet: View {
                         Text(category.title)
                     }
                     .toggleStyle(.checkbox)
-                    .disabled(!preview.suggestedCategories.contains(category))
+                    .disabled(
+                        !preview.suggestedCategories.contains(category)
+                            || (category == .profiles && requiresProfiles)
+                    )
                 }
             }
 
@@ -362,7 +373,8 @@ private struct SumiImportPreviewSheet: View {
                 }
             }
 
-            if applyMode == .replace,
+            if preview.sourceKind.allowsReplaceMode,
+               applyMode == .replace,
                selectedCategories.contains(.profiles) {
                 Label(
                     "Replace safely retires local profiles not present in the import "
@@ -394,13 +406,21 @@ private struct SumiImportPreviewSheet: View {
         return "\(summary.profiles) profiles, \(summary.spaces) spaces, \(summary.essentials) essentials, \(summary.pinnedLaunchers) pinned, \(summary.regularTabs) regular tabs, \(summary.folders) folders, \(summary.bookmarks) bookmarks"
     }
 
+    private var requiresProfiles: Bool {
+        selectedCategories.contains(.spaces)
+            || selectedCategories.contains(.essentials)
+    }
+
     private func categoryBinding(_ category: SumiImportCategory) -> Binding<Bool> {
         Binding(
             get: { selectedCategories.contains(category) },
             set: { enabled in
                 if enabled {
                     selectedCategories.insert(category)
-                } else {
+                    if requiresProfiles {
+                        selectedCategories.insert(.profiles)
+                    }
+                } else if category != .profiles || requiresProfiles == false {
                     selectedCategories.remove(category)
                 }
             }

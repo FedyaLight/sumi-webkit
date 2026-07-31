@@ -57,7 +57,7 @@ final class ProfileReferenceAdmissionLedger {
     private var quarantinedRetirementByProfileID: [UUID: ProfileRetirementQuarantine]
     private var admissionRevisionByProfileID: [UUID: UInt64] = [:]
     private var activeMutation: ActiveMutation?
-    private var allowsUnrelatedReferencesDuringDeferredRecovery = false
+    private var allowsUnrelatedReferencesDuringRecovery = false
 
     init(store: ProfileRetirementStore) throws {
         self.store = store
@@ -232,7 +232,7 @@ final class ProfileReferenceAdmissionLedger {
             )
         }
         if requiresQuiescentRetirement,
-           allowsUnrelatedReferencesDuringDeferredRecovery == false,
+           allowsUnrelatedReferencesDuringRecovery == false,
            let profileID = activeRetirementProfileID {
             throw ProfileReferenceAdmissionLedgerError.retirementInProgress(
                 profileID
@@ -262,8 +262,8 @@ final class ProfileReferenceAdmissionLedger {
         )
     }
 
-    func allowUnrelatedReferencesDuringDeferredRecovery() {
-        allowsUnrelatedReferencesDuringDeferredRecovery = true
+    func allowUnrelatedReferencesDuringRecovery() {
+        allowsUnrelatedReferencesDuringRecovery = true
     }
 
     private var activeRetirementProfileID: UUID? {

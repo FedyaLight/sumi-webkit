@@ -372,4 +372,112 @@ extension SumiImportTransactionTests {
         XCTAssertNil(fixture.journal.record)
     }
 
+    func testImportingBrowserSpacesAlsoImportsTheirOwningProfiles() throws {
+        let localProfileID = UUID().uuidString
+        let sourceProfileID = "chromium-profile-1"
+        let request = SumiImportRequest(
+            sourceKind: .chromium,
+            data: SumiPortableData(
+                profiles: [portableProfile(id: sourceProfileID, name: "Imported")],
+                spaces: [portableSpace(id: "chromium-space-1", profileId: sourceProfileID)]
+            ),
+            categories: [.spaces],
+            mode: .merge
+        )
+
+        let plan = SumiImportPlanBuilder().makePlan(
+            request: request,
+            baseline: SumiPortableData(profiles: [
+                portableProfile(id: localProfileID, name: "Local"),
+            ])
+        )
+
+        let importedProfileID = try XCTUnwrap(
+            plan.profileTransition.sourceToTargetProfileID[sourceProfileID]
+        )
+        let importedSpace = try XCTUnwrap(
+            plan.targetRuntimeData.spaces.first { $0.name == "Space" }
+        )
+
+        XCTAssertNotEqual(importedProfileID, localProfileID)
+        XCTAssertEqual(importedSpace.profileId, importedProfileID)
+        XCTAssertTrue(plan.categories.contains(.profiles))
+        XCTAssertEqual(plan.targetRuntimeData.profiles.count, 2)
+
+        let database = try SumiDatabase.inMemory()
+        let localProfileUUID = try XCTUnwrap(UUID(uuidString: localProfileID))
+        let importedProfileUUID = try XCTUnwrap(UUID(uuidString: importedProfileID))
+        let importedSpaceUUID = try XCTUnwrap(UUID(uuidString: importedSpace.id))
+        try database.transaction {
+            try $0.profiles.save(
+                ProfileRecord(id: localProfileUUID, name: "Local", index: 0)
+            )
+            try $0.profiles.save(
+                ProfileRecord(id: importedProfileUUID, name: "Imported", index: 1)
+            )
+            try $0.workspace.save(
+                SpaceRecord(
+                    id: importedSpaceUUID,
+                    profileID: importedProfileUUID,
+                    name: importedSpace.name,
+                    icon: importedSpace.icon,
+                    index: importedSpace.index,
+                    workspaceThemeData: nil
+                )
+            )
+            try $0.profiles.delete(id: localProfileUUID)
+        }
+        let survivingSpaces = try database.read {
+            try $0.workspace.spaces()
+        }
+        XCTAssertEqual(survivingSpaces.map(\.id), [importedSpaceUUID])
+        XCTAssertEqual(survivingSpaces.first?.profileID, importedProfileUUID)
+    }
+
+    func testExternalBrowserReplaceRequestIsNormalizedToMerge() {
+        let sourceKinds: [SumiImportSourceKind] = [
+            .arc,
+            .zen,
+            .chromium,
+            .firefox,
+            .safari,
+            .browser2zen,
+        ]
+
+        for sourceKind in sourceKinds {
+            let localProfileID = UUID().uuidString
+            let request = SumiImportRequest(
+                sourceKind: sourceKind,
+                data: SumiPortableData(
+                    profiles: [
+                        portableProfile(
+                            id: "external-profile-1",
+                            name: "Imported"
+                        ),
+                    ]
+                ),
+                categories: [.profiles],
+                mode: .replace
+            )
+
+            let plan = SumiImportPlanBuilder().makePlan(
+                request: request,
+                baseline: SumiPortableData(profiles: [
+                    portableProfile(id: localProfileID, name: "Local"),
+                ])
+            )
+
+            XCTAssertEqual(plan.mode, .merge, "\(sourceKind)")
+            XCTAssertTrue(
+                plan.targetRuntimeData.profiles.contains {
+                    $0.id == localProfileID
+                },
+                "\(sourceKind)"
+            )
+            XCTAssertTrue(
+                plan.profileTransition.retiringProfileIDs.isEmpty,
+                "\(sourceKind)"
+            )
+        }
+    }
 }

@@ -86,6 +86,15 @@ enum SumiImportSourceKind: String, Codable, Sendable {
     case browser2zen
     case sumiBackup
     case sumiTransfer
+
+    var allowsReplaceMode: Bool {
+        switch self {
+        case .sumiBackup, .sumiTransfer:
+            return true
+        case .arc, .zen, .chromium, .firefox, .safari, .browser2zen:
+            return false
+        }
+    }
 }
 
 struct SumiImportPreview: Identifiable, Sendable {

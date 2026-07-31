@@ -42,9 +42,9 @@ final class TabRuntimeLifecycle {
         return .attached
     }
 
-    func startPersistedStateRestoreIfNeeded() {
-        guard phase == .running else { return }
-        runtimePorts.startPersistedStateRestoreIfNeeded()
+    func startPersistedStateRestoreIfNeeded() -> Bool {
+        guard phase == .running else { return false }
+        return runtimePorts.startPersistedStateRestoreIfNeeded()
     }
 
 #if DEBUG

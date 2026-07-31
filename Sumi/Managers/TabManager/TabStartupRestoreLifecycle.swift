@@ -10,6 +10,7 @@ final class TabStartupRestoreLifecycle {
         case completed
     }
     private let eventBus: TabStructureEventBus
+    private let initialDataSettlement = TabInitialDataSettlement()
     private var generation: UInt64 = 0
     private var phase = Phase.idle
     var hasLoadedInitialData: Bool {
@@ -20,11 +21,16 @@ final class TabStartupRestoreLifecycle {
         if case .idle = phase { return false }
         return true
     }
+
     init(eventBus: TabStructureEventBus) {
         self.eventBus = eventBus
     }
+
+    func waitUntilInitialDataLoaded(startIfNeeded: @MainActor () -> Bool) async -> Bool { await initialDataSettlement.wait(startIfNeeded: startIfNeeded) }
+
     func markLoadFinished() {
         phase = .completed
+        initialDataSettlement.settle()
         eventBus.publishInitialDataLoaded()
     }
     func makeAttempt(
@@ -42,6 +48,7 @@ final class TabStartupRestoreLifecycle {
     func activate(_ attempt: TabStartupRestoreAttempt) -> Bool {
         guard case .idle = phase, attempt.isRuntimeCurrent() else { return false }
         phase = .loading(attempt)
+        initialDataSettlement.reset()
         eventBus.resetInitialDataLoaded()
         return true
     }

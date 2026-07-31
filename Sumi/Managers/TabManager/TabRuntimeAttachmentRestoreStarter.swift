@@ -35,19 +35,24 @@ final class TabRuntimeAttachmentRestoreStarter {
         }
     }
 
-    func startAutomatically(using lease: TabRuntimePortLease) {
-        guard policy.automaticallyStarts else { return }
+    @discardableResult
+    func startAutomatically(using lease: TabRuntimePortLease) -> Bool {
+        guard policy.automaticallyStarts else { return false }
+        return start(using: lease)
+    }
+
+    @discardableResult
+    func startManually(using lease: TabRuntimePortLease) -> Bool {
         start(using: lease)
     }
 
-    func startManually(using lease: TabRuntimePortLease) {
-        start(using: lease)
-    }
-
-    private func start(using lease: TabRuntimePortLease) {
-        guard policy.isEnabled,
-              pendingStart == nil,
-              connection.accepts(lease) else { return }
+    private func start(using lease: TabRuntimePortLease) -> Bool {
+        guard policy.isEnabled, connection.accepts(lease) else {
+            return false
+        }
+        if pendingStart != nil || lifecycle.didStartPersistedStateLoad {
+            return true
+        }
         let runtimeAttachment = TabRuntimeAttachmentWitness(
             connection: connection,
             lease: lease
@@ -55,7 +60,9 @@ final class TabRuntimeAttachmentRestoreStarter {
         guard let attempt = lifecycle.makeAttempt(
             revision: policy.requestedStructuralRevision,
             using: runtimeAttachment
-        ) else { return }
+        ) else {
+            return false
+        }
         startRevision &+= 1
         let revision = startRevision
         let task = Task { @MainActor [weak self] in
@@ -67,6 +74,7 @@ final class TabRuntimeAttachmentRestoreStarter {
             attempt: attempt,
             task: task
         )
+        return true
     }
 
     private func activatePending(revision: UInt64) {

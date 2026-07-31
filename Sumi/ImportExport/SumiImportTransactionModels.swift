@@ -8,8 +8,30 @@ struct SumiImportRequest: Sendable {
     /// Bulk payloads staged during preview, and which of them the user chose.
     /// Kept separate from `categories` so the logical backup format's declared
     /// scope stays exactly what it was.
-    var bulkStaging: SumiImportBulkStagingManifest? = nil
+    var bulkStaging: SumiImportBulkStagingManifest?
     var bulkKinds: Set<SumiImportBulkKind> = []
+
+    /// Profile-scoped structure always includes its owners, and external-browser
+    /// data can only merge into the current browser state.
+    init(
+        sourceKind: SumiImportSourceKind,
+        data: SumiPortableData,
+        categories: Set<SumiImportCategory>,
+        mode: SumiImportApplyMode,
+        bulkStaging: SumiImportBulkStagingManifest? = nil,
+        bulkKinds: Set<SumiImportBulkKind> = []
+    ) {
+        var effectiveCategories = categories
+        if categories.contains(.spaces) || categories.contains(.essentials) {
+            effectiveCategories.insert(.profiles)
+        }
+        self.sourceKind = sourceKind
+        self.data = data
+        self.categories = effectiveCategories
+        self.mode = sourceKind.allowsReplaceMode ? mode : .merge
+        self.bulkStaging = bulkStaging
+        self.bulkKinds = bulkKinds
+    }
 }
 
 struct SumiImportReport: Sendable {

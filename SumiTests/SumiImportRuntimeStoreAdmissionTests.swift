@@ -56,6 +56,76 @@ final class SumiImportRuntimeStoreAdmissionTests: XCTestCase {
         XCTAssertEqual(entities.map(\.id), [original.id])
     }
 
+    func testRollbackLeaseCoversImportedProfilesWithoutStructuralReferences() async throws {
+        let container = try makeInMemoryStartupDatabase()
+        let profileManager = ProfileManager(database: container)
+        let original = try profileManager.createProfile(name: "Original")
+        let imported = try profileManager.createProfile(name: "Imported")
+        let admission = profileManager.profileReferenceAdmission
+        let tabManager = TabManager(
+            database: container,
+            webViewSessions: WebViewSessionRepository(),
+            profileReferenceAdmission: admission,
+            loadPersistedState: false
+        )
+        let structuralLookup = TabStructuralLookupCoordinator(
+            eventBus: tabManager.tabStructureEventBus,
+            stateStore: tabManager.stateStore
+        )
+        let structuralInstall = TabStructuralInstallOwner(
+            state: tabManager.stateStore,
+            structuralLookup: structuralLookup,
+            persistence: tabManager.structuralPersistence,
+            publication: TabStructuralInstallPublication(
+                changes: tabManager.objectWillChange,
+                faviconService: tabManager.faviconService
+            ),
+            profileReferenceAdmission: admission
+        )
+        let store = SumiImportRuntimeStore(
+            profileManager: profileManager,
+            profileSelection: ImportProfileSelectionOracle(),
+            profileReferenceAdmission: admission,
+            state: tabManager.stateStore,
+            structuralInstaller: structuralInstall,
+            persistence: tabManager.structuralPersistence
+        )
+        let space = Space(name: "Original", profileId: original.id)
+        let current = SumiImportRuntimeState(
+            profiles: [original, imported],
+            currentProfile: original,
+            spaces: [space],
+            tabsBySpace: [space.id: []],
+            foldersBySpace: [space.id: []],
+            pinnedByProfile: [:],
+            spacePinnedShortcuts: [:],
+            pendingPinnedWithoutProfile: [],
+            splitGroups: [],
+            currentSpace: space,
+            currentTab: nil
+        )
+        let rollback = SumiImportRuntimeState(
+            profiles: [original],
+            currentProfile: original,
+            spaces: current.spaces,
+            tabsBySpace: current.tabsBySpace,
+            foldersBySpace: current.foldersBySpace,
+            pinnedByProfile: current.pinnedByProfile,
+            spacePinnedShortcuts: current.spacePinnedShortcuts,
+            pendingPinnedWithoutProfile: current.pendingPinnedWithoutProfile,
+            splitGroups: current.splitGroups,
+            currentSpace: current.currentSpace,
+            currentTab: current.currentTab
+        )
+
+        let session = try store.beginMutation(covering: [current, rollback])
+        defer { XCTAssertTrue(store.endMutation(session)) }
+        try await store.restore(rollback, in: session)
+
+        XCTAssertEqual(Set(profileManager.profiles.map(\.id)), [original.id, imported.id])
+        XCTAssertEqual(tabManager.stateStore.spaces.spaces.map(\.id), [space.id])
+    }
+
     func testUnavailableAdmissionRejectsImportBeforeAnyRuntimeMutation() async throws {
         let container = try makeInMemoryStartupDatabase()
         let admission = ProfileReferenceAdmissionLedger.failClosed()

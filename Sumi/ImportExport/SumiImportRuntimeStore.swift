@@ -57,6 +57,7 @@ final class SumiImportRuntimeStore: SumiImportRuntimeMutating {
             throw SumiImportRuntimeStoreError.mutationAlreadyActive
         }
         let profileIDs = candidates.reduce(into: Set<UUID>()) { result, state in
+            result.formUnion(state.profiles.map(\.id))
             result.formUnion(ProfileReferenceInventory(runtimeState: state).profileIDs)
         }
         let lease = try profileReferenceAdmission.beginReferenceMutation(

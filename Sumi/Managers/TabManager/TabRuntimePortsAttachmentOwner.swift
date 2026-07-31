@@ -74,9 +74,9 @@ final class TabRuntimePortsAttachmentOwner {
         }
     }
 
-    func startPersistedStateRestoreIfNeeded() {
-        guard let lease = currentLease, owns(lease) else { return }
-        settlement.startPersistedStateRestoreIfNeeded(using: lease)
+    func startPersistedStateRestoreIfNeeded() -> Bool {
+        guard let lease = currentLease, owns(lease) else { return false }
+        return settlement.startPersistedStateRestoreIfNeeded(using: lease)
     }
 
 #if DEBUG

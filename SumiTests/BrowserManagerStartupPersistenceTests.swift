@@ -348,6 +348,62 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
         )
     }
 
+    func testPendingProfileRetirementRecoveryDoesNotWaitForeverForTabRestore()
+        async throws {
+        let container = try makeInMemoryStartupContainer()
+        let retiring = Profile(name: "Imported")
+        let fallback = Profile(name: "Retained")
+        try persistProfiles([fallback, retiring], in: container)
+        try container.transaction {
+            try $0.workspace.save(
+                SpaceRecord(
+                    id: UUID(),
+                    profileID: fallback.id,
+                    name: "Retained Space",
+                    icon: "circle",
+                    index: 0,
+                    workspaceThemeData: nil
+                )
+            )
+        }
+        let ledger = try ProfileReferenceAdmissionLedger(database: container)
+        let token = try ledger.reserve(
+            profile: retiring,
+            fallbackID: fallback.id
+        )
+        XCTAssertTrue(try ledger.beginReferenceMigration(token))
+        let browserManager = BrowserManager(
+            startupPersistence: BrowserManagerStartupPersistence(
+                database: container
+            ),
+            notificationService: FakeSumiNotificationService(),
+            automaticallyStartPersistedStateLoad: true,
+            automaticallyPrepareRuntime: false
+        )
+        browserManager.prepareRuntimeForStartupRecovery()
+
+        var didComplete = false
+        let recovery = Task { @MainActor in
+            _ = try? await browserManager.profileLifecycleBundle
+                .retirementStartupRecovery.recover()
+            didComplete = true
+        }
+        for _ in 0..<50 where didComplete == false {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let completedBeforeDeadline = didComplete
+        recovery.cancel()
+        _ = await recovery.result
+
+        XCTAssertTrue(
+            completedBeforeDeadline,
+            "Startup remained in Recovering browser data while profile retirement waited for tab restore; "
+                + "didStartRestore=\(browserManager.startupRestoreLifecycle.didStartPersistedStateLoad), "
+                + "didLoadInitialData=\(browserManager.startupRestoreLifecycle.hasLoadedInitialData), "
+                + "spaceCount=\(browserManager.spaceStateOwner.spaces.count)."
+        )
+    }
+
     func testCleaningRecoveryOnlyRehydratesRuntimeState() async throws {
         let container = try makeInMemoryStartupContainer()
         let retiring = Profile(name: "Retiring")

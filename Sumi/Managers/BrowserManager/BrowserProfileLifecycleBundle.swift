@@ -166,7 +166,13 @@ extension BrowserManager {
         let referenceMigration = BrowserProfileReferenceRetirementRuntime(
             tabs: profileDeletion,
             persistence: tabPersistence,
-            browserReferences: referenceRetirement
+            browserReferences: referenceRetirement,
+            structuralStateIsSettled: {
+                [startupRestoreLifecycle, tabRuntimeLifecycle] in
+                await startupRestoreLifecycle.waitUntilInitialDataLoaded {
+                    tabRuntimeLifecycle.startPersistedStateRestoreIfNeeded()
+                }
+            }
         )
         let maintenanceContext = SumiProfileMaintenanceService.Context(
                 profileManager: profileManager,

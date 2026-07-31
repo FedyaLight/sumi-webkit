@@ -104,4 +104,46 @@ final class ProfileRetirementDatabaseTests: XCTestCase {
         XCTAssertFalse(ledger.isReferenceAllowed(retiring.id))
         XCTAssertTrue(ledger.isReferenceAllowed(fallback.id))
     }
+
+    func testPersistingVisibleProfilesDoesNotDeleteLedgerBlockedProfile() throws {
+        let database = try SumiDatabase.inMemory()
+        let retiring = ProfileRecord(id: UUID(), name: "Retiring", index: 0)
+        let fallback = ProfileRecord(id: UUID(), name: "Fallback", index: 1)
+        let retiringSpace = SpaceRecord(
+            id: UUID(),
+            profileID: retiring.id,
+            name: "Retiring Space",
+            icon: "🌐",
+            index: 0,
+            workspaceThemeData: nil
+        )
+        try database.transaction {
+            try $0.profiles.save(retiring)
+            try $0.profiles.save(fallback)
+            try $0.workspace.save(retiringSpace)
+        }
+        let ledger = try ProfileReferenceAdmissionLedger(database: database)
+        let token = try ledger.reserve(
+            profile: Profile(id: retiring.id, name: retiring.name),
+            fallbackID: fallback.id
+        )
+        XCTAssertTrue(try ledger.beginReferenceMigration(token))
+
+        let manager = ProfileManager(
+            database: database,
+            profileReferenceAdmission: ledger
+        )
+        XCTAssertEqual(manager.profiles.map(\.id), [fallback.id])
+
+        manager.persistProfiles()
+
+        let persisted = try database.read {
+            (
+                profiles: try $0.profiles.all(),
+                spaces: try $0.workspace.spaces()
+            )
+        }
+        XCTAssertEqual(Set(persisted.profiles.map(\.id)), [retiring.id, fallback.id])
+        XCTAssertEqual(persisted.spaces.map(\.id), [retiringSpace.id])
+    }
 }

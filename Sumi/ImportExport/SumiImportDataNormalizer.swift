@@ -170,6 +170,9 @@ enum SumiImportDataNormalizer {
         data.profiles = deduped(data.profiles, key: \.id)
         data.spaces = deduped(data.spaces, key: \.id)
         data.folders = deduped(data.folders, key: \.id)
+        data.essentials = deduped(data.essentials, key: \.id)
+        data.pinnedLaunchers = deduped(data.pinnedLaunchers, key: \.id)
+        data.regularTabs = deduped(data.regularTabs, key: \.id)
         data.essentials = deduped(data.essentials) {
             "\($0.profileId ?? "")|\(normalizedURLKey($0.urlString))"
         }

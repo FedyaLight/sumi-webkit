@@ -33,7 +33,6 @@ final class SumiImportWizardModel {
     var selectedProfile: SumiDetectedBrowserProfile?
     var selectedCategories: Set<SumiImportCategory> = []
     var selectedBulkKinds: Set<SumiImportBulkKind> = []
-    var applyMode: SumiImportApplyMode = .merge
 
     private let actions: SumiImportWizardActions
     private let staging = SumiImportBulkStagingStore()
@@ -45,7 +44,7 @@ final class SumiImportWizardModel {
 
     var canImport: Bool {
         guard step == .categories, preview != nil else { return false }
-        guard requiresProfilesForBrowsingData == false
+        guard requiresProfiles == false
             || selectedCategories.contains(.profiles)
         else {
             return false
@@ -56,6 +55,12 @@ final class SumiImportWizardModel {
     var requiresProfilesForBrowsingData: Bool {
         guard selectedBulkKinds.isEmpty == false, let preview else { return false }
         return Set(preview.data.profiles.compactMap(\.sourceDirectoryKey)).count > 1
+    }
+
+    var requiresProfiles: Bool {
+        requiresProfilesForBrowsingData
+            || selectedCategories.contains(.spaces)
+            || selectedCategories.contains(.essentials)
     }
 
     func detect() {
@@ -122,7 +127,7 @@ final class SumiImportWizardModel {
                         sourceKind: preview.sourceKind,
                         data: preview.data,
                         categories: selectedCategories,
-                        mode: applyMode,
+                        mode: .merge,
                         bulkStaging: preview.bulkStaging,
                         bulkKinds: selectedBulkKinds
                     )
@@ -165,7 +170,10 @@ final class SumiImportWizardModel {
     func setCategory(_ category: SumiImportCategory, enabled: Bool) {
         if enabled {
             selectedCategories.insert(category)
-        } else if category != .profiles || requiresProfilesForBrowsingData == false {
+            if requiresProfiles {
+                selectedCategories.insert(.profiles)
+            }
+        } else if category != .profiles || requiresProfiles == false {
             selectedCategories.remove(category)
         }
     }
@@ -190,7 +198,9 @@ final class SumiImportWizardModel {
                 preview = loaded
                 selectedCategories = loaded.suggestedCategories
                 selectedBulkKinds = loaded.bulkStaging?.kinds ?? []
-                applyMode = loaded.defaultMode
+                if requiresProfiles {
+                    selectedCategories.insert(.profiles)
+                }
             } catch is CancellationError {
                 return
             } catch {

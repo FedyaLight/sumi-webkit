@@ -38,9 +38,13 @@ final class TabRuntimeAttachmentSettlement {
         return connection.accepts(lease) ? .completed : .superseded
     }
 
-    func startPersistedStateRestoreIfNeeded(using lease: TabRuntimePortLease) {
-        guard connection.accepts(lease) else { return }
-        restoreStarter?.startManually(using: lease)
+    func startPersistedStateRestoreIfNeeded(
+        using lease: TabRuntimePortLease
+    ) -> Bool {
+        guard connection.accepts(lease), let restoreStarter else {
+            return false
+        }
+        return restoreStarter.startManually(using: lease)
     }
 
     @discardableResult

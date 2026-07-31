@@ -134,6 +134,9 @@ final class ProfileRetirementStartupRecovery {
     }
 
     func recover() async throws -> ProfileRetirementStartupRecoveryReport {
+        // Startup restore must be able to publish references to surviving
+        // profiles before retirement migration can inspect that structure.
+        ledger.allowUnrelatedReferencesDuringRecovery()
         var report = ProfileRetirementStartupRecoveryReport(
             issues: ledger.quarantinedRetirements.map { quarantine in
                 ProfileRetirementRecoveryIssue(
@@ -166,9 +169,6 @@ final class ProfileRetirementStartupRecovery {
                     )
                 )
             }
-        }
-        if report.hasDeferredRecovery {
-            ledger.allowUnrelatedReferencesDuringDeferredRecovery()
         }
         return report
     }
