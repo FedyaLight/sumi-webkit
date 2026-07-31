@@ -13,7 +13,6 @@ public struct WebViewVisibleRuntimeContext {
     public let markTabAccessed: (UUID) -> Void
     public let globallyVisibleTabIDs: @MainActor @Sendable () -> Set<UUID>
     public let scheduleTabSuspensionReconcile: (String) -> Void
-    public let scheduleBackgroundMediaReconcile: (String) -> Void
     /// Compositor refresh is UUID-keyed so package owners need not see BrowserWindowState.
     public let refreshCompositor: (UUID) -> Void
 
@@ -29,7 +28,6 @@ public struct WebViewVisibleRuntimeContext {
         markTabAccessed: @escaping (UUID) -> Void,
         globallyVisibleTabIDs: @escaping @MainActor @Sendable () -> Set<UUID>,
         scheduleTabSuspensionReconcile: @escaping (String) -> Void,
-        scheduleBackgroundMediaReconcile: @escaping (String) -> Void,
         refreshCompositor: @escaping (UUID) -> Void
     ) {
         self.windowState = windowState
@@ -40,7 +38,6 @@ public struct WebViewVisibleRuntimeContext {
         self.markTabAccessed = markTabAccessed
         self.globallyVisibleTabIDs = globallyVisibleTabIDs
         self.scheduleTabSuspensionReconcile = scheduleTabSuspensionReconcile
-        self.scheduleBackgroundMediaReconcile = scheduleBackgroundMediaReconcile
         self.refreshCompositor = refreshCompositor
     }
 }

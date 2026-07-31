@@ -39,7 +39,6 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
                 webViews: webViewRuntime.lifecycleService,
                 emptySplitPlaceholders: browserManager.splitEmptyPlaceholders,
                 splitPreviews: browserManager.splitWindowContext.previews,
-                backgroundMedia: browserManager.backgroundMediaOptimizationService,
                 commands: browserManager.windowCommands
             )
         }
@@ -137,7 +136,6 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
             webViews: webViewRuntime.lifecycleService,
             emptySplitPlaceholders: browserManager.splitEmptyPlaceholders,
             splitPreviews: browserManager.splitWindowContext.previews,
-            backgroundMedia: browserManager.backgroundMediaOptimizationService,
             commands: browserManager.windowCommands
         )
 
@@ -216,7 +214,6 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
             webViews: webViewRuntime.lifecycleService,
             emptySplitPlaceholders: browserManager.splitEmptyPlaceholders,
             splitPreviews: browserManager.splitWindowContext.previews,
-            backgroundMedia: browserManager.backgroundMediaOptimizationService,
             commands: browserManager.windowCommands
         )
 
@@ -307,7 +304,6 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
                 webViews: webViewRuntime.lifecycleService,
                 emptySplitPlaceholders: browserManager.splitEmptyPlaceholders,
                 splitPreviews: browserManager.splitWindowContext.previews,
-                backgroundMedia: browserManager.backgroundMediaOptimizationService,
                 commands: browserManager.windowCommands
             )
         }
@@ -336,7 +332,6 @@ final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
             webViews: webViewRuntime.lifecycleService,
             emptySplitPlaceholders: browserManager.splitEmptyPlaceholders,
             splitPreviews: browserManager.splitWindowContext.previews,
-            backgroundMedia: browserManager.backgroundMediaOptimizationService,
             commands: browserManager.windowCommands
         )
         let allClosedWorkflow = BrowserAllWindowsClosedWorkflow(

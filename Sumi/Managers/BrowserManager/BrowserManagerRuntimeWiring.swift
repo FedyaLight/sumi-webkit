@@ -152,9 +152,6 @@ enum BrowserManagerRuntimeWiring {
         browserManager.glanceManager.windowRegistry = browserManager.windowRegistry
         browserManager.privacyBundle.permissionSidebarPinningOwner
             .scheduleReconciliation(reason: "window-registry-attached")
-        browserManager.backgroundMediaOptimizationService.scheduleReconcile(
-            reason: "window-registry-attached"
-        )
         browserManager.reconcileStartupSessionIfPossible()
     }
 
@@ -165,7 +162,6 @@ enum BrowserManagerRuntimeWiring {
         let shellRuntime = browserManager.shellRuntime
         let webViewRuntime = browserManager.webViewRuntime
         let tabSuspension = browserManager.tabSuspensionController
-        let backgroundMedia = browserManager.backgroundMediaOptimizationService
         let structuralObserver = BrowserTabStructuralRuntimeObserver(
             structuralChanges: browserManager.tabStructureEventBus.structureChangedPublisher,
             pageResidency: browserManager.pageResidency
@@ -191,29 +187,9 @@ enum BrowserManagerRuntimeWiring {
                 }
             )
         )
-        let backgroundMediaRuntime = BrowserBackgroundMediaRuntimeFactory.runtime(
-            webViews: BrowserBackgroundMediaWebViewProjection(
-                ownership: webViewRuntime.ownershipQuery
-            ),
-            energyPolicy: BrowserBackgroundMediaEnergyPolicy(
-                settings: browserManager.settingsAttachment
-            ),
-            tabs: BrowserRuntimeTabCatalog(
-                regularTabs: browserManager.tabCollectionMembershipOwner,
-                windows: browserManager.windowRegistry
-            ),
-            visibility: BrowserBackgroundMediaVisibilityProjection(
-                windows: browserManager.windowRegistry,
-                windowTabs: shellRuntime.windowTabs,
-                splitQuery: splitQuery
-            )
-        )
-
         return BrowserTabRuntimeCompositionService.attach(
             tabSuspension: tabSuspension,
             tabSuspensionRuntime: tabSuspensionRuntime,
-            backgroundMedia: backgroundMedia,
-            backgroundMediaRuntime: backgroundMediaRuntime,
             structuralObserver: structuralObserver
         )
     }

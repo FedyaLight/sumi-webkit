@@ -62,12 +62,6 @@ final class BrowserWindowStateAuthorityTests: XCTestCase {
             width: 300,
             height: 40
         )
-        transientlyPresented.presentationState.visibility = SumiWindowVisibilityState(
-            hasAttachedWindow: true,
-            isVisible: false,
-            isMiniaturized: true,
-            isOccluded: true
-        )
         transientlyPresented.presentationState.pendingSplitGroupFocusRequest =
             SplitGroupFocusRequest(
                 groupID: UUID(),

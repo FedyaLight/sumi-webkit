@@ -37,32 +37,12 @@ final class BrowserManagerLifecycleWiringTests: XCTestCase {
         )
     }
 
-    func testSettingsAttachmentReconfiguresLiveSubsystemsThroughDidSet() async throws {
+    func testSettingsAttachmentReconfiguresLiveSubsystemsThroughDidSet() throws {
         let browserManager = BrowserManager(
             startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()
             )
         )
         browserManager.startRuntimeAfterStartupRecovery()
-        var backgroundMediaEnergySaverReads = 0
-        browserManager.backgroundMediaOptimizationService.attach(
-            runtime: SumiBackgroundMediaOptimizationRuntime(
-                liveWebViewEntries: { _ in [] },
-                energySaverActive: {
-                    backgroundMediaEnergySaverReads += 1
-                    return false
-                },
-                allKnownTabs: { [] },
-                visibleTabIDsByWindow: { [:] }
-            )
-        )
-        // Runtime replacement intentionally cancels requests queued for the
-        // retired runtime. Establish the baseline with fresh work owned by the
-        // replacement so each settings assignment has an isolated increment.
-        browserManager.backgroundMediaOptimizationService.scheduleReconcile(
-            reason: "replacement-runtime-baseline"
-        )
-        await waitUntil { backgroundMediaEnergySaverReads > 0 }
-        let backgroundMediaBaseline = backgroundMediaEnergySaverReads
 
         let settings = try makeSettings(suiteName: "primary")
         settings.memoryMode = .maximum
@@ -83,12 +63,6 @@ final class BrowserManagerLifecycleWiringTests: XCTestCase {
             TabSuspensionPolicy(settings: settings)
         )
 
-        // Background-media reconciliation was genuinely scheduled by the attach.
-        await waitUntil {
-            backgroundMediaEnergySaverReads == backgroundMediaBaseline + 1
-        }
-        XCTAssertEqual(backgroundMediaEnergySaverReads, backgroundMediaBaseline + 1)
-
         // Replacing the settings service switches every consumer to the new one.
         let replacement = try makeSettings(suiteName: "replacement")
         replacement.memoryMode = .maximum
@@ -106,10 +80,6 @@ final class BrowserManagerLifecycleWiringTests: XCTestCase {
             TabSuspensionPolicy(settings: settings)
         )
 
-        await waitUntil {
-            backgroundMediaEnergySaverReads == backgroundMediaBaseline + 2
-        }
-
         // Detaching keeps the nil-attach workflow intact.
         browserManager.sumiSettings = nil
 
@@ -119,10 +89,6 @@ final class BrowserManagerLifecycleWiringTests: XCTestCase {
             browserManager.tabSuspensionController.currentPolicyForTesting,
             TabSuspensionPolicy(settings: nil)
         )
-        await waitUntil {
-            backgroundMediaEnergySaverReads == backgroundMediaBaseline + 3
-        }
-        XCTAssertEqual(backgroundMediaEnergySaverReads, backgroundMediaBaseline + 3)
     }
 
     func testInitialDataLoadedEventAppliesStartupPolicyThroughLiveWiring() throws {
@@ -157,18 +123,6 @@ final class BrowserManagerLifecycleWiringTests: XCTestCase {
         browserManager.startupRestoreLifecycle.markLoadFinished()
 
         XCTAssertTrue(windowState.isShowingEmptyState)
-    }
-
-    private func waitUntil(
-        timeout: Duration = .seconds(1),
-        _ condition: @MainActor () -> Bool
-    ) async {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: timeout)
-        while condition() == false, clock.now < deadline {
-            await Task.yield()
-        }
-        XCTAssertTrue(condition(), "Condition was not satisfied before \(timeout)")
     }
 
     private var defaultsSuiteNames: [String] = []

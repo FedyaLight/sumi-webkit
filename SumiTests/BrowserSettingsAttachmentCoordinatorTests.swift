@@ -72,11 +72,9 @@ final class BrowserSettingsAttachmentCoordinatorTests: XCTestCase {
 
         coordinator.attach(harness.settings)
         await waitUntil {
-            harness.backgroundMediaEnergySaverReadCount == 1
-                && harness.automaticCleanupScheduleCount == 1
+            harness.automaticCleanupScheduleCount == 1
         }
 
-        XCTAssertEqual(harness.backgroundMediaEnergySaverReadCount, 1)
         XCTAssertEqual(harness.automaticCleanupScheduleCount, 1)
     }
 
@@ -85,18 +83,15 @@ final class BrowserSettingsAttachmentCoordinatorTests: XCTestCase {
         let coordinator = harness.makeCoordinator()
         coordinator.attach(harness.settings)
         await waitUntil {
-            harness.backgroundMediaEnergySaverReadCount == 1
-                && harness.automaticCleanupScheduleCount == 1
+            harness.automaticCleanupScheduleCount == 1
         }
 
         coordinator.attach(nil)
         await waitUntil {
-            harness.backgroundMediaEnergySaverReadCount == 2
-                && harness.automaticCleanupScheduleCount == 1
+            harness.automaticCleanupScheduleCount == 1
         }
 
         XCTAssertNil(harness.downloadManager.settings)
-        XCTAssertEqual(harness.backgroundMediaEnergySaverReadCount, 2)
         XCTAssertEqual(harness.automaticCleanupScheduleCount, 1)
     }
 
@@ -106,7 +101,6 @@ final class BrowserSettingsAttachmentCoordinatorTests: XCTestCase {
         let settings: SumiSettingsService
         private let automaticCleanup = RecordingBrowsingDataCleanupScheduler()
         private var defaultsSuiteNames: [String] = []
-        private(set) var backgroundMediaEnergySaverReadCount = 0
 
         var downloadManager: DownloadManager { browserManager.downloadManager }
         var tabSuspension: TabSuspensionController {
@@ -137,17 +131,6 @@ final class BrowserSettingsAttachmentCoordinatorTests: XCTestCase {
                     historyVisitedLinkStore: unavailable.historyVisitedLinkStore,
                     privacyService: unavailable.privacyService,
                     profileWebsiteDataMutationService: unavailable.profileWebsiteDataMutationService
-                )
-            )
-            browserManager.backgroundMediaOptimizationService.attach(
-                runtime: SumiBackgroundMediaOptimizationRuntime(
-                    liveWebViewEntries: { _ in [] },
-                    energySaverActive: { [weak self] in
-                        self?.backgroundMediaEnergySaverReadCount += 1
-                        return false
-                    },
-                    allKnownTabs: { [] },
-                    visibleTabIDsByWindow: { [:] }
                 )
             )
         }

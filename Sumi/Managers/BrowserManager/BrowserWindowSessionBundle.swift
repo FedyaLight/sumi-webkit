@@ -95,7 +95,6 @@ extension BrowserManager {
                 profileAdoption: profileAdoption
             ),
             nowPlaying: nativeNowPlayingController,
-            backgroundMedia: backgroundMediaOptimizationService
         )
     }
 }

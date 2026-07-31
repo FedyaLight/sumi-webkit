@@ -29,9 +29,6 @@ enum BrowserWindowRegistryBinding {
                 activateWindow: { [weak activity] windowState in
                     activity?.activate(windowState)
                 },
-                changeWindowVisibility: { [weak activity] windowState in
-                    activity?.handleVisibilityChanged(windowState)
-                },
                 closeAllWindows: {
                     allWindowsClosed.handleAllWindowsClosed()
                 }

@@ -13,7 +13,6 @@ final class BrowserWindowCloseWorkflow {
     private let webViews: WebViewLifecycleService
     private weak var emptySplitPlaceholders: EmptySplitService?
     private weak var splitPreviews: SplitPreviewSession?
-    private weak var backgroundMedia: SumiBackgroundMediaOptimizationService?
     private weak var commands: BrowserWindowCommands?
 
     init(
@@ -24,7 +23,6 @@ final class BrowserWindowCloseWorkflow {
         webViews: WebViewLifecycleService,
         emptySplitPlaceholders: EmptySplitService,
         splitPreviews: SplitPreviewSession,
-        backgroundMedia: SumiBackgroundMediaOptimizationService,
         commands: BrowserWindowCommands
     ) {
         self.browserRuntime = browserRuntime
@@ -34,7 +32,6 @@ final class BrowserWindowCloseWorkflow {
         self.webViews = webViews
         self.emptySplitPlaceholders = emptySplitPlaceholders
         self.splitPreviews = splitPreviews
-        self.backgroundMedia = backgroundMedia
         self.commands = commands
     }
 
@@ -51,7 +48,6 @@ final class BrowserWindowCloseWorkflow {
         guard let extensions,
               let emptySplitPlaceholders,
               let splitPreviews,
-              let backgroundMedia,
               let commands
         else {
             assertionFailure(
@@ -68,7 +64,6 @@ final class BrowserWindowCloseWorkflow {
         webViews.cleanupWindow(windowState.id)
         emptySplitPlaceholders.removeWindow(windowState.id)
         splitPreviews.removeWindow(windowState.id)
-        backgroundMedia.scheduleReconcile(reason: "window-closed")
 
         guard windowState.isIncognito else { return nil }
 

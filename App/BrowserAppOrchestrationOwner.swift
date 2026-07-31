@@ -90,7 +90,6 @@ final class BrowserAppOrchestrationOwner {
             webViews: dependencies.webViewLifecycle,
             emptySplitPlaceholders: browserManager.splitEmptyPlaceholders,
             splitPreviews: browserManager.splitPreviews,
-            backgroundMedia: browserManager.backgroundMediaOptimizationService,
             commands: browserManager.windowCommands
         )
         let allWindowsClosedWorkflow = BrowserAllWindowsClosedWorkflow(
@@ -124,17 +123,11 @@ final class BrowserAppOrchestrationOwner {
     }
 
     func handleApplicationWillResignActive() {
-        browserManager?.backgroundMediaOptimizationService.scheduleReconcile(
-            reason: "app-will-resign-active"
-        )
         browserManager?.permissionRuntime
             .pauseGeolocationOnAppBackgroundIfNeeded()
     }
 
     func handleApplicationDidBecomeActive() {
-        browserManager?.backgroundMediaOptimizationService.scheduleReconcile(
-            reason: "app-did-become-active"
-        )
         browserManager?.permissionRuntime
             .resumeGeolocationOnAppForegroundIfNeeded()
     }

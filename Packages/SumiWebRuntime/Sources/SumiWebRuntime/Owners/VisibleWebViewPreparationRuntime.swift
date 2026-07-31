@@ -20,7 +20,6 @@ public struct VisibleWebViewPreparationRuntime {
     public let markTabAccessed: (UUID) -> Void
     public let evictHiddenWebViews: (UUID, Set<UUID>) -> Void
     public let scheduleTabSuspensionReconcile: (String) -> Void
-    public let scheduleBackgroundMediaReconcile: (String) -> Void
     public let refreshCompositor: (UUID) -> Void
 
     public init(
@@ -35,7 +34,6 @@ public struct VisibleWebViewPreparationRuntime {
         markTabAccessed: @escaping (UUID) -> Void,
         evictHiddenWebViews: @escaping (UUID, Set<UUID>) -> Void,
         scheduleTabSuspensionReconcile: @escaping (String) -> Void,
-        scheduleBackgroundMediaReconcile: @escaping (String) -> Void,
         refreshCompositor: @escaping (UUID) -> Void
     ) {
         self.windowState = windowState
@@ -46,7 +44,6 @@ public struct VisibleWebViewPreparationRuntime {
         self.markTabAccessed = markTabAccessed
         self.evictHiddenWebViews = evictHiddenWebViews
         self.scheduleTabSuspensionReconcile = scheduleTabSuspensionReconcile
-        self.scheduleBackgroundMediaReconcile = scheduleBackgroundMediaReconcile
         self.refreshCompositor = refreshCompositor
     }
 }

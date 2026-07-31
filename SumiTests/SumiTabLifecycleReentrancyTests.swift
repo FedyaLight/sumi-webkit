@@ -159,13 +159,6 @@ final class SumiTabLifecycleReentrancyTests: XCTestCase {
             _ = tab?.beginMainFrameNavigationIntent(to: successorURL)
         }
         fixture.tab.navigationRuntime.persistenceCallbacks = persistence
-        var mediaReconcileReasons: [String] = []
-        var media = TabMediaRuntimeCallbacks.inactive
-        media.scheduleBackgroundMediaReconcile = { reason in
-            mediaReconcileReasons.append(reason)
-        }
-        fixture.tab.mediaRuntime.callbacks = media
-
         fixture.responder.navigationDidFinish(fixture.context)
 
         XCTAssertEqual(
@@ -175,9 +168,6 @@ final class SumiTabLifecycleReentrancyTests: XCTestCase {
         XCTAssertEqual(fixture.tab.loadingState, .didFinish)
         XCTAssertTrue(fixture.runtime.documentSuspensionReconcileTabIds.isEmpty)
         XCTAssertTrue(fixture.runtime.siteDataPolicyTabIds.isEmpty)
-        XCTAssertFalse(
-            mediaReconcileReasons.contains("navigation-promoted-finish")
-        )
         XCTAssertNotEqual(
             properties.properties.last,
             [.URL, .title, .loading]

@@ -13,11 +13,6 @@ final class SumiNormalTabUserScripts {
 
     let faviconScripts = SumiFaviconUserScripts()
     private let transientChromeInteractionShieldUserScript = SumiTransientChromeInteractionShieldUserScript()
-    private let mediaPlaybackEventBrokerUserScript =
-        SumiMediaPlaybackEventBrokerUserScript()
-    private let backgroundVideoOptimizationUserScript = SumiBackgroundVideoOptimizationUserScript()
-    private let backgroundVideoOptimizationSubframeStubUserScript =
-        SumiBackgroundVideoOptimizationSubframeStubUserScript()
     private var contentBlockingUserScripts: [SumiPageScript]
     private var staticManagedUserScripts: [SumiPageScript]
     private var navigationUserScripts: [SumiPageScript]
@@ -65,10 +60,7 @@ final class SumiNormalTabUserScripts {
             return cachedStaticUserScripts
         }
 
-        let scripts = [mediaPlaybackEventBrokerUserScript]
-            + [transientChromeInteractionShieldUserScript]
-            + [backgroundVideoOptimizationUserScript]
-            + [backgroundVideoOptimizationSubframeStubUserScript]
+        let scripts = [transientChromeInteractionShieldUserScript]
             + contentBlockingUserScripts
             + faviconScripts.userScripts
             + staticManagedUserScripts

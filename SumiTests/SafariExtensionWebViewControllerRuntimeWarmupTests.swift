@@ -616,8 +616,6 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
                 webViews: browserManager.webViewRuntime.lifecycleService,
                 emptySplitPlaceholders: browserManager.splitEmptyPlaceholders,
                 splitPreviews: browserManager.splitWindowContext.previews,
-                backgroundMedia: browserManager
-                    .backgroundMediaOptimizationService,
                 commands: browserManager.windowCommands
             ),
             activity: browserManager.windowActivation,

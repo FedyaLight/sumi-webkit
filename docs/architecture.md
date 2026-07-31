@@ -129,8 +129,8 @@ intent, while the physical visibility of the bar is not.
 Attached-shell state is split into exact, independently observable authorities:
 
 - `WindowPresentationState` owns runtime-only chrome and AppKit facts: popover
-  and command-palette visibility, URL-bar geometry, physical window visibility,
-  and a deferred split-focus request.
+  and command-palette visibility, URL-bar geometry, native display mode, and a
+  deferred split-focus request.
 - `WindowRestorationState` owns one restore cycle's archived-window identity,
   initial-resolution gate, typed pending split selection, and decode-only legacy
   migration evidence.

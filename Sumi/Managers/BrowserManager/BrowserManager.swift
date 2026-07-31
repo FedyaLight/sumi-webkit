@@ -112,10 +112,8 @@ class BrowserManager: ObservableObject {
     }
     let compositorManager: TabCompositorManager
     let tabSuspensionController: TabSuspensionController
-    let backgroundMediaOptimizationService = SumiBackgroundMediaOptimizationService()
     lazy var pageResidency = BrowserPageResidencyController(
-        tabSuspension: tabSuspensionController,
-        backgroundMedia: backgroundMediaOptimizationService
+        tabSuspension: tabSuspensionController
     )
     lazy var tabBrowserRuntimeReference = TabBrowserRuntimeReference(
         TabBrowserRuntimeFactory.make(for: self)

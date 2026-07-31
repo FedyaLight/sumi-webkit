@@ -134,14 +134,10 @@ struct TabRuntimePersistenceCallbacks {
 @MainActor
 struct TabMediaRuntimeCallbacks {
     var scheduleNowPlayingRefresh: (UInt64) -> Void
-    var scheduleBackgroundMediaReconcile: (String) -> Void
-    var invalidateBackgroundMediaCommand: (WKWebView) -> Void
     var notifyNowPlayingTabUnloaded: (UUID) -> Void
 
     static let inactive = Self(
         scheduleNowPlayingRefresh: { _ in /* No-op. */ },
-        scheduleBackgroundMediaReconcile: { _ in /* No-op. */ },
-        invalidateBackgroundMediaCommand: { _ in /* No-op. */ },
         notifyNowPlayingTabUnloaded: { _ in /* No-op. */ }
     )
 }

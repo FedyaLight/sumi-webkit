@@ -59,7 +59,6 @@ struct BrowserWindowBridge: NSViewRepresentable {
             )
             BrowserWindowGeometryPolicy.captureRestorableFrame(of: window)
             refreshNativeWindowState()
-            refreshWindowVisibilityState()
 
             addObserver(
                 center: .default,
@@ -74,7 +73,6 @@ struct BrowserWindowBridge: NSViewRepresentable {
                         in: window
                     )
                     self.refreshNativeWindowState()
-                    self.refreshWindowVisibilityState()
                 }
             }
 
@@ -84,7 +82,6 @@ struct BrowserWindowBridge: NSViewRepresentable {
                 object: window
             ) { [weak self] _ in
                 MainActor.assumeIsolated {
-                    self?.refreshWindowVisibilityState()
                     self?.refreshNativeWindowState()
                 }
             }
@@ -95,18 +92,7 @@ struct BrowserWindowBridge: NSViewRepresentable {
                 object: window
             ) { [weak self] _ in
                 MainActor.assumeIsolated {
-                    self?.refreshWindowVisibilityState()
                     self?.refreshNativeWindowState()
-                }
-            }
-
-            addObserver(
-                center: .default,
-                forName: NSWindow.didChangeOcclusionStateNotification,
-                object: window
-            ) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    self?.refreshWindowVisibilityState()
                 }
             }
 
@@ -149,17 +135,6 @@ struct BrowserWindowBridge: NSViewRepresentable {
             }
 
             addObserver(
-                center: NSWorkspace.shared.notificationCenter,
-                forName: NSWorkspace.activeSpaceDidChangeNotification,
-                object: nil
-            ) { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    await Task.yield()
-                    self?.refreshWindowVisibilityState()
-                }
-            }
-
-            addObserver(
                 center: .default,
                 forName: NSWindow.willCloseNotification,
                 object: window
@@ -181,7 +156,6 @@ struct BrowserWindowBridge: NSViewRepresentable {
 
         func detach() {
             removeObservers()
-            windowState.presentationState.visibility = .unknown
             windowRegistry.unbindAppKitWindow(window, from: windowState)
             window = nil
         }
@@ -189,7 +163,6 @@ struct BrowserWindowBridge: NSViewRepresentable {
         private func handleWindowWillClose() {
             windowRegistry.unregister(windowState.id)
             removeObservers()
-            windowState.presentationState.visibility = .unknown
             windowRegistry.unbindAppKitWindow(window, from: windowState)
             window = nil
         }
@@ -214,14 +187,6 @@ struct BrowserWindowBridge: NSViewRepresentable {
                 using: block
             )
             notificationObservers.append((center, observer))
-        }
-
-        private func refreshWindowVisibilityState() {
-            let newState = SumiWindowVisibilityState(window: window)
-            guard windowState.presentationState.visibility != newState else { return }
-
-            windowState.presentationState.visibility = newState
-            windowRegistry.notifyWindowVisibilityChanged(windowState)
         }
 
         private func refreshNativeWindowState() {

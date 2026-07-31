@@ -21,12 +21,10 @@ enum TabBrowserHostServicesRuntimeFactory {
     }
 
     static func mediaCallbacks(
-        nowPlayingController: any SumiNativeNowPlayingRuntimeControlling,
-        backgroundMediaOptimizationService: SumiBackgroundMediaOptimizationService
+        nowPlayingController: any SumiNativeNowPlayingRuntimeControlling
     ) -> TabMediaRuntimeCallbacks {
         .make(
-            nowPlayingController: nowPlayingController,
-            backgroundMediaOptimizationService: backgroundMediaOptimizationService
+            nowPlayingController: nowPlayingController
         )
     }
 
@@ -246,18 +244,11 @@ extension TabRuntimePersistenceCallbacks {
 @MainActor
 extension TabMediaRuntimeCallbacks {
     static func make(
-        nowPlayingController: any SumiNativeNowPlayingRuntimeControlling,
-        backgroundMediaOptimizationService: SumiBackgroundMediaOptimizationService
+        nowPlayingController: any SumiNativeNowPlayingRuntimeControlling
     ) -> Self {
         Self(
             scheduleNowPlayingRefresh: { [weak nowPlayingController] delayNanoseconds in
                 nowPlayingController?.scheduleRefresh(delayNanoseconds: delayNanoseconds)
-            },
-            scheduleBackgroundMediaReconcile: { [weak backgroundMediaOptimizationService] reason in
-                backgroundMediaOptimizationService?.scheduleReconcile(reason: reason)
-            },
-            invalidateBackgroundMediaCommand: { [weak backgroundMediaOptimizationService] webView in
-                backgroundMediaOptimizationService?.invalidateAppliedCommand(for: webView)
             },
             notifyNowPlayingTabUnloaded: { [weak nowPlayingController] tabId in
                 nowPlayingController?.handleTabUnloaded(tabId)

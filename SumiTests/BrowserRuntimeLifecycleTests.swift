@@ -80,30 +80,4 @@ final class BrowserRuntimeLifecycleTests: XCTestCase {
         XCTAssertNil(browser.runtimePortConnection.current)
     }
 
-    func testShutdownDetachesBackgroundMediaOptimization() async {
-        var browser: BrowserManager? = BrowserManager()
-        var energySaverReadCount = 0
-        let backgroundMedia = browser?.backgroundMediaOptimizationService
-        backgroundMedia?.attach(
-            runtime: SumiBackgroundMediaOptimizationRuntime(
-                liveWebViewEntries: { _ in [] },
-                energySaverActive: {
-                    energySaverReadCount += 1
-                    return false
-                },
-                allKnownTabs: { [] },
-                visibleTabIDsByWindow: { [:] }
-            )
-        )
-        browser?.startRuntimeAfterStartupRecovery()
-
-        browser = nil
-        backgroundMedia?.scheduleReconcile(
-            reason: "after-shutdown"
-        )
-        await Task.yield()
-        await Task.yield()
-
-        XCTAssertEqual(energySaverReadCount, 0)
-    }
 }

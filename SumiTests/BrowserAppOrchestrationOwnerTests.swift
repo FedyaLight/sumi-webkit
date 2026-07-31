@@ -153,7 +153,6 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
         let lateWindowState = BrowserWindowState()
         registry.register(lateWindowState)
         registry.setActive(lateWindowState)
-        registry.notifyWindowVisibilityChanged(lateWindowState)
         appDelegate.mouseButtonRouter?.focusCommandPalette(
             in: lateWindowState,
             prefill: "late",

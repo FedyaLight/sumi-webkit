@@ -10,7 +10,6 @@ final class BrowserTerminationRuntimeLease: BrowserTerminationFinalizing {
     private let browserRuntime: BrowserManager
     private let tabPersistence: TabStructuralPersistenceService
     private let windowPersistence: WindowSessionPersistenceCoordinator
-    private let backgroundMediaOptimization: SumiBackgroundMediaOptimizationService
     private let cleanup: BrowserShutdownCleanupService
     private let siteDataPolicy: any BrowserSiteDataPolicyEnforcing
     private let profiles: ProfileManager
@@ -20,7 +19,6 @@ final class BrowserTerminationRuntimeLease: BrowserTerminationFinalizing {
             browserRuntime: browserRuntime,
             tabPersistence: browserRuntime.structuralPersistence,
             windowPersistence: browserRuntime.windowSessionPersistenceCoordinator,
-            backgroundMediaOptimization: browserRuntime.backgroundMediaOptimizationService,
             cleanup: browserRuntime.shutdownCleanupService,
             siteDataPolicy: browserRuntime.dataServices.siteDataPolicyEnforcementService,
             profiles: browserRuntime.profileManager
@@ -31,7 +29,6 @@ final class BrowserTerminationRuntimeLease: BrowserTerminationFinalizing {
         browserRuntime: BrowserManager,
         tabPersistence: TabStructuralPersistenceService,
         windowPersistence: WindowSessionPersistenceCoordinator,
-        backgroundMediaOptimization: SumiBackgroundMediaOptimizationService,
         cleanup: BrowserShutdownCleanupService,
         siteDataPolicy: any BrowserSiteDataPolicyEnforcing,
         profiles: ProfileManager
@@ -39,14 +36,12 @@ final class BrowserTerminationRuntimeLease: BrowserTerminationFinalizing {
         self.browserRuntime = browserRuntime
         self.tabPersistence = tabPersistence
         self.windowPersistence = windowPersistence
-        self.backgroundMediaOptimization = backgroundMediaOptimization
         self.cleanup = cleanup
         self.siteDataPolicy = siteDataPolicy
         self.profiles = profiles
     }
 
     func finalizeTermination() async {
-        backgroundMediaOptimization.detach()
         Self.log.info("Termination persistence began")
         windowPersistence.flush()
         let didFlushPermissions = await browserRuntime.permissionRuntime

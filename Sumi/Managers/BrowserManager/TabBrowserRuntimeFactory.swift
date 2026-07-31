@@ -112,9 +112,7 @@ enum TabBrowserRuntimeFactory {
             mediaRuntimeCallbacks: TabBrowserHostServicesRuntimeFactory
                 .mediaCallbacks(
                     nowPlayingController: browserManager
-                        .nativeNowPlayingController,
-                    backgroundMediaOptimizationService: browserManager
-                        .backgroundMediaOptimizationService
+                        .nativeNowPlayingController
                 ),
             navigationCommandRuntime: TabBrowserNavigationRuntimeFactory.navigationCommandRuntime(for: browserManager),
             profileResolutionRuntime: TabBrowserNavigationRuntimeFactory.profileResolutionRuntime(for: browserManager),

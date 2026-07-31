@@ -40,7 +40,6 @@ extension Tab {
 
         if oldState.isPlayingAudio != newState.isPlayingAudio {
             mediaRuntime.callbacks.scheduleNowPlayingRefresh(0)
-            mediaRuntime.callbacks.scheduleBackgroundMediaReconcile("tab-audio-state-changed")
         }
     }
 

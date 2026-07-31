@@ -13,7 +13,6 @@ final class WindowRegistryTests: XCTestCase {
             publishWindowRegistration: { _ in events.append("publish") },
             closeWindow: { _ in events.append("close") },
             activateWindow: { _ in events.append("activate") },
-            changeWindowVisibility: { _ in events.append("visibility") },
             closeAllWindows: { events.append("all-closed") }
         )
         let replacementSink = WindowRegistry.EventSink(
@@ -21,7 +20,6 @@ final class WindowRegistryTests: XCTestCase {
             publishWindowRegistration: { _ in events.append("replacement") },
             closeWindow: { _ in events.append("replacement") },
             activateWindow: { _ in events.append("replacement") },
-            changeWindowVisibility: { _ in events.append("replacement") },
             closeAllWindows: { events.append("replacement") }
         )
 
@@ -36,12 +34,11 @@ final class WindowRegistryTests: XCTestCase {
 
         registry.setActive(window)
         XCTAssertEqual(registry.register(window), .registered)
-        registry.notifyWindowVisibilityChanged(window)
         registry.unregister(window.id)
 
         XCTAssertEqual(
             events,
-            ["prepare", "publish", "activate", "visibility", "close", "all-closed"]
+            ["prepare", "publish", "activate", "close", "all-closed"]
         )
         XCTAssertFalse(events.contains("replacement"))
     }

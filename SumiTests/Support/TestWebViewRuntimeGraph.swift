@@ -45,7 +45,6 @@ func makeTestWebViewRuntimeGraph(
             markTabAccessed: { _ in },
             globallyVisibleTabIDs: { [] },
             scheduleTabSuspensionReconcile: { _ in },
-            scheduleBackgroundMediaReconcile: { _ in },
             refreshCompositor: { _ in }
         ),
         initialDocumentContext: initialDocumentContext

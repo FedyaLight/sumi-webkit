@@ -10,7 +10,6 @@ extension BrowserSettingsAttachmentCoordinator {
             settingsState: browserManager.settingsState,
             downloadManager: browserManager.downloadManager,
             tabSuspension: browserManager.tabSuspensionController,
-            backgroundMedia: browserManager.backgroundMediaOptimizationService,
             startupReconciliation: browserManager.startupSessionReconciliation,
             automaticDataCleanup: browserManager.privacyBundle
                 .automaticBrowsingDataCleanup

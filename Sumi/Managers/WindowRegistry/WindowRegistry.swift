@@ -30,7 +30,6 @@ class WindowRegistry {
         let publishWindowRegistration: @MainActor (BrowserWindowState) -> Void
         let closeWindow: @MainActor (BrowserWindowState) -> Void
         let activateWindow: @MainActor (BrowserWindowState) -> Void
-        let changeWindowVisibility: @MainActor (BrowserWindowState) -> Void
         let closeAllWindows: @MainActor () -> Void
     }
 
@@ -333,10 +332,6 @@ class WindowRegistry {
         RuntimeDiagnostics.emit {
             "🪟 [WindowRegistry] Active window: \(registeredWindow.id)"
         }
-    }
-
-    func notifyWindowVisibilityChanged(_ window: BrowserWindowState) {
-        eventSink?.changeWindowVisibility(window)
     }
 
     func registrationReceipt(

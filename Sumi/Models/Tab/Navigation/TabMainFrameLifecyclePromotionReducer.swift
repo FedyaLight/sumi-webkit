@@ -275,10 +275,6 @@ enum TabMainFrameLifecycleReducer {
         tab.navigationRuntime.lifecycleNavigationRuntime
             .reconcileDocumentSuspensionState(tab)
         guard remainsCurrent() else { return }
-        tab.mediaRuntime.callbacks.scheduleBackgroundMediaReconcile(
-            "navigation-promoted-finish"
-        )
-        guard remainsCurrent() else { return }
         tab.navigationRuntime.lifecycleNavigationRuntime.enforceSiteDataPolicyAfterNavigation(tab)
         guard remainsCurrent() else { return }
         SafariExtensionAutofillFillDiagnostics.endInlineUISession(extensionId: nil)

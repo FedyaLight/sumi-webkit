@@ -30,8 +30,6 @@ extension BrowserRuntimeLifecycle {
                 automaticCleanup: browserManager.privacyBundle
                     .automaticBrowsingDataCleanup
             ),
-            backgroundMedia: browserManager
-                .backgroundMediaOptimizationService,
             tabRuntime: browserManager.tabRuntimeLifecycle,
             attachRuntime: { [weak browserManager] in
                 guard let browserManager else {

@@ -103,7 +103,7 @@ class BrowserConfiguration {
             SumiSetAllowsPictureInPictureMediaPlayback(config.preferences, true)
         }
 
-        // Enable background media playback
+        // Allow AirPlay media playback.
         config.allowsAirPlayForMediaPlayback = true
 
         config.preferences.setValue(

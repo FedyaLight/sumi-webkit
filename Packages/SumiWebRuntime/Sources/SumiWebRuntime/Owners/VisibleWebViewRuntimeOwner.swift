@@ -204,7 +204,6 @@ public final class VisibleWebViewRuntimeOwner: WebRuntimeVisiblePreparationContr
             Set(visibleTabIDs)
         )
         runtime.scheduleTabSuspensionReconcile("visible-webviews-prepared")
-        runtime.scheduleBackgroundMediaReconcile("visible-webviews-prepared")
 
         return didCreateWebView
     }

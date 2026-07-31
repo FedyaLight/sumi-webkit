@@ -727,9 +727,7 @@ final class WindowSessionRegistrationTests: XCTestCase {
                 windowState: browserManager.windowStateReconciler,
                 profileAdoption: browserManager.profileAdoption
             ),
-            nowPlaying: browserManager.nativeNowPlayingController,
-            backgroundMedia: browserManager
-                .backgroundMediaOptimizationService
+            nowPlaying: browserManager.nativeNowPlayingController
         )
         let windowState = BrowserWindowState(
             awaitsInitialSessionResolution: true

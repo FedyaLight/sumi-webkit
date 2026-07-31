@@ -1208,7 +1208,6 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
                 markTabAccessed: { _ in },
                 globallyVisibleTabIDs: { [tabID] in [tabID] },
                 scheduleTabSuspensionReconcile: { _ in },
-                scheduleBackgroundMediaReconcile: { _ in },
                 refreshCompositor: { _ in }
             ),
             initialDocumentContext: InitialDocumentWebViewRuntimeContext(

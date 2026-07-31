@@ -351,7 +351,6 @@ final class TabRuntimeRoutingTests: XCTestCase {
         tab.applyAudioState(.unmuted(isPlayingAudio: true))
 
         XCTAssertEqual(callbacks.nowPlayingRefreshDelays, [0])
-        XCTAssertEqual(callbacks.backgroundMediaReasons, ["tab-audio-state-changed"])
     }
 
     func testUnloadWebViewUsesInjectedMediaCallbacksWithoutBrowserManager() {
@@ -887,7 +886,6 @@ private struct RuntimeRoutingProtectionPolicy: ProtectionPolicyReading {
 @MainActor
 private final class RecordingTabMediaCallbacks {
     private(set) var nowPlayingRefreshDelays: [UInt64] = []
-    private(set) var backgroundMediaReasons: [String] = []
     private(set) var unloadedTabIds: [UUID] = []
 
     var runtime: TabMediaRuntimeCallbacks {
@@ -895,10 +893,6 @@ private final class RecordingTabMediaCallbacks {
             scheduleNowPlayingRefresh: { [weak self] delay in
                 self?.nowPlayingRefreshDelays.append(delay)
             },
-            scheduleBackgroundMediaReconcile: { [weak self] reason in
-                self?.backgroundMediaReasons.append(reason)
-            },
-            invalidateBackgroundMediaCommand: { _ in /* No-op. */ },
             notifyNowPlayingTabUnloaded: { [weak self] tabId in
                 self?.unloadedTabIds.append(tabId)
             }

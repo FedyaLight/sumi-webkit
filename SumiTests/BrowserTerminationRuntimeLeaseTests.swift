@@ -52,18 +52,6 @@ final class BrowserTerminationRuntimeLeaseTests: XCTestCase {
 
     func testFinalizationWaitsForSiteDataCleanupBeforeReleasingBrowserResources() async throws {
         let browserManager = try makeBrowserManager()
-        var backgroundMediaEnergySaverReads = 0
-        browserManager.backgroundMediaOptimizationService.attach(
-            runtime: SumiBackgroundMediaOptimizationRuntime(
-                liveWebViewEntries: { _ in [] },
-                energySaverActive: {
-                    backgroundMediaEnergySaverReads += 1
-                    return false
-                },
-                allKnownTabs: { [] },
-                visibleTabIDsByWindow: { [:] }
-            )
-        )
         let profile = Profile(name: "Termination")
         browserManager.profileManager.profiles = [profile]
         let space = installTestSpace(
@@ -89,19 +77,6 @@ final class BrowserTerminationRuntimeLeaseTests: XCTestCase {
 
         XCTAssertNotNil(browserManager.glanceManager.currentSession)
         XCTAssertEqual(siteDataPolicy.profileIDs, [profile.id])
-        browserManager.backgroundMediaOptimizationService.reconcileNow(
-            reason: "termination-in-progress"
-        )
-        browserManager.backgroundMediaOptimizationService.scheduleReconcile(
-            reason: "termination-in-progress"
-        )
-        NotificationCenter.default.post(
-            name: .sumiEnergySaverPolicyChanged,
-            object: nil
-        )
-        await Task.yield()
-        await Task.yield()
-        XCTAssertEqual(backgroundMediaEnergySaverReads, 0)
 
         siteDataPolicy.resumeCleanup()
         await finalization.value
@@ -243,7 +218,6 @@ final class BrowserTerminationRuntimeLeaseTests: XCTestCase {
             browserRuntime: browserManager,
             tabPersistence: browserManager.structuralPersistence,
             windowPersistence: browserManager.windowSessionPersistenceCoordinator,
-            backgroundMediaOptimization: browserManager.backgroundMediaOptimizationService,
             cleanup: browserManager.shutdownCleanupService,
             siteDataPolicy: siteDataPolicy
                 ?? browserManager.dataServices.siteDataPolicyEnforcementService,

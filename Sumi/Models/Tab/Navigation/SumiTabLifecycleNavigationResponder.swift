@@ -266,7 +266,6 @@ final class SumiTabLifecycleNavigationResponder:
                     tab
                 )
             }
-            tab.mediaRuntime.callbacks.invalidateBackgroundMediaCommand(webView)
             tab.navigationRuntime.lifecycleNavigationRuntime.loadZoomForTab(
                 tab.id,
                 webView
@@ -623,9 +622,6 @@ final class SumiTabLifecycleNavigationResponder:
         tab.navigationRuntime.extensionPropertiesRuntime.notifyTabPropertiesChanged(
             tab,
             [.URL, .loading]
-        )
-        tab.mediaRuntime.callbacks.scheduleBackgroundMediaReconcile(
-            "navigation-terminal-rollback"
         )
     }
 

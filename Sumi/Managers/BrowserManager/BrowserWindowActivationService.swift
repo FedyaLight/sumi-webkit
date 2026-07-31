@@ -15,7 +15,6 @@ final class BrowserWindowActivationService {
     private let extensions: any BrowserWindowExtensionFocusNotifying
     private let focusedContext: BrowserWindowFocusedContextSynchronizer
     private let nowPlaying: any SumiNativeNowPlayingRuntimeControlling
-    private let backgroundMedia: SumiBackgroundMediaOptimizationService
     private var deferredActivationsByWindowID: [UUID: DeferredActivation] = [:]
 
     init(
@@ -25,8 +24,7 @@ final class BrowserWindowActivationService {
         findManager: FindManager,
         extensions: any BrowserWindowExtensionFocusNotifying,
         focusedContext: BrowserWindowFocusedContextSynchronizer,
-        nowPlaying: any SumiNativeNowPlayingRuntimeControlling,
-        backgroundMedia: SumiBackgroundMediaOptimizationService
+        nowPlaying: any SumiNativeNowPlayingRuntimeControlling
     ) {
         self.sidebarPresentation = sidebarPresentation
         self.persistence = persistence
@@ -35,7 +33,6 @@ final class BrowserWindowActivationService {
         self.extensions = extensions
         self.focusedContext = focusedContext
         self.nowPlaying = nowPlaying
-        self.backgroundMedia = backgroundMedia
     }
 
     func activate(_ windowState: BrowserWindowState) {
@@ -90,11 +87,5 @@ final class BrowserWindowActivationService {
         extensions.notifyWindowFocusedIfLoaded(windowState)
 
         nowPlaying.scheduleRefresh(delayNanoseconds: 0)
-        backgroundMedia.scheduleReconcile(reason: "window-activated")
-    }
-
-    func handleVisibilityChanged(_ windowState: BrowserWindowState) {
-        _ = windowState
-        backgroundMedia.scheduleReconcile(reason: "window-visibility-changed")
     }
 }

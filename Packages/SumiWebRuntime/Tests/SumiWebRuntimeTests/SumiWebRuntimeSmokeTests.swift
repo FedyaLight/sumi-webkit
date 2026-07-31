@@ -623,7 +623,6 @@ final class SumiWebRuntimeSmokeTests: XCTestCase {
             markTabAccessed: { marked.append($0) },
             evictHiddenWebViews: { _, _ in },
             scheduleTabSuspensionReconcile: { _ in },
-            scheduleBackgroundMediaReconcile: { _ in },
             refreshCompositor: { _ in }
         )
 

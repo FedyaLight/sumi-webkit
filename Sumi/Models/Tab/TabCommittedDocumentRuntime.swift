@@ -291,9 +291,8 @@ final class TabCommittedDocumentRuntime {
 }
 
 extension Tab: TabCommittedDocumentSuspensionEffects {
-    func committedDocumentSuspensionDecisionDidChange(reason: String) {
+    func committedDocumentSuspensionDecisionDidChange(reason _: String) {
         navigationRuntime.lifecycleNavigationRuntime
             .reconcileDocumentSuspensionState(self)
-        mediaRuntime.callbacks.scheduleBackgroundMediaReconcile(reason)
     }
 }

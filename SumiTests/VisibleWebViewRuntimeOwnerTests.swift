@@ -23,7 +23,6 @@ final class VisibleWebViewRuntimeOwnerTests: XCTestCase {
         var createdPairs: [(tabId: UUID, windowId: UUID)] = []
         var evictedVisibleTabIds = Set<UUID>()
         var suspensionReasons: [String] = []
-        var mediaReasons: [String] = []
 
         let didCreate = owner.prepareVisibleWebViews(
             for: windowState,
@@ -36,8 +35,7 @@ final class VisibleWebViewRuntimeOwnerTests: XCTestCase {
                 evictHiddenWebViews: { _, visibleTabIds in
                     evictedVisibleTabIds = visibleTabIds
                 },
-                scheduleTabSuspensionReconcile: { suspensionReasons.append($0) },
-                scheduleBackgroundMediaReconcile: { mediaReasons.append($0) }
+                scheduleTabSuspensionReconcile: { suspensionReasons.append($0) }
             ),
             webViewSessions: webViewSessions,
             existingWebView: { _, _ in nil },
@@ -59,7 +57,6 @@ final class VisibleWebViewRuntimeOwnerTests: XCTestCase {
         )
         XCTAssertEqual(evictedVisibleTabIds, [currentTab.id, splitTab.id])
         XCTAssertEqual(suspensionReasons, ["visible-webviews-prepared"])
-        XCTAssertEqual(mediaReasons, ["visible-webviews-prepared"])
     }
 
     func testPrepareVisibleWebViewsResolvesRegularAndEphemeralTabsExactly() {
@@ -313,7 +310,6 @@ final class VisibleWebViewRuntimeOwnerTests: XCTestCase {
         markTabAccessed: @escaping @MainActor (UUID) -> Void = { _ in /* No-op. */ },
         evictHiddenWebViews: @escaping @MainActor (UUID, Set<UUID>) -> Void = { _, _ in /* No-op. */ },
         scheduleTabSuspensionReconcile: @escaping @MainActor (String) -> Void = { _ in /* No-op. */ },
-        scheduleBackgroundMediaReconcile: @escaping @MainActor (String) -> Void = { _ in /* No-op. */ },
         refreshCompositor: @escaping @MainActor (UUID) -> Void = { _ in /* No-op. */ }
     ) -> VisibleWebViewPreparationRuntime {
         VisibleWebViewPreparationRuntime(
@@ -326,7 +322,6 @@ final class VisibleWebViewRuntimeOwnerTests: XCTestCase {
             markTabAccessed: markTabAccessed,
             evictHiddenWebViews: evictHiddenWebViews,
             scheduleTabSuspensionReconcile: scheduleTabSuspensionReconcile,
-            scheduleBackgroundMediaReconcile: scheduleBackgroundMediaReconcile,
             refreshCompositor: refreshCompositor
         )
     }

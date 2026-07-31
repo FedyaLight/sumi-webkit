@@ -57,7 +57,6 @@ checks=(
   "scripts/check_webview_interaction_state_boundary.sh"
   "scripts/check_popup_navigation_architecture.sh"
   "scripts/check_tab_suspension_architecture.sh"
-  "scripts/check_background_media_lifecycle_boundary.sh"
   "scripts/check_tab_persistence_architecture.sh"
   "scripts/check_favicon_production_ownership.sh"
   "scripts/check_window_registration_transaction.sh"

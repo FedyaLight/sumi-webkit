@@ -406,9 +406,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             self,
             [.URL, .loading]
         )
-        mediaRuntime.callbacks.scheduleBackgroundMediaReconcile(
-            "navigation-submission-failed"
-        )
     }
 
     var hasBrowserRuntime: Bool {

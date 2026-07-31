@@ -13,7 +13,6 @@ final class BrowserRuntimeLifecycle {
     private let permissionObservation: BrowserRuntimePermissionObservation
     private let startupObservation: BrowserRuntimeStartupObservation
     private let retentionObservation: BrowserRuntimeRetentionObservation
-    private let backgroundMedia: SumiBackgroundMediaOptimizationService
     private let tabRuntime: TabRuntimeLifecycle
     private let attachRuntime: @MainActor () -> AnyCancellable
     private var runtimeSubscription: AnyCancellable?
@@ -23,14 +22,12 @@ final class BrowserRuntimeLifecycle {
         permissionObservation: BrowserRuntimePermissionObservation,
         startupObservation: BrowserRuntimeStartupObservation,
         retentionObservation: BrowserRuntimeRetentionObservation,
-        backgroundMedia: SumiBackgroundMediaOptimizationService,
         tabRuntime: TabRuntimeLifecycle,
         attachRuntime: @escaping @MainActor () -> AnyCancellable
     ) {
         self.permissionObservation = permissionObservation
         self.startupObservation = startupObservation
         self.retentionObservation = retentionObservation
-        self.backgroundMedia = backgroundMedia
         self.tabRuntime = tabRuntime
         self.attachRuntime = attachRuntime
     }
@@ -65,7 +62,6 @@ final class BrowserRuntimeLifecycle {
         phase = .shutDown
         runtimeSubscription?.cancel()
         runtimeSubscription = nil
-        backgroundMedia.detach()
         permissionObservation.cancel()
         startupObservation.cancel()
         retentionObservation.cancel()

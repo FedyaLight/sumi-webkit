@@ -3,16 +3,11 @@ import Foundation
 @MainActor
 final class BrowserPageResidencyController {
     private let tabSuspension: TabSuspensionController
-    private let backgroundMedia: SumiBackgroundMediaOptimizationService
     private var pendingReasons: [String] = []
     private var scheduledReconcile: Task<Void, Never>?
 
-    init(
-        tabSuspension: TabSuspensionController,
-        backgroundMedia: SumiBackgroundMediaOptimizationService
-    ) {
+    init(tabSuspension: TabSuspensionController) {
         self.tabSuspension = tabSuspension
-        self.backgroundMedia = backgroundMedia
     }
 
     func schedule(reason: String) {
@@ -28,7 +23,6 @@ final class BrowserPageResidencyController {
             pendingReasons.removeAll(keepingCapacity: true)
             scheduledReconcile = nil
             tabSuspension.reconcileNow(reason: reason)
-            backgroundMedia.reconcileNow(reason: reason)
         }
     }
 }

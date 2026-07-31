@@ -196,9 +196,6 @@ extension BrowserManager {
             scheduleTabSuspensionReconcile: { [weak pageResidency] reason in
                 pageResidency?.schedule(reason: reason)
             },
-            scheduleBackgroundMediaReconcile: { [weak pageResidency] reason in
-                pageResidency?.schedule(reason: reason)
-            },
             refreshCompositor: { [commands] windowID in
                 commands.refreshCompositor(in: windowID)
             }

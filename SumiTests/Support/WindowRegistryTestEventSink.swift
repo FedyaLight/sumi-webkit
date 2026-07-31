@@ -10,7 +10,6 @@ func installWindowRegistryTestEventSink(
     publishWindowRegistration: @escaping @MainActor (BrowserWindowState) -> Void = { _ in },
     closeWindow: @escaping @MainActor (BrowserWindowState) -> Void = { _ in },
     activateWindow: @escaping @MainActor (BrowserWindowState) -> Void = { _ in },
-    changeWindowVisibility: @escaping @MainActor (BrowserWindowState) -> Void = { _ in },
     closeAllWindows: @escaping @MainActor () -> Void = {}
 ) -> WindowRegistry.EventSinkInstallationReceipt? {
     let receipt = registry.installEventSink(
@@ -19,7 +18,6 @@ func installWindowRegistryTestEventSink(
             publishWindowRegistration: publishWindowRegistration,
             closeWindow: closeWindow,
             activateWindow: activateWindow,
-            changeWindowVisibility: changeWindowVisibility,
             closeAllWindows: closeAllWindows
         )
     )

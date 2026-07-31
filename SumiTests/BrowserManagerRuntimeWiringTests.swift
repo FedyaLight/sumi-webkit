@@ -64,57 +64,6 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertFalse(browserManager.optionalModules.extensions.hasLoadedRuntime)
     }
 
-    func testTabRuntimeCompositionServiceAttachesResourceRuntimesAndHandlesStructuralChanges() async throws {
-        let structuralChanges = PassthroughSubject<Void, Never>()
-        let tab = Tab(
-            url: URL(string: "https://example.com/runtime-composition")!,
-            loadsCachedFaviconOnInit: false
-        )
-        let webView = WKWebView()
-        let tabSuspension = TabSuspensionController(memoryMonitor: nil)
-        let backgroundMedia = SumiBackgroundMediaOptimizationService()
-        let reconciliation = BrowserPageResidencyController(
-            tabSuspension: tabSuspension,
-            backgroundMedia: backgroundMedia
-        )
-        let structuralObserver = BrowserTabStructuralRuntimeObserver(
-            structuralChanges: structuralChanges.eraseToAnyPublisher(),
-            pageResidency: reconciliation
-        )
-        var backgroundMediaReasons: [String] = []
-        let structuralChangeHandled = expectation(description: "structural change handled")
-        let backgroundMediaRuntime = SumiBackgroundMediaOptimizationRuntime(
-            liveWebViewEntries: { _ in [(windowID: UUID(), webView: webView)] },
-            energySaverActive: { true },
-            allKnownTabs: { [tab] },
-            visibleTabIDsByWindow: { [:] },
-            executeJavaScriptCommand: { _, _, arguments in
-                guard let reason = arguments["reason"] as? String else { return }
-                backgroundMediaReasons.append(reason)
-                if reason == "tab-structure-changed" {
-                    structuralChangeHandled.fulfill()
-                }
-            }
-        )
-
-        let cancellable = BrowserTabRuntimeCompositionService.attach(
-            tabSuspension: tabSuspension,
-            tabSuspensionRuntime: TabSuspensionRuntimePorts(
-                context: .inactive,
-                webView: .inactive,
-                catalog: .inactive
-            ),
-            backgroundMedia: backgroundMedia,
-            backgroundMediaRuntime: backgroundMediaRuntime,
-            structuralObserver: structuralObserver
-        )
-        defer { cancellable.cancel() }
-
-        structuralChanges.send()
-        await fulfillment(of: [structuralChangeHandled], timeout: 1)
-        XCTAssertEqual(backgroundMediaReasons, ["tab-structure-changed"])
-    }
-
     func testDetachedRuntimeTabContextMenuForegroundOpenDoesNotUseActiveWindow() throws {
         let windowRegistry = WindowRegistry()
         let browserManager = BrowserManager(

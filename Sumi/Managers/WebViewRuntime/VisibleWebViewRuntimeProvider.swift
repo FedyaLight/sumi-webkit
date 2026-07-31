@@ -31,7 +31,6 @@ final class VisibleWebViewRuntimeProvider {
             markTabAccessed: context.markTabAccessed,
             evictHiddenWebViews: evictHiddenWebViews,
             scheduleTabSuspensionReconcile: context.scheduleTabSuspensionReconcile,
-            scheduleBackgroundMediaReconcile: context.scheduleBackgroundMediaReconcile,
             refreshCompositor: context.refreshCompositor
         )
     }
