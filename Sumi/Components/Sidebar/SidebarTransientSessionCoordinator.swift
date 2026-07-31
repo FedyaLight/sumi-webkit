@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import Observation
 import SumiDomain
 
 enum SidebarRecoveryTier: Int, Comparable, CustomStringConvertible {
@@ -213,6 +214,7 @@ final class SidebarTransientPresentationSource {
 }
 
 @MainActor
+@Observable
 final class SidebarTransientSessionCoordinator {
     private struct PendingRecovery {
         var source: SidebarTransientPresentationSource

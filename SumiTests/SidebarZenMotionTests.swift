@@ -1,4 +1,5 @@
 import AppKit
+import Observation
 @testable import Sumi
 import SwiftUI
 import XCTest
@@ -582,6 +583,35 @@ final class SidebarZenMotionTests: XCTestCase {
         XCTAssertFalse(state.allowsFolderPreviewHoverTracking)
     }
 
+    func testEndingTransientSessionPublishesCollapsedSidebarPinChange() {
+        let coordinator = SidebarTransientSessionCoordinator(
+            windowID: UUID(),
+            interactionState: SidebarInteractionState()
+        )
+        let source = SidebarTransientPresentationSource(
+            windowID: coordinator.windowID,
+            window: nil,
+            originOwnerView: nil,
+            coordinator: coordinator
+        )
+        let token = coordinator.beginSession(
+            kind: .downloadsPopover,
+            source: source,
+            path: "test.downloadsPopover"
+        )
+        let observation = SidebarZenObservationFlag()
+
+        withObservationTracking {
+            _ = coordinator.currentPresentationWindowID
+        } onChange: {
+            observation.markChanged()
+        }
+
+        coordinator.endSession(token)
+
+        XCTAssertTrue(observation.didChange)
+    }
+
     func testVisualItemDragSynchronizesHoverSuppressionWithoutDeferredWork() {
         let state = SidebarInteractionState()
         let dragState = SidebarDragState(interactionState: state)
@@ -1112,6 +1142,23 @@ private final class SidebarPressReplacementPresentation: ObservableObject {
     }
 
     @Published var phase: Phase = .stored
+}
+
+private final class SidebarZenObservationFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var changed = false
+
+    var didChange: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return changed
+    }
+
+    func markChanged() {
+        lock.lock()
+        defer { lock.unlock() }
+        changed = true
+    }
 }
 
 private struct SidebarPressReplacementFixture: View {
