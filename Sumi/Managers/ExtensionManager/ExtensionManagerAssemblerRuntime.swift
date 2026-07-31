@@ -59,8 +59,8 @@ extension ExtensionManagerAssembler {
             controllerCore: core.controller, contextResidency: residency
         )
         let coordination = assembleRuntimeCoordinationPhase(
-            contextResidency: residency, demand: demand,
-            profileTransition: profileTransition
+            runtime: f.runtime, contexts: f.contexts,
+            contextResidency: residency, demand: demand, profileTransition: profileTransition
         )
         let popupCoordination = assemblePopupCoordinationPhase(
             contexts: f.contexts, actions: f.actions, browser: f.browser,
@@ -149,6 +149,7 @@ extension ExtensionManagerAssembler {
             )
         #endif
         return ExtensionManagerAssemblyResult(
+            profileWarmup: coordination.profileWarmup,
             controller: makeRuntimeControllerResult(
                 controller: f.controller, browser: f.browser,
                 controllerCore: core.controller, services: services

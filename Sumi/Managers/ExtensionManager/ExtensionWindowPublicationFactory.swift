@@ -40,6 +40,7 @@ final class ExtensionWindowPublicationFactory {
     private let runtimePublicationEvidence:
         ExtensionRuntimePublicationEvidenceIssuer
     private let profileTransition: ExtensionProfileRuntimeTransition
+    private let profileWarmup: ExtensionProfileRuntimeWarmup
     #if DEBUG
         private var debugSignals: ExtensionManagerDebugSignals?
     #endif
@@ -52,7 +53,8 @@ final class ExtensionWindowPublicationFactory {
         adapterStore: ExtensionBrowserAdapterStore,
         runtimePublicationEvidence:
             ExtensionRuntimePublicationEvidenceIssuer,
-        profileTransition: ExtensionProfileRuntimeTransition
+        profileTransition: ExtensionProfileRuntimeTransition,
+        profileWarmup: ExtensionProfileRuntimeWarmup
     ) {
         self.runtimeLoadStatus = runtimeLoadStatus
         self.profileRuntime = profileRuntime
@@ -61,6 +63,7 @@ final class ExtensionWindowPublicationFactory {
         self.adapterStore = adapterStore
         self.runtimePublicationEvidence = runtimePublicationEvidence
         self.profileTransition = profileTransition
+        self.profileWarmup = profileWarmup
     }
 
     #if DEBUG
@@ -197,7 +200,8 @@ final class ExtensionWindowPublicationFactory {
             ),
             profileSwitcher: ExtensionNormalWindowProfileSwitcher(
                 profiles: bridge.profiles,
-                transition: profileTransition
+                transition: profileTransition,
+                warmup: profileWarmup
             )
         )
         #if DEBUG

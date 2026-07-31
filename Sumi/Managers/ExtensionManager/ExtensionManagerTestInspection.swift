@@ -61,6 +61,7 @@ struct ExtensionManagerTestInspection {
             let loads: ExtensionContextLoadRegistry
             let demand: ExtensionRuntimeDemandCoordinator
             let profileTransition: ExtensionProfileRuntimeTransition
+            let profileWarmup: ExtensionProfileRuntimeWarmup
             let residency: ExtensionContextResidencyOwner
             let loader: ExtensionRuntimeLoader
             let diagnostics: ExtensionRuntimeDiagnostics

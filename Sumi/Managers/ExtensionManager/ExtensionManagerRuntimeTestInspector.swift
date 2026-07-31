@@ -53,6 +53,7 @@
                         loads: f.contexts.contextLoadRegistry,
                         demand: coordination.demandCoordinator,
                         profileTransition: coordination.profileTransition,
+                        profileWarmup: coordination.profileWarmup,
                         residency: coordination.contextResidency,
                         loader: runtimeLoader,
                         diagnostics: f.runtime.diagnostics,

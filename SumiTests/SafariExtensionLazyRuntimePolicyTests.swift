@@ -177,6 +177,73 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
         XCTAssertFalse(inspection.nativeMessaging.hasLoadedWakeOwner)
     }
 
+    func testProfileWarmupSchedulesNoWorkWithoutEnabledExtensions() throws {
+        let container = try makeTestContainer()
+        let profileA = Profile(name: "Warmup Empty A")
+        let profileB = Profile(name: "Warmup Empty B")
+        let fixture = makeSafariExtensionManagerTestFixture(
+            context: container,
+            initialProfile: profileA
+        )
+
+        fixture.manager.moduleBrowserRuntime().publication
+            .switchProfile(profileB)
+
+        XCTAssertTrue(
+            fixture.inspection.contextCoordination.profileWarmup
+                .runtimeTasksForDrain().isEmpty,
+            "No enabled extensions must keep profile activation zero-cost"
+        )
+        XCTAssertEqual(
+            fixture.inspection.contextState.profiles.countLoadedExtensionContexts(),
+            0
+        )
+    }
+
+    func testRepeatedProfileActivationKeepsLatestWarmup() async throws {
+        let container = try makeTestContainer()
+        let profileA = Profile(name: "Warmup A")
+        let profileB = Profile(name: "Warmup B")
+        let fixture = makeSafariExtensionManagerTestFixture(
+            context: container,
+            initialProfile: profileA
+        )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
+
+        let scratchDirectory = try makeScratchDirectory()
+        let installed = try await installUnpackedExtension(
+            manager: manager,
+            scratchDirectory: scratchDirectory,
+            name: "RepeatedWarmupExtension"
+        )
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
+
+        manager.moduleBrowserRuntime().publication.switchProfile(profileB)
+        manager.moduleBrowserRuntime().publication.switchProfile(profileB)
+
+        XCTAssertEqual(
+            inspection.contextCoordination.profileWarmup
+                .runtimeTasksForDrain().count,
+            1,
+            "A repeated activation must replace the stale warm-up, not keep it"
+        )
+
+        await manager.drainExtensionRuntimeTasksForTests()
+
+        XCTAssertTrue(
+            inspection.contextState.profileState.isProfileReady(for: profileB.id)
+        )
+        XCTAssertTrue(
+            inspection.contextState.profiles.contexts(for: profileA.id).isEmpty
+        )
+        XCTAssertEqual(
+            inspection.contextState.profiles.countLoadedExtensionContexts(),
+            1,
+            "Only the latest active profile may retain a warmed context"
+        )
+    }
+
     func testEightProfilesWithOneExtensionCreatesAtMostOneContextUntilUsed() async throws {
         let container = try makeTestContainer()
         var profiles: [Profile] = []

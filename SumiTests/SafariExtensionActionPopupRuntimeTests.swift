@@ -462,6 +462,139 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
         XCTAssertEqual(raindrop?.displayName, "Raindrop")
     }
 
+    func testProfileActivationWarmsEnabledContextsBeforeAnyActionClick() async throws {
+        let container = try makeTestContainer()
+        let profileA = Profile(name: "Warm A")
+        let profileB = Profile(name: "Warm B")
+        let fixture = makeSafariExtensionManagerTestFixture(
+            context: container,
+            initialProfile: profileA
+        )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
+
+        let scratchDirectory = try makeScratchDirectory()
+        let installed = try await installUnpackedExtension(
+            manager: manager,
+            scratchDirectory: scratchDirectory,
+            name: "WarmupExtension"
+        )
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
+
+        manager.moduleBrowserRuntime().publication.switchProfile(profileB)
+        XCTAssertFalse(
+            inspection.contextState.profileState.isProfileReady(for: profileB.id),
+            "Switching to another profile unloads the previous profile's contexts"
+        )
+
+        await manager.drainExtensionRuntimeTasksForTests()
+
+        XCTAssertTrue(
+            inspection.contextState.profileState.isProfileReady(for: profileB.id),
+            "Activating a profile must load its contexts, so the first action "
+                + "click finds a settled runtime instead of loading one itself"
+        )
+    }
+
+    func testFirstPopupActionAfterProfileActivationDoesNotReconcileRuntime()
+        async throws {
+        let container = try makeTestContainer()
+        let profileA = Profile(name: "Popup Warm A")
+        let profileB = Profile(name: "Popup Warm B")
+        let fixture = makeAttachedBrowserFixture(
+            context: container,
+            profile: profileA
+        )
+        fixture.browserManager.profileManager.profiles = [profileA, profileB]
+
+        let scratchDirectory = try makeScratchDirectory()
+        let installed = try await installUnpackedExtension(
+            manager: fixture.manager,
+            scratchDirectory: scratchDirectory,
+            name: "PopupWarmupExtension",
+            packageStyle: .raindropIframePopup
+        )
+        _ = try await fixture.inspection.installation.lifecycle.enable(
+            installed.id
+        )
+
+        fixture.manager.moduleBrowserRuntime().publication
+            .switchProfile(profileB)
+        await fixture.manager.drainExtensionRuntimeTasksForTests()
+        XCTAssertTrue(
+            fixture.inspection.contextState.profileState.isProfileReady(
+                for: profileB.id
+            )
+        )
+
+        let tab = makeVisibleTab(
+            url: URL(string: "https://popup-warm.example/")!,
+            profile: profileB,
+            fixture: fixture
+        )
+        let reconciler = fixture.attachedRuntime.controller.reconciler
+        let reconciliationCountBeforeClick =
+            reconciler.reconciliationRequestCount
+
+        let result = await fixture.inspection.actionSurfaces.invocation.openPopup(
+            extensionID: installed.id,
+            currentTab: tab
+        )
+        await Task.yield()
+        await Task.yield()
+
+        XCTAssertNotEqual(
+            result.blocker,
+            BrowserExtensionActionPopupBlocker.runtimeUnavailable
+        )
+        XCTAssertNotEqual(
+            result.blocker,
+            BrowserExtensionActionPopupBlocker.runtimeLoadFailed
+        )
+        XCTAssertEqual(
+            reconciler.reconciliationRequestCount,
+            reconciliationCountBeforeClick,
+            "The first popup action must not be the event that settles the profile runtime"
+        )
+    }
+
+    func testProfileWarmupSchedulesNoWorkForAnAlreadyResidentProfile() async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Resident Warm")
+        let fixture = makeSafariExtensionManagerTestFixture(
+            context: container,
+            initialProfile: profile
+        )
+        let manager = fixture.manager
+        let inspection = fixture.inspection
+
+        let scratchDirectory = try makeScratchDirectory()
+        let installed = try await installUnpackedExtension(
+            manager: manager,
+            scratchDirectory: scratchDirectory,
+            name: "ResidentWarmupExtension"
+        )
+        _ = try await inspection.installation.lifecycle.enable(installed.id)
+
+        let coordination = inspection.contextCoordination
+        let receipt = coordination.profileTransition.switchProfile(
+            profileID: profile.id
+        )
+        XCTAssertTrue(
+            inspection.contextState.profileState.isProfileReady(for: profile.id)
+        )
+
+        coordination.profileWarmup.warm(profileID: profile.id) {
+            coordination.profileTransition.isCurrent(receipt)
+        }
+        XCTAssertTrue(
+            coordination.profileWarmup.runtimeTasksForDrain().isEmpty,
+            "A resident profile must not allocate warm-up work; this is what "
+                + "stops the reentrant focus published by a runtime load from "
+                + "warming in a loop"
+        )
+    }
+
     private func makeTestContainer() throws -> SumiDatabase {
         try SumiDatabase.inMemory()
     }

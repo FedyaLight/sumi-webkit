@@ -14,6 +14,7 @@ struct ExtensionRuntimeCoordinationPhaseProduct {
     let deferredRuntimeOwners: ExtensionDeferredRuntimeOwnerStore
     let demandCoordinator: ExtensionRuntimeDemandCoordinator
     let profileTransition: ExtensionProfileRuntimeTransition
+    let profileWarmup: ExtensionProfileRuntimeWarmup
 }
 
 @available(macOS 15.5, *)
@@ -133,6 +134,8 @@ extension ExtensionManagerAssembler {
     }
 
     static func assembleRuntimeCoordinationPhase(
+        runtime: ExtensionRuntimeAuthorityFoundation,
+        contexts: ExtensionContextGraphFoundation,
         contextResidency: ExtensionContextResidencyOwner,
         demand: ExtensionRuntimeDemandPhaseProduct,
         profileTransition: ExtensionProfileRuntimeTransition
@@ -141,7 +144,19 @@ extension ExtensionManagerAssembler {
             contextResidency: contextResidency,
             deferredRuntimeOwners: demand.deferredOwners,
             demandCoordinator: demand.coordinator,
-            profileTransition: profileTransition
+            profileTransition: profileTransition,
+            profileWarmup: ExtensionProfileRuntimeWarmup(
+                readiness: ExtensionProfileReadinessProbe(
+                    installedExtensions: contexts.installedExtensions,
+                    profileRuntime: runtime.profileRuntime,
+                    runtimeLifecycle: runtime.lifecycle
+                ),
+                residency: contextResidency,
+                profileRuntime: runtime.profileRuntime,
+                runtimeIsEnabled: { [modules = contexts.moduleRegistry] in
+                    modules.isEnabledForRuntimeBoundary(.extensions)
+                }
+            )
         )
     }
 }

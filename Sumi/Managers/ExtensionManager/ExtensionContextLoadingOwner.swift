@@ -62,6 +62,10 @@ final class ExtensionContextLoadingOwner {
         guard runtimeIsEnabled() else { return }
         guard runtimeAccess.ensureExtensionController(profileID) else { return }
         for record in installedExtensions.enabledRecords {
+            // Cooperative: a caller that warms a profile speculatively cancels
+            // its task when the runtime moves on, and must not keep accruing
+            // residency for a profile that is no longer current.
+            guard Task.isCancelled == false else { return }
             guard runtimeAccess.getExtensionContext(record.id, profileID) == nil
             else { continue }
             do {
@@ -72,6 +76,8 @@ final class ExtensionContextLoadingOwner {
                     from: entity,
                     profileID: profileID
                 )
+            } catch is CancellationError {
+                return
             } catch {
                 ExtensionManager.logger.error(
                     "Failed to load enabled extension \(record.id, privacy: .public) for profile \(profileID.uuidString, privacy: .public): \(error.localizedDescription, privacy: .public)"

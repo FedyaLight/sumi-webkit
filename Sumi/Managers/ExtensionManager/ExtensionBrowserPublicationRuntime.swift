@@ -5,13 +5,16 @@ import Foundation
 struct ExtensionBrowserPublicationRuntime {
     private let events: ExtensionBrowserAttachmentAuthority.BrowserEvents
     private let profiles: ExtensionProfileRuntimeTransition
+    private let warmup: ExtensionProfileRuntimeWarmup
 
     init(
         events: ExtensionBrowserAttachmentAuthority.BrowserEvents,
-        profiles: ExtensionProfileRuntimeTransition
+        profiles: ExtensionProfileRuntimeTransition,
+        warmup: ExtensionProfileRuntimeWarmup
     ) {
         self.events = events
         self.profiles = profiles
+        self.warmup = warmup
     }
 
     func publishWindow(
@@ -28,10 +31,20 @@ struct ExtensionBrowserPublicationRuntime {
         mutationLease: ProfileReferenceMutationLease? = nil
     ) {
         profiles.rememberProfile(profile)
-        profiles.switchProfile(
+        let receipt = profiles.switchProfile(
             profileID: profile.id,
             mutationLease: mutationLease
         )
+        // Load this profile's contexts now, while no popup can be in flight.
+        // Deferring it to the first action click makes that click's own popup
+        // race the load's WebView rebuild and toolbar republication.
+        guard profile.isEphemeral == false else {
+            warmup.cancel()
+            return
+        }
+        warmup.warm(profileID: profile.id) { [profiles] in
+            profiles.isCurrent(receipt)
+        }
     }
 
     func activateTab(_ tab: Tab, previous: Tab?) {

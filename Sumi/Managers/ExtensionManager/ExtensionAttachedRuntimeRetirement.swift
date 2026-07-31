@@ -70,6 +70,7 @@ extension ExtensionBrowserAttachmentAuthority {
             reason: String,
             initialDocumentPreparation:
                 ExtensionInitialDocumentRuntimePreparationOwner?,
+            profileWarmup: ExtensionProfileRuntimeWarmup,
             nativeMessagingOwners: ExtensionDemandScopedNativeMessagingOwners,
             admission: ExtensionRuntimeShutdown.Admission
         ) -> ExtensionRuntimeShutdown.Result {
@@ -91,6 +92,7 @@ extension ExtensionBrowserAttachmentAuthority {
                     activityResources: .init(
                         initialDocumentPreparation:
                             initialDocumentPreparation,
+                        profileWarmup: profileWarmup,
                         deferredTabRegistration:
                             activity.deferredTabRegistration,
                         nativeMessagingWakes: wakes,
@@ -108,6 +110,7 @@ extension ExtensionBrowserAttachmentAuthority {
                 liveWebViews: { _ in [] },
                 activityResources: .init(
                     initialDocumentPreparation: initialDocumentPreparation,
+                    profileWarmup: profileWarmup,
                     deferredTabRegistration: nil,
                     nativeMessagingWakes: wakes,
                     publicationReconciler: nil,

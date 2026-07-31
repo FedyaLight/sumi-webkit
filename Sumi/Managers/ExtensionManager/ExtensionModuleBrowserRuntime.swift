@@ -30,6 +30,7 @@ struct ExtensionModuleBrowserRuntimeFactory {
         requestedTabs: ExtensionBrowserAttachmentAuthority.RequestedTabs,
         browserEvents: ExtensionBrowserAttachmentAuthority.BrowserEvents,
         profileTransition: ExtensionProfileRuntimeTransition,
+        profileWarmup: ExtensionProfileRuntimeWarmup,
         keyboard: ExtensionKeyboardCommandDispatchOwner,
         recentRequests: ExtensionRecentTabRequestHistory,
         deferredRuntimeOwners: ExtensionDeferredRuntimeOwnerStore,
@@ -40,7 +41,8 @@ struct ExtensionModuleBrowserRuntimeFactory {
         self.requestedTabs = requestedTabs
         publication = ExtensionBrowserPublicationRuntime(
             events: browserEvents,
-            profiles: profileTransition
+            profiles: profileTransition,
+            warmup: profileWarmup
         )
         interaction = ExtensionNormalTabInteractionRuntime(
             lifecycle: lifecycle,

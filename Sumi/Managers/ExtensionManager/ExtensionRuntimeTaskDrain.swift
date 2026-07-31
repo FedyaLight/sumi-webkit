@@ -9,6 +9,7 @@ import Foundation
         private let deferredRuntimeOwners: ExtensionDeferredRuntimeOwnerStore
         private let normalTabLifecycle:
             ExtensionBrowserAttachmentAuthority.NormalTabLifecycle
+        private let profileWarmup: ExtensionProfileRuntimeWarmup
         private let nativeMessaging: ExtensionNativeMessagingSessionControl
         private let backgroundRuntimeState: ExtensionBackgroundRuntimeStateOwner
 
@@ -16,11 +17,13 @@ import Foundation
             deferredRuntimeOwners: ExtensionDeferredRuntimeOwnerStore,
             normalTabLifecycle:
                 ExtensionBrowserAttachmentAuthority.NormalTabLifecycle,
+            profileWarmup: ExtensionProfileRuntimeWarmup,
             nativeMessaging: ExtensionNativeMessagingSessionControl,
             backgroundRuntimeState: ExtensionBackgroundRuntimeStateOwner
         ) {
             self.deferredRuntimeOwners = deferredRuntimeOwners
             self.normalTabLifecycle = normalTabLifecycle
+            self.profileWarmup = profileWarmup
             self.nativeMessaging = nativeMessaging
             self.backgroundRuntimeState = backgroundRuntimeState
         }
@@ -32,6 +35,7 @@ import Foundation
                         .loadedInitialDocumentRuntimePreparationOwner?
                         .runtimeTasksForDrain() ?? [])
                     + normalTabLifecycle.runtimeTasksForDrain()
+                    + profileWarmup.runtimeTasksForDrain()
                     + nativeMessaging.runtimeTasksForDrain()
                 let didDrainWakeTask = await backgroundRuntimeState
                     .drainWakeTasksForTests()

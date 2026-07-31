@@ -8,6 +8,7 @@ final class ExtensionRuntimeTermination {
     private let shutdown: ExtensionRuntimeShutdown
     private let browser: ExtensionBrowserAttachmentAuthority.Retirement
     private let deferredOwners: ExtensionDeferredRuntimeOwnerStore
+    private let profileWarmup: ExtensionProfileRuntimeWarmup
     private let nativeMessagingOwners: ExtensionDemandScopedNativeMessagingOwners
     private let surfacePublication: ExtensionManagerSurfacePublication
 
@@ -15,12 +16,14 @@ final class ExtensionRuntimeTermination {
         shutdown: ExtensionRuntimeShutdown,
         browser: ExtensionBrowserAttachmentAuthority.Retirement,
         deferredOwners: ExtensionDeferredRuntimeOwnerStore,
+        profileWarmup: ExtensionProfileRuntimeWarmup,
         nativeMessagingOwners: ExtensionDemandScopedNativeMessagingOwners,
         surfacePublication: ExtensionManagerSurfacePublication
     ) {
         self.shutdown = shutdown
         self.browser = browser
         self.deferredOwners = deferredOwners
+        self.profileWarmup = profileWarmup
         self.nativeMessagingOwners = nativeMessagingOwners
         self.surfacePublication = surfacePublication
     }
@@ -35,6 +38,7 @@ final class ExtensionRuntimeTermination {
             reason: reason,
             initialDocumentPreparation:
                 deferredOwners.loadedInitialDocumentRuntimePreparationOwner,
+            profileWarmup: profileWarmup,
             nativeMessagingOwners: nativeMessagingOwners,
             admission: admission
         )

@@ -147,6 +147,7 @@ extension ExtensionManagerAssembler {
             shutdown: shutdown.shutdown,
             browser: browser.retirement,
             deferredOwners: coordination.deferredRuntimeOwners,
+            profileWarmup: coordination.profileWarmup,
             nativeMessagingOwners: nativeMessaging.owners,
             surfacePublication: actions.surfacePublication
         )

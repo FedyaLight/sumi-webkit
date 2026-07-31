@@ -191,6 +191,7 @@ struct ExtensionInstallationRetirementAssemblyProduct {
 @available(macOS 15.5, *)
 @MainActor
 struct ExtensionManagerAssemblyResult {
+    let profileWarmup: ExtensionProfileRuntimeWarmup
     let controller: ExtensionControllerAssemblyProduct
     let contexts: ExtensionContextLifecycleAssemblyProduct
     let normalTabs: ExtensionNormalTabAssemblyProduct

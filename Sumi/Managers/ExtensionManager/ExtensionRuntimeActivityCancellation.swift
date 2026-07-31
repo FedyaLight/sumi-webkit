@@ -8,6 +8,7 @@ final class ExtensionRuntimeActivityCancellation {
     struct Resources {
         let initialDocumentPreparation:
             ExtensionInitialDocumentRuntimePreparationOwner?
+        let profileWarmup: ExtensionProfileRuntimeWarmup?
         let deferredTabRegistration: ExtensionDeferredTabRegistration?
         let nativeMessagingWakes:
             ExtensionNativeMessagingBackgroundWakeOwner?
@@ -35,6 +36,7 @@ final class ExtensionRuntimeActivityCancellation {
 
     func cancel(reason: String, resources: Resources) {
         loadRegistry.invalidateAll()
+        resources.profileWarmup?.cancel()
         resources.initialDocumentPreparation?
             .cancelContentScriptContextLoadTasks()
         resources.initialDocumentPreparation?

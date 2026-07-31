@@ -17,7 +17,8 @@ enum ExtensionManagerGraphFinalizer {
             adapterStore: f.actions.adapterStore,
             runtimePublicationEvidence:
                 assembled.normalTabs.publicationEvidence,
-            profileTransition: assembled.contexts.profileTransition
+            profileTransition: assembled.contexts.profileTransition,
+            profileWarmup: assembled.profileWarmup
         )
         let normalTabRuntime = ExtensionAttachedNormalTabRuntimeFactory(
             tabPublicationRevisions: f.runtime.tabPublicationRevisions,
@@ -125,6 +126,7 @@ enum ExtensionManagerGraphFinalizer {
             requestedTabs: assembled.normalTabs.requestedTabs,
             browserEvents: f.browser.events,
             profileTransition: assembled.contexts.profileTransition,
+            profileWarmup: assembled.profileWarmup,
             keyboard: assembled.actions.presentation.keyboardCommands,
             recentRequests: f.contexts.recentTabRequests,
             deferredRuntimeOwners: assembled.normalTabs.deferredRuntimeOwners,
@@ -185,6 +187,7 @@ enum ExtensionManagerGraphFinalizer {
                     deferredRuntimeOwners:
                         assembled.normalTabs.deferredRuntimeOwners,
                     normalTabLifecycle: assembled.normalTabs.lifecycle,
+                    profileWarmup: assembled.profileWarmup,
                     nativeMessaging:
                         assembled.controller.nativeMessagingSessions,
                     backgroundRuntimeState:
