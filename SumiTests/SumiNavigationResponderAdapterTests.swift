@@ -751,6 +751,26 @@ extension SumiNavigationResponderTests {
         }
     }
 
+    func testSumiNavigationResponderAdapterDisablesLongDecisionCheckWhileAuthIsPending() async {
+        let target = SuspendingSumiNavigationAuthProbeResponder()
+        let adapter = SumiNavigationResponderAdapter(target: target)
+        let task = Task { @MainActor in
+            await adapter.didReceive(makeAuthenticationChallenge(), for: nil)
+        }
+
+        for _ in 0 ..< 10 where target.didBegin == false {
+            await Task.yield()
+        }
+
+        XCTAssertTrue(target.didBegin)
+        XCTAssertTrue(adapter.shouldDisableLongDecisionMakingChecks)
+
+        target.resume()
+        _ = await task.value
+
+        XCTAssertFalse(adapter.shouldDisableLongDecisionMakingChecks)
+    }
+
     func testSumiNavigationResponderAdapterPassesAuthNavigationContextWhenAvailable() async {
         let target = SumiNavigationAuthProbeResponder(decision: .next)
         let adapter = SumiNavigationResponderAdapter(target: target)
@@ -1056,5 +1076,31 @@ extension SumiNavigationResponderTests {
         XCTAssertActionPolicy(policy, .allow)
         XCTAssertEqual(scriptsProvider.scriptsRevision, 1)
         XCTAssertEqual(observer.observedScriptRevisions, [1])
+    }
+}
+
+@MainActor
+private final class SuspendingSumiNavigationAuthProbeResponder: SumiNavigationAuthChallengeResponding {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private(set) var didBegin = false
+
+    func didReceive(_ authenticationChallenge: URLAuthenticationChallenge) async -> SumiAuthChallengeDisposition? {
+        await didReceive(authenticationChallenge, context: nil)
+    }
+
+    func didReceive(
+        _ authenticationChallenge: URLAuthenticationChallenge,
+        context _: SumiNavigationContext?
+    ) async -> SumiAuthChallengeDisposition? {
+        didBegin = true
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+        return .next
+    }
+
+    func resume() {
+        continuation?.resume()
+        continuation = nil
     }
 }

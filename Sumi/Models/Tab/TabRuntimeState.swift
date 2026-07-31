@@ -258,7 +258,8 @@ struct TabLifecycleNavigationRuntime {
     var enforceSiteDataPolicyAfterNavigation: (Tab) -> Void
     var resolveAuthenticationChallenge: (
         _ challenge: URLAuthenticationChallenge,
-        _ tab: Tab
+        _ tab: Tab,
+        _ webView: WKWebView?
     ) async -> SumiAuthChallengeDisposition?
     var destructiveDataCleanupNavigationWillStart: (
         WKWebView,
@@ -289,7 +290,7 @@ struct TabLifecycleNavigationRuntime {
         loadZoomForTab: { _, _ in /* No-op. */ },
         applyAdblockZapperRulesAfterNavigation: { _, _, _ in /* No-op. */ },
         enforceSiteDataPolicyAfterNavigation: { _ in /* No-op. */ },
-        resolveAuthenticationChallenge: { _, _ in .next },
+        resolveAuthenticationChallenge: { _, _, _ in .next },
         destructiveDataCleanupNavigationWillStart: { _, _, _, _, _ in /* No-op. */ },
         isPreparingForDataCleanupNavigation: { _, _, _ in false },
         finishDestructiveDataCleanupNavigation: { _, _, _, _ in /* No-op. */ },

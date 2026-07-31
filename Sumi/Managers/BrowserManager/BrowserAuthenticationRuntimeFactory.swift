@@ -11,6 +11,9 @@ enum BrowserAuthenticationRuntimeFactory {
                     in: browserManager.shellRuntime.windowTabs.windowState(containing: tab)
                 )
             },
+            presentCertificateTrustWarning: { session, webView in
+                webView?.sumiReaderPresentationHost?.presentCertificateTrustWarning(session) ?? false
+            },
             dismissNativeModalPresentation: { [weak browserManager] in
                 browserManager?.chromeBundle.nativeDialogPresentationOwner.dismissNativeModalPresentation()
             }

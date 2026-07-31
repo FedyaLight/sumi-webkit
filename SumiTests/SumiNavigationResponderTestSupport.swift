@@ -436,7 +436,7 @@ final class RecordingTabLifecycleNavigationRuntime {
             enforceSiteDataPolicyAfterNavigation: { [weak self] tab in
                 self?.siteDataPolicyTabIds.append(tab.id)
             },
-            resolveAuthenticationChallenge: { [weak self] challenge, tab in
+            resolveAuthenticationChallenge: { [weak self] challenge, tab, _ in
                 guard let self else { return .next }
                 authChallengeHosts.append(challenge.protectionSpace.host)
                 authTabIds.append(tab.id)

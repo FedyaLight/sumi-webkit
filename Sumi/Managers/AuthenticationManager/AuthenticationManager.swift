@@ -6,18 +6,51 @@
 
 import AppKit
 import Foundation
+import Security
+import SumiDomain
 import WebKit
 
 @MainActor
 struct AuthenticationManagerRuntime {
     var presentBasicAuthSheet: (BasicAuthSheetSession, Tab) -> Bool
+    var presentCertificateTrustWarning: (CertificateTrustWarningSession, WKWebView?) -> Bool
     var dismissNativeModalPresentation: () -> Void
 }
 
 @MainActor
 final class AuthenticationManager: NSObject {
+    typealias CertificateTrustCompletion = (
+        URLSession.AuthChallengeDisposition,
+        URLCredential?
+    ) -> Void
+
+    private struct CertificateTrustPendingKey: Hashable {
+        let tabID: UUID
+        let siteDomain: String
+    }
+
+    private struct CertificateTrustPendingChallenge {
+        let trust: SecTrust
+        let completion: CertificateTrustCompletion
+    }
+
+    private final class CertificateTrustPendingRequest {
+        let key: CertificateTrustPendingKey
+        var challenges: [CertificateTrustPendingChallenge] = []
+        var session: CertificateTrustWarningSession?
+
+        init(key: CertificateTrustPendingKey) {
+            self.key = key
+        }
+    }
+
     private var runtime: AuthenticationManagerRuntime?
     private let credentialStore: BasicAuthCredentialStore
+    private let siteNormalizer = SumiSiteNormalizer()
+    private var approvedCertificateTrustDomains: [UUID: Set<String>] = [:]
+    private var pendingCertificateTrustRequests: [
+        CertificateTrustPendingKey: CertificateTrustPendingRequest
+    ] = [:]
 
     init(credentialStore: BasicAuthCredentialStore = BasicAuthCredentialStore()) {
         self.credentialStore = credentialStore
@@ -31,7 +64,8 @@ final class AuthenticationManager: NSObject {
     func handleAuthenticationChallenge(
         _ challenge: URLAuthenticationChallenge,
         for tab: Tab,
-        completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
+        webView: WKWebView? = nil,
+        completionHandler: @escaping CertificateTrustCompletion
     ) -> Bool {
         switch challenge.protectionSpace.authenticationMethod {
         case NSURLAuthenticationMethodDefault, NSURLAuthenticationMethodHTTPBasic, NSURLAuthenticationMethodHTTPDigest:
@@ -54,15 +88,74 @@ final class AuthenticationManager: NSObject {
             }
             return true
         case NSURLAuthenticationMethodServerTrust:
-            if let trust = challenge.protectionSpace.serverTrust {
-                var error: CFError?
-                if SecTrustEvaluateWithError(trust, &error) {
-                    completionHandler(.useCredential, URLCredential(trust: trust))
-                } else {
-                    completionHandler(.cancelAuthenticationChallenge, nil)
-                }
-            } else {
+            guard let trust = challenge.protectionSpace.serverTrust else {
                 completionHandler(.performDefaultHandling, nil)
+                return true
+            }
+
+            var error: CFError?
+            if SecTrustEvaluateWithError(trust, &error) {
+                completionHandler(.useCredential, URLCredential(trust: trust))
+                return true
+            }
+
+            let host = challenge.protectionSpace.host.isEmpty
+                ? (tab.url.host ?? "this site")
+                : challenge.protectionSpace.host
+            let siteDomain = siteNormalizer.siteDomain(fromRawDomain: host) ?? host.lowercased()
+            let pendingKey = CertificateTrustPendingKey(
+                tabID: tab.id,
+                siteDomain: siteDomain
+            )
+
+            if isCertificateTrustApproved(for: pendingKey) {
+                completionHandler(.useCredential, URLCredential(trust: trust))
+                return true
+            }
+
+            if let pending = pendingCertificateTrustRequests[pendingKey] {
+                pending.challenges.append(
+                    CertificateTrustPendingChallenge(
+                        trust: trust,
+                        completion: completionHandler
+                    )
+                )
+                return true
+            }
+
+            guard let runtime else {
+                completionHandler(.cancelAuthenticationChallenge, nil)
+                return true
+            }
+
+            let pending = CertificateTrustPendingRequest(key: pendingKey)
+            pending.challenges.append(
+                CertificateTrustPendingChallenge(
+                    trust: trust,
+                    completion: completionHandler
+                )
+            )
+            let session = CertificateTrustWarningSession(
+                host: host,
+                onVisitSite: { [weak self, weak pending] in
+                    guard let self, let pending else { return }
+                    self.completeCertificateTrustRequest(pending, allowing: true)
+                },
+                onClosePage: { [weak self, weak pending, weak tab] in
+                    guard let self, let pending else { return }
+                    self.completeCertificateTrustRequest(pending, allowing: false)
+                    tab?.closeTab()
+                },
+                onCancel: { [weak self, weak pending] in
+                    guard let self, let pending else { return }
+                    self.completeCertificateTrustRequest(pending, allowing: false)
+                }
+            )
+            pending.session = session
+            pendingCertificateTrustRequests[pendingKey] = pending
+
+            if runtime.presentCertificateTrustWarning(session, webView) == false {
+                session.cancel()
             }
             return true
         case NSURLAuthenticationMethodClientCertificate:
@@ -70,6 +163,33 @@ final class AuthenticationManager: NSObject {
             return true
         default:
             return false
+        }
+    }
+
+    private func isCertificateTrustApproved(
+        for key: CertificateTrustPendingKey
+    ) -> Bool {
+        approvedCertificateTrustDomains[key.tabID]?.contains(key.siteDomain) == true
+    }
+
+    private func completeCertificateTrustRequest(
+        _ pending: CertificateTrustPendingRequest,
+        allowing: Bool
+    ) {
+        guard pendingCertificateTrustRequests[pending.key] === pending else { return }
+        pendingCertificateTrustRequests.removeValue(forKey: pending.key)
+
+        if allowing {
+            approvedCertificateTrustDomains[pending.key.tabID, default: []]
+                .insert(pending.key.siteDomain)
+        }
+
+        let disposition: URLSession.AuthChallengeDisposition = allowing
+            ? .useCredential
+            : .cancelAuthenticationChallenge
+        for challenge in pending.challenges {
+            let credential = allowing ? URLCredential(trust: challenge.trust) : nil
+            challenge.completion(disposition, credential)
         }
     }
 

@@ -278,7 +278,7 @@ extension TabLifecycleNavigationRuntime {
                 }
             },
             enforceSiteDataPolicyAfterNavigation: dependencies.enforceSiteDataPolicyAfterNavigation,
-            resolveAuthenticationChallenge: { challenge, tab in
+            resolveAuthenticationChallenge: { challenge, tab, webView in
                 guard let authenticationManager = dependencies.authenticationManager() else {
                     return .next
                 }
@@ -286,7 +286,8 @@ extension TabLifecycleNavigationRuntime {
                 return await withCheckedContinuation { continuation in
                     let handled = authenticationManager.handleAuthenticationChallenge(
                         challenge,
-                        for: tab
+                        for: tab,
+                        webView: webView
                     ) { disposition, credential in
                         switch disposition {
                         case .useCredential:

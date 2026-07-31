@@ -39,6 +39,7 @@ final class SumiTabLifecycleNavigationResponder:
         else { return }
         (webView as? FocusableWKWebView)?
             .resetPageInteractionStateForNavigation()
+        webView.sumiReaderPresentationHost?.dismissCertificateTrustWarning()
         webView.sumiReaderPresentationHost?.dismissReader()
 
         tab.navigationRuntime.lifecycleNavigationRuntime
@@ -473,9 +474,12 @@ final class SumiTabLifecycleNavigationResponder:
 
     func didReceive(
         _ authenticationChallenge: URLAuthenticationChallenge,
-        context _: SumiNavigationContext?
+        context: SumiNavigationContext?
     ) async -> SumiAuthChallengeDisposition? {
-        await sumiAuthChallengeDisposition(for: authenticationChallenge)
+        await sumiAuthChallengeDisposition(
+            for: authenticationChallenge,
+            webView: context?.webView
+        )
     }
 
     func didReceive(_ authenticationChallenge: URLAuthenticationChallenge) async -> SumiAuthChallengeDisposition? {
@@ -483,12 +487,14 @@ final class SumiTabLifecycleNavigationResponder:
     }
 
     private func sumiAuthChallengeDisposition(
-        for authenticationChallenge: URLAuthenticationChallenge
+        for authenticationChallenge: URLAuthenticationChallenge,
+        webView: WKWebView? = nil
     ) async -> SumiAuthChallengeDisposition? {
         guard let tab else { return .next }
         return await tab.navigationRuntime.lifecycleNavigationRuntime.resolveAuthenticationChallenge(
             authenticationChallenge,
-            tab
+            tab,
+            webView
         )
     }
 

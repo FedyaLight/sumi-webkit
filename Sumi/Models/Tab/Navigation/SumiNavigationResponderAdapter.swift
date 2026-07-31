@@ -6,6 +6,7 @@ import SumiDomain
 final class SumiNavigationResponderAdapter: NavigationResponder {
     private weak var target: AnyObject?
     private weak var installedWebView: WKWebView?
+    private var authenticationChallengeWaitCount = 0
 
     init(target: AnyObject) {
         self.target = target
@@ -17,6 +18,10 @@ final class SumiNavigationResponderAdapter: NavigationResponder {
 
     func bind(to webView: WKWebView) {
         installedWebView = webView
+    }
+
+    var shouldDisableLongDecisionMakingChecks: Bool {
+        authenticationChallengeWaitCount > 0
     }
 
     func decidePolicy(
@@ -119,6 +124,8 @@ final class SumiNavigationResponderAdapter: NavigationResponder {
         for navigation: Navigation?
     ) async -> AuthChallengeDisposition? {
         guard let responder = target as? any SumiNavigationAuthChallengeResponding else { return .next }
+        authenticationChallengeWaitCount += 1
+        defer { authenticationChallengeWaitCount -= 1 }
         let decision = await responder.didReceive(
             authenticationChallenge,
             context: navigation.map(SumiNavigationContext.init)

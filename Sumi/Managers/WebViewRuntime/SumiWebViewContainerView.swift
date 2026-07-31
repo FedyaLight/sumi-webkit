@@ -35,6 +35,7 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
     private var preservesDisplayedContentOnNextRemoval = false
     private let overlayScrollChrome = WebContentOverlayScrollChrome()
     private var readerPresentationSession: ReaderPresentationSession?
+    private var certificateTrustWarningView: CertificateTrustWarningView?
     private var presentationObservers: [UUID: (WKWebView) -> Void] = [:]
     private var runtimeEvictionHandler: ((SumiWebViewContainerView) -> Void)?
 
@@ -83,6 +84,9 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
             if subview === readerPresentationSession?.webView {
                 continue
             }
+            if subview === certificateTrustWarningView {
+                continue
+            }
             subview.removeFromSuperview()
         }
         if displayedView.superview !== self {
@@ -90,7 +94,36 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
         }
         overlayScrollChrome.ensureIndicatorAboveContent()
         ensureReaderPresentationAboveContent()
+        ensureCertificateTrustWarningAboveContent()
         recenterFullscreenPlaceholderLabelIfNeeded(displayedView)
+    }
+
+    @discardableResult
+    func presentCertificateTrustWarning(
+        _ session: CertificateTrustWarningSession
+    ) -> Bool {
+        guard certificateTrustWarningView == nil else { return false }
+        let warningView = CertificateTrustWarningView(session: session) { [weak self] warningView in
+            guard self?.certificateTrustWarningView === warningView else { return }
+            self?.certificateTrustWarningView = nil
+        }
+        warningView.translatesAutoresizingMaskIntoConstraints = false
+        certificateTrustWarningView = warningView
+        addSubview(warningView, positioned: .above, relativeTo: nil)
+        NSLayoutConstraint.activate([
+            warningView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            warningView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            warningView.topAnchor.constraint(equalTo: topAnchor),
+            warningView.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+        return true
+    }
+
+    func dismissCertificateTrustWarning() {
+        guard let warningView = certificateTrustWarningView else { return }
+        certificateTrustWarningView = nil
+        warningView.removeFromSuperview()
+        warningView.session.cancel()
     }
 
     @discardableResult
@@ -212,6 +245,7 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
         runtimeEvictionHandler?(self)
         runtimeEvictionHandler = nil
         preservesDisplayedContentOnNextRemoval = false
+        dismissCertificateTrustWarning()
         dismissReader()
         removeFromSuperview()
         if let focusable = retainedWebView as? FocusableWKWebView,
@@ -304,6 +338,7 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
 
     deinit {
         MainActor.assumeIsolated {
+            dismissCertificateTrustWarning()
             dismissReader()
             if let focusable = retainedWebView as? FocusableWKWebView,
                focusable.overlayScrollChrome === overlayScrollChrome {
@@ -337,6 +372,12 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
         guard let readerWebView = readerPresentationSession?.webView,
               readerWebView.superview === self else { return }
         addSubview(readerWebView, positioned: .above, relativeTo: nil)
+    }
+
+    private func ensureCertificateTrustWarningAboveContent() {
+        guard let certificateTrustWarningView,
+              certificateTrustWarningView.superview === self else { return }
+        addSubview(certificateTrustWarningView, positioned: .above, relativeTo: nil)
     }
 
 }
