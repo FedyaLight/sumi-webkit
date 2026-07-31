@@ -11,10 +11,13 @@ struct URLBarExtensionActionContext {
         (UUID?) -> BrowserExtensionToolbarPresentationSnapshot
     let toolbarPresentationSnapshots:
         (UUID?) -> AnyPublisher<BrowserExtensionToolbarPresentationSnapshot, Never>
+    /// `(records, orderedIDs, windowState, profileID)`. The ordered ids come
+    /// from the observed presentation snapshot so a pin, unpin, or reorder is a
+    /// SwiftUI input change rather than an invisible read inside the surface.
     let compactStrip:
-        ([BrowserExtensionToolbarDisplayRecord], BrowserWindowState, UUID?) -> AnyView
+        ([BrowserExtensionToolbarDisplayRecord], [String], BrowserWindowState, UUID?) -> AnyView
     let hubTiles:
-        ([BrowserExtensionToolbarDisplayRecord], BrowserWindowState, UUID?) -> AnyView
+        ([BrowserExtensionToolbarDisplayRecord], [String], BrowserWindowState, UUID?) -> AnyView
     let ensureActionMetadataLoadedIfNeeded: () -> Void
 }
 

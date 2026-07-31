@@ -28,6 +28,11 @@ struct ExtensionActionReorderSurface<Item>: View {
     let axis: ReorderAxis
     let coordinateSpaceName: String
     let onCommit: (ReorderMove<String>) -> Void
+    /// Primary activation for a slot. Delivered by the reorder gesture's tap
+    /// branch rather than a nested `Button`: the gesture is built with
+    /// `minimumDistance: 0` and needs the primary mouse, so a button inside it
+    /// would be a second claimant on the same press.
+    let onActivate: (Item) -> Void
     private let content: (Surface) -> AnyView
     private let overlayContent: (Item) -> AnyView
 
@@ -41,6 +46,7 @@ struct ExtensionActionReorderSurface<Item>: View {
         axis: ReorderAxis,
         coordinateSpaceName: String,
         onCommit: @escaping (ReorderMove<String>) -> Void,
+        onActivate: @escaping (Item) -> Void,
         @ViewBuilder content: @escaping (Surface) -> some View,
         @ViewBuilder overlayContent: @escaping (Item) -> some View
     ) {
@@ -49,6 +55,7 @@ struct ExtensionActionReorderSurface<Item>: View {
         self.axis = axis
         self.coordinateSpaceName = coordinateSpaceName
         self.onCommit = onCommit
+        self.onActivate = onActivate
         self.content = { AnyView(content($0)) }
         self.overlayContent = { AnyView(overlayContent($0)) }
     }
@@ -69,7 +76,8 @@ struct ExtensionActionReorderSurface<Item>: View {
             reorderState: $reorder,
             onBeginDrag: { frames.freeze(order: baseIDs) },
             onEndDrag: { lastDropAt = Date() },
-            onCommit: onCommit
+            onCommit: onCommit,
+            onActivate: onActivate
         )
 
         content(surface)
@@ -83,7 +91,11 @@ struct ExtensionActionReorderSurface<Item>: View {
 
     @ViewBuilder
     private func draggedOverlay(_ items: [Item]) -> some View {
-        if let draggedID = reorder.draggedID,
+        // Only past the drag threshold: below it the inline slot is still
+        // visible (see `ReorderDragState.hidesInlineItem`), so a floating copy
+        // here would double the icon on every plain press.
+        if reorder.isDragging,
+           let draggedID = reorder.draggedID,
            let item = items.first(where: { $0[keyPath: id] == draggedID }),
            let frame = reorder.draggedOverlayFrame() {
             overlayContent(item)
@@ -114,9 +126,17 @@ struct ExtensionActionReorderSurface<Item>: View {
         let onBeginDrag: () -> Void
         let onEndDrag: () -> Void
         let onCommit: (ReorderMove<String>) -> Void
+        let onActivate: (Item) -> Void
 
         func slotID(_ item: Item) -> String {
             item[keyPath: itemID]
+        }
+
+        /// Whether the slot is currently under the pointer with the button
+        /// down, drag threshold crossed or not. Replaces the per-button press
+        /// gesture that used to compete with this one.
+        func isPressed(_ item: Item) -> Bool {
+            reorder.isTrackingDrag && reorder.draggedID == slotID(item)
         }
 
         @ViewBuilder
@@ -127,17 +147,18 @@ struct ExtensionActionReorderSurface<Item>: View {
             let slotID = self.slotID(item)
             content()
                 .opacity(reorder.hidesInlineItem(slotID) ? 0 : 1)
+                .contentShape(Rectangle())
                 .reorderSlotFrame(
                     id: slotID,
                     coordinateSpace: coordinateSpaceName,
                     into: $frames.live
                 )
-                .simultaneousGesture(reorderGesture(for: slotID))
+                .gesture(reorderGesture(for: item))
         }
 
-        private func reorderGesture(for id: String) -> some Gesture {
+        private func reorderGesture(for item: Item) -> some Gesture {
             makeReorderDragGesture(
-                id: id,
+                id: slotID(item),
                 coordinateSpaceName: coordinateSpaceName,
                 isEnabled: { baseIDs.count > 1 },
                 orderedIDs: { baseIDs },
@@ -151,7 +172,11 @@ struct ExtensionActionReorderSurface<Item>: View {
                 state: $reorderState,
                 onBeginDrag: onBeginDrag,
                 onEndDrag: onEndDrag,
-                onCommit: onCommit
+                onCommit: onCommit,
+                onTap: {
+                    guard shouldSuppressActivation() == false else { return }
+                    onActivate(item)
+                }
             )
         }
     }

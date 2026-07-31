@@ -22,9 +22,12 @@ struct SidebarPageInventorySnapshot: Equatable {
     }
 }
 
-private struct SidebarExtensionGridSnapshot: Equatable {
+/// Carries the ordered pinned slot ids, not just their count: a reorder — and
+/// any pin/unpin pair that keeps the count — leaves the count identical, and
+/// `SidebarScopedSnapshotModel` drops every event whose snapshot compares equal.
+struct SidebarExtensionGridSnapshot: Equatable {
     let enabledExtensions: [BrowserExtensionToolbarDisplayRecord]
-    let slotCount: Int
+    let slotIDs: [String]
 }
 
 extension SpacesSideBarView {
@@ -292,49 +295,66 @@ extension SpacesSideBarView {
         allowsInteractiveWork: Bool
     ) -> some View {
         SidebarWindowSelectionSnapshotScope {
-            VStack(spacing: 8) {
-                if includesPinnedGrid && !windowState.isIncognito {
-                    makeSidebarExtensionGrid(
-                        profileId: pageProfileId,
-                        pageRenderMode: pageRenderMode
-                    )
+            // The extension-grid snapshot is read around the whole page rather
+            // than around the grid itself. Below the sidebar-grid threshold the
+            // grid renders nothing, and `SidebarScopedSnapshotReader` installs
+            // its subscription from `onAppear` — which never fires for a view
+            // that produces no node. The reader then sits there holding its
+            // initial value, so the pin that *crosses* the threshold is never
+            // delivered and the grid only appears once the page is rebuilt by a
+            // space switch. Reading at a node that always renders keeps the
+            // subscription alive while the grid is still empty.
+            makeSidebarExtensionGridReader(
+                profileId: pageProfileId,
+                allowsInteractiveWork: allowsInteractiveWork
+            ) { extensionGrid in
+                VStack(spacing: 8) {
+                    if includesPinnedGrid && !windowState.isIncognito {
+                        SpaceSidebarExtensionGridContent(
+                            enabledExtensions: extensionGrid.enabledExtensions,
+                            slotIDs: extensionGrid.slotIDs,
+                            profileId: pageProfileId,
+                            browserContext: browserContext,
+                            allowsInteractiveWork: allowsInteractiveWork
+                        )
 
-                    makePinnedGrid(
-                        spaceId: space.id,
-                        profileId: pageProfileId,
+                        makePinnedGrid(
+                            spaceId: space.id,
+                            profileId: pageProfileId,
+                            inventory: pageInventory.space,
+                            items: pageInventory.essentialPins,
+                            launcherRuntime: launcherRuntime,
+                            isTransitioningProfile: isTransitioningProfile,
+                            pageRenderMode: pageRenderMode
+                        )
+                    }
+
+                    makeSpaceView(
+                        for: space,
                         inventory: pageInventory.space,
-                        items: pageInventory.essentialPins,
                         launcherRuntime: launcherRuntime,
-                        isTransitioningProfile: isTransitioningProfile,
-                        pageRenderMode: pageRenderMode
+                        renderMode: pageRenderMode.spaceRenderMode,
+                        allowsInteraction: pageRenderMode == .interactive && allowsSidebarInteractiveWork
                     )
                 }
-
-                makeSpaceView(
-                    for: space,
-                    inventory: pageInventory.space,
-                    launcherRuntime: launcherRuntime,
-                    renderMode: pageRenderMode.spaceRenderMode,
-                    allowsInteraction: pageRenderMode == .interactive && allowsSidebarInteractiveWork
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .sidebarPageGeometry(
+                    spaceId: space.id,
+                    profileId: pageProfileId,
+                    renderMode: pageRenderMode.geometryRenderMode,
+                    generation: dragGeometry.sidebarGeometryGeneration,
+                    isEnabled: allowsInteractiveWork
                 )
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .sidebarPageGeometry(
-                spaceId: space.id,
-                profileId: pageProfileId,
-                renderMode: pageRenderMode.geometryRenderMode,
-                generation: dragGeometry.sidebarGeometryGeneration,
-                isEnabled: allowsInteractiveWork
-            )
         }
     }
 
     @ViewBuilder
-    func makeSidebarExtensionGrid(
+    fileprivate func makeSidebarExtensionGridReader<Content: View>(
         profileId: UUID?,
-        pageRenderMode: SidebarPageRenderMode
+        allowsInteractiveWork: Bool,
+        @ViewBuilder content: @escaping (SidebarExtensionGridSnapshot) -> Content
     ) -> some View {
-        let allowsInteractiveWork = pageRenderMode == .interactive && allowsSidebarInteractiveWork
         let surfaceStore = browserContext.extensionSurfaceStore
 
         SidebarScopedSnapshotReader(
@@ -346,16 +366,10 @@ extension SpacesSideBarView {
             }
             .eraseToAnyPublisher(),
             areEquivalent: ==,
-            isActive: allowsInteractiveWork
-        ) { snapshot in
-            SpaceSidebarExtensionGridContent(
-                enabledExtensions: snapshot.enabledExtensions,
-                slotCount: snapshot.slotCount,
-                profileId: profileId,
-                browserContext: browserContext,
-                allowsInteractiveWork: allowsInteractiveWork
-            )
-        }
+            sourceIdentity: profileId,
+            isActive: allowsInteractiveWork,
+            content: content
+        )
     }
 
     @ViewBuilder
@@ -427,17 +441,17 @@ extension SpacesSideBarView {
             .toolbarDisplaySnapshot.enabledExtensions
         return SidebarExtensionGridSnapshot(
             enabledExtensions: enabledExtensions,
-            slotCount: browserContext.extensionToolbarActions.orderedPinnedToolbarSlots(
+            slotIDs: browserContext.extensionToolbarActions.orderedPinnedToolbarSlots(
                 enabledExtensions: enabledExtensions,
                 profileID: profileID
-            ).count
+            ).map(\.id)
         )
     }
 }
 
 private struct SpaceSidebarExtensionGridContent: View {
     let enabledExtensions: [BrowserExtensionToolbarDisplayRecord]
-    let slotCount: Int
+    let slotIDs: [String]
     let profileId: UUID?
     let browserContext: SidebarBrowserContext
     let allowsInteractiveWork: Bool
@@ -445,10 +459,11 @@ private struct SpaceSidebarExtensionGridContent: View {
     @Environment(BrowserWindowState.self) private var windowState
 
     var body: some View {
-        if SpaceSidebarChromeBindings.shouldShowSidebarExtensionGrid(slotCount: slotCount) {
+        if SpaceSidebarChromeBindings.shouldShowSidebarExtensionGrid(slotCount: slotIDs.count) {
             ExtensionActionView(
                 extensions: enabledExtensions,
                 layout: .sidebarGrid,
+                orderedExtensionIDs: slotIDs,
                 profileId: profileId,
                 browserContext: ExtensionActionBrowserContext(
                     extensionsModule: browserContext.extensionsModule,

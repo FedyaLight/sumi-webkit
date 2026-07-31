@@ -159,6 +159,47 @@ final class ReorderDragStateTests: XCTestCase {
         XCTAssertFalse(state.consumeSuppressedClick(for: first))
     }
 
+    /// Gestures are built with `minimumDistance: 0`, so tracking begins on the
+    /// first mouse-down sample. The slot must stay visible until the drag
+    /// threshold is crossed: hiding it on press blanks the button on every
+    /// plain click, and any AppKit view hosted inside it (the extension popup
+    /// anchor) would report `alphaValue == 0` when the click resolves.
+    func testPressBelowThresholdKeepsInlineItemVisible() {
+        let first = UUID()
+        let second = UUID()
+        let geometry = makeHorizontalGeometry(itemCount: 2)
+        var state = ReorderDragState<UUID>()
+
+        _ = state.update(
+            id: first,
+            location: CGPoint(x: 16, y: 16),
+            orderedIDs: [first, second],
+            geometry: geometry
+        )
+        XCTAssertTrue(state.isTrackingDrag)
+        XCTAssertFalse(state.isDragging)
+        XCTAssertFalse(state.hidesInlineItem(first))
+
+        _ = state.update(
+            id: first,
+            location: CGPoint(x: 19, y: 16),
+            orderedIDs: [first, second],
+            geometry: geometry
+        )
+        XCTAssertFalse(state.hidesInlineItem(first))
+
+        // Past the threshold the inline slot yields to the floating overlay.
+        _ = state.update(
+            id: first,
+            location: CGPoint(x: 40, y: 16),
+            orderedIDs: [first, second],
+            geometry: geometry
+        )
+        XCTAssertTrue(state.isDragging)
+        XCTAssertTrue(state.hidesInlineItem(first))
+        XCTAssertFalse(state.hidesInlineItem(second))
+    }
+
     func testFinishedDragSuppressesSyntheticClickOnce() {
         let first = UUID()
         let second = UUID()

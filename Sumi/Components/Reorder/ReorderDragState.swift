@@ -123,8 +123,14 @@ struct ReorderDragState<ID: Hashable>: Equatable {
 
     /// Whether the inline slot for `id` should be hidden (it is being dragged
     /// and rendered in the floating overlay instead).
+    ///
+    /// Gated on `isDragging`, not `isTrackingDrag`: gestures are built with
+    /// `minimumDistance: 0`, so tracking begins on the first mouse-down sample.
+    /// Hiding there would blank the slot on every plain click — and any AppKit
+    /// view hosted inside it (an `NSPopover` anchor, say) would report
+    /// `alphaValue == 0` at the moment the click resolves.
     func hidesInlineItem(_ id: ID) -> Bool {
-        isTrackingDrag && draggedID == id
+        isDragging && draggedID == id
     }
 
     /// The items reordered to match the live visual order during a drag, or the

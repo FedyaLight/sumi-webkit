@@ -638,7 +638,12 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
 
         module.pinToToolbar("extension-a", profileId: nil)
         module.unpinFromToolbar("extension-a", profileId: nil)
-        module.movePinnedToolbarSlot(id: "extension-a", to: 0, profileId: nil)
+        module.movePinnedToolbarSlot(
+            id: "extension-a",
+            to: 0,
+            within: ["extension-a"],
+            profileId: nil
+        )
         module.moveUnpinnedExtension(
             id: "extension-a",
             to: 0,
@@ -682,7 +687,12 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
 
         module.pinToToolbar("extension-a", profileId: nil)
         module.unpinFromToolbar("not-pinned", profileId: nil)
-        module.movePinnedToolbarSlot(id: "not-pinned", to: 0, profileId: nil)
+        module.movePinnedToolbarSlot(
+            id: "not-pinned",
+            to: 0,
+            within: ["not-pinned"],
+            profileId: nil
+        )
         module.moveUnpinnedExtension(
             id: "extension-a",
             to: 0,
@@ -692,10 +702,20 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         XCTAssertEqual(exactChanges, 1)
 
         module.pinToToolbar("extension-b", profileId: nil)
-        module.movePinnedToolbarSlot(id: "extension-a", to: 1, profileId: nil)
+        module.movePinnedToolbarSlot(
+            id: "extension-a",
+            to: 1,
+            within: ["extension-a", "extension-b"],
+            profileId: nil
+        )
         XCTAssertEqual(exactChanges, 3)
 
-        module.movePinnedToolbarSlot(id: "extension-a", to: 1, profileId: nil)
+        module.movePinnedToolbarSlot(
+            id: "extension-a",
+            to: 1,
+            within: ["extension-a", "extension-b"],
+            profileId: nil
+        )
         XCTAssertEqual(exactChanges, 3)
 
         module.unpinFromToolbar("extension-a", profileId: nil)
@@ -756,7 +776,12 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
 
         module.pinToToolbar("one", profileId: profileB.id)
         module.pinToToolbar("two", profileId: profileB.id)
-        module.movePinnedToolbarSlot(id: "one", to: 1, profileId: profileB.id)
+        module.movePinnedToolbarSlot(
+            id: "one",
+            to: 1,
+            within: ["one", "two"],
+            profileId: profileB.id
+        )
         module.unpinFromToolbar("two", profileId: profileB.id)
         module.moveUnpinnedExtension(
             id: "hub-one",

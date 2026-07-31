@@ -63,6 +63,7 @@ extension URLBarView {
         if ExtensionActionPlacement.resolve(totalActions: orderedExtensionActionCount) == .urlBar {
             browserContext.extensionActions.compactStrip(
                 extensionDisplayModel.snapshot.enabledExtensions,
+                extensionDisplayModel.snapshot.pinnedExtensionIDs,
                 windowState,
                 extensionToolbarProfileID
             )

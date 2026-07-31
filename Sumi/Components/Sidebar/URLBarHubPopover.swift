@@ -290,6 +290,7 @@ struct URLBarHubPopover: View {
                 currentSiteBoosts: currentSiteBoosts,
                 currentActiveBoostId: currentActiveBoostId,
                 unpinnedEnabledExtensionActions: unpinnedEnabledExtensionActions,
+                unpinnedExtensionIDs: extensionDisplayModel.snapshot.unpinnedExtensionIDs,
                 permissionDependencies: permissionDependencies,
                 readerModeIsActive: readerModeIsActive,
                 bookmarkErrorMessage: bookmarkErrorMessage,

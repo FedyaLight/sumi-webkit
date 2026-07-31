@@ -80,35 +80,66 @@ func extensionActionMenuEntries(
     return entries
 }
 
+/// Whether the extension's action is actionable for the focused tab. Shared by
+/// the button's disabled styling and the surface's tap gate, so a click on a
+/// dimmed icon stays inert now that activation is delivered by the reorder
+/// gesture rather than a `Button` with `.disabled`.
+@available(macOS 15.5, *)
+@MainActor
+func extensionActionIsEnabled(
+    _ ext: BrowserExtensionToolbarDisplayRecord,
+    browserContext: ExtensionActionBrowserContext
+) -> Bool {
+    guard let tab = browserContext.currentTab(),
+          browserContext.windowState.currentTabId == tab.id,
+          let target = browserContext.extensionsModule.actionPresentationTarget(
+              extensionID: ext.id,
+              tab: tab,
+              window: browserContext.windowState
+          ),
+          let snapshot = browserContext.extensionsModule
+              .actionPresentationSnapshot(for: target)
+    else {
+        return true
+    }
+    return snapshot.isEnabled != false
+}
+
 @available(macOS 15.5, *)
 struct ExtensionActionButton: View {
     let ext: BrowserExtensionToolbarDisplayRecord
     var layout: ExtensionActionLayout = .compactStrip
     var profileId: UUID?
     let browserContext: ExtensionActionBrowserContext
-    /// When it returns true, a just-completed reorder drag suppresses the
-    /// synthetic click so dragging the icon does not also open its popup.
-    var suppressActivation: (() -> Bool)?
+    /// Press state, owned by the enclosing reorder surface. The button used to
+    /// track this with its own `DragGesture(minimumDistance: 0)`, which was a
+    /// third claimant on a press the reorder gesture already tracks.
+    var isPressed: Bool = false
+    /// Assistive-technology activation. The pointer path runs through the
+    /// enclosing reorder gesture, which VoiceOver cannot drive, so the same
+    /// action is published here as an accessibility action.
+    var onActivate: () -> Void = {}
     private let iconCache: ExtensionIconCache
     @StateObject private var actionModel: BrowserExtensionActionButtonModel
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.chromeThemeTokens) private var scopedChromeTokens
     @State private var isHovering: Bool = false
-    @State private var isPressed = false
 
     init(
         ext: BrowserExtensionToolbarDisplayRecord,
         layout: ExtensionActionLayout = .compactStrip,
         profileId: UUID? = nil,
         browserContext: ExtensionActionBrowserContext,
-        suppressActivation: (() -> Bool)? = nil
+        isPressed: Bool = false,
+        onActivate: @escaping () -> Void = {}
     ) {
         self.ext = ext
         self.layout = layout
         self.profileId = profileId
         self.browserContext = browserContext
-        self.suppressActivation = suppressActivation
+        self.isPressed = isPressed
+        self.onActivate = onActivate
         let surfaceStore = browserContext.extensionsModule.surfaceStore
         iconCache = surfaceStore.iconCache
         _actionModel = StateObject(
@@ -126,38 +157,26 @@ struct ExtensionActionButton: View {
     }
 
     var body: some View {
-        Group {
-            // A plain SwiftUI Button on every surface: the reorder drag gesture
-            // (attached by the enclosing strip/grid) needs the primary mouse,
-            // so no surface may use AppKit primary-mouse tracking.
-            Button(action: {
-                showExtensionPopup()
-            }) {
-                buttonLabel
+        // Deliberately not a `Button`: the enclosing strip/grid owns a
+        // `minimumDistance: 0` reorder gesture that needs the primary mouse and
+        // delivers activation through its tap branch. A button here would be a
+        // second claimant on the same press. Enablement is enforced at that tap
+        // gate via `extensionActionIsEnabled`.
+        buttonLabel
+            .help(actionTitle)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(actionTitle)
+            .accessibilityIdentifier("extension-action-\(ext.id)")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { onActivate() }
+            .opacity(actionState.isEnabled == false ? 0.55 : 1)
+            .sidebarHover($isHovering)
+            .task(id: actionPresentationTarget) {
+                actionModel.setTarget(actionPresentationTarget)
             }
-            .buttonStyle(.plain)
-        }
-        .help(actionTitle)
-        .accessibilityLabel(actionTitle)
-        .accessibilityIdentifier("extension-action-\(ext.id)")
-        .disabled(actionState.isEnabled == false)
-        .opacity(actionState.isEnabled == false ? 0.55 : 1)
-        .sidebarHover($isHovering)
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in
-                    isPressed = true
-                }
-                .onEnded { _ in
-                    isPressed = false
-                }
-        )
-        .task(id: actionPresentationTarget) {
-            actionModel.setTarget(actionPresentationTarget)
-        }
-        .onDisappear {
-            actionModel.setTarget(nil)
-        }
+            .onDisappear {
+                actionModel.setTarget(nil)
+            }
     }
 
     private var buttonLabel: some View {
@@ -334,20 +353,6 @@ struct ExtensionActionButton: View {
             return 1.03
         }
         return 1
-    }
-
-    private func showExtensionPopup() {
-        guard suppressActivation?() != true else { return }
-        Task { @MainActor in
-            await actionPresentationContext.presentActionPopup(for: ext)
-        }
-    }
-
-    private var actionPresentationContext: ExtensionActionPresentationContext {
-        ExtensionActionPresentationContext(
-            browserContext: browserContext,
-            profileId: profileId
-        )
     }
 }
 @available(macOS 15.5, *)

@@ -95,20 +95,48 @@ final class ExtensionToolbarPinningOwner {
         return persistPinnedToolbarExtensionIDsByProfile()
     }
 
-    /// Move an already-pinned slot to a new index within the pinned order. The
-    /// target index is interpreted against the array with the moved slot
-    /// removed, matching `ReorderMove.targetIndex`.
+    /// Move an already-pinned slot to a new index within `displayedOrder` — the
+    /// slot ids the surface actually rendered — and splice the result back into
+    /// the persisted order. The target index is interpreted against the
+    /// displayed list with the moved slot removed, matching
+    /// `ReorderMove.targetIndex`.
+    ///
+    /// The displayed list is a subset of the persisted one: `orderedPinnedToolbarSlots`
+    /// drops pinned ids whose extension is disabled or has no action, and the
+    /// compact URL-bar strip truncates further. Applying a display-space index
+    /// straight to the persisted array would land the slot in the wrong place,
+    /// so the move is anchored to a displayed neighbour instead, leaving every
+    /// filtered-out id where it was.
     @discardableResult
     func movePinnedToolbarSlot(
         id: String,
         to targetIndex: Int,
+        within displayedOrder: [String],
         profileId: UUID?
     ) -> Bool {
         updatePinnedToolbarExtensionIDs(profileId: profileId) { ids in
-            guard let from = ids.firstIndex(of: id) else { return }
-            let slot = ids.remove(at: from)
-            let clamped = min(max(targetIndex, 0), ids.count)
-            ids.insert(slot, at: clamped)
+            guard ids.contains(id) else { return }
+
+            let displayed = Self.normalizedPinnedToolbarExtensionIDs(displayedOrder)
+                .filter { ids.contains($0) }
+            let remaining = displayed.filter { $0 != id }
+            let clamped = min(max(targetIndex, 0), remaining.count)
+
+            ids.removeAll { $0 == id }
+
+            let insertionIndex: Int
+            if clamped < remaining.count {
+                // Land immediately before the displayed slot now occupying the
+                // target position.
+                insertionIndex = ids.firstIndex(of: remaining[clamped]) ?? ids.count
+            } else if let trailing = remaining.last {
+                // Past the last displayed slot: land immediately after it.
+                insertionIndex = ids.firstIndex(of: trailing).map { $0 + 1 } ?? ids.count
+            } else {
+                insertionIndex = ids.count
+            }
+
+            ids.insert(id, at: min(insertionIndex, ids.count))
         }
     }
 

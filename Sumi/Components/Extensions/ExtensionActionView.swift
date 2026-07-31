@@ -114,6 +114,10 @@ final class ExtensionIconCache {
 struct ExtensionActionView: View {
     let extensions: [BrowserExtensionToolbarDisplayRecord]
     var layout: ExtensionActionLayout = .compactStrip
+    /// Display order for the surface: pinned slot ids for the strip and grid,
+    /// unpinned tile ids for the hub. Passed in rather than read back from the
+    /// module so SwiftUI can see it change.
+    var orderedExtensionIDs: [String] = []
     var visibleActionLimit: Int?
     var profileId: UUID?
     let browserContext: ExtensionActionBrowserContext
@@ -123,6 +127,7 @@ struct ExtensionActionView: View {
         case .compactStrip:
             CompactExtensionActionStrip(
                 extensions: extensions,
+                pinnedExtensionIDs: orderedExtensionIDs,
                 visibleActionLimit: visibleActionLimit,
                 profileId: profileId,
                 browserContext: browserContext
@@ -130,12 +135,14 @@ struct ExtensionActionView: View {
         case .sidebarGrid:
             SidebarExtensionActionGrid(
                 extensions: extensions,
+                pinnedExtensionIDs: orderedExtensionIDs,
                 profileId: profileId,
                 browserContext: browserContext
             )
         case .hubTiles:
             HubExtensionTilesGrid(
                 extensions: extensions,
+                unpinnedExtensionIDs: orderedExtensionIDs,
                 profileId: profileId,
                 browserContext: browserContext
             )

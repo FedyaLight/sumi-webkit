@@ -147,17 +147,22 @@ struct ExtensionActionPresentationContext {
         browserContext.openSettingsTab(.extensions)
     }
 
+    // Pin state is keyed by profile, and a `nil` key is not "the current
+    // profile" — it is a distinct `__global__` bucket. Writing there while the
+    // reading surfaces are scoped to a real profile hides the pin *and* makes
+    // the `.profile(nil)` layout event match no subscriber, so nothing
+    // refreshes. Resolve through the same ladder the options page uses.
     func pinToToolbar(extensionId: String) {
         browserContext.extensionsModule.pinToToolbar(
             extensionId,
-            profileId: profileId
+            profileId: extensionActionProfileId
         )
     }
 
     func unpinFromToolbar(extensionId: String) {
         browserContext.extensionsModule.unpinFromToolbar(
             extensionId,
-            profileId: profileId
+            profileId: extensionActionProfileId
         )
     }
 

@@ -58,11 +58,13 @@ final class SumiExtensionToolbarSiteAccessOwner {
     func movePinnedToolbarSlot(
         id: String,
         to targetIndex: Int,
+        within currentOrder: [String],
         profileId: UUID?
     ) -> Bool {
         runtimeIfEnabled()?.ordering.movePinned(
             id: id,
             to: targetIndex,
+            within: currentOrder,
             profileID: profileId
         ) ?? false
     }

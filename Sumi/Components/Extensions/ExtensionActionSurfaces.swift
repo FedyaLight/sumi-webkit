@@ -1,10 +1,18 @@
 import AppKit
 import SwiftUI
 
+// Every surface here takes its display order as a plain stored property rather
+// than reading it back out of `SumiExtensionsModule` inside `body`. The pinning
+// store is not observable, so an imperative read is invisible to SwiftUI: with
+// unchanged inputs the body is never re-evaluated and a pin, unpin, or reorder
+// stays on screen in its pre-change order until something else (historically, a
+// space switch) rebuilds the subtree.
 
 @available(macOS 15.5, *)
 struct HubExtensionTilesGrid: View {
     let extensions: [BrowserExtensionToolbarDisplayRecord]
+    /// Display order of the unpinned tiles, resolved by the caller.
+    let unpinnedExtensionIDs: [String]
     let profileId: UUID?
     let browserContext: ExtensionActionBrowserContext
 
@@ -26,35 +34,44 @@ struct HubExtensionTilesGrid: View {
                     profileId: profileId
                 )
             },
+            onActivate: { ext in
+                activate(ext)
+            },
             content: { surface in
                 LazyVGrid(columns: columns, alignment: .leading, spacing: Self.spacing) {
                     ForEach(surface.displayed, id: \.id) { ext in
                         surface.slot(ext) {
-                            tileView(
-                                ext,
-                                suppressActivation: surface.shouldSuppressActivation
-                            )
+                            tileView(ext, isPressed: surface.isPressed(ext))
                         }
                         .sumiAppKitContextMenu(entries: { menuEntries(for: ext) })
                     }
                 }
             },
             overlayContent: { ext in
-                tileView(ext, suppressActivation: nil)
+                tileView(ext, isPressed: false)
             }
         )
     }
 
     private func tileView(
         _ ext: BrowserExtensionToolbarDisplayRecord,
-        suppressActivation: (() -> Bool)?
+        isPressed: Bool
     ) -> some View {
         ExtensionActionButton(
             ext: ext,
             layout: .hubTiles,
             profileId: profileId,
             browserContext: browserContext,
-            suppressActivation: suppressActivation
+            isPressed: isPressed,
+            onActivate: { activate(ext) }
+        )
+    }
+
+    private func activate(_ ext: BrowserExtensionToolbarDisplayRecord) {
+        presentActionPopup(
+            for: ext,
+            browserContext: browserContext,
+            profileId: profileId
         )
     }
 
@@ -79,20 +96,26 @@ struct HubExtensionTilesGrid: View {
     }
 
     private var hubExtensions: [BrowserExtensionToolbarDisplayRecord] {
-        extensions.filter { $0.isEnabled && $0.hasAction }
+        let eligible = extensions.filter { $0.isEnabled && $0.hasAction }
+        return orderedExtensions(eligible, by: unpinnedExtensionIDs)
     }
 }
+
 @available(macOS 15.5, *)
 struct SidebarExtensionActionGrid: View {
     let extensions: [BrowserExtensionToolbarDisplayRecord]
+    /// Ordered ids of the pinned toolbar slots, resolved by the caller.
+    let pinnedExtensionIDs: [String]
     let profileId: UUID?
     let browserContext: ExtensionActionBrowserContext
+    @Environment(\.sidebarPresentationContext) private var sidebarPresentationContext
     private static let gridSpacing: CGFloat = 8
     private static let coordinateSpaceName = "sidebar-extension-reorder"
 
     var body: some View {
+        let slots = pinnedSlots
         ExtensionActionReorderSurface(
-            base: pinnedSlots,
+            base: slots,
             id: \.id,
             axis: .horizontal,
             coordinateSpaceName: Self.coordinateSpaceName,
@@ -100,8 +123,12 @@ struct SidebarExtensionActionGrid: View {
                 browserContext.extensionsModule.movePinnedToolbarSlot(
                     id: move.id,
                     to: move.targetIndex,
+                    within: slots.map(\.id),
                     profileId: profileId
                 )
+            },
+            onActivate: { slot in
+                activate(slot)
             },
             content: { surface in
                 LazyVGrid(
@@ -111,10 +138,7 @@ struct SidebarExtensionActionGrid: View {
                 ) {
                     ForEach(surface.displayed) { slot in
                         surface.slot(slot) {
-                            slotView(
-                                slot,
-                                suppressActivation: surface.shouldSuppressActivation
-                            )
+                            slotView(slot, isPressed: surface.isPressed(slot))
                         }
                         // Inside the sidebar, the background/column owns an AppKit
                         // context menu that competes for right-clicks through the
@@ -124,9 +148,18 @@ struct SidebarExtensionActionGrid: View {
                         // `sidebarAppKitContextMenu` (right-click only, no primary
                         // action) so this slot registers as an AppKit owner and wins
                         // the right-click while still passing the primary mouse to
-                        // the SwiftUI button and reorder drag.
+                        // the SwiftUI reorder gesture.
+                        //
+                        // In collapsed-overlay mode there is no such primary mouse to
+                        // pass: `CollapsedSidebarOverlayRootView` converts every hit
+                        // that lands on the bare hosting view into a window drag, so a
+                        // pure-SwiftUI control there is click-dead. Claim the press
+                        // with a release action in that mode only — it costs
+                        // drag-to-reorder while the sidebar is collapsed, which never
+                        // worked there anyway, and buys back activation.
                         .sidebarAppKitContextMenu(
                             surfaceKind: .button,
+                            releaseAction: overlayReleaseAction(for: slot),
                             entries: { menuEntries(for: slot) }
                         )
                     }
@@ -135,7 +168,7 @@ struct SidebarExtensionActionGrid: View {
                 .accessibilityIdentifier("sidebar-extension-action-grid")
             },
             overlayContent: { slot in
-                slotView(slot, suppressActivation: nil)
+                slotView(slot, isPressed: false)
             }
         )
     }
@@ -143,7 +176,7 @@ struct SidebarExtensionActionGrid: View {
     @ViewBuilder
     private func slotView(
         _ slot: PinnedToolbarSlot,
-        suppressActivation: (() -> Bool)?
+        isPressed: Bool
     ) -> some View {
         switch slot {
         case .webExtension(let ext):
@@ -152,9 +185,30 @@ struct SidebarExtensionActionGrid: View {
                 layout: .sidebarGrid,
                 profileId: profileId,
                 browserContext: browserContext,
-                suppressActivation: suppressActivation
+                isPressed: isPressed,
+                onActivate: { activate(slot) }
             )
         }
+    }
+
+    private func activate(_ slot: PinnedToolbarSlot) {
+        switch slot {
+        case .webExtension(let ext):
+            presentActionPopup(
+                for: ext,
+                browserContext: browserContext,
+                profileId: profileId
+            )
+        }
+    }
+
+    private func overlayReleaseAction(
+        for slot: PinnedToolbarSlot
+    ) -> (() -> Void)? {
+        guard sidebarPresentationContext.inputMode == .collapsedOverlay else {
+            return nil
+        }
+        return { activate(slot) }
     }
 
     private func menuEntries(for slot: PinnedToolbarSlot) -> [SidebarContextMenuEntry] {
@@ -182,14 +236,10 @@ struct SidebarExtensionActionGrid: View {
         )
     }
 
-    private var enabledExtensions: [BrowserExtensionToolbarDisplayRecord] {
-        extensions.filter { $0.isEnabled }
-    }
-
     private var pinnedSlots: [PinnedToolbarSlot] {
-        browserContext.extensionsModule.orderedPinnedToolbarSlots(
-            enabledExtensions: enabledExtensions,
-            profileId: profileId
+        pinnedToolbarSlots(
+            ids: pinnedExtensionIDs,
+            enabledExtensions: extensions
         )
     }
 }
@@ -197,6 +247,8 @@ struct SidebarExtensionActionGrid: View {
 @available(macOS 15.5, *)
 struct CompactExtensionActionStrip: View {
     let extensions: [BrowserExtensionToolbarDisplayRecord]
+    /// Ordered ids of the pinned toolbar slots, resolved by the caller.
+    let pinnedExtensionIDs: [String]
     let visibleActionLimit: Int?
     let profileId: UUID?
     let browserContext: ExtensionActionBrowserContext
@@ -204,8 +256,9 @@ struct CompactExtensionActionStrip: View {
     private static let coordinateSpaceName = "compact-extension-reorder"
 
     var body: some View {
+        let slots = visiblePinnedSlots
         ExtensionActionReorderSurface(
-            base: visiblePinnedSlots,
+            base: slots,
             id: \.id,
             axis: .horizontal,
             coordinateSpaceName: Self.coordinateSpaceName,
@@ -213,24 +266,25 @@ struct CompactExtensionActionStrip: View {
                 browserContext.extensionsModule.movePinnedToolbarSlot(
                     id: move.id,
                     to: move.targetIndex,
+                    within: slots.map(\.id),
                     profileId: profileId
                 )
+            },
+            onActivate: { slot in
+                activate(slot)
             },
             content: { surface in
                 HStack(spacing: 4) {
                     ForEach(surface.displayed) { slot in
                         surface.slot(slot) {
-                            slotView(
-                                slot,
-                                suppressActivation: surface.shouldSuppressActivation
-                            )
+                            slotView(slot, isPressed: surface.isPressed(slot))
                         }
                         .sumiAppKitContextMenu(entries: { menuEntries(for: slot) })
                     }
                 }
             },
             overlayContent: { slot in
-                slotView(slot, suppressActivation: nil)
+                slotView(slot, isPressed: false)
             }
         )
     }
@@ -238,7 +292,7 @@ struct CompactExtensionActionStrip: View {
     @ViewBuilder
     private func slotView(
         _ slot: PinnedToolbarSlot,
-        suppressActivation: (() -> Bool)?
+        isPressed: Bool
     ) -> some View {
         switch slot {
         case .webExtension(let ext):
@@ -247,7 +301,19 @@ struct CompactExtensionActionStrip: View {
                 layout: .compactStrip,
                 profileId: profileId,
                 browserContext: browserContext,
-                suppressActivation: suppressActivation
+                isPressed: isPressed,
+                onActivate: { activate(slot) }
+            )
+        }
+    }
+
+    private func activate(_ slot: PinnedToolbarSlot) {
+        switch slot {
+        case .webExtension(let ext):
+            presentActionPopup(
+                for: ext,
+                browserContext: browserContext,
+                profileId: profileId
             )
         }
     }
@@ -266,22 +332,74 @@ struct CompactExtensionActionStrip: View {
         }
     }
 
-    private var enabledExtensions: [BrowserExtensionToolbarDisplayRecord] {
-        extensions.filter { $0.isEnabled }
-    }
-
     private var compactLimit: Int {
         visibleActionLimit ?? Int.max
     }
 
-    private var pinnedSlots: [PinnedToolbarSlot] {
-        browserContext.extensionsModule.orderedPinnedToolbarSlots(
-            enabledExtensions: enabledExtensions,
-            profileId: profileId
+    private var visiblePinnedSlots: [PinnedToolbarSlot] {
+        Array(
+            pinnedToolbarSlots(
+                ids: pinnedExtensionIDs,
+                enabledExtensions: extensions
+            )
+            .prefix(compactLimit)
         )
     }
+}
 
-    private var visiblePinnedSlots: [PinnedToolbarSlot] {
-        Array(pinnedSlots.prefix(compactLimit))
+// MARK: - Shared display projection
+
+/// The pinned slots for `ids`, in that order, keeping only ids whose extension
+/// is present, enabled, and has an action. Mirrors
+/// `ExtensionToolbarPinningOwner.orderedPinnedToolbarSlots` so a surface can
+/// project the ids it was handed without reaching back into the module.
+@available(macOS 15.5, *)
+func pinnedToolbarSlots(
+    ids: [String],
+    enabledExtensions: [BrowserExtensionToolbarDisplayRecord]
+) -> [PinnedToolbarSlot] {
+    let eligibleByID = Dictionary(
+        enabledExtensions
+            .filter { $0.isEnabled && $0.hasAction }
+            .map { ($0.id, $0) },
+        uniquingKeysWith: { first, _ in first }
+    )
+    return ids.compactMap { id in
+        eligibleByID[id].map(PinnedToolbarSlot.webExtension)
+    }
+}
+
+/// `extensions` reordered to match `order`; anything `order` does not mention
+/// keeps its incoming relative position at the end.
+@available(macOS 15.5, *)
+func orderedExtensions(
+    _ extensions: [BrowserExtensionToolbarDisplayRecord],
+    by order: [String]
+) -> [BrowserExtensionToolbarDisplayRecord] {
+    let byID = Dictionary(
+        extensions.map { ($0.id, $0) },
+        uniquingKeysWith: { first, _ in first }
+    )
+    let ordered = order.compactMap { byID[$0] }
+    let orderedIDs = Set(ordered.map(\.id))
+    return ordered + extensions.filter { !orderedIDs.contains($0.id) }
+}
+
+@available(macOS 15.5, *)
+@MainActor
+private func presentActionPopup(
+    for ext: BrowserExtensionToolbarDisplayRecord,
+    browserContext: ExtensionActionBrowserContext,
+    profileId: UUID?
+) {
+    guard extensionActionIsEnabled(ext, browserContext: browserContext) else {
+        return
+    }
+    Task { @MainActor in
+        await ExtensionActionPresentationContext(
+            browserContext: browserContext,
+            profileId: profileId
+        )
+        .presentActionPopup(for: ext)
     }
 }

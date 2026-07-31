@@ -29,17 +29,19 @@ final class BrowserURLBarExtensionActionContextOwner {
             toolbarPresentationSnapshots: { [extensions] profileID in
                 extensions.toolbarPresentationSnapshots(profileID: profileID)
             },
-            compactStrip: { [weak self] extensions, windowState, profileID in
+            compactStrip: { [weak self] extensions, orderedIDs, windowState, profileID in
                 self?.view(
                     extensions,
+                    orderedIDs: orderedIDs,
                     layout: .compactStrip,
                     windowState: windowState,
                     profileID: profileID
                 ) ?? AnyView(EmptyView())
             },
-            hubTiles: { [weak self] extensions, windowState, profileID in
+            hubTiles: { [weak self] extensions, orderedIDs, windowState, profileID in
                 self?.view(
                     extensions,
+                    orderedIDs: orderedIDs,
                     layout: .hubTiles,
                     windowState: windowState,
                     profileID: profileID
@@ -53,6 +55,7 @@ final class BrowserURLBarExtensionActionContextOwner {
 
     private func view(
         _ records: [BrowserExtensionToolbarDisplayRecord],
+        orderedIDs: [String],
         layout: ExtensionActionLayout,
         windowState: BrowserWindowState,
         profileID: UUID?
@@ -61,6 +64,7 @@ final class BrowserURLBarExtensionActionContextOwner {
             ExtensionActionView(
                 extensions: records,
                 layout: layout,
+                orderedExtensionIDs: orderedIDs,
                 profileId: profileID,
                 browserContext: ExtensionActionBrowserContext(
                     extensionsModule: extensions,

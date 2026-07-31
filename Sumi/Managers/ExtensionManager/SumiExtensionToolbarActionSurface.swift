@@ -98,11 +98,17 @@ final class SumiExtensionToolbarActionSurface {
         )
     }
 
-    func movePinnedToolbarSlot(id: String, to index: Int, profileID: UUID?) {
+    func movePinnedToolbarSlot(
+        id: String,
+        to index: Int,
+        within order: [String],
+        profileID: UUID?
+    ) {
         publishToolbarLayoutIfChanged(
             siteAccess.movePinnedToolbarSlot(
                 id: id,
                 to: index,
+                within: order,
                 profileId: profileID
             ),
             profileID: profileID
@@ -364,11 +370,13 @@ extension SumiExtensionsModule {
     func movePinnedToolbarSlot(
         id: String,
         to targetIndex: Int,
+        within currentOrder: [String],
         profileId: UUID?
     ) {
         toolbarActions.movePinnedToolbarSlot(
             id: id,
             to: targetIndex,
+            within: currentOrder,
             profileID: profileId
         )
     }

@@ -157,6 +157,38 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
         XCTAssertTrue(lifecycle.availableSpaces(isIncognito: false, ephemeralSpaces: []).isEmpty)
     }
 
+    /// A model only subscribes from `setActive(true)`, which the reader view
+    /// calls from `onAppear`. A reader whose content renders no node never gets
+    /// that callback, so it sits on its initial value forever — which is how
+    /// the sidebar extension grid stayed empty past the point where a third pin
+    /// should have made it appear. Readers must therefore be mounted at a node
+    /// that always renders, not around conditionally-empty content.
+    func testNeverActivatedScopedSnapshotModelKeepsItsInitialValue() {
+        let snapshots = PassthroughSubject<Int, Never>()
+        let probe = SidebarSubscriptionProbe()
+        var currentSnapshot = 2
+
+        let model = SidebarScopedSnapshotModel<Int>(
+            current: { currentSnapshot },
+            changes: tracked(
+                snapshots.eraseToAnyPublisher(),
+                probe: probe
+            )
+        )
+        XCTAssertEqual(model.snapshot, 2)
+        XCTAssertEqual(probe.subscriptions, 0)
+
+        // The mutation that crosses the visibility threshold.
+        currentSnapshot = 3
+        snapshots.send(currentSnapshot)
+        XCTAssertEqual(model.snapshot, 2)
+
+        // Activating catches the model up, the way rebuilding the page did.
+        model.setActive(true)
+        XCTAssertEqual(probe.subscriptions, 1)
+        XCTAssertEqual(model.snapshot, 3)
+    }
+
     func testScopedSnapshotModelCatchesUpBeforeResubscribingAfterHiddenMutation() throws {
         let snapshots = PassthroughSubject<Int, Never>()
         let probe = SidebarSubscriptionProbe()

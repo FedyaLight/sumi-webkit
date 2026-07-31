@@ -244,7 +244,11 @@ struct SpacesList: View {
 
     @ViewBuilder
     private func draggedSpaceOverlay(spaces: [Space]) -> some View {
-        if let draggedSpaceId = reorderState.draggedID,
+        // Only past the drag threshold: below it the inline item is still
+        // visible (see `ReorderDragState.hidesInlineItem`), so a floating copy
+        // here would double the icon on every plain press.
+        if reorderState.isDragging,
+           let draggedSpaceId = reorderState.draggedID,
            let draggedSpace = spaces.first(where: { $0.id == draggedSpaceId }),
            let frame = reorderState.draggedOverlayFrame() {
             SpacesListItem(

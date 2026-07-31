@@ -46,11 +46,13 @@ struct ExtensionToolbarOrderingRuntime {
     func movePinned(
         id: String,
         to targetIndex: Int,
+        within currentOrder: [String],
         profileID: UUID?
     ) -> Bool {
         pinning.movePinnedToolbarSlot(
             id: id,
             to: targetIndex,
+            within: currentOrder,
             profileId: profileID
         )
     }
