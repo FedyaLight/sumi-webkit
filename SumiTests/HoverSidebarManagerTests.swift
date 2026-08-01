@@ -157,6 +157,52 @@ final class HoverSidebarManagerTests: XCTestCase {
         XCTAssertEqual(harness.manager.overlayHostLifecycleState, .retainedHidden)
     }
 
+    func testPinnedTransientRevealsAgainAfterFocusReturns() async {
+        let harness = makePointerRevealHarness {
+            CGPoint(x: 650, y: 300)
+        }
+        defer {
+            harness.windowRegistry.unregister(harness.windowState.id)
+        }
+
+        let source = harness.windowState.sidebarTransientSessionCoordinator.preparedPresentationSource(
+            window: harness.appKitWindow
+        )
+        let token = harness.windowState.sidebarTransientSessionCoordinator.beginSession(
+            kind: .downloadsPopover,
+            source: source,
+            path: "HoverSidebarManagerTests.focusRecovery"
+        )
+        defer {
+            harness.windowState.sidebarTransientSessionCoordinator.endSession(token)
+        }
+        harness.manager.setPinnedInteractionActive(true)
+        harness.delayedActions.runNext()
+        XCTAssertTrue(harness.manager.isOverlayVisible)
+
+        harness.windowRegistry.activeWindowId = nil
+        harness.manager.refreshMonitoring()
+        XCTAssertTrue(harness.manager.isOverlayVisible)
+
+        let otherWindow = BrowserWindowState()
+        harness.browserManager.tabResidenceAuthority.establishResidenceSession(on: otherWindow)
+        otherWindow.isSidebarVisible = false
+        harness.windowRegistry.register(otherWindow)
+        defer {
+            harness.windowRegistry.unregister(otherWindow.id)
+        }
+        harness.windowRegistry.setActive(otherWindow)
+        harness.manager.refreshMonitoring()
+        harness.delayedActions.runNext()
+        XCTAssertFalse(harness.manager.isOverlayVisible)
+
+        harness.windowRegistry.setActive(harness.windowState)
+        harness.manager.refreshMonitoring()
+        harness.delayedActions.runNext()
+
+        XCTAssertTrue(harness.manager.isOverlayVisible)
+    }
+
     func testMouseEventUsesOneSampleBeforeDelayedIntentValidation() async {
         var sampleCount = 0
         let harness = makePointerRevealHarness {

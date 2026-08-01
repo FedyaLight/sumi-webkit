@@ -219,6 +219,19 @@ final class ExtensionActionPopupCoordinator {
                 retirement.failPending(claim, error: CancellationError())
                 return
             }
+            let sidebarTransientSessionCoordinator = target.source.windowState
+                .sidebarTransientSessionCoordinator
+            let sidebarTransientPresentationSource =
+                sidebarTransientSessionCoordinator.preparedPresentationSource(
+                    window: target.presentationWindow,
+                    ownerView: target.anchor?.buttonView
+                )
+            let sidebarTransientSessionToken =
+                sidebarTransientSessionCoordinator.beginSession(
+                    kind: .extensionActionPopover,
+                    source: sidebarTransientPresentationSource,
+                    path: "ExtensionActionPopupCoordinator.present"
+                )
             let session = ExtensionActionPopupSession(
                 claim: claim,
                 evidence: evidence,
@@ -229,6 +242,9 @@ final class ExtensionActionPopupCoordinator {
                 focusReceipt: focusReceipt,
                 telemetrySnapshot: telemetrySnapshot,
                 completion: completion,
+                sidebarTransientSessionCoordinator:
+                    sidebarTransientSessionCoordinator,
+                sidebarTransientSessionToken: sidebarTransientSessionToken,
                 popoverDidClose: { [weak retirement] claim, popover in
                     retirement?.popoverDidClose(
                         claim: claim,

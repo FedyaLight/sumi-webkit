@@ -98,6 +98,10 @@ final class ExtensionActionPopupSession {
     let completion: ExtensionActionPopupCompletion
 
     private let closeObservation: ExtensionActionPopupCloseObservation
+    private weak var sidebarTransientSessionCoordinator:
+        SidebarTransientSessionCoordinator?
+    private let sidebarTransientSessionToken: SidebarTransientSessionToken?
+    private var hasEndedSidebarTransientSession = false
     private(set) var telemetryCommitted = false
     private(set) var presentationRetired = false
     private(set) var focusRevision: UInt64 = 0
@@ -112,6 +116,8 @@ final class ExtensionActionPopupSession {
         focusReceipt: ExtensionActionPopupFocusReceipt?,
         telemetrySnapshot: ExtensionActionPopupTelemetrySnapshot,
         completion: ExtensionActionPopupCompletion,
+        sidebarTransientSessionCoordinator: SidebarTransientSessionCoordinator? = nil,
+        sidebarTransientSessionToken: SidebarTransientSessionToken? = nil,
         popoverDidClose: @escaping @MainActor (
             ExtensionActionPopupSessionClaim,
             NSPopover
@@ -131,6 +137,8 @@ final class ExtensionActionPopupSession {
         self.focusReceipt = focusReceipt
         self.telemetrySnapshot = telemetrySnapshot
         self.completion = completion
+        self.sidebarTransientSessionCoordinator = sidebarTransientSessionCoordinator
+        self.sidebarTransientSessionToken = sidebarTransientSessionToken
         self.closeObservation = ExtensionActionPopupCloseObservation(
             claim: claim,
             popover: popover,
@@ -156,6 +164,7 @@ final class ExtensionActionPopupSession {
         closePhysicalPopup: Bool,
         awaitPopoverDidClose: Bool = false
     ) {
+        endSidebarTransientSession()
         if presentationRetired == false {
             presentationRetired = true
             sourceReceipt?.invalidate()
@@ -170,5 +179,13 @@ final class ExtensionActionPopupSession {
 
     func finishPopoverClosing() {
         closeObservation.stop()
+    }
+
+    private func endSidebarTransientSession() {
+        guard hasEndedSidebarTransientSession == false else { return }
+        hasEndedSidebarTransientSession = true
+        sidebarTransientSessionCoordinator?.endSession(
+            sidebarTransientSessionToken
+        )
     }
 }

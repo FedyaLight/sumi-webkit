@@ -202,13 +202,14 @@ final class HoverSidebarManager: ObservableObject {
             return
         }
 
+        let hasPinnedTransientUI = hostedState.sidebarTransientSessionCoordinator
+            .hasPinnedTransientUI(for: hostedWindowId)
+
         guard registry.activeWindowId == hostedWindowId else {
-            // During startup the registry has not promoted any window to active yet
-            // (`activeWindowId == nil`). While the empty-state force is pinning the
-            // collapsed sidebar, tearing it down here just to re-reveal it once the
-            // window becomes active produces a visible flicker. Hold the pinned
-            // overlay until a real active window (this one or another) is resolved.
-            if isEmptyStateOverlayForceActive, registry.activeWindowId == nil {
+            // During startup or transient UI focus, the registry may not have an
+            // active browser window yet. Keep a pinned overlay until focus resolves.
+            if (isEmptyStateOverlayForceActive || hasPinnedTransientUI),
+               registry.activeWindowId == nil {
                 return
             }
             uninstallMonitors()
@@ -219,7 +220,7 @@ final class HoverSidebarManager: ObservableObject {
 
         deferOverlayHostRetentionWhileCollapsed()
         installMonitorsIfNeeded()
-        if isEmptyStateOverlayForceActive, !isOverlayVisible {
+        if (isEmptyStateOverlayForceActive || hasPinnedTransientUI), !isOverlayVisible {
             requestOverlayReveal()
         }
     }

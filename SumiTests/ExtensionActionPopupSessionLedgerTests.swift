@@ -217,6 +217,56 @@ final class ExtensionActionPopupSessionLedgerTests: XCTestCase {
         XCTAssertTrue(session.presentationRetired)
     }
 
+    func testCommittedSessionRetirementEndsSidebarTransientPin()
+        async throws {
+        let fixture = try await makeFixture()
+        let lifecycle = makeLifecycle()
+        let coordinator = SidebarTransientSessionCoordinator(
+            windowID: UUID(),
+            interactionState: SidebarInteractionState()
+        )
+        let source = coordinator.preparedPresentationSource(window: nil)
+        let token = coordinator.beginSession(
+            kind: .extensionActionPopover,
+            source: source,
+            path: "ExtensionActionPopupSessionLedgerTests.pinLifecycle"
+        )
+        XCTAssertTrue(coordinator.hasPinnedTransientUI(for: coordinator.windowID))
+
+        let popover = NSPopover()
+        let webView = WKWebView()
+        let completion = ExtensionActionPopupCompletion { _ in }
+        let claim = lifecycle.ledger.reserve(
+            evidence: fixture.evidence,
+            action: fixture.action,
+            popover: popover,
+            popupWebView: webView
+        )
+        XCTAssertNotNil(lifecycle.ledger.activate(
+            claim,
+            evidence: fixture.evidence,
+            completion: completion
+        ))
+        let session = makeSession(
+            fixture: fixture,
+            claim: claim,
+            popover: popover,
+            webView: webView,
+            completion: completion,
+            sidebarTransientSessionCoordinator: coordinator,
+            sidebarTransientSessionToken: token
+        )
+        XCTAssertTrue(lifecycle.ledger.stage(session, for: claim))
+        XCTAssertNotNil(lifecycle.ledger.commit(session))
+        XCTAssertTrue(coordinator.hasPinnedTransientUI(for: coordinator.windowID))
+
+        lifecycle.retirement.execute(
+            lifecycle.ledger.closePopup(backedBy: [fixture.evidence.profileID])
+        )
+
+        XCTAssertFalse(coordinator.hasPinnedTransientUI(for: coordinator.windowID))
+    }
+
     private struct Fixture {
         let evidence: ExtensionActionPopupCallbackEvidence
         let action: WKWebExtension.Action
@@ -297,7 +347,9 @@ final class ExtensionActionPopupSessionLedgerTests: XCTestCase {
         claim: ExtensionActionPopupSessionClaim,
         popover: NSPopover,
         webView: WKWebView,
-        completion: ExtensionActionPopupCompletion
+        completion: ExtensionActionPopupCompletion,
+        sidebarTransientSessionCoordinator: SidebarTransientSessionCoordinator? = nil,
+        sidebarTransientSessionToken: SidebarTransientSessionToken? = nil
     ) -> ExtensionActionPopupSession {
         ExtensionActionPopupSession(
             claim: claim,
@@ -314,6 +366,8 @@ final class ExtensionActionPopupSessionLedgerTests: XCTestCase {
                 recordsDiagnostics: false
             ),
             completion: completion,
+            sidebarTransientSessionCoordinator: sidebarTransientSessionCoordinator,
+            sidebarTransientSessionToken: sidebarTransientSessionToken,
             popoverDidClose: { _, _ in },
             popoverWillClose: { _, _ in }
         )

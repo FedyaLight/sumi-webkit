@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import WebKit
 
@@ -23,6 +24,7 @@ struct ExtensionActionPopupPresentationTarget {
     let extensionID: String
     let profileID: UUID
     let windowID: UUID
+    let presentationWindow: NSWindow?
     let anchor: ExtensionActionPopupAnchor?
     let source: Source
 }
@@ -81,6 +83,7 @@ final class ExtensionActionPopupTargetCapture {
                 extensionID: evidence.extensionID,
                 profileID: evidence.profileID,
                 windowID: target.windowID,
+                presentationWindow: browser.popupAppKitWindow(for: windowState),
                 anchor: anchor,
                 source: source
             )
@@ -105,6 +108,7 @@ final class ExtensionActionPopupTargetCapture {
                 extensionID: evidence.extensionID,
                 profileID: evidence.profileID,
                 windowID: window.id,
+                presentationWindow: browser.popupAppKitWindow(for: window),
                 anchor: nil,
                 source: .associatedTab(
                     window,
@@ -124,6 +128,7 @@ final class ExtensionActionPopupTargetCapture {
             extensionID: evidence.extensionID,
             profileID: evidence.profileID,
             windowID: window.id,
+            presentationWindow: browser.popupAppKitWindow(for: window),
             anchor: nil,
             source: .presentationOnly(window)
         )

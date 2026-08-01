@@ -97,11 +97,12 @@ enum SidebarTransientUIKind: String, CaseIterable {
     case emojiPopover
     case sharingPicker
     case downloadsPopover
+    case extensionActionPopover
     case permissionPrompt
 
     var blocksSidebarDragSources: Bool {
         switch self {
-        case .contextMenu, .dialog, .spaceCreation, .folderEditorPopover, .spaceEditorPopover, .shortcutEditorPopover, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt:
+        case .contextMenu, .dialog, .spaceCreation, .folderEditorPopover, .spaceEditorPopover, .shortcutEditorPopover, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .extensionActionPopover, .permissionPrompt:
             return true
         // Zen parity: the hover preview is passive chrome. It opens over the very
         // row the user presses to drag a collapsed folder, so blocking drag
@@ -119,7 +120,7 @@ enum SidebarTransientUIKind: String, CaseIterable {
         switch self {
         case .folderPreview:
             return false
-        case .contextMenu, .dialog, .spaceCreation, .folderEditorPopover, .spaceEditorPopover, .shortcutEditorPopover, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt:
+        case .contextMenu, .dialog, .spaceCreation, .folderEditorPopover, .spaceEditorPopover, .shortcutEditorPopover, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .extensionActionPopover, .permissionPrompt:
             return true
         }
     }
@@ -135,7 +136,7 @@ enum SidebarTransientUIKind: String, CaseIterable {
         switch self {
         case .folderPreview:
             return false
-        case .contextMenu, .dialog, .spaceCreation, .folderEditorPopover, .spaceEditorPopover, .shortcutEditorPopover, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt:
+        case .contextMenu, .dialog, .spaceCreation, .folderEditorPopover, .spaceEditorPopover, .shortcutEditorPopover, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .extensionActionPopover, .permissionPrompt:
             return true
         }
     }
@@ -575,7 +576,7 @@ final class SidebarTransientSessionCoordinator {
         switch kind {
         case .contextMenu:
             return pendingMenuActionRecoveryTier
-        case .dialog, .spaceCreation, .folderEditorPopover, .folderPreview, .spaceEditorPopover, .shortcutEditorPopover, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .permissionPrompt:
+        case .dialog, .spaceCreation, .folderEditorPopover, .folderPreview, .spaceEditorPopover, .shortcutEditorPopover, .themePicker, .urlHubPopover, .emojiPopover, .sharingPicker, .downloadsPopover, .extensionActionPopover, .permissionPrompt:
             return .soft
         }
     }
