@@ -178,11 +178,20 @@ struct ShortcutLinkEditorIcon: View {
     let pin: ShortcutPin
     let iconAsset: String?
     let faviconImageReader: any BrowserFaviconImageReading
+    @Environment(SidebarFaviconImageStore.self) private var faviconImageStore
 
     var body: some View {
         icon
             .frame(width: 26, height: 26)
             .contentShape(Rectangle())
+            .task(id: faviconLoadKey) {
+                guard iconAsset == nil else { return }
+                await faviconImageStore.load(
+                    launchURL: pin.launchURL,
+                    partition: faviconPartition,
+                    imageReader: faviconImageReader
+                )
+            }
     }
 
     @ViewBuilder
@@ -195,22 +204,32 @@ struct ShortcutLinkEditorIcon: View {
             Image(systemName: SumiPersistentGlyph.resolvedLauncherSystemImageName(iconAsset))
                 .font(.system(size: 17, weight: .medium))
                 .symbolRenderingMode(.monochrome)
-        } else if let templateName = pin.storedChromeTemplateSystemImageName(
-            for: .regular(pin.executionProfileId ?? pin.profileId),
-            imageReader: faviconImageReader
+        } else if let favicon = faviconImageStore.image(
+            for: pin.launchURL,
+            partition: faviconPartition
         ) {
-            Image(systemName: templateName)
-                .font(.system(size: 17, weight: .medium))
-                .symbolRenderingMode(.monochrome)
-        } else {
-            pin.storedFaviconImage(
-                partition: .regular(pin.executionProfileId ?? pin.profileId),
-                imageReader: faviconImageReader
-            )
+            favicon
                 .resizable()
                 .scaledToFit()
                 .frame(width: 18, height: 18)
                 .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+        } else {
+            Image(systemName: SumiPersistentGlyph.launcherSystemImageFallback)
+                .font(.system(size: 17, weight: .medium))
+                .symbolRenderingMode(.monochrome)
         }
+    }
+
+    private var faviconPartition: SumiFaviconPartition {
+        .regular(pin.executionProfileId ?? pin.profileId)
+    }
+
+    private var faviconLoadKey: String {
+        faviconImageStore.loadKey(
+            launchURL: pin.launchURL,
+            partition: faviconPartition,
+            isEnabled: iconAsset == nil,
+            disabledID: pin.id.uuidString
+        )
     }
 }

@@ -1,4 +1,3 @@
-import SumiDomain
 import SwiftUI
 
 struct SidebarShortcutIconPresentation {
@@ -21,9 +20,7 @@ enum SidebarShortcutIconResolver {
     static func resolve(
         pin: ShortcutPin,
         liveTab: Tab?,
-        loadedStoredFavicon: Image?,
-        partition: SumiFaviconPartition,
-        imageReader: any BrowserFaviconImageReading
+        loadedStoredFavicon: Image?
     ) -> SidebarShortcutIconPresentation {
         if let iconAsset = pin.iconAsset {
             if SumiPersistentGlyph.presentsAsEmoji(iconAsset) {
@@ -40,82 +37,26 @@ enum SidebarShortcutIconResolver {
             )
         }
 
-        let cachedStoredFavicon = loadedStoredFavicon ?? ShortcutPin.cachedLaunchFavicon(
-            for: pin.launchURL,
-            partition: partition,
-            imageReader: imageReader
-        )
-
-        if let systemImageName = templateSystemImageName(
-            pin: pin,
-            liveTab: liveTab,
-            loadedStoredFavicon: loadedStoredFavicon,
-            cachedStoredFavicon: cachedStoredFavicon,
-            partition: partition,
-            imageReader: imageReader
-        ) {
+        if let loadedStoredFavicon {
             return SidebarShortcutIconPresentation(
                 glyphText: nil,
-                systemImageName: systemImageName,
-                image: nil
+                systemImageName: nil,
+                image: loadedStoredFavicon
+            )
+        }
+
+        if let liveTab, !liveTab.faviconIsTemplateGlobePlaceholder {
+            return SidebarShortcutIconPresentation(
+                glyphText: nil,
+                systemImageName: nil,
+                image: liveTab.favicon
             )
         }
 
         return SidebarShortcutIconPresentation(
             glyphText: nil,
-            systemImageName: nil,
-            image: favicon(
-                pin: pin,
-                liveTab: liveTab,
-                cachedStoredFavicon: cachedStoredFavicon,
-                partition: partition,
-                imageReader: imageReader
-            )
-        )
-    }
-
-    private static func favicon(
-        pin: ShortcutPin,
-        liveTab: Tab?,
-        cachedStoredFavicon: Image?,
-        partition: SumiFaviconPartition,
-        imageReader: any BrowserFaviconImageReading
-    ) -> Image {
-        if let cachedStoredFavicon {
-            return cachedStoredFavicon
-        }
-        if let liveTab, !liveTab.faviconIsTemplateGlobePlaceholder {
-            return liveTab.favicon
-        }
-        return pin.storedFaviconImage(
-            partition: partition,
-            imageReader: imageReader
-        )
-    }
-
-    private static func templateSystemImageName(
-        pin: ShortcutPin,
-        liveTab: Tab?,
-        loadedStoredFavicon: Image?,
-        cachedStoredFavicon: Image?,
-        partition: SumiFaviconPartition,
-        imageReader: any BrowserFaviconImageReading
-    ) -> String? {
-        if let liveTab {
-            if cachedStoredFavicon != nil {
-                return nil
-            }
-            if liveTab.faviconIsTemplateGlobePlaceholder {
-                return SumiPersistentGlyph.launcherSystemImageFallback
-            }
-            return nil
-        }
-        if loadedStoredFavicon != nil {
-            return nil
-        }
-        return pin.storedChromeTemplateSystemImageName(
-            for: partition,
-            imageReader: imageReader
+            systemImageName: SumiPersistentGlyph.launcherSystemImageFallback,
+            image: nil
         )
     }
 }

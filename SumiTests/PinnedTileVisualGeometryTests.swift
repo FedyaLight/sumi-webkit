@@ -21,7 +21,9 @@ final class PinnedTileVisualGeometryTests: XCTestCase {
         let host = NSHostingView(rootView: ZStack {
             Color.black
             tile
-        }.frame(width: tileWidth, height: canvasHeight))
+        }
+        .frame(width: tileWidth, height: canvasHeight)
+        .environment(SidebarFaviconImageStore()))
         host.frame = NSRect(x: 0, y: 0, width: tileWidth, height: canvasHeight)
         host.wantsLayer = true
         host.layer?.backgroundColor = NSColor.clear.cgColor
@@ -188,6 +190,7 @@ final class PinnedTileVisualGeometryTests: XCTestCase {
         let root = tile
             .frame(width: size.width, height: size.height)
             .environment(\.sumiSettings, settings)
+            .environment(SidebarFaviconImageStore())
         let host = NSHostingView(rootView: root)
         host.wantsLayer = true
         host.frame = CGRect(origin: .zero, size: size)
@@ -221,6 +224,7 @@ final class PinnedTileVisualGeometryTests: XCTestCase {
         let root = row
             .frame(width: width, height: PinnedTileMetrics.height, alignment: .leading)
             .environment(\.sumiSettings, settings)
+            .environment(SidebarFaviconImageStore())
         let host = NSHostingView(rootView: root)
         host.wantsLayer = true
         host.frame = CGRect(

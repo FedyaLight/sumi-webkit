@@ -91,9 +91,7 @@ struct SplitGroupMemberIconPresentation {
 enum SplitGroupMemberIconResolver {
     static func resolve(
         item: SplitGroupSidebarItem,
-        loadedStoredFavicon: Image?,
-        faviconPartition: SumiFaviconPartition,
-        imageReader: any BrowserFaviconImageReading
+        loadedStoredFavicon: Image?
     ) -> SplitGroupMemberIconPresentation {
         guard let pin = item.pin else {
             return SplitGroupMemberIconPresentation(
@@ -132,12 +130,7 @@ enum SplitGroupMemberIconResolver {
             )
         }
 
-        if let storedFavicon = loadedStoredFavicon
-            ?? ShortcutPin.cachedLaunchFavicon(
-                for: pin.launchURL,
-                partition: faviconPartition,
-                imageReader: imageReader
-            ) {
+        if let storedFavicon = loadedStoredFavicon {
             return SplitGroupMemberIconPresentation(
                 image: storedFavicon,
                 glyphText: nil,
@@ -171,27 +164,13 @@ enum SplitGroupMemberIconResolver {
             )
         }
 
-        if let systemImageName = pin.storedChromeTemplateSystemImageName(
-            for: faviconPartition,
-            imageReader: imageReader
-        ) {
-            return SplitGroupMemberIconPresentation(
-                image: Image(systemName: systemImageName),
-                glyphText: nil,
-                systemImageName: systemImageName,
-                kind: .systemImage,
-                shouldDesaturate: shouldDesaturate
-            )
-        }
-
         return SplitGroupMemberIconPresentation(
-            image: pin.storedFaviconImage(
-                partition: faviconPartition,
-                imageReader: imageReader
+            image: Image(systemName:
+                SumiPersistentGlyph.launcherSystemImageFallback
             ),
             glyphText: nil,
-            systemImageName: nil,
-            kind: .storedFallback,
+            systemImageName: SumiPersistentGlyph.launcherSystemImageFallback,
+            kind: .systemImage,
             shouldDesaturate: shouldDesaturate
         )
     }

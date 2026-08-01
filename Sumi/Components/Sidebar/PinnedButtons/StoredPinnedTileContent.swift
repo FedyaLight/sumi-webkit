@@ -18,20 +18,16 @@ struct StoredPinnedTileContent: View {
     let contextMenuActions: EssentialTileContextMenuActions
     let dragIsEnabled: Bool
     let isAppKitInteractionEnabled: Bool
-    @StateObject private var storedFaviconLoader = SidebarStoredFaviconLoader()
+    @Environment(SidebarFaviconImageStore.self) private var faviconImageStore
 
     var body: some View {
         let resolvedTitle = pin.preferredDisplayTitle
-        let resolvedFavicon = currentLoadedStoredFavicon ?? pin.storedFaviconImage(
-            partition: faviconPartition,
-            imageReader: faviconImageReader
-        )
+        let resolvedFavicon = currentLoadedStoredFavicon
+            ?? Image(systemName: SumiPersistentGlyph.launcherSystemImageFallback)
         let glyphText = pin.glyphText
         let resolvedChromeTemplateSystemImageName = currentLoadedStoredFavicon == nil
-            ? (pin.chromeTemplateSystemImageName ?? pin.storedChromeTemplateSystemImageName(
-                for: faviconPartition,
-                imageReader: faviconImageReader
-            ))
+            ? (pin.chromeTemplateSystemImageName
+                ?? SumiPersistentGlyph.launcherSystemImageFallback)
             : nil
         PinnedTabView(
             tabIcon: resolvedFavicon,
@@ -65,19 +61,12 @@ struct StoredPinnedTileContent: View {
         .task(id: storedFaviconLoadKey) {
             await loadStoredFavicon()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .faviconCacheUpdated)) { notification in
-            storedFaviconLoader.invalidateIfNeeded(
-                for: notification,
-                launchURL: pin.launchURL,
-                partition: faviconPartition
-            )
-        }
     }
 
     private var dragExclusionZones: [SidebarDragSourceExclusionZone] { [] }
 
     private var currentLoadedStoredFavicon: Image? {
-        storedFaviconLoader.image(
+        faviconImageStore.image(
             for: pin.launchURL,
             partition: faviconPartition
         )
@@ -91,7 +80,7 @@ struct StoredPinnedTileContent: View {
     }
 
     private var storedFaviconLoadKey: String {
-        storedFaviconLoader.loadKey(
+        faviconImageStore.loadKey(
             launchURL: pin.launchURL,
             partition: faviconPartition
         )
@@ -99,11 +88,10 @@ struct StoredPinnedTileContent: View {
 
     @MainActor
     private func loadStoredFavicon() async {
-        await storedFaviconLoader.load(
+        await faviconImageStore.load(
             launchURL: pin.launchURL,
             partition: faviconPartition,
-            imageReader: faviconImageReader,
-            isCurrentLaunchURL: { pin.launchURL == $0 }
+            imageReader: faviconImageReader
         )
     }
 }

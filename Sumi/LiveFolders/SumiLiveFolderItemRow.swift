@@ -19,7 +19,7 @@ struct SumiLiveFolderItemRow: View {
     @Environment(\.chromeThemeTokens) private var scopedChromeTokens
     @State private var isRowHovered = false
     @State private var isDismissHovered = false
-    @StateObject private var storedFaviconLoader = SidebarStoredFaviconLoader()
+    @Environment(SidebarFaviconImageStore.self) private var faviconImageStore
 
     var body: some View {
         HStack(spacing: 0) {
@@ -60,16 +60,6 @@ struct SumiLiveFolderItemRow: View {
         )
         .task(id: storedFaviconLoadKey) {
             await loadStoredFavicon()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .faviconCacheUpdated)) { notification in
-            guard isRSSItem,
-                  let shortcutPin,
-                  let faviconPartition else { return }
-            storedFaviconLoader.invalidateIfNeeded(
-                for: notification,
-                launchURL: shortcutPin.launchURL,
-                partition: faviconPartition
-            )
         }
     }
 
@@ -126,7 +116,7 @@ struct SumiLiveFolderItemRow: View {
 
     private var storedFavicon: Image? {
         guard let shortcutPin, let faviconPartition else { return nil }
-        return storedFaviconLoader.image(
+        return faviconImageStore.image(
             for: shortcutPin.launchURL,
             partition: faviconPartition
         )
@@ -138,7 +128,7 @@ struct SumiLiveFolderItemRow: View {
               let faviconPartition else {
             return "disabled|\(item.id)"
         }
-        return storedFaviconLoader.loadKey(
+        return faviconImageStore.loadKey(
             launchURL: shortcutPin.launchURL,
             partition: faviconPartition
         )
@@ -149,11 +139,10 @@ struct SumiLiveFolderItemRow: View {
               let shortcutPin,
               let faviconPartition,
               let faviconImageReader else { return }
-        await storedFaviconLoader.load(
+        await faviconImageStore.load(
             launchURL: shortcutPin.launchURL,
             partition: faviconPartition,
-            imageReader: faviconImageReader,
-            isCurrentLaunchURL: { shortcutPin.launchURL == $0 }
+            imageReader: faviconImageReader
         )
     }
 

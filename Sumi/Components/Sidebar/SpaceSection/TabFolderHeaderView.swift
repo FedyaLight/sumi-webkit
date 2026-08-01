@@ -185,7 +185,6 @@ struct TabFolderHeaderView: View {
             selection: selection,
             windowState: windowState,
             liveFolderProvider: browserContext.liveFolderManager,
-            faviconImageReader: browserContext.faviconImageReader,
             pinProjection: pinProjection,
             actions: FolderSearchActivationActions(
                 activateShortcut: { pin in

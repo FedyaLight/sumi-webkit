@@ -6,6 +6,7 @@ struct SpaceSnapshotPinnedTileView: View {
     let tokens: ChromeThemeTokens
 
     @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(SidebarFaviconImageStore.self) private var faviconImageStore
 
     var body: some View {
         let selectedBackdrop = item.presentationState.isSelected
@@ -82,17 +83,22 @@ struct SpaceSnapshotPinnedTileView: View {
         // Matches the live tile's press-effect transform so the favicon keeps
         // its device pixel across the live/snapshot swap.
         .sidebarZenPressEffectRestingGeometry()
+        .task(id: item.icon.loadKey(using: faviconImageStore)) {
+            await item.icon.load(using: faviconImageStore)
+        }
         .accessibilityIdentifier("essential-shortcut-snapshot-\(item.id.uuidString)")
     }
 
     private var iconContent: PinnedTileFaviconSymbol.Content {
-        switch item.icon {
+        switch item.icon.resolved(using: faviconImageStore) {
         case .image(let image):
             return .image(image)
         case .system(let systemName):
             return .chromeTemplate(systemName)
         case .emoji(let emoji):
             return .glyph(emoji)
+        case .resolvable:
+            return .chromeTemplate("globe")
         }
     }
 

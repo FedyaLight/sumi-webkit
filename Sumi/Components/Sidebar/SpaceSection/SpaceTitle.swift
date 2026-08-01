@@ -85,6 +85,33 @@ struct SpaceTitleChevronRotationPlan: Equatable {
     }
 }
 
+struct SpaceTitleLeadingGlyphContent: View {
+    let iconValue: String
+    let displaysChevron: Bool
+    let rotationDegrees: Double
+    let textColor: Color
+    let visibilityAnimation: Animation?
+
+    var body: some View {
+        ZStack {
+            SpaceTitleIconView(
+                iconValue: iconValue,
+                textColor: textColor
+            )
+            .opacity(displaysChevron ? 0 : 1)
+            .animation(visibilityAnimation, value: displaysChevron)
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(textColor)
+                .rotationEffect(.degrees(rotationDegrees))
+                .opacity(displaysChevron ? 1 : 0)
+                .animation(visibilityAnimation, value: displaysChevron)
+                .accessibilityHidden(true)
+        }
+    }
+}
+
 private struct SpaceTitleLeadingGlyphView: View {
     let iconValue: String
     let isExpanded: Bool
@@ -116,22 +143,13 @@ private struct SpaceTitleLeadingGlyphView: View {
     }
 
     var body: some View {
-        ZStack {
-            SpaceTitleIconView(
-                iconValue: iconValue,
-                textColor: textColor
-            )
-            .opacity(displaysChevron ? 0 : 1)
-            .animation(visibilityAnimation, value: displaysChevron)
-
-            Image(systemName: "chevron.right")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(textColor)
-                .rotationEffect(.degrees(displayedDegrees))
-                .opacity(displaysChevron ? 1 : 0)
-                .animation(visibilityAnimation, value: displaysChevron)
-                .accessibilityHidden(true)
-        }
+        SpaceTitleLeadingGlyphContent(
+            iconValue: iconValue,
+            displaysChevron: displaysChevron,
+            rotationDegrees: displayedDegrees,
+            textColor: textColor,
+            visibilityAnimation: visibilityAnimation
+        )
         .onChange(of: isExpanded) { _, isExpanded in
             animateRotation(isExpanded: isExpanded)
         }

@@ -34,7 +34,7 @@ struct ShortcutSidebarRowChrome: View {
     @State var isGlanceCloseHovered = false
     @State var isResetHovered = false
     @State var suppressRegularActionUntilHoverExit = false
-    @StateObject var storedFaviconLoader = SidebarStoredFaviconLoader()
+    @Environment(SidebarFaviconImageStore.self) var faviconImageStore
 
     var body: some View {
         presentedRow
@@ -66,14 +66,6 @@ struct ShortcutSidebarRowChrome: View {
         .sidebarZenPressEffect(sourceID: rowSourceID)
         .task(id: storedFaviconLoadKey) {
             await loadStoredFavicon()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .faviconCacheUpdated)) { notification in
-            guard pin.iconAsset == nil else { return }
-            storedFaviconLoader.invalidateIfNeeded(
-                for: notification,
-                launchURL: pin.launchURL,
-                partition: faviconPartition
-            )
         }
         .sidebarAppKitContextMenu(
             isInteractionEnabled: dragIsEnabled,

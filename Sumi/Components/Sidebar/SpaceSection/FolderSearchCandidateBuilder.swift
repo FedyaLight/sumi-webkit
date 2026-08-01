@@ -18,8 +18,7 @@ enum FolderSearchCandidateIcon {
     case shortcut(
         pin: ShortcutPin,
         liveTab: Tab?,
-        partition: SumiFaviconPartition,
-        imageReader: any BrowserFaviconImageReading
+        partition: SumiFaviconPartition
     )
     case systemImage(String)
     case resolved(Image)
@@ -58,7 +57,6 @@ struct FolderSearchCandidateBuilder {
     let launcherRuntime: SidebarLauncherRuntimeSnapshot
     let windowState: BrowserWindowState
     let liveFolderProvider: FolderSearchLiveFolderProviding
-    let faviconImageReader: any BrowserFaviconImageReading
     /// Same projection the folder's own rows use, so a preview row lands on the
     /// identical favicon partition instead of guessing one.
     let pinProjection: SidebarPinFolderProjection
@@ -69,7 +67,6 @@ struct FolderSearchCandidateBuilder {
         selection: SidebarWindowSelectionQuery,
         windowState: BrowserWindowState,
         liveFolderProvider: FolderSearchLiveFolderProviding,
-        faviconImageReader: any BrowserFaviconImageReading,
         pinProjection: SidebarPinFolderProjection,
         actions: FolderSearchActivationActions
     ) {
@@ -81,7 +78,6 @@ struct FolderSearchCandidateBuilder {
         )
         self.windowState = windowState
         self.liveFolderProvider = liveFolderProvider
-        self.faviconImageReader = faviconImageReader
         self.pinProjection = pinProjection
         self.actions = actions
     }
@@ -191,8 +187,7 @@ struct FolderSearchCandidateBuilder {
             partition: pinProjection.faviconPartition(
                 for: pin,
                 currentSpaceID: windowState.currentSpaceId
-            ),
-            imageReader: faviconImageReader
+            )
         )
     }
 
@@ -229,17 +224,19 @@ struct FolderSearchCandidateBuilder {
         let urlString = url?.absoluteString ?? ""
         let host = url?.host ?? ""
         let title = item.title
-        let icon = SplitGroupMemberIconResolver.resolve(
-            item: item,
-            loadedStoredFavicon: nil,
-            faviconPartition: item.pin.map {
-                pinProjection.faviconPartition(
-                    for: $0,
+        let icon: FolderSearchCandidateIcon
+        if let pin = item.pin {
+            icon = .shortcut(
+                pin: pin,
+                liveTab: item.tab,
+                partition: pinProjection.faviconPartition(
+                    for: pin,
                     currentSpaceID: inventory.spaceID
                 )
-            } ?? .regular(item.tab?.profileId),
-            imageReader: faviconImageReader
-        ).image
+            )
+        } else {
+            icon = .resolved(item.tab?.favicon ?? Image(systemName: "globe"))
+        }
 
         return FolderSearchCandidate(
             id: "split-\(group.id.uuidString)-\(item.stableIDDescription)",
@@ -249,7 +246,7 @@ struct FolderSearchCandidateBuilder {
             ),
             title: title,
             secondaryText: secondaryText(host: host, folderPath: folderPath),
-            icon: .resolved(icon),
+            icon: icon,
             searchText: FolderSearchMatcher.searchText(
                 components: [title, host, urlString] + folderPath
             ),

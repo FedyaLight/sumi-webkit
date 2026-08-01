@@ -11,7 +11,6 @@ enum SpaceSidebarTransitionItemSnapshotProjector {
         let inventory: SidebarSpaceInventorySnapshot
         let selection: SidebarWindowSelectionQuery
         let pinProjection: SidebarPinFolderProjection
-        let imageReader: any BrowserFaviconImageReading
         let windowState: BrowserWindowState
     }
 
@@ -20,7 +19,6 @@ enum SpaceSidebarTransitionItemSnapshotProjector {
         launcherRuntime: SidebarLauncherRuntimeSnapshot,
         selection: SidebarWindowSelectionQuery,
         pinProjection: SidebarPinFolderProjection,
-        imageReader: any BrowserFaviconImageReading,
         windowState: BrowserWindowState
     ) -> [SpacePinnedItemSnapshot] {
         guard let projection else { return [] }
@@ -32,7 +30,6 @@ enum SpaceSidebarTransitionItemSnapshotProjector {
             inventory: projection,
             selection: selection,
             pinProjection: pinProjection,
-            imageReader: imageReader,
             windowState: windowState
         )
 
@@ -50,7 +47,6 @@ enum SpaceSidebarTransitionItemSnapshotProjector {
         projection: SidebarSpaceInventorySnapshot?,
         selection: SidebarWindowSelectionQuery,
         pinProjection: SidebarPinFolderProjection,
-        imageReader: any BrowserFaviconImageReading,
         windowState: BrowserWindowState,
         currentTabID: UUID?
     ) -> [SpaceRegularRowSnapshot] {
@@ -80,7 +76,6 @@ enum SpaceSidebarTransitionItemSnapshotProjector {
             inventory: projection,
             selection: selection,
             pinProjection: pinProjection,
-            imageReader: imageReader,
             windowState: windowState
         )
 
@@ -107,7 +102,6 @@ enum SpaceSidebarTransitionItemSnapshotProjector {
         launcherRuntime: SidebarLauncherRuntimeSnapshot,
         selection: SidebarWindowSelectionQuery,
         pinProjection: SidebarPinFolderProjection,
-        imageReader: any BrowserFaviconImageReading,
         windowState: BrowserWindowState
     ) -> [SpacePinnedItemSnapshot] {
         guard let projection else { return [] }
@@ -119,7 +113,6 @@ enum SpaceSidebarTransitionItemSnapshotProjector {
             inventory: projection,
             selection: selection,
             pinProjection: pinProjection,
-            imageReader: imageReader,
             windowState: windowState
         )
         let owner = SidebarSpacePinnedStickyProjectionOwner(
@@ -174,7 +167,6 @@ enum SpaceSidebarTransitionItemSnapshotProjector {
                     inventory: context.inventory,
                     selection: context.selection,
                     pinProjection: context.pinProjection,
-                    imageReader: context.imageReader,
                     windowState: context.windowState
                 )
             )
@@ -382,23 +374,35 @@ enum SpaceSidebarTransitionItemSnapshotProjector {
         let members = items.map { item in
             let presentation = SplitGroupMemberIconResolver.resolve(
                 item: item,
-                loadedStoredFavicon: nil,
-                faviconPartition: item.pin.map {
+                loadedStoredFavicon: item.pin.flatMap { pin in
+                    let partition = context.pinProjection.faviconPartition(
+                        for: pin,
+                        currentSpaceID: context.inventory.spaceID
+                    )
+                    return context.windowState.sidebarFaviconImageStore.image(
+                        for: pin.launchURL,
+                        partition: partition
+                    )
+                }
+            )
+            let fallbackIcon: SpaceSidebarSnapshotIcon
+            if let glyphText = presentation.glyphText {
+                fallbackIcon = .emoji(glyphText)
+            } else if let systemImageName = presentation.systemImageName {
+                fallbackIcon = .system(systemImageName)
+            } else {
+                fallbackIcon = .image(presentation.image)
+            }
+            let icon = resolvableIcon(
+                for: item.pin,
+                partition: item.pin.map {
                     context.pinProjection.faviconPartition(
                         for: $0,
                         currentSpaceID: context.inventory.spaceID
                     )
-                } ?? .regular(item.tab?.profileId),
-                imageReader: context.imageReader
+                },
+                fallback: fallbackIcon
             )
-            let icon: SpaceSidebarSnapshotIcon
-            if let glyphText = presentation.glyphText {
-                icon = .emoji(glyphText)
-            } else if let systemImageName = presentation.systemImageName {
-                icon = .system(systemImageName)
-            } else {
-                icon = .image(presentation.image)
-            }
             return SpaceSplitGroupMemberSnapshot(
                 id: item.id,
                 title: item.title,
@@ -457,7 +461,6 @@ enum SpaceSidebarTransitionItemSnapshotProjector {
         inventory: SidebarSpaceInventorySnapshot?,
         selection: SidebarWindowSelectionQuery,
         pinProjection: SidebarPinFolderProjection,
-        imageReader: any BrowserFaviconImageReading,
         backdropReader: (any BrowserEssentialBackdropReading)? = nil,
         windowState: BrowserWindowState
     ) -> SpaceShortcutSnapshot {
@@ -480,14 +483,19 @@ enum SpaceSidebarTransitionItemSnapshotProjector {
             containing: .shortcutPin(pin.id)
         ).map { !$0.container.isShortcutSidebar } == true
 
+        let fallbackIcon = shortcutIcon(
+            for: pin,
+            liveTab: liveTab,
+            faviconPartition: faviconPartition,
+            faviconImageStore: windowState.sidebarFaviconImageStore
+        )
         return SpaceShortcutSnapshot(
             id: pin.id,
             title: pin.resolvedDisplayTitle(liveTab: liveTab),
-            icon: shortcutIcon(
+            icon: resolvableIcon(
                 for: pin,
-                liveTab: liveTab,
-                faviconPartition: faviconPartition,
-                imageReader: imageReader
+                partition: faviconPartition,
+                fallback: fallbackIcon
             ),
             accentSource: SpaceShortcutSnapshotAccentSource(
                 launchURL: pin.launchURL,
@@ -540,7 +548,7 @@ enum SpaceSidebarTransitionItemSnapshotProjector {
         for pin: ShortcutPin,
         liveTab: Tab?,
         faviconPartition: SumiFaviconPartition,
-        imageReader: any BrowserFaviconImageReading
+        faviconImageStore: SidebarFaviconImageStore
     ) -> SpaceSidebarSnapshotIcon {
         if let iconAsset = pin.iconAsset {
             if SumiPersistentGlyph.presentsAsEmoji(iconAsset) {
@@ -549,34 +557,36 @@ enum SpaceSidebarTransitionItemSnapshotProjector {
             return .system(SumiPersistentGlyph.resolvedLauncherSystemImageName(iconAsset))
         }
 
-        if let liveTab {
-            if let cachedFavicon = ShortcutPin.cachedLaunchFavicon(
+        let presentation = SidebarShortcutIconResolver.resolve(
+            pin: pin,
+            liveTab: liveTab,
+            loadedStoredFavicon: faviconImageStore.image(
                 for: pin.launchURL,
-                partition: faviconPartition,
-                imageReader: imageReader
-            ) {
-                return .image(cachedFavicon)
-            }
-
-            if !liveTab.faviconIsTemplateGlobePlaceholder {
-                return .image(liveTab.favicon)
-            }
-
-            return .system(SumiPersistentGlyph.launcherSystemImageFallback)
-        }
-
-        if let systemName = pin.storedChromeTemplateSystemImageName(
-            for: faviconPartition,
-            imageReader: imageReader
-        ) {
-            return .system(systemName)
-        }
-
-        return .image(
-            pin.storedFaviconImage(
-                partition: faviconPartition,
-                imageReader: imageReader
+                partition: faviconPartition
             )
+        )
+        if let glyphText = presentation.glyphText {
+            return .emoji(glyphText)
+        }
+        if let systemImageName = presentation.systemImageName {
+            return .system(systemImageName)
+        }
+        return presentation.image.map(SpaceSidebarSnapshotIcon.image)
+            ?? .system(SumiPersistentGlyph.launcherSystemImageFallback)
+    }
+
+    private static func resolvableIcon(
+        for pin: ShortcutPin?,
+        partition: SumiFaviconPartition?,
+        fallback: SpaceSidebarSnapshotIcon
+    ) -> SpaceSidebarSnapshotIcon {
+        guard let pin, pin.iconAsset == nil, let partition else {
+            return fallback
+        }
+        return .resolvable(
+            launchURL: pin.launchURL,
+            partition: partition,
+            fallback: fallback
         )
     }
 }

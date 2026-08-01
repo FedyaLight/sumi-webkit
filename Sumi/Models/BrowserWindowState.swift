@@ -96,6 +96,7 @@ class BrowserWindowState {
     /// Durable selection/sidebar/split values remain the session state below.
     let presentationState = WindowPresentationState()
     let restorationState: WindowRestorationState
+    let sidebarFaviconImageStore = SidebarFaviconImageStore()
 
     /// Present only for a shell created from WebKit's `createWebViewWith`
     /// callback. Ordinary browser windows never infer this role from shape.

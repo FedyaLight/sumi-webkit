@@ -23,6 +23,7 @@ struct SpaceRegularSplitGroupEntryView: View {
     let tabActionOwner: SpaceRegularTabActionOwner
 
     @Environment(BrowserWindowState.self) private var windowState
+    @Environment(SidebarFaviconImageStore.self) private var faviconImageStore
     @Environment(\.sidebarWindowSelectionSnapshot) private var sidebarSelection
 
     private var splitResolver: RegularSplitSegmentResolver {
@@ -80,7 +81,7 @@ struct SpaceRegularSplitGroupEntryView: View {
         splitResolver.dragSource(
             for: item,
             in: group,
-            faviconImageReader: browserContext.faviconImageReader,
+            loadedStoredFavicon: loadedStoredFavicon(for: item),
             splitPresentation: splitDragPresentation,
             isGroupSelected:
                 sidebarSelection.splitSelection?.groupID == group.id
@@ -105,15 +106,21 @@ struct SpaceRegularSplitGroupEntryView: View {
         items.map { item in
             SplitGroupMemberIconResolver.resolve(
                 item: item,
-                loadedStoredFavicon: nil,
-                faviconPartition: .regular(
-                    item.pin?.executionProfileId
-                        ?? item.pin?.profileId
-                        ?? item.tab?.profileId
-                ),
-                imageReader: browserContext.faviconImageReader
+                loadedStoredFavicon: loadedStoredFavicon(for: item)
             )
         }
+    }
+
+    private func loadedStoredFavicon(
+        for item: SplitGroupSidebarItem
+    ) -> Image? {
+        guard let pin = item.pin else { return nil }
+        return faviconImageStore.image(
+            for: pin.launchURL,
+            partition: .regular(
+                pin.executionProfileId ?? pin.profileId ?? item.tab?.profileId
+            )
+        )
     }
 
     @Environment(\.sumiSettings) private var sumiSettings

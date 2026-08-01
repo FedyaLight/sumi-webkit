@@ -10,6 +10,7 @@ struct SpaceSnapshotSplitGroupView: View {
     let splitGroup: SpaceSplitGroupSnapshot
     let rowCornerRadius: CGFloat
     let tokens: ChromeThemeTokens
+    @Environment(SidebarFaviconImageStore.self) private var faviconImageStore
 
     var body: some View {
         rowContent
@@ -26,6 +27,12 @@ struct SpaceSnapshotSplitGroupView: View {
             isVisible: splitGroup.isSelected,
             drawsSelectionShadow: splitGroup.isSelected
         )
+        .sidebarZenPressEffectRestingGeometry()
+        .task(id: memberIconLoadKey) {
+            for member in splitGroup.members {
+                await member.icon.load(using: faviconImageStore)
+            }
+        }
     }
 
     @ViewBuilder
@@ -56,7 +63,9 @@ struct SpaceSnapshotSplitGroupView: View {
                 textColor: tokens.primaryText
             ) {
                 SplitGroupRowIconView(
-                    icon: member.icon.splitGroupRowIcon,
+                    icon: member.icon
+                        .resolved(using: faviconImageStore)
+                        .splitGroupRowIcon,
                     foregroundColor: tokens.primaryText,
                     desaturates: member.desaturatesIcon
                 )
@@ -90,6 +99,12 @@ struct SpaceSnapshotSplitGroupView: View {
         .padding(.trailing, SidebarRowLayout.trailingInset)
         .frame(height: SidebarRowLayout.rowHeight)
     }
+
+    private var memberIconLoadKey: String {
+        splitGroup.members.map {
+            $0.icon.loadKey(using: faviconImageStore)
+        }.joined(separator: "|")
+    }
 }
 
 private extension SpaceSidebarSnapshotIcon {
@@ -101,6 +116,8 @@ private extension SpaceSidebarSnapshotIcon {
             return .system(systemName)
         case .emoji(let emoji):
             return .emoji(emoji)
+        case .resolvable(_, _, let fallback):
+            return fallback.splitGroupRowIcon
         }
     }
 }
@@ -236,6 +253,7 @@ struct SpaceSnapshotShortcutRowView: View {
             isVisible: shortcut.presentationState.isSelected,
             drawsSelectionShadow: shortcut.presentationState.isSelected
         )
+        .sidebarZenPressEffectRestingGeometry()
     }
 
     private var shortcutIcon: some View {
@@ -388,6 +406,7 @@ private struct SpaceSnapshotRegularTabRowView: View {
             isVisible: tab.isSelected,
             drawsSelectionShadow: tab.isSelected
         )
+        .sidebarZenPressEffectRestingGeometry()
     }
 
     @ViewBuilder
@@ -431,10 +450,11 @@ struct SpaceSnapshotIconView: View {
     let icon: SpaceSidebarSnapshotIcon
     let size: CGFloat
     let foregroundColor: Color
+    @Environment(SidebarFaviconImageStore.self) private var faviconImageStore
 
     var body: some View {
         Group {
-            switch icon {
+            switch icon.resolved(using: faviconImageStore) {
             case .image(let image):
                 image
             case .system(let systemName):
@@ -449,8 +469,13 @@ struct SpaceSnapshotIconView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.45)
                     .multilineTextAlignment(.center)
+            case .resolvable:
+                EmptyView()
             }
         }
         .frame(width: size, height: size)
+        .task(id: icon.loadKey(using: faviconImageStore)) {
+            await icon.load(using: faviconImageStore)
+        }
     }
 }

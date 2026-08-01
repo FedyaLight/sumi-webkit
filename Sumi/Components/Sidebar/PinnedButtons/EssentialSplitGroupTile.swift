@@ -23,7 +23,7 @@ struct EssentialSplitGroupTile: View {
     @Environment(\.chromeThemeTokens) private var scopedChromeTokens
     @State private var loadedAccentColors: [UUID: Color] = [:]
     @State private var accentRefreshID = UUID()
-    @StateObject private var storedFaviconLoader = SidebarStoredFaviconLoader()
+    @Environment(SidebarFaviconImageStore.self) private var faviconImageStore
     @State private var backdropLoader = SidebarEssentialBackdropLoader()
 
     var body: some View {
@@ -56,13 +56,6 @@ struct EssentialSplitGroupTile: View {
         .onReceive(
             NotificationCenter.default.publisher(for: .faviconCacheUpdated)
         ) { notification in
-            for pin in memberPins where pin.iconAsset == nil {
-                storedFaviconLoader.invalidateIfNeeded(
-                    for: notification,
-                    launchURL: pin.launchURL,
-                    partition: faviconPartition(for: pin)
-                )
-            }
             let affected = memberVisuals.filter {
                 PinnedTileAccentResolver.faviconUpdate(
                     notification,
@@ -261,12 +254,10 @@ struct EssentialSplitGroupTile: View {
             let liveTab = liveTabsByPinID[pinID]
             let presentation = SplitGroupMemberIconResolver.resolve(
                 item: item,
-                loadedStoredFavicon: storedFaviconLoader.image(
+                loadedStoredFavicon: faviconImageStore.image(
                     for: pin.launchURL,
                     partition: faviconPartition(for: pin)
-                ),
-                faviconPartition: faviconPartition(for: pin),
-                imageReader: faviconImageReader
+                )
             )
             return EssentialSplitMemberVisual(
                 id: member.memberID,
@@ -312,7 +303,7 @@ struct EssentialSplitGroupTile: View {
 
     private var storedFaviconLoadKey: String {
         memberPins.map { pin in
-            storedFaviconLoader.loadKey(
+            faviconImageStore.loadKey(
                 launchURL: pin.launchURL,
                 partition: faviconPartition(for: pin),
                 isEnabled: pin.iconAsset == nil,
@@ -337,11 +328,10 @@ struct EssentialSplitGroupTile: View {
     @MainActor
     private func loadStoredFavicons() async {
         for pin in memberPins where pin.iconAsset == nil {
-            await storedFaviconLoader.load(
+            await faviconImageStore.load(
                 launchURL: pin.launchURL,
                 partition: faviconPartition(for: pin),
-                imageReader: faviconImageReader,
-                isCurrentLaunchURL: { pin.launchURL == $0 }
+                imageReader: faviconImageReader
             )
             guard !Task.isCancelled else { return }
         }
@@ -399,24 +389,16 @@ struct EssentialSplitGroupTile: View {
                 loadedAccentColors[member.persistentID] = cached
                 continue
             }
-            let cachedImage = TabFaviconStore.getCachedImage(
-                forDocumentURL: member.url,
+            await faviconImageStore.load(
+                launchURL: member.url,
                 partition: member.partition,
-                context: .pinnedLauncher,
                 imageReader: faviconImageReader
             )
-            let image: NSImage?
-            if let cachedImage {
-                image = cachedImage
-            } else {
-                image = await TabFaviconStore.loadCachedLauncherImage(
-                    forDocumentURL: member.url,
-                    partition: member.partition,
-                    imageReader: faviconImageReader
-                )
-            }
             guard !Task.isCancelled else { return }
-            guard let image,
+            guard let image = faviconImageStore.nsImage(
+                for: member.url,
+                partition: member.partition
+            ),
                   let accent = SumiFaviconAccentColor.extract(from: image)
             else { continue }
             PinnedTileAccentResolver.storeAccent(

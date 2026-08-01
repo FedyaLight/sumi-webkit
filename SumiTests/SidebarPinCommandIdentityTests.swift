@@ -126,7 +126,7 @@ final class SidebarPinCommandIdentityTests: XCTestCase {
             iconAsset: "😥",
             faviconImageReader: TabDependencyIsolationDefaults
                 .faviconCapabilities.images
-        ))
+        ).environment(SidebarFaviconImageStore()))
         host.frame = NSRect(x: 0, y: 0, width: 26, height: 26)
         host.layoutSubtreeIfNeeded()
         let image = try XCTUnwrap(
@@ -199,10 +199,7 @@ final class SidebarPinCommandIdentityTests: XCTestCase {
                 let icon = SidebarShortcutIconResolver.resolve(
                     pin: customized,
                     liveTab: liveTab,
-                    loadedStoredFavicon: nil,
-                    partition: .regular(nil),
-                    imageReader: TabDependencyIsolationDefaults
-                        .faviconCapabilities.images
+                    loadedStoredFavicon: nil
                 )
                 XCTAssertEqual(icon.systemImageName, "star.fill")
                 XCTAssertNil(icon.image)

@@ -211,7 +211,6 @@ final class FolderSearchCandidateBuilderTests: XCTestCase {
             selection: selection,
             windowState: windowState,
             liveFolderProvider: liveProvider,
-            faviconImageReader: TabDependencyIsolationDefaults.faviconCapabilities.images,
             pinProjection: SidebarPinFolderProjection(
                 runtimeIsAlive: { true },
                 windows: windows,

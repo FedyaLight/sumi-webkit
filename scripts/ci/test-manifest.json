@@ -331,7 +331,7 @@
         "SumiTests/SidebarDragGeometryRepositoryTests",
         "SumiTests/SidebarDragOwnershipTransferTests",
         "SumiTests/SidebarDragReorderBoundaryTests",
-        "SumiTests/SidebarStoredFaviconLoaderTests",
+        "SumiTests/SidebarFaviconImageStoreTests",
         "SumiTests/SpaceSidebarTransitionCoordinatorTests",
         "SumiTests/SplitGroupStoreTests",
         "SumiTests/StartupWindowRestoreServiceTests",

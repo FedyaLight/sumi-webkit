@@ -75,25 +75,76 @@ enum SpaceSidebarSnapshotThemeResolver {
     }
 }
 
-enum SpaceSidebarSnapshotIcon {
+indirect enum SpaceSidebarSnapshotIcon {
     case image(Image)
     case system(String)
     case emoji(String)
+    case resolvable(
+        launchURL: URL,
+        partition: SumiFaviconPartition,
+        fallback: SpaceSidebarSnapshotIcon
+    )
 }
 
 extension SpaceSidebarSnapshotIcon {
     var accentGlyphText: String? {
-        if case .emoji(let glyph) = self {
+        switch self {
+        case .emoji(let glyph):
             return glyph
+        case .resolvable(_, _, let fallback):
+            return fallback.accentGlyphText
+        case .image, .system:
+            return nil
         }
-        return nil
     }
 
     var accentSystemImageName: String? {
-        if case .system(let systemName) = self {
+        switch self {
+        case .system(let systemName):
             return systemName
+        case .resolvable(_, _, let fallback):
+            return fallback.accentSystemImageName
+        case .image, .emoji:
+            return nil
         }
-        return nil
+    }
+
+    @MainActor
+    func resolved(using store: SidebarFaviconImageStore) -> Self {
+        switch self {
+        case .resolvable(let launchURL, let partition, let fallback):
+            if let image = store.image(for: launchURL, partition: partition) {
+                return .image(image)
+            }
+            return fallback.resolved(using: store)
+        case .image, .system, .emoji:
+            return self
+        }
+    }
+
+    @MainActor
+    func loadKey(using store: SidebarFaviconImageStore) -> String {
+        switch self {
+        case .resolvable(let launchURL, let partition, _):
+            return store.loadKey(
+                launchURL: launchURL,
+                partition: partition
+            )
+        case .image:
+            return "static-image"
+        case .system(let systemName):
+            return "static-system|\(systemName)"
+        case .emoji(let glyph):
+            return "static-emoji|\(glyph)"
+        }
+    }
+
+    @MainActor
+    func load(using store: SidebarFaviconImageStore) async {
+        guard case .resolvable(let launchURL, let partition, _) = self else {
+            return
+        }
+        await store.load(launchURL: launchURL, partition: partition)
     }
 }
 

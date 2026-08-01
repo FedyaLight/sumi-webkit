@@ -92,20 +92,14 @@ struct RegularSplitSegmentResolver {
     func dragSource(
         for item: SplitGroupSidebarItem,
         in group: SplitGroup,
-        faviconImageReader: any BrowserFaviconImageReading,
+        loadedStoredFavicon: Image?,
         splitPresentation: SidebarSplitDragPresentation,
         isGroupSelected: Bool
     ) -> SidebarDragSourceConfiguration? {
         guard let tab = item.tab else { return nil }
         let memberIcon = SplitGroupMemberIconResolver.resolve(
             item: item,
-            loadedStoredFavicon: nil,
-            faviconPartition: .regular(
-                item.pin?.executionProfileId
-                    ?? item.pin?.profileId
-                    ?? item.tab?.profileId
-            ),
-            imageReader: faviconImageReader
+            loadedStoredFavicon: loadedStoredFavicon
         )
         return SidebarDragSourceConfiguration(
             item: SumiDragItem.splitGroup(

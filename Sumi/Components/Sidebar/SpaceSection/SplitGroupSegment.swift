@@ -32,7 +32,7 @@ struct SplitGroupSegment: View {
     @Environment(\.resolvedThemeContext) private var themeContext
     @State private var isSegmentHovered = false
     @State private var isActionHovered = false
-    @StateObject private var storedFaviconLoader = SidebarStoredFaviconLoader()
+    @Environment(SidebarFaviconImageStore.self) private var faviconImageStore
 
     var body: some View {
         hoverTrackedContent
@@ -48,18 +48,6 @@ struct SplitGroupSegment: View {
             }
             .task(id: storedFaviconLoadKey) {
                 await loadStoredFavicon()
-            }
-            .onReceive(
-                NotificationCenter.default.publisher(
-                    for: .faviconCacheUpdated
-                )
-            ) { notification in
-                guard let pin = item.pin, pin.iconAsset == nil else { return }
-                storedFaviconLoader.invalidateIfNeeded(
-                    for: notification,
-                    launchURL: pin.launchURL,
-                    partition: faviconPartition
-                )
             }
     }
 
@@ -186,15 +174,13 @@ struct SplitGroupSegment: View {
     private var iconPresentation: SplitGroupMemberIconPresentation {
         SplitGroupMemberIconResolver.resolve(
             item: item,
-            loadedStoredFavicon: loadedStoredFavicon,
-            faviconPartition: faviconPartition,
-            imageReader: faviconImageReader
+            loadedStoredFavicon: loadedStoredFavicon
         )
     }
 
     private var loadedStoredFavicon: Image? {
         item.pin.flatMap {
-            storedFaviconLoader.image(
+            faviconImageStore.image(
                 for: $0.launchURL,
                 partition: faviconPartition
             )
@@ -203,7 +189,7 @@ struct SplitGroupSegment: View {
 
     private var storedFaviconLoadKey: String? {
         guard let pin = item.pin else { return nil }
-        return storedFaviconLoader.loadKey(
+        return faviconImageStore.loadKey(
             launchURL: pin.launchURL,
             partition: faviconPartition,
             isEnabled: pin.iconAsset == nil,
@@ -214,11 +200,10 @@ struct SplitGroupSegment: View {
     @MainActor
     private func loadStoredFavicon() async {
         guard let pin = item.pin, pin.iconAsset == nil else { return }
-        await storedFaviconLoader.load(
+        await faviconImageStore.load(
             launchURL: pin.launchURL,
             partition: faviconPartition,
-            imageReader: faviconImageReader,
-            isCurrentLaunchURL: { item.pin?.launchURL == $0 }
+            imageReader: faviconImageReader
         )
     }
 
@@ -268,9 +253,7 @@ private struct SplitGroupLiveMemberIcon: View {
         SplitGroupResolvedMemberIcon(
             presentation: SplitGroupMemberIconResolver.resolve(
                 item: item,
-                loadedStoredFavicon: loadedStoredFavicon,
-                faviconPartition: faviconPartition,
-                imageReader: faviconImageReader
+                loadedStoredFavicon: loadedStoredFavicon
             )
         )
     }

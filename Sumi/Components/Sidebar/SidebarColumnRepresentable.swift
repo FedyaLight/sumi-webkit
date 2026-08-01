@@ -180,7 +180,10 @@ enum SidebarColumnHostedRoot {
         inventoryUpdates: SidebarInventoryUpdates,
         profileUpdates: SidebarProfileUpdates
     ) -> SidebarColumnHostedRootView {
-        SidebarColumnHostedRootView(
+        environmentContext.windowState.sidebarFaviconImageStore.configure(
+            imageReader: environmentContext.browserContext.faviconImageReader
+        )
+        return SidebarColumnHostedRootView(
             environmentContext: environmentContext,
             presentationContext: presentationContext,
             spaceCatalog: spaceCatalog,
@@ -200,6 +203,61 @@ enum SidebarColumnHostedRoot {
             inventoryUpdates: inventoryUpdates,
             profileUpdates: profileUpdates
         )
+    }
+
+    @MainActor
+    static func faviconPrewarmRequests(
+        environmentContext: SidebarHostEnvironmentContext,
+        spaceCatalog: SidebarSpaceCatalogProjection,
+        inventory: SidebarSpaceInventoryProjection,
+        pinProjection: SidebarPinFolderProjection
+    ) -> [SidebarFaviconImageStore.Request] {
+        let windowState = environmentContext.windowState
+        guard !windowState.isIncognito else { return [] }
+
+        let spaces = spaceCatalog.availableSpaces(
+            isIncognito: false,
+            ephemeralSpaces: []
+        )
+        let currentSpaceID = windowState.currentSpaceId
+        let orderedSpaces = spaces.enumerated().sorted { lhs, rhs in
+            let lhsIsCurrent = lhs.element.id == currentSpaceID
+            let rhsIsCurrent = rhs.element.id == currentSpaceID
+            if lhsIsCurrent != rhsIsCurrent {
+                return lhsIsCurrent
+            }
+            return lhs.offset < rhs.offset
+        }.map(\.element)
+        var seen = Set<SidebarFaviconImageStore.Request>()
+        var requests: [SidebarFaviconImageStore.Request] = []
+
+        func append(_ pin: ShortcutPin, spaceID: UUID) {
+            guard pin.iconAsset == nil else { return }
+            let request = SidebarFaviconImageStore.Request(
+                launchURL: pin.launchURL,
+                partition: pinProjection.faviconPartition(
+                    for: pin,
+                    currentSpaceID: spaceID
+                )
+            )
+            if seen.insert(request).inserted {
+                requests.append(request)
+            }
+        }
+
+        for space in orderedSpaces {
+            for pin in spaceCatalog.essentialPins(profileID: space.profileId) {
+                append(pin, spaceID: space.id)
+            }
+            if let snapshot = inventory.snapshot(for: space.id) {
+                for pin in snapshot.pinsByID.values.sorted(by: {
+                    $0.index < $1.index
+                }) {
+                    append(pin, spaceID: space.id)
+                }
+            }
+        }
+        return requests
     }
 }
 
@@ -267,7 +325,18 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
     }
 
     func makeNSViewController(context: Context) -> SidebarColumnViewController {
-        SidebarColumnViewController(
+        windowState.sidebarFaviconImageStore.configure(
+            imageReader: browserContext.faviconImageReader
+        )
+        windowState.sidebarFaviconImageStore.prewarm(
+            SidebarColumnHostedRoot.faviconPrewarmRequests(
+                environmentContext: environmentContext,
+                spaceCatalog: spaceCatalog,
+                inventory: inventory,
+                pinProjection: pinProjection
+            )
+        )
+        return SidebarColumnViewController(
             usesCollapsedOverlayRoot: presentationContext.isCollapsedOverlay,
             sidebarRecoveryCoordinator: windowState.sidebarContextMenuController.sidebarRecoveryCoordinator
         )

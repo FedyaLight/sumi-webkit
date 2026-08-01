@@ -196,19 +196,15 @@ private struct SpaceSnapshotTitleView: View {
             backgroundColor: .clear,
             cornerRadius: rowCornerRadius
         ) {
-            if hasPinnedContent && isPinnedContentCollapsed {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(tokens.primaryText)
-                    .accessibilityHidden(true)
-            } else {
-                SpaceTitleIconView(
-                    iconValue: iconValue,
-                    textColor: tokens.primaryText,
-                    hidesAccessibility: true
-                )
-                .id(iconValue)
-            }
+            SpaceTitleLeadingGlyphContent(
+                iconValue: iconValue,
+                displaysChevron: hasPinnedContent && isPinnedContentCollapsed,
+                rotationDegrees: SpaceTitleChevronRotationPlan.resolve(
+                    isExpanded: !isPinnedContentCollapsed
+                ).destinationDegrees,
+                textColor: tokens.primaryText,
+                visibilityAnimation: nil
+            )
         } title: {
             SpaceTitleTextLabel(
                 title: title,
@@ -218,24 +214,11 @@ private struct SpaceSnapshotTitleView: View {
             Color.clear
                 .accessibilityHidden(true)
         }
-        .id(
-            SpaceSnapshotTitleIdentity(
-                title: title,
-                iconValue: iconValue,
-                isPinnedContentCollapsed: isPinnedContentCollapsed
-            )
-        )
         .allowsHitTesting(false)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
         .accessibilityIdentifier("space-transition-snapshot-title")
     }
-}
-
-private struct SpaceSnapshotTitleIdentity: Hashable {
-    let title: String
-    let iconValue: String
-    let isPinnedContentCollapsed: Bool
 }
 
 @MainActor
@@ -331,6 +314,7 @@ private struct EssentialsSnapshotSplitTileView: View {
     let tokens: ChromeThemeTokens
 
     @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(SidebarFaviconImageStore.self) private var faviconImageStore
 
     var body: some View {
         EssentialSplitCompactVisual(
@@ -353,14 +337,28 @@ private struct EssentialsSnapshotSplitTileView: View {
             desaturatesIcons: !splitGroup.isLoaded
         )
         .frame(width: tileSize.width, height: tileSize.height)
+        .sidebarZenPressEffectRestingGeometry()
+        .task(id: memberIconLoadKey) {
+            for member in splitGroup.members {
+                await member.icon.load(using: faviconImageStore)
+            }
+        }
         .accessibilityIdentifier(
             "essential-split-group-snapshot-\(splitGroup.id.uuidString)"
         )
     }
 
     private func fallbackImage(for icon: SpaceSidebarSnapshotIcon) -> Image {
-        if case .image(let image) = icon { return image }
+        if case .image(let image) = icon.resolved(using: faviconImageStore) {
+            return image
+        }
         return Image(systemName: "globe")
+    }
+
+    private var memberIconLoadKey: String {
+        splitGroup.members.map {
+            $0.icon.loadKey(using: faviconImageStore)
+        }.joined(separator: "|")
     }
 
     private func accentColor(

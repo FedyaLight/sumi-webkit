@@ -128,6 +128,7 @@ extension View {
         self
             .environmentObject(context.nowPlayingController)
             .environment(context.windowState)
+            .environment(context.windowState.sidebarFaviconImageStore)
             .environment(context.windowRegistry)
             .environmentObject(context.sidebarDragState.geometry)
             .environmentObject(context.sidebarDragState.geometry.refreshSignal)

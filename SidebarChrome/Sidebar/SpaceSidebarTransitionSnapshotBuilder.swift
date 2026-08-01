@@ -89,7 +89,6 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                 launcherRuntime: launcherRuntime,
                 selection: selection,
                 pinProjection: pinProjection,
-                imageReader: browserContext.faviconImageReader,
                 backdropReader: browserContext.essentialBackdropReader,
                 windowState: windowState,
                 settings: settings
@@ -126,7 +125,6 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             projection: projection,
             selection: selection,
             pinProjection: pinProjection,
-            imageReader: browserContext.faviconImageReader,
             windowState: windowState,
             currentTabID: currentTabID
         )
@@ -141,7 +139,6 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                 launcherRuntime: launcherRuntime,
                 selection: selection,
                 pinProjection: pinProjection,
-                imageReader: browserContext.faviconImageReader,
                 windowState: windowState
             )
             : SpaceSidebarTransitionItemSnapshotProjector
@@ -150,7 +147,6 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                 launcherRuntime: launcherRuntime,
                 selection: selection,
                 pinProjection: pinProjection,
-                imageReader: browserContext.faviconImageReader,
                 windowState: windowState
             )
 
@@ -173,7 +169,6 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                     launcherRuntime: launcherRuntime,
                     selection: selection,
                     pinProjection: pinProjection,
-                    imageReader: browserContext.faviconImageReader,
                     backdropReader: browserContext.essentialBackdropReader,
                     windowState: windowState,
                     settings: settings
@@ -256,7 +251,6 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         launcherRuntime: SidebarLauncherRuntimeSnapshot,
         selection: SidebarWindowSelectionQuery,
         pinProjection: SidebarPinFolderProjection,
-        imageReader: any BrowserFaviconImageReading,
         backdropReader: any BrowserEssentialBackdropReading,
         windowState: BrowserWindowState,
         settings: SumiSettingsService
@@ -284,7 +278,6 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                 inventory: inventory,
                 selection: selection,
                 pinProjection: pinProjection,
-                imageReader: imageReader,
                 windowState: windowState
             )
         }
@@ -300,7 +293,6 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                             inventory: spaceInventory,
                             selection: selection,
                             pinProjection: pinProjection,
-                            imageReader: imageReader,
                             backdropReader: backdropReader,
                             windowState: windowState
                         )

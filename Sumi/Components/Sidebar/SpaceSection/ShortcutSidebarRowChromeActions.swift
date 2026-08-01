@@ -147,14 +147,14 @@ extension ShortcutSidebarRowChrome {
     }
 
     var currentLoadedStoredFavicon: Image? {
-        storedFaviconLoader.image(
+        faviconImageStore.image(
             for: pin.launchURL,
             partition: faviconPartition
         )
     }
 
     var storedFaviconLoadKey: String {
-        storedFaviconLoader.loadKey(
+        faviconImageStore.loadKey(
             launchURL: pin.launchURL,
             partition: faviconPartition,
             isEnabled: pin.iconAsset == nil,
@@ -166,11 +166,10 @@ extension ShortcutSidebarRowChrome {
     func loadStoredFavicon() async {
         guard pin.iconAsset == nil else { return }
 
-        await storedFaviconLoader.load(
+        await faviconImageStore.load(
             launchURL: pin.launchURL,
             partition: faviconPartition,
-            imageReader: faviconImageReader,
-            isCurrentLaunchURL: { pin.launchURL == $0 }
+            imageReader: faviconImageReader
         )
     }
 

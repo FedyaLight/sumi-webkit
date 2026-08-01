@@ -218,47 +218,6 @@ final class ShortcutPin: NSObject, ObservableObject, Identifiable {
         return nil
     }
 
-    static func cachedLaunchFavicon(
-        for url: URL,
-        partition: SumiFaviconPartition = .regular(nil),
-        imageReader: any BrowserFaviconImageReading
-    ) -> Image? {
-        guard let image = TabFaviconStore.getCachedImage(
-            forDocumentURL: url,
-            partition: partition,
-            context: .pinnedLauncher,
-            imageReader: imageReader
-        ) else {
-            return nil
-        }
-        return Image(nsImage: image)
-    }
-
-    func storedFaviconImage(
-        partition: SumiFaviconPartition,
-        imageReader: any BrowserFaviconImageReading
-    ) -> Image {
-        if let cached = Self.cachedLaunchFavicon(
-            for: launchURL,
-            partition: partition,
-            imageReader: imageReader
-        ) {
-            return cached
-        }
-        return Image(systemName: SumiPersistentGlyph.launcherSystemImageFallback)
-    }
-
-    func hasStoredFaviconPlaceholder(
-        partition: SumiFaviconPartition,
-        imageReader: any BrowserFaviconImageReading
-    ) -> Bool {
-        Self.cachedLaunchFavicon(
-            for: launchURL,
-            partition: partition,
-            imageReader: imageReader
-        ) == nil
-    }
-
     /// Emoji glyph chosen by the user for this pin (`iconAsset`), if the asset
     /// renders as an emoji. `nil` when the asset is an SF Symbol or absent.
     var glyphText: String? {
@@ -270,26 +229,12 @@ final class ShortcutPin: NSObject, ObservableObject, Identifiable {
 
     /// SF Symbol name chosen by the user for this pin (`iconAsset`), if the
     /// asset renders as a template symbol. `nil` when the asset is an emoji or
-    /// absent. Distinct from `storedChromeTemplateSystemImageName`, which is
-    /// derived from the cached favicon/surface rather than the chosen asset.
+    /// absent.
     var chromeTemplateSystemImageName: String? {
         guard let iconAsset, SumiPersistentGlyph.presentsAsEmoji(iconAsset) == false else {
             return nil
         }
         return SumiPersistentGlyph.resolvedLauncherSystemImageName(iconAsset)
-    }
-
-    func storedChromeTemplateSystemImageName(
-        for partition: SumiFaviconPartition,
-        imageReader: any BrowserFaviconImageReading
-    ) -> String? {
-        if hasStoredFaviconPlaceholder(
-            partition: partition,
-            imageReader: imageReader
-        ) {
-            return SumiPersistentGlyph.launcherSystemImageFallback
-        }
-        return nil
     }
 
     var preferredDisplayTitle: String {

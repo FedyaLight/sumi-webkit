@@ -23,6 +23,7 @@ struct PinnedTileVisual: View {
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.chromeThemeTokens) private var scopedChromeTokens
+    @Environment(SidebarFaviconImageStore.self) private var faviconImageStore
     @State private var loadedSelectionAccentColor: Color?
     @State private var accentCacheRefreshID = UUID()
 
@@ -200,25 +201,17 @@ struct PinnedTileVisual: View {
             return
         }
 
-        let cachedImage = TabFaviconStore.getCachedImage(
-            forDocumentURL: accentSourceURL,
+        await faviconImageStore.load(
+            launchURL: accentSourceURL,
             partition: accentSourcePartition,
-            context: .pinnedLauncher,
             imageReader: faviconImageReader
         )
-        let image: NSImage?
-        if let cachedImage {
-            image = cachedImage
-        } else {
-            image = await TabFaviconStore.loadCachedLauncherImage(
-                forDocumentURL: accentSourceURL,
-                partition: accentSourcePartition,
-                imageReader: faviconImageReader
-            )
-        }
 
         guard !Task.isCancelled,
-              let image,
+              let image = faviconImageStore.nsImage(
+                  for: accentSourceURL,
+                  partition: accentSourcePartition
+              ),
               let accent = SumiFaviconAccentColor.extract(from: image)
         else { return }
 

@@ -16,6 +16,7 @@ struct ShortcutHostedSplitGroupRow: View {
     let onActivateMember: (SplitMemberID) -> Void
     let onUnloadGroup: () -> Void
     let onCloseGroup: () -> Void
+    @Environment(SidebarFaviconImageStore.self) private var faviconImageStore
 
     init(
         group: SplitGroup,
@@ -153,10 +154,12 @@ struct ShortcutHostedSplitGroupRow: View {
     ) -> SplitGroupMemberIconPresentation {
         SplitGroupMemberIconResolver.resolve(
             item: item,
-            loadedStoredFavicon: nil,
-            faviconPartition: item.pin.map(faviconPartition)
-                ?? .regular(item.tab?.profileId),
-            imageReader: faviconImageReader
+            loadedStoredFavicon: item.pin.flatMap { pin in
+                faviconImageStore.image(
+                    for: pin.launchURL,
+                    partition: faviconPartition(pin)
+                )
+            }
         )
     }
 

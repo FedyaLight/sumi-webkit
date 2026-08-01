@@ -164,6 +164,7 @@ extension SpacesSideBarView {
         )
             .frame(width: width, alignment: .top)
             .frame(maxHeight: .infinity, alignment: .top)
+            .geometryGroup()
             .offset(x: offsetX)
             .opacity(opacity)
             .zIndex(zIndex)

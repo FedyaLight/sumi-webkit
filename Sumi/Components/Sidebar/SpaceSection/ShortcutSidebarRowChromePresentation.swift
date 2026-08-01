@@ -29,9 +29,7 @@ extension ShortcutSidebarRowChrome {
         SidebarShortcutIconResolver.resolve(
             pin: pin,
             liveTab: liveTab,
-            loadedStoredFavicon: currentLoadedStoredFavicon,
-            partition: faviconPartition,
-            imageReader: faviconImageReader
+            loadedStoredFavicon: currentLoadedStoredFavicon
         )
     }
 

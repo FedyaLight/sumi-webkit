@@ -20,12 +20,12 @@ struct LivePinnedTileContent: View {
     let contextMenuActions: EssentialTileContextMenuActions
     let dragIsEnabled: Bool
     let isAppKitInteractionEnabled: Bool
-    @StateObject private var storedFaviconLoader = SidebarStoredFaviconLoader()
+    @Environment(SidebarFaviconImageStore.self) private var faviconImageStore
 
     var body: some View {
         let resolvedTitle = pin.resolvedDisplayTitle(liveTab: liveTab)
         let glyphText = pin.glyphText
-        let launcherFavicon = currentCachedStoredFavicon
+        let launcherFavicon = currentLoadedStoredFavicon
         let resolvedFavicon = launcherFavicon ?? liveTab.favicon
         let chromeTemplateSystemImageName = pin.chromeTemplateSystemImageName
             ?? Self.chromeTemplateSystemImageName(
@@ -64,13 +64,6 @@ struct LivePinnedTileContent: View {
         .task(id: storedFaviconLoadKey) {
             await loadStoredFavicon()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .faviconCacheUpdated)) { notification in
-            storedFaviconLoader.invalidateIfNeeded(
-                for: notification,
-                launchURL: pin.launchURL,
-                partition: faviconPartition
-            )
-        }
     }
 
     private static func chromeTemplateSystemImageName(
@@ -97,7 +90,7 @@ struct LivePinnedTileContent: View {
     }
 
     private var currentLoadedStoredFavicon: Image? {
-        storedFaviconLoader.image(
+        faviconImageStore.image(
             for: pin.launchURL,
             partition: faviconPartition
         )
@@ -110,16 +103,8 @@ struct LivePinnedTileContent: View {
         ).map(Image.init(nsImage:))
     }
 
-    private var currentCachedStoredFavicon: Image? {
-        currentLoadedStoredFavicon ?? ShortcutPin.cachedLaunchFavicon(
-            for: pin.launchURL,
-            partition: faviconPartition,
-            imageReader: faviconImageReader
-        )
-    }
-
     private var storedFaviconLoadKey: String {
-        storedFaviconLoader.loadKey(
+        faviconImageStore.loadKey(
             launchURL: pin.launchURL,
             partition: faviconPartition,
             isEnabled: pin.iconAsset == nil,
@@ -131,11 +116,10 @@ struct LivePinnedTileContent: View {
     private func loadStoredFavicon() async {
         guard pin.iconAsset == nil else { return }
 
-        await storedFaviconLoader.load(
+        await faviconImageStore.load(
             launchURL: pin.launchURL,
             partition: faviconPartition,
-            imageReader: faviconImageReader,
-            isCurrentLaunchURL: { pin.launchURL == $0 }
+            imageReader: faviconImageReader
         )
     }
 }

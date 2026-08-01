@@ -284,20 +284,12 @@ private struct SidebarFolderPreviewRowIcon: View {
     let icon: FolderSearchCandidateIcon
     let tokens: ChromeThemeTokens
 
-    @StateObject private var storedFaviconLoader = SidebarStoredFaviconLoader()
+    @Environment(SidebarFaviconImageStore.self) private var faviconImageStore
 
     var body: some View {
         content
             .task(id: storedFaviconLoadKey) {
                 await loadStoredFaviconIfNeeded()
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .faviconCacheUpdated)) { notification in
-                guard case .shortcut(let pin, _, let partition, _) = icon else { return }
-                storedFaviconLoader.invalidateIfNeeded(
-                    for: notification,
-                    launchURL: pin.launchURL,
-                    partition: partition
-                )
             }
     }
 
@@ -308,17 +300,15 @@ private struct SidebarFolderPreviewRowIcon: View {
             templateIcon(systemName)
         case .resolved(let image):
             faviconImage(image)
-        case .shortcut(let pin, let liveTab, let partition, let imageReader):
+        case .shortcut(let pin, let liveTab, let partition):
             shortcutIcon(
                 SidebarShortcutIconResolver.resolve(
                     pin: pin,
                     liveTab: liveTab,
-                    loadedStoredFavicon: storedFaviconLoader.image(
+                    loadedStoredFavicon: faviconImageStore.image(
                         for: pin.launchURL,
                         partition: partition
-                    ),
-                    partition: partition,
-                    imageReader: imageReader
+                    )
                 )
             )
         }
@@ -365,10 +355,10 @@ private struct SidebarFolderPreviewRowIcon: View {
     }
 
     private var storedFaviconLoadKey: String {
-        guard case .shortcut(let pin, _, let partition, _) = icon else {
+        guard case .shortcut(let pin, _, let partition) = icon else {
             return "disabled"
         }
-        return storedFaviconLoader.loadKey(
+        return faviconImageStore.loadKey(
             launchURL: pin.launchURL,
             partition: partition,
             isEnabled: pin.iconAsset == nil,
@@ -377,15 +367,13 @@ private struct SidebarFolderPreviewRowIcon: View {
     }
 
     private func loadStoredFaviconIfNeeded() async {
-        guard case .shortcut(let pin, _, let partition, let imageReader) = icon,
+        guard case .shortcut(let pin, _, let partition) = icon,
               pin.iconAsset == nil
         else { return }
 
-        await storedFaviconLoader.load(
+        await faviconImageStore.load(
             launchURL: pin.launchURL,
-            partition: partition,
-            imageReader: imageReader,
-            isCurrentLaunchURL: { $0 == pin.launchURL }
+            partition: partition
         )
     }
 }

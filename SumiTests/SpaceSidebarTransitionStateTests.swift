@@ -1299,6 +1299,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             tokens: tokens
         )
         .frame(width: rowWidth, height: SidebarRowLayout.rowHeight)
+        .environment(SidebarFaviconImageStore())
         let host = NSHostingView(rootView: root)
         host.wantsLayer = true
         host.frame = CGRect(
@@ -1373,6 +1374,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             tokens: tokens
         )
         .frame(width: rowWidth, height: rowHeight)
+        .environment(SidebarFaviconImageStore())
         let host = NSHostingView(rootView: root)
         host.wantsLayer = true
         host.frame = CGRect(
@@ -1436,6 +1438,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             tokens: tokens
         )
         .environment(\.sumiSettings, settings)
+        .environment(SidebarFaviconImageStore())
         .padding(padding)
         let canvasSize = CGSize(
             width: tileSize.width + padding * 2,
@@ -1494,6 +1497,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             foregroundColor: .black
         )
         .frame(width: canvasSize, height: canvasSize)
+        .environment(SidebarFaviconImageStore())
         let host = NSHostingView(rootView: root)
         host.wantsLayer = true
         host.frame = CGRect(
