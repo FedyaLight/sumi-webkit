@@ -141,11 +141,17 @@ final class CollapsedSidebarOverlayRootView: SidebarColumnBaseContainerView {
         }
 
         let hit = super.hitTest(localPoint)
-        if hit === hostedSidebarView {
-            return self
-        }
-
-        return hit ?? self
+        let event = window?.currentEvent
+        return SidebarColumnHitTestRouting.routedHit(
+            point: localPoint,
+            in: self,
+            originalHit: hit,
+            hostedSidebarView: hostedSidebarView,
+            contextMenuController: contextMenuController,
+            eventType: event?.type,
+            eventButtonNumber: event?.buttonNumber,
+            capturesOverlayBackgroundPointerEvents: true
+        )
     }
 
     override func mouseDown(with event: NSEvent) {

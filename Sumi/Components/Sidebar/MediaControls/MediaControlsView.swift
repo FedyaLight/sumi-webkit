@@ -7,8 +7,18 @@ import AppKit
 import Foundation
 import SwiftUI
 
+enum SidebarMediaCardPresentationPolicy {
+    static func shouldPresentCard(
+        hasCardState: Bool,
+        presentationContext: SidebarPresentationContext
+    ) -> Bool {
+        hasCardState && presentationContext.allowsInteractiveWork
+    }
+}
+
 struct MediaControlsView: View {
     @Environment(BrowserWindowState.self) private var windowState
+    @Environment(\.sidebarPresentationContext) private var sidebarPresentationContext
     @Environment(\.scenePhase) private var scenePhase
 
     @StateObject private var mediaStore: SumiBackgroundMediaCardStore
@@ -29,7 +39,10 @@ struct MediaControlsView: View {
 
     var body: some View {
         Group {
-            if windowState.isSidebarVisible, let cardState = mediaStore.cardState {
+            if SidebarMediaCardPresentationPolicy.shouldPresentCard(
+                hasCardState: mediaStore.cardState != nil,
+                presentationContext: sidebarPresentationContext
+            ), let cardState = mediaStore.cardState {
                 SumiBackgroundMediaCardView(
                     cardState: cardState,
                     faviconImageReader: faviconImageReader,

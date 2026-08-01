@@ -122,7 +122,13 @@ struct SpacesSideBarView: View {
 
     var body: some View {
         sidebarContent
-            .contentShape(Rectangle())
+            .background {
+                if sidebarPresentationContext.inputMode == .collapsedOverlay {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .backgroundDraggable(sidebarDragState: dragState)
+                }
+            }
             .overlay {
                 SidebarMouseButtonCaptureSurface(
                     isEnabled: allowsSidebarInteractiveWork,

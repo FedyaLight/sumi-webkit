@@ -108,7 +108,6 @@ struct SidebarExtensionActionGrid: View {
     let pinnedExtensionIDs: [String]
     let profileId: UUID?
     let browserContext: ExtensionActionBrowserContext
-    @Environment(\.sidebarPresentationContext) private var sidebarPresentationContext
     private static let gridSpacing: CGFloat = 8
     private static let coordinateSpaceName = "sidebar-extension-reorder"
 
@@ -140,26 +139,11 @@ struct SidebarExtensionActionGrid: View {
                         surface.slot(slot) {
                             slotView(slot, isPressed: surface.isPressed(slot))
                         }
-                        // Inside the sidebar, the background/column owns an AppKit
-                        // context menu that competes for right-clicks through the
-                        // sidebar controller's routing priority. A plain
-                        // `sumiAppKitContextMenu` overlay does not register with that
-                        // controller, so the sidebar menu wins. Route through
-                        // `sidebarAppKitContextMenu` (right-click only, no primary
-                        // action) so this slot registers as an AppKit owner and wins
-                        // the right-click while still passing the primary mouse to
-                        // the SwiftUI reorder gesture.
-                        //
-                        // In collapsed-overlay mode there is no such primary mouse to
-                        // pass: `CollapsedSidebarOverlayRootView` converts every hit
-                        // that lands on the bare hosting view into a window drag, so a
-                        // pure-SwiftUI control there is click-dead. Claim the press
-                        // with a release action in that mode only — it costs
-                        // drag-to-reorder while the sidebar is collapsed, which never
-                        // worked there anyway, and buys back activation.
+                        // Register the slot with the sidebar's AppKit context-menu
+                        // router without claiming the primary mouse used by the
+                        // shared SwiftUI tap/reorder gesture.
                         .sidebarAppKitContextMenu(
                             surfaceKind: .button,
-                            releaseAction: overlayReleaseAction(for: slot),
                             entries: { menuEntries(for: slot) }
                         )
                     }
@@ -200,15 +184,6 @@ struct SidebarExtensionActionGrid: View {
                 profileId: profileId
             )
         }
-    }
-
-    private func overlayReleaseAction(
-        for slot: PinnedToolbarSlot
-    ) -> (() -> Void)? {
-        guard sidebarPresentationContext.inputMode == .collapsedOverlay else {
-            return nil
-        }
-        return { activate(slot) }
     }
 
     private func menuEntries(for slot: PinnedToolbarSlot) -> [SidebarContextMenuEntry] {
