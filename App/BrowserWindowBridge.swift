@@ -197,6 +197,10 @@ struct BrowserWindowBridge: NSViewRepresentable {
             }
             guard windowState.presentationState.nativeDisplayMode != mode
             else { return }
+            if mode == .fullScreen
+                || windowState.presentationState.nativeDisplayMode == .fullScreen {
+                window.applyBrowserChromeConfiguration(displayMode: mode)
+            }
             windowState.presentationState.nativeDisplayMode = mode
         }
     }

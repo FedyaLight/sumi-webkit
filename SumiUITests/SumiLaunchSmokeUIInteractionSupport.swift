@@ -1769,6 +1769,14 @@ extension SumiLaunchSmokeUITestCase {
             return
         }
 
+        XCTAssertEqual(
+            zoomButton.frame.midY,
+            sidebarToggle.frame.midY,
+            accuracy: 1,
+            "Traffic lights and the sidebar toggle should share one vertical centre. zoom=\(zoomButton.frame) toggle=\(sidebarToggle.frame)",
+            file: file,
+            line: line
+        )
         XCTAssertGreaterThanOrEqual(
             sidebarToggle.frame.minX - zoomButton.frame.maxX,
             10,

@@ -7,76 +7,47 @@ enum BrowserWindowControlsAccessibilityIdentifiers {
     static let zoomButton = "browser-window-zoom-button"
 }
 
-/// Geometry AppKit measured from the live standard buttons. It reserves the right amount of room
-/// in SwiftUI while AppKit remains the only authority for button sizes and spacing.
+/// Pure validation helpers for geometry measured from AppKit's live standard buttons.
 enum BrowserWindowTrafficLightGeometry {
-    struct Fallback: Equatable {
-        let diameter: CGFloat
-        let centerSpacing: CGFloat
-
-        var clusterWidth: CGFloat {
-            diameter + centerSpacing * 2
-        }
-    }
-
-    @MainActor static var learnedClusterWidth: CGFloat?
-
-    @MainActor
-    static var resolvedClusterWidth: CGFloat {
-        learnedClusterWidth ?? fallback.clusterWidth
-    }
-
-    static var fallback: Fallback {
-        if #available(macOS 26.0, *) {
-            return Fallback(
-                diameter: 14,
-                centerSpacing: 23
-            )
-        }
-        return Fallback(
-            diameter: 12,
-            centerSpacing: 20
-        )
-    }
-
     static func measuredClusterWidth(fromNativeFrames frames: [CGRect]) -> CGFloat? {
-        guard frames.count == 3,
+        guard frames.count == BrowserWindowTrafficLightAction.allCases.count,
               frames.allSatisfy({ $0.width > 0 && $0.height > 0 })
         else { return nil }
 
-        let firstSpacing = frames[1].midX - frames[0].midX
-        let secondSpacing = frames[2].midX - frames[1].midX
-        guard firstSpacing > 0, secondSpacing > 0 else { return nil }
+        let sortedFrames = frames.sorted { $0.midX < $1.midX }
+        guard zip(sortedFrames, sortedFrames.dropFirst()).allSatisfy({ $1.midX > $0.midX })
+        else { return nil }
 
-        let bounds = frames.reduce(CGRect.null) { $0.union($1) }
-        guard !bounds.isNull else { return nil }
-
-        return bounds.width
+        let bounds = sortedFrames.reduce(CGRect.null) { $0.union($1) }
+        return bounds.isNull ? nil : bounds.width
     }
 }
 
 enum BrowserWindowTrafficLightMetrics {
-    @MainActor static var clusterWidth: CGFloat {
-        BrowserWindowTrafficLightGeometry.resolvedClusterWidth
-    }
-
     static let clusterHeight: CGFloat = 30
     static let clusterTrailingInset: CGFloat = 14
-    static let clusterHorizontalOffset: CGFloat = -1
+    static let placeholderOpacity: Double = 0.16
 
-    /// 18pt sidebar padding with the existing 1pt optical correction.
-    static let chromeLeading = SidebarChromeMetrics.controlLeadingPadding + clusterHorizontalOffset
+    @MainActor
+    static var clusterWidth: CGFloat {
+        BrowserWindowTrafficLightSnapshotStore.snapshot()?.size.width ?? 0
+    }
 
-    @MainActor static var sidebarReservedWidth: CGFloat { clusterWidth + clusterTrailingInset }
+    @MainActor
+    static var sidebarReservedWidth: CGFloat {
+        clusterWidth + clusterTrailingInset
+    }
 
     @MainActor
     static func sidebarReservedWidth(for rendering: BrowserWindowTrafficLightRendering) -> CGFloat {
         rendering.reservesSidebarWidth ? sidebarReservedWidth : 0
     }
 
-    @MainActor
-    static var travelDistance: CGFloat {
-        sidebarReservedWidth + SidebarChromeMetrics.controlLeadingPadding
+    static func sidebarReservedWidth(
+        for rendering: BrowserWindowTrafficLightRendering,
+        clusterWidth: CGFloat
+    ) -> CGFloat {
+        rendering.reservesSidebarWidth ? clusterWidth + clusterTrailingInset : 0
     }
 }
 
@@ -102,81 +73,98 @@ enum BrowserWindowTrafficLightAction: CaseIterable, Hashable {
     }
 }
 
-/// Reserves the visual slot in the sidebar. During travel a cached image rides the sidebar; after
-/// it settles, the native titlebar buttons replace that image at the same visual origin.
+/// A stable sidebar slot containing the permanent inactive system placeholder.
+///
+/// The slot is part of the sidebar hierarchy, so its pixels inherit docked and collapsed motion
+/// without a second progress value or offset animation. The real buttons cover these pixels only
+/// while the sidebar has settled at the leading window edge.
 struct BrowserWindowTrafficLights: View {
     let presentation: BrowserWindowTrafficLightPresentation
 
     var body: some View {
+        let snapshot = BrowserWindowTrafficLightSnapshotStore.snapshot()
         Color.clear
             .frame(
                 width: BrowserWindowTrafficLightMetrics.sidebarReservedWidth(
-                    for: presentation.rendering
+                    for: presentation.rendering,
+                    clusterWidth: snapshot?.size.width ?? 0
                 ),
                 height: BrowserWindowTrafficLightMetrics.clusterHeight
             )
             .overlay(alignment: .leading) {
-                BrowserWindowTrafficLightPlaceholder(rendering: presentation.rendering)
+                BrowserWindowTrafficLightPlaceholder(
+                    snapshot: snapshot,
+                    isVisible: presentation.rendering.showsPlaceholder
+                )
             }
-            .offset(x: BrowserWindowTrafficLightMetrics.clusterHorizontalOffset + travelOffset)
             .accessibilityHidden(true)
+            .allowsHitTesting(false)
     }
+}
 
-    private var travelOffset: CGFloat {
-        guard presentation.carriesOwnTravel else { return 0 }
-        let progress = min(max(presentation.travelProgress, 0), 1)
-        return -BrowserWindowTrafficLightMetrics.travelDistance * (1 - progress)
+struct BrowserWindowTrafficLightPlaceholderShape: Shape {
+    let nativeButtonFrames: [CGRect]
+
+    func path(in _: CGRect) -> Path {
+        var path = Path()
+        for frame in nativeButtonFrames {
+            let diameter = min(frame.width, frame.height)
+            path.addEllipse(in: CGRect(
+                x: frame.midX - diameter / 2,
+                y: frame.midY - diameter / 2,
+                width: diameter,
+                height: diameter
+            ))
+        }
+        return path
     }
 }
 
 private struct BrowserWindowTrafficLightPlaceholder: View {
-    let rendering: BrowserWindowTrafficLightRendering
-    @Environment(\.controlActiveState) private var controlActiveState
-    @Environment(\.displayScale) private var displayScale
+    let snapshot: BrowserWindowTrafficLightClusterSnapshot?
+    let isVisible: Bool
+    @Environment(\.layoutDirection) private var layoutDirection
 
     var body: some View {
-        if rendering.showsPlaceholder {
-            Group {
-                if let snapshot = BrowserWindowTrafficLightSnapshotStore.snapshot(
-                    isKeyWindow: controlActiveState == .key,
-                    scale: displayScale
-                ) {
-                    Image(nsImage: snapshot.image)
-                        .frame(width: snapshot.size.width, height: snapshot.size.height)
-                        .accessibilityHidden(true)
-                }
-            }
-            .onAppear {
-                BrowserWindowTrafficLightSnapshotStore.acquireDemand()
-            }
-            .onDisappear {
-                BrowserWindowTrafficLightSnapshotStore.releaseDemand()
-            }
+        if let snapshot {
+            BrowserWindowTrafficLightPlaceholderShape(
+                nativeButtonFrames: snapshot.buttonFrames
+            )
+                .fill(Color.primary.opacity(
+                    isVisible ? BrowserWindowTrafficLightMetrics.placeholderOpacity : 0
+                ))
+                .frame(width: snapshot.size.width, height: snapshot.size.height)
+                .offset(
+                    x: horizontalOffset(for: snapshot),
+                    y: snapshot.topInset
+                        - (SidebarChromeMetrics.controlStripHeight - snapshot.size.height) / 2
+                )
+                .accessibilityHidden(true)
+                .allowsHitTesting(false)
         }
+    }
+
+    private func horizontalOffset(
+        for snapshot: BrowserWindowTrafficLightClusterSnapshot
+    ) -> CGFloat {
+        let leadingOffset = snapshot.leadingInset - SidebarChromeMetrics.controlLeadingPadding
+        return layoutDirection == .rightToLeft ? -leadingOffset : leadingOffset
     }
 }
 
-/// The single stable SwiftUI/AppKit adapter for a window's native titlebar controls. It is rooted
-/// beside `BrowserWindowBridge`, never inside either sidebar host.
+/// The stable SwiftUI/AppKit adapter for one window's native titlebar controls.
 @MainActor
 struct BrowserWindowTrafficLightPlacementBridge: NSViewRepresentable {
     let state: BrowserWindowTrafficLightPlacementState
-    let displayFramesDidElapse: (UInt64) -> Void
 
     func makeNSView(context _: Context) -> BrowserWindowTrafficLightPlacementView {
         let view = BrowserWindowTrafficLightPlacementView()
-        view.update(
-            state: state,
-            displayFramesDidElapse: displayFramesDidElapse
-        )
+        view.update(state: state)
         return view
     }
 
     func updateNSView(_ nsView: BrowserWindowTrafficLightPlacementView, context _: Context) {
-        nsView.update(
-            state: state,
-            displayFramesDidElapse: displayFramesDidElapse
-        )
+        nsView.update(state: state)
     }
 
     static func dismantleNSView(_ nsView: BrowserWindowTrafficLightPlacementView, coordinator _: Void) {
@@ -188,19 +176,13 @@ struct BrowserWindowTrafficLightPlacementBridge: NSViewRepresentable {
 final class BrowserWindowTrafficLightPlacementView: NSView {
     private var state = BrowserWindowTrafficLightPlacementState(
         rendering: .hidden,
-        isLeadingSidebarChrome: false,
-        displayFrameRequest: nil
+        isLeadingSidebarChrome: false
     )
-    private var displayFramesDidElapse: ((UInt64) -> Void)?
     private weak var placement: BrowserWindowTrafficLightPlacement?
     private var placementSyncTask: Task<Void, Never>?
-    private var displayLink: CADisplayLink?
-    private var activeDisplayFrameRequestID: UInt64?
-    private var remainingDisplayFrames = 0
 
     isolated deinit {
         placementSyncTask?.cancel()
-        displayLink?.invalidate()
     }
 
     override var mouseDownCanMoveWindow: Bool { false }
@@ -221,11 +203,7 @@ final class BrowserWindowTrafficLightPlacementView: NSView {
         schedulePlacementSync()
     }
 
-    func update(
-        state: BrowserWindowTrafficLightPlacementState,
-        displayFramesDidElapse: @escaping (UInt64) -> Void
-    ) {
-        self.displayFramesDidElapse = displayFramesDidElapse
+    func update(state: BrowserWindowTrafficLightPlacementState) {
         guard self.state != state else { return }
         self.state = state
         schedulePlacementSync()
@@ -234,13 +212,12 @@ final class BrowserWindowTrafficLightPlacementView: NSView {
     func resignPlacement() {
         placementSyncTask?.cancel()
         placementSyncTask = nil
-        stopDisplayFrameConfirmation()
         placement?.resign()
         placement = nil
     }
 
-    /// `updateNSView` runs inside SwiftUI/AppKit layout. Titlebar geometry must be applied on the
-    /// next actor turn or AppKit detects a recursive layout pass.
+    /// `updateNSView` can run during SwiftUI/AppKit layout. Apply visibility on the next actor turn
+    /// to avoid entering AppKit's titlebar update recursively.
     private func schedulePlacementSync() {
         placementSyncTask?.cancel()
         placementSyncTask = Task { @MainActor [weak self] in
@@ -266,44 +243,5 @@ final class BrowserWindowTrafficLightPlacementView: NSView {
             rendering: state.rendering,
             isLeadingSidebarChrome: state.isLeadingSidebarChrome
         )
-        syncDisplayFrameConfirmation(in: window)
-    }
-
-    private func syncDisplayFrameConfirmation(in window: NSWindow) {
-        guard let request = state.displayFrameRequest else {
-            stopDisplayFrameConfirmation()
-            return
-        }
-        guard activeDisplayFrameRequestID != request.id else { return }
-
-        stopDisplayFrameConfirmation()
-        guard request.frameCount > 0 else { return }
-        let displayLink = window.displayLink(
-            target: self,
-            selector: #selector(handleDisplayFrame(_:))
-        )
-
-        activeDisplayFrameRequestID = request.id
-        remainingDisplayFrames = request.frameCount
-        self.displayLink = displayLink
-        displayLink.add(to: .main, forMode: .common)
-    }
-
-    private func stopDisplayFrameConfirmation() {
-        displayLink?.invalidate()
-        displayLink = nil
-        activeDisplayFrameRequestID = nil
-        remainingDisplayFrames = 0
-    }
-
-    @objc
-    private func handleDisplayFrame(_ displayLink: CADisplayLink) {
-        _ = displayLink
-        guard let requestID = activeDisplayFrameRequestID else { return }
-        remainingDisplayFrames -= 1
-        guard remainingDisplayFrames <= 0 else { return }
-
-        stopDisplayFrameConfirmation()
-        displayFramesDidElapse?(requestID)
     }
 }

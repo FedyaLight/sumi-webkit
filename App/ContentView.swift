@@ -77,10 +77,7 @@ struct ContentView: View {
             .background(BrowserWindowBridge(windowState: windowState, windowRegistry: windowRegistry))
             .background(
                 BrowserWindowTrafficLightPlacementBridge(
-                    state: windowState.chromePresentation.placement,
-                    displayFramesDidElapse: {
-                        windowState.chromePresentation.displayFramesDidElapse(requestID: $0)
-                    }
+                    state: windowState.chromePresentation.placement
                 )
             )
             .frame(

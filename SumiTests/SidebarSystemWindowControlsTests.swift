@@ -112,30 +112,31 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         )
     }
 
-    func testTrafficLightMetricsPreserveBrowserChromeClusterSize() {
-        XCTAssertEqual(BrowserWindowTrafficLightMetrics.clusterHeight, 30)
-        XCTAssertEqual(
-            BrowserWindowTrafficLightMetrics.clusterWidth,
-            BrowserWindowTrafficLightGeometry.resolvedClusterWidth
+    func testTrafficLightMetricsPreserveBrowserChromeLayout() throws {
+        let snapshot = try XCTUnwrap(
+            BrowserWindowTrafficLightSnapshotStore.snapshot()
         )
+
+        XCTAssertEqual(BrowserWindowTrafficLightMetrics.clusterHeight, 30)
+        XCTAssertEqual(BrowserWindowTrafficLightMetrics.clusterWidth, snapshot.size.width)
         XCTAssertEqual(BrowserWindowTrafficLightMetrics.clusterTrailingInset, 14)
-        XCTAssertEqual(BrowserWindowTrafficLightMetrics.clusterHorizontalOffset, -1)
+        XCTAssertEqual(BrowserWindowTrafficLightMetrics.placeholderOpacity, 0.16)
         XCTAssertEqual(
             BrowserWindowTrafficLightMetrics.sidebarReservedWidth,
-            BrowserWindowTrafficLightGeometry.resolvedClusterWidth
-                + BrowserWindowTrafficLightMetrics.clusterTrailingInset
+            snapshot.size.width + BrowserWindowTrafficLightMetrics.clusterTrailingInset
         )
         XCTAssertEqual(SidebarChromeMetrics.topControlInset, 0)
         XCTAssertEqual(SidebarChromeMetrics.controlLeadingPadding, 18)
         XCTAssertEqual(SidebarChromeMetrics.contentHorizontalPadding, 8)
-        XCTAssertEqual(SidebarChromeMetrics.controlStripHeight, 38)
+        XCTAssertEqual(SidebarChromeMetrics.controlStripHeight, 40)
+        XCTAssertEqual(SidebarChromeMetrics.controlToURLBarSpacing, 4)
         XCTAssertEqual(SidebarChromeMetrics.controlSpacing, 0)
         XCTAssertEqual(SidebarChromeMetrics.navigationButtonSize, 30)
         XCTAssertEqual(SidebarChromeMetrics.navigationIconSize, 14)
     }
 
     func testTrafficLightHeaderReservesRoomOnlyWhereTheClusterIsTheSidebars() {
-        for rendering in [BrowserWindowTrafficLightRendering.chrome, .travelling, .handoff] {
+        for rendering in [BrowserWindowTrafficLightRendering.chrome, .travelling] {
             XCTAssertEqual(
                 BrowserWindowTrafficLightMetrics.sidebarReservedWidth(for: rendering),
                 BrowserWindowTrafficLightMetrics.sidebarReservedWidth,
@@ -202,28 +203,31 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         ]))
     }
 
-    func testTrafficLightFallbackGeometryMatchesSystemClusterForCurrentOS() {
-        let fallback = BrowserWindowTrafficLightGeometry.fallback
-
-        if #available(macOS 26.0, *) {
-            XCTAssertEqual(fallback.diameter, 14)
-            XCTAssertEqual(fallback.centerSpacing, 23)
-        } else {
-            XCTAssertEqual(fallback.diameter, 12)
-            XCTAssertEqual(fallback.centerSpacing, 20)
-        }
+    func testSystemPlaceholderGeometryComesFromAppKit() throws {
+        let snapshot = try XCTUnwrap(
+            BrowserWindowTrafficLightSnapshotStore.snapshot()
+        )
+        XCTAssertGreaterThan(snapshot.size.width, 0)
+        XCTAssertGreaterThan(snapshot.size.height, 0)
+        XCTAssertGreaterThanOrEqual(snapshot.leadingInset, 0)
+        XCTAssertGreaterThanOrEqual(snapshot.topInset, 0)
         XCTAssertEqual(
-            fallback.clusterWidth,
-            fallback.diameter + fallback.centerSpacing * 2
+            snapshot.buttonFrames.count,
+            BrowserWindowTrafficLightAction.allCases.count
+        )
+        XCTAssertEqual(
+            snapshot.topInset + snapshot.size.height / 2,
+            SidebarChromeMetrics.controlStripHeight / 2,
+            accuracy: 0.5
         )
     }
 
     // MARK: - Rendering
 
-    func testPlaceholderExistsOnlyDuringTravelAndTheOneFrameHandoff() {
+    func testPlaceholderRemainsMountedUnderSettledNativeButtons() {
         XCTAssertTrue(BrowserWindowTrafficLightRendering.travelling.showsPlaceholder)
-        XCTAssertTrue(BrowserWindowTrafficLightRendering.handoff.showsPlaceholder)
-        for rendering in [BrowserWindowTrafficLightRendering.hidden, .system, .chrome] {
+        XCTAssertTrue(BrowserWindowTrafficLightRendering.chrome.showsPlaceholder)
+        for rendering in [BrowserWindowTrafficLightRendering.hidden, .system] {
             XCTAssertFalse(rendering.showsPlaceholder, "\(rendering)")
         }
     }
@@ -233,7 +237,6 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
 
         for rendering in [
             BrowserWindowTrafficLightRendering.travelling,
-            .handoff,
             .chrome,
         ] {
             XCTAssertEqual(
@@ -245,7 +248,7 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         }
     }
 
-    func testChromePresentationUsesDisplayFramesForNativeHandoff() throws {
+    func testSettledDockedSidebarRevealsNativeButtonsWithoutAFrameHandoff() {
         let presentation = BrowserWindowChromePresentation()
         presentation.performSidebarMotion(
             surface: .docked,
@@ -254,19 +257,11 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
             updateLayout: noLayoutMutation
         )
 
-        XCTAssertEqual(presentation.trafficLights.rendering, .travelling)
-        XCTAssertEqual(presentation.trafficLights.travelProgress, 1)
-        XCTAssertEqual(presentation.placement.displayFrameRequest?.frameCount, 2)
-
-        let confirmationID = try XCTUnwrap(presentation.placement.displayFrameRequest?.id)
-        presentation.displayFramesDidElapse(requestID: confirmationID)
-        XCTAssertEqual(presentation.trafficLights.rendering, .handoff)
-        XCTAssertEqual(presentation.placement.displayFrameRequest?.frameCount, 1)
-
-        let retirementID = try XCTUnwrap(presentation.placement.displayFrameRequest?.id)
-        presentation.displayFramesDidElapse(requestID: retirementID)
         XCTAssertEqual(presentation.trafficLights.rendering, .chrome)
-        XCTAssertNil(presentation.placement.displayFrameRequest)
+        XCTAssertEqual(
+            presentation.sidebarLayoutPhase,
+            .settled(surface: .docked, visibility: .visible)
+        )
     }
 
     func testFullScreenHandoverIsNotTreatedAsATrip() {
@@ -284,7 +279,6 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         )
 
         XCTAssertEqual(presentation.trafficLights.rendering, .system)
-        XCTAssertNil(presentation.placement.displayFrameRequest)
     }
 
     func testTrailingSidebarKeepsNativeWindowControlsWithdrawn() {
@@ -302,7 +296,6 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
 
         XCTAssertEqual(presentation.trafficLights.rendering, .hidden)
         XCTAssertFalse(presentation.placement.isLeadingSidebarChrome)
-        XCTAssertNil(presentation.placement.displayFrameRequest)
     }
 
     func testImmediateCollapsedHidePublishesOneSettledState() {
@@ -342,7 +335,7 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
             presentation.sidebarLayoutPhase,
             .settled(surface: .collapsed, visibility: .visible)
         )
-        XCTAssertEqual(presentation.placement.displayFrameRequest?.frameCount, 2)
+        XCTAssertEqual(presentation.trafficLights.rendering, .chrome)
     }
 
     func testCollapsedHostRetirementCannotOverrideDockedReveal() async {
@@ -372,26 +365,17 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
             presentation.sidebarLayoutPhase,
             .settled(surface: .docked, visibility: .visible)
         )
-        XCTAssertEqual(presentation.trafficLights.rendering, .travelling)
-        XCTAssertEqual(presentation.trafficLights.travelProgress, 1)
-        XCTAssertEqual(presentation.placement.displayFrameRequest?.frameCount, 2)
+        XCTAssertEqual(presentation.trafficLights.rendering, .chrome)
     }
 
-    func testInterruptedDisplayFrameConfirmationCannotRevealNativeButtons() async throws {
+    func testInterruptedMotionCompletionCannotRevealNativeButtons() async {
         let presentation = BrowserWindowChromePresentation()
         presentation.performSidebarMotion(
             surface: .collapsed,
             toward: .visible,
-            animation: nil,
+            animation: .linear(duration: 0.02),
             updateLayout: noLayoutMutation
         )
-        await withCheckedContinuation { continuation in
-            DispatchQueue.main.async {
-                continuation.resume()
-            }
-        }
-        try await Task.sleep(for: .milliseconds(20))
-        let staleRequestID = try XCTUnwrap(presentation.placement.displayFrameRequest?.id)
 
         presentation.performSidebarMotion(
             surface: .collapsed,
@@ -399,21 +383,17 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
             animation: nil,
             updateLayout: noLayoutMutation
         )
-        presentation.displayFramesDidElapse(requestID: staleRequestID)
+        try? await Task.sleep(for: .milliseconds(50))
 
         XCTAssertEqual(presentation.trafficLights.rendering, .hidden)
-        XCTAssertNil(presentation.placement.displayFrameRequest)
+        XCTAssertEqual(
+            presentation.sidebarLayoutPhase,
+            .settled(surface: .collapsed, visibility: .hidden)
+        )
     }
 
     func testCollapsedSidebarOffsetCarriesPlaceholderPixelsWithItsContent() throws {
-        BrowserWindowTrafficLightSnapshotStore.acquireDemand()
-        defer {
-            BrowserWindowTrafficLightSnapshotStore.releaseDemand()
-        }
-        _ = BrowserWindowTrafficLightSnapshotStore.snapshot(
-            isKeyWindow: true,
-            scale: 2
-        )
+        _ = BrowserWindowTrafficLightSnapshotStore.snapshot()
 
         let firstOffset: CGFloat = 12
         let secondOffset: CGFloat = 72
@@ -433,9 +413,7 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
                 Color.clear
                 BrowserWindowTrafficLights(
                     presentation: BrowserWindowTrafficLightPresentation(
-                        rendering: .travelling,
-                        travelProgress: 0,
-                        carriesOwnTravel: false
+                        rendering: .travelling
                     )
                 )
                 .offset(x: parentOffset)
@@ -470,9 +448,7 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
             HStack(spacing: 0) {
                 BrowserWindowTrafficLights(
                     presentation: BrowserWindowTrafficLightPresentation(
-                        rendering: rendering,
-                        travelProgress: 1,
-                        carriesOwnTravel: false
+                        rendering: rendering
                     )
                 )
                 Color.black.frame(width: markerWidth, height: 2)
@@ -484,6 +460,56 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
     }
 
     // MARK: - Placement
+
+    func testBrowserWindowUsesSystemTitlebarGeometryAlignedWithSidebarControls() throws {
+        let window = WindowChromeTestSupport.makeBrowserWindow()
+        WindowChromeTestSupport.retain(window)
+        let closeButton = try XCTUnwrap(window.standardWindowButton(.closeButton))
+        let closeFrameInWindow = closeButton.convert(closeButton.bounds, to: nil)
+        let closeCenterFromTop = window.frame.height - closeFrameInWindow.midY
+        let toolbar = try XCTUnwrap(window.toolbar)
+
+        XCTAssertEqual(window.toolbarStyle, .unifiedCompact)
+        XCTAssertEqual(toolbar.displayMode, .iconOnly)
+        XCTAssertTrue(toolbar.items.isEmpty)
+        let snapshot = try XCTUnwrap(BrowserWindowTrafficLightSnapshotStore.snapshot())
+        XCTAssertEqual(closeFrameInWindow.minX, snapshot.leadingInset, accuracy: 0.5)
+        XCTAssertEqual(
+            closeCenterFromTop,
+            SidebarChromeMetrics.controlStripHeight / 2,
+            accuracy: 0.5
+        )
+    }
+
+    func testPlacementNeverMutatesAppKitsTitlebarHierarchyOrNativeButtonFrames() throws {
+        let window = WindowChromeTestSupport.makeBrowserWindow()
+        WindowChromeTestSupport.retain(window)
+        let buttons = try BrowserWindowTrafficLightAction.allCases.map { action in
+            try XCTUnwrap(window.standardWindowButton(action.buttonType))
+        }
+        let titlebarView = try XCTUnwrap(buttons.first?.superview)
+        let titlebarContainer = try XCTUnwrap(titlebarView.superview)
+        let nativeButtonFrames = buttons.map(\.frame)
+        let nativeContainerFrame = titlebarContainer.frame
+
+        XCTAssertFalse(titlebarView.isHidden)
+        XCTAssertFalse(titlebarContainer.isHidden)
+
+        window.browserTrafficLightPlacement.apply(rendering: .chrome)
+
+        XCTAssertEqual(buttons.map(\.frame), nativeButtonFrames)
+        XCTAssertEqual(titlebarContainer.frame, nativeContainerFrame)
+        XCTAssertFalse(titlebarView.isHidden)
+        XCTAssertTrue(buttons.allSatisfy { !$0.isHidden })
+
+        window.browserTrafficLightPlacement.apply(rendering: .travelling)
+
+        XCTAssertEqual(buttons.map(\.frame), nativeButtonFrames)
+        XCTAssertEqual(titlebarContainer.frame, nativeContainerFrame)
+        XCTAssertFalse(titlebarView.isHidden)
+        XCTAssertFalse(titlebarContainer.isHidden)
+        XCTAssertTrue(buttons.allSatisfy(\.isHidden))
+    }
 
     func testChromePlacementKeepsNativeButtonsInAppKitsTitlebar() throws {
         let window = WindowChromeTestSupport.makeBrowserWindow()
@@ -505,46 +531,32 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         }
     }
 
-    func testChromePlacementMovesTheNativeClusterContainerAndPreservesButtonSizes() throws {
+    func testChromePlacementPreservesAppKitsNativeContainerAndButtonGeometry() throws {
         let window = WindowChromeTestSupport.makeBrowserWindow()
         WindowChromeTestSupport.retain(window)
         let closeButton = try XCTUnwrap(window.standardWindowButton(.closeButton))
         let titlebarView = try XCTUnwrap(closeButton.superview)
         let titlebarContainer = try XCTUnwrap(titlebarView.superview)
-        let containerHost = try XCTUnwrap(titlebarContainer.superview)
         let nativeContainerFrame = titlebarContainer.frame
-        let nativeSizes = BrowserWindowTrafficLightAction.allCases.map {
-            window.standardWindowButton($0.buttonType)?.frame.size
+        let nativeFrames = BrowserWindowTrafficLightAction.allCases.map {
+            window.standardWindowButton($0.buttonType)?.frame
         }
 
         window.browserTrafficLightPlacement.apply(
             rendering: .chrome
         )
 
-        let closeFrameInHost = titlebarView.convert(closeButton.frame, to: containerHost)
-        XCTAssertEqual(
-            titlebarContainer.frame.height,
-            SidebarChromeMetrics.controlStripHeight
-        )
-        XCTAssertEqual(titlebarContainer.frame.maxY, nativeContainerFrame.maxY)
-        XCTAssertEqual(titlebarContainer.frame.width, containerHost.bounds.width)
-        XCTAssertEqual(closeFrameInHost.minX, BrowserWindowTrafficLightMetrics.chromeLeading)
-        XCTAssertEqual(
-            closeFrameInHost.midY,
-            containerHost.bounds.maxY
-                - SidebarChromeMetrics.topControlInset
-                - SidebarChromeMetrics.controlStripHeight / 2
-        )
+        XCTAssertEqual(titlebarContainer.frame, nativeContainerFrame)
         for (index, action) in BrowserWindowTrafficLightAction.allCases.enumerated() {
             XCTAssertEqual(
-                window.standardWindowButton(action.buttonType)?.frame.size,
-                nativeSizes[index],
+                window.standardWindowButton(action.buttonType)?.frame,
+                nativeFrames[index],
                 "\(action)"
             )
         }
     }
 
-    func testChromePlacementMovesAppKitsSharedTrackingAreaWithTheNativeButtons() throws {
+    func testChromePlacementLeavesAppKitsSharedTrackingAreaWithTheNativeButtons() throws {
         let window = WindowChromeTestSupport.makeBrowserWindow()
         WindowChromeTestSupport.retain(window)
         window.makeKeyAndOrderFront(nil)
@@ -587,14 +599,8 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
                 rendering: rendering
             )
 
-            XCTAssertFalse(
-                closeButton.isHidden,
-                "Visibility has one owner: the native titlebar container"
-            )
-            XCTAssertTrue(
-                titlebarView.isHidden,
-                "The native tracking hierarchy must be inactive while the placeholder is visible"
-            )
+            XCTAssertTrue(closeButton.isHidden)
+            XCTAssertFalse(titlebarView.isHidden)
             XCTAssertFalse(
                 titlebarContainer.isHidden,
                 "The AppKit-owned titlebar container must never be hidden"
@@ -610,15 +616,6 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
             XCTAssertFalse(titlebarContainer.isHidden, "\(rendering)")
             XCTAssertEqual(closeButton.frame, chromeFrame, "\(rendering)")
         }
-
-        placement.apply(
-            rendering: .handoff
-        )
-        XCTAssertFalse(closeButton.isHidden)
-        XCTAssertFalse(titlebarView.isHidden)
-        XCTAssertFalse(titlebarContainer.isHidden)
-        XCTAssertEqual(closeButton.frame, chromeFrame)
-        placement.apply(rendering: .chrome)
     }
 
     func testPlacementExposesAccessibilityIdentifiersOnlyWhileTheClusterIsVisible() throws {
@@ -661,7 +658,6 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         let window = WindowChromeTestSupport.makeBrowserWindow()
         WindowChromeTestSupport.retain(window)
         let closeButton = try XCTUnwrap(window.standardWindowButton(.closeButton))
-        let titlebarView = try XCTUnwrap(closeButton.superview)
         let placement = window.browserTrafficLightPlacement
 
         placement.apply(rendering: .chrome)
@@ -670,12 +666,12 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
             object: window
         )
 
-        // AppKit can finish mutating its titlebar after the lifecycle notification returns.
-        titlebarView.isHidden = true
+        // AppKit can finish replacing or mutating its buttons after the lifecycle notification.
+        closeButton.isHidden = true
         await Task.yield()
         await Task.yield()
 
-        XCTAssertFalse(titlebarView.isHidden)
+        XCTAssertFalse(closeButton.isHidden)
     }
 
     func testStableWindowPlacementResignsWithoutSidebarOwnership() throws {
@@ -688,9 +684,9 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
 
         placement.apply(rendering: .chrome)
         placement.resign()
-        XCTAssertTrue(titlebarView.isHidden)
+        XCTAssertFalse(titlebarView.isHidden)
         XCTAssertFalse(titlebarContainer.isHidden)
-        XCTAssertFalse(closeButton.isHidden)
+        XCTAssertTrue(closeButton.isHidden)
     }
 
     func testFullScreenTransitionKeepsTheChromeOutOfAppKitsWay() throws {
@@ -712,8 +708,9 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         XCTAssertEqual(closeButton.frame, nativeFrame)
 
         placement.beginFullScreenTransition(isEntering: false)
-        XCTAssertTrue(titlebarView.isHidden)
+        XCTAssertFalse(titlebarView.isHidden)
         XCTAssertFalse(titlebarContainer.isHidden)
+        XCTAssertTrue(closeButton.isHidden)
         XCTAssertEqual(closeButton.frame, nativeFrame)
 
         placement.endFullScreenTransition()
@@ -735,8 +732,9 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         )
         placement.beginFullScreenTransition(isEntering: true)
 
-        XCTAssertTrue(titlebarView.isHidden)
+        XCTAssertFalse(titlebarView.isHidden)
         XCTAssertFalse(titlebarContainer.isHidden)
+        XCTAssertTrue(closeButton.isHidden)
     }
 
     func testSystemRenderingCannotExposeButtonsOutsideFullScreen() throws {
@@ -747,178 +745,46 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
 
         window.browserTrafficLightPlacement.apply(rendering: .system)
 
-        XCTAssertTrue(titlebarView.isHidden)
+        XCTAssertFalse(titlebarView.isHidden)
+        XCTAssertTrue(closeButton.isHidden)
     }
 
-    // MARK: - Snapshot cache
+    // MARK: - Placeholder geometry
 
-    func testSnapshotStorePreparesANativeColdStartPlaceholder() throws {
-        BrowserWindowTrafficLightSnapshotStore.acquireDemand()
-        defer {
-            BrowserWindowTrafficLightSnapshotStore.releaseDemand()
-        }
-
+    func testSnapshotStorePreparesNativeColdStartGeometry() throws {
         let snapshot = try XCTUnwrap(
-            BrowserWindowTrafficLightSnapshotStore.snapshot(isKeyWindow: true, scale: 2)
+            BrowserWindowTrafficLightSnapshotStore.snapshot()
         )
-        XCTAssertEqual(snapshot.size.height, BrowserWindowTrafficLightGeometry.fallback.diameter)
-        XCTAssertEqual(snapshot.size.width, BrowserWindowTrafficLightGeometry.fallback.clusterWidth)
+        XCTAssertGreaterThan(snapshot.size.width, 0)
+        XCTAssertGreaterThan(snapshot.size.height, 0)
+        XCTAssertGreaterThanOrEqual(snapshot.leadingInset, 0)
+        XCTAssertGreaterThanOrEqual(snapshot.topInset, 0)
+        XCTAssertEqual(snapshot.buttonFrames.count, 3)
     }
 
-    func testSnapshotCacheFallsBackToTheOtherKeyStateRatherThanToNothing() throws {
-        let window = WindowChromeTestSupport.makeBrowserWindow()
-        WindowChromeTestSupport.retain(window)
-        BrowserWindowTrafficLightSnapshotStore.acquireDemand()
-        defer {
-            BrowserWindowTrafficLightSnapshotStore.releaseDemand()
-        }
-        let items = try BrowserWindowTrafficLightAction.allCases.enumerated().map { index, action in
-            BrowserWindowTrafficLightSnapshotItem(
-                button: try XCTUnwrap(window.standardWindowButton(action.buttonType)),
-                frame: CGRect(x: CGFloat(index) * 20, y: 0, width: 14, height: 14)
-            )
-        }
-
-        BrowserWindowTrafficLightSnapshotStore.warm(
-            isKeyWindow: false,
-            items: items,
-            size: CGSize(width: 54, height: 14),
-            scale: 2
-        )
-
-        // Over the ~200ms a placeholder is on screen, coloured-versus-grey beats no cluster at all.
-        let oppositeKeySnapshot = try XCTUnwrap(
-            BrowserWindowTrafficLightSnapshotStore.snapshot(isKeyWindow: true, scale: 2)
-        )
-        let liveSnapshot = try XCTUnwrap(
-            BrowserWindowTrafficLightSnapshotStore.snapshot(isKeyWindow: false, scale: 2)
-        )
-        XCTAssertIdentical(oppositeKeySnapshot.image, liveSnapshot.image)
-    }
-
-    func testSnapshotCacheReusesAStoredKeyState() throws {
-        BrowserWindowTrafficLightSnapshotStore.acquireDemand()
-        defer {
-            BrowserWindowTrafficLightSnapshotStore.releaseDemand()
-        }
-
-        let window = WindowChromeTestSupport.makeBrowserWindow()
-        WindowChromeTestSupport.retain(window)
-        let items = try BrowserWindowTrafficLightAction.allCases.enumerated().map { index, action in
-            BrowserWindowTrafficLightSnapshotItem(
-                button: try XCTUnwrap(window.standardWindowButton(action.buttonType)),
-                frame: CGRect(x: CGFloat(index) * 20, y: 0, width: 14, height: 14)
-            )
-        }
-        let size = CGSize(width: 54, height: 14)
-
-        for _ in 0..<5 {
-            for isKeyWindow in [true, false] {
-                BrowserWindowTrafficLightSnapshotStore.warm(
-                    isKeyWindow: isKeyWindow,
-                    items: items,
-                    size: size,
-                    scale: 2
-                )
-            }
-        }
-
-        let first = BrowserWindowTrafficLightSnapshotStore.snapshot(isKeyWindow: true, scale: 2)
-        BrowserWindowTrafficLightSnapshotStore.warm(
-            isKeyWindow: true,
-            items: items,
-            size: size,
-            scale: 2
-        )
-        // Repeated collapses must reuse the cached picture rather than re-render it.
-        XCTAssertIdentical(
-            BrowserWindowTrafficLightSnapshotStore.snapshot(isKeyWindow: true, scale: 2)?.image,
-            first?.image
+    func testSnapshotStoreReusesTheMeasuredSystemGeometry() {
+        XCTAssertEqual(
+            BrowserWindowTrafficLightSnapshotStore.snapshot(),
+            BrowserWindowTrafficLightSnapshotStore.snapshot()
         )
     }
 
-    func testSnapshotRenderingRefusesAClusterItCannotDraw() throws {
-        BrowserWindowTrafficLightSnapshotStore.acquireDemand()
-        defer {
-            BrowserWindowTrafficLightSnapshotStore.releaseDemand()
+    func testPlaceholderShapeTurnsEveryNativeButtonFrameIntoACircle() {
+        let nativeFrames = [
+            CGRect(x: 0, y: 0, width: 18, height: 14),
+            CGRect(x: 24, y: 0, width: 14, height: 14),
+            CGRect(x: 47, y: 0, width: 14, height: 18),
+        ]
+        let path = BrowserWindowTrafficLightPlaceholderShape(
+            nativeButtonFrames: nativeFrames
+        ).path(in: CGRect(x: 0, y: 0, width: 61, height: 18))
+
+        for frame in nativeFrames {
+            XCTAssertTrue(path.contains(CGPoint(x: frame.midX, y: frame.midY)))
+            XCTAssertFalse(path.contains(CGPoint(x: frame.minX, y: frame.minY)))
         }
-
-        let fallback = try XCTUnwrap(
-            BrowserWindowTrafficLightSnapshotStore.snapshot(isKeyWindow: true, scale: 2)
-        )
-        BrowserWindowTrafficLightSnapshotStore.warm(
-            isKeyWindow: true,
-            items: [],
-            size: CGSize(width: 54, height: 14),
-            scale: 2
-        )
-
-        let window = WindowChromeTestSupport.makeBrowserWindow()
-        WindowChromeTestSupport.retain(window)
-        let item = BrowserWindowTrafficLightSnapshotItem(
-            button: try XCTUnwrap(window.standardWindowButton(.closeButton)),
-            frame: CGRect(x: 0, y: 0, width: 14, height: 14)
-        )
-        BrowserWindowTrafficLightSnapshotStore.warm(
-            isKeyWindow: true,
-            items: [item],
-            size: .zero,
-            scale: 2
-        )
-        XCTAssertIdentical(
-            BrowserWindowTrafficLightSnapshotStore.snapshot(
-                isKeyWindow: true,
-                scale: 2
-            )?.image,
-            fallback.image
-        )
-    }
-
-    func testSnapshotDemandReleaseDropsCachedPixels() throws {
-        let first: BrowserWindowTrafficLightClusterSnapshot = try {
-            BrowserWindowTrafficLightSnapshotStore.acquireDemand()
-            defer {
-                BrowserWindowTrafficLightSnapshotStore.releaseDemand()
-            }
-            return try XCTUnwrap(
-                BrowserWindowTrafficLightSnapshotStore.snapshot(
-                    isKeyWindow: true,
-                    scale: 2
-                )
-            )
-        }()
-
-        BrowserWindowTrafficLightSnapshotStore.acquireDemand()
-        defer {
-            BrowserWindowTrafficLightSnapshotStore.releaseDemand()
-        }
-        let second = try XCTUnwrap(
-            BrowserWindowTrafficLightSnapshotStore.snapshot(
-                isKeyWindow: true,
-                scale: 2
-            )
-        )
-        XCTAssertNotIdentical(first.image, second.image)
-    }
-
-    func testSnapshotCacheNeverReusesPixelsFromAnotherBackingScale() throws {
-        BrowserWindowTrafficLightSnapshotStore.acquireDemand()
-        defer {
-            BrowserWindowTrafficLightSnapshotStore.releaseDemand()
-        }
-        let scaleTwo = try XCTUnwrap(
-            BrowserWindowTrafficLightSnapshotStore.snapshot(
-                isKeyWindow: true,
-                scale: 2
-            )
-        )
-        let scaleOne = try XCTUnwrap(
-            BrowserWindowTrafficLightSnapshotStore.snapshot(
-                isKeyWindow: true,
-                scale: 1
-            )
-        )
-        XCTAssertNotIdentical(scaleTwo.image, scaleOne.image)
+        XCTAssertGreaterThan(BrowserWindowTrafficLightMetrics.placeholderOpacity, 0)
+        XCTAssertLessThan(BrowserWindowTrafficLightMetrics.placeholderOpacity, 1)
     }
 }
 

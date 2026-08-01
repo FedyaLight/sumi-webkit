@@ -18,6 +18,36 @@ enum SumiBrowserChromeConfiguration {
         .resizable,
         .fullSizeContentView,
     ]
+
+    private static let toolbarIdentifier = NSToolbar.Identifier("SumiBrowserWindowToolbar")
+
+    @MainActor
+    static func applyTitlebar(
+        to window: NSWindow,
+        displayMode: BrowserWindowDisplayMode = .normal
+    ) {
+        guard displayMode != .fullScreen else {
+            window.titleVisibility = .hidden
+            window.titlebarAppearsTransparent = false
+            window.titlebarSeparatorStyle = .automatic
+            window.toolbar = nil
+            return
+        }
+
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
+
+        if window.toolbar?.identifier != toolbarIdentifier {
+            let toolbar = NSToolbar(identifier: toolbarIdentifier)
+            toolbar.allowsUserCustomization = false
+            toolbar.autosavesConfiguration = false
+            toolbar.displayMode = .iconOnly
+            window.toolbar = toolbar
+        }
+        window.toolbar?.isVisible = true
+        window.toolbarStyle = .unifiedCompact
+    }
 }
 
 enum SumiBrowserWindowShellConfiguration {
@@ -53,12 +83,17 @@ private enum SumiBrowserWindowAssociatedKeys {
 
 extension NSWindow {
     @MainActor
-    func applyBrowserChromeConfiguration() {
+    func applyBrowserChromeConfiguration(
+        displayMode: BrowserWindowDisplayMode = .normal
+    ) {
         styleMask = styleMask.union(SumiBrowserChromeConfiguration.requiredStyleMask)
-        titleVisibility = .hidden
-        titlebarAppearsTransparent = true
-        titlebarSeparatorStyle = .none
-        toolbar = nil
+        if displayMode == .fullScreen {
+            styleMask.remove(.fullSizeContentView)
+        }
+        SumiBrowserChromeConfiguration.applyTitlebar(
+            to: self,
+            displayMode: displayMode
+        )
         browserTrafficLightPlacement.reapply()
     }
 

@@ -655,7 +655,7 @@ final class HoverSidebarManagerTests: XCTestCase {
         harness.delayedActions.runNext()
 
         XCTAssertTrue(harness.manager.isOverlayVisible)
-        XCTAssertEqual(presentation.trafficLights.rendering, .travelling)
+        XCTAssertTrue(presentation.trafficLights.rendering.showsPlaceholder)
 
         mouse = CGPoint(x: 180, y: 300)
         harness.recorder.sendMouseMoved()
@@ -667,14 +667,6 @@ final class HoverSidebarManagerTests: XCTestCase {
             .settled(surface: .collapsed, visibility: .visible),
             "Pointer intent must not invalidate settlement of the active visual motion"
         )
-        XCTAssertEqual(presentation.placement.displayFrameRequest?.frameCount, 2)
-
-        let confirmationID = try XCTUnwrap(presentation.placement.displayFrameRequest?.id)
-        presentation.displayFramesDidElapse(requestID: confirmationID)
-        XCTAssertEqual(presentation.trafficLights.rendering, .handoff)
-
-        let retirementID = try XCTUnwrap(presentation.placement.displayFrameRequest?.id)
-        presentation.displayFramesDidElapse(requestID: retirementID)
         XCTAssertEqual(presentation.trafficLights.rendering, .chrome)
     }
 }

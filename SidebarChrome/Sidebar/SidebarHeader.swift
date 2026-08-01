@@ -21,7 +21,7 @@ struct SidebarHeader: View {
     @Environment(\.sumiSettings) var sumiSettings
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: SidebarChromeMetrics.controlToURLBarSpacing) {
             controlStrip
             sidebarURLBar
         }

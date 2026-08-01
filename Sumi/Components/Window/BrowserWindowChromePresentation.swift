@@ -1,4 +1,3 @@
-import CoreGraphics
 import Observation
 import SwiftUI
 
@@ -10,10 +9,6 @@ enum BrowserWindowSidebarLayoutSurface: Equatable {
 enum BrowserWindowSidebarLayoutVisibility: Equatable {
     case hidden
     case visible
-
-    var progress: CGFloat {
-        self == .visible ? 1 : 0
-    }
 }
 
 enum BrowserWindowSidebarLayoutPhase: Equatable {
@@ -31,21 +26,13 @@ private struct BrowserWindowSidebarMotionToken: Equatable {
     fileprivate let generation: UInt64
 }
 
-struct BrowserWindowDisplayFrameRequest: Equatable {
-    let id: UInt64
-    let frameCount: Int
-}
-
 struct BrowserWindowTrafficLightPresentation: Equatable {
     var rendering: BrowserWindowTrafficLightRendering
-    var travelProgress: CGFloat
-    var carriesOwnTravel: Bool
 }
 
 struct BrowserWindowTrafficLightPlacementState: Equatable {
     var rendering: BrowserWindowTrafficLightRendering
     var isLeadingSidebarChrome: Bool
-    var displayFrameRequest: BrowserWindowDisplayFrameRequest?
 }
 
 enum BrowserWindowTrafficLightRendering: Equatable {
@@ -53,25 +40,21 @@ enum BrowserWindowTrafficLightRendering: Equatable {
     case system
     case chrome
     case travelling
-    case handoff
 
-    var showsPlaceholder: Bool { self == .travelling || self == .handoff }
+    /// The placeholder is a permanent part of leading sidebar chrome. In `.chrome` the real
+    /// AppKit buttons cover it; in `.travelling` it moves with the sidebar on its own.
+    var showsPlaceholder: Bool { self == .chrome || self == .travelling }
 
-    var reservesSidebarWidth: Bool {
-        switch self {
-        case .chrome, .travelling, .handoff:
-            return true
-        case .hidden, .system:
-            return false
-        }
-    }
+    var showsNativeButtons: Bool { self == .chrome || self == .system }
+
+    var reservesSidebarWidth: Bool { self == .chrome || self == .travelling }
 }
 
 /// Window-local authority for Presented Sidebar Layout Phase and its traffic-light projections.
 ///
-/// Docked and collapsed adapters provide their actual layout mutation, while this module owns
-/// admission, interruption, progress and settlement. AppKit display confirmation is generation-
-/// bound by the same authority, so no caller can publish a half-transition.
+/// The sidebar owns the travelling placeholder. AppKit owns the stationary interactive buttons.
+/// A transition therefore needs no independent progress, display-link confirmation, or handoff
+/// state: the native buttons are visible only after the matching sidebar motion has settled.
 @MainActor
 @Observable
 final class BrowserWindowChromePresentation {
@@ -81,39 +64,24 @@ final class BrowserWindowChromePresentation {
         case chrome
     }
 
-    private enum DisplayFrameStage {
-        case chromeConfirmation
-        case placeholderRetirement
-    }
-
     private(set) var sidebarLayoutPhase: BrowserWindowSidebarLayoutPhase = .settled(
         surface: .docked,
         visibility: .hidden
     )
     private(set) var rendering: BrowserWindowTrafficLightRendering = .hidden
-    private(set) var travelProgress: CGFloat = 0
-    private(set) var carriesOwnTravel = false
-    private(set) var displayFrameRequest: BrowserWindowDisplayFrameRequest?
 
     private var shellEdge: SidebarShellEdge = SidebarPosition.left.shellEdge
     private var isBrowserWindowFullScreen = false
     private var motionGeneration: UInt64 = 0
-    private var displayFrameGeneration: UInt64 = 0
-    private var displayFrameStage: DisplayFrameStage?
 
     var trafficLights: BrowserWindowTrafficLightPresentation {
-        BrowserWindowTrafficLightPresentation(
-            rendering: rendering,
-            travelProgress: travelProgress,
-            carriesOwnTravel: carriesOwnTravel
-        )
+        BrowserWindowTrafficLightPresentation(rendering: rendering)
     }
 
     var placement: BrowserWindowTrafficLightPlacementState {
         BrowserWindowTrafficLightPlacementState(
             rendering: rendering,
-            isLeadingSidebarChrome: shellEdge.isLeft,
-            displayFrameRequest: displayFrameRequest
+            isLeadingSidebarChrome: shellEdge.isLeft
         )
     }
 
@@ -127,14 +95,13 @@ final class BrowserWindowChromePresentation {
 
         self.shellEdge = shellEdge
         self.isBrowserWindowFullScreen = isBrowserWindowFullScreen
-        cancelDisplayFrameConfirmation()
         reconcileRenderingWithCurrentPhase()
     }
 
     /// Performs one Presented Sidebar Layout motion as a single transaction.
     ///
     /// The supplied update mutates the real docked or collapsed layout. Callers never receive the
-    /// generation token and therefore cannot forget to advance or settle the chrome projection.
+    /// generation token and therefore cannot let an interrupted completion reveal native controls.
     func performSidebarMotion(
         surface: BrowserWindowSidebarLayoutSurface,
         toward visibility: BrowserWindowSidebarLayoutVisibility,
@@ -144,17 +111,14 @@ final class BrowserWindowChromePresentation {
     ) {
         let token = beginSidebarMotion(surface: surface, toward: visibility)
 
-        let update = {
-            updateLayout()
-            self.advanceSidebarMotion(token)
-        }
-
         guard let animation else {
             var transaction = Transaction()
             transaction.animation = nil
             transaction.disablesAnimations = true
-            withTransaction(transaction, update)
+            withTransaction(transaction, updateLayout)
 
+            // A collapsed overlay is attached by AppKit on the next actor turn. Keep the native
+            // buttons withdrawn until that stable host exists.
             if token != nil, surface == .collapsed, visibility == .visible {
                 Task { @MainActor [weak self] in
                     await Task.yield()
@@ -169,7 +133,7 @@ final class BrowserWindowChromePresentation {
             return
         }
 
-        withAnimation(animation, completionCriteria: .removed, update) { [weak self] in
+        withAnimation(animation, completionCriteria: .removed, updateLayout) { [weak self] in
             guard let self, self.isCurrentMotion(token) else { return }
             completion?()
             self.settleSidebarMotion(token)
@@ -184,30 +148,9 @@ final class BrowserWindowChromePresentation {
 
         motionGeneration &+= 1
         let token = BrowserWindowSidebarMotionToken(generation: motionGeneration)
-        cancelDisplayFrameConfirmation()
         sidebarLayoutPhase = .moving(surface: surface, toward: visibility)
-        carriesOwnTravel = surface == .docked && shellEdge.isLeft
-
-        switch destination(visibility: visibility) {
-        case .hidden where shellEdge.isLeft && !isBrowserWindowFullScreen:
-            rendering = .travelling
-        case .chrome:
-            rendering = .travelling
-        case .hidden:
-            rendering = .hidden
-        case .system:
-            rendering = .system
-        }
-
+        rendering = movingRendering(toward: visibility)
         return token
-    }
-
-    private func advanceSidebarMotion(_ token: BrowserWindowSidebarMotionToken?) {
-        guard let token,
-              token.generation == motionGeneration,
-              case .moving(_, let visibility) = sidebarLayoutPhase
-        else { return }
-        travelProgress = visibility.progress
     }
 
     private func settleSidebarMotion(_ token: BrowserWindowSidebarMotionToken?) {
@@ -217,7 +160,7 @@ final class BrowserWindowChromePresentation {
         else { return }
 
         sidebarLayoutPhase = .settled(surface: surface, visibility: visibility)
-        settleRendering(visibility: visibility)
+        rendering = settledRendering(visibility: visibility)
     }
 
     private func isCurrentMotion(_ token: BrowserWindowSidebarMotionToken?) -> Bool {
@@ -225,36 +168,12 @@ final class BrowserWindowChromePresentation {
         return token.generation == motionGeneration
     }
 
-    func displayFramesDidElapse(requestID: UInt64) {
-        guard placement.displayFrameRequest?.id == requestID,
-              let displayFrameStage
-        else { return }
-
-        switch displayFrameStage {
-        case .chromeConfirmation:
-            rendering = .handoff
-            requestDisplayFrames(1, stage: .placeholderRetirement)
-        case .placeholderRetirement:
-            rendering = .chrome
-            cancelDisplayFrameConfirmation()
-        }
-    }
-
     private func reconcileRenderingWithCurrentPhase() {
         switch sidebarLayoutPhase {
-        case .moving(let surface, let visibility):
-            carriesOwnTravel = surface == .docked && shellEdge.isLeft
-            switch destination(visibility: visibility) {
-            case .system:
-                rendering = .system
-            case .hidden where !shellEdge.isLeft:
-                rendering = .hidden
-            case .hidden, .chrome:
-                rendering = .travelling
-            }
-        case .settled(let surface, let visibility):
-            carriesOwnTravel = surface == .docked && shellEdge.isLeft
-            settleRendering(visibility: visibility)
+        case .moving(_, let visibility):
+            rendering = movingRendering(toward: visibility)
+        case .settled(_, let visibility):
+            rendering = settledRendering(visibility: visibility)
         }
     }
 
@@ -270,19 +189,26 @@ final class BrowserWindowChromePresentation {
         }
     }
 
-    private func settleRendering(
-        visibility: BrowserWindowSidebarLayoutVisibility
-    ) {
+    private func movingRendering(
+        toward visibility: BrowserWindowSidebarLayoutVisibility
+    ) -> BrowserWindowTrafficLightRendering {
         switch destination(visibility: visibility) {
-        case .chrome:
-            rendering = .travelling
-            requestDisplayFrames(2, stage: .chromeConfirmation)
-        case .hidden:
-            rendering = .hidden
-            cancelDisplayFrameConfirmation()
         case .system:
-            rendering = .system
-            cancelDisplayFrameConfirmation()
+            return .system
+        case .hidden where !shellEdge.isLeft:
+            return .hidden
+        case .hidden, .chrome:
+            return .travelling
+        }
+    }
+
+    private func settledRendering(
+        visibility: BrowserWindowSidebarLayoutVisibility
+    ) -> BrowserWindowTrafficLightRendering {
+        switch destination(visibility: visibility) {
+        case .chrome: .chrome
+        case .hidden: .hidden
+        case .system: .system
         }
     }
 
@@ -292,19 +218,5 @@ final class BrowserWindowChromePresentation {
         guard shellEdge.isLeft else { return .hidden }
         guard !isBrowserWindowFullScreen else { return .system }
         return visibility == .visible ? .chrome : .hidden
-    }
-
-    private func requestDisplayFrames(_ count: Int, stage: DisplayFrameStage) {
-        displayFrameGeneration &+= 1
-        displayFrameStage = stage
-        displayFrameRequest = BrowserWindowDisplayFrameRequest(
-            id: displayFrameGeneration,
-            frameCount: count
-        )
-    }
-
-    private func cancelDisplayFrameConfirmation() {
-        displayFrameStage = nil
-        displayFrameRequest = nil
     }
 }

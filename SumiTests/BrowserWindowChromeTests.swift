@@ -258,6 +258,46 @@ final class BrowserWindowChromeTests: XCTestCase {
         )
     }
 
+    private func assertBrowserToolbarConfiguration(
+        _ window: NSWindow,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertEqual(window.toolbarStyle, .unifiedCompact, file: file, line: line)
+        XCTAssertEqual(window.toolbar?.displayMode, .iconOnly, file: file, line: line)
+        XCTAssertTrue(window.toolbar?.items.isEmpty == true, file: file, line: line)
+        XCTAssertTrue(window.toolbar?.isVisible == true, file: file, line: line)
+    }
+
+    func testFullScreenChromeReturnsTheTitlebarAreaToAppKit() {
+        let window = WindowChromeTestSupport.makeBrowserWindow()
+        WindowChromeTestSupport.retain(window)
+
+        window.applyBrowserChromeConfiguration(displayMode: .fullScreen)
+        window.contentView?.layoutSubtreeIfNeeded()
+
+        XCTAssertFalse(window.styleMask.contains(.fullSizeContentView))
+        XCTAssertFalse(window.titlebarAppearsTransparent)
+        XCTAssertEqual(window.titlebarSeparatorStyle, .automatic)
+        XCTAssertNil(window.toolbar)
+        guard let contentView = window.contentView else {
+            XCTFail("A browser window must keep its AppKit content view in fullscreen.")
+            return
+        }
+        XCTAssertEqual(
+            contentView.frame.height,
+            window.contentLayoutRect.height,
+            accuracy: 0.5
+        )
+
+        window.applyBrowserChromeConfiguration(displayMode: .normal)
+
+        XCTAssertTrue(window.styleMask.contains(.fullSizeContentView))
+        XCTAssertTrue(window.titlebarAppearsTransparent)
+        XCTAssertEqual(window.titlebarSeparatorStyle, .none)
+        assertBrowserToolbarConfiguration(window)
+    }
+
     func testSumiBrowserWindowInitAppliesBrowserChromeConfiguration() {
         let window = WindowChromeTestSupport.makeBrowserWindow()
 
@@ -265,7 +305,7 @@ final class BrowserWindowChromeTests: XCTestCase {
         XCTAssertEqual(window.titleVisibility, .hidden)
         XCTAssertTrue(window.titlebarAppearsTransparent)
         XCTAssertEqual(window.titlebarSeparatorStyle, .none)
-        XCTAssertNil(window.toolbar)
+        assertBrowserToolbarConfiguration(window)
         XCTAssertEqual(window.backgroundColor, SumiBrowserWindowShellConfiguration.backgroundColor)
         XCTAssertFalse(window.isOpaque)
         assertMinimumWindowConstraints(window)
@@ -292,7 +332,7 @@ final class BrowserWindowChromeTests: XCTestCase {
         XCTAssertFalse(window is SumiBrowserWindow)
         XCTAssertIdentical(windowRegistry.appKitWindow(for: windowState), window)
         XCTAssertEqual(window.titlebarSeparatorStyle, .none)
-        XCTAssertNil(window.toolbar)
+        assertBrowserToolbarConfiguration(window)
         XCTAssertEqual(window.backgroundColor, SumiBrowserWindowShellConfiguration.backgroundColor)
         XCTAssertFalse(window.isOpaque)
         assertMinimumWindowConstraints(window)
@@ -360,7 +400,7 @@ final class BrowserWindowChromeTests: XCTestCase {
         XCTAssertEqual(window.titleVisibility, .hidden)
         XCTAssertTrue(window.titlebarAppearsTransparent)
         XCTAssertEqual(window.titlebarSeparatorStyle, .none)
-        XCTAssertNil(window.toolbar)
+        assertBrowserToolbarConfiguration(window)
         XCTAssertEqual(window.backgroundColor, SumiBrowserWindowShellConfiguration.backgroundColor)
         XCTAssertFalse(window.isOpaque)
         assertMinimumWindowConstraints(window)
@@ -650,19 +690,19 @@ final class BrowserWindowChromeTests: XCTestCase {
 
             titlebarView = titlebarView ?? button.superview
             titlebarContainer = titlebarContainer ?? button.superview?.superview
-            XCTAssertFalse(
-                button.isHidden,
-                "Visibility must not be implemented again on each child",
-                file: file,
-                line: line
-            )
+            XCTAssertTrue(button.isHidden, file: file, line: line)
             XCTAssertEqual(button.alphaValue, 1, file: file, line: line)
             XCTAssertFalse(button.isTransparent, file: file, line: line)
             XCTAssertTrue(button.isAccessibilityHidden(), file: file, line: line)
             XCTAssertTrue(button.identifier?.rawValue.isEmpty ?? true, file: file, line: line)
             XCTAssertTrue(button.accessibilityIdentifier().isEmpty, file: file, line: line)
         }
-        XCTAssertTrue(titlebarView?.isHidden == true, file: file, line: line)
+        XCTAssertFalse(
+            titlebarView?.isHidden ?? true,
+            "The AppKit-owned titlebar hierarchy must remain in its native lifecycle",
+            file: file,
+            line: line
+        )
         XCTAssertFalse(
             titlebarContainer?.isHidden ?? true,
             "The AppKit-owned titlebar container must remain in its native lifecycle",
