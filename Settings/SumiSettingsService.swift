@@ -41,8 +41,7 @@ class SumiSettingsService {
     let downloads: DownloadSettingsStore
     let essentialsHint: EssentialsHintSettingsStore
 
-    /// Owns settings-surface UI routing (selected pane, privacy route, sub-pane,
-    /// and URL translation). Kept separate from preference persistence.
+    /// Owns transient navigation for the standalone Settings window.
     let navigation = SettingsNavigationOwner()
 
     var currentSettingsTab: SettingsTabs {
@@ -423,16 +422,6 @@ class SumiSettingsService {
 
         chrome.enforceSumiChromeDefaults()
         nowPlayingController.setFeatureEnabled(chrome.sidebarMiniPlayerEnabled)
-    }
-
-    /// Syncs sidebar state from `sumi://settings?pane=…`.
-    func applyNavigationFromSettingsSurfaceURL(_ url: URL) {
-        navigation.applyNavigation(from: url)
-    }
-
-    /// URL for the active settings tab.
-    func settingsSurfaceURLForCurrentNavigation() -> URL {
-        navigation.settingsSurfaceURLForCurrentNavigation()
     }
 }
 

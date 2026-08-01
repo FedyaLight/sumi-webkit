@@ -272,7 +272,9 @@ struct URLBarBookmarkEditorView: View {
     }
 
     private func folderDisplayTitle(_ folder: SumiBookmarkFolder) -> String {
-        folder.depth == 0 ? "Bookmarks" : folder.title
+        folder.id == SumiBookmarkConstants.favoritesFolderID
+            ? String(localized: "Favorites")
+            : folder.title
     }
 }
 

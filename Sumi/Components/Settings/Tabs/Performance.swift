@@ -59,11 +59,8 @@ struct SettingsPerformanceTab: View {
     var body: some View {
         @Bindable var settings = sumiSettings
 
-        VStack(alignment: .leading, spacing: 16) {
-            SettingsSection(
-                title: "Memory Saver",
-                subtitle: "Choose one inactive-tab policy. Pinned tabs and Essentials keep their launcher identity."
-            ) {
+        VStack(alignment: .leading, spacing: 20) {
+            SettingsSection(title: "Memory Saver") {
                 SettingsRow(
                     title: "Mode",
                     subtitle: selectedDescriptor?.detail
@@ -84,10 +81,7 @@ struct SettingsPerformanceTab: View {
                 }
             }
 
-            SettingsSection(
-                title: "Energy Saver",
-                subtitle: "Reduce native browser chrome work without modifying website content."
-            ) {
+            SettingsSection(title: "Energy Saver") {
                 SettingsRow(
                     title: "Mode",
                     subtitle: energySaverStatusText
@@ -105,8 +99,7 @@ struct SettingsPerformanceTab: View {
                 if settings.energySaverMode == .automatic {
                     SettingsDivider()
                     SettingsRow(
-                        title: "Use on battery at or below",
-                        subtitle: "Automatic mode also follows macOS Low Power Mode and serious thermal pressure."
+                        title: "Use on battery at or below"
                     ) {
                         Picker(
                             "Use on battery at or below",
@@ -116,41 +109,26 @@ struct SettingsPerformanceTab: View {
                                 Text("\(threshold)%").tag(threshold)
                             }
                         }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        .settingsTrailingControl(width: 120)
+                        .settingsMenuPicker(width: 120)
                     }
                 }
+            }
 
-                SettingsDivider()
+            SettingsSection(title: "While Energy Saver is active") {
+                ForEach(Array(SumiEnergySaverFeature.allCases.enumerated()), id: \.element) { index, feature in
+                    SettingsRow(
+                        title: feature.title,
+                        subtitle: feature.subtitle
+                    ) {
+                        Toggle("", isOn: energySaverFeatureBinding(feature, settings: settings))
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                    }
 
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("While Energy Saver is active")
-                        .font(.callout.weight(.semibold))
-
-                    ForEach(SumiEnergySaverFeature.allCases) { feature in
-                        HStack(alignment: .center, spacing: 16) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(feature.title)
-                                Text(feature.subtitle)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-
-                            Spacer(minLength: 16)
-
-                            Toggle("", isOn: energySaverFeatureBinding(feature, settings: settings))
-                                .toggleStyle(.switch)
-                                .labelsHidden()
-                        }
+                    if index < SumiEnergySaverFeature.allCases.count - 1 {
+                        SettingsDivider()
                     }
                 }
-
-                Text("macOS Reduce Motion is always honored independently, including when Energy Saver is Off.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -178,9 +156,7 @@ struct SettingsPerformanceTab: View {
                     Text(formattedDelay(delay)).tag(delay)
                 }
             }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .settingsTrailingControl(width: 140)
+            .settingsMenuPicker(width: 140)
         }
     }
 

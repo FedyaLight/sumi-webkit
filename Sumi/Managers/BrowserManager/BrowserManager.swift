@@ -221,7 +221,6 @@ class BrowserManager: ObservableObject {
             state: state,
             windowSpaceContext: windowSpaceContextSynchronizer,
             workspaceThemes: workspaceThemeTransitionOwner,
-            settings: settingsState,
             commandPalette: commandPalettePresentation
         )
         let mediaEffects = BrowserTabSelectionMediaEffects(

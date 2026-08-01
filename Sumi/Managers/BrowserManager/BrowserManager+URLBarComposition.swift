@@ -6,27 +6,10 @@ extension BrowserManager {
         let shell = shellRuntime
         let chrome = chromeBundle
         let webViews = webViewRoutingService
-        let nativeSurfaces = chrome.nativeSurfaceRoutingOwner
         let settingsNavigation = BrowserSettingsNavigationService(
-            activeWindow: { [windowRegistry] in
-                windowRegistry.activeWindow
-            },
+            settings: { [settingsState] in settingsState.settings },
             currentTab: { [windowTabs = shell.windowTabs] window in
                 windowTabs.currentTab(for: window)
-            },
-            settingsSurfaceURL: { pane in
-                BrowserPermissionSettingsRoutes.settingsSurfaceURL(for: pane)
-            },
-            siteSettingsSurfaceURL: { tab in
-                BrowserPermissionSettingsRoutes
-                    .privacySiteSettingsSurfaceURL(focusing: tab)
-            },
-            openNativeSurface: { [nativeSurfaces] kind, url, window in
-                nativeSurfaces.openNativeBrowserSurface(
-                    kind,
-                    url: url,
-                    in: window
-                )
             }
         )
         let extensionActions = BrowserURLBarExtensionActionContextOwner(

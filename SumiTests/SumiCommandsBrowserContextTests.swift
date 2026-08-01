@@ -65,10 +65,13 @@ final class SumiCommandsBrowserContextTests: XCTestCase {
         context.clearAllHistoryFromMenu()
         context.requestBookmarkEditorForActiveWindowFromMenu()
         context.bookmarkAllTabsFromMenu()
+        context.createBookmarkFolderFromMenu()
         context.manageBookmarksFromMenu()
         context.importBookmarksFromMenu()
         context.exportBookmarksFromMenu()
         context.openBookmarkURLFromMenuItem(bookmarkURL)
+        context.openBookmarkURLsInNewTabsFromMenuItem([bookmarkURL])
+        context.replaceTabsWithBookmarkURLsFromMenuItem([bookmarkURL])
 
         XCTAssertEqual(historyRouting.events, [
             .reopenAllWindows,
@@ -78,10 +81,13 @@ final class SumiCommandsBrowserContextTests: XCTestCase {
         XCTAssertEqual(bookmarkRouting.events, [
             .requestEditor,
             .bookmarkAllTabs,
+            .createBookmarkFolder,
             .manageBookmarks,
             .importBookmarks,
             .exportBookmarks,
             .openBookmarkURL(bookmarkURL),
+            .openBookmarkURLsInNewTabs([bookmarkURL]),
+            .replaceTabsWithBookmarkURLs([bookmarkURL]),
         ])
     }
 
@@ -198,10 +204,13 @@ private final class FakeCommandBookmarkRouting: SumiCommandBookmarkRouting {
     enum Event: Equatable {
         case requestEditor
         case bookmarkAllTabs
+        case createBookmarkFolder
         case manageBookmarks
         case importBookmarks
         case exportBookmarks
         case openBookmarkURL(URL)
+        case openBookmarkURLsInNewTabs([URL])
+        case replaceTabsWithBookmarkURLs([URL])
     }
 
     var canBookmarkAllTabs = false
@@ -219,6 +228,10 @@ private final class FakeCommandBookmarkRouting: SumiCommandBookmarkRouting {
         events.append(.bookmarkAllTabs)
     }
 
+    func createBookmarkFolderFromMenu() {
+        events.append(.createBookmarkFolder)
+    }
+
     func manageBookmarksFromMenu() {
         events.append(.manageBookmarks)
     }
@@ -233,6 +246,14 @@ private final class FakeCommandBookmarkRouting: SumiCommandBookmarkRouting {
 
     func openBookmarkURLFromMenuItem(_ url: URL) {
         events.append(.openBookmarkURL(url))
+    }
+
+    func openBookmarkURLsInNewTabsFromMenuItem(_ urls: [URL]) {
+        events.append(.openBookmarkURLsInNewTabs(urls))
+    }
+
+    func replaceTabsWithBookmarkURLsFromMenuItem(_ urls: [URL]) {
+        events.append(.replaceTabsWithBookmarkURLs(urls))
     }
 }
 

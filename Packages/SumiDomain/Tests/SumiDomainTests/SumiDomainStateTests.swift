@@ -14,23 +14,23 @@ final class SumiDomainStateTests: XCTestCase {
     }
 
     func testTabSurfaceStateAppliesNativeSurfaceAndPopupPolicy() {
-        let settingsURL = SumiSurface.settingsSurfaceURL(paneQuery: "general")
+        let historyURL = SumiSurface.historySurfaceURL(rangeQuery: "all")
         let webURL = URL(string: "https://example.com")!
         var state = TabSurfaceState()
 
-        XCTAssertTrue(state.representsSumiNativeSurface(for: settingsURL))
-        XCTAssertFalse(state.requiresPrimaryWebView(for: settingsURL))
+        XCTAssertTrue(state.representsSumiNativeSurface(for: historyURL))
+        XCTAssertFalse(state.requiresPrimaryWebView(for: historyURL))
         XCTAssertTrue(state.requiresPrimaryWebView(for: webURL))
         XCTAssertTrue(state.usesChromeThemedTemplateFavicon(
-            for: settingsURL,
+            for: historyURL,
             faviconIsTemplateGlobePlaceholder: false
         ))
 
         state.isPopupHost = true
-        XCTAssertFalse(state.representsSumiNativeSurface(for: settingsURL))
-        XCTAssertTrue(state.requiresPrimaryWebView(for: settingsURL))
+        XCTAssertFalse(state.representsSumiNativeSurface(for: historyURL))
+        XCTAssertTrue(state.requiresPrimaryWebView(for: historyURL))
         XCTAssertFalse(state.usesChromeThemedTemplateFavicon(
-            for: settingsURL,
+            for: historyURL,
             faviconIsTemplateGlobePlaceholder: true
         ))
     }

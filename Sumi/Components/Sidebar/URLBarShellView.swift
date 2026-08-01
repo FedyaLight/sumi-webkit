@@ -51,9 +51,6 @@ extension URLBarView {
 
     var displayURL: String {
         guard let currentTab else { return "" }
-        if currentTab.representsSumiSettingsSurface {
-            return String(localized: "Settings")
-        }
         if currentTab.representsSumiHistorySurface {
             return String(localized: "History")
         }
@@ -64,9 +61,6 @@ extension URLBarView {
     }
 
     func formatURL(_ url: URL) -> String {
-        if SumiSurface.isSettingsSurfaceURL(url) {
-            return String(localized: "Settings")
-        }
         if SumiSurface.isHistorySurfaceURL(url) {
             return String(localized: "History")
         }

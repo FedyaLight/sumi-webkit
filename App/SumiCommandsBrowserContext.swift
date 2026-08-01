@@ -34,10 +34,13 @@ protocol SumiCommandBookmarkRouting: AnyObject {
     func canBookmarkAllTabsInActiveWindow() -> Bool
     func requestBookmarkEditorForActiveWindowFromMenu()
     func bookmarkAllTabsFromMenu()
+    func createBookmarkFolderFromMenu()
     func manageBookmarksFromMenu()
     func importBookmarksFromMenu()
     func exportBookmarksFromMenu()
     func openBookmarkURLFromMenuItem(_ url: URL)
+    func openBookmarkURLsInNewTabsFromMenuItem(_ urls: [URL])
+    func replaceTabsWithBookmarkURLsFromMenuItem(_ urls: [URL])
 }
 
 #if DEBUG
@@ -226,6 +229,10 @@ final class SumiCommandsBrowserContext {
         bookmarkRouting.bookmarkAllTabsFromMenu()
     }
 
+    func createBookmarkFolderFromMenu() {
+        bookmarkRouting.createBookmarkFolderFromMenu()
+    }
+
     func manageBookmarksFromMenu() {
         bookmarkRouting.manageBookmarksFromMenu()
     }
@@ -240,6 +247,14 @@ final class SumiCommandsBrowserContext {
 
     func openBookmarkURLFromMenuItem(_ url: URL) {
         bookmarkRouting.openBookmarkURLFromMenuItem(url)
+    }
+
+    func openBookmarkURLsInNewTabsFromMenuItem(_ urls: [URL]) {
+        bookmarkRouting.openBookmarkURLsInNewTabsFromMenuItem(urls)
+    }
+
+    func replaceTabsWithBookmarkURLsFromMenuItem(_ urls: [URL]) {
+        bookmarkRouting.replaceTabsWithBookmarkURLsFromMenuItem(urls)
     }
 
 #if DEBUG

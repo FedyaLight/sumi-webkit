@@ -4,20 +4,17 @@ import Foundation
 @MainActor
 final class BrowserNativeSurfaceRoutingOwner {
     private let residence: BrowserNativeSurfaceResidenceOwner
-    private let settings: BrowserSettingsState
     private let tabOpening: BrowserTabOpeningOwner
     private let selection: BrowserTabSelectionOwner
     private let windows: WindowRegistry
 
     init(
         residence: BrowserNativeSurfaceResidenceOwner,
-        settings: BrowserSettingsState,
         tabOpening: BrowserTabOpeningOwner,
         selection: BrowserTabSelectionOwner,
         windows: WindowRegistry
     ) {
         self.residence = residence
-        self.settings = settings
         self.tabOpening = tabOpening
         self.selection = selection
         self.windows = windows
@@ -59,7 +56,6 @@ final class BrowserNativeSurfaceRoutingOwner {
             return
         }
 
-        applySettingsSurfaceNavigationIfNeeded(kind, url: url)
         let newTab = tabOpening.openPreparedRegularTab(
             url: url.absoluteString,
             context: .foreground(
@@ -95,15 +91,6 @@ final class BrowserNativeSurfaceRoutingOwner {
         url: URL
     ) {
         kind.configure(tab, url: url)
-        applySettingsSurfaceNavigationIfNeeded(kind, url: url)
-    }
-
-    private func applySettingsSurfaceNavigationIfNeeded(
-        _ kind: SumiNativeBrowserSurfaceKind,
-        url: URL
-    ) {
-        guard case .settings = kind else { return }
-        settings.settings?.applyNavigationFromSettingsSurfaceURL(url)
     }
 
     private func focus(_ windowState: BrowserWindowState) {

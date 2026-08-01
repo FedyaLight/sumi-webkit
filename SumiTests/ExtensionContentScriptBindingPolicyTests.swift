@@ -19,7 +19,7 @@ final class ExtensionContentScriptBindingPolicyTests: XCTestCase {
     func testNonInjectableCommittedDocumentDoesNotNeedRebind() {
         for url in [
             URL(string: "about:blank")!,
-            URL(string: "sumi://settings")!,
+            URL(string: "sumi://history")!,
             URL(string: "data:text/plain,hello")!,
         ] {
             XCTAssertFalse(

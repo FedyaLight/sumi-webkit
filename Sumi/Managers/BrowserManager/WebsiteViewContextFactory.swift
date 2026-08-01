@@ -33,9 +33,7 @@ enum WebsiteViewContextFactory {
     }
 
     static func nativeSurfaceRootBuilders(
-        for browserManager: BrowserManager,
-        updaterService: SumiUpdaterService,
-        defaultBrowserService: SumiDefaultBrowserService
+        for browserManager: BrowserManager
     ) -> WebsiteNativeSurfaceRootBuilders {
         WebsiteNativeSurfaceRootBuilders(
             history: { [weak browserManager] windowState in
@@ -52,18 +50,6 @@ enum WebsiteViewContextFactory {
                 return AnyView(
                     SumiBookmarksTabRootView(
                         browserContext: bookmarksPageBrowserContext(for: browserManager),
-                        windowState: windowState
-                    )
-                )
-            },
-            settings: { [weak browserManager] windowState in
-                guard let browserManager else { return AnyView(EmptyView()) }
-                let browserContext = settingsPageBrowserContext(for: browserManager)
-                return AnyView(
-                    SumiSettingsTabRootView(
-                        browserContext: browserContext,
-                        updaterService: updaterService,
-                        defaultBrowserService: defaultBrowserService,
                         windowState: windowState
                     )
                 )
@@ -101,19 +87,20 @@ enum WebsiteViewContextFactory {
             ),
             extensionsModule: browserManager.optionalModules.extensions,
             extensionSurfaceStore: browserManager.optionalModules.extensions.surfaceStore,
+            moduleRegistry: browserManager.moduleRegistry,
+            protectionCoordinator: browserManager.protectionCoordinator,
+            boostsModule: browserManager.optionalModules.boosts,
             currentProfile: { [currentProfileAuthority] in
                 currentProfileAuthority.currentProfile
             },
             currentProfileUpdates: currentProfileAuthority.$currentProfile
                 .eraseToAnyPublisher(),
-            currentTab: { [weak browserManager] windowState in
-                browserManager?.shellRuntime.windowTabs.currentTab(for: windowState)
-            },
-            requestProfileDeletion: { [profileDeletion] profile, message in
-                profileDeletion.requestDeletion(profile, message: message)
-            },
-            scheduleRuntimeStatePersistence: { [weak browserManager] tab in
-                browserManager?.structuralPersistence.scheduleRuntimeStatePersistence(for: tab)
+            requestProfileDeletion: { [profileDeletion] profile, message, presentationWindow in
+                profileDeletion.requestDeletion(
+                    profile,
+                    message: message,
+                    presentationWindow: presentationWindow
+                )
             },
             makePermissionRepository: { [weak browserManager] in
                 guard let browserManager else {
@@ -260,10 +247,7 @@ enum WebsiteViewContextFactory {
                     }
                     return report
                 }
-            ),
-            presentNotification: { [weak browserManager] notification in
-                browserManager?.notificationPresenter.presentNotification(notification)
-            }
+            )
         )
     }
 
@@ -280,15 +264,6 @@ enum WebsiteViewContextFactory {
             },
             currentProfileUpdates: currentProfileAuthority.$currentProfile
                 .eraseToAnyPublisher(),
-            nativeModalPresentationUpdates: browserManager
-                .nativeModalPresentationState.$presentation
-                .map { _ in () }
-                .eraseToAnyPublisher(),
-            isNativeModalPresented: { [weak browserManager] windowId in
-                guard let windowId else { return false }
-                return browserManager?.chromeBundle.nativeDialogPresentationOwner
-                    .isNativeModalPresented(in: windowId) ?? false
-            },
             currentTab: { [weak browserManager] windowState in
                 browserManager?.shellRuntime.windowTabs.currentTab(for: windowState)
             },
@@ -350,12 +325,6 @@ enum WebsiteViewContextFactory {
                     in: windowState,
                     preferredOpenMode: preferredOpenMode
                 )
-            },
-            importBookmarksFromMenu: { [weak browserManager] in
-                browserManager?.bookmarkBundle.bookmarkCommandOwner.importBookmarksFromMenu()
-            },
-            exportBookmarksFromMenu: { [weak browserManager] in
-                browserManager?.bookmarkBundle.bookmarkCommandOwner.exportBookmarksFromMenu()
             },
             scheduleRuntimeStatePersistence: { [weak browserManager] tab in
                 browserManager?.structuralPersistence.scheduleRuntimeStatePersistence(for: tab)

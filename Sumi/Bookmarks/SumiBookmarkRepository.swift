@@ -44,6 +44,16 @@ final class SumiUnavailableBookmarkRepository: SumiBookmarkRepository {
     }
 
     func snapshot(sortMode: SumiBookmarkSortMode) -> SumiBookmarksSnapshot {
+        let favorites = SumiBookmarkEntity(
+            id: SumiBookmarkConstants.favoritesFolderID,
+            kind: .folder,
+            title: "Favorites",
+            url: nil,
+            parentID: SumiBookmarkConstants.rootFolderID,
+            parentTitle: "Bookmarks",
+            children: [],
+            childBookmarkCount: 0
+        )
         let root = SumiBookmarkEntity(
             id: SumiBookmarkConstants.rootFolderID,
             kind: .folder,
@@ -51,13 +61,13 @@ final class SumiUnavailableBookmarkRepository: SumiBookmarkRepository {
             url: nil,
             parentID: nil,
             parentTitle: nil,
-            children: [],
+            children: [favorites],
             childBookmarkCount: 0
         )
         return SumiBookmarksSnapshot(
             root: root,
-            flattenedFolders: [.init(id: root.id, title: root.title, depth: 0)],
-            entitiesByID: [root.id: root]
+            flattenedFolders: [.init(id: favorites.id, title: favorites.title, depth: 0)],
+            entitiesByID: [root.id: root, favorites.id: favorites]
         )
     }
 

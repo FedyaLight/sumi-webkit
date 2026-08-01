@@ -4,14 +4,12 @@ import SumiDomain
 struct SumiSiteSettingsCategoryView: View {
     @StateObject private var viewModel: SumiSiteSettingsCategoryViewModel
     let profile: Profile?
-    let onBack: () -> Void
     let onOpenSite: (SumiPermissionSiteScope) -> Void
 
     init(
         category: SumiSiteSettingsPermissionCategory,
         repository: SumiPermissionSettingsRepository,
         profile: Profile?,
-        onBack: @escaping () -> Void,
         onOpenSite: @escaping (SumiPermissionSiteScope) -> Void
     ) {
         _viewModel = StateObject(
@@ -21,7 +19,6 @@ struct SumiSiteSettingsCategoryView: View {
             )
         )
         self.profile = profile
-        self.onBack = onBack
         self.onOpenSite = onOpenSite
     }
 
@@ -76,28 +73,16 @@ struct SumiSiteSettingsCategoryView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Button(action: onBack) {
-                Label("Site Settings", systemImage: "chevron.left")
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
+        HStack(spacing: 10) {
+            Image(systemName: viewModel.category.systemImage)
+                .font(.title3)
+                .foregroundStyle(.secondary)
+                .frame(width: 24)
 
-            HStack(spacing: 10) {
-                Image(systemName: viewModel.category.systemImage)
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 24)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(viewModel.category.title)
-                        .font(.title3.weight(.semibold))
-                    Text(viewModel.category.explanation)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
+            Text(viewModel.category.explanation)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

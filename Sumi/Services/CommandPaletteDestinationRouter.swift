@@ -66,7 +66,6 @@ final class CommandPaletteDestinationRouter {
                 in: tab,
                 windowState: windowState
             )
-            pageNavigation.applySettingsSurfaceNavigation(from: urlString)
             guard let source else { return }
             RuntimeDiagnostics.debug(
                 "Navigated current tab to \(source) URL: \(urlString)",
@@ -95,7 +94,6 @@ final class CommandPaletteDestinationRouter {
         case .currentPage(let tab):
             tabTargets.commitPlaceholder(for: tab, in: windowState.id)
             pageNavigation.navigate(to: input, in: tab, windowState: windowState)
-            pageNavigation.applySettingsSurfaceNavigation(from: input)
             RuntimeDiagnostics.debug(
                 "Navigated current tab to: \(input)",
                 category: "CommandPalette"

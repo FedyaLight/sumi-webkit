@@ -184,7 +184,7 @@ final class SumiBookmarkManagerTests: XCTestCase {
 
         let snapshot = manager.snapshot()
         XCTAssertEqual(snapshot.root.childBookmarkCount, 2)
-        XCTAssertEqual(snapshot.flattenedFolders.map(\.title), ["Bookmarks", "Docs", "Nested"])
+        XCTAssertEqual(snapshot.flattenedFolders.map(\.title), ["Favorites", "Docs", "Nested"])
         XCTAssertEqual(snapshot.entitiesByID[folder.id]?.childBookmarkCount, 2)
 
         XCTAssertEqual(
@@ -197,7 +197,7 @@ final class SumiBookmarkManagerTests: XCTestCase {
         )
 
         try manager.moveEntities(ids: [alpha.id], toParentID: nil, atIndex: 0)
-        XCTAssertEqual(manager.entity(id: alpha.id)?.parentID, SumiBookmarkConstants.rootFolderID)
+        XCTAssertEqual(manager.entity(id: alpha.id)?.parentID, SumiBookmarkConstants.favoritesFolderID)
 
         try manager.removeEntities(ids: [folder.id])
         XCTAssertNil(manager.entity(id: zed.id))
@@ -351,7 +351,7 @@ final class SumiBookmarkManagerTests: XCTestCase {
         _ = try manager.updateFolder(id: folder.id, title: "Final", parentID: nil)
         _ = try manager.createFolder(title: "Nested", parentID: folder.id)
 
-        XCTAssertEqual(manager.folders().map(\.title), ["Bookmarks", "Final", "Nested"])
+        XCTAssertEqual(manager.folders().map(\.title), ["Favorites", "Final", "Nested"])
         XCTAssertEqual(faviconService.syncedBookmarkURLs.count, initialSyncCount)
 
         await waitForPublication(from: manager)
@@ -393,7 +393,15 @@ final class SumiBookmarkManagerTests: XCTestCase {
             nestedBookmarkIDs = [firstNestedBookmark.id, secondNestedBookmark.id]
 
             let snapshot = manager.snapshot()
-            XCTAssertEqual(snapshot.root.children.map(\.id), [firstFolderID, rootBookmarkID])
+            XCTAssertEqual(
+                snapshot.root.children.map(\.id),
+                [SumiBookmarkConstants.favoritesFolderID, firstFolderID]
+            )
+            XCTAssertEqual(
+                snapshot.entitiesByID[SumiBookmarkConstants.favoritesFolderID]?
+                    .children.map(\.id),
+                [rootBookmarkID]
+            )
             XCTAssertEqual(snapshot.entitiesByID[nestedFolderID]?.children.map(\.id), nestedBookmarkIDs)
             XCTAssertEqual(snapshot.entitiesByID[nestedFolderID]?.parentID, firstFolderID)
         }
@@ -403,7 +411,15 @@ final class SumiBookmarkManagerTests: XCTestCase {
         let reopenedSnapshot = reopenedManager.snapshot()
 
         XCTAssertEqual(reopenedSnapshot.root.id, SumiBookmarkConstants.rootFolderID)
-        XCTAssertEqual(reopenedSnapshot.root.children.map(\.id), [firstFolderID, rootBookmarkID])
+        XCTAssertEqual(
+            reopenedSnapshot.root.children.map(\.id),
+            [SumiBookmarkConstants.favoritesFolderID, firstFolderID]
+        )
+        XCTAssertEqual(
+            reopenedSnapshot.entitiesByID[SumiBookmarkConstants.favoritesFolderID]?
+                .children.map(\.id),
+            [rootBookmarkID]
+        )
         XCTAssertEqual(reopenedSnapshot.entitiesByID[firstFolderID]?.title, "Engineering")
         XCTAssertEqual(reopenedSnapshot.entitiesByID[nestedFolderID]?.parentID, firstFolderID)
         XCTAssertEqual(reopenedSnapshot.entitiesByID[nestedFolderID]?.children.map(\.id), nestedBookmarkIDs)
@@ -439,7 +455,7 @@ final class SumiBookmarkManagerTests: XCTestCase {
             )
 
             try manager.moveEntities(ids: [second.id], toParentID: folderB.id, atIndex: 0)
-            try manager.moveEntities(ids: [folderA.id], toParentID: nil, atIndex: 1)
+            try manager.moveEntities(ids: [folderA.id], toParentID: nil, atIndex: 2)
             try manager.removeBookmark(id: deleted.id)
 
             folderAID = folderA.id
@@ -448,7 +464,10 @@ final class SumiBookmarkManagerTests: XCTestCase {
             secondBookmarkID = second.id
 
             let snapshot = manager.snapshot()
-            XCTAssertEqual(snapshot.root.children.map(\.id), [folderBID, folderAID])
+            XCTAssertEqual(
+                snapshot.root.children.map(\.id),
+                [SumiBookmarkConstants.favoritesFolderID, folderBID, folderAID]
+            )
             XCTAssertEqual(snapshot.entitiesByID[folderAID]?.children.map(\.id), [firstBookmarkID])
             XCTAssertEqual(snapshot.entitiesByID[folderBID]?.children.map(\.id), [secondBookmarkID])
             XCTAssertNil(snapshot.entitiesByID[deleted.id])
@@ -457,7 +476,10 @@ final class SumiBookmarkManagerTests: XCTestCase {
         let reopenedManager = makeManager(directory: directory)
         let reopenedSnapshot = reopenedManager.snapshot()
 
-        XCTAssertEqual(reopenedSnapshot.root.children.map(\.id), [folderBID, folderAID])
+        XCTAssertEqual(
+            reopenedSnapshot.root.children.map(\.id),
+            [SumiBookmarkConstants.favoritesFolderID, folderBID, folderAID]
+        )
         XCTAssertEqual(reopenedSnapshot.entitiesByID[folderAID]?.children.map(\.id), [firstBookmarkID])
         XCTAssertEqual(reopenedSnapshot.entitiesByID[folderBID]?.children.map(\.id), [secondBookmarkID])
         XCTAssertEqual(reopenedSnapshot.entitiesByID[firstBookmarkID]?.parentID, folderAID)

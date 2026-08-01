@@ -56,7 +56,7 @@ struct ExtensionSettingsInstalledSection: View {
     @State private var actionSession = ExtensionSettingsInstalledActionSession()
 
     var body: some View {
-        SettingsSection(title: "Extensions") {
+        SettingsSection {
             if projection.isEmpty {
                 Text("No extensions added.")
                     .foregroundStyle(.secondary)
@@ -239,6 +239,7 @@ private struct ExtensionCatalogRow: View {
                 Toggle("", isOn: $isEnabled)
                     .labelsHidden()
                     .toggleStyle(.switch)
+                    .controlSize(.small)
                     .disabled(isBusy)
                     .help(
                         extensionRecord.isEnabled
@@ -264,7 +265,7 @@ private struct ExtensionCatalogRow: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 4)
+        .padding(.vertical, 8)
         .onAppear {
             isEnabled = extensionRecord.isEnabled
             syncSiteAccessState()

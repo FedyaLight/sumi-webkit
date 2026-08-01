@@ -1,4 +1,5 @@
 import XCTest
+import SumiDomain
 
 @testable import Sumi
 
@@ -74,15 +75,15 @@ final class SidebarURLDropServiceTests: XCTestCase {
         let space = Space(name: "Target", profileId: UUID())
         let harness = Harness(spaces: [space.id: space])
         let window = BrowserWindowState()
-        let settingsURL = try XCTUnwrap(URL(string: "sumi://settings?pane=privacy"))
+        let bookmarksURL = SumiSurface.bookmarksSurfaceURL()
 
         XCTAssertTrue(harness.service.open(
-            settingsURL,
+            bookmarksURL,
             in: window,
             atPresentedSlot: .spaceRegular(spaceId: space.id, slot: 1)
         ))
         XCTAssertFalse(harness.service.open(
-            settingsURL,
+            bookmarksURL,
             in: window,
             atPresentedSlot: .spacePinned(spaceId: space.id, slot: 1)
         ))

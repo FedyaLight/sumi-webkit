@@ -132,19 +132,6 @@ enum SplitGroupMemberIconResolver {
             )
         }
 
-        if let liveTab = item.tab,
-           SumiSurface.isSettingsSurfaceURL(liveTab.url) {
-            return SplitGroupMemberIconPresentation(
-                image: Image(systemName:
-                    SumiSurface.settingsTabFaviconSystemImageName
-                ),
-                glyphText: nil,
-                systemImageName: SumiSurface.settingsTabFaviconSystemImageName,
-                kind: .systemImage,
-                shouldDesaturate: false
-            )
-        }
-
         if let storedFavicon = loadedStoredFavicon
             ?? ShortcutPin.cachedLaunchFavicon(
                 for: pin.launchURL,

@@ -131,12 +131,10 @@ struct WebsiteViewBrowserContext {
 struct WebsiteNativeSurfaceRootBuilders {
     let history: (BrowserWindowState) -> AnyView
     let bookmarks: (BrowserWindowState) -> AnyView
-    let settings: (BrowserWindowState) -> AnyView
 }
 
 struct WebsiteView: View {
     @Environment(BrowserWindowState.self) private var windowState
-    @Environment(KeyboardShortcutManager.self) private var keyboardShortcutManager
     @Environment(\.sumiSettings) var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     private let sidebarDragState: SidebarDragState
@@ -276,7 +274,6 @@ struct WebsiteView: View {
     private enum NativeSurfaceKind: Equatable {
         case history
         case bookmarks
-        case settings
         case empty
     }
 
@@ -287,7 +284,6 @@ struct WebsiteView: View {
         guard let currentTab = browserContext.currentTab(windowState) else { return .empty }
         if currentTab.representsSumiHistorySurface { return .history }
         if currentTab.representsSumiBookmarksSurface { return .bookmarks }
-        if currentTab.representsSumiSettingsSurface { return .settings }
         if currentTab.representsSumiEmptySurface { return .empty }
         return nil
     }
@@ -354,9 +350,6 @@ struct WebsiteView: View {
             nativeSurfaceRootBuilders.history(windowState)
         case .bookmarks:
             nativeSurfaceRootBuilders.bookmarks(windowState)
-        case .settings:
-            nativeSurfaceRootBuilders.settings(windowState)
-                .environment(keyboardShortcutManager)
         case .empty:
             EmptyWebsiteView()
         }

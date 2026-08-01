@@ -7,7 +7,7 @@ import AppKit
 import SwiftUI
 
 private enum SettingsLayout {
-    static let sectionCornerRadius: CGFloat = 14
+    static let sectionCornerRadius: CGFloat = 11
     static let rowControlWidth: CGFloat = 220
 }
 
@@ -71,13 +71,13 @@ enum SettingsSurfaceStyle {
 typealias SettingsTypography = SettingsThemeTokens.Typography
 
 struct SettingsSection<Content: View>: View {
-    let title: String
+    let title: String?
     var subtitle: String?
     var headerAccessory: AnyView?
     @ViewBuilder var content: Content
 
     init(
-        title: String,
+        title: String? = nil,
         subtitle: String? = nil,
         @ViewBuilder content: () -> Content
     ) {
@@ -88,7 +88,7 @@ struct SettingsSection<Content: View>: View {
     }
 
     init<HeaderAccessory: View>(
-        title: String,
+        title: String? = nil,
         subtitle: String? = nil,
         @ViewBuilder headerAccessory: () -> HeaderAccessory,
         @ViewBuilder content: () -> Content
@@ -100,74 +100,59 @@ struct SettingsSection<Content: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title)
-                        .font(.headline.weight(.semibold))
-                        .foregroundStyle(.primary)
+        if content is EmptyView {
+            summaryCard
+        } else {
+            groupedContent
+        }
+    }
 
-                    if let subtitle {
-                        Text(subtitle)
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+    private var groupedContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if hasHeader {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        if let title {
+                            Text(title)
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(.primary)
+                        }
+
+                        if let subtitle {
+                            Text(subtitle)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    if let headerAccessory {
+                        headerAccessory
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                if let headerAccessory {
-                    headerAccessory
-                }
+                .padding(.horizontal, 4)
             }
 
-            content
+            VStack(alignment: .leading, spacing: 0) {
+                content
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 14)
+                .padding(.horizontal, 16)
+                .background(sectionBackground)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 14)
-        .padding(.horizontal, 18)
-        .background(
-            RoundedRectangle(cornerRadius: SettingsLayout.sectionCornerRadius, style: .continuous)
-                .fill(SettingsSurfaceStyle.groupedBackground)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: SettingsLayout.sectionCornerRadius, style: .continuous)
-                .strokeBorder(SettingsSurfaceStyle.stroke, lineWidth: 1)
-        )
-    }
-}
-
-struct SettingsRow<Control: View>: View {
-    let title: String
-    var subtitle: String?
-    var systemImage: String?
-    @ViewBuilder var control: Control
-
-    init(
-        title: String,
-        subtitle: String? = nil,
-        systemImage: String? = nil,
-        @ViewBuilder control: () -> Control
-    ) {
-        self.title = title
-        self.subtitle = subtitle
-        self.systemImage = systemImage
-        self.control = control()
+        .padding(.bottom, 2)
     }
 
-    var body: some View {
+    private var summaryCard: some View {
         HStack(alignment: .center, spacing: 14) {
-            if let systemImage {
-                Image(systemName: systemImage)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 20, alignment: .center)
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.body)
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 3) {
+                if let title {
+                    Text(title)
+                        .font(.system(size: 13, weight: .medium))
+                }
                 if let subtitle {
                     Text(subtitle)
                         .font(.caption)
@@ -177,15 +162,78 @@ struct SettingsRow<Control: View>: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
+            if let headerAccessory {
+                headerAccessory
+            }
+        }
+        .padding(.vertical, 16)
+        .padding(.horizontal, 16)
+        .background(sectionBackground)
+    }
+
+    private var sectionBackground: some View {
+        RoundedRectangle(cornerRadius: SettingsLayout.sectionCornerRadius, style: .continuous)
+            .fill(SettingsSurfaceStyle.groupedBackground)
+    }
+
+    private var hasHeader: Bool {
+        title != nil || subtitle != nil || headerAccessory != nil
+    }
+}
+
+struct SettingsRow<Control: View>: View {
+    let title: String
+    var subtitle: String?
+    var systemImage: String?
+    var verticalPadding: CGFloat
+    @ViewBuilder var control: Control
+
+    init(
+        title: String,
+        subtitle: String? = nil,
+        systemImage: String? = nil,
+        verticalPadding: CGFloat = 10,
+        @ViewBuilder control: () -> Control
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.systemImage = systemImage
+        self.verticalPadding = verticalPadding
+        self.control = control()
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 14) {
+            if let systemImage {
+                Image(systemName: systemImage)
+                    .font(.system(size: 16, weight: .regular))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 28, alignment: .center)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
             HStack {
                 Spacer(minLength: 0)
                 control
-                    .controlSize(.regular)
+                    .controlSize(.small)
             }
             .frame(width: SettingsLayout.rowControlWidth, alignment: .trailing)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 6)
+        .padding(.vertical, verticalPadding)
     }
 }
 
@@ -253,32 +301,6 @@ struct SettingsEmptyState: View {
         .padding(.vertical, 24)
     }
 }
-struct SettingsSectionFooter: View {
-    var buttonTitle: String = "Restore Defaults"
-    var infoText: String?
-    let action: () -> Void
-
-    var body: some View {
-        VStack(spacing: 12) {
-            SettingsDivider()
-
-            HStack(spacing: 10) {
-                if let infoText {
-                    Text(infoText)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Spacer(minLength: 12)
-
-                Button(buttonTitle, action: action)
-                    .buttonStyle(.bordered)
-            }
-        }
-    }
-}
-
 struct SettingsPillBadge: View {
     let title: String
 
@@ -299,6 +321,14 @@ struct SettingsPillBadge: View {
 extension View {
     func settingsTrailingControl(width: CGFloat) -> some View {
         fixedSize(horizontal: true, vertical: false)
+            .frame(width: width, alignment: .trailing)
+    }
+
+    func settingsMenuPicker(width: CGFloat) -> some View {
+        labelsHidden()
+            .pickerStyle(.menu)
+            .controlSize(.regular)
+            .fixedSize(horizontal: true, vertical: false)
             .frame(width: width, alignment: .trailing)
     }
 }

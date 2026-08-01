@@ -9,21 +9,16 @@ extension EnvironmentValues {
 
 struct SumiSettingsModuleToggleDescriptor: Identifiable, Equatable {
     let moduleID: SumiModuleID
-    let title: String
     let toggleTitle: String
-    let detail: String
     var badgeTitle: String?
 
     var id: SumiModuleID { moduleID }
 
     static let extensions = SumiSettingsModuleToggleDescriptor(
         moduleID: .extensions,
-        title: "Extensions",
-        toggleTitle: "Enable Extensions",
-        detail: "When off, this module does not use system resources.",
+        toggleTitle: "Extensions",
         badgeTitle: "EXPERIMENTAL"
     )
-
 }
 
 @MainActor
@@ -57,7 +52,7 @@ struct SumiSettingsModuleToggleGate<EnabledContent: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 20) {
             SumiSettingsModuleToggleCard(
                 descriptor: descriptor,
                 isEnabled: isEnabledBinding
@@ -123,7 +118,7 @@ private struct SumiSettingsModuleToggleCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
-                Text(descriptor.title)
+                Text(descriptor.toggleTitle)
                     .font(.headline)
                     .foregroundStyle(tokens.primaryText)
 
@@ -136,13 +131,9 @@ private struct SumiSettingsModuleToggleCard: View {
                 Toggle("", isOn: $isEnabled)
                     .labelsHidden()
                     .toggleStyle(.switch)
+                    .controlSize(.regular)
                     .accessibilityLabel(descriptor.toggleTitle)
             }
-
-            Text(descriptor.detail)
-                .font(.caption)
-                .foregroundStyle(tokens.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)

@@ -12,8 +12,10 @@ window_section="Sumi/Components/Settings/Tabs/GeneralWindowSettingsSection.swift
 new_tabs_section="Sumi/Components/Settings/Tabs/GeneralNewTabsSettingsSection.swift"
 search_section="Sumi/Components/Settings/Tabs/GeneralSearchSettingsSection.swift"
 engines_section="Sumi/Components/Settings/Tabs/GeneralSearchEnginesSettingsSection.swift"
+engine_table="Sumi/Components/Settings/Tabs/SumiSearchEngineTableController.swift"
+engine_row="Sumi/Components/Settings/Tabs/SumiSearchEngineTableRowCell.swift"
+engine_editor="Sumi/Components/Settings/Tabs/GeneralSearchEngineEditorAlert.swift"
 mutation="Sumi/Components/Settings/Tabs/GeneralSearchEngineMutation.swift"
-editor="Sumi/Components/Settings/Tabs/SearchEngineEditor.swift"
 
 production=(
   "$root"
@@ -21,8 +23,10 @@ production=(
   "$new_tabs_section"
   "$search_section"
   "$engines_section"
+  "$engine_table"
+  "$engine_row"
+  "$engine_editor"
   "$mutation"
-  "$editor"
 )
 
 for file in "${production[@]}"; do
@@ -71,7 +75,9 @@ children=(
   "$new_tabs_section"
   "$search_section"
   "$engines_section"
-  "$editor"
+  "$engine_table"
+  "$engine_row"
+  "$engine_editor"
 )
 for file in "${children[@]}"; do
   reject_pattern \
@@ -97,15 +103,18 @@ require_pattern '@Binding private var searchEngines: \[SumiSearchEngine\]' "$eng
   "Search Engines section must bind only to the durable engine list"
 reject_pattern '@Binding[^\n]*(default|searchEngineId)' "$engines_section" \
   "Search Engines must rely on SearchSettingsStore for default-ID repair"
-for state in \
-  searchEngineFilter \
-  editingSearchEngine \
-  searchEnginePendingRemoval \
-  showingRestoreDefaultsConfirmation \
-  searchEngineReorder; do
-  require_pattern "@State private var ${state}" "$engines_section" \
-    "Search Engines must locally own transient interaction state: $state"
-done
+require_pattern 'NSViewControllerRepresentable' "$engine_table" \
+  "Search Engines must bridge its AppKit controller through a narrow representable"
+require_pattern 'NSTableViewDataSource' "$engine_table" \
+  "Search Engines must retain native AppKit table ownership"
+require_pattern 'registerForDraggedTypes' "$engine_table" \
+  "Search Engines must retain native row reordering"
+reject_pattern '@State|ReorderDragState|\.sheet\(|\.confirmationDialog\(' "$engine_table" \
+  "Search Engines transient interaction state must remain AppKit-owned"
+require_pattern 'NSAlert' "$engine_editor" \
+  "Search-engine editing must remain a native AppKit sheet"
+reject_pattern 'SwiftUI|@State|\.sheet\(' "$engine_editor" \
+  "Search-engine editor must not regain SwiftUI presentation state"
 
 require_pattern 'enum GeneralSearchEngineMutation' "$mutation" \
   "Search-engine command/reorder seams must remain stateless"

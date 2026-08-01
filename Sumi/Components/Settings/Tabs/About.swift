@@ -29,7 +29,7 @@ struct SettingsAboutTab: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 20) {
             SumiAboutStatusPanel(
                 viewModel: updateViewModel,
                 appIconImage: appIconImage
@@ -189,33 +189,33 @@ private struct SumiAboutVersionUpdatePanel: View {
         case .ready, .checking:
             Button("Check for Updates", action: onRetry)
                 .buttonStyle(.bordered)
-                .controlSize(.regular)
+                .controlSize(.small)
                 .fixedSize()
                 .disabled(true)
         case .upToDate:
             Button("Check for Updates", action: onRetry)
                 .buttonStyle(.bordered)
-                .controlSize(.regular)
+                .controlSize(.small)
                 .fixedSize()
                 .disabled(!viewModel.checkButtonIsEnabled)
         case .updateAvailable(let update):
             Button("Update", action: viewModel.checkForUpdates)
                 .buttonStyle(.borderedProminent)
-                .controlSize(.regular)
+                .controlSize(.small)
                 .fixedSize()
                 .disabled(!viewModel.checkButtonIsEnabled)
                 .accessibilityLabel("Update to \(update.versionLine)")
         case .checkFailed(let message):
             Button("Try Again", action: onRetry)
                 .buttonStyle(.bordered)
-                .controlSize(.regular)
+                .controlSize(.small)
                 .fixedSize()
                 .disabled(!viewModel.checkButtonIsEnabled)
                 .accessibilityHint(message)
         case .unavailable:
             Button("Check for Updates", action: onRetry)
                 .buttonStyle(.bordered)
-                .controlSize(.regular)
+                .controlSize(.small)
                 .fixedSize()
                 .disabled(true)
         }
@@ -284,27 +284,27 @@ private struct SumiAboutStatusBadge: View {
         case .progress:
             return [
                 Color(nsColor: .systemGray),
-                Color(nsColor: .systemGray)
+                Color(nsColor: .systemGray),
             ]
         case .checkmark:
             return [
                 Color(nsColor: NSColor(red: 52 / 255, green: 199 / 255, blue: 89 / 255, alpha: 1)),
-                Color(nsColor: NSColor(red: 46 / 255, green: 180 / 255, blue: 80 / 255, alpha: 1))
+                Color(nsColor: NSColor(red: 46 / 255, green: 180 / 255, blue: 80 / 255, alpha: 1)),
             ]
         case .download:
             return [
                 Color(nsColor: .systemBlue),
-                Color(nsColor: .controlAccentColor)
+                Color(nsColor: .controlAccentColor),
             ]
         case .warning:
             return [
                 Color(nsColor: .systemOrange),
-                Color(nsColor: NSColor(red: 210 / 255, green: 120 / 255, blue: 24 / 255, alpha: 1))
+                Color(nsColor: NSColor(red: 210 / 255, green: 120 / 255, blue: 24 / 255, alpha: 1)),
             ]
         case .info:
             return [
                 Color(nsColor: .systemGray),
-                Color(nsColor: .secondaryLabelColor)
+                Color(nsColor: .secondaryLabelColor),
             ]
         }
     }

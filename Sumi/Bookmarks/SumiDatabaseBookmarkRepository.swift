@@ -7,10 +7,24 @@ final class SumiDatabaseBookmarkRepository:
     @unchecked Sendable
 {
     private static let log = Logger.sumi(category: "Bookmarks")
+    nonisolated private static let favoritesFolderUUID = UUID(
+        uuidString: SumiBookmarkConstants.favoritesFolderID
+    )!
     private let database: SumiDatabase
 
     init(database: SumiDatabase) {
         self.database = database
+        do {
+            try database.transaction { connection in
+                var records = try connection.bookmarks.all()
+                guard try Self.ensureFavoritesFolder(in: &records) else { return }
+                try connection.bookmarks.replaceAll(with: records)
+            }
+        } catch {
+            Self.log.error(
+                "Failed to prepare Favorites: \(error.localizedDescription, privacy: .public)"
+            )
+        }
     }
 
     func fetchBookmarks() -> [SumiBookmark] {
@@ -42,7 +56,7 @@ final class SumiDatabaseBookmarkRepository:
         title: String,
         folderID: String?
     ) throws -> SumiBookmark {
-        let parentID = try resolvedFolderID(folderID, in: records())
+        let parentID = try resolvedBookmarkFolderID(folderID, in: records())
         let record = BookmarkRecord(
             id: UUID(),
             parentID: parentID,
@@ -76,7 +90,7 @@ final class SumiDatabaseBookmarkRepository:
             }) else {
                 throw SumiBookmarkError.missingBookmark
             }
-            let parentID = try resolvedFolderID(folderID, in: records)
+            let parentID = try resolvedBookmarkFolderID(folderID, in: records)
             let oldParentID = records[index].parentID
             records[index].name = title
             records[index].urlString = url.absoluteString
@@ -151,7 +165,7 @@ final class SumiDatabaseBookmarkRepository:
         title: String,
         parentID: String?
     ) throws -> SumiBookmarkEntity {
-        guard id != SumiBookmarkConstants.rootFolderID,
+        guard !SumiBookmarkConstants.isProtectedFolderID(id),
               let identifier = UUID(uuidString: id) else {
             throw SumiBookmarkError.missingFolder
         }
@@ -181,7 +195,7 @@ final class SumiDatabaseBookmarkRepository:
     }
 
     func removeEntities(ids: [String]) throws -> [SumiBookmark] {
-        if ids.contains(SumiBookmarkConstants.rootFolderID) {
+        if ids.contains(where: SumiBookmarkConstants.isProtectedFolderID) {
             throw SumiBookmarkError.cannotDeleteRootFolder
         }
         let identifiers = Set(ids.compactMap(UUID.init(uuidString:)))
@@ -210,12 +224,19 @@ final class SumiDatabaseBookmarkRepository:
         toParentID parentID: String?,
         atIndex index: Int?
     ) throws {
-        if ids.contains(SumiBookmarkConstants.rootFolderID) {
+        if ids.contains(where: SumiBookmarkConstants.isProtectedFolderID) {
             throw SumiBookmarkError.cannotDeleteRootFolder
         }
         let identifiers = ids.compactMap(UUID.init(uuidString:))
         try mutate { records in
-            let destination = try resolvedFolderID(parentID, in: records)
+            let requestedDestination = try resolvedFolderID(parentID, in: records)
+            let includesBookmark = records.contains {
+                identifiers.contains($0.id)
+                    && $0.kind == SumiBookmarkEntityKind.bookmark.rawValue
+            }
+            let destination = requestedDestination == nil && includesBookmark
+                ? Self.favoritesFolderUUID
+                : requestedDestination
             for id in identifiers where destination == id
                 || destination.map({ descendants(of: id, in: records).contains($0) }) == true {
                 throw SumiBookmarkError.cannotMoveFolderIntoDescendant
@@ -303,6 +324,7 @@ final class SumiDatabaseBookmarkRepository:
             }
         }
         try append(snapshot.root.children, parentID: nil)
+        _ = try Self.ensureFavoritesFolder(in: &restored)
         try database.transaction {
             try $0.bookmarks.replaceAll(with: restored)
         }
@@ -344,6 +366,7 @@ final class SumiDatabaseBookmarkRepository:
             var records = replaceExisting
                 ? []
                 : try connection.bookmarks.all()
+            _ = try Self.ensureFavoritesFolder(in: &records)
             let destination = try resolvedFolderID(parentID, in: records)
             var knownKeys = Set(
                 records.compactMap { $0.urlString.flatMap(URL.init(string:)) }
@@ -382,7 +405,7 @@ final class SumiDatabaseBookmarkRepository:
                         records.append(
                             BookmarkRecord(
                                 id: UUID(),
-                                parentID: parentID,
+                                parentID: parentID ?? Self.favoritesFolderUUID,
                                 name: node.name.nilIfTrimmedEmpty
                                     ?? url.host
                                     ?? url.absoluteString,
@@ -454,7 +477,13 @@ final class SumiDatabaseBookmarkRepository:
             entitiesByID[node.id] = node
             return node
         }
-        let children = sorted(recordsByParent[nil] ?? [], mode: sortMode)
+        let sortedTopLevel = sorted(recordsByParent[nil] ?? [], mode: sortMode)
+        let orderedTopLevel = sortedTopLevel.filter {
+            $0.id == Self.favoritesFolderUUID
+        } + sortedTopLevel.filter {
+            $0.id != Self.favoritesFolderUUID
+        }
+        let children = orderedTopLevel
             .compactMap { build($0, parentTitle: "Bookmarks", visited: []) }
         let root = SumiBookmarkEntity(
             id: SumiBookmarkConstants.rootFolderID,
@@ -477,7 +506,7 @@ final class SumiDatabaseBookmarkRepository:
             )
             entity.children.forEach { flatten($0, depth: depth + 1) }
         }
-        flatten(root, depth: 0)
+        root.children.forEach { flatten($0, depth: 0) }
         return SumiBookmarksSnapshot(
             root: root,
             flattenedFolders: flattenedFolders,
@@ -496,6 +525,10 @@ final class SumiDatabaseBookmarkRepository:
             return records.sorted { titleOrder($0, $1, ascending: true) }
         case .nameDescending:
             return records.sorted { titleOrder($0, $1, ascending: false) }
+        case .addressAscending:
+            return records.sorted { addressOrder($0, $1, ascending: true) }
+        case .addressDescending:
+            return records.sorted { addressOrder($0, $1, ascending: false) }
         }
     }
 
@@ -508,6 +541,25 @@ final class SumiDatabaseBookmarkRepository:
         let rhsFolder = rhs.kind == SumiBookmarkEntityKind.folder.rawValue
         if lhsFolder != rhsFolder { return lhsFolder }
         let result = lhs.name.localizedCaseInsensitiveCompare(rhs.name)
+        return ascending
+            ? result == .orderedAscending
+            : result == .orderedDescending
+    }
+
+    private func addressOrder(
+        _ lhs: BookmarkRecord,
+        _ rhs: BookmarkRecord,
+        ascending: Bool
+    ) -> Bool {
+        let lhsFolder = lhs.kind == SumiBookmarkEntityKind.folder.rawValue
+        let rhsFolder = rhs.kind == SumiBookmarkEntityKind.folder.rawValue
+        if lhsFolder != rhsFolder { return lhsFolder }
+        let result = (lhs.urlString ?? lhs.name).localizedCaseInsensitiveCompare(
+            rhs.urlString ?? rhs.name
+        )
+        if result == .orderedSame {
+            return titleOrder(lhs, rhs, ascending: ascending)
+        }
         return ascending
             ? result == .orderedAscending
             : result == .orderedDescending
@@ -527,6 +579,83 @@ final class SumiDatabaseBookmarkRepository:
             throw SumiBookmarkError.missingFolder
         }
         return id
+    }
+
+    private func resolvedBookmarkFolderID(
+        _ value: String?,
+        in records: [BookmarkRecord]
+    ) throws -> UUID {
+        try resolvedFolderID(value, in: records) ?? Self.favoritesFolderUUID
+    }
+
+    @discardableResult
+    private static func ensureFavoritesFolder(
+        in records: inout [BookmarkRecord]
+    ) throws -> Bool {
+        var changed = false
+        if let index = records.firstIndex(where: { $0.id == favoritesFolderUUID }) {
+            guard records[index].kind == SumiBookmarkEntityKind.folder.rawValue else {
+                throw SumiBookmarkError.saveFailed("Favorites identifier is already in use.")
+            }
+            if records[index].parentID != nil {
+                records[index].parentID = nil
+                changed = true
+            }
+            if records[index].name != "Favorites" {
+                records[index].name = "Favorites"
+                changed = true
+            }
+        } else {
+            records.append(
+                BookmarkRecord(
+                    id: favoritesFolderUUID,
+                    parentID: nil,
+                    name: "Favorites",
+                    urlString: nil,
+                    kind: SumiBookmarkEntityKind.folder.rawValue,
+                    index: 0
+                )
+            )
+            changed = true
+        }
+
+        let directBookmarks = records
+            .filter {
+                $0.parentID == nil
+                    && $0.kind == SumiBookmarkEntityKind.bookmark.rawValue
+            }
+            .sorted(by: recordOrder)
+        if !directBookmarks.isEmpty {
+            let nextChildIndex = (records
+                .filter { $0.parentID == favoritesFolderUUID }
+                .map(\.index)
+                .max() ?? -1) + 1
+            for (offset, bookmark) in directBookmarks.enumerated() {
+                guard let index = records.firstIndex(where: { $0.id == bookmark.id }) else {
+                    continue
+                }
+                records[index].parentID = favoritesFolderUUID
+                records[index].index = nextChildIndex + offset
+            }
+            changed = true
+        }
+
+        let topLevel = records
+            .filter { $0.parentID == nil }
+            .sorted(by: recordOrder)
+        let orderedTopLevel = topLevel
+            .filter { $0.id == favoritesFolderUUID }
+            + topLevel.filter { $0.id != favoritesFolderUUID }
+        for (position, record) in orderedTopLevel.enumerated() {
+            guard let index = records.firstIndex(where: { $0.id == record.id }) else {
+                continue
+            }
+            if records[index].index != position {
+                records[index].index = position
+                changed = true
+            }
+        }
+        return changed
     }
 
     private func descendants(
@@ -573,13 +702,20 @@ final class SumiDatabaseBookmarkRepository:
         normalize(&records, parentID: parentID)
     }
 
-    private func recordOrder(
+    nonisolated private static func recordOrder(
         _ lhs: BookmarkRecord,
         _ rhs: BookmarkRecord
     ) -> Bool {
         lhs.index == rhs.index
             ? lhs.id.uuidString < rhs.id.uuidString
             : lhs.index < rhs.index
+    }
+
+    private func recordOrder(
+        _ lhs: BookmarkRecord,
+        _ rhs: BookmarkRecord
+    ) -> Bool {
+        Self.recordOrder(lhs, rhs)
     }
 
     private func bookmark(_ record: BookmarkRecord) -> SumiBookmark? {

@@ -38,7 +38,10 @@ final class SumiBookmarkMenuSnapshotTests: XCTestCase {
         let snapshot = bookmarkManager.snapshot(sortMode: .manual)
 
         XCTAssertFalse(snapshot.hasBookmarks)
-        XCTAssertTrue(snapshot.root.children.isEmpty)
+        XCTAssertEqual(
+            snapshot.root.children.map(\.id),
+            [SumiBookmarkConstants.favoritesFolderID]
+        )
     }
 
     private func makeBookmarkManager() -> SumiBookmarkManager {

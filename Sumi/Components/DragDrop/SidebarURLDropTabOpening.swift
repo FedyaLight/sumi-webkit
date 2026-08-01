@@ -48,7 +48,6 @@ final class SidebarURLDropTabOpening {
     static func nativeSurfaceKind(
         for url: URL
     ) -> SumiNativeBrowserSurfaceKind? {
-        if SumiSurface.isSettingsSurfaceURL(url) { return .settings }
         if SumiSurface.isHistorySurfaceURL(url) { return .history }
         if SumiSurface.isBookmarksSurfaceURL(url) { return .bookmarks }
         return nil

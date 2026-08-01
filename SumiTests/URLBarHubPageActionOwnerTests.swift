@@ -1,5 +1,6 @@
 import XCTest
 import WebKit
+import SumiDomain
 
 @testable import Sumi
 
@@ -65,14 +66,14 @@ final class URLBarHubPageActionOwnerTests: XCTestCase {
         )
         XCTAssertTrue(owner.canCapture(webPage))
 
-        let settingsTab = Tab(url: SettingsTabs.general.settingsSurfaceURL)
-        let settingsPage = ActivePageResolution(
+        let historyTab = Tab(url: SumiSurface.historySurfaceURL(rangeQuery: "all"))
+        let historyPage = ActivePageResolution(
             source: .selectedTab,
             windowState: windowState,
-            tab: settingsTab,
-            url: settingsTab.url,
+            tab: historyTab,
+            url: historyTab.url,
             canonicalWebView: WKWebView()
         )
-        XCTAssertFalse(owner.canCapture(settingsPage))
+        XCTAssertFalse(owner.canCapture(historyPage))
     }
 }

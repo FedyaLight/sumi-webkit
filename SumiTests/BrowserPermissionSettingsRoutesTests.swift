@@ -1,37 +1,10 @@
 import XCTest
+import SumiDomain
 
 @testable import Sumi
 
 @MainActor
 final class BrowserPermissionSettingsRoutesTests: XCTestCase {
-    func testSettingsSurfaceURLUsesPaneMapping() {
-        XCTAssertEqual(
-            BrowserPermissionSettingsRoutes.settingsSurfaceURL(for: .about),
-            SettingsTabs.about.settingsSurfaceURL
-        )
-    }
-
-    func testPrivacySiteSettingsURLKeepsQueryItemsAndOrder() {
-        let url = BrowserPermissionSettingsRoutes.privacySiteSettingsSurfaceURL(
-            filter: SumiSettingsSiteSettingsFilter(
-                requestingOriginIdentity: "https://example.com",
-                topOriginIdentity: "https://top.example",
-                displayDomain: "example.com"
-            )
-        )
-
-        XCTAssertEqual(
-            URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
-            [
-                URLQueryItem(name: "pane", value: "privacy"),
-                URLQueryItem(name: "section", value: "siteSettings"),
-                URLQueryItem(name: "origin", value: "https://example.com"),
-                URLQueryItem(name: "topOrigin", value: "https://top.example"),
-                URLQueryItem(name: "site", value: "example.com"),
-            ]
-        )
-    }
-
     func testPrivacySiteSettingsFilterUsesCommittedURLBeforeVisibleAndStoredURL() {
         let tab = Tab(
             url: URL(string: "https://stored.example/path")!,
@@ -55,9 +28,9 @@ final class BrowserPermissionSettingsRoutesTests: XCTestCase {
             name: "Stored",
             loadsCachedFaviconOnInit: false
         )
-        let settingsTab = Tab(
-            url: SettingsTabs.privacy.settingsSurfaceURL,
-            name: "Settings",
+        let historyTab = Tab(
+            url: SumiSurface.historySurfaceURL(rangeQuery: "all"),
+            name: "History",
             loadsCachedFaviconOnInit: false
         )
 
@@ -69,7 +42,7 @@ final class BrowserPermissionSettingsRoutesTests: XCTestCase {
         )
         XCTAssertNil(
             BrowserPermissionSettingsRoutes.privacySiteSettingsFilter(
-                focusing: settingsTab
+                focusing: historyTab
             )
         )
         XCTAssertNil(

@@ -14,12 +14,6 @@ final class BrowserNativeSurfaceRoutingOwnerTests: XCTestCase {
             symbol: String
         )] = [
             (
-                .settings,
-                SettingsTabs.general.settingsSurfaceURL,
-                "Settings",
-                SumiSurface.settingsTabFaviconSystemImageName
-            ),
-            (
                 .history,
                 SumiSurface.historySurfaceURL(rangeQuery: "all"),
                 "History",
@@ -82,8 +76,8 @@ final class BrowserNativeSurfaceRoutingOwnerTests: XCTestCase {
         let secondarySurface = harness.makeSurfaceTab(in: harness.secondarySpace)
 
         harness.owner.openNativeBrowserSurface(
-            .settings,
-            url: SettingsTabs.general.settingsSurfaceURL,
+            .history,
+            url: SumiSurface.historySurfaceURL(rangeQuery: "all"),
             in: harness.windowState
         )
 
@@ -100,8 +94,8 @@ final class BrowserNativeSurfaceRoutingOwnerTests: XCTestCase {
         let initialSecondaryCount = harness.browser.regularTabCollectionOwner.tabs(in: harness.secondarySpace).count
 
         harness.owner.openNativeBrowserSurface(
-            .settings,
-            url: SettingsTabs.general.settingsSurfaceURL,
+            .history,
+            url: SumiSurface.historySurfaceURL(rangeQuery: "all"),
             in: harness.windowState
         )
 
@@ -162,13 +156,13 @@ private final class NativeSurfaceRoutingHarness {
 
     func makeSurfaceTab(in space: Space) -> Tab {
         let tab = browser.regularTabLifecycleOwner.createNewTab(
-            url: SettingsTabs.general.settingsSurfaceURL.absoluteString,
+            url: SumiSurface.historySurfaceURL(rangeQuery: "all").absoluteString,
             in: space,
             activate: false
         )
-        SumiNativeBrowserSurfaceKind.settings.configure(
+        SumiNativeBrowserSurfaceKind.history.configure(
             tab,
-            url: SettingsTabs.general.settingsSurfaceURL
+            url: SumiSurface.historySurfaceURL(rangeQuery: "all")
         )
         return tab
     }

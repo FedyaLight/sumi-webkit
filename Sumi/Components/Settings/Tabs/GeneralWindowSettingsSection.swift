@@ -13,13 +13,10 @@ struct GeneralWindowSettingsSection: View {
     }
 
     var body: some View {
-        SettingsSection(
-            title: "Window",
-            subtitle: "Core browser-window behavior."
-        ) {
+        SettingsSection(title: "Window") {
             SettingsRow(
                 title: "Warn before quitting",
-                subtitle: "Ask for confirmation before closing Sumi."
+                systemImage: "power"
             ) {
                 Toggle("", isOn: $askBeforeQuit)
                     .labelsHidden()
@@ -28,7 +25,8 @@ struct GeneralWindowSettingsSection: View {
 
             SettingsRow(
                 title: "Glance",
-                subtitle: "Preview links without fully opening a tab."
+                subtitle: "Preview links without opening a full browser tab.",
+                systemImage: "eye"
             ) {
                 Toggle("", isOn: $glanceEnabled)
                     .labelsHidden()

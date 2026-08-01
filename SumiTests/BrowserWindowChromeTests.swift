@@ -433,9 +433,7 @@ final class BrowserWindowChromeTests: XCTestCase {
 
         let contentView = ContentView(
             webContentContext: .make(
-                browserManager: browserManager,
-                updaterService: updaterService,
-                defaultBrowserService: SumiDefaultBrowserService()
+                browserManager: browserManager
             ),
             sidebarContext: .make(
                 browserManager: browserManager,

@@ -17,7 +17,8 @@ struct DefaultBrowserSettingsSection: View {
         SettingsSection(title: "Default Browser") {
             SettingsRow(
                 title: "Make Sumi your default browser",
-                subtitle: currentDefaultBrowserLine
+                subtitle: currentDefaultBrowserLine,
+                systemImage: "safari"
             ) {
                 Button("Make Default") {
                     makeDefault()

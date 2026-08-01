@@ -194,6 +194,7 @@ final class SumiBookmarkImportExportTests: XCTestCase {
 
         XCTAssertEqual(firstSummary, SumiBookmarksImportSummary(successful: 4, duplicates: 0, failed: 0))
         XCTAssertEqual(bookmarkOutline(in: firstManager), [
+            "folder:Favorites",
             "folder:Engineering",
             "  bookmark:Docs Home|https://docs.example/start",
             "  folder:Specs",
@@ -229,7 +230,8 @@ final class SumiBookmarkImportExportTests: XCTestCase {
 
         XCTAssertEqual(summary, SumiBookmarksImportSummary(successful: 1, duplicates: 0, failed: 0))
         XCTAssertEqual(bookmarkOutline(in: manager), [
-            "bookmark:New|https://old.example",
+            "folder:Favorites",
+            "  bookmark:New|https://old.example",
         ])
     }
 

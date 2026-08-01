@@ -75,9 +75,6 @@ enum SumiFaviconResolver {
     }
 
     private static func systemImageName(for url: URL) -> String? {
-        if SumiSurface.isSettingsSurfaceURL(url) {
-            return SumiSurface.settingsTabFaviconSystemImageName
-        }
         if SumiSurface.isHistorySurfaceURL(url) {
             return SumiSurface.historyTabFaviconSystemImageName
         }

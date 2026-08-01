@@ -18,13 +18,6 @@ final class TabFaviconRuntime {
         let referenceKey = TabFaviconStore.referenceKey(forDocumentURL: url)
         let partition = tab.faviconService.partition(profile: tab.resolveProfile())
 
-        if SumiSurface.isSettingsSurfaceURL(url) {
-            tab.faviconPresentation = .systemSymbol(SumiSurface.settingsTabFaviconSystemImageName)
-            tab.faviconIsTemplateGlobePlaceholder = false
-            resolvedCacheKey = nil
-            return true
-        }
-
         if SumiSurface.isHistorySurfaceURL(url) {
             tab.faviconPresentation = .systemSymbol(SumiSurface.historyTabFaviconSystemImageName)
             tab.faviconIsTemplateGlobePlaceholder = false

@@ -97,6 +97,7 @@ final class TabPersistenceArchitectureTests: XCTestCase {
         let secondSpaceId = UUID()
         let regularTabId = UUID()
         let extensionTabId = UUID()
+        let retiredSettingsTabId = UUID()
         let folderId = UUID()
         let records = TabRestoreStoreRecords(
             spaces: [
@@ -124,6 +125,12 @@ final class TabPersistenceArchitectureTests: XCTestCase {
                     spaceId: spaceId,
                     index: 1,
                     url: "webkit-extension://extension/page.html"
+                ),
+                regularRecord(
+                    id: retiredSettingsTabId,
+                    spaceId: spaceId,
+                    index: 3,
+                    url: "sumi://settings?pane=privacy"
                 ),
             ],
             folders: [
@@ -168,6 +175,7 @@ final class TabPersistenceArchitectureTests: XCTestCase {
         XCTAssertEqual(payload.snapshot.spaces.map(\.id), [spaceId, secondSpaceId])
         XCTAssertEqual(payload.snapshot.state.currentTabID, regularTabId)
         XCTAssertTrue(payload.repairReasons.contains("removed extension-owned restored tab"))
+        XCTAssertTrue(payload.repairReasons.contains("removed retired settings surface"))
         XCTAssertTrue(payload.repairReasons.contains("moved folder out of invalid parent"))
         XCTAssertTrue(payload.repairReasons.contains("removed unreadable split groups"))
         XCTAssertTrue(payload.repairReasons.contains("removed duplicate tab state"))

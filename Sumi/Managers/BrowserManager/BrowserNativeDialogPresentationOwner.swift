@@ -69,6 +69,7 @@ final class BrowserNativeDialogPresentationOwner {
         title: String,
         message: String,
         confirmButtonTitle: String,
+        in presentationWindow: NSWindow? = nil,
         onConfirm: @escaping @MainActor () -> Void
     ) -> Bool {
         prepareForNativeModalPresentation()
@@ -76,6 +77,7 @@ final class BrowserNativeDialogPresentationOwner {
             title: title,
             message: message,
             confirmButtonTitle: confirmButtonTitle,
+            preferredWindow: presentationWindow,
             onConfirm: onConfirm
         )
     }
@@ -84,13 +86,15 @@ final class BrowserNativeDialogPresentationOwner {
     func presentNoticeAlert(
         title: String,
         subtitle: String?,
-        message: String
+        message: String,
+        in presentationWindow: NSWindow? = nil
     ) -> Bool {
         prepareForNativeModalPresentation()
         return alerts.presentNotice(
             title: title,
             subtitle: subtitle,
-            message: message
+            message: message,
+            preferredWindow: presentationWindow
         )
     }
 

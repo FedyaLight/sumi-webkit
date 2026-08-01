@@ -54,6 +54,8 @@ Sumi implements the browser application layer. WebKit still owns HTML/CSS render
 - Incognito windows backed by a non-persistent private partition.
 - Command palette/address field with local actions, history, bookmarks, spaces, site search, and split-aware results.
 - Session restoration, closed-tab restoration, downloads, find in page, Reader presentation, page zoom, and custom keyboard shortcuts.
+- History and bookmarks stay available as browser sidebar tabs, with native AppKit tables, hierarchy editing, context menus, and bookmark import/export.
+- Settings open in a separate macOS window with a native sidebar and window-local sheets instead of occupying a browser tab.
 
 ### Media, performance, and appearance
 

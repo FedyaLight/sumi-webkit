@@ -34,4 +34,18 @@ final class BrowserNativeAlertPresenterTests: XCTestCase {
         XCTAssertEqual(alert.informativeText, "Personal\n\nCleanup is pending.")
         XCTAssertEqual(alert.buttons.map(\.title), ["OK"])
     }
+
+    func testPreferredSettingsWindowWinsOverActiveBrowserWindow() {
+        let settingsWindow = NSWindow()
+        let browserWindow = NSWindow()
+
+        let resolvedWindow = BrowserNativeAlertPresenter.resolvePresentationWindow(
+            preferredWindow: settingsWindow,
+            activeBrowserWindow: browserWindow,
+            keyWindow: browserWindow,
+            mainWindow: browserWindow
+        )
+
+        XCTAssertTrue(resolvedWindow === settingsWindow)
+    }
 }

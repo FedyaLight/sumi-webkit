@@ -463,10 +463,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         surfaceState.representsSumiEmptySurface(for: url)
     }
 
-    var representsSumiSettingsSurface: Bool {
-        surfaceState.representsSumiSettingsSurface(for: url)
-    }
-
     var representsSumiHistorySurface: Bool {
         surfaceState.representsSumiHistorySurface(for: url)
     }

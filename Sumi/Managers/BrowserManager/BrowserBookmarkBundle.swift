@@ -52,6 +52,22 @@ final class BrowserBookmarkBundle {
                     preferredOpenMode: preferredOpenMode
                 )
             },
+            replaceTabsWithBookmarkURLs: { [weak browserManager] urls, windowState in
+                guard let browserManager else { return }
+                if windowState.isIncognito {
+                    let tabs = windowState.ephemeralTabs
+                    tabs.forEach {
+                        _ = browserManager.tabCloseOrchestration.closeTab(
+                            $0,
+                            in: windowState
+                        )
+                    }
+                } else if let spaceID = windowState.currentSpaceId {
+                    browserManager.tabClosureService.clearRegularTabs(for: spaceID)
+                }
+                browserManager.historyBundle.historyNavigationOwner
+                    .openHistoryURLsInNewTabs(urls, in: windowState)
+            },
             openHistoryURLsInNewWindow: { [weak browserManager] urls in
                 browserManager?.historyBundle.historyNavigationOwner.openHistoryURLsInNewWindow(urls)
             },

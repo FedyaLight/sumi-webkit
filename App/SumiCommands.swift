@@ -16,7 +16,6 @@ struct SumiCommands: Commands {
     private let updaterService: SumiUpdaterService
     @ObservedObject private var recentlyClosedManager: RecentlyClosedManager
     @ObservedObject private var menuFaviconInvalidator: SumiMenuFaviconInvalidator
-    @Environment(\.sumiSettings) var sumiSettings
 
     init(
         browserContext: SumiCommandsBrowserContext,
@@ -63,13 +62,6 @@ struct SumiCommands: Commands {
             Button("Make Sumi Default Browser") {
                 browserContext.setAsDefaultBrowser()
             }
-        }
-
-        CommandGroup(replacing: .appSettings) {
-            Button("Settings…") {
-                browserContext.openSettingsTab(selecting: sumiSettings.currentSettingsTab)
-            }
-            .keyboardShortcut(",", modifiers: .command)
         }
 
         CommandGroup(replacing: .saveItem) {

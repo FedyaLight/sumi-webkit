@@ -1,5 +1,14 @@
 import Foundation
 
+enum SumiBookmarkConstants {
+    static let rootFolderID = "bookmarks_root"
+    static let favoritesFolderID = "00000000-0000-4000-8000-000000000001"
+
+    static func isProtectedFolderID(_ id: String) -> Bool {
+        id == rootFolderID || id == favoritesFolderID
+    }
+}
+
 struct SumiBookmark: Equatable, Identifiable, Sendable {
     let id: String
     var title: String
@@ -65,23 +74,12 @@ struct SumiBookmarksSnapshot: Equatable, Sendable {
     }
 }
 
-enum SumiBookmarkSortMode: String, CaseIterable, Identifiable, Sendable {
+enum SumiBookmarkSortMode: Equatable, Sendable {
     case manual
     case nameAscending
     case nameDescending
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .manual:
-            return "Manual Order"
-        case .nameAscending:
-            return "Name A-Z"
-        case .nameDescending:
-            return "Name Z-A"
-        }
-    }
+    case addressAscending
+    case addressDescending
 
     var allowsManualMove: Bool {
         self == .manual

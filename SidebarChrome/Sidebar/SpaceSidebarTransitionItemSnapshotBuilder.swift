@@ -527,9 +527,6 @@ enum SpaceSidebarTransitionItemSnapshotProjector {
             return .image(tab.favicon)
         }
 
-        if tab.representsSumiSettingsSurface {
-            return .system(SumiSurface.settingsTabFaviconSystemImageName)
-        }
         if tab.representsSumiHistorySurface {
             return .system(SumiSurface.historyTabFaviconSystemImageName)
         }
@@ -553,10 +550,6 @@ enum SpaceSidebarTransitionItemSnapshotProjector {
         }
 
         if let liveTab {
-            if SumiSurface.isSettingsSurfaceURL(liveTab.url) {
-                return .system(SumiSurface.settingsTabFaviconSystemImageName)
-            }
-
             if let cachedFavicon = ShortcutPin.cachedLaunchFavicon(
                 for: pin.launchURL,
                 partition: faviconPartition,

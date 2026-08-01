@@ -4,13 +4,11 @@ import SumiDomain
 struct SumiSiteSettingsSiteDetailView: View {
     @StateObject private var viewModel: SumiSiteSettingsSiteDetailViewModel
     let profile: Profile?
-    let onBack: () -> Void
 
     init(
         scope: SumiPermissionSiteScope,
         repository: SumiPermissionSettingsRepository,
-        profile: Profile?,
-        onBack: @escaping () -> Void
+        profile: Profile?
     ) {
         _viewModel = StateObject(
             wrappedValue: SumiSiteSettingsSiteDetailViewModel(
@@ -19,7 +17,6 @@ struct SumiSiteSettingsSiteDetailView: View {
             )
         )
         self.profile = profile
-        self.onBack = onBack
     }
 
     var body: some View {
@@ -44,25 +41,15 @@ struct SumiSiteSettingsSiteDetailView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Button(action: onBack) {
-                Label("All sites", systemImage: "chevron.left")
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(viewModel.scope.title)
-                    .font(.title3.weight(.semibold))
-                Text(viewModel.scope.originSummary)
-                    .font(.callout)
+        VStack(alignment: .leading, spacing: 3) {
+            Text(viewModel.scope.originSummary)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let profileName = viewModel.detail?.profileName {
+                Text(profileName)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                if let profileName = viewModel.detail?.profileName {
-                    Text(profileName)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
             }
         }
     }

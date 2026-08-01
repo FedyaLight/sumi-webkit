@@ -1,664 +1,565 @@
 import AppKit
+import Combine
 import SwiftUI
-import UniformTypeIdentifiers
 
-struct SumiBookmarksTabRootView: View {
-    @Environment(\.sumiSettings) private var sumiSettings
+/// SwiftUI reserves the browser-surface slot; AppKit owns every visible
+/// bookmark control and interaction inside it.
+struct SumiBookmarksTabRootView: NSViewControllerRepresentable {
     @Environment(\.resolvedThemeContext) private var themeContext
-    @StateObject private var viewModel: SumiBookmarksPageViewModel
-    @StateObject private var scrollHoverCoordinator = NativeSurfaceScrollHoverCoordinator()
-    @State private var bookmarkDraft: SumiBookmarkFormDraft?
-    @State private var folderDraft: SumiFolderFormDraft?
-    @FocusState private var searchFocused: Bool
 
-    private enum Layout {
-        static let sidebarWidth: CGFloat = 260
-        static let contentMaxWidth: CGFloat = 1100
-        static let rowCornerRadius: CGFloat = 8
-    }
+    let browserContext: BookmarksPageBrowserContext
+    let windowState: BrowserWindowState?
 
-    init(browserContext: BookmarksPageBrowserContext, windowState: BrowserWindowState?) {
-        _viewModel = StateObject(
-            wrappedValue: SumiBookmarksPageViewModel(
+    func makeNSViewController(context _: Context) -> SumiBookmarksViewController {
+        let controller = SumiBookmarksViewController(
+            viewModel: SumiBookmarksPageViewModel(
                 browserContext: browserContext,
                 windowState: windowState
             )
         )
+        controller.applyAppearance(themeContext.nativeSurfaceThemeContext)
+        return controller
     }
 
-    var body: some View {
-        HStack(spacing: 0) {
-            sidebar
-            Divider()
-            content
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .sumiChromeThemeScope(context: surfaceThemeContext, settings: sumiSettings)
-        .environment(\.colorScheme, surfaceThemeContext.chromeColorScheme)
-        .environment(\.nativeSurfaceHoverUpdatesEnabled, scrollHoverCoordinator.hoverUpdatesEnabled)
-        .overlay(alignment: .topLeading) {
-            Button {
-                searchFocused = true
-            } label: {
-                EmptyView()
-            }
-            .keyboardShortcut("f", modifiers: .command)
-            .buttonStyle(.plain)
-            .frame(width: 0, height: 0)
-            .opacity(0)
-            .accessibilityHidden(true)
-        }
-        .onAppear { viewModel.appear() }
-        .onDisappear { scrollHoverCoordinator.reset() }
-        .onDeleteCommand { viewModel.deleteSelected() }
-        .sheet(item: $bookmarkDraft) { draft in
-            SumiBookmarkFormView(
-                draft: draft,
-                folders: viewModel.folderPickerFolders(),
-                onCancel: { bookmarkDraft = nil },
-                onSave: { saved in
-                    if let editingID = saved.editingID {
-                        viewModel.updateBookmark(
-                            id: editingID,
-                            title: saved.title,
-                            urlString: saved.urlString,
-                            parentID: saved.parentID
-                        )
-                    } else {
-                        viewModel.createBookmark(
-                            title: saved.title,
-                            urlString: saved.urlString,
-                            parentID: saved.parentID
-                        )
-                    }
-                    bookmarkDraft = nil
-                }
-            )
-            .sumiNativeSurfaceColorScheme()
-        }
-        .sheet(item: $folderDraft) { draft in
-            SumiFolderFormView(
-                draft: draft,
-                folders: viewModel.folderPickerFolders(excluding: draft.editingID),
-                onCancel: { folderDraft = nil },
-                onSave: { saved in
-                    if let editingID = saved.editingID {
-                        viewModel.updateFolder(
-                            id: editingID,
-                            title: saved.title,
-                            parentID: saved.parentID
-                        )
-                    } else {
-                        viewModel.createFolder(title: saved.title, parentID: saved.parentID)
-                    }
-                    folderDraft = nil
-                }
-            )
-            .sumiNativeSurfaceColorScheme()
-        }
-    }
-
-    private var surfaceThemeContext: ResolvedThemeContext {
-        themeContext.nativeSurfaceThemeContext
-    }
-
-    private var tokens: ChromeThemeTokens {
-        surfaceThemeContext.tokens(settings: sumiSettings)
-    }
-
-    private var selectionBackground: Color {
-        surfaceThemeContext.nativeSurfaceSelectionBackground
-    }
-
-    private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("Bookmarks")
-                .font(SumiBookmarksTabTypography.sidebarTitle)
-                .foregroundStyle(tokens.primaryText)
-                .padding(.horizontal, 22)
-                .padding(.top, 28)
-                .padding(.bottom, 18)
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(viewModel.folders) { folder in
-                        sidebarRow(folder)
-                    }
-                }
-                .padding(.horizontal, 10)
-                .padding(.bottom, 16)
-            }
-            .suppressesNativeSurfaceHoverWhileScrolling(scrollHoverCoordinator, region: "bookmarks-sidebar")
-        }
-        .frame(width: Layout.sidebarWidth, alignment: .leading)
-    }
-
-    private func sidebarRow(_ folder: SumiBookmarkFolder) -> some View {
-        let selected = viewModel.selectedFolderID == folder.id
-        return Button {
-            viewModel.selectFolder(folder.id)
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: folder.depth == 0 ? "book.closed.fill" : "folder")
-                    .frame(width: 18, alignment: .center)
-                Text(folder.title)
-                    .lineLimit(1)
-                Spacer(minLength: 8)
-            }
-            .padding(.leading, CGFloat(max(0, folder.depth)) * 14)
-            .padding(.vertical, 8)
-            .padding(.horizontal, 10)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .background(
-            RoundedRectangle(cornerRadius: Layout.rowCornerRadius, style: .continuous)
-                .fill(selected ? selectionBackground : SumiBookmarksTabColors.transparent)
-        )
-        .foregroundStyle(tokens.primaryText)
-        .onDrop(of: [.text], isTargeted: nil) { _ in
-            viewModel.dropDraggedItems(toParentID: folder.id)
-        }
-        .contextMenu {
-            Button("New Folder") {
-                folderDraft = SumiFolderFormDraft(editingID: nil, title: "", parentID: folder.id)
-            }
-            if folder.id != SumiBookmarkConstants.rootFolderID {
-                Button("Edit Folder") {
-                    folderDraft = viewModel.folderDraft(forFolderID: folder.id)
-                }
-                Button("Delete") {
-                    viewModel.deleteFolder(id: folder.id)
-                }
-            }
-        }
-        .chromeCursor(.pointingHand, isEnabled: scrollHoverCoordinator.hoverUpdatesEnabled)
-    }
-
-    private var content: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-            Divider()
-            entityList
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 0) {
-                // Invisible placeholder to perfectly balance the menu button on the right,
-                // ensuring the search field is mathematically centered in the space.
-                SumiBookmarksTabColors.transparent
-                    .frame(width: 28, height: 28)
-
-                Spacer()
-
-                searchField
-                    .frame(width: 480)
-
-                Spacer()
-
-                Menu {
-                    Button("New Bookmark…") {
-                        bookmarkDraft = viewModel.bookmarkDraft()
-                    }
-                    Button("New Folder…") {
-                        folderDraft = viewModel.folderDraft()
-                    }
-
-                    Divider()
-
-                    Menu("Sort") {
-                        ForEach(SumiBookmarkSortMode.allCases) { mode in
-                            Button {
-                                viewModel.sortMode = mode
-                            } label: {
-                                if viewModel.sortMode == mode {
-                                    Label(mode.title, systemImage: "checkmark")
-                                } else {
-                                    Text(mode.title)
-                                }
-                            }
-                        }
-                    }
-
-                    Divider()
-
-                    Button("Import Bookmarks…") {
-                        viewModel.importBookmarksFromMenu()
-                    }
-
-                    Button("Export Bookmarks…") {
-                        viewModel.exportBookmarksFromMenu()
-                    }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(SumiBookmarksTabTypography.moreActionsIcon)
-                        .rotationEffect(.degrees(90))
-                        .foregroundStyle(tokens.primaryText)
-                        .frame(width: 28, height: 28)
-                        .contentShape(Rectangle())
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .frame(width: 28, height: 28)
-                .help("More actions")
-                .chromeCursor(.pointingHand, isEnabled: scrollHoverCoordinator.hoverUpdatesEnabled)
-            }
-
-            if viewModel.hasSelection {
-                HStack(spacing: 12) {
-                    Text("\(viewModel.selectionCount) Selected")
-                        .foregroundStyle(tokens.secondaryText)
-
-                    Button("Open") {
-                        viewModel.openSelected()
-                    }
-                    .chromeCursor(.pointingHand, isEnabled: scrollHoverCoordinator.hoverUpdatesEnabled)
-
-                    Button("Delete") {
-                        viewModel.deleteSelected()
-                    }
-                    .disabled(!viewModel.canDeleteSelection)
-                    .chromeCursor(.pointingHand, isEnabled: scrollHoverCoordinator.hoverUpdatesEnabled)
-
-                    Button("Clear Selection") {
-                        viewModel.clearSelection()
-                    }
-                    .chromeCursor(.pointingHand, isEnabled: scrollHoverCoordinator.hoverUpdatesEnabled)
-                }
-                .font(.callout)
-            } else if let message = viewModel.statusMessage {
-                Text(message)
-                    .font(.callout)
-                    .foregroundStyle(tokens.secondaryText)
-            }
-        }
-        .padding(.horizontal, 28)
-        .padding(.vertical, 22)
-    }
-
-    private var searchField: some View {
-        HStack(spacing: 9) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(tokens.secondaryText)
-            TextField("Search Bookmarks", text: $viewModel.searchText)
-                .textFieldStyle(.plain)
-                .focused($searchFocused)
-        }
-        .padding(.vertical, 9)
-        .padding(.horizontal, 12)
-        .background(tokens.fieldBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(tokens.separator.opacity(0.65), lineWidth: 1)
-        )
-    }
-
-    private var entityList: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 2) {
-                if viewModel.visibleEntities.isEmpty {
-                    emptyState
-                } else {
-                    ForEach(Array(viewModel.visibleEntities.enumerated()), id: \.element.id) { index, entity in
-                        SumiBookmarkEntityRow(
-                            entity: entity,
-                            isSelected: viewModel.selectedEntityIDs.contains(entity.id),
-                            canDrag: viewModel.canDragAndDrop,
-                            beginDrag: { viewModel.beginDragging(entity) },
-                            drop: { viewModel.dropDraggedItems(toParentID: viewModel.selectedFolderID, at: index) },
-                            select: { viewModel.handleRowClick(entity) },
-                            open: { viewModel.openFromRow(entity) },
-                            edit: {
-                                if entity.isFolder {
-                                    folderDraft = viewModel.folderDraft(for: entity)
-                                } else {
-                                    bookmarkDraft = viewModel.bookmarkDraft(for: entity)
-                                }
-                            },
-                            delete: { viewModel.delete(entity) },
-                            copyLink: { viewModel.copyLink(entity) },
-                            showInFolder: { viewModel.showInFolder(entity) },
-                            openMode: { mode in viewModel.open(entity, mode: mode) },
-                            newFolder: {
-                                folderDraft = SumiFolderFormDraft(
-                                    editingID: nil,
-                                    title: "",
-                                    parentID: entity.isFolder ? entity.id : viewModel.selectedFolderID
-                                )
-                            },
-                            searchActive: !viewModel.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                            faviconPartition: viewModel.faviconPartition,
-                            faviconImageReader: viewModel.faviconImageReader
-                        )
-                    }
-                }
-            }
-            .frame(maxWidth: Layout.contentMaxWidth, alignment: .leading)
-            .padding(.horizontal, 28)
-            .padding(.vertical, 22)
-        }
-        .suppressesNativeSurfaceHoverWhileScrolling(scrollHoverCoordinator, region: "bookmarks-list")
-    }
-
-    private var emptyState: some View {
-        VStack(alignment: .center, spacing: 12) {
-            Image(systemName: "book.closed")
-                .font(SumiBookmarksTabTypography.emptyStateIcon)
-                .foregroundStyle(tokens.secondaryText)
-            Text("No Bookmarks")
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(tokens.primaryText)
-            Text("Saved pages and folders will appear here.")
-                .foregroundStyle(tokens.secondaryText)
-        }
-        .frame(maxWidth: .infinity, minHeight: 280)
+    func updateNSViewController(
+        _ controller: SumiBookmarksViewController,
+        context _: Context
+    ) {
+        controller.applyAppearance(themeContext.nativeSurfaceThemeContext)
     }
 }
 
-private struct SumiBookmarkEntityRow: View {
-    let entity: SumiBookmarkEntity
-    let isSelected: Bool
-    let canDrag: Bool
-    let beginDrag: () -> Void
-    let drop: () -> Bool
-    let select: () -> Void
-    let open: () -> Void
-    let edit: () -> Void
-    let delete: () -> Void
-    let copyLink: () -> Void
-    let showInFolder: () -> Void
-    let openMode: (HistoryOpenMode) -> Void
-    let newFolder: () -> Void
-    let searchActive: Bool
-    let faviconPartition: SumiFaviconPartition
-    let faviconImageReader: any BrowserFaviconImageReading
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
-    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
-    @Environment(\.nativeSurfaceHoverUpdatesEnabled) private var hoverUpdatesEnabled
-    @State private var isHovering = false
-    @State private var faviconImage: NSImage?
+@MainActor
+final class SumiBookmarksViewController: NSViewController {
+    final class Node: NSObject {
+        let entity: SumiBookmarkEntity
+        let children: [Node]
 
-    private var tokens: ChromeThemeTokens {
-        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
+        init(entity: SumiBookmarkEntity) {
+            self.entity = entity
+            children = entity.children.map(Node.init(entity:))
+        }
     }
 
-    var body: some View {
-        HStack(spacing: 12) {
-            icon
-            VStack(alignment: .leading, spacing: 3) {
-                Text(entity.title)
-                    .lineLimit(1)
-                    .font(SumiBookmarksTabTypography.rowTitle)
-                    .foregroundStyle(tokens.primaryText)
-                if entity.isBookmark {
-                    Text(entity.displayURL)
-                        .lineLimit(1)
-                        .font(.caption)
-                        .foregroundStyle(tokens.secondaryText)
-                } else {
-                    Text("\(entity.childBookmarkCount) bookmarks")
-                        .lineLimit(1)
-                        .font(.caption)
-                        .foregroundStyle(tokens.secondaryText)
-                }
-            }
-            Spacer(minLength: 12)
-            if let parentTitle = entity.parentTitle, searchActive {
-                Text(parentTitle)
-                    .font(.caption)
-                    .foregroundStyle(tokens.secondaryText)
-            }
-        }
-        .padding(.vertical, 9)
-        .padding(.horizontal, 11)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(rowBackgroundColor)
+    private enum Layout {
+        static let headerHeight: CGFloat = 45
+        static let horizontalInset: CGFloat = 8
+        static let tableHorizontalInset: CGFloat = 12
+        static let searchWidth: CGFloat = 110
+        static let firstColumnFraction: CGFloat = 0.31
+        static let rowHeight: CGFloat = 20
+    }
+
+    let viewModel: SumiBookmarksPageViewModel
+    let outlineView = SumiBookmarksOutlineView()
+    var roots: [Node] = []
+
+    private let scrollView = NSScrollView()
+    private let searchField = NSSearchField()
+    private let emptyLabel = NSTextField(labelWithString: String(localized: "No Bookmarks"))
+    private var cancellables = Set<AnyCancellable>()
+    private var searchTask: Task<Void, Never>?
+    private var pendingSelectionID: String?
+    private var pendingRenameID: String?
+    private var didApplyInitialSelection = false
+    private var didApplyInitialExpansion = false
+    var isApplyingSortDescriptors = false
+
+    init(viewModel: SumiBookmarksPageViewModel) {
+        self.viewModel = viewModel
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    isolated deinit {
+        searchTask?.cancel()
+    }
+
+    override func loadView() {
+        view = NSView()
+        configureHeader()
+        configureOutlineView()
+        configureEmptyState()
+        installLayout()
+        bindViewModel()
+        viewModel.appear()
+    }
+
+    func applyAppearance(_ themeContext: ResolvedThemeContext) {
+        view.sumiApplyNativeSurfaceAppearance(themeContext: themeContext)
+    }
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        let availableWidth = outlineView.bounds.width
+        guard availableWidth > 0,
+              let firstColumn = outlineView.tableColumns.first,
+              let addressColumn = outlineView.tableColumns.last,
+              firstColumn !== addressColumn
+        else { return }
+        let firstWidth = max(
+            firstColumn.minWidth,
+            floor(availableWidth * Layout.firstColumnFraction)
         )
-        .contentShape(Rectangle())
-        .onTapGesture { select() }
-        .onTapGesture(count: 2) { open() }
-        .nativeSurfaceHover($isHovering)
-        .task(id: faviconLoadID) {
-            await loadFaviconImage()
+        let addressWidth = max(addressColumn.minWidth, availableWidth - firstWidth)
+        if abs(firstColumn.width - firstWidth) > 0.5 {
+            firstColumn.width = firstWidth
         }
-        .contextMenu { contextMenu }
-        .modifier(SumiBookmarkDragDropModifier(canDrag: canDrag, beginDrag: beginDrag, drop: drop))
-        .chromeCursor(.pointingHand, isEnabled: hoverUpdatesEnabled)
+        if abs(addressColumn.width - addressWidth) > 0.5 {
+            addressColumn.width = addressWidth
+        }
     }
 
-    @ViewBuilder
-    private var icon: some View {
-        if entity.isFolder {
-            Image(systemName: "folder")
-                .font(SumiBookmarksTabTypography.folderIcon)
-                .foregroundStyle(tokens.secondaryText)
-                .frame(width: 22, height: 22)
-        } else if let image = faviconImage ?? cachedFaviconImage {
-            Image(nsImage: image)
-                .frame(width: 22, height: 22)
+    private func configureHeader() {
+        let title = NSTextField(labelWithString: String(localized: "Bookmarks"))
+        title.font = .systemFont(ofSize: 22, weight: .bold)
+        title.setContentHuggingPriority(.required, for: .horizontal)
+
+        let newFolderButton = NSButton(
+            title: String(localized: "New Folder"),
+            target: self,
+            action: #selector(createFolder)
+        )
+        newFolderButton.bezelStyle = .rounded
+        newFolderButton.controlSize = .small
+
+        searchField.placeholderString = String(localized: "Search")
+        searchField.controlSize = .small
+        searchField.sendsSearchStringImmediately = true
+        searchField.delegate = self
+        searchField.widthAnchor.constraint(equalToConstant: Layout.searchWidth).isActive = true
+
+        let spacer = NSView()
+        let header = NSStackView(views: [title, spacer, newFolderButton, searchField])
+        header.orientation = .horizontal
+        header.alignment = .centerY
+        header.spacing = 8
+        header.edgeInsets = NSEdgeInsets(
+            top: 0,
+            left: Layout.horizontalInset,
+            bottom: 0,
+            right: Layout.horizontalInset
+        )
+        header.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(header)
+        NSLayoutConstraint.activate([
+            header.topAnchor.constraint(equalTo: view.topAnchor),
+            header.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            header.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            header.heightAnchor.constraint(equalToConstant: Layout.headerHeight),
+        ])
+    }
+
+    private func configureOutlineView() {
+        let nameColumn = NSTableColumn(identifier: .bookmarkName)
+        nameColumn.title = String(localized: "Site")
+        nameColumn.minWidth = 240
+        nameColumn.width = 390
+        nameColumn.sortDescriptorPrototype = NSSortDescriptor(
+            key: "name",
+            ascending: true,
+            selector: #selector(NSString.localizedCaseInsensitiveCompare(_:))
+        )
+
+        let addressColumn = NSTableColumn(identifier: .bookmarkAddress)
+        addressColumn.title = String(localized: "Address")
+        addressColumn.minWidth = 240
+        addressColumn.resizingMask = .autoresizingMask
+        addressColumn.sortDescriptorPrototype = NSSortDescriptor(
+            key: "address",
+            ascending: true,
+            selector: #selector(NSString.localizedCaseInsensitiveCompare(_:))
+        )
+
+        outlineView.addTableColumn(nameColumn)
+        outlineView.addTableColumn(addressColumn)
+        outlineView.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
+        outlineView.outlineTableColumn = nameColumn
+        outlineView.dataSource = self
+        outlineView.delegate = self
+        outlineView.headerView = NSTableHeaderView()
+        outlineView.rowHeight = Layout.rowHeight
+        outlineView.rowSizeStyle = .small
+        outlineView.intercellSpacing = .zero
+        outlineView.indentationPerLevel = 14
+        outlineView.gridStyleMask = .solidVerticalGridLineMask
+        outlineView.gridColor = .separatorColor
+        outlineView.allowsMultipleSelection = true
+        outlineView.allowsEmptySelection = true
+        outlineView.usesAlternatingRowBackgroundColors = false
+        outlineView.backgroundColor = .clear
+        outlineView.style = .plain
+        outlineView.target = self
+        outlineView.doubleAction = #selector(openDoubleClickedItem)
+        outlineView.onDelete = { [weak self] in self?.deleteSelectedItems() }
+        outlineView.onReturn = { [weak self] in self?.openSelectedItems() }
+        outlineView.registerForDraggedTypes([.sumiBookmarkIDs])
+        outlineView.setDraggingSourceOperationMask(.move, forLocal: true)
+
+        let menu = NSMenu()
+        menu.delegate = self
+        outlineView.menu = menu
+
+        scrollView.documentView = outlineView
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(scrollView)
+    }
+
+    private func configureEmptyState() {
+        emptyLabel.font = .systemFont(ofSize: 15, weight: .medium)
+        emptyLabel.textColor = .secondaryLabelColor
+        emptyLabel.alignment = .center
+        emptyLabel.translatesAutoresizingMaskIntoConstraints = false
+        emptyLabel.isHidden = true
+        view.addSubview(emptyLabel)
+    }
+
+    private func installLayout() {
+        NSLayoutConstraint.activate([
+            scrollView.topAnchor.constraint(equalTo: view.topAnchor, constant: Layout.headerHeight),
+            scrollView.leadingAnchor.constraint(
+                equalTo: view.leadingAnchor,
+                constant: Layout.tableHorizontalInset
+            ),
+            scrollView.trailingAnchor.constraint(
+                equalTo: view.trailingAnchor,
+                constant: -Layout.tableHorizontalInset
+            ),
+            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            emptyLabel.centerXAnchor.constraint(equalTo: scrollView.centerXAnchor),
+            emptyLabel.centerYAnchor.constraint(equalTo: scrollView.centerYAnchor),
+        ])
+    }
+
+    private func bindViewModel() {
+        viewModel.$outlineRoots
+            .sink { [weak self] entities in
+                self?.apply(entities)
+            }
+            .store(in: &cancellables)
+
+        viewModel.$sortMode
+            .removeDuplicates()
+            .sink { [weak self] mode in
+                self?.applySortDescriptor(for: mode)
+            }
+            .store(in: &cancellables)
+    }
+
+    private func apply(_ entities: [SumiBookmarkEntity]) {
+        let selectedIDs = pendingSelectionID.map { [$0] } ?? selectedEntities.map(\.id)
+        let expandedIDs = expandedEntityIDs()
+        roots = entities.map(Node.init(entity:))
+        outlineView.reloadData()
+
+        if viewModel.searchText.isEmpty {
+            if didApplyInitialExpansion {
+                restoreExpansion(ids: expandedIDs)
+            } else if let firstRoot = roots.first {
+                outlineView.expandItem(firstRoot)
+                didApplyInitialExpansion = true
+            }
+        }
+
+        if !didApplyInitialSelection, let initial = viewModel.initiallySelectedFolderID {
+            didApplyInitialSelection = true
+            expandAncestorsAndSelect(id: initial)
         } else {
-            Image(systemName: "globe")
-                .font(SumiBookmarksTabTypography.bookmarkFallbackIcon)
-                .foregroundStyle(tokens.secondaryText)
-                .frame(width: 22, height: 22)
+            restoreSelection(ids: selectedIDs)
+        }
+        let renameID = pendingRenameID
+        pendingSelectionID = nil
+        pendingRenameID = nil
+        emptyLabel.stringValue = viewModel.searchText.isEmpty
+            ? String(localized: "No Bookmarks")
+            : String(localized: "No Matching Bookmarks")
+        emptyLabel.isHidden = !entities.isEmpty
+        if let renameID {
+            DispatchQueue.main.async { [weak self] in
+                self?.beginRenaming(entityID: renameID)
+            }
         }
     }
 
-    private var faviconLoadID: String {
-        let urlString = entity.url?.absoluteString ?? "folder-\(entity.id)"
-        return "\(urlString)|\(faviconPartition.storageComponent)"
+    private func applySortDescriptor(for mode: SumiBookmarkSortMode) {
+        let descriptor: NSSortDescriptor?
+        switch mode {
+        case .manual:
+            descriptor = nil
+        case .nameAscending:
+            descriptor = NSSortDescriptor(key: "name", ascending: true)
+        case .nameDescending:
+            descriptor = NSSortDescriptor(key: "name", ascending: false)
+        case .addressAscending:
+            descriptor = NSSortDescriptor(key: "address", ascending: true)
+        case .addressDescending:
+            descriptor = NSSortDescriptor(key: "address", ascending: false)
+        }
+        isApplyingSortDescriptors = true
+        outlineView.sortDescriptors = descriptor.map { [$0] } ?? []
+        isApplyingSortDescriptors = false
     }
 
-    private var cachedFaviconImage: NSImage? {
-        guard let url = entity.url else { return nil }
-        return TabFaviconStore.getCachedImage(
-            forDocumentURL: url,
-            partition: faviconPartition,
-            context: .historyBookmarkRow,
-            imageReader: faviconImageReader
+    func applySortDescriptorsFromOutlineView() {
+        guard !isApplyingSortDescriptors,
+              let descriptor = outlineView.sortDescriptors.first,
+              let key = descriptor.key
+        else { return }
+        switch (key, descriptor.ascending) {
+        case ("name", true):
+            viewModel.sortMode = .nameAscending
+        case ("name", false):
+            viewModel.sortMode = .nameDescending
+        case ("address", true):
+            viewModel.sortMode = .addressAscending
+        case ("address", false):
+            viewModel.sortMode = .addressDescending
+        default:
+            break
+        }
+    }
+
+    private func expandedEntityIDs() -> Set<String> {
+        Set((0..<outlineView.numberOfRows).compactMap { row in
+            guard let node = outlineView.item(atRow: row) as? Node,
+                  outlineView.isItemExpanded(node)
+            else { return nil }
+            return node.entity.id
+        })
+    }
+
+    private func restoreExpansion(ids: Set<String>) {
+        func visit(_ node: Node) {
+            if ids.contains(node.entity.id) { outlineView.expandItem(node) }
+            node.children.forEach(visit)
+        }
+        roots.forEach(visit)
+    }
+
+    private func restoreSelection(ids: [String]) {
+        let idSet = Set(ids)
+        guard !idSet.isEmpty else { return }
+        let rows = IndexSet((0..<outlineView.numberOfRows).filter { row in
+            guard let node = outlineView.item(atRow: row) as? Node else { return false }
+            return idSet.contains(node.entity.id)
+        })
+        outlineView.selectRowIndexes(rows, byExtendingSelection: false)
+        if let row = rows.first { outlineView.scrollRowToVisible(row) }
+    }
+
+    private func expandAncestorsAndSelect(id: String) {
+        guard let path = nodePath(to: id, in: roots) else { return }
+        path.dropLast().forEach { outlineView.expandItem($0) }
+        restoreSelection(ids: [id])
+    }
+
+    private func nodePath(to id: String, in nodes: [Node]) -> [Node]? {
+        for node in nodes {
+            if node.entity.id == id { return [node] }
+            if let path = nodePath(to: id, in: node.children) { return [node] + path }
+        }
+        return nil
+    }
+
+    var selectedEntities: [SumiBookmarkEntity] {
+        outlineView.selectedRowIndexes.compactMap { row in
+            (outlineView.item(atRow: row) as? Node)?.entity
+        }
+    }
+
+    func contextEntity() -> SumiBookmarkEntity? {
+        let row = outlineView.clickedRow >= 0 ? outlineView.clickedRow : outlineView.selectedRow
+        return row >= 0 ? (outlineView.item(atRow: row) as? Node)?.entity : nil
+    }
+
+    @objc func createFolder() {
+        createFolderAndBeginRenaming(parentID: SumiBookmarkConstants.rootFolderID)
+    }
+
+    @objc func createContextFolder() {
+        guard let entity = contextEntity() else { return }
+        createFolderAndBeginRenaming(
+            parentID: entity.isFolder
+                ? entity.id
+                : entity.parentID ?? SumiBookmarkConstants.rootFolderID
         )
     }
 
-    @MainActor
-    private func loadFaviconImage() async {
-        guard let url = entity.url else {
-            faviconImage = nil
+    private func createFolderAndBeginRenaming(parentID: String) {
+        guard let folder = viewModel.createFolder(
+            title: String(localized: "Untitled Folder"),
+            parentID: parentID
+        ) else {
+            showMutationError()
             return
         }
-
-        faviconImage = cachedFaviconImage
-        let loadedImage = await TabFaviconStore.loadCachedDisplayImage(
-            forDocumentURL: url,
-            partition: faviconPartition,
-            context: .historyBookmarkRow,
-            priority: .historyBookmarkVisibleRow,
-            imageReader: faviconImageReader
-        )
-        guard !Task.isCancelled else { return }
-        faviconImage = loadedImage ?? cachedFaviconImage
+        pendingSelectionID = folder.id
+        pendingRenameID = folder.id
+        viewModel.appear()
     }
 
-    @ViewBuilder
-    private var contextMenu: some View {
-        Button(entity.isFolder ? "Open All" : "Open") {
-            openMode(.currentTab)
-        }
-        Button(entity.isFolder ? "Open All in New Tabs" : "Open in New Tab") {
-            openMode(.newTab)
-        }
-        Button(entity.isFolder ? "Open All in New Window" : "Open in New Window") {
-            openMode(.newWindow)
-        }
-        Divider()
-        Button("Edit") {
-            edit()
-        }
-        if entity.isBookmark {
-            Button("Copy Link") {
-                copyLink()
-            }
-        }
-        if searchActive, entity.parentID != nil {
-            Button("Show in Folder") {
-                showInFolder()
-            }
-        }
-        if entity.isFolder {
-            Button("New Folder") {
-                newFolder()
-            }
-        }
-        Divider()
-        Button("Delete", role: .destructive) {
-            delete()
+    @objc func renameContextItem() {
+        guard let entity = contextEntity() else { return }
+        beginRenaming(entityID: entity.id)
+    }
+
+    @objc func editContextItemAddress() {
+        guard let entity = contextEntity(), entity.isBookmark else { return }
+        beginEditingAddress(entityID: entity.id)
+    }
+
+    @objc func openContextItemInNewTab() {
+        contextEntity().map { viewModel.open($0, mode: .newTab) }
+    }
+
+    @objc func openContextItemInNewWindow() {
+        contextEntity().map { viewModel.open($0, mode: .newWindow) }
+    }
+
+    @objc func copyContextItemLink() {
+        contextEntity().map(viewModel.copyLink)
+    }
+
+    @objc func deleteContextItem() {
+        guard let entity = contextEntity() else { return }
+        let selection = selectedEntities
+        viewModel.delete(selection.contains(where: { $0.id == entity.id }) ? selection : [entity])
+    }
+
+    @objc func sortByName() {
+        viewModel.sortMode = .nameAscending
+    }
+
+    @objc func sortByAddress() {
+        viewModel.sortMode = .addressAscending
+    }
+
+    private func beginRenaming(entityID: String) {
+        guard let row = row(for: entityID),
+              let cell = outlineView.view(
+                  atColumn: outlineView.column(withIdentifier: .bookmarkName),
+                  row: row,
+                  makeIfNecessary: true
+              ) as? SumiBookmarkNameCellView
+        else { return }
+        outlineView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        cell.beginEditing()
+    }
+
+    private func beginEditingAddress(entityID: String) {
+        guard let row = row(for: entityID),
+              let cell = outlineView.view(
+                  atColumn: outlineView.column(withIdentifier: .bookmarkAddress),
+                  row: row,
+                  makeIfNecessary: true
+              ) as? SumiBookmarkAddressCellView
+        else { return }
+        outlineView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        cell.beginEditing()
+    }
+
+    private func row(for entityID: String) -> Int? {
+        (0..<outlineView.numberOfRows).first { row in
+            (outlineView.item(atRow: row) as? Node)?.entity.id == entityID
         }
     }
 
-    private var rowBackgroundColor: Color {
-        if isSelected {
-            return themeContext.nativeSurfaceSelectionBackground
-        }
-        if isHovering {
-            return tokens.fieldBackgroundHover
-        }
-        return SumiBookmarksTabColors.transparent
-    }
-}
-
-private struct SumiBookmarkDragDropModifier: ViewModifier {
-    let canDrag: Bool
-    let beginDrag: () -> Void
-    let drop: () -> Bool
-
-    func body(content: Content) -> some View {
-        if canDrag {
-            content
-                .onDrag {
-                    beginDrag()
-                    return NSItemProvider(object: "bookmark" as NSString)
-                }
-                .onDrop(of: [UTType.text], isTargeted: nil) { _ in
-                    drop()
-                }
+    @objc private func openDoubleClickedItem() {
+        let row = outlineView.clickedRow
+        guard row >= 0, let node = outlineView.item(atRow: row) as? Node else { return }
+        if node.entity.isFolder {
+            outlineView.isItemExpanded(node)
+                ? outlineView.collapseItem(node)
+                : outlineView.expandItem(node)
         } else {
-            content
+            viewModel.open(
+                node.entity,
+                mode: NSApp.currentEvent?.modifierFlags.contains(.command) == true
+                    ? .newTab
+                    : .currentTab
+            )
+        }
+    }
+
+    private func openSelectedItems() {
+        let entities = selectedEntities
+        guard !entities.isEmpty else { return }
+        if entities.count == 1, let entity = entities.first {
+            viewModel.open(entity, mode: .currentTab)
+        } else {
+            viewModel.open(entities)
+        }
+    }
+
+    private func deleteSelectedItems() {
+        viewModel.delete(selectedEntities)
+    }
+
+    func showMutationError() {
+        guard let message = viewModel.statusMessage else { return }
+        let alert = NSAlert()
+        alert.messageText = String(localized: "Bookmarks Could Not Be Updated")
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.window.appearance = view.effectiveAppearance
+        alert.runModal()
+    }
+}
+
+extension SumiBookmarksViewController: NSSearchFieldDelegate {
+    func controlTextDidChange(_ notification: Notification) {
+        guard notification.object as? NSSearchField === searchField else { return }
+        let query = searchField.stringValue
+        searchTask?.cancel()
+        searchTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled else { return }
+            self?.viewModel.searchText = query
         }
     }
 }
 
-private struct SumiBookmarkFormView: View {
-    @State private var draft: SumiBookmarkFormDraft
-    let folders: [SumiBookmarkFolder]
-    let onCancel: () -> Void
-    let onSave: (SumiBookmarkFormDraft) -> Void
+@MainActor
+final class SumiBookmarksOutlineView: NSOutlineView {
+    var onDelete: (() -> Void)?
+    var onReturn: (() -> Void)?
 
-    init(
-        draft: SumiBookmarkFormDraft,
-        folders: [SumiBookmarkFolder],
-        onCancel: @escaping () -> Void,
-        onSave: @escaping (SumiBookmarkFormDraft) -> Void
-    ) {
-        _draft = State(initialValue: draft)
-        self.folders = folders
-        self.onCancel = onCancel
-        self.onSave = onSave
+    override func keyDown(with event: NSEvent) {
+        switch event.keyCode {
+        case 36, 76:
+            onReturn?()
+        case 51, 117:
+            onDelete?()
+        default:
+            super.keyDown(with: event)
+        }
     }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text(draft.editingID == nil ? "New Bookmark" : "Edit Bookmark")
-                .font(.title3.weight(.semibold))
-
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Name")
-                TextField("Name", text: $draft.title)
-                    .textFieldStyle(.roundedBorder)
-                Text("URL")
-                TextField("URL", text: $draft.urlString)
-                    .textFieldStyle(.roundedBorder)
-                Text("Location")
-                Picker("Location", selection: $draft.parentID) {
-                    ForEach(folders) { folder in
-                        Text(String(repeating: "  ", count: folder.depth) + folder.title)
-                            .tag(folder.id)
-                    }
-                }
-                .labelsHidden()
-            }
-
-            HStack {
-                Spacer()
-                Button("Cancel") {
-                    onCancel()
-                }
-                Button(draft.editingID == nil ? "Add" : "Save") {
-                    onSave(draft)
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let row = self.row(at: convert(event.locationInWindow, from: nil))
+        if row >= 0, !selectedRowIndexes.contains(row) {
+            selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
         }
-        .padding(24)
-        .frame(width: 460)
+        return super.menu(for: event)
     }
 }
 
-private struct SumiFolderFormView: View {
-    @State private var draft: SumiFolderFormDraft
-    let folders: [SumiBookmarkFolder]
-    let onCancel: () -> Void
-    let onSave: (SumiFolderFormDraft) -> Void
+extension NSPasteboard.PasteboardType {
+    static let sumiBookmarkIDs = Self("com.sumi.browser.bookmark-identifiers")
+}
 
-    init(
-        draft: SumiFolderFormDraft,
-        folders: [SumiBookmarkFolder],
-        onCancel: @escaping () -> Void,
-        onSave: @escaping (SumiFolderFormDraft) -> Void
-    ) {
-        _draft = State(initialValue: draft)
-        self.folders = folders
-        self.onCancel = onCancel
-        self.onSave = onSave
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text(draft.editingID == nil ? "New Folder" : "Edit Folder")
-                .font(.title3.weight(.semibold))
-
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Name")
-                TextField("Name", text: $draft.title)
-                    .textFieldStyle(.roundedBorder)
-                Text("Location")
-                Picker("Location", selection: $draft.parentID) {
-                    ForEach(folders) { folder in
-                        Text(String(repeating: "  ", count: folder.depth) + folder.title)
-                            .tag(folder.id)
-                    }
-                }
-                .labelsHidden()
-            }
-
-            HStack {
-                Spacer()
-                Button("Cancel") {
-                    onCancel()
-                }
-                Button(draft.editingID == nil ? "Add" : "Save") {
-                    onSave(draft)
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-        }
-        .padding(24)
-        .frame(width: 420)
-    }
+extension NSUserInterfaceItemIdentifier {
+    static let bookmarkName = Self("BookmarkName")
+    static let bookmarkAddress = Self("BookmarkAddress")
+    static let bookmarkNameCell = Self("BookmarkNameCell")
+    static let bookmarkAddressCell = Self("BookmarkAddressCell")
 }

@@ -18,7 +18,12 @@ enum BookmarkHTMLExporter {
             "<H1>Bookmarks</H1>",
             "<DL><p>",
         ]
-        appendExportLines(for: root.children, indent: 1, to: &lines)
+        let portableRootChildren = root.children.flatMap { entity in
+            entity.id == SumiBookmarkConstants.favoritesFolderID
+                ? entity.children
+                : [entity]
+        }
+        appendExportLines(for: portableRootChildren, indent: 1, to: &lines)
         lines.append("</DL><p>")
         return lines.joined(separator: "\n")
     }

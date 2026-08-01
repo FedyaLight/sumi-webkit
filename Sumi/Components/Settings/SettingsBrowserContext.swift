@@ -1,3 +1,4 @@
+import AppKit
 import Combine
 import Foundation
 import SumiDomain
@@ -8,7 +9,7 @@ struct ProfileSettingsInventory {
     let updates: AnyPublisher<Void, Never>
 }
 
-/// Browser projection consumed by the in-tab Settings surface.
+/// Browser capabilities consumed by the standalone Settings window.
 /// Built by `WebsiteViewContextFactory`; Settings UI must not reach into the browser composition root.
 @MainActor
 struct SettingsBrowserContext {
@@ -16,14 +17,13 @@ struct SettingsBrowserContext {
     let profileInventory: ProfileSettingsInventory
     let extensionsModule: SumiExtensionsModule
     let extensionSurfaceStore: BrowserExtensionSurfaceStore
+    let moduleRegistry: SumiModuleRegistry
+    let protectionCoordinator: SumiProtectionCoordinator
+    let boostsModule: SumiBoostsModule
 
     let currentProfile: () -> Profile?
     let currentProfileUpdates: AnyPublisher<Profile?, Never>
-    let currentTab: (BrowserWindowState) -> Tab?
-    let requestProfileDeletion: (Profile, String) -> Void
-    let scheduleRuntimeStatePersistence: (Tab) -> Void
+    let requestProfileDeletion: (Profile, String, NSWindow?) -> Void
     let makePermissionRepository: () -> SumiPermissionSettingsRepository
     let dataRecoveryActions: SumiDataRecoveryActions
-    /// Routes transient settings feedback into the window's in-app notification stack.
-    let presentNotification: (BrowserNotification) -> Void
 }

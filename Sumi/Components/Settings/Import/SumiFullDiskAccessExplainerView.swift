@@ -16,7 +16,7 @@ struct SumiFullDiskAccessExplainerView: View {
     )
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 20) {
             HStack(spacing: 10) {
                 Image(systemName: "lock.shield")
                     .font(.title2)

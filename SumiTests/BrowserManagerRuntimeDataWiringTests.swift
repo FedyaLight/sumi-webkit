@@ -289,10 +289,6 @@ extension BrowserManagerRuntimeWiringTests {
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
 
-        let settingsTab = browserManager.tabOpening.openNewTab(
-            url: "sumi://settings/general",
-            context: .foreground(windowState: windowState)
-        )
         let browserContext = WebsiteViewContextFactory.settingsPageBrowserContext(
             for: browserManager
         )
@@ -300,15 +296,13 @@ extension BrowserManagerRuntimeWiringTests {
         XCTAssertTrue(browserContext.profileManager === browserManager.profileManager)
         XCTAssertEqual(
             browserContext.profileInventory.snapshot()[profile.id] ?? .none,
-            ProfileUsage(spaces: 1, tabs: 1)
+            ProfileUsage(spaces: 1, tabs: 0)
         )
         XCTAssertTrue(browserContext.extensionsModule === browserManager.optionalModules.extensions)
         XCTAssertTrue(
             browserContext.extensionSurfaceStore === browserManager.optionalModules.extensions.surfaceStore
         )
         XCTAssertEqual(browserContext.currentProfile()?.id, profile.id)
-        XCTAssertEqual(browserContext.currentTab(windowState)?.id, settingsTab.id)
-        XCTAssertTrue(settingsTab.representsSumiSettingsSurface)
 
         var inventoryUpdateCount = 0
         let inventoryUpdates = browserContext.profileInventory.updates.sink {
@@ -322,7 +316,7 @@ extension BrowserManagerRuntimeWiringTests {
         XCTAssertEqual(inventoryUpdateCount, 1)
         XCTAssertEqual(
             browserContext.profileInventory.snapshot()[profile.id]?.tabs,
-            2
+            1
         )
         let profilePin = ShortcutPin(
             id: UUID(),
@@ -336,7 +330,7 @@ extension BrowserManagerRuntimeWiringTests {
             .replacePinnedByProfile([profile.id: [profilePin]])
         XCTAssertEqual(
             browserContext.profileInventory.snapshot()[profile.id],
-            ProfileUsage(spaces: 1, tabs: 3)
+            ProfileUsage(spaces: 1, tabs: 2)
         )
 
         var browserManagerChangeCount = 0
@@ -371,11 +365,6 @@ extension BrowserManagerRuntimeWiringTests {
 
         let repository = browserContext.makePermissionRepository()
         XCTAssertNotNil(repository)
-
-        let previousURL = settingsTab.url
-        settingsTab.url = URL(string: "sumi://settings/privacy")!
-        browserContext.scheduleRuntimeStatePersistence(settingsTab)
-        XCTAssertNotEqual(settingsTab.url, previousURL)
     }
 
     func testSelectionPublicationPreservesLazyExtensionRuntime() throws {

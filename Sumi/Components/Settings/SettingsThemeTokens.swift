@@ -8,7 +8,7 @@ import SwiftUI
 enum SettingsThemeTokens {
     enum Colors {
         static var groupedBackground: Color {
-            Color.primary.opacity(0.055)
+            Color.primary.opacity(0.045)
         }
 
         static var fieldBackground: Color {
@@ -20,7 +20,7 @@ enum SettingsThemeTokens {
         }
 
         static var stroke: Color {
-            Color.primary.opacity(0.06)
+            Color.clear
         }
 
         static var selectedNavigationBackground: Color {

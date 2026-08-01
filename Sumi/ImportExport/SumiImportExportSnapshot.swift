@@ -116,23 +116,26 @@ enum SumiImportExportSnapshot {
     private static func portableBookmarks(
         from entities: [SumiBookmarkEntity]
     ) -> [SumiPortableBookmarkNode] {
-        entities.compactMap { entity in
+        entities.flatMap { entity -> [SumiPortableBookmarkNode] in
+            if entity.id == SumiBookmarkConstants.favoritesFolderID {
+                return portableBookmarks(from: entity.children)
+            }
             switch entity.kind {
             case .bookmark:
-                guard let url = entity.url else { return nil }
-                return SumiPortableBookmarkNode(
+                guard let url = entity.url else { return [] }
+                return [SumiPortableBookmarkNode(
                     name: entity.title,
                     kind: .bookmark,
                     urlString: url.absoluteString,
                     children: []
-                )
+                )]
             case .folder:
-                return SumiPortableBookmarkNode(
+                return [SumiPortableBookmarkNode(
                     name: entity.title,
                     kind: .folder,
                     urlString: nil,
                     children: portableBookmarks(from: entity.children)
-                )
+                )]
             }
         }
     }

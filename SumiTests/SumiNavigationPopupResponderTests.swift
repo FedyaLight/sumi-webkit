@@ -1261,7 +1261,7 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         let responder = SumiInternalSurfaceNavigationResponder()
         var preferences = sumiNavigationPreferences()
         let action = SumiNavigationAction(navigationAction(
-            url: URL(string: "sumi://settings?pane=privacy")!,
+            url: URL(string: "sumi://history?range=all")!,
             navigationType: .other,
             sourceURL: URL(string: "https://evil.example/page")!,
             isUserInitiated: false,
@@ -1278,7 +1278,7 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         let responder = SumiInternalSurfaceNavigationResponder()
         var preferences = sumiNavigationPreferences()
         let action = SumiNavigationAction(navigationAction(
-            url: URL(string: "sumi://settings?pane=privacy")!,
+            url: URL(string: "sumi://history?range=all")!,
             navigationType: .custom(.sumiUserEnteredURL),
             sourceURL: URL(string: "about:blank")!,
             isUserInitiated: true,

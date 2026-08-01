@@ -56,15 +56,6 @@ final class CommandPalettePageNavigationService {
         loadPage(url, tab, windowState)
     }
 
-    func applySettingsSurfaceNavigation(from input: String) {
-        let normalizedURL = normalizedURLString(for: input)
-        guard let url = URL(string: normalizedURL),
-              SumiSurface.isSettingsSurfaceURL(url)
-        else { return }
-
-        settings()?.applyNavigationFromSettingsSurfaceURL(url)
-    }
-
     private var searchQueryTemplate: String {
         settings()?.resolvedSearchEngineTemplate
             ?? SearchProvider.google.queryTemplate

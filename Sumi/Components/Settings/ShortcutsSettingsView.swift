@@ -1,5 +1,6 @@
-import SwiftUI
+import AppKit
 import SumiDomain
+import SwiftUI
 
 struct ShortcutsSettingsView: View {
     let shortcutManager: KeyboardShortcutManager
@@ -20,50 +21,96 @@ struct ShortcutsSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            SettingsSection(
-                title: "Filters",
-                subtitle: "Find commands before editing their key combinations."
-            ) {
-                SettingsRow(title: "Search") {
-                    searchField
+            HStack(spacing: 12) {
+                searchField
+
+                Spacer(minLength: 16)
+
+                Button("Restore Defaults") {
+                    shortcutManager.resetToDefaults()
                 }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
 
-            SettingsSection(
-                title: "Shortcuts",
-                subtitle: "Customizable shortcuts can be disabled or recorded again."
-            ) {
-                if filteredShortcuts.isEmpty {
+            if filteredShortcuts.isEmpty {
+                SettingsSection {
                     SettingsEmptyState(
                         systemImage: "keyboard",
                         title: "No Shortcuts",
-                        detail: "No keyboard shortcuts match the current filters."
+                        detail: "No shortcuts match your search."
                     )
-                } else {
-                    LazyVStack(alignment: .leading, spacing: 18) {
-                        ForEach(ShortcutCategory.allCases, id: \.self) { category in
-                            if let categoryShortcuts = shortcutsByCategory[category], !categoryShortcuts.isEmpty {
-                                ShortcutCategorySection(
-                                    category: category,
-                                    shortcuts: categoryShortcuts,
-                                    shortcutManager: shortcutManager
-                                )
-                            }
+                }
+            } else {
+                SettingsSection {
+                    let visibleCategories = ShortcutCategory.allCases.filter {
+                        shortcutsByCategory[$0]?.isEmpty == false
+                    }
+
+                    ForEach(Array(visibleCategories.enumerated()), id: \.element) { index, category in
+                        if index > 0 {
+                            SettingsDivider()
+                                .padding(.vertical, 8)
+                        }
+
+                        if let categoryShortcuts = shortcutsByCategory[category] {
+                            ShortcutCategorySection(
+                                category: category,
+                                shortcuts: categoryShortcuts,
+                                shortcutManager: shortcutManager
+                            )
                         }
                     }
-                }
-
-                SettingsSectionFooter {
-                    shortcutManager.resetToDefaults()
                 }
             }
         }
     }
 
     private var searchField: some View {
-        TextField("Search shortcuts...", text: $searchText)
-            .textFieldStyle(.roundedBorder)
+        ShortcutSearchField(
+            text: $searchText,
+            placeholder: String(localized: "Search Shortcuts")
+        )
             .frame(width: 220)
+    }
+}
+
+private struct ShortcutSearchField: NSViewRepresentable {
+    @Binding var text: String
+    let placeholder: String
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+
+    func makeNSView(context: Context) -> NSSearchField {
+        let searchField = NSSearchField()
+        searchField.placeholderString = placeholder
+        searchField.controlSize = .small
+        searchField.delegate = context.coordinator
+        return searchField
+    }
+
+    func updateNSView(_ searchField: NSSearchField, context: Context) {
+        context.coordinator.text = $text
+        searchField.placeholderString = placeholder
+        if searchField.stringValue != text {
+            searchField.stringValue = text
+        }
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, NSSearchFieldDelegate {
+        var text: Binding<String>
+
+        init(text: Binding<String>) {
+            self.text = text
+        }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let searchField = notification.object as? NSSearchField else { return }
+            text.wrappedValue = searchField.stringValue
+        }
     }
 }
 
@@ -73,18 +120,18 @@ private struct ShortcutCategorySection: View {
     let shortcutManager: KeyboardShortcutManager
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label(category.displayName, systemImage: category.icon)
-                .font(.subheadline.weight(.semibold))
+        VStack(alignment: .leading, spacing: 4) {
+            Text(category.displayName)
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)
+                .padding(.horizontal, 4)
+                .padding(.bottom, 4)
 
-            VStack(spacing: 0) {
-                ForEach(Array(shortcuts.enumerated()), id: \.element.action) { index, shortcut in
-                    ShortcutRowView(shortcut: shortcut, shortcutManager: shortcutManager)
+            ForEach(Array(shortcuts.enumerated()), id: \.element.action) { index, shortcut in
+                ShortcutRowView(shortcut: shortcut, shortcutManager: shortcutManager)
 
-                    if index < shortcuts.count - 1 {
-                        SettingsDivider()
-                    }
+                if index < shortcuts.count - 1 {
+                    SettingsDivider()
                 }
             }
         }
@@ -96,13 +143,7 @@ private struct ShortcutRowView: View {
     let shortcutManager: KeyboardShortcutManager
 
     var body: some View {
-        HStack(spacing: 12) {
-            Text(shortcut.action.displayName)
-                .font(.body)
-                .foregroundStyle(.primary)
-
-            Spacer(minLength: 12)
-
+        SettingsRow(title: shortcut.action.displayName, verticalPadding: 6) {
             ShortcutRecorderView(
                 keyCombination: shortcut.keyCombination,
                 onValidate: validate,
@@ -110,7 +151,6 @@ private struct ShortcutRowView: View {
                 onClear: clear
             )
         }
-        .padding(.vertical, 8)
     }
 
     private func validate(_ combination: KeyCombination) -> ShortcutValidationResult {

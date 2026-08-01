@@ -77,9 +77,6 @@ struct LivePinnedTileContent: View {
         for liveTab: Tab,
         hasLauncherFavicon: Bool
     ) -> String? {
-        if SumiSurface.isSettingsSurfaceURL(liveTab.url) {
-            return SumiSurface.settingsTabFaviconSystemImageName
-        }
         if hasLauncherFavicon {
             return nil
         }

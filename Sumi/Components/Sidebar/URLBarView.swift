@@ -145,7 +145,7 @@ struct URLBarView: View {
             }
         }
         .onChange(of: currentTab?.url) { _, url in
-            if let url, SumiSurface.isSettingsSurfaceURL(url) || SumiSurface.isHistorySurfaceURL(url) || SumiSurface.isBookmarksSurfaceURL(url) {
+            if let url, SumiSurface.isHistorySurfaceURL(url) || SumiSurface.isBookmarksSurfaceURL(url) {
                 DispatchQueue.main.async {
                     closePermissionIndicatorPopover()
                     browserContext.closeURLBarHubPopover(windowState)

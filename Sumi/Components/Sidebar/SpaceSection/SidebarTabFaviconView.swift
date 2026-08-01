@@ -2,7 +2,7 @@
 //  SidebarTabFaviconView.swift
 //  Sumi
 //
-//  Aligns template SF Symbol tab icons (new tab globe, settings/history symbols) with
+//  Aligns template SF Symbol tab icons (new tab globe and native surfaces) with
 //  `NavButtonStyle` / top bar navigation controls (`ChromeThemeTokens.primaryText`).
 //
 
@@ -23,9 +23,6 @@ struct SidebarTabFaviconView: View {
 
     /// Fresh `Image(systemName:)` so SF Symbol rendering mode is not "baked in" from `Tab.favicon` storage.
     private var chromeSystemImageName: String {
-        if tab.representsSumiSettingsSurface {
-            return SumiSurface.settingsTabFaviconSystemImageName
-        }
         if tab.representsSumiHistorySurface {
             return SumiSurface.historyTabFaviconSystemImageName
         }

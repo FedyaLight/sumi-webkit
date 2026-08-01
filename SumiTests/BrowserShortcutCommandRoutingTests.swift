@@ -455,17 +455,10 @@ final class BrowserShortcutCommandRoutingTests: XCTestCase {
         )
 
         execute(.openSettings, in: harness)
-        let settingsTabID = try XCTUnwrap(
-            harness.windowState.currentTabId
-        )
-        let settingsTab = try XCTUnwrap(
-            harness.browserManager.regularTabCollectionOwner.tab(
-                for: settingsTabID
-            )
-        )
-        XCTAssertEqual(
-            settingsTab.url,
-            SettingsTabs.general.settingsSurfaceURL
+        XCTAssertEqual(harness.settings.currentSettingsTab, .general)
+        XCTAssertTrue(
+            harness.browserManager.regularTabCollectionOwner
+                .tabs(in: harness.space).isEmpty
         )
         guard case .browser(let settingsContext) = harness.browserManager
             .shortcutTargetResolver.resolve(
@@ -487,7 +480,7 @@ final class BrowserShortcutCommandRoutingTests: XCTestCase {
                     action,
                     in: settingsContext
                 ),
-                "\(action) must not be offered for a native settings page"
+                "\(action) must not be offered without an active page"
             )
         }
         XCTAssertNil(
@@ -499,10 +492,7 @@ final class BrowserShortcutCommandRoutingTests: XCTestCase {
         )
 
         execute(.manageExtensions, in: harness)
-        XCTAssertEqual(
-            settingsTab.url,
-            SettingsTabs.extensions.settingsSurfaceURL
-        )
+        XCTAssertEqual(harness.settings.currentSettingsTab, .extensions)
     }
 
     func testPinAndUnpinRoundTripPreservesTheLiveTab() throws {

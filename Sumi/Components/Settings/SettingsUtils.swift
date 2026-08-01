@@ -13,6 +13,21 @@ enum SettingsPaneGroup: String, CaseIterable, Hashable {
     case privacy = "Privacy"
     case system = "System"
     case support = "Support"
+
+    var localizedTitle: String {
+        switch self {
+        case .browser:
+            String(localized: "Browser")
+        case .browsing:
+            String(localized: "Browsing")
+        case .privacy:
+            String(localized: "Privacy")
+        case .system:
+            String(localized: "System")
+        case .support:
+            String(localized: "Support")
+        }
+    }
 }
 
 struct SettingsPaneDescriptor: Identifiable, Hashable {
@@ -36,8 +51,8 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
         case .general:
             return SettingsPaneDescriptor(
                 tab: tab,
-                title: "General",
-                subtitle: "Window behavior, Glance, search engines, and site search.",
+                title: String(localized: "General"),
+                subtitle: String(localized: "Window behavior, Glance, search engines, and site search."),
                 icon: tab.icon,
                 group: .browser,
                 keywords: [
@@ -48,8 +63,8 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
         case .startup:
             return SettingsPaneDescriptor(
                 tab: tab,
-                title: "Startup",
-                subtitle: "Choose what Sumi opens when a new app session starts.",
+                title: String(localized: "Startup"),
+                subtitle: String(localized: "Choose what Sumi opens when a new app session starts."),
                 icon: tab.icon,
                 group: .browser,
                 keywords: [
@@ -60,8 +75,8 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
         case .downloads:
             return SettingsPaneDescriptor(
                 tab: tab,
-                title: "Downloads",
-                subtitle: "Download destination and file handling behavior.",
+                title: String(localized: "Downloads"),
+                subtitle: String(localized: "Download destination and file handling behavior."),
                 icon: tab.icon,
                 group: .browser,
                 keywords: [
@@ -72,8 +87,8 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
         case .appearance:
             return SettingsPaneDescriptor(
                 tab: tab,
-                title: "Appearance",
-                subtitle: "Sidebar chrome and tab-list controls.",
+                title: String(localized: "Appearance"),
+                subtitle: String(localized: "Sidebar chrome and tab-list controls."),
                 icon: tab.icon,
                 group: .browser,
                 keywords: [
@@ -85,8 +100,8 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
         case .performance:
             return SettingsPaneDescriptor(
                 tab: tab,
-                title: "Performance",
-                subtitle: "Memory Saver, Energy Saver, and inactive tab deactivation behavior.",
+                title: String(localized: "Performance"),
+                subtitle: String(localized: "Memory Saver, Energy Saver, and inactive tab deactivation behavior."),
                 icon: tab.icon,
                 group: .browsing,
                 keywords: [
@@ -98,8 +113,8 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
         case .privacy:
             return SettingsPaneDescriptor(
                 tab: tab,
-                title: "Privacy & Security",
-                subtitle: "Tracking protection, ad blocking, permissions, and site settings.",
+                title: String(localized: "Privacy & Security"),
+                subtitle: String(localized: "Tracking protection, ad blocking, permissions, and site settings."),
                 icon: tab.icon,
                 group: .privacy,
                 keywords: [
@@ -114,8 +129,8 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
         case .profiles:
             return SettingsPaneDescriptor(
                 tab: tab,
-                title: "Profiles",
-                subtitle: "Isolated browsing data and profile management.",
+                title: String(localized: "Profiles"),
+                subtitle: String(localized: "Isolated browsing data and profile management."),
                 icon: tab.icon,
                 group: .browsing,
                 keywords: [
@@ -126,8 +141,8 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
         case .shortcuts:
             return SettingsPaneDescriptor(
                 tab: tab,
-                title: "Keyboard",
-                subtitle: "Search, customize, enable, and reset keyboard shortcuts.",
+                title: String(localized: "Keyboard"),
+                subtitle: String(localized: "Search, customize, enable, and reset keyboard shortcuts."),
                 icon: tab.icon,
                 group: .system,
                 keywords: [
@@ -138,8 +153,8 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
         case .extensions:
             return SettingsPaneDescriptor(
                 tab: tab,
-                title: "Extensions",
-                subtitle: "Extension runtime status and installed extensions.",
+                title: String(localized: "Extensions"),
+                subtitle: String(localized: "Extension runtime status and installed extensions."),
                 icon: tab.icon,
                 group: .system,
                 keywords: [
@@ -150,8 +165,8 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
         case .advanced:
             return SettingsPaneDescriptor(
                 tab: tab,
-                title: "Data & Recovery",
-                subtitle: "Local runtime data folders, snapshots, and recovery tools.",
+                title: String(localized: "Data & Recovery"),
+                subtitle: String(localized: "Local runtime data folders, snapshots, and recovery tools."),
                 icon: tab.icon,
                 group: .support,
                 keywords: [
@@ -162,8 +177,8 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
         case .about:
             return SettingsPaneDescriptor(
                 tab: tab,
-                title: "About Sumi",
-                subtitle: "Version and build information.",
+                title: String(localized: "About Sumi"),
+                subtitle: String(localized: "Version and build information."),
                 icon: tab.icon,
                 group: .support,
                 keywords: ["about", "version", "build", "sumi"]
@@ -184,7 +199,7 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
             .map(String.init)
         guard !terms.isEmpty else { return true }
 
-        let searchableText = ([title, subtitle, group.rawValue] + keywords)
+        let searchableText = ([title, subtitle, group.rawValue, group.localizedTitle] + keywords)
             .joined(separator: " ")
             .lowercased()
         return terms.allSatisfy { searchableText.contains($0) }
@@ -305,41 +320,4 @@ enum SettingsTabs: Hashable, CaseIterable {
         }
     }
 
-    /// Query value persisted in `sumi://settings?pane=…`.
-    var paneQueryValue: String {
-        switch self {
-        case .appearance: return "appearance"
-        case .general: return "general"
-        case .startup: return "startup"
-        case .downloads: return "downloads"
-        case .performance: return "performance"
-        case .privacy: return "privacy"
-        case .profiles: return "profiles"
-        case .shortcuts: return "shortcuts"
-        case .extensions: return "extensions"
-        case .advanced: return "advanced"
-        case .about: return "about"
-        }
-    }
-
-    init?(paneQueryValue: String) {
-        switch paneQueryValue.lowercased() {
-        case "appearance": self = .appearance
-        case "general": self = .general
-        case "startup": self = .startup
-        case "downloads": self = .downloads
-        case "performance": self = .performance
-        case "privacy": self = .privacy
-        case "profiles": self = .profiles
-        case "shortcuts": self = .shortcuts
-        case "extensions": self = .extensions
-        case "advanced": self = .advanced
-        case "about": self = .about
-        default: return nil
-        }
-    }
-
-    var settingsSurfaceURL: URL {
-        SumiSurface.settingsSurfaceURL(paneQuery: paneQueryValue)
-    }
 }

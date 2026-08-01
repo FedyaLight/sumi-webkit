@@ -22,7 +22,7 @@ final class TabFaviconRuntimeOwnershipTests: XCTestCase {
     }
 
     func testInternalSurfaceClearsGlobePlaceholder() {
-        let settingsURL = SumiSurface.settingsSurfaceURL(paneQuery: "general")
+        let historyURL = SumiSurface.historySurfaceURL(rangeQuery: "all")
         let tab = Tab(
             url: URL(string: "https://runtime-owner.example/page")!,
             name: "Example",
@@ -30,8 +30,8 @@ final class TabFaviconRuntimeOwnershipTests: XCTestCase {
         )
 
         XCTAssertTrue(tab.faviconIsTemplateGlobePlaceholder)
-        tab.url = settingsURL
-        XCTAssertTrue(tab.applyCachedFaviconOrPlaceholder(for: settingsURL))
+        tab.url = historyURL
+        XCTAssertTrue(tab.applyCachedFaviconOrPlaceholder(for: historyURL))
 
         XCTAssertFalse(tab.faviconIsTemplateGlobePlaceholder)
         XCTAssertTrue(tab.usesChromeThemedTemplateFavicon)

@@ -1,5 +1,5 @@
-import SwiftUI
 import SumiDomain
+import SwiftUI
 
 struct GeneralNewTabsSettingsSection: View {
     @Binding private var mode: SumiNewTabMode
@@ -14,30 +14,23 @@ struct GeneralNewTabsSettingsSection: View {
     }
 
     var body: some View {
-        SettingsSection(
-            title: "New Tabs",
-            subtitle: "Choose what opens when you create a new tab."
-        ) {
+        SettingsSection(title: "New Tabs") {
             SettingsRow(
                 title: "Open new tabs with",
-                subtitle: "Choose between the command palette or a specific page."
+                systemImage: "plus.square"
             ) {
                 Picker("", selection: $mode) {
                     ForEach(SumiNewTabMode.allCases) { mode in
                         Text(mode.title).tag(mode)
                     }
                 }
-                .labelsHidden()
-                .settingsTrailingControl(width: 160)
+                .settingsMenuPicker(width: 160)
             }
 
             if mode == .specificPage {
                 SettingsDivider()
 
-                SettingsRow(
-                    title: "New Tab URL",
-                    subtitle: "Use a full URL or a bare domain."
-                ) {
+                SettingsRow(title: "New Tab URL", systemImage: "link") {
                     TextField("https://example.com", text: $pageURLString)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 260)

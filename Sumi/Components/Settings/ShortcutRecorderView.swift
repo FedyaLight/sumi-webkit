@@ -5,8 +5,8 @@
 //
 
 import AppKit
-import SwiftUI
 import SumiDomain
+import SwiftUI
 
 struct ShortcutRecorderView: View {
     let keyCombination: KeyCombination?
@@ -19,82 +19,58 @@ struct ShortcutRecorderView: View {
     @State private var activeModifiers: Modifiers = []
     @State private var validationResult: ShortcutValidationResult = .valid
     @State private var eventMonitor: Any?
-    @State private var isHovering = false
 
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 6) {
             Button(action: toggleRecording) {
-                HStack(spacing: 4) {
-                    if isRecording {
-                        if let pendingCombination {
-                            Text(KeyboardShortcutPresentation.displayString(for: pendingCombination))
-                                .font(.system(.body, design: .default))
-                                .fontWeight(.medium)
-                        } else if !activeModifiers.isEmpty {
-                            Text(activeModifiers.menuGlyphs)
-                                .font(.system(.body, design: .default))
-                                .fontWeight(.medium)
-                                .foregroundColor(.accentColor)
-                        } else {
-                            Text("Press keys...")
-                                .font(.system(.body, design: .default))
-                                .foregroundStyle(.secondary)
-                        }
-                    } else {
-                        if let keyCombination {
-                            Text(KeyboardShortcutPresentation.displayString(for: keyCombination))
-                                .font(.system(.body, design: .default))
-                                .fontWeight(.medium)
-                        } else {
-                            Text("Record Shortcut")
-                                .font(.system(.body, design: .default))
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .contentShape(Rectangle())
+                Text(recorderTitle)
+                    .monospaced()
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(width: 116)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .help(isRecording ? "Press a key combination" : "Record shortcut")
 
-            if let message = validationResult.userMessage {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundColor(.red)
-                    .font(.system(size: 11, weight: .semibold))
-                    .help(message)
-                    .padding(.trailing, 6)
-            } else if keyCombination != nil, !isRecording {
-                Button(action: {
-                    clearShortcut()
-                }) {
-                    Image(systemName: "xmark.circle.fill")
+            ZStack {
+                if let message = validationResult.userMessage {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.red)
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(.secondary.opacity(0.8))
-                        .contentShape(Rectangle())
+                        .help(message)
+                } else if keyCombination != nil, !isRecording {
+                    Button(action: clearShortcut) {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                    .help("Clear shortcut")
+                    .accessibilityLabel("Clear shortcut")
                 }
-                .buttonStyle(.plain)
-                .transition(.opacity.animation(.easeInOut(duration: 0.15)))
-                .padding(.trailing, 6)
-                .opacity(isHovering ? 1.0 : 0.0)
             }
+            .frame(width: 18, height: 18)
         }
-        .frame(width: 140, height: 22)
-        .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(isRecording ? Color(nsColor: .controlBackgroundColor) : Color.primary.opacity(0.05))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .stroke(isRecording ? Color.accentColor : Color.primary.opacity(0.12), lineWidth: isRecording ? 2 : 1)
-        )
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.15)) {
-                isHovering = hovering
-            }
-        }
+        .frame(width: 140, height: 24, alignment: .trailing)
         .onDisappear {
             removeKeyMonitor()
         }
+    }
+
+    private var recorderTitle: String {
+        if isRecording {
+            if let pendingCombination {
+                return KeyboardShortcutPresentation.displayString(for: pendingCombination)
+            }
+            if !activeModifiers.isEmpty {
+                return activeModifiers.menuGlyphs
+            }
+            return "Press keys…"
+        }
+        if let keyCombination {
+            return KeyboardShortcutPresentation.displayString(for: keyCombination)
+        }
+        return "Record"
     }
 
     private func toggleRecording() {
@@ -180,7 +156,7 @@ struct ShortcutRecorderView: View {
         }
 
         if event.keyCode == 0x33 { // Delete/Backspace
-            let _ = onClear()
+            _ = onClear()
             cancelRecording()
             return
         }

@@ -68,6 +68,17 @@ extension NSAlert {
 }
 
 @MainActor
+extension NSView {
+    /// Pins an AppKit-native browser surface to Sumi's resolved lightness.
+    func sumiApplyNativeSurfaceAppearance(themeContext: ResolvedThemeContext) {
+        appearance = NSAppearance.sumiChromeAppearance(
+            for: themeContext.nativeSurfaceColorScheme,
+            fallback: appearance
+        )
+    }
+}
+
+@MainActor
 extension BrowserWindowState {
     /// Canonical global window scheme: Settings ▸ window-scheme override when
     /// set, otherwise the window's (or app's) effective appearance.

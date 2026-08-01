@@ -12,7 +12,7 @@ struct SumiExtensionsSettingsPane: View {
     let extensionSurfaceStore: BrowserExtensionSurfaceStore
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 20) {
             SumiSettingsModuleToggleGate(descriptor: .extensions) {
                 ExtensionSettingsRuntimeGate(
                     readiness: ExtensionSettingsRuntimeReadiness(
@@ -98,7 +98,7 @@ private struct ExtensionSettingsEnabledContent: View {
             installedExtensions: extensionSurfaceStore.installedExtensions
         )
 
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 20) {
             ExtensionSettingsInstalledSection(
                 projection: projection,
                 commands: installedCommands

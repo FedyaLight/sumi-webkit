@@ -283,9 +283,6 @@ final class ShortcutPin: NSObject, ObservableObject, Identifiable {
         for partition: SumiFaviconPartition,
         imageReader: any BrowserFaviconImageReading
     ) -> String? {
-        if SumiSurface.isSettingsSurfaceURL(launchURL) {
-            return SumiSurface.settingsTabFaviconSystemImageName
-        }
         if hasStoredFaviconPlaceholder(
             partition: partition,
             imageReader: imageReader

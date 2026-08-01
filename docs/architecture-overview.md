@@ -27,6 +27,20 @@ flowchart LR
 
 The detailed runtime invariants live in [architecture.md](architecture.md).
 
+## Native Utility Surfaces
+
+History and bookmarks are browser-owned native surfaces. They keep browser-tab
+identity so sidebar selection, open-in-tab commands, and profile context remain
+consistent, but their large collections are rendered by reusable AppKit table
+and outline cells rather than WebKit documents.
+
+Settings is process UI, not page identity. The SwiftUI `Settings` scene owns a
+single macOS window; its AppKit split view owns the sidebar, titlebar integration,
+and native table controls. Settings navigation is transient window state and is
+not represented by a `Tab`, `SumiSurface`, WebView residence, or session URL.
+Restore admission removes legacy `sumi://settings` tab records so an upgrade
+cannot materialize the retired surface as a web page.
+
 ## A UI Action Through the System
 
 Opening a page illustrates the normal direction of dependencies:

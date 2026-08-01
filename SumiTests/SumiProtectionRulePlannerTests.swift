@@ -51,7 +51,7 @@ final class SumiProtectionRulePlannerTests: XCTestCase {
         var emptyPlanCallCount = 0
 
         let plan = planner.makeRulePlan(
-            for: URL(string: "sumi://settings/privacy"),
+            for: URL(string: "sumi://history"),
             requestedLevel: .protection,
             activeManifest: nil,
             includeExpensiveDiagnostics: false,

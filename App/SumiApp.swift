@@ -18,7 +18,6 @@ private struct SumiAppRootDependencies {
     let keyboardShortcutManager: KeyboardShortcutManager
     let nowPlayingController: SumiNativeNowPlayingController
     let updaterService: SumiUpdaterService
-    let defaultBrowserService: SumiDefaultBrowserService
     let windowRegistry: WindowRegistry
     let sidebarMouseButtonCaptureRegistry: SidebarMouseButtonCaptureRegistry
 }
@@ -164,6 +163,7 @@ struct SumiApp: App {
                             .currentSpace?.workspaceTheme,
                         registersWindowState: true
                     )
+                    .installsSumiSettingsWindowAction(settingsManager.navigation)
                     .onAppear {
                         setupApplicationLifecycle()
                         presentPendingProfileRetirementNoticeIfPossible()
@@ -201,6 +201,20 @@ struct SumiApp: App {
                 )
             }
         }
+
+        Settings {
+            SumiSettingsSceneRootView(
+                settings: settingsManager,
+                browserContext: WebsiteViewContextFactory.settingsPageBrowserContext(
+                    for: browserManager
+                ),
+                keyboardShortcutManager: keyboardShortcutManager,
+                updaterService: updaterService,
+                defaultBrowserService: defaultBrowserService
+            )
+        }
+        .defaultSize(width: 940, height: 680)
+        .windowResizability(.contentMinSize)
     }
 
     // MARK: - Application Lifecycle Setup
@@ -365,7 +379,6 @@ struct SumiApp: App {
         let keyboardShortcutManager = keyboardShortcutManager
         let nowPlayingController = nowPlayingController
         let updaterService = updaterService
-        let defaultBrowserService = defaultBrowserService
         let sidebarMouseButtonCaptureRegistry = appDelegate.sidebarMouseButtonCaptureRegistry
 
         return { [weak browserManager] windowRegistry, windowState in
@@ -382,7 +395,6 @@ struct SumiApp: App {
                     keyboardShortcutManager: keyboardShortcutManager,
                     nowPlayingController: nowPlayingController,
                     updaterService: updaterService,
-                    defaultBrowserService: defaultBrowserService,
                     windowRegistry: windowRegistry,
                     sidebarMouseButtonCaptureRegistry:
                         sidebarMouseButtonCaptureRegistry
@@ -413,7 +425,6 @@ struct SumiApp: App {
                 keyboardShortcutManager: keyboardShortcutManager,
                 nowPlayingController: nowPlayingController,
                 updaterService: updaterService,
-                defaultBrowserService: defaultBrowserService,
                 windowRegistry: windowRegistry,
                 sidebarMouseButtonCaptureRegistry: appDelegate.sidebarMouseButtonCaptureRegistry
             ),
@@ -445,9 +456,7 @@ struct SumiApp: App {
     ) -> some View {
         ContentView(
             webContentContext: .make(
-                browserManager: dependencies.browserManager,
-                updaterService: dependencies.updaterService,
-                defaultBrowserService: dependencies.defaultBrowserService
+                browserManager: dependencies.browserManager
             ),
             sidebarContext: .make(
                 browserManager: dependencies.browserManager,

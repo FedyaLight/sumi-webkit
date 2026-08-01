@@ -13,7 +13,7 @@ struct SettingsGeneralTab: View {
         @Bindable var chrome = sumiSettings.chrome
         @Bindable var search = sumiSettings.search
 
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 20) {
             DefaultBrowserSettingsSection(service: defaultBrowserService)
 
             GeneralWindowSettingsSection(

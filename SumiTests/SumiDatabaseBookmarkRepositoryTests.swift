@@ -5,6 +5,78 @@ import SumiDomain
 
 @MainActor
 final class SumiDatabaseBookmarkRepositoryTests: XCTestCase {
+    func testInitializationMigratesRootBookmarksIntoRealFavoritesWithoutMovingRootFolders() throws {
+        let database = try SumiDatabase.inMemory()
+        let rootBookmarkID = UUID()
+        let rootFolderID = UUID()
+        try database.transaction { connection in
+            try connection.bookmarks.replaceAll(with: [
+                BookmarkRecord(
+                    id: rootBookmarkID,
+                    parentID: nil,
+                    name: "Existing Link",
+                    urlString: "https://existing.example/",
+                    kind: SumiBookmarkEntityKind.bookmark.rawValue,
+                    index: 0
+                ),
+                BookmarkRecord(
+                    id: rootFolderID,
+                    parentID: nil,
+                    name: "Existing Folder",
+                    urlString: nil,
+                    kind: SumiBookmarkEntityKind.folder.rawValue,
+                    index: 1
+                ),
+            ])
+        }
+
+        let repository = SumiDatabaseBookmarkRepository(database: database)
+        let snapshot = repository.snapshot(sortMode: .manual)
+        let favorites = try XCTUnwrap(
+            snapshot.entitiesByID[SumiBookmarkConstants.favoritesFolderID]
+        )
+
+        XCTAssertEqual(
+            snapshot.root.children.map(\.id),
+            [SumiBookmarkConstants.favoritesFolderID, rootFolderID.uuidString]
+        )
+        XCTAssertEqual(favorites.children.map(\.id), [rootBookmarkID.uuidString])
+        XCTAssertEqual(favorites.parentID, SumiBookmarkConstants.rootFolderID)
+        XCTAssertEqual(
+            snapshot.entitiesByID[rootFolderID.uuidString]?.parentID,
+            SumiBookmarkConstants.rootFolderID
+        )
+        XCTAssertEqual(
+            snapshot.flattenedFolders.map(\.id),
+            [SumiBookmarkConstants.favoritesFolderID, rootFolderID.uuidString]
+        )
+    }
+
+    func testDefaultDestinationsKeepBookmarksInFavoritesAndFoldersAtTopLevel() throws {
+        let database = try SumiDatabase.inMemory()
+        let repository = SumiDatabaseBookmarkRepository(database: database)
+
+        let bookmark = try repository.createBookmark(
+            url: try XCTUnwrap(URL(string: "https://example.com/")),
+            title: "Example",
+            folderID: nil
+        )
+        let folder = try repository.createFolder(title: "Work", parentID: nil)
+        let snapshot = repository.snapshot(sortMode: .manual)
+
+        XCTAssertEqual(bookmark.folderID, SumiBookmarkConstants.favoritesFolderID)
+        XCTAssertEqual(
+            snapshot.root.children.map(\.id),
+            [SumiBookmarkConstants.favoritesFolderID, folder.id]
+        )
+        XCTAssertEqual(
+            snapshot.entitiesByID[SumiBookmarkConstants.favoritesFolderID]?
+                .children.map(\.id),
+            [bookmark.id]
+        )
+        XCTAssertEqual(folder.parentID, SumiBookmarkConstants.rootFolderID)
+    }
+
     func testSnapshotsReflectMutationsAndImports() throws {
         let database = try SumiDatabase.inMemory()
         let repository = SumiDatabaseBookmarkRepository(database: database)
@@ -38,6 +110,40 @@ final class SumiDatabaseBookmarkRepositoryTests: XCTestCase {
 
         try repository.removeEntities(ids: [bookmark.id])
         XCTAssertNil(repository.snapshot(sortMode: .manual).entitiesByID[bookmark.id])
+    }
+
+    func testSnapshotsSortAddressesWhileKeepingFoldersFirst() throws {
+        let database = try SumiDatabase.inMemory()
+        let repository = SumiDatabaseBookmarkRepository(database: database)
+
+        let folder = try repository.createFolder(title: "Folder", parentID: nil)
+        let zed = try repository.createBookmark(
+            url: try XCTUnwrap(URL(string: "https://zed.example/")),
+            title: "First by Name",
+            folderID: nil
+        )
+        let alpha = try repository.createBookmark(
+            url: try XCTUnwrap(URL(string: "https://alpha.example/")),
+            title: "Last by Name",
+            folderID: nil
+        )
+
+        XCTAssertEqual(
+            repository.snapshot(sortMode: .addressAscending).root.children.map(\.id),
+            [SumiBookmarkConstants.favoritesFolderID, folder.id]
+        )
+        XCTAssertEqual(
+            repository.snapshot(sortMode: .addressAscending)
+                .entitiesByID[SumiBookmarkConstants.favoritesFolderID]?
+                .children.map(\.id),
+            [alpha.id, zed.id]
+        )
+        XCTAssertEqual(
+            repository.snapshot(sortMode: .addressDescending)
+                .entitiesByID[SumiBookmarkConstants.favoritesFolderID]?
+                .children.map(\.id),
+            [zed.id, alpha.id]
+        )
     }
 }
 

@@ -102,9 +102,6 @@ enum SidebarShortcutIconResolver {
         imageReader: any BrowserFaviconImageReading
     ) -> String? {
         if let liveTab {
-            if SumiSurface.isSettingsSurfaceURL(liveTab.url) {
-                return SumiSurface.settingsTabFaviconSystemImageName
-            }
             if cachedStoredFavicon != nil {
                 return nil
             }

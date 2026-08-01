@@ -49,6 +49,10 @@ final class BrowserBookmarkCommandOwner {
         BrowserWindowState,
         HistoryOpenMode
     ) -> Void
+    private let replaceTabsWithBookmarkURLs: @MainActor @Sendable (
+        [URL],
+        BrowserWindowState
+    ) -> Void
     private let openHistoryURLsInNewWindow: @MainActor @Sendable ([URL]) -> Void
     private let windowIds: @MainActor @Sendable () -> [UUID]
     private let createNewWindow: @MainActor @Sendable () -> Void
@@ -77,6 +81,10 @@ final class BrowserBookmarkCommandOwner {
             BrowserWindowState,
             HistoryOpenMode
         ) -> Void,
+        replaceTabsWithBookmarkURLs: @escaping @MainActor @Sendable (
+            [URL],
+            BrowserWindowState
+        ) -> Void,
         openHistoryURLsInNewWindow: @escaping @MainActor @Sendable ([URL]) -> Void,
         windowIds: @escaping @MainActor @Sendable () -> [UUID],
         createNewWindow: @escaping @MainActor @Sendable () -> Void,
@@ -96,6 +104,7 @@ final class BrowserBookmarkCommandOwner {
         self.setBookmarkEditorPresentationRequest = setBookmarkEditorPresentationRequest
         self.openNativeBrowserSurface = openNativeBrowserSurface
         self.openHistoryURL = openHistoryURL
+        self.replaceTabsWithBookmarkURLs = replaceTabsWithBookmarkURLs
         self.openHistoryURLsInNewWindow = openHistoryURLsInNewWindow
         self.windowIds = windowIds
         self.createNewWindow = createNewWindow
@@ -174,6 +183,28 @@ final class BrowserBookmarkCommandOwner {
     }
 
     @MainActor
+    func openBookmarkURLsInNewTabsFromMenuItem(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        guard let activeWindow = activeWindow() else {
+            openHistoryURLsInNewWindow(urls)
+            return
+        }
+        for url in urls {
+            openBookmarkURL(url, in: activeWindow, preferredOpenMode: .newTab)
+        }
+    }
+
+    @MainActor
+    func replaceTabsWithBookmarkURLsFromMenuItem(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        guard let activeWindow = activeWindow() else {
+            openHistoryURLsInNewWindow(urls)
+            return
+        }
+        replaceTabsWithBookmarkURLs(urls, activeWindow)
+    }
+
+    @MainActor
     func openBookmarkURL(
         _ url: URL,
         in windowState: BrowserWindowState,
@@ -185,6 +216,23 @@ final class BrowserBookmarkCommandOwner {
     @MainActor
     func manageBookmarksFromMenu() {
         openBookmarksTab()
+    }
+
+    @MainActor
+    func createBookmarkFolderFromMenu() {
+        guard let bookmarkManager = bookmarkManager() else { return }
+        do {
+            let folder = try bookmarkManager.createFolder(
+                title: String(localized: "Untitled Folder"),
+                parentID: SumiBookmarkConstants.rootFolderID
+            )
+            openBookmarksTab(selecting: folder.id)
+        } catch {
+            presenter.showBookmarkResultAlert(
+                title: String(localized: "Could Not Add Bookmark Folder"),
+                message: error.localizedDescription
+            )
+        }
     }
 
     @MainActor
@@ -353,7 +401,7 @@ final class BrowserBookmarkCommandAppKitPresenter: BrowserBookmarkCommandPresent
             )
             item.representedObject = folder.id
             folderPopup.menu?.addItem(item)
-            if folder.id == SumiBookmarkConstants.rootFolderID {
+            if folder.id == SumiBookmarkConstants.favoritesFolderID {
                 folderPopup.select(item)
             }
         }

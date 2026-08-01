@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 /// Stable settings command backed by the exact profile-retirement authorities
@@ -18,7 +19,11 @@ final class BrowserProfileDeletionWorkflow {
         self.presenter = presenter
     }
 
-    func requestDeletion(_ profile: Profile, message: String) {
+    func requestDeletion(
+        _ profile: Profile,
+        message: String,
+        presentationWindow: NSWindow? = nil
+    ) {
         let resetsBrowserData =
             maintenanceContext.profileManager.profiles.count == 1
         presenter?.presentDestructiveConfirmationAlert(
@@ -40,27 +45,33 @@ final class BrowserProfileDeletionWorkflow {
             confirmButtonTitle: resetsBrowserData
                 ? String(localized: "Erase and Reset")
                 : String(localized: "Delete Profile"),
+            in: presentationWindow,
             onConfirm: { [weak self, weak profile] in
                 guard let self, let profile else { return }
-                self.delete(profile)
+                self.delete(profile, presentationWindow: presentationWindow)
             }
         )
     }
 
-    func delete(_ profile: Profile) {
+    func delete(_ profile: Profile, presentationWindow: NSWindow? = nil) {
         Task { @MainActor [weak self] in
             guard let self else { return }
             let result = await maintenanceService.retireProfile(
                 profile,
                 using: maintenanceContext
             )
-            present(result, for: profile)
+            present(
+                result,
+                for: profile,
+                presentationWindow: presentationWindow
+            )
         }
     }
 
     private func present(
         _ result: SumiProfileMaintenanceService.RetirementResult,
-        for profile: Profile
+        for profile: Profile,
+        presentationWindow: NSWindow?
     ) {
         switch result {
         case .completed:
@@ -69,7 +80,8 @@ final class BrowserProfileDeletionWorkflow {
             presentNotice(
                 title: String(localized: "Couldn't Delete Profile"),
                 profile: profile,
-                message: message
+                message: message,
+                presentationWindow: presentationWindow
             )
         case .migrationPending:
             presentNotice(
@@ -77,7 +89,8 @@ final class BrowserProfileDeletionWorkflow {
                 profile: profile,
                 message: String(
                     localized: "The profile is still in use. Sumi will retry deletion the next time it starts."
-                )
+                ),
+                presentationWindow: presentationWindow
             )
         case .cleanupPending:
             presentNotice(
@@ -85,7 +98,8 @@ final class BrowserProfileDeletionWorkflow {
                 profile: profile,
                 message: String(
                     localized: "Sumi will finish removing this profile's private data the next time it starts."
-                )
+                ),
+                presentationWindow: presentationWindow
             )
         }
     }
@@ -93,12 +107,14 @@ final class BrowserProfileDeletionWorkflow {
     private func presentNotice(
         title: String,
         profile: Profile,
-        message: String
+        message: String,
+        presentationWindow: NSWindow?
     ) {
         presenter?.presentNoticeAlert(
             title: title,
             subtitle: profile.name,
-            message: message
+            message: message,
+            in: presentationWindow
         )
     }
 }

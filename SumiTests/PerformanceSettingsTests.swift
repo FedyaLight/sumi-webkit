@@ -117,9 +117,7 @@ final class PerformanceSettingsTests: XCTestCase {
 
     func testSettingsNavigationReferencesPerformanceTab() {
         XCTAssertTrue(SettingsTabs.ordered.contains(.performance))
-        XCTAssertEqual(SettingsTabs(paneQueryValue: "performance"), .performance)
         XCTAssertEqual(SettingsPaneDescriptor.descriptor(for: .performance).title, "Performance")
-        XCTAssertEqual(SettingsTabs.performance.settingsSurfaceURL.absoluteString, "sumi://settings?pane=performance")
     }
 
     private static var performanceCopy: String {

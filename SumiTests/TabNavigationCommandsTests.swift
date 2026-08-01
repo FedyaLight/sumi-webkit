@@ -428,8 +428,8 @@ final class TabNavigationCommandsTests: XCTestCase {
     }
 
     func testFailedSubmissionDoesNotReapplyTargetFaviconAfterRollback() throws {
-        let committedURL = try XCTUnwrap(URL(string: "sumi://settings?pane=general"))
-        let failedURL = try XCTUnwrap(URL(string: "sumi://history?range=all"))
+        let committedURL = try XCTUnwrap(URL(string: "sumi://history?range=all"))
+        let failedURL = try XCTUnwrap(URL(string: "sumi://bookmarks"))
         let webView = NavigationRecordingWebView()
         let tab = Tab(
             url: committedURL,
@@ -439,7 +439,7 @@ final class TabNavigationCommandsTests: XCTestCase {
         tab.replaceUntrackedWebView(webView)
         _ = tab.installNavigationDelegate(on: webView)
         tab.applyCachedFaviconOrPlaceholder(for: committedURL)
-        XCTAssertEqual(tab.faviconPresentation, .systemSymbol("gearshape.fill"))
+        XCTAssertEqual(tab.faviconPresentation, .systemSymbol("clock.arrow.circlepath"))
 
         tab.navigationCommandOwner.loadURL(
             failedURL,
@@ -450,7 +450,7 @@ final class TabNavigationCommandsTests: XCTestCase {
         )
 
         XCTAssertEqual(tab.url, committedURL)
-        XCTAssertEqual(tab.faviconPresentation, .systemSymbol("gearshape.fill"))
+        XCTAssertEqual(tab.faviconPresentation, .systemSymbol("clock.arrow.circlepath"))
     }
 
     func testInitialExtensionLoadRollsBackIfMaterializationFailsAfterPolicy() throws {

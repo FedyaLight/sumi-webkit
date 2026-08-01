@@ -3,14 +3,6 @@ import SumiDomain
 
 @MainActor
 enum BrowserPermissionSettingsRoutes {
-    static func settingsSurfaceURL(for pane: SettingsTabs) -> URL {
-        pane.settingsSurfaceURL
-    }
-
-    static func privacySiteSettingsSurfaceURL(focusing tab: Tab?) -> URL {
-        privacySiteSettingsSurfaceURL(filter: privacySiteSettingsFilter(focusing: tab))
-    }
-
     static func privacySiteSettingsFilter(focusing tab: Tab?) -> SumiSettingsSiteSettingsFilter? {
         let mainURL = tab?.extensionPageRuntimeOwner.committedMainDocumentURLForCurrentPage()
             ?? tab?.url
@@ -24,25 +16,6 @@ enum BrowserPermissionSettingsRoutes {
                 for: origin,
                 fallbackURL: mainURL
             )
-        )
-    }
-
-    static func privacySiteSettingsSurfaceURL(filter: SumiSettingsSiteSettingsFilter?) -> URL {
-        var extraQueryItems = [URLQueryItem(name: "section", value: "siteSettings")]
-        if let filter {
-            if let origin = filter.requestingOriginIdentity, !origin.isEmpty {
-                extraQueryItems.append(URLQueryItem(name: "origin", value: origin))
-            }
-            if let topOrigin = filter.topOriginIdentity, !topOrigin.isEmpty {
-                extraQueryItems.append(URLQueryItem(name: "topOrigin", value: topOrigin))
-            }
-            if let site = filter.displayDomain, !site.isEmpty {
-                extraQueryItems.append(URLQueryItem(name: "site", value: site))
-            }
-        }
-        return SumiSurface.settingsSurfaceURL(
-            paneQuery: SettingsTabs.privacy.paneQueryValue,
-            extraQueryItems: extraQueryItems
         )
     }
 

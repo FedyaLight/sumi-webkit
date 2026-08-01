@@ -31,11 +31,8 @@ struct SumiDataRecoverySettingsPane: View {
     private let importService = SumiBrowserImportService()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            SettingsSection(
-                title: "Browser Import",
-                subtitle: "Bring spaces, launchers, tabs, folders, themes, profiles, and bookmarks into Sumi."
-            ) {
+        VStack(alignment: .leading, spacing: 20) {
+            SettingsSection(title: "Browser Import") {
                 VStack(alignment: .leading, spacing: 12) {
                     SettingsActionRow(
                         title: "Import from another browser",
@@ -60,10 +57,7 @@ struct SumiDataRecoverySettingsPane: View {
                 }
             }
 
-            SettingsSection(
-                title: "Export & Backup",
-                subtitle: "Move your browser data to Zen or create a logical Sumi backup."
-            ) {
+            SettingsSection(title: "Export & Backup") {
                 VStack(alignment: .leading, spacing: 12) {
                     SettingsActionRow(
                         title: "Export for Zen",

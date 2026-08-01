@@ -4,64 +4,61 @@ import XCTest
 
 @MainActor
 final class BrowserSettingsNavigationServiceTests: XCTestCase {
-    func testOpenSettingsTabUsesExplicitWindowAndPaneURL() {
-        let windowState = BrowserWindowState()
-        let harness = Harness(activeWindow: BrowserWindowState())
-        let commands = harness.makeCommands()
+    func testOpenSettingsSelectsPaneAndPresentsStandaloneWindow() {
+        let harness = Harness()
 
-        commands.openSettings(selecting: .about, in: windowState)
+        harness.commands.openSettings(selecting: .about, in: BrowserWindowState())
 
-        XCTAssertEqual(harness.openRequests.map(\.kind), [.settings])
-        XCTAssertEqual(harness.openRequests.map(\.url), [Harness.aboutURL])
-        XCTAssertEqual(harness.openRequests.map(\.windowId), [windowState.id])
+        XCTAssertEqual(harness.settings.currentSettingsTab, .about)
+        XCTAssertEqual(harness.presentationCount, 1)
     }
 
-    func testOpenSettingsTabFallsBackToActiveWindow() {
-        let activeWindow = BrowserWindowState()
-        let harness = Harness(activeWindow: activeWindow)
-        let commands = harness.makeCommands()
+    func testOpenSettingsDoesNotCreateOrRequireBrowserWindow() {
+        let harness = Harness()
 
-        commands.openSettings(selecting: .privacy)
+        harness.commands.openSettings(selecting: .privacy)
 
-        XCTAssertEqual(harness.openRequests.map(\.kind), [.settings])
-        XCTAssertEqual(harness.openRequests.map(\.url), [Harness.privacyURL])
-        XCTAssertEqual(harness.openRequests.map(\.windowId), [activeWindow.id])
+        XCTAssertEqual(harness.settings.currentSettingsTab, .privacy)
+        XCTAssertEqual(harness.settings.privacySettingsRoute, .overview)
+        XCTAssertEqual(harness.presentationCount, 1)
     }
 
-    func testOpenSettingsTabDoesNothingWithoutWindow() {
-        let harness = Harness(activeWindow: nil)
-        let commands = harness.makeCommands()
+    func testOpenSettingsDoesNothingWhenSettingsAreDetached() {
+        let commands = BrowserSettingsNavigationService(
+            settings: { nil },
+            currentTab: { _ in nil }
+        )
 
         commands.openSettings(selecting: .about)
-
-        XCTAssertTrue(harness.openRequests.isEmpty)
     }
 
     func testOpenSiteSettingsUsesExplicitFocusedTab() {
-        let windowState = BrowserWindowState()
-        let currentTab = Self.makeTab(url: "https://current.example")
-        let focusedTab = Self.makeTab(url: "https://focused.example")
-        let harness = Harness(activeWindow: windowState, currentTab: currentTab)
-        let commands = harness.makeCommands()
+        let harness = Harness()
+        let focusedTab = Self.makeTab(url: "https://focused.example/page")
 
-        commands.openSiteSettings(focusing: focusedTab, in: windowState)
+        harness.commands.openSiteSettings(
+            focusing: focusedTab,
+            in: BrowserWindowState()
+        )
 
-        XCTAssertEqual(harness.privacyURLTabIds, [focusedTab.id])
-        XCTAssertEqual(harness.openRequests.map(\.url), [Harness.siteSettingsURL])
-        XCTAssertEqual(harness.openRequests.map(\.windowId), [windowState.id])
+        XCTAssertEqual(harness.settings.currentSettingsTab, .privacy)
+        XCTAssertEqual(
+            harness.settings.privacySettingsRoute.siteSettingsFilter?.displayDomain,
+            "focused.example"
+        )
+        XCTAssertEqual(harness.presentationCount, 1)
     }
 
-    func testOpenSiteSettingsFallsBackToActiveWindowCurrentTab() {
-        let activeWindow = BrowserWindowState()
+    func testOpenSiteSettingsUsesCurrentTabFromExplicitWindow() {
         let currentTab = Self.makeTab(url: "https://current.example")
-        let harness = Harness(activeWindow: activeWindow, currentTab: currentTab)
-        let commands = harness.makeCommands()
+        let harness = Harness(currentTab: currentTab)
 
-        commands.openSiteSettings()
+        harness.commands.openSiteSettings(in: BrowserWindowState())
 
-        XCTAssertEqual(harness.privacyURLTabIds, [currentTab.id])
-        XCTAssertEqual(harness.openRequests.map(\.url), [Harness.siteSettingsURL])
-        XCTAssertEqual(harness.openRequests.map(\.windowId), [activeWindow.id])
+        XCTAssertEqual(
+            harness.settings.privacySettingsRoute.siteSettingsFilter?.requestingOriginIdentity,
+            "https://current.example"
+        )
     }
 
     private static func makeTab(url: String) -> Tab {
@@ -74,44 +71,24 @@ final class BrowserSettingsNavigationServiceTests: XCTestCase {
 
     @MainActor
     private final class Harness {
-        static let aboutURL = URL(string: "sumi://settings?pane=about")!
-        static let privacyURL = URL(string: "sumi://settings?pane=privacy")!
-        static let siteSettingsURL = URL(string: "sumi://settings?pane=privacy&section=siteSettings")!
+        let settings: SumiSettingsService
+        let currentTab: Tab?
+        private(set) var presentationCount = 0
 
-        var activeWindow: BrowserWindowState?
-        var currentTab: Tab?
-        var privacyURLTabIds: [UUID?] = []
-        var openRequests: [(kind: SumiNativeBrowserSurfaceKind, url: URL, windowId: UUID)] = []
+        lazy var commands = BrowserSettingsNavigationService(
+            settings: { [settings] in settings },
+            currentTab: { [currentTab] _ in currentTab }
+        )
 
-        init(activeWindow: BrowserWindowState?, currentTab: Tab? = nil) {
-            self.activeWindow = activeWindow
+        init(currentTab: Tab? = nil) {
             self.currentTab = currentTab
-        }
-
-        func makeCommands() -> BrowserSettingsNavigationService {
-            BrowserSettingsNavigationService(
-                activeWindow: { self.activeWindow },
-                currentTab: { _ in self.currentTab },
-                settingsSurfaceURL: { pane in
-                    switch pane {
-                    case .about:
-                        return Self.aboutURL
-                    case .privacy:
-                        return Self.privacyURL
-                    default:
-                        return pane.settingsSurfaceURL
-                    }
-                },
-                siteSettingsSurfaceURL: { tab in
-                    self.privacyURLTabIds.append(tab?.id)
-                    return Self.siteSettingsURL
-                },
-                openNativeSurface: { kind, url, windowState in
-                    self.openRequests.append(
-                        (kind: kind, url: url, windowId: windowState.id)
-                    )
-                }
-            )
+            let defaults = UserDefaults(
+                suiteName: "BrowserSettingsNavigationServiceTests-\(UUID().uuidString)"
+            )!
+            settings = SumiSettingsService(userDefaults: defaults)
+            settings.navigation.installPresentationAction { [weak self] in
+                self?.presentationCount += 1
+            }
         }
     }
 }

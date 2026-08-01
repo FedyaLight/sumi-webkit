@@ -13,7 +13,7 @@ struct SumiImportWizardSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 20) {
             header
 
             Divider()
@@ -183,7 +183,7 @@ struct SumiImportSourceStepView: View {
                 Image(systemName: browser.isImportable ? "chevron.right" : "exclamationmark.circle")
                     .foregroundStyle(.secondary)
             }
-            .padding(.vertical, 6)
+            .padding(.vertical, 8)
             .padding(.horizontal, 8)
             .contentShape(Rectangle())
         }
@@ -225,7 +225,7 @@ struct SumiImportProfileStepView: View {
                             Spacer()
                             Image(systemName: "chevron.right").foregroundStyle(.secondary)
                         }
-                        .padding(.vertical, 6)
+                        .padding(.vertical, 8)
                         .padding(.horizontal, 8)
                         .contentShape(Rectangle())
                     }

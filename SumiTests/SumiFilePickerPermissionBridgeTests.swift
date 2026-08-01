@@ -58,9 +58,9 @@ final class SumiFilePickerPermissionBridgeTests: XCTestCase {
             bridge: bridge,
             request: filePickerRequest(userActivation: .directWebKit),
             tabContext: tabContext(
-                committedURL: URL(string: "sumi://settings")!,
-                visibleURL: URL(string: "sumi://settings")!,
-                mainFrameURL: URL(string: "sumi://settings")!
+                committedURL: URL(string: "sumi://history")!,
+                visibleURL: URL(string: "sumi://history")!,
+                mainFrameURL: URL(string: "sumi://history")!
             )
         )
 

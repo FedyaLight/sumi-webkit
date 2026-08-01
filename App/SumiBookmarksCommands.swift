@@ -45,29 +45,7 @@ struct SumiBookmarksCommands: Commands {
     }
 
     var body: some Commands {
-        CommandMenu("Bookmarks") {
-            let bookmarkSnapshot = bookmarkMenuSnapshot
-            let faviconPartition = bookmarkMenuFaviconPartition
-
-            Button("Bookmark This Page…") {
-                browserContext.requestBookmarkEditorForActiveWindowFromMenu()
-            }
-            .keyboardShortcut("d", modifiers: .command)
-            .disabled(!browserContext.canBookmarkActivePage)
-
-            Button("Bookmark All Tabs…") {
-                browserContext.bookmarkAllTabsFromMenu()
-            }
-            .keyboardShortcut("d", modifiers: [.command, .shift])
-            .disabled(!browserContext.canBookmarkAllTabsInActiveWindow)
-
-            Button("Manage Bookmarks") {
-                browserContext.manageBookmarksFromMenu()
-            }
-            .keyboardShortcut("b", modifiers: [.command, .option])
-
-            Divider()
-
+        CommandGroup(replacing: .importExport) {
             Button("Import Bookmarks…") {
                 browserContext.importBookmarksFromMenu()
             }
@@ -75,7 +53,35 @@ struct SumiBookmarksCommands: Commands {
             Button("Export Bookmarks…") {
                 browserContext.exportBookmarksFromMenu()
             }
-            .disabled(!bookmarkSnapshot.hasBookmarks)
+            .disabled(!bookmarkMenuSnapshot.hasBookmarks)
+        }
+
+        CommandMenu("Bookmarks") {
+            let bookmarkSnapshot = bookmarkMenuSnapshot
+            let faviconPartition = bookmarkMenuFaviconPartition
+
+            Button("Show Bookmarks") {
+                browserContext.manageBookmarksFromMenu()
+            }
+            .keyboardShortcut("b", modifiers: [.command, .option])
+
+            Divider()
+
+            Button("Add Bookmark…") {
+                browserContext.requestBookmarkEditorForActiveWindowFromMenu()
+            }
+            .keyboardShortcut("d", modifiers: .command)
+            .disabled(!browserContext.canBookmarkActivePage)
+
+            Button("Add Open Tabs to Bookmarks…") {
+                browserContext.bookmarkAllTabsFromMenu()
+            }
+            .keyboardShortcut("d", modifiers: [.command, .shift])
+            .disabled(!browserContext.canBookmarkAllTabsInActiveWindow)
+
+            Button("Add Bookmark Folder") {
+                browserContext.createBookmarkFolderFromMenu()
+            }
 
             Divider()
 
@@ -117,9 +123,10 @@ private struct SumiBookmarkCommandItem: View {
 
     var body: some View {
         if entity.isFolder {
+            let openableURLs = entity.openableURLs
             Menu {
                 if entity.children.isEmpty {
-                    Text("Empty")
+                    Text("Folder Is Empty")
                         .disabled(true)
                 } else {
                     SumiBookmarkCommandItems(
@@ -128,10 +135,25 @@ private struct SumiBookmarkCommandItem: View {
                         faviconPartition: faviconPartition
                     )
                 }
+                if !openableURLs.isEmpty {
+                    Divider()
+                    Button("Open in New Tabs") {
+                        browserContext.openBookmarkURLsInNewTabsFromMenuItem(
+                            openableURLs
+                        )
+                    }
+                    Button("Replace Tabs") {
+                        browserContext.replaceTabsWithBookmarkURLsFromMenuItem(
+                            openableURLs
+                        )
+                    }
+                }
             } label: {
                 SumiCommandMenuLabels.system(
                     SumiCommandMenuLabels.bookmarkTitle(for: entity),
-                    systemImage: "folder"
+                    systemImage: entity.id == SumiBookmarkConstants.favoritesFolderID
+                        ? "star"
+                        : "folder"
                 )
             }
         } else {
@@ -149,5 +171,12 @@ private struct SumiBookmarkCommandItem: View {
             }
             .disabled(entity.url == nil)
         }
+    }
+}
+
+private extension SumiBookmarkEntity {
+    var openableURLs: [URL] {
+        if let url { return [url] }
+        return children.flatMap(\.openableURLs)
     }
 }

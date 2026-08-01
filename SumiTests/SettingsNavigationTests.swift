@@ -5,6 +5,31 @@ import SumiDomain
 
 @MainActor
 final class SettingsNavigationTests: XCTestCase {
+    func testSettingsSceneOwnsSingleApplicationMenuCommand() throws {
+        let appSource = try repositorySource("App/SumiApp.swift")
+        let commandsSource = try repositorySource("App/SumiCommands.swift")
+
+        XCTAssertTrue(appSource.contains("Settings {"))
+        XCTAssertFalse(commandsSource.contains("CommandGroup(replacing: .appSettings)"))
+    }
+
+    func testSettingsNativeSurfaceStructureAvoidsDuplicateChromeAndNestedScrolling() throws {
+        let windowSource = try settingsSource("SumiSettingsSceneRootView.swift")
+        XCTAssertFalse(windowSource.contains("view.window?.title = presentation.title"))
+
+        let componentsSource = try settingsSource("SettingsComponents.swift")
+        XCTAssertFalse(componentsSource.contains("struct SettingsPopUpButton"))
+        XCTAssertTrue(componentsSource.contains(".pickerStyle(.menu)"))
+
+        let startupSource = try settingsSource("Tabs/Startup.swift")
+        XCTAssertTrue(startupSource.contains(".settingsMenuPicker"))
+        XCTAssertFalse(startupSource.contains(".pickerStyle(.radioGroup)"))
+
+        let searchEnginesSource = try settingsSource("Tabs/GeneralSearchEnginesSettingsSection.swift")
+        XCTAssertFalse(searchEnginesSource.contains("NSScrollView"))
+        XCTAssertTrue(searchEnginesSource.contains("SumiSearchEngineTableLayout.preferredHeight"))
+    }
+
     func testSidebarOrderingKeepsAboutLast() {
         XCTAssertEqual(
             SettingsTabs.ordered,
@@ -16,11 +41,10 @@ final class SettingsNavigationTests: XCTestCase {
     func testStartupSettingsDefaultAndPersistence() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
-
         let settings = SumiSettingsService(userDefaults: harness.defaults)
+
         XCTAssertEqual(settings.startupMode, .restorePreviousSession)
         XCTAssertEqual(settings.startupPageURLString, SumiStartupPageURL.defaultURLString)
-
         settings.startupMode = .specificPage
         settings.startupPageURLString = "example.com"
 
@@ -33,11 +57,10 @@ final class SettingsNavigationTests: XCTestCase {
     func testNewTabSettingsDefaultAndPersistence() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
-
         let settings = SumiSettingsService(userDefaults: harness.defaults)
+
         XCTAssertEqual(settings.newTabMode, .commandPalette)
         XCTAssertEqual(settings.newTabPageURLString, SumiNewTabPageURL.defaultURLString)
-
         settings.newTabMode = .specificPage
         settings.newTabPageURLString = "example.com"
 
@@ -50,7 +73,6 @@ final class SettingsNavigationTests: XCTestCase {
     func testUnifiedSearchEnginesDefaultOrderAndTabSearchPriority() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
-
         let settings = SumiSettingsService(userDefaults: harness.defaults)
 
         XCTAssertEqual(settings.searchEngineId, SearchProvider.google.rawValue)
@@ -60,22 +82,17 @@ final class SettingsNavigationTests: XCTestCase {
             SearchProvider.allCases.map(\.rawValue)
         )
         XCTAssertEqual(settings.searchEngines[SearchProvider.allCases.count].name, "YouTube")
-
-        let youtubeMatch = SumiSearchEngine.match(for: "y", in: settings.searchEngines)
-        XCTAssertEqual(youtubeMatch?.name, "YouTube")
-
-        let githubMatch = SumiSearchEngine.match(for: "g", in: settings.searchEngines)
-        XCTAssertEqual(githubMatch?.name, "GitHub")
+        XCTAssertEqual(SumiSearchEngine.match(for: "y", in: settings.searchEngines)?.name, "YouTube")
+        XCTAssertEqual(SumiSearchEngine.match(for: "g", in: settings.searchEngines)?.name, "GitHub")
     }
 
-    func testUnifiedSearchEngineDefaultCanUseSiteSearchEngine() {
+    func testUnifiedSearchEngineDefaultCanUseSiteSearchEngine() throws {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
-
         let settings = SumiSettingsService(userDefaults: harness.defaults)
-        let youtube = settings.searchEngines.first { $0.name == "YouTube" }
+        let youtube = try XCTUnwrap(settings.searchEngines.first { $0.name == "YouTube" })
 
-        settings.searchEngineId = try! XCTUnwrap(youtube?.id)
+        settings.searchEngineId = youtube.id
 
         XCTAssertEqual(settings.resolvedSearchEngineDisplayName, "YouTube")
         XCTAssertEqual(
@@ -87,13 +104,11 @@ final class SettingsNavigationTests: XCTestCase {
     func testUnifiedSearchEnginesPersistCustomEntries() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
-
         let custom = SumiSearchEngine(
             id: "startpage",
             name: "Startpage",
             domain: "www.startpage.com",
             searchURLTemplate: "https://www.startpage.com/sp/search?query={query}",
-            colorHex: "#666666",
             tabSearchEnabled: true
         )
         let settings = SumiSettingsService(userDefaults: harness.defaults)
@@ -101,7 +116,6 @@ final class SettingsNavigationTests: XCTestCase {
         settings.searchEngineId = custom.id
 
         let reloaded = SumiSettingsService(userDefaults: harness.defaults)
-
         XCTAssertTrue(reloaded.searchEngines.contains { $0.id == custom.id })
         XCTAssertEqual(reloaded.resolvedSearchEngineDisplayName, "Startpage")
         XCTAssertEqual(
@@ -136,41 +150,19 @@ final class SettingsNavigationTests: XCTestCase {
             engines.first { $0.id == id }?.searchURL(for: query)?.absoluteString
         }
 
-        // Query-position tokens get form encoding, matching what browsers send.
-        XCTAssertEqual(
-            url("site.youtube", "daft punk"),
-            "https://www.youtube.com/results?search_query=daft+punk"
-        )
-        // Spotify's token sits in the path, where `+` would be a literal plus.
-        XCTAssertEqual(
-            url("site.spotify", "daft punk"),
-            "https://open.spotify.com/search/daft%20punk"
-        )
-        // A `/` in the query must not open a new path segment.
-        XCTAssertEqual(
-            url("site.spotify", "ac/dc"),
-            "https://open.spotify.com/search/ac%2Fdc"
-        )
-        // A `&` in the query must not open a new parameter.
-        XCTAssertEqual(
-            url("site.github", "sort & filter"),
-            "https://github.com/search?q=sort+%26+filter"
-        )
+        XCTAssertEqual(url("site.youtube", "daft punk"), "https://www.youtube.com/results?search_query=daft+punk")
+        XCTAssertEqual(url("site.spotify", "daft punk"), "https://open.spotify.com/search/daft%20punk")
+        XCTAssertEqual(url("site.spotify", "ac/dc"), "https://open.spotify.com/search/ac%2Fdc")
+        XCTAssertEqual(url("site.github", "sort & filter"), "https://github.com/search?q=sort+%26+filter")
     }
 
     func testStartupPageURLNormalizationAndValidation() {
-        XCTAssertEqual(
-            SumiStartupPageURL.normalizedURLString(from: "example.com"),
-            "https://example.com"
-        )
+        XCTAssertEqual(SumiStartupPageURL.normalizedURLString(from: "example.com"), "https://example.com")
         XCTAssertEqual(
             SumiStartupPageURL.normalizedURLString(from: "https://example.com/path"),
             "https://example.com/path"
         )
-        XCTAssertEqual(
-            SumiStartupPageURL.normalizedURLString(from: "about:blank"),
-            "about:blank"
-        )
+        XCTAssertEqual(SumiStartupPageURL.normalizedURLString(from: "about:blank"), "about:blank")
         XCTAssertEqual(
             SumiStartupPageURL.normalizedURLString(from: "sumi://settings?pane=startup"),
             "sumi://settings?pane=startup"
@@ -182,249 +174,106 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertNotNil(SumiStartupPageURL.validationMessage(for: "plain search text"))
     }
 
-    func testAllVisiblePaneQueriesRoundTripThroughSettingsSurfaceURL() {
-        let harness = TestDefaultsHarness()
-        defer { harness.reset() }
+    func testSettingsNavigationPresentsWindowAndSelectsPane() {
+        let navigation = SettingsNavigationOwner()
+        var presentationCount = 0
+        navigation.installPresentationAction { presentationCount += 1 }
 
-        let settings = SumiSettingsService(userDefaults: harness.defaults)
+        navigation.openSettings(selecting: .extensions)
 
-        for pane in SettingsTabs.ordered {
-            settings.currentSettingsTab = pane
-
-            XCTAssertEqual(SettingsTabs(paneQueryValue: pane.paneQueryValue), pane)
-            XCTAssertEqual(
-                settings.settingsSurfaceURLForCurrentNavigation(),
-                pane.settingsSurfaceURL
-            )
-
-            settings.currentSettingsTab = .general
-            settings.applyNavigationFromSettingsSurfaceURL(pane.settingsSurfaceURL)
-
-            XCTAssertEqual(settings.currentSettingsTab, pane)
-        }
+        XCTAssertEqual(navigation.currentSettingsTab, .extensions)
+        XCTAssertEqual(presentationCount, 1)
     }
 
-    func testAboutPaneQueryRoundTripsThroughSettingsSurfaceURL() {
-        let harness = TestDefaultsHarness()
-        defer { harness.reset() }
-
-        let settings = SumiSettingsService(userDefaults: harness.defaults)
-        settings.currentSettingsTab = .about
-
-        XCTAssertEqual(SettingsTabs(paneQueryValue: "about"), .about)
-        XCTAssertEqual(settings.settingsSurfaceURLForCurrentNavigation(), SettingsTabs.about.settingsSurfaceURL)
-
-        settings.currentSettingsTab = .appearance
-        settings.applyNavigationFromSettingsSurfaceURL(SettingsTabs.about.settingsSurfaceURL)
-
-        XCTAssertEqual(settings.currentSettingsTab, .about)
-    }
-
-    func testStartupPaneQueryRoutesThroughSettingsSurfaceURL() {
-        let harness = TestDefaultsHarness()
-        defer { harness.reset() }
-
-        let settings = SumiSettingsService(userDefaults: harness.defaults)
-        let url = URL(string: "sumi://settings?pane=startup")!
-
-        settings.applyNavigationFromSettingsSurfaceURL(url)
-
-        XCTAssertEqual(settings.currentSettingsTab, .startup)
-        XCTAssertEqual(SettingsTabs(paneQueryValue: "startup"), .startup)
-        XCTAssertEqual(SettingsTabs.startup.settingsSurfaceURL, url)
-    }
-
-    func testPrivacySiteSettingsRouteRoundTripsThroughSettingsSurfaceURL() {
-        let harness = TestDefaultsHarness()
-        defer { harness.reset() }
-
-        let settings = SumiSettingsService(userDefaults: harness.defaults)
-        settings.currentSettingsTab = .privacy
-        settings.privacySettingsRoute = .siteSettings(
-            SumiSettingsSiteSettingsFilter(
-                requestingOriginIdentity: "https://example.com",
-                topOriginIdentity: "https://example.com",
-                displayDomain: "example.com"
-            )
+    func testSettingsNavigationOpensFilteredSiteSettings() {
+        let navigation = SettingsNavigationOwner()
+        let filter = SumiSettingsSiteSettingsFilter(
+            requestingOriginIdentity: "https://example.com",
+            topOriginIdentity: "https://example.com",
+            displayDomain: "example.com"
         )
 
-        let url = settings.settingsSurfaceURLForCurrentNavigation()
-        XCTAssertEqual(url.scheme, "sumi")
-        XCTAssertEqual(url.host, "settings")
-        let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
-        XCTAssertEqual(queryItems.first { $0.name == "section" }?.value, "siteSettings")
-        XCTAssertEqual(queryItems.first { $0.name == "origin" }?.value, "https://example.com")
+        navigation.openSiteSettings(filter: filter)
 
-        settings.currentSettingsTab = .general
-        settings.privacySettingsRoute = .overview
-        settings.applyNavigationFromSettingsSurfaceURL(url)
-
-        XCTAssertEqual(settings.currentSettingsTab, .privacy)
-        XCTAssertTrue(settings.privacySettingsRoute.isSiteSettings)
-        XCTAssertEqual(
-            settings.privacySettingsRoute.siteSettingsFilter?.requestingOriginIdentity,
-            "https://example.com"
-        )
+        XCTAssertEqual(navigation.currentSettingsTab, .privacy)
+        XCTAssertEqual(navigation.privacySettingsRoute, .siteSettings(filter))
     }
 
-    func testSettingsSurfaceRemainsNativeNonWebSurface() {
-        let tab = Tab(url: SettingsTabs.about.settingsSurfaceURL)
+    func testOpeningRegularPrivacyPaneLeavesSiteSettingsRoute() {
+        let navigation = SettingsNavigationOwner()
+        navigation.openSiteSettings(filter: nil)
 
-        XCTAssertTrue(tab.representsSumiSettingsSurface)
-        XCTAssertTrue(tab.representsSumiInternalSurface)
-        XCTAssertTrue(tab.representsSumiNativeSurface)
-        XCTAssertTrue(tab.usesChromeThemedTemplateFavicon)
+        navigation.openSettings(selecting: .privacy)
+
+        XCTAssertEqual(navigation.privacySettingsRoute, .overview)
+    }
+
+    func testSettingsToolbarPresentationTracksNestedNavigationActions() {
+        let toolbar = SettingsWindowToolbarOwner()
+        var backCount = 0
+        var forwardCount = 0
+
+        toolbar.show(
+            title: "Site Settings",
+            backAction: { backCount += 1 },
+            forwardAction: { forwardCount += 1 }
+        )
+
+        XCTAssertEqual(toolbar.presentation.title, "Site Settings")
+        XCTAssertTrue(toolbar.presentation.canGoBack)
+        XCTAssertTrue(toolbar.presentation.canGoForward)
+
+        toolbar.goBack()
+        toolbar.goForward()
+        XCTAssertEqual(backCount, 1)
+        XCTAssertEqual(forwardCount, 1)
+
+        toolbar.showRoot(title: "Privacy & Security")
+        XCTAssertEqual(toolbar.presentation.title, "Privacy & Security")
+        XCTAssertFalse(toolbar.presentation.canGoBack)
+        XCTAssertFalse(toolbar.presentation.canGoForward)
     }
 
     func testSettingsPaneDescriptorsCoverVisiblePanes() {
-        XCTAssertEqual(
-            SettingsPaneDescriptor.all.map(\.tab),
-            SettingsTabs.ordered
-        )
-        XCTAssertEqual(
-            Set(SettingsPaneDescriptor.all.map(\.id)),
-            Set(SettingsTabs.ordered)
-        )
-        XCTAssertEqual(
-            SettingsPaneDescriptor.descriptor(for: .privacy).title,
-            "Privacy & Security"
-        )
-        XCTAssertEqual(
-            SettingsPaneDescriptor.descriptor(for: .profiles).title,
-            "Profiles"
-        )
+        XCTAssertEqual(SettingsPaneDescriptor.all.map(\.tab), SettingsTabs.ordered)
+        XCTAssertEqual(Set(SettingsPaneDescriptor.all.map(\.id)), Set(SettingsTabs.ordered))
+        XCTAssertEqual(SettingsPaneDescriptor.descriptor(for: .privacy).title, "Privacy & Security")
     }
 
     func testSettingsPaneSearchMatchesTitlesSubtitlesAndKeywords() {
-        XCTAssertEqual(
-            SettingsPaneDescriptor.filtered(by: "tracker").map(\.tab),
-            [.privacy]
-        )
-        XCTAssertEqual(
-            SettingsPaneDescriptor.filtered(by: "custom delay").map(\.tab),
-            [.performance]
-        )
-        XCTAssertEqual(
-            SettingsPaneDescriptor.filtered(by: "previous session").map(\.tab),
-            [.startup]
-        )
-        XCTAssertTrue(
-            SettingsPaneDescriptor.filtered(by: "safari extension").map(\.tab).contains(.extensions)
-        )
-        XCTAssertEqual(
-            SettingsPaneDescriptor.filtered(by: "no matching settings").count,
-            0
-        )
+        XCTAssertEqual(SettingsPaneDescriptor.filtered(by: "tracker").map(\.tab), [.privacy])
+        XCTAssertEqual(SettingsPaneDescriptor.filtered(by: "custom delay").map(\.tab), [.performance])
+        XCTAssertEqual(SettingsPaneDescriptor.filtered(by: "previous session").map(\.tab), [.startup])
+        XCTAssertTrue(SettingsPaneDescriptor.filtered(by: "safari extension").map(\.tab).contains(.extensions))
+        XCTAssertTrue(SettingsPaneDescriptor.filtered(by: "no matching settings").isEmpty)
     }
 
-    func testOpenSettingsTabSelectsAboutSurface() {
-        let (browserManager, _, settings, windowState, space) = makeHarness()
-
-        browserManager.urlBarBundle.settingsNavigation.openSettings(selecting: .about, in: windowState)
-
-        let settingsTabs = browserManager.regularTabCollectionOwner.tabs(in: space).filter(\.representsSumiSettingsSurface)
-        XCTAssertEqual(settingsTabs.count, 1)
-        XCTAssertEqual(settingsTabs.first?.url, SettingsTabs.about.settingsSurfaceURL)
-        XCTAssertEqual(windowState.currentTabId, settingsTabs.first?.id)
-        XCTAssertEqual(settings.currentSettingsTab, .about)
-    }
-
-    func testOpenSettingsTabReusesExistingSettingsSurfaceForAbout() {
-        let (browserManager, _, settings, windowState, space) = makeHarness()
-        let existing = browserManager.regularTabLifecycleOwner.createNewTab(
-            url: SettingsTabs.general.settingsSurfaceURL.absoluteString,
-            in: space,
-            activate: false
-        )
-
-        browserManager.urlBarBundle.settingsNavigation.openSettings(selecting: .about, in: windowState)
-
-        let settingsTabs = browserManager.regularTabCollectionOwner.tabs(in: space).filter(\.representsSumiSettingsSurface)
-        XCTAssertEqual(settingsTabs.count, 1)
-        XCTAssertEqual(settingsTabs.first?.id, existing.id)
-        XCTAssertEqual(existing.url, SettingsTabs.about.settingsSurfaceURL)
-        XCTAssertEqual(windowState.currentTabId, existing.id)
-        XCTAssertEqual(settings.currentSettingsTab, .about)
-    }
-
-    func testOpenSettingsTabReusesEphemeralSettingsSurfaceInIncognitoWindow() throws {
-        let (browserManager, _, settings, windowState, space) = makeHarness()
-        let ephemeralProfile = Profile.createEphemeral()
-        windowState.isIncognito = true
-        windowState.ephemeralProfile = ephemeralProfile
-        windowState.currentProfileId = ephemeralProfile.id
-
-        browserManager.urlBarBundle.settingsNavigation.openSettings(selecting: .privacy, in: windowState)
-
-        let firstSettingsTab = try XCTUnwrap(
-            windowState.ephemeralTabs.first(where: \.representsSumiSettingsSurface)
-        )
-        XCTAssertEqual(firstSettingsTab.profileId, ephemeralProfile.id)
-        XCTAssertEqual(firstSettingsTab.url, SettingsTabs.privacy.settingsSurfaceURL)
-        XCTAssertEqual(firstSettingsTab.name, "Settings")
-        XCTAssertEqual(windowState.currentTabId, firstSettingsTab.id)
-        XCTAssertEqual(settings.currentSettingsTab, .privacy)
-        XCTAssertFalse(browserManager.regularTabCollectionOwner.tabs(in: space).contains(where: \.representsSumiSettingsSurface))
-
-        browserManager.urlBarBundle.settingsNavigation.openSettings(selecting: .about, in: windowState)
-
-        let settingsTabs = windowState.ephemeralTabs.filter(\.representsSumiSettingsSurface)
-        XCTAssertEqual(settingsTabs.count, 1)
-        XCTAssertEqual(settingsTabs.first?.id, firstSettingsTab.id)
-        XCTAssertEqual(firstSettingsTab.url, SettingsTabs.about.settingsSurfaceURL)
-        XCTAssertEqual(windowState.currentTabId, firstSettingsTab.id)
-        XCTAssertEqual(settings.currentSettingsTab, .about)
-        XCTAssertFalse(browserManager.regularTabCollectionOwner.tabs(in: space).contains(where: \.representsSumiSettingsSurface))
-    }
-
-    func testCommandPaletteCurrentSettingsURLCommitAppliesPaneNavigation() {
-        let (browserManager, _, settings, windowState, space) = makeHarness()
-        let existing = browserManager.regularTabLifecycleOwner.createNewTab(
-            url: SettingsTabs.general.settingsSurfaceURL.absoluteString,
-            in: space,
-            activate: false
-        )
-        browserManager.selectTab(existing, in: windowState, loadPolicy: .deferred)
-        settings.currentSettingsTab = .general
-        browserManager.urlBarBundle.commandPalettePresentation.focus(
-            in: windowState,
-            prefill: existing.url.absoluteString,
-            navigateCurrentTab: true,
-            reason: .keyboard
-        )
-
-        browserManager.urlBarBundle.commandPaletteCommit.commitActivation(
-            .literalURL("sumi://settings?pane=extensions"),
-            in: windowState
-        )
-
-        XCTAssertEqual(existing.url, SettingsTabs.extensions.settingsSurfaceURL)
-        XCTAssertEqual(windowState.currentTabId, existing.id)
-        XCTAssertEqual(settings.currentSettingsTab, .extensions)
-    }
-
-    private func makeHarness() -> (BrowserManager, WindowRegistry, SumiSettingsService, BrowserWindowState, Space) {
+    func testOpeningSettingsDoesNotCreateBrowserTab() {
         let harness = TestDefaultsHarness()
-        addTeardownBlock {
-            harness.reset()
-        }
-
-        let windowRegistry = WindowRegistry()
-        let browserManager = BrowserManager(windowRegistry: windowRegistry)
+        defer { harness.reset() }
+        let browserManager = BrowserManager()
         let settings = SumiSettingsService(userDefaults: harness.defaults)
         let space = Space(name: "Primary")
-        let windowState = BrowserWindowState()
-
         browserManager.sumiSettings = settings
         browserManager.spaceStateOwner.replaceSpaces([space])
         browserManager.spaceStateOwner.replaceCurrentSpace(space)
 
-        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
-        windowState.currentSpaceId = space.id
+        browserManager.urlBarBundle.settingsNavigation.openSettings(selecting: .about)
 
-        windowRegistry.register(windowState)
-        windowRegistry.setActive(windowState)
+        XCTAssertEqual(settings.currentSettingsTab, .about)
+        XCTAssertTrue(browserManager.regularTabCollectionOwner.tabs(in: space).isEmpty)
+    }
 
-        return (browserManager, windowRegistry, settings, windowState, space)
+    private func settingsSource(_ relativePath: String) throws -> String {
+        try repositorySource("Sumi/Components/Settings/\(relativePath)")
+    }
+
+    private func repositorySource(_ relativePath: String) throws -> String {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = repositoryRoot
+            .appendingPathComponent(relativePath)
+        return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 }

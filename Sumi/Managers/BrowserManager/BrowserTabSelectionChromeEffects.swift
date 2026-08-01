@@ -5,20 +5,17 @@ final class BrowserTabSelectionChromeEffects {
     private let state: BrowserTabSelectionStateApplication
     private let windowSpaceContext: BrowserWindowSpaceContextSynchronizer
     private let workspaceThemes: BrowserWorkspaceThemeTransitionOwner
-    private let settings: BrowserSettingsState
     private let commandPalette: CommandPalettePresentationService
 
     init(
         state: BrowserTabSelectionStateApplication,
         windowSpaceContext: BrowserWindowSpaceContextSynchronizer,
         workspaceThemes: BrowserWorkspaceThemeTransitionOwner,
-        settings: BrowserSettingsState,
         commandPalette: CommandPalettePresentationService
     ) {
         self.state = state
         self.windowSpaceContext = windowSpaceContext
         self.workspaceThemes = workspaceThemes
-        self.settings = settings
         self.commandPalette = commandPalette
     }
 
@@ -40,10 +37,6 @@ final class BrowserTabSelectionChromeEffects {
                 in: windowState,
                 previousSpaceID: previousSpaceID
             )
-        }
-
-        if tab.representsSumiSettingsSurface {
-            settings.settings?.applyNavigationFromSettingsSurfaceURL(tab.url)
         }
     }
 

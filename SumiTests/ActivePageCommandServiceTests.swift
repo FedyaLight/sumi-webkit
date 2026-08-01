@@ -36,12 +36,12 @@ final class ActivePageCommandServiceTests: XCTestCase {
 
     func testNativeSurfaceRejectsPageCommands() {
         let window = BrowserWindowState()
-        let settingsTab = makeTab("sumi://settings?pane=privacy")
+        let historyTab = makeTab("sumi://history?range=all")
         let recorder = ActivePageCommandRecorder()
         let nativeWebView = WKWebView()
         let service = makeService(
             window: window,
-            selectedTab: settingsTab,
+            selectedTab: historyTab,
             webView: nativeWebView,
             reloadSelected: { _, _, _ in
                 recorder.selectedReloadCount += 1
@@ -58,7 +58,7 @@ final class ActivePageCommandServiceTests: XCTestCase {
         XCTAssertFalse(service.copyActivePageURL())
         XCTAssertFalse(service.inspectActivePage())
 
-        XCTAssertFalse(settingsTab.audioState.isMuted)
+        XCTAssertFalse(historyTab.audioState.isMuted)
         XCTAssertEqual(recorder.selectedReloadCount, 0)
         XCTAssertEqual(recorder.previewReloadCount, 0)
         XCTAssertFalse(nativeWebView.isInspectable)

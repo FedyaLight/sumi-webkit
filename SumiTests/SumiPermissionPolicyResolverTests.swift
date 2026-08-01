@@ -255,8 +255,8 @@ final class SumiPermissionPolicyResolverTests: XCTestCase {
             .camera,
             requestingOrigin: SumiPermissionOrigin(identity: "unsupported:sumi"),
             topOrigin: SumiPermissionOrigin(identity: "unsupported:sumi"),
-            committedURL: URL(string: "sumi://settings?pane=privacy"),
-            visibleURL: URL(string: "sumi://settings?pane=privacy")
+            committedURL: URL(string: "sumi://history?range=all"),
+            visibleURL: URL(string: "sumi://history?range=all")
         )
 
         XCTAssertFalse(result.isAllowedToProceed)

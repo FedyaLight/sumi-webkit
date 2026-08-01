@@ -80,6 +80,59 @@ final class BrowserBookmarkCommandOwnerTests: XCTestCase {
         XCTAssertEqual(harness.openedHistoryURLGroupsInNewWindow, [[url]])
     }
 
+    func testOpenBookmarkFolderFromMenuOpensEveryURLInNewTabs() throws {
+        let harness = makeHarness()
+        let owner = harness.makeOwner(presenter: FakeBookmarkCommandPresenter())
+        let windowState = BrowserWindowState()
+        let urls = try [
+            XCTUnwrap(URL(string: "https://one.example/")),
+            XCTUnwrap(URL(string: "https://two.example/")),
+        ]
+        harness.activeWindow = windowState
+
+        owner.openBookmarkURLsInNewTabsFromMenuItem(urls)
+
+        XCTAssertEqual(harness.openedHistoryURLs.map(\.url), urls)
+        XCTAssertTrue(harness.openedHistoryURLs.allSatisfy { entry in
+            if case .newTab = entry.mode { return true }
+            return false
+        })
+    }
+
+    func testReplaceTabsFromBookmarkFolderUsesActiveWindow() throws {
+        let harness = makeHarness()
+        let owner = harness.makeOwner(presenter: FakeBookmarkCommandPresenter())
+        let windowState = BrowserWindowState()
+        let urls = try [
+            XCTUnwrap(URL(string: "https://one.example/")),
+            XCTUnwrap(URL(string: "https://two.example/")),
+        ]
+        harness.activeWindow = windowState
+
+        owner.replaceTabsWithBookmarkURLsFromMenuItem(urls)
+
+        XCTAssertEqual(harness.replacedBookmarkURLGroups.map(\.urls), [urls])
+        XCTAssertEqual(harness.replacedBookmarkURLGroups.map(\.windowID), [windowState.id])
+    }
+
+    func testAddBookmarkFolderMenuCommandCreatesRootSiblingOfFavorites() throws {
+        let harness = makeHarness()
+        let owner = harness.makeOwner(presenter: FakeBookmarkCommandPresenter())
+        harness.activeWindow = BrowserWindowState()
+
+        owner.createBookmarkFolderFromMenu()
+
+        let snapshot = harness.bookmarkManager.snapshot()
+        XCTAssertEqual(snapshot.root.children.first?.id, SumiBookmarkConstants.favoritesFolderID)
+        let createdFolder = try XCTUnwrap(snapshot.root.children.dropFirst().first)
+        XCTAssertEqual(createdFolder.title, "Untitled Folder")
+        XCTAssertEqual(createdFolder.parentID, SumiBookmarkConstants.rootFolderID)
+        XCTAssertEqual(
+            harness.openedNativeSurfaceURLs.last,
+            SumiSurface.bookmarksSurfaceURL(selecting: createdFolder.id)
+        )
+    }
+
     func testBookmarkAllTabsScopesToCurrentSpaceAndIgnoresIncognitoWindows() throws {
         let harness = makeHarness()
         let presenter = FakeBookmarkCommandPresenter()
@@ -184,6 +237,8 @@ private final class BrowserBookmarkCommandOwnerHarness {
     var bookmarkEditorPresentationRequest: SumiBookmarkEditorPresentationRequest?
     var openedHistoryURLs: [OpenedHistoryURL] = []
     var openedHistoryURLGroupsInNewWindow: [[URL]] = []
+    var replacedBookmarkURLGroups: [(urls: [URL], windowID: UUID)] = []
+    var openedNativeSurfaceURLs: [URL] = []
     var windowIdsValue: [UUID] = []
     var createNewWindowCallCount = 0
     var nextRegisteredWindow: BrowserWindowState?
@@ -218,7 +273,9 @@ private final class BrowserBookmarkCommandOwnerHarness {
             setBookmarkEditorPresentationRequest: { [weak self] request in
                 self?.bookmarkEditorPresentationRequest = request
             },
-            openNativeBrowserSurface: { _, _, _, _ in /* No-op. */ },
+            openNativeBrowserSurface: { [weak self] _, url, _, _ in
+                self?.openedNativeSurfaceURLs.append(url)
+            },
             openHistoryURL: { [weak self] url, windowState, mode in
                 self?.openedHistoryURLs.append(
                     OpenedHistoryURL(
@@ -227,6 +284,9 @@ private final class BrowserBookmarkCommandOwnerHarness {
                         mode: mode
                     )
                 )
+            },
+            replaceTabsWithBookmarkURLs: { [weak self] urls, windowState in
+                self?.replacedBookmarkURLGroups.append((urls, windowState.id))
             },
             openHistoryURLsInNewWindow: { [weak self] urls in
                 self?.openedHistoryURLGroupsInNewWindow.append(urls)

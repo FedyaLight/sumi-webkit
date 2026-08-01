@@ -10,7 +10,7 @@ final class SumiCurrentSitePermissionsViewModelTests: XCTestCase {
     func testInvalidOriginProducesEmptyDisabledState() async {
         let viewModel = SumiCurrentSitePermissionsViewModel()
         await viewModel.load(
-            context: context(url: URL(string: "sumi://settings")!),
+            context: context(url: URL(string: "sumi://history")!),
             webView: nil,
             profile: nil,
             reloadRequired: false,

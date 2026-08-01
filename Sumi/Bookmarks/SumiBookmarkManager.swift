@@ -291,7 +291,7 @@ final class SumiBookmarkManager: ObservableObject {
     ) throws {
         guard !ids.isEmpty else { return }
         try repository.moveEntities(ids: ids, toParentID: parentID, atIndex: index)
-        let resolvedParentID = parentID ?? SumiBookmarkConstants.rootFolderID
+        let resolvedParentID = parentID ?? SumiBookmarkConstants.favoritesFolderID
         bookmarkIndex.moveBookmarks(ids: ids, to: resolvedParentID)
         recordLocalMutation()
     }

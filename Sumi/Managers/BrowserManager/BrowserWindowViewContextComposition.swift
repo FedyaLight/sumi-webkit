@@ -3,16 +3,12 @@ import Foundation
 @MainActor
 extension WindowWebContentContext {
     static func make(
-        browserManager: BrowserManager,
-        updaterService: SumiUpdaterService,
-        defaultBrowserService: SumiDefaultBrowserService
+        browserManager: BrowserManager
     ) -> WindowWebContentContext {
         WindowWebContentContext(
             browserContext: browserManager.composeWebsiteViewBrowserContext(),
             nativeSurfaceRootBuilders: WebsiteViewContextFactory.nativeSurfaceRootBuilders(
-                for: browserManager,
-                updaterService: updaterService,
-                defaultBrowserService: defaultBrowserService
+                for: browserManager
             ),
             webViewOwnershipQuery: browserManager.webViewRuntime.ownershipQuery,
             trackedWebViewAdmission: browserManager.webViewRuntime.trackedWebViewAdmission,

@@ -4,15 +4,15 @@
 //
 //
 
-import SwiftUI
 import SumiDomain
+import SwiftUI
 
 struct PrivacySettingsView: View {
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.sumiProtectionCoordinator) private var protectionCoordinator
+    @EnvironmentObject private var toolbarOwner: SettingsWindowToolbarOwner
     let repository: SumiPermissionSettingsRepository
     let activeProfile: Profile?
-    let presentNotification: (BrowserNotification) -> Void
 
     var body: some View {
         @Bindable var settings = sumiSettings
@@ -24,14 +24,19 @@ struct PrivacySettingsView: View {
                     profile: activeProfile,
                     initialFilter: sumiSettings.privacySettingsRoute.siteSettingsFilter
                 ) {
+                    let previousFilter = sumiSettings.privacySettingsRoute.siteSettingsFilter
                     sumiSettings.privacySettingsRoute = .overview
+                    toolbarOwner.show(
+                        title: String(localized: "Privacy & Security"),
+                        backAction: nil,
+                        forwardAction: {
+                            sumiSettings.privacySettingsRoute = .siteSettings(previousFilter)
+                        }
+                    )
                 }
             } else {
-                VStack(alignment: .leading, spacing: 16) {
-                    SettingsSection(
-                        title: SumiSiteSettingsStrings.title,
-                        subtitle: SumiSiteSettingsStrings.subtitle
-                    ) {
+                VStack(alignment: .leading, spacing: 20) {
+                    SettingsSection {
                         SumiSiteSettingsNavigationRow(
                             title: SumiSiteSettingsStrings.title,
                             subtitle: SumiSiteSettingsStrings.subtitle,
@@ -44,8 +49,7 @@ struct PrivacySettingsView: View {
 
                     if let protectionCoordinator {
                         AdblockProtectionSettingsView(
-                            coordinator: protectionCoordinator,
-                            presentNotification: presentNotification
+                            coordinator: protectionCoordinator
                         )
                     } else {
                         SettingsSection(title: "Adblock & Protection") {
@@ -93,24 +97,27 @@ private struct GlobalPrivacyControlSettingsView: View {
 
 private struct AdblockProtectionSettingsView: View {
     let coordinator: SumiProtectionCoordinator
-    let presentNotification: (BrowserNotification) -> Void
     @ObservedObject private var settings: SumiProtectionSettings
     @ObservedObject private var bundleUpdateStatus: SumiProtectionBundleUpdateStatusStore
     @State private var isApplying = false
     @State private var isUpdatingBundles = false
+    @State private var presentedNotification: BrowserNotification?
 
-    init(
-        coordinator: SumiProtectionCoordinator,
-        presentNotification: @escaping (BrowserNotification) -> Void
-    ) {
+    init(coordinator: SumiProtectionCoordinator) {
         self.coordinator = coordinator
-        self.presentNotification = presentNotification
         _settings = ObservedObject(wrappedValue: coordinator.settings)
         _bundleUpdateStatus = ObservedObject(wrappedValue: coordinator.bundleUpdateStatusStore)
     }
 
     var body: some View {
         protectionSettingsSection
+            .alert(item: $presentedNotification) { notification in
+                Alert(
+                    title: Text(notification.title),
+                    message: notification.subtitle.map(Text.init),
+                    dismissButton: .default(Text("OK"))
+                )
+            }
     }
 
     private var protectionSettingsSection: some View {
@@ -143,8 +150,7 @@ private struct AdblockProtectionSettingsView: View {
                         Text(level.displayTitle).tag(level)
                     }
                 }
-                .labelsHidden()
-                .settingsTrailingControl(width: 150)
+                .settingsMenuPicker(width: 150)
                 .accessibilityLabel("Protection level")
                 .accessibilityIdentifier("privacy-protection-level")
 
@@ -161,7 +167,7 @@ private struct AdblockProtectionSettingsView: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .controlSize(.regular)
+                .controlSize(.small)
                 .disabled(isApplying || !coordinator.applyNeeded)
                 .accessibilityIdentifier("privacy-apply-protection-level")
                 .help("Apply the selected protection level")
@@ -234,11 +240,10 @@ private struct AdblockProtectionSettingsView: View {
                 await MainActor.run {
                     isApplying = false
                     if settings.browserRestartRequired {
-                        presentNotification(
+                        presentedNotification =
                             .protectionLevelApplied(
                                 levelTitle: outcome.appliedLevel.displayTitle
                             )
-                        )
                     }
                 }
             } catch {
@@ -258,9 +263,8 @@ private struct AdblockProtectionSettingsView: View {
                 await MainActor.run {
                     isUpdatingBundles = false
                     if outcome.activation == .installedRestartRequired {
-                        presentNotification(
+                        presentedNotification =
                             .protectionBundlesUpdated(releaseVersion: outcome.releaseVersion)
-                        )
                     }
                 }
             } catch {

@@ -10,8 +10,6 @@ struct HistoryPageBrowserContext {
     let faviconImageReader: any BrowserFaviconImageReading
     let currentProfile: () -> Profile?
     let currentProfileUpdates: AnyPublisher<Profile?, Never>
-    let nativeModalPresentationUpdates: AnyPublisher<Void, Never>
-    let isNativeModalPresented: (UUID?) -> Bool
     let currentTab: (BrowserWindowState) -> Tab?
     let openHistoryURL: (URL, BrowserWindowState, HistoryOpenMode) -> Void
     let openHistoryURLsInNewTabs: ([URL], BrowserWindowState) -> Void
@@ -22,26 +20,22 @@ struct HistoryPageBrowserContext {
 
 @MainActor
 final class HistoryPageViewModel: ObservableObject {
-    @Published var selectedRange: HistoryRange {
+    var selectedRange: HistoryRange {
         didSet {
             guard selectedRange != oldValue else { return }
-            domainFilter = nil
             syncSelectedRangeToActiveTab()
             scheduleSnapshotRebuild()
         }
     }
-    @Published var searchText: String = "" {
+    var searchText: String = "" {
         didSet {
             guard searchText != oldValue else { return }
             scheduleSnapshotRebuild()
         }
     }
-    @Published private(set) var ranges: [HistoryRangeCount] = []
     @Published private(set) var sections: [HistorySection] = []
-    @Published private(set) var isRefreshing = false
-    @Published private(set) var isLoadingNextPage = false
-    @Published private(set) var domainFilter: String?
-    @Published private(set) var selectedItemIDs: Set<String> = []
+    private var isRefreshing = false
+    private var isLoadingNextPage = false
 
     private weak var windowState: BrowserWindowState?
     private let browserContext: HistoryPageBrowserContext
@@ -71,11 +65,17 @@ final class HistoryPageViewModel: ObservableObject {
         self.faviconService = browserContext.faviconService
         self.confirmDeletionOverride = confirmDeletion
         let sectionDateFormatter = DateFormatter()
-        sectionDateFormatter.locale = Locale(identifier: "en_US")
+        sectionDateFormatter.locale = .autoupdatingCurrent
         sectionDateFormatter.calendar = calendar
-        sectionDateFormatter.dateFormat = "EEEE, MMMM d, yyyy"
+        sectionDateFormatter.setLocalizedDateFormatFromTemplate("EEEE MMMM d yyyy")
         self.sectionDateFormatter = sectionDateFormatter
-        self.selectedRange = .all
+        let activeHistoryURL = windowState.flatMap {
+            browserContext.currentTab($0)?.url
+        }
+        self.selectedRange = activeHistoryURL
+            .flatMap { SumiSurface.historyRangeQuery(from: $0) }
+            .flatMap(HistoryRange.init(rawValue:))
+            ?? .all
 
         revisionCancellable = historyManager.$revision
             .sink { [weak self] _ in
@@ -86,7 +86,7 @@ final class HistoryPageViewModel: ObservableObject {
         currentProfileCancellable = browserContext.currentProfileUpdates
             .dropFirst()
             .sink { [weak self] _ in
-                self?.objectWillChange.send()
+                self?.scheduleSnapshotRebuild()
             }
     }
 
@@ -94,10 +94,6 @@ final class HistoryPageViewModel: ObservableObject {
         snapshotTask?.cancel()
         revisionCancellable?.cancel()
         currentProfileCancellable?.cancel()
-    }
-
-    var hasVisibleItems: Bool {
-        sections.contains { !$0.items.isEmpty }
     }
 
     var faviconPartition: SumiFaviconPartition {
@@ -108,54 +104,12 @@ final class HistoryPageViewModel: ObservableObject {
         browserContext.faviconImageReader
     }
 
-    var selectionCount: Int {
-        selectedItemIDs.count
-    }
-
-    var hasSelection: Bool {
-        !selectedItemIDs.isEmpty
-    }
-
-    var allVisibleItemsSelected: Bool {
-        guard !visibleItems.isEmpty else { return false }
-        let visibleIDs = Set(visibleItems.map(\.id))
-        return visibleIDs.isSubset(of: selectedItemIDs)
-    }
-
-    var activeFilterDescription: String? {
-        if let domainFilter {
-            return "Site: \(domainFilter)"
-        }
-        if trimmedSearchText.isEmpty == false {
-            return "Search: \(trimmedSearchText)"
-        }
-        return nil
-    }
-
     func appear() {
         guard hasAppeared == false else {
             scheduleSnapshotRebuild()
             return
         }
         hasAppeared = true
-        scheduleSnapshotRebuild()
-    }
-
-    func clearFilters() {
-        domainFilter = nil
-        if searchText.isEmpty == false {
-            searchText = ""
-        } else {
-            scheduleSnapshotRebuild()
-        }
-    }
-
-    func showAllHistory(from item: HistoryListItem) {
-        let domain = item.siteDomain ?? item.domain
-        if selectedRange != .all {
-            selectedRange = .all
-        }
-        domainFilter = domain
         scheduleSnapshotRebuild()
     }
 
@@ -174,37 +128,10 @@ final class HistoryPageViewModel: ObservableObject {
         open(item, mode: mode)
     }
 
-    func isSelected(_ item: HistoryListItem) -> Bool {
-        selectedItemIDs.contains(item.id)
-    }
-
-    func toggleSelection(_ item: HistoryListItem) {
-        if selectedItemIDs.contains(item.id) {
-            selectedItemIDs.remove(item.id)
-        } else {
-            selectedItemIDs.insert(item.id)
-        }
-    }
-
-    func clearSelection() {
-        selectedItemIDs.removeAll()
-    }
-
-    func selectAllVisibleItems() {
-        selectedItemIDs.formUnion(visibleItems.map(\.id))
-    }
-
-    func openSelectedItems() {
+    func openInNewTabs(_ items: [HistoryListItem]) {
         guard let windowState else { return }
-        let urls = selectedVisibleItems().map(\.url)
-        guard !urls.isEmpty else { return }
+        let urls = items.map(\.url).uniquedPreservingOrder()
         browserContext.openHistoryURLsInNewTabs(urls, windowState)
-    }
-
-    func deleteSelectedItems() {
-        Task { [weak self] in
-            await self?.deleteSelectedItemsNow()
-        }
     }
 
     func copyLink(_ item: HistoryListItem) {
@@ -215,6 +142,12 @@ final class HistoryPageViewModel: ObservableObject {
     func delete(_ item: HistoryListItem) {
         Task { [weak self] in
             await self?.deleteItem(item)
+        }
+    }
+
+    func delete(_ items: [HistoryListItem]) {
+        Task { [weak self] in
+            await self?.deleteItems(items)
         }
     }
 
@@ -241,7 +174,7 @@ final class HistoryPageViewModel: ObservableObject {
     }
 
     func loadNextPageIfNeeded(after item: HistoryListItem) {
-        guard visibleItems.last?.id == item.id else { return }
+        guard loadedItems.last?.id == item.id else { return }
         Task { [weak self] in
             await self?.loadNextPage()
         }
@@ -253,8 +186,6 @@ final class HistoryPageViewModel: ObservableObject {
         loadedItems = []
         nextPageOffset = 0
         hasMorePages = false
-        ranges = historyManager.ranges()
-
         let page = await historyManager.historyPage(
             query: currentQuery(),
             searchTerm: currentSearchTerm(),
@@ -272,7 +203,6 @@ final class HistoryPageViewModel: ObservableObject {
         loadedItems = page.items
         nextPageOffset = page.nextOffset
         hasMorePages = page.hasMore
-        pruneSelection(toVisibleItems: loadedItems)
         sections = makeSections(from: loadedItems)
         isRefreshing = false
     }
@@ -302,15 +232,11 @@ final class HistoryPageViewModel: ObservableObject {
         loadedItems.append(contentsOf: page.items)
         nextPageOffset = page.nextOffset
         hasMorePages = page.hasMore
-        pruneSelection(toVisibleItems: loadedItems)
         sections = makeSections(from: loadedItems)
         isLoadingNextPage = false
     }
 
     private func currentQuery() -> HistoryQuery {
-        if let domainFilter {
-            return .domainFilter([domainFilter])
-        }
         if selectedRange == .allSites {
             return .rangeFilter(.allSites)
         }
@@ -325,7 +251,7 @@ final class HistoryPageViewModel: ObservableObject {
     }
 
     private func makeSections(from items: [HistoryListItem]) -> [HistorySection] {
-        if selectedRange == .allSites, domainFilter == nil {
+        if selectedRange == .allSites {
             return [.init(id: "sites", title: HistoryRange.allSites.title, items: items)]
         }
 
@@ -362,11 +288,7 @@ final class HistoryPageViewModel: ObservableObject {
         let referenceDate = Date()
         let fullDate = sectionDateFormatter.string(from: day)
         if calendar.isDate(day, inSameDayAs: referenceDate) {
-            return "Today - \(fullDate)"
-        }
-        if let yesterday = calendar.date(byAdding: .day, value: -1, to: referenceDate),
-           calendar.isDate(day, inSameDayAs: yesterday) {
-            return "Yesterday - \(fullDate)"
+            return String(localized: "Recently Visited Today")
         }
         return fullDate
     }
@@ -406,12 +328,8 @@ final class HistoryPageViewModel: ObservableObject {
         await historyManager.delete(query: .visits([visitID]))
     }
 
-    func deleteSelectedItemsNow() async {
-        let selectedItems = selectedVisibleItems()
-        guard !selectedItems.isEmpty else {
-            clearSelection()
-            return
-        }
+    private func deleteItems(_ selectedItems: [HistoryListItem]) async {
+        guard !selectedItems.isEmpty else { return }
 
         let selectedDomains = Set(
             selectedItems
@@ -435,25 +353,6 @@ final class HistoryPageViewModel: ObservableObject {
             visitIDs: selectedVisitIDs,
             domains: selectedDomains
         )
-        clearSelection()
-    }
-
-    private func selectedVisibleItems() -> [HistoryListItem] {
-        visibleItems
-            .filter { selectedItemIDs.contains($0.id) }
-    }
-
-    private var visibleItems: [HistoryListItem] {
-        loadedItems
-    }
-
-    private func pruneSelection(toVisibleItems items: [HistoryListItem]) {
-        guard !selectedItemIDs.isEmpty else { return }
-        let visibleIDs = Set(items.map(\.id))
-        let prunedIDs = selectedItemIDs.intersection(visibleIDs)
-        if prunedIDs != selectedItemIDs {
-            selectedItemIDs = prunedIDs
-        }
     }
 
     private func confirmDeletion(title: String, message: String) -> Bool {
@@ -471,5 +370,12 @@ final class HistoryPageViewModel: ObservableObject {
             settings: browserContext.sumiSettings()
         )
         return alert.runModal() == .alertFirstButtonReturn
+    }
+}
+
+private extension Array where Element: Hashable {
+    func uniquedPreservingOrder() -> [Element] {
+        var seen = Set<Element>()
+        return filter { seen.insert($0).inserted }
     }
 }

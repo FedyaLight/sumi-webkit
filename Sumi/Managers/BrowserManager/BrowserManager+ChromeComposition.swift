@@ -38,7 +38,6 @@ extension BrowserManager {
                 regularTabs: regularTabCollectionOwner,
                 persistence: structuralPersistence
             ),
-            settings: settingsState,
             tabOpening: tabOpening,
             selection: browserTabSelection,
             windows: windowRegistry

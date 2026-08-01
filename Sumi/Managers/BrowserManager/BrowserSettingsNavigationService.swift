@@ -1,49 +1,33 @@
 import Foundation
 
+/// Routes browser commands into the app's single Settings window.
 @MainActor
 final class BrowserSettingsNavigationService {
-    private let activeWindow: @MainActor () -> BrowserWindowState?
+    private let settings: @MainActor () -> SumiSettingsService?
     private let currentTab: @MainActor (BrowserWindowState) -> Tab?
-    private let settingsSurfaceURL: @MainActor (SettingsTabs) -> URL
-    private let siteSettingsSurfaceURL: @MainActor (Tab?) -> URL
-    private let openNativeSurface: @MainActor (
-        SumiNativeBrowserSurfaceKind,
-        URL,
-        BrowserWindowState
-    ) -> Void
 
     init(
-        activeWindow: @escaping @MainActor () -> BrowserWindowState?,
-        currentTab: @escaping @MainActor (BrowserWindowState) -> Tab?,
-        settingsSurfaceURL: @escaping @MainActor (SettingsTabs) -> URL,
-        siteSettingsSurfaceURL: @escaping @MainActor (Tab?) -> URL,
-        openNativeSurface: @escaping @MainActor (
-            SumiNativeBrowserSurfaceKind,
-            URL,
-            BrowserWindowState
-        ) -> Void
+        settings: @escaping @MainActor () -> SumiSettingsService?,
+        currentTab: @escaping @MainActor (BrowserWindowState) -> Tab?
     ) {
-        self.activeWindow = activeWindow
+        self.settings = settings
         self.currentTab = currentTab
-        self.settingsSurfaceURL = settingsSurfaceURL
-        self.siteSettingsSurfaceURL = siteSettingsSurfaceURL
-        self.openNativeSurface = openNativeSurface
     }
 
     func openSettings(
         selecting pane: SettingsTabs,
         in windowState: BrowserWindowState? = nil
     ) {
-        guard let windowState = windowState ?? activeWindow() else { return }
-        openNativeSurface(.settings, settingsSurfaceURL(pane), windowState)
+        settings()?.navigation.openSettings(selecting: pane)
     }
 
     func openSiteSettings(
         focusing tab: Tab? = nil,
         in windowState: BrowserWindowState? = nil
     ) {
-        guard let windowState = windowState ?? activeWindow() else { return }
-        let targetTab = tab ?? currentTab(windowState)
-        openNativeSurface(.settings, siteSettingsSurfaceURL(targetTab), windowState)
+        let targetTab = tab ?? windowState.flatMap(currentTab)
+        let filter = BrowserPermissionSettingsRoutes
+            .privacySiteSettingsFilter(focusing: targetTab)
+        settings()?.navigation.openSiteSettings(filter: filter)
     }
 }

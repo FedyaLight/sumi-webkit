@@ -21,6 +21,7 @@ final class BrowserNativeAlertPresenter {
         title: String,
         message: String,
         confirmButtonTitle: String,
+        preferredWindow: NSWindow? = nil,
         onConfirm: @escaping @MainActor () -> Void
     ) -> Bool {
         let alert = Self.makeDestructiveConfirmationAlert(
@@ -28,7 +29,7 @@ final class BrowserNativeAlertPresenter {
             message: message,
             confirmButtonTitle: confirmButtonTitle
         )
-        return present(alert) { response in
+        return present(alert, preferredWindow: preferredWindow) { response in
             guard response == .alertFirstButtonReturn else { return }
             onConfirm()
         }
@@ -38,14 +39,15 @@ final class BrowserNativeAlertPresenter {
     func presentNotice(
         title: String,
         subtitle: String?,
-        message: String
+        message: String,
+        preferredWindow: NSWindow? = nil
     ) -> Bool {
         let alert = Self.makeNoticeAlert(
             title: title,
             subtitle: subtitle,
             message: message
         )
-        return present(alert) { _ in }
+        return present(alert, preferredWindow: preferredWindow) { _ in }
     }
 
     static func makeDestructiveConfirmationAlert(
@@ -90,12 +92,19 @@ final class BrowserNativeAlertPresenter {
 
     private func present(
         _ alert: NSAlert,
+        preferredWindow: NSWindow?,
         completion: @escaping @MainActor (NSApplication.ModalResponse) -> Void
     ) -> Bool {
         let windowState = windows.activeWindow
-        let window = windowState.flatMap { windows.appKitWindow(for: $0) }
-            ?? NSApp.keyWindow
-            ?? NSApp.mainWindow
+        let activeBrowserWindow = windowState.flatMap {
+            windows.appKitWindow(for: $0)
+        }
+        let window = Self.resolvePresentationWindow(
+            preferredWindow: preferredWindow,
+            activeBrowserWindow: activeBrowserWindow,
+            keyWindow: NSApp.keyWindow,
+            mainWindow: NSApp.mainWindow
+        )
         let appearanceWindowState = window.flatMap {
             windows.windowState(containing: $0)
         } ?? windowState
@@ -114,5 +123,14 @@ final class BrowserNativeAlertPresenter {
             completion(alert.runModal())
         }
         return true
+    }
+
+    static func resolvePresentationWindow(
+        preferredWindow: NSWindow?,
+        activeBrowserWindow: NSWindow?,
+        keyWindow: NSWindow?,
+        mainWindow: NSWindow?
+    ) -> NSWindow? {
+        preferredWindow ?? activeBrowserWindow ?? keyWindow ?? mainWindow
     }
 }

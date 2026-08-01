@@ -14,25 +14,24 @@ struct BookmarksPageBrowserContext {
     let openHistoryURLsInNewTabs: ([URL], BrowserWindowState) -> Void
     let openHistoryURLsInNewWindow: ([URL]) -> Void
     let openBookmarkURL: (URL, BrowserWindowState, HistoryOpenMode) -> Void
-    let importBookmarksFromMenu: () -> Void
-    let exportBookmarksFromMenu: () -> Void
     let scheduleRuntimeStatePersistence: (Tab) -> Void
     let sumiSettings: () -> SumiSettingsService?
 }
 
+/// Prepares the bookmark tree for the AppKit outline view and owns bookmark
+/// mutations. Selection, expansion, and drag state belong to NSOutlineView.
 @MainActor
 final class SumiBookmarksPageViewModel: ObservableObject {
-    @Published var selectedFolderID: String
-    @Published var searchText = "" {
-        didSet { rebuildVisibleEntities() }
+    var searchText = "" {
+        didSet { rebuildOutline() }
     }
     @Published var sortMode: SumiBookmarkSortMode = .manual {
-        didSet { rebuildVisibleEntities() }
+        didSet { rebuildOutline() }
     }
-    @Published private(set) var folders: [SumiBookmarkFolder] = []
-    @Published private(set) var visibleEntities: [SumiBookmarkEntity] = []
-    @Published private(set) var selectedEntityIDs: Set<String> = []
-    @Published var statusMessage: String?
+    @Published private(set) var outlineRoots: [SumiBookmarkEntity] = []
+    private(set) var statusMessage: String?
+
+    let initiallySelectedFolderID: String?
 
     private weak var windowState: BrowserWindowState?
     private let browserContext: BookmarksPageBrowserContext
@@ -40,7 +39,6 @@ final class SumiBookmarksPageViewModel: ObservableObject {
     private let faviconService: any BrowserFaviconServicing
     private var publicationCancellable: AnyCancellable?
     private var currentProfileCancellable: AnyCancellable?
-    private(set) var draggedEntityIDs: Set<String> = []
 
     init(
         browserContext: BookmarksPageBrowserContext,
@@ -50,33 +48,26 @@ final class SumiBookmarksPageViewModel: ObservableObject {
         self.browserContext = browserContext
         self.bookmarkManager = browserContext.bookmarkManager
         self.faviconService = browserContext.faviconService
-        let selected = windowState
+        self.initiallySelectedFolderID = windowState
             .flatMap { browserContext.currentTab($0) }
             .flatMap { SumiSurface.bookmarksSelectedFolderID(from: $0.url) }
-        self.selectedFolderID = selected ?? SumiBookmarkConstants.rootFolderID
 
         publicationCancellable = bookmarkManager.$publicationRevision
             .dropFirst()
             .sink { [weak self] _ in
-                Task { @MainActor in
-                    self?.rebuildVisibleEntities()
-                }
+                self?.rebuildOutline()
             }
         currentProfileCancellable = browserContext.currentProfileUpdates
             .dropFirst()
             .sink { [weak self] _ in
-                self?.objectWillChange.send()
+                self?.rebuildOutline()
             }
-        rebuildVisibleEntities()
+        rebuildOutline()
     }
 
     isolated deinit {
         publicationCancellable?.cancel()
         currentProfileCancellable?.cancel()
-    }
-
-    var hasSelection: Bool {
-        !selectedEntityIDs.isEmpty
     }
 
     var faviconPartition: SumiFaviconPartition {
@@ -87,64 +78,17 @@ final class SumiBookmarksPageViewModel: ObservableObject {
         browserContext.faviconImageReader
     }
 
-    var selectionCount: Int {
-        selectedEntityIDs.count
-    }
-
-    var canDeleteSelection: Bool {
-        selectedEntityIDs.contains(SumiBookmarkConstants.rootFolderID) == false && !selectedEntityIDs.isEmpty
-    }
-
     var canDragAndDrop: Bool {
-        sortMode.allowsManualMove && searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        sortMode.allowsManualMove
+            && searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     func appear() {
-        rebuildVisibleEntities()
-    }
-
-    func selectFolder(_ folderID: String) {
-        selectedFolderID = folderID
-        selectedEntityIDs.removeAll()
-        syncSelectedFolderToActiveTab()
-        rebuildVisibleEntities()
-    }
-
-    func showInFolder(_ entity: SumiBookmarkEntity) {
-        guard let parentID = entity.parentID else { return }
-        searchText = ""
-        selectFolder(parentID)
-        selectedEntityIDs = [entity.id]
-    }
-
-    func handleRowClick(_ entity: SumiBookmarkEntity, modifiers: NSEvent.ModifierFlags = NSEvent.modifierFlags) {
-        if modifiers.contains(.command) {
-            if selectedEntityIDs.contains(entity.id) {
-                selectedEntityIDs.remove(entity.id)
-            } else {
-                selectedEntityIDs.insert(entity.id)
-            }
-            return
-        }
-        selectedEntityIDs = [entity.id]
-    }
-
-    func clearSelection() {
-        selectedEntityIDs.removeAll()
-    }
-
-    func openFromRow(_ entity: SumiBookmarkEntity, modifiers: NSEvent.ModifierFlags = NSEvent.modifierFlags) {
-        if entity.isFolder {
-            selectFolder(entity.id)
-            return
-        }
-        let mode: HistoryOpenMode = modifiers.contains(.command) ? .newTab : .currentTab
-        open(entity, mode: mode)
+        rebuildOutline()
     }
 
     func open(_ entity: SumiBookmarkEntity, mode: HistoryOpenMode) {
         guard let windowState else { return }
-
         if entity.isFolder {
             let urls = bookmarkManager.openableURLs(for: [entity.id])
             switch mode {
@@ -160,12 +104,11 @@ final class SumiBookmarksPageViewModel: ObservableObject {
         browserContext.openBookmarkURL(url, windowState, mode)
     }
 
-    func openSelected() {
+    func open(_ entities: [SumiBookmarkEntity]) {
         guard let windowState else { return }
-        browserContext.openHistoryURLsInNewTabs(
-            bookmarkManager.openableURLs(for: selectedEntityIDs),
-            windowState
-        )
+        let ids = entities.map(\.id)
+        let urls = bookmarkManager.openableURLs(for: ids)
+        browserContext.openHistoryURLsInNewTabs(urls, windowState)
     }
 
     func copyLink(_ entity: SumiBookmarkEntity) {
@@ -174,145 +117,15 @@ final class SumiBookmarksPageViewModel: ObservableObject {
         NSPasteboard.general.setString(url.absoluteString, forType: .string)
     }
 
-    func deleteSelected() {
-        guard canDeleteSelection else { return }
-        delete(ids: selectedEntityIDs)
-    }
+    func delete(_ entities: [SumiBookmarkEntity]) {
+        let ids = Set(entities.map(\.id))
+        guard !ids.isEmpty,
+              !ids.contains(where: SumiBookmarkConstants.isProtectedFolderID)
+        else { return }
 
-    func delete(_ entity: SumiBookmarkEntity) {
-        delete(ids: [entity.id])
-    }
-
-    func createBookmark(title: String, urlString: String, parentID: String?) {
-        do {
-            guard let url = URL(string: urlString.trimmingCharacters(in: .whitespacesAndNewlines)) else {
-                throw SumiBookmarkError.invalidURL
-            }
-            _ = try bookmarkManager.createBookmark(url: url, title: title, folderID: parentID)
-            statusMessage = nil
-        } catch {
-            statusMessage = error.localizedDescription
-        }
-    }
-
-    func updateBookmark(id: String, title: String, urlString: String, parentID: String?) {
-        do {
-            guard let url = URL(string: urlString.trimmingCharacters(in: .whitespacesAndNewlines)) else {
-                throw SumiBookmarkError.invalidURL
-            }
-            _ = try bookmarkManager.updateBookmark(id: id, title: title, url: url, folderID: parentID)
-            statusMessage = nil
-        } catch {
-            statusMessage = error.localizedDescription
-        }
-    }
-
-    func createFolder(title: String, parentID: String?) {
-        do {
-            _ = try bookmarkManager.createFolder(title: title, parentID: parentID)
-            statusMessage = nil
-        } catch {
-            statusMessage = error.localizedDescription
-        }
-    }
-
-    func updateFolder(id: String, title: String, parentID: String?) {
-        do {
-            _ = try bookmarkManager.updateFolder(id: id, title: title, parentID: parentID)
-            statusMessage = nil
-        } catch {
-            statusMessage = error.localizedDescription
-        }
-    }
-
-    func beginDragging(_ entity: SumiBookmarkEntity) {
-        if selectedEntityIDs.contains(entity.id) {
-            draggedEntityIDs = selectedEntityIDs
-        } else {
-            draggedEntityIDs = [entity.id]
-            selectedEntityIDs = [entity.id]
-        }
-    }
-
-    func dropDraggedItems(toParentID parentID: String, at index: Int? = nil) -> Bool {
-        guard canDragAndDrop, !draggedEntityIDs.isEmpty else { return false }
-        do {
-            let orderedIDs = visibleEntities
-                .map(\.id)
-                .filter { draggedEntityIDs.contains($0) }
-            try bookmarkManager.moveEntities(
-                ids: orderedIDs.isEmpty ? Array(draggedEntityIDs) : orderedIDs,
-                toParentID: parentID,
-                atIndex: index
-            )
-            draggedEntityIDs.removeAll()
-            return true
-        } catch {
-            statusMessage = error.localizedDescription
-            draggedEntityIDs.removeAll()
-            return false
-        }
-    }
-
-    func bookmarkDraft(for entity: SumiBookmarkEntity? = nil) -> SumiBookmarkFormDraft {
-        if let entity, let url = entity.url {
-            return SumiBookmarkFormDraft(
-                editingID: entity.id,
-                title: entity.title,
-                urlString: url.absoluteString,
-                parentID: entity.parentID ?? selectedFolderID
-            )
-        }
-        return SumiBookmarkFormDraft(
-            editingID: nil,
-            title: "",
-            urlString: "https://",
-            parentID: selectedFolderID
-        )
-    }
-
-    func folderDraft(for entity: SumiBookmarkEntity? = nil) -> SumiFolderFormDraft {
-        if let entity {
-            return SumiFolderFormDraft(
-                editingID: entity.id,
-                title: entity.title,
-                parentID: entity.parentID ?? SumiBookmarkConstants.rootFolderID
-            )
-        }
-        return SumiFolderFormDraft(
-            editingID: nil,
-            title: "",
-            parentID: selectedFolderID
-        )
-    }
-
-    func folderPickerFolders(excluding folderID: String? = nil) -> [SumiBookmarkFolder] {
-        guard let folderID else { return folders }
-        let excludedPrefix = Set(descendantFolderIDs(of: folderID) + [folderID])
-        return folders.filter { !excludedPrefix.contains($0.id) }
-    }
-
-    func folderDraft(forFolderID folderID: String) -> SumiFolderFormDraft? {
-        bookmarkManager.entity(id: folderID).map { folderDraft(for: $0) }
-    }
-
-    func deleteFolder(id folderID: String) {
-        guard let entity = bookmarkManager.entity(id: folderID) else { return }
-        delete(entity)
-    }
-
-    func importBookmarksFromMenu() {
-        browserContext.importBookmarksFromMenu()
-    }
-
-    func exportBookmarksFromMenu() {
-        browserContext.exportBookmarksFromMenu()
-    }
-
-    private func delete(ids: Set<String>) {
         let alert = NSAlert()
-        alert.messageText = ids.count > 1 ? "Delete Bookmarks" : "Delete Bookmark"
-        alert.informativeText = "This will permanently remove the selected bookmark items."
+        alert.messageText = ids.count > 1 ? "Delete Bookmark Items?" : "Delete Bookmark Item?"
+        alert.informativeText = "This permanently removes the selected bookmarks and folders."
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Delete")
         alert.addButton(withTitle: "Cancel")
@@ -324,63 +137,121 @@ final class SumiBookmarksPageViewModel: ObservableObject {
 
         do {
             try bookmarkManager.removeEntities(ids: ids)
-            selectedEntityIDs.removeAll()
             statusMessage = nil
         } catch {
             statusMessage = error.localizedDescription
         }
     }
 
-    private func rebuildVisibleEntities() {
-        let snapshot = bookmarkManager.snapshot(sortMode: sortMode)
-        folders = snapshot.flattenedFolders
-        if !folders.contains(where: { $0.id == selectedFolderID }) {
-            selectedFolderID = SumiBookmarkConstants.rootFolderID
+    func updateBookmark(
+        id: String,
+        title: String,
+        urlString: String,
+        parentID: String?
+    ) -> Bool {
+        do {
+            guard let url = URL(
+                string: urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+            ) else {
+                throw SumiBookmarkError.invalidURL
+            }
+            _ = try bookmarkManager.updateBookmark(
+                id: id,
+                title: title,
+                url: url,
+                folderID: parentID
+            )
+            statusMessage = nil
+            return true
+        } catch {
+            statusMessage = error.localizedDescription
+            return false
         }
-        visibleEntities = bookmarkManager.visibleEntities(
-            in: selectedFolderID,
-            query: searchText,
-            sortMode: sortMode
+    }
+
+    func createFolder(title: String, parentID: String?) -> SumiBookmarkEntity? {
+        do {
+            let folder = try bookmarkManager.createFolder(title: title, parentID: parentID)
+            statusMessage = nil
+            return folder
+        } catch {
+            statusMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    func rename(_ entity: SumiBookmarkEntity, title: String) -> Bool {
+        if entity.isFolder {
+            return updateFolder(
+                id: entity.id,
+                title: title,
+                parentID: entity.parentID
+            )
+        }
+        guard let url = entity.url else { return false }
+        return updateBookmark(
+            id: entity.id,
+            title: title,
+            urlString: url.absoluteString,
+            parentID: entity.parentID
         )
-        selectedEntityIDs = selectedEntityIDs.intersection(Set(visibleEntities.map(\.id)))
     }
 
-    private func syncSelectedFolderToActiveTab() {
-        guard let windowState,
-              let tab = browserContext.currentTab(windowState),
-              tab.representsSumiBookmarksSurface
-        else { return }
-        tab.url = SumiSurface.bookmarksSurfaceURL(selecting: selectedFolderID)
-        tab.name = "Bookmarks"
-        tab.faviconPresentation = .systemSymbol(SumiSurface.bookmarksTabFaviconSystemImageName)
-        tab.faviconIsTemplateGlobePlaceholder = false
-        browserContext.scheduleRuntimeStatePersistence(tab)
+    func updateAddress(_ entity: SumiBookmarkEntity, urlString: String) -> Bool {
+        guard entity.isBookmark else { return false }
+        return updateBookmark(
+            id: entity.id,
+            title: entity.title,
+            urlString: urlString,
+            parentID: entity.parentID
+        )
     }
 
-    private func descendantFolderIDs(of folderID: String) -> [String] {
-        guard let entity = bookmarkManager.entity(id: folderID) else { return [] }
-        return entity.children.flatMap { child -> [String] in
-            guard child.isFolder else { return [] }
-            return [child.id] + descendantFolderIDs(of: child.id)
+    func updateFolder(id: String, title: String, parentID: String?) -> Bool {
+        do {
+            _ = try bookmarkManager.updateFolder(id: id, title: title, parentID: parentID)
+            statusMessage = nil
+            return true
+        } catch {
+            statusMessage = error.localizedDescription
+            return false
         }
     }
-}
 
-enum SumiBookmarkConstants {
-    static let rootFolderID = "bookmarks_root"
-}
+    func moveEntities(ids: [String], toParentID parentID: String, at index: Int?) -> Bool {
+        guard canDragAndDrop, !ids.isEmpty else { return false }
+        do {
+            try bookmarkManager.moveEntities(ids: ids, toParentID: parentID, atIndex: index)
+            statusMessage = nil
+            return true
+        } catch {
+            statusMessage = error.localizedDescription
+            return false
+        }
+    }
 
-struct SumiBookmarkFormDraft: Identifiable, Equatable {
-    let id = UUID()
-    var editingID: String?
-    var title: String
-    var urlString: String
-    var parentID: String
-}
+    private func rebuildOutline() {
+        let snapshot = bookmarkManager.snapshot(sortMode: sortMode)
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if query.isEmpty {
+            outlineRoots = snapshot.root.children
+        } else {
+            outlineRoots = flattenedDescendants(of: snapshot.root)
+                .filter { $0.matchesSearch(query) }
+                .map { entity in
+                    var result = entity
+                    result.children = []
+                    return result
+                }
+        }
+    }
 
-struct SumiFolderFormDraft: Identifiable, Equatable {
-    let id = UUID()
-    var editingID: String?
-    var title: String
-    var parentID: String
+    private func flattenedDescendants(
+        of entity: SumiBookmarkEntity
+    ) -> [SumiBookmarkEntity] {
+        entity.children.flatMap { child in
+            [child] + flattenedDescendants(of: child)
+        }
+    }
+
 }

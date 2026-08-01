@@ -1,593 +1,531 @@
 import AppKit
+import Combine
 import SwiftUI
 
-struct SumiHistoryTabRootView: View {
-    @Environment(\.sumiSettings) private var sumiSettings
+/// SwiftUI owns the browser-surface slot; the complete history presentation is
+/// AppKit so scrolling, selection, keyboard commands, and menus stay native.
+struct SumiHistoryTabRootView: NSViewControllerRepresentable {
     @Environment(\.resolvedThemeContext) private var themeContext
-    @StateObject private var viewModel: HistoryPageViewModel
-    @StateObject private var scrollHoverCoordinator = NativeSurfaceScrollHoverCoordinator()
-    @State private var nativeModalInvalidationGeneration: UInt = 0
-    private let browserContext: HistoryPageBrowserContext
-    private let windowState: BrowserWindowState?
-    private let rowActions: HistoryRowActions
 
-    private enum Layout {
-        static let sidebarWidth: CGFloat = 220
-        static let rowCornerRadius: CGFloat = 8
-    }
+    let browserContext: HistoryPageBrowserContext
+    let windowState: BrowserWindowState?
 
-    private var headerControlsAnimation: Animation {
-        .easeInOut(duration: 0.18)
-    }
-
-    init(browserContext: HistoryPageBrowserContext, windowState: BrowserWindowState?) {
-        self.browserContext = browserContext
-        self.windowState = windowState
-        let viewModel = HistoryPageViewModel(
-            browserContext: browserContext,
-            windowState: windowState
-        )
-        _viewModel = StateObject(wrappedValue: viewModel)
-        rowActions = HistoryRowActions(viewModel: viewModel)
-    }
-
-    var body: some View {
-        HStack(spacing: 0) {
-            sidebar
-            Divider()
-            content
-                .layoutPriority(1)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .sumiChromeThemeScope(context: surfaceThemeContext, settings: sumiSettings)
-        .environment(\.colorScheme, surfaceThemeContext.chromeColorScheme)
-        .environment(\.nativeSurfaceHoverUpdatesEnabled, nativeSurfaceHoverUpdatesEnabled)
-        .onAppear {
-            viewModel.appear()
-        }
-        .onReceive(browserContext.nativeModalPresentationUpdates) { _ in
-            nativeModalInvalidationGeneration &+= 1
-        }
-        .onDisappear {
-            scrollHoverCoordinator.reset()
-        }
-    }
-
-    private var surfaceThemeContext: ResolvedThemeContext {
-        themeContext.nativeSurfaceThemeContext
-    }
-
-    private var tokens: ChromeThemeTokens {
-        surfaceThemeContext.tokens(settings: sumiSettings)
-    }
-
-    private var selectionBackground: Color {
-        surfaceThemeContext.nativeSurfaceSelectionBackground
-    }
-
-    private var nativeSurfaceHoverUpdatesEnabled: Bool {
-        let _ = nativeModalInvalidationGeneration
-        return scrollHoverCoordinator.hoverUpdatesEnabled
-            && !browserContext.isNativeModalPresented(windowState?.id)
-    }
-
-    private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 28) {
-            Text("History")
-                .font(SumiHistoryTabTypography.sidebarTitle)
-                .foregroundStyle(tokens.primaryText)
-                .padding(.top, 4)
-
-            VStack(alignment: .leading, spacing: 6) {
-                navigationRow(
-                    title: "History",
-                    iconName: "clock.arrow.circlepath",
-                    isSelected: true
-                ) {}
-
-                navigationRow(
-                    title: "Browsing data",
-                    iconName: "trash",
-                    isSelected: false
-                ) {
-                    viewModel.showBrowsingDataDialog()
-                }
-            }
-
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 18)
-        .frame(width: Layout.sidebarWidth, alignment: .leading)
-    }
-
-    private func navigationRow(
-        title: String,
-        iconName: String,
-        isSelected: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button {
-            action()
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: iconName)
-                    .font(SumiHistoryTabTypography.navigationIcon)
-                    .frame(width: 20, alignment: .center)
-                Text(title)
-                    .font(SumiHistoryTabTypography.navigationTitle)
-                    .lineLimit(2)
-                Spacer()
-            }
-            .padding(.vertical, 11)
-            .padding(.horizontal, 14)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .background(
-            RoundedRectangle(cornerRadius: Layout.rowCornerRadius, style: .continuous)
-                .fill(isSelected ? selectionBackground : SumiHistoryTabColors.transparent)
-        )
-        .foregroundStyle(tokens.primaryText)
-        .chromeCursor(.pointingHand)
-    }
-
-    private var content: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-            Divider()
-            historyList
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(tokens.secondaryText)
-                TextField("Search History", text: $viewModel.searchText)
-                    .textFieldStyle(.plain)
-            }
-            .padding(.vertical, 11)
-            .padding(.horizontal, 14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(tokens.fieldBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(tokens.separator.opacity(0.55), lineWidth: 1)
+    func makeNSViewController(context _: Context) -> SumiHistoryViewController {
+        let controller = SumiHistoryViewController(
+            viewModel: HistoryPageViewModel(
+                browserContext: browserContext,
+                windowState: windowState
             )
-
-            headerControls
-        }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 10)
-    }
-
-    @ViewBuilder
-    private var headerControls: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if viewModel.hasVisibleItems {
-                HStack(spacing: 12) {
-                    Button("Select All") {
-                        withAnimation(headerControlsAnimation) {
-                            viewModel.selectAllVisibleItems()
-                        }
-                    }
-                    .disabled(viewModel.allVisibleItemsSelected)
-                    .chromeCursor(.pointingHand)
-
-                    if viewModel.hasSelection {
-                        Text("\(viewModel.selectionCount) Selected")
-                            .font(.callout)
-                            .foregroundStyle(tokens.secondaryText)
-                            .transition(.move(edge: .leading).combined(with: .opacity))
-
-                        Button("Open") {
-                            viewModel.openSelectedItems()
-                        }
-                        .transition(.move(edge: .leading).combined(with: .opacity))
-                        .chromeCursor(.pointingHand)
-
-                        Button("Delete") {
-                            withAnimation(headerControlsAnimation) {
-                                viewModel.deleteSelectedItems()
-                            }
-                        }
-                        .transition(.move(edge: .leading).combined(with: .opacity))
-                        .chromeCursor(.pointingHand)
-
-                        Button("Clear Selection") {
-                            withAnimation(headerControlsAnimation) {
-                                viewModel.clearSelection()
-                            }
-                        }
-                        .transition(.move(edge: .leading).combined(with: .opacity))
-                        .chromeCursor(.pointingHand)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 2)
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
-
-            if let filter = viewModel.activeFilterDescription {
-                HStack(spacing: 8) {
-                    Text(filter)
-                        .foregroundStyle(tokens.secondaryText)
-                    Button("Clear Filter") {
-                        withAnimation(headerControlsAnimation) {
-                            viewModel.clearFilters()
-                        }
-                    }
-                    .buttonStyle(.link)
-                    .chromeCursor(.pointingHand)
-                }
-                .font(.callout)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
-        }
-        .animation(headerControlsAnimation, value: viewModel.hasVisibleItems)
-        .animation(headerControlsAnimation, value: viewModel.hasSelection)
-        .animation(headerControlsAnimation, value: viewModel.selectionCount)
-        .animation(headerControlsAnimation, value: viewModel.activeFilterDescription)
-    }
-
-    private var historyList: some View {
-        ScrollView {
-            VStack(alignment: .center, spacing: 0) {
-                if viewModel.sections.isEmpty || !viewModel.hasVisibleItems {
-                    emptyState
-                } else {
-                    historyCard
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 24)
-            .padding(.vertical, 26)
-        }
-        .suppressesNativeSurfaceHoverWhileScrolling(scrollHoverCoordinator, region: "history-list")
-    }
-
-    private var historyCard: some View {
-        LazyVStack(alignment: .leading, spacing: 0, pinnedViews: []) {
-            ForEach(viewModel.sections) { section in
-                Section {
-                    ForEach(section.items) { item in
-                        HistoryRow(
-                            presentation: HistoryRowPresentation(
-                                item: item,
-                                isSelected: viewModel.isSelected(item),
-                                faviconPartition: viewModel.faviconPartition,
-                                themeContext: surfaceThemeContext,
-                                settingsFingerprint: sumiSettings.chromeTokenRecipeFingerprint
-                            ),
-                            faviconImageReader: viewModel.faviconImageReader,
-                            actions: rowActions
-                        )
-                            .onAppear {
-                                viewModel.loadNextPageIfNeeded(after: item)
-                            }
-                            .padding(.bottom, 2)
-                    }
-                } header: {
-                    Text(section.title)
-                        .font(SumiHistoryTabTypography.sectionTitle)
-                        .foregroundStyle(tokens.primaryText)
-                        .padding(.horizontal, 22)
-                        .padding(.top, 20)
-                        .padding(.bottom, 14)
-                }
-
-                if section.id != viewModel.sections.last?.id {
-                    Divider()
-                        .padding(.vertical, 20)
-                } else {
-                    SumiHistoryTabColors.transparent
-                        .frame(height: 18)
-                }
-            }
-
-            if viewModel.isLoadingNextPage {
-                ProgressView()
-                    .controlSize(.small)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 18)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(tokens.separator.opacity(0.8), lineWidth: 1)
         )
+        controller.applyAppearance(themeContext.nativeSurfaceThemeContext)
+        return controller
     }
 
-    private var emptyState: some View {
-        VStack(alignment: .center, spacing: 12) {
-            Image(systemName: "clock.arrow.circlepath")
-                .font(SumiHistoryTabTypography.emptyStateIcon)
-                .foregroundStyle(tokens.secondaryText)
-            Text("No History")
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(tokens.primaryText)
-            Text("Visited pages will appear here.")
-                .foregroundStyle(tokens.secondaryText)
-        }
-        .frame(maxWidth: .infinity, minHeight: 260)
+    func updateNSViewController(
+        _ controller: SumiHistoryViewController,
+        context _: Context
+    ) {
+        controller.applyAppearance(themeContext.nativeSurfaceThemeContext)
     }
 }
 
 @MainActor
-final class HistoryRowActions {
-    private weak var viewModel: HistoryPageViewModel?
+final class SumiHistoryViewController: NSViewController {
+    private enum Layout {
+        static let headerHeight: CGFloat = 45
+        static let horizontalInset: CGFloat = 8
+        static let tableHorizontalInset: CGFloat = 12
+        static let searchWidth: CGFloat = 110
+        static let firstColumnFraction: CGFloat = 0.31
+        static let rowHeight: CGFloat = 20
+    }
+
+    private final class Node: NSObject {
+        enum Content {
+            case section(HistorySection)
+            case item(HistoryListItem)
+        }
+
+        let id: String
+        let content: Content
+        var children: [Node]
+
+        init(section: HistorySection) {
+            id = section.id
+            content = .section(section)
+            children = section.items.map(Node.init(item:))
+        }
+
+        init(item: HistoryListItem) {
+            id = item.id
+            content = .item(item)
+            children = []
+        }
+    }
+
+    private let viewModel: HistoryPageViewModel
+    private let outlineView = SumiHistoryOutlineView()
+    private let scrollView = NSScrollView()
+    private let searchField = NSSearchField()
+    private let clearHistoryButton = NSButton()
+    private let titleLabel = NSTextField(labelWithString: "")
+    private let emptyLabel = NSTextField(labelWithString: String(localized: "No History"))
+    private var roots: [Node] = []
+    private var cancellables = Set<AnyCancellable>()
+    private var searchTask: Task<Void, Never>?
+    private var didApplyInitialSnapshot = false
 
     init(viewModel: HistoryPageViewModel) {
         self.viewModel = viewModel
+        super.init(nibName: nil, bundle: nil)
     }
 
-    func open(_ item: HistoryListItem, mode: HistoryOpenMode) {
-        viewModel?.open(item, mode: mode)
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
 
-    func openFromRow(_ item: HistoryListItem) { viewModel?.openFromRow(item) }
-    func showAllHistory(from item: HistoryListItem) { viewModel?.showAllHistory(from: item) }
-    func copyLink(_ item: HistoryListItem) { viewModel?.copyLink(item) }
-    func delete(_ item: HistoryListItem) { viewModel?.delete(item) }
-    func toggleSelection(_ item: HistoryListItem) { viewModel?.toggleSelection(item) }
-}
-
-struct HistoryRowPresentation: Equatable {
-    let item: HistoryListItem
-    let isSelected: Bool
-    let faviconPartition: SumiFaviconPartition
-    let themeContext: ResolvedThemeContext
-    let settingsFingerprint: Int
-}
-
-private enum HistoryRowLayout {
-    static let selectionWidth: CGFloat = 22
-    static let timeWidth: CGFloat = 56
-    static let faviconSize: CGFloat = 20
-    static let menuWidth: CGFloat = 32
-}
-
-private struct HistoryRow: View {
-    let presentation: HistoryRowPresentation
-    let faviconImageReader: any BrowserFaviconImageReading
-    let actions: HistoryRowActions
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
-    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
-    @Environment(\.nativeSurfaceHoverUpdatesEnabled) private var hoverUpdatesEnabled
-
-    private var tokens: ChromeThemeTokens {
-        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
+    isolated deinit {
+        searchTask?.cancel()
     }
 
-    var body: some View {
-        HStack(spacing: 12) {
-            selectionControl
-                .frame(width: HistoryRowLayout.selectionWidth, alignment: .center)
+    override func loadView() {
+        view = NSView()
+        configureHeader()
+        configureOutlineView()
+        configureEmptyState()
+        installLayout()
+        bindViewModel()
+        viewModel.appear()
+    }
 
-            rowOpenButton
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .layoutPriority(1)
+    func applyAppearance(_ themeContext: ResolvedThemeContext) {
+        view.sumiApplyNativeSurfaceAppearance(themeContext: themeContext)
+    }
 
-            Menu {
-                rowMenuContent
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(SumiHistoryTabTypography.rowMenuIcon)
-                    .rotationEffect(.degrees(90))
-                    .foregroundStyle(tokens.primaryText)
-                    .frame(width: HistoryRowLayout.menuWidth, height: 28)
-                    .contentShape(Rectangle())
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        let availableWidth = outlineView.bounds.width
+        guard availableWidth > 0,
+              let firstColumn = outlineView.tableColumns.first,
+              let addressColumn = outlineView.tableColumns.last,
+              firstColumn !== addressColumn
+        else { return }
+        let firstWidth = max(
+            firstColumn.minWidth,
+            floor(availableWidth * Layout.firstColumnFraction)
+        )
+        let addressWidth = max(addressColumn.minWidth, availableWidth - firstWidth)
+        if abs(firstColumn.width - firstWidth) > 0.5 {
+            firstColumn.width = firstWidth
+        }
+        if abs(addressColumn.width - addressWidth) > 0.5 {
+            addressColumn.width = addressWidth
+        }
+    }
+
+    private func configureHeader() {
+        titleLabel.stringValue = String(localized: "History")
+        titleLabel.font = .systemFont(ofSize: 22, weight: .bold)
+        titleLabel.setContentHuggingPriority(.required, for: .horizontal)
+
+        clearHistoryButton.title = String(localized: "Clear History…")
+        clearHistoryButton.bezelStyle = .rounded
+        clearHistoryButton.controlSize = .small
+        clearHistoryButton.target = self
+        clearHistoryButton.action = #selector(showBrowsingData)
+        clearHistoryButton.toolTip = String(localized: "Open Browsing Data")
+
+        searchField.placeholderString = String(localized: "Search")
+        searchField.controlSize = .small
+        searchField.sendsSearchStringImmediately = true
+        searchField.delegate = self
+        searchField.setContentHuggingPriority(.required, for: .horizontal)
+        searchField.widthAnchor.constraint(equalToConstant: Layout.searchWidth).isActive = true
+
+        let spacer = NSView()
+        let header = NSStackView(views: [titleLabel, spacer, clearHistoryButton, searchField])
+        header.orientation = .horizontal
+        header.alignment = .centerY
+        header.spacing = 8
+        header.edgeInsets = NSEdgeInsets(
+            top: 0,
+            left: Layout.horizontalInset,
+            bottom: 0,
+            right: Layout.horizontalInset
+        )
+        header.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(header)
+        NSLayoutConstraint.activate([
+            header.topAnchor.constraint(equalTo: view.topAnchor),
+            header.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            header.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            header.heightAnchor.constraint(equalToConstant: Layout.headerHeight),
+        ])
+    }
+
+    private func configureOutlineView() {
+        let siteColumn = NSTableColumn(identifier: .historySite)
+        siteColumn.title = String(localized: "Site")
+        siteColumn.minWidth = 220
+        siteColumn.width = 360
+
+        let addressColumn = NSTableColumn(identifier: .historyAddress)
+        addressColumn.title = String(localized: "Address")
+        addressColumn.minWidth = 240
+        addressColumn.resizingMask = .autoresizingMask
+
+        outlineView.addTableColumn(siteColumn)
+        outlineView.addTableColumn(addressColumn)
+        outlineView.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
+        outlineView.outlineTableColumn = siteColumn
+        outlineView.dataSource = self
+        outlineView.delegate = self
+        outlineView.headerView = NSTableHeaderView()
+        outlineView.rowHeight = Layout.rowHeight
+        outlineView.rowSizeStyle = .small
+        outlineView.intercellSpacing = .zero
+        outlineView.indentationPerLevel = 14
+        outlineView.gridStyleMask = .solidVerticalGridLineMask
+        outlineView.gridColor = .separatorColor
+        outlineView.allowsMultipleSelection = true
+        outlineView.allowsEmptySelection = true
+        outlineView.usesAlternatingRowBackgroundColors = false
+        outlineView.backgroundColor = .clear
+        outlineView.style = .plain
+        outlineView.target = self
+        outlineView.doubleAction = #selector(openSelectedRows)
+        outlineView.onDelete = { [weak self] in self?.deleteSelectedRows() }
+        outlineView.onReturn = { [weak self] in self?.openSelectedRows() }
+
+        let menu = NSMenu()
+        menu.delegate = self
+        outlineView.menu = menu
+
+        scrollView.documentView = outlineView
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(scrollView)
+    }
+
+    private func configureEmptyState() {
+        emptyLabel.font = .systemFont(ofSize: 15, weight: .medium)
+        emptyLabel.textColor = .secondaryLabelColor
+        emptyLabel.alignment = .center
+        emptyLabel.translatesAutoresizingMaskIntoConstraints = false
+        emptyLabel.isHidden = true
+        view.addSubview(emptyLabel)
+    }
+
+    private func installLayout() {
+        NSLayoutConstraint.activate([
+            scrollView.topAnchor.constraint(equalTo: view.topAnchor, constant: Layout.headerHeight),
+            scrollView.leadingAnchor.constraint(
+                equalTo: view.leadingAnchor,
+                constant: Layout.tableHorizontalInset
+            ),
+            scrollView.trailingAnchor.constraint(
+                equalTo: view.trailingAnchor,
+                constant: -Layout.tableHorizontalInset
+            ),
+            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            emptyLabel.centerXAnchor.constraint(equalTo: scrollView.centerXAnchor),
+            emptyLabel.centerYAnchor.constraint(equalTo: scrollView.centerYAnchor),
+        ])
+    }
+
+    private func bindViewModel() {
+        viewModel.$sections
+            .sink { [weak self] sections in
+                self?.apply(sections)
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .frame(width: HistoryRowLayout.menuWidth, alignment: .center)
-            .help("More")
-            .chromeCursor(.pointingHand, isEnabled: hoverUpdatesEnabled)
-        }
-        .padding(.vertical, 5)
-        .padding(.horizontal, 22)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(rowBackgroundColor)
-        )
-        .chromeCursor(.pointingHand, isEnabled: hoverUpdatesEnabled)
-        .contextMenu {
-            rowMenuContent
-        }
+            .store(in: &cancellables)
+
     }
 
-    @ViewBuilder
-    private var rowMenuContent: some View {
-        Button("Open") {
-            actions.open(presentation.item, mode: .currentTab)
-        }
-        Button("Open in New Tab") {
-            actions.open(presentation.item, mode: .newTab)
-        }
-        Button("Open in New Window") {
-            actions.open(presentation.item, mode: .newWindow)
-        }
-        Divider()
-        Button("Show All History From This Site") {
-            actions.showAllHistory(from: presentation.item)
-        }
-        Button("Copy Link") {
-            actions.copyLink(presentation.item)
-        }
-        Divider()
-        Button(presentation.item.isSiteAggregate ? "Delete Site History" : "Delete") {
-            actions.delete(presentation.item)
-        }
-    }
+    private func apply(_ sections: [HistorySection]) {
+        let selectedIDs = selectedItems.map(\.id)
+        let expandedIDs = roots.filter { outlineView.isItemExpanded($0) }.map(\.id)
+        roots = sections.map(Node.init(section:))
+        outlineView.reloadData()
 
-    private var rowOpenButton: some View {
-        Button {
-            actions.openFromRow(presentation.item)
-        } label: {
-            HistoryRowContent(
-                presentation: presentation,
-                faviconImageReader: faviconImageReader
-            )
-                .equatable()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .layoutPriority(1)
-        .accessibilityLabel(presentation.item.displayTitle)
-    }
-
-    private var selectionControl: some View {
-        Toggle(
-            "",
-            isOn: Binding(
-                get: {
-                    presentation.isSelected
-                },
-                set: { isSelected in
-                    guard isSelected != presentation.isSelected else { return }
-                    actions.toggleSelection(presentation.item)
-                }
-            )
-        )
-        .toggleStyle(.checkbox)
-        .labelsHidden()
-        .frame(width: 18, height: 18)
-        .help("Select")
-        .accessibilityLabel("Select")
-    }
-
-    private var rowBackgroundColor: Color {
-        if presentation.isSelected {
-            return presentation.themeContext.nativeSurfaceSelectionBackground
-        }
-        return SumiHistoryTabColors.transparent
-    }
-}
-
-struct HistoryRowContent: View, @MainActor Equatable {
-    let presentation: HistoryRowPresentation
-    let faviconImageReader: any BrowserFaviconImageReading
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
-
-    static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.presentation == rhs.presentation
-    }
-
-    private var tokens: ChromeThemeTokens {
-        scopedChromeTokens ?? presentation.themeContext.tokens(settings: sumiSettings)
-    }
-
-    var body: some View {
-        HStack(spacing: 14) {
-            Text(presentation.item.isSiteAggregate ? "" : presentation.item.timeText)
-                .font(.callout)
-                .foregroundStyle(tokens.secondaryText)
-                .frame(width: HistoryRowLayout.timeWidth, alignment: .leading)
-
-            HistoryFaviconView(
-                url: presentation.item.url,
-                partition: presentation.faviconPartition,
-                imageReader: faviconImageReader
-            )
-                .frame(width: HistoryRowLayout.faviconSize, height: HistoryRowLayout.faviconSize)
-
-            HStack(spacing: 8) {
-                Text(presentation.item.displayTitle)
-                    .font(SumiHistoryTabTypography.rowTitle)
-                    .lineLimit(1)
-                    .foregroundStyle(tokens.primaryText)
-                    .layoutPriority(2)
-
-                Text(presentation.item.domain)
-                    .font(.callout)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .foregroundStyle(tokens.secondaryText)
-                    .layoutPriority(-1)
-
-                if presentation.item.isSiteAggregate, presentation.item.visitCount > 0 {
-                    Text("\(presentation.item.visitCount)")
-                        .font(.caption)
-                        .foregroundStyle(tokens.secondaryText)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(tokens.fieldBackground)
-                        .clipShape(Capsule())
-                }
+        if didApplyInitialSnapshot {
+            for root in roots where expandedIDs.contains(root.id) {
+                outlineView.expandItem(root)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+        } else if let firstRoot = roots.first {
+            outlineView.expandItem(firstRoot)
+            didApplyInitialSnapshot = true
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        restoreSelection(ids: selectedIDs)
+        emptyLabel.stringValue = viewModel.searchText.isEmpty
+            ? String(localized: "No History")
+            : String(localized: "No Matching History")
+        emptyLabel.isHidden = sections.contains { !$0.items.isEmpty }
+    }
+
+    private func restoreSelection(ids: [String]) {
+        guard !ids.isEmpty else { return }
+        let idSet = Set(ids)
+        let rows = IndexSet((0..<outlineView.numberOfRows).filter { row in
+            guard let node = outlineView.item(atRow: row) as? Node else { return false }
+            return idSet.contains(node.id)
+        })
+        outlineView.selectRowIndexes(rows, byExtendingSelection: false)
+    }
+
+    private var selectedItems: [HistoryListItem] {
+        outlineView.selectedRowIndexes.compactMap { row in
+            guard let node = outlineView.item(atRow: row) as? Node,
+                  case .item(let item) = node.content
+            else { return nil }
+            return item
+        }
+    }
+
+    private func contextItem() -> HistoryListItem? {
+        let row = outlineView.clickedRow >= 0 ? outlineView.clickedRow : outlineView.selectedRow
+        guard row >= 0,
+              let node = outlineView.item(atRow: row) as? Node,
+              case .item(let item) = node.content
+        else { return nil }
+        return item
+    }
+
+    @objc private func showBrowsingData() {
+        viewModel.showBrowsingDataDialog()
+    }
+
+    @objc private func openSelectedRows() {
+        let items = selectedItems
+        guard let item = items.first else { return }
+        if items.count > 1 {
+            viewModel.openInNewTabs(items)
+        } else {
+            viewModel.openFromRow(item, modifiers: NSApp.currentEvent?.modifierFlags ?? [])
+        }
+    }
+
+    @objc private func openContextItemInNewTab() {
+        viewModel.openInNewTabs(contextSelectionItems)
+    }
+
+    @objc private func openContextItemInNewWindow() {
+        guard let item = contextItem() else { return }
+        viewModel.open(item, mode: .newWindow)
+    }
+
+    @objc private func copyContextItemLink() {
+        guard let item = contextItem() else { return }
+        viewModel.copyLink(item)
+    }
+
+    @objc private func deleteContextItem() {
+        viewModel.delete(contextSelectionItems)
+    }
+
+    private func deleteSelectedRows() {
+        let items = selectedItems
+        guard !items.isEmpty else { return }
+        viewModel.delete(items)
+    }
+
+    private var contextSelectionItems: [HistoryListItem] {
+        guard let item = contextItem() else { return [] }
+        let selection = selectedItems
+        return selection.contains(where: { $0.id == item.id }) ? selection : [item]
     }
 }
 
-private struct HistoryFaviconView: View {
-    let url: URL
-    let partition: SumiFaviconPartition
-    let imageReader: any BrowserFaviconImageReading
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
-    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
-    @State private var image: NSImage?
-
-    private var tokens: ChromeThemeTokens {
-        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
+extension SumiHistoryViewController: NSOutlineViewDataSource {
+    func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
+        (item as? Node)?.children.count ?? roots.count
     }
 
-    var body: some View {
-        Group {
-            if let image {
-                Image(nsImage: image)
-            } else {
-                Image(systemName: "globe")
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .foregroundStyle(tokens.secondaryText)
+    func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
+        (item as? Node)?.children[index] ?? roots[index]
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
+        guard let node = item as? Node else { return false }
+        return !node.children.isEmpty
+    }
+}
+
+extension SumiHistoryViewController: NSOutlineViewDelegate {
+    func outlineView(_ outlineView: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? {
+        let row = SumiOutlineRowView()
+        let level = outlineView.level(forItem: item)
+        row.separatorLeadingInset = level > 0
+            ? CGFloat(level) * outlineView.indentationPerLevel + 20
+            : 0
+        return row
+    }
+
+    func outlineView(
+        _ outlineView: NSOutlineView,
+        viewFor tableColumn: NSTableColumn?,
+        item: Any
+    ) -> NSView? {
+        guard let node = item as? Node else { return nil }
+        switch node.content {
+        case .section(let section):
+            if tableColumn?.identifier == .historyAddress {
+                let cell = reusableTextCell(in: outlineView, identifier: .historySectionCount)
+                cell.textField?.stringValue = String(localized: "\(section.items.count) items")
+                cell.textField?.font = .systemFont(ofSize: 12)
+                cell.textField?.textColor = .labelColor
+                return cell
             }
-        }
-        .task(id: faviconLoadID) {
-            await loadImage()
+            let cell = reusableSectionCell(in: outlineView)
+            cell.configure(title: section.title)
+            return cell
+        case .item(let historyItem):
+            if tableColumn?.identifier == .historyAddress {
+                let cell = reusableTextCell(in: outlineView, identifier: .historyAddressCell)
+                cell.textField?.stringValue = historyItem.displayURL
+                cell.textField?.lineBreakMode = .byTruncatingMiddle
+                cell.toolTip = historyItem.displayURL
+                return cell
+            }
+            let cell = reusableFaviconCell(in: outlineView)
+            cell.configure(
+                item: historyItem,
+                partition: viewModel.faviconPartition,
+                imageReader: viewModel.faviconImageReader
+            )
+            viewModel.loadNextPageIfNeeded(after: historyItem)
+            return cell
         }
     }
 
-    private var faviconLoadID: FaviconLoadID {
-        FaviconLoadID(url: url, partition: partition)
+    func outlineView(_ outlineView: NSOutlineView, shouldSelectItem item: Any) -> Bool {
+        item is Node
     }
 
-    @MainActor
-    private func loadImage() async {
-        let cachedImage = TabFaviconStore.getCachedImage(
-            forDocumentURL: url,
-            partition: partition,
-            context: .historyBookmarkRow,
-            imageReader: imageReader
-        )
-        image = cachedImage
-        let loadedImage = await TabFaviconStore.loadCachedDisplayImage(
-            forDocumentURL: url,
-            partition: partition,
-            context: .historyBookmarkRow,
-            priority: .historyBookmarkVisibleRow,
-            imageReader: imageReader
-        )
-        guard !Task.isCancelled else { return }
-        image = loadedImage ?? cachedImage
+    private func reusableTextCell(
+        in outlineView: NSOutlineView,
+        identifier: NSUserInterfaceItemIdentifier
+    ) -> NSTableCellView {
+        if let cell = outlineView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView {
+            return cell
+        }
+        let cell = NSTableCellView()
+        cell.identifier = identifier
+        let label = NSTextField(labelWithString: "")
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.lineBreakMode = .byTruncatingTail
+        cell.textField = label
+        cell.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 6),
+            label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -6),
+            label.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+        ])
+        return cell
+    }
+
+    private func reusableFaviconCell(in outlineView: NSOutlineView) -> SumiHistoryFaviconCellView {
+        if let cell = outlineView.makeView(withIdentifier: .historySiteCell, owner: self)
+            as? SumiHistoryFaviconCellView {
+            return cell
+        }
+        let cell = SumiHistoryFaviconCellView()
+        cell.identifier = .historySiteCell
+        return cell
+    }
+
+    private func reusableSectionCell(in outlineView: NSOutlineView) -> SumiHistorySectionCellView {
+        if let cell = outlineView.makeView(withIdentifier: .historySection, owner: self)
+            as? SumiHistorySectionCellView {
+            return cell
+        }
+        let cell = SumiHistorySectionCellView()
+        cell.identifier = .historySection
+        return cell
     }
 }
 
-private struct FaviconLoadID: Hashable {
-    let url: URL
-    let partition: SumiFaviconPartition
+extension SumiHistoryViewController: NSSearchFieldDelegate {
+    func controlTextDidChange(_ notification: Notification) {
+        guard notification.object as? NSSearchField === searchField else { return }
+        let query = searchField.stringValue
+        searchTask?.cancel()
+        searchTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled else { return }
+            self?.viewModel.searchText = query
+        }
+    }
+}
+
+extension SumiHistoryViewController: NSMenuDelegate {
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        guard contextItem() != nil else { return }
+        let selectionCount = contextSelectionItems.count
+        menu.addItem(
+            withTitle: selectionCount > 1
+                ? String(localized: "Open in New Tabs")
+                : String(localized: "Open in New Tab"),
+            action: #selector(openContextItemInNewTab),
+            keyEquivalent: ""
+        )
+        menu.addItem(
+            withTitle: String(localized: "Open in New Window"),
+            action: #selector(openContextItemInNewWindow),
+            keyEquivalent: ""
+        )
+        menu.addItem(
+            withTitle: String(localized: "Copy"),
+            action: #selector(copyContextItemLink),
+            keyEquivalent: ""
+        )
+        menu.addItem(
+            withTitle: selectionCount > 1
+                ? String(localized: "Delete Selected History")
+                : String(localized: "Delete"),
+            action: #selector(deleteContextItem),
+            keyEquivalent: ""
+        )
+        menu.items.forEach { $0.target = self }
+    }
+}
+
+@MainActor
+private final class SumiHistoryOutlineView: NSOutlineView {
+    var onDelete: (() -> Void)?
+    var onReturn: (() -> Void)?
+
+    override func keyDown(with event: NSEvent) {
+        switch event.keyCode {
+        case 36, 76:
+            onReturn?()
+        case 51, 117:
+            onDelete?()
+        default:
+            super.keyDown(with: event)
+        }
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let row = self.row(at: convert(event.locationInWindow, from: nil))
+        if row >= 0, !selectedRowIndexes.contains(row) {
+            selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        }
+        return super.menu(for: event)
+    }
+}
+
+private extension NSUserInterfaceItemIdentifier {
+    static let historySite = Self("HistorySite")
+    static let historyAddress = Self("HistoryAddress")
+    static let historySection = Self("HistorySection")
+    static let historySectionCount = Self("HistorySectionCount")
+    static let historySiteCell = Self("HistorySiteCell")
+    static let historyAddressCell = Self("HistoryAddressCell")
 }

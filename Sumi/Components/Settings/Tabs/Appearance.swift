@@ -13,14 +13,12 @@ struct SettingsAppearanceTab: View {
     var body: some View {
         @Bindable var settings = sumiSettings
 
-        VStack(alignment: .leading, spacing: 16) {
-            SettingsSection(
-                title: "Browser",
-                subtitle: "Controls that affect browser chrome, Boosts, and sidebar layout."
-            ) {
+        VStack(alignment: .leading, spacing: 20) {
+            SettingsSection(title: "Browser") {
                 SettingsRow(
                     title: "Boosts",
-                    subtitle: "Show Boost controls and apply active Boost styles to web pages."
+                    subtitle: "Apply custom styles and page adjustments from Boosts.",
+                    systemImage: "wand.and.stars"
                 ) {
                     Toggle("", isOn: boostsModuleEnabledBinding)
                         .labelsHidden()
@@ -32,7 +30,7 @@ struct SettingsAppearanceTab: View {
 
                 SettingsRow(
                     title: "Sidebar toggle button",
-                    subtitle: "Expose the sidebar visibility control in browser chrome."
+                    systemImage: "sidebar.left"
                 ) {
                     Toggle("", isOn: $settings.showSidebarToggleButton)
                         .labelsHidden()
@@ -41,20 +39,20 @@ struct SettingsAppearanceTab: View {
 
                 SettingsRow(
                     title: "Sidebar side",
-                    subtitle: "Place the browser sidebar on the left or right edge."
+                    systemImage: "rectangle.split.2x1"
                 ) {
                     Picker("", selection: $settings.sidebarPosition) {
                         ForEach(SidebarPosition.allCases) { position in
                             Text(position.displayName).tag(position)
                         }
                     }
-                    .labelsHidden()
-                    .settingsTrailingControl(width: 120)
+                    .settingsMenuPicker(width: 120)
                 }
 
                 SettingsRow(
                     title: "Mini player",
-                    subtitle: "Show media controls for background tabs at the bottom of the sidebar."
+                    subtitle: "Show media controls for background tabs in the sidebar.",
+                    systemImage: "play.rectangle"
                 ) {
                     Toggle("", isOn: $settings.sidebarMiniPlayerEnabled)
                         .labelsHidden()
@@ -65,7 +63,8 @@ struct SettingsAppearanceTab: View {
 
                 SettingsRow(
                     title: "Frameless chrome",
-                    subtitle: "Extend web content to the side and bottom window edges, keeping the top bar and sidebar."
+                    subtitle: "Extend web content to the side and bottom edges of the window.",
+                    systemImage: "rectangle.inset.filled"
                 ) {
                     Toggle("", isOn: $settings.framelessChrome)
                         .labelsHidden()
@@ -76,7 +75,7 @@ struct SettingsAppearanceTab: View {
 
                 SettingsRow(
                     title: "Preview link URL",
-                    subtitle: "Show the hovered link target in the status area."
+                    systemImage: "link"
                 ) {
                     Toggle("", isOn: $settings.showLinkStatusBar)
                         .labelsHidden()
@@ -85,7 +84,8 @@ struct SettingsAppearanceTab: View {
 
                 SettingsRow(
                     title: "Browser notifications",
-                    subtitle: "Show brief feedback banners for actions like copying URLs, switching profiles, and closing tabs."
+                    subtitle: "Show brief in-app confirmation banners for browser actions.",
+                    systemImage: "bell"
                 ) {
                     Toggle("", isOn: $settings.showInAppNotifications)
                         .labelsHidden()
@@ -96,7 +96,7 @@ struct SettingsAppearanceTab: View {
 
                 SettingsRow(
                     title: "New Tab button",
-                    subtitle: "Show a New Tab control in the tab list."
+                    systemImage: "plus"
                 ) {
                     Toggle("", isOn: $settings.showNewTabButtonInTabList)
                         .labelsHidden()
@@ -105,15 +105,14 @@ struct SettingsAppearanceTab: View {
 
                 SettingsRow(
                     title: "New Tab button position",
-                    subtitle: "Choose where the tab-list button appears."
+                    systemImage: "arrow.up.and.down"
                 ) {
                     Picker("", selection: $settings.tabListNewTabButtonPosition) {
                         ForEach(TabListNewTabButtonPosition.allCases) { position in
                             Text(position.displayName).tag(position)
                         }
                     }
-                    .labelsHidden()
-                    .settingsTrailingControl(width: 150)
+                    .settingsMenuPicker(width: 150)
                     .disabled(!settings.showNewTabButtonInTabList)
                 }
             }

@@ -126,29 +126,29 @@ enum HistoryRange: String, Codable, CaseIterable, Equatable, Hashable {
     var title: String {
         switch self {
         case .all:
-            return "All"
+            return String(localized: "All")
         case .today:
-            return "Today"
+            return String(localized: "Today")
         case .yesterday:
-            return "Yesterday"
+            return String(localized: "Yesterday")
         case .sunday:
-            return "Sunday"
+            return String(localized: "Sunday")
         case .monday:
-            return "Monday"
+            return String(localized: "Monday")
         case .tuesday:
-            return "Tuesday"
+            return String(localized: "Tuesday")
         case .wednesday:
-            return "Wednesday"
+            return String(localized: "Wednesday")
         case .thursday:
-            return "Thursday"
+            return String(localized: "Thursday")
         case .friday:
-            return "Friday"
+            return String(localized: "Friday")
         case .saturday:
-            return "Saturday"
+            return String(localized: "Saturday")
         case .older:
-            return "Older"
+            return String(localized: "Older")
         case .allSites:
-            return "Sites"
+            return String(localized: "Sites")
         }
     }
 

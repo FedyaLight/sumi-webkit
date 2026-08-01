@@ -48,14 +48,11 @@ struct ExtensionCatalogDetailsPopover: View {
                             Text("Other Websites")
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             Picker("", selection: $defaultSiteAccess) {
-                                ForEach(SafariExtensionSiteAccessLevel.allCases) {
-                                    access in
+                                ForEach(SafariExtensionSiteAccessLevel.allCases) { access in
                                     Text(access.title).tag(access)
                                 }
                             }
-                            .labelsHidden()
-                            .pickerStyle(.menu)
-                            .frame(width: 112)
+                            .settingsMenuPicker(width: 112)
                             .disabled(isBusy)
                         }
 
@@ -79,21 +76,13 @@ struct ExtensionCatalogDetailsPopover: View {
 
                                         Picker(
                                             "",
-                                            selection:
-                                                configuredSiteAccessBinding(
-                                                    for: rule
-                                                )
+                                            selection: configuredSiteAccessBinding(for: rule)
                                         ) {
-                                            ForEach(
-                                                SafariExtensionSiteAccessLevel
-                                                    .allCases
-                                            ) { access in
+                                            ForEach(SafariExtensionSiteAccessLevel.allCases) { access in
                                                 Text(access.title).tag(access)
                                             }
                                         }
-                                        .labelsHidden()
-                                        .pickerStyle(.menu)
-                                        .frame(width: 112)
+                                        .settingsMenuPicker(width: 112)
                                         .disabled(isBusy)
                                     }
                                 }
@@ -110,6 +99,7 @@ struct ExtensionCatalogDetailsPopover: View {
                         isOn: $privateAccessAllowed
                     )
                     .toggleStyle(.checkbox)
+                    .controlSize(.small)
                     .disabled(isBusy)
                 }
             }
@@ -144,6 +134,7 @@ struct ExtensionCatalogDetailsPopover: View {
                         onOpenOptions()
                     }
                     .buttonStyle(.bordered)
+                    .controlSize(.small)
                     .accessibilityIdentifier(
                         "extension-open-options-\(extensionRecord.id)"
                     )

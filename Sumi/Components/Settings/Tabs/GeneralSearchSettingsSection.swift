@@ -23,22 +23,17 @@ struct GeneralSearchSettingsSection: View {
     }
 
     var body: some View {
-        SettingsSection(
-            title: "Search",
-            subtitle: "Choose the default web search engine."
-        ) {
+        SettingsSection(title: "Search") {
             SettingsRow(
                 title: "Default search engine",
-                subtitle: "Used for plain text typed into the URL bar."
+                systemImage: "magnifyingglass"
             ) {
                 Picker("", selection: $defaultEngineID) {
                     ForEach(engineChoices) { engine in
                         Text(engine.name).tag(engine.id)
                     }
                 }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .settingsTrailingControl(width: 210)
+                .settingsMenuPicker(width: 210)
             }
         }
     }

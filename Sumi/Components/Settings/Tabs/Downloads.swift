@@ -8,11 +8,8 @@ struct SettingsDownloadsTab: View {
     var body: some View {
         @Bindable var settings = sumiSettings
 
-        VStack(alignment: .leading, spacing: 16) {
-            SettingsSection(
-                title: "Downloads",
-                subtitle: "Choose where downloaded files are saved."
-            ) {
+        VStack(alignment: .leading, spacing: 20) {
+            SettingsSection {
                 SettingsRow(
                     title: "Save files to",
                     subtitle: settings.downloadsDirectoryDisplayName
@@ -25,8 +22,7 @@ struct SettingsDownloadsTab: View {
                 SettingsDivider()
 
                 SettingsRow(
-                    title: "Always ask you where to save files",
-                    subtitle: "Show the save panel for each download destination."
+                    title: "Always ask you where to save files"
                 ) {
                     Toggle("", isOn: $settings.downloadsAlwaysAskWhereToSave)
                         .labelsHidden()
@@ -34,22 +30,16 @@ struct SettingsDownloadsTab: View {
                 }
             }
 
-            SettingsSection(
-                title: "Applications",
-                subtitle: "Choose how downloaded file types are handled."
-            ) {
+            SettingsSection(title: "Applications") {
                 SettingsRow(
-                    title: "What should Sumi do with other files?",
-                    subtitle: "Used only when no content-type rule exists."
+                    title: "What should Sumi do with other files?"
                 ) {
                     Picker("", selection: $settings.downloadsFallbackAction) {
                         ForEach(SumiDownloadFallbackAction.allCases) { action in
                             Text(action.title).tag(action)
                         }
                     }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .settingsTrailingControl(width: 240)
+                    .settingsMenuPicker(width: 240)
                 }
 
                 let records = sumiSettings.downloadApplicationsStore.records
@@ -102,9 +92,7 @@ struct SettingsDownloadsTab: View {
                     Text(handler.title).tag(handler)
                 }
             }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .settingsTrailingControl(width: 220)
+            .settingsMenuPicker(width: 220)
 
             Button {
                 sumiSettings.downloadApplicationsStore.remove(contentType: record.contentType)
@@ -115,6 +103,7 @@ struct SettingsDownloadsTab: View {
             .buttonStyle(.borderless)
             .help("Remove rule")
         }
+        .padding(.vertical, 8)
     }
 
     private func handlerBinding(for record: SumiContentHandlerRecord) -> Binding<SumiContentHandlerKind> {

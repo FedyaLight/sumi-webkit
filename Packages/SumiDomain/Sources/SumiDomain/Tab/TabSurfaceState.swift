@@ -10,10 +10,6 @@ public struct TabSurfaceState: Equatable, Sendable {
         !isPopupHost && SumiSurface.isEmptyNewTabURL(url)
     }
 
-    public func representsSumiSettingsSurface(for url: URL) -> Bool {
-        !isPopupHost && SumiSurface.isSettingsSurfaceURL(url)
-    }
-
     public func representsSumiHistorySurface(for url: URL) -> Bool {
         !isPopupHost && SumiSurface.isHistorySurfaceURL(url)
     }
@@ -23,8 +19,7 @@ public struct TabSurfaceState: Equatable, Sendable {
     }
 
     public func representsSumiNativeSurface(for url: URL) -> Bool {
-        representsSumiSettingsSurface(for: url)
-            || representsSumiHistorySurface(for: url)
+        representsSumiHistorySurface(for: url)
             || representsSumiBookmarksSurface(for: url)
     }
 

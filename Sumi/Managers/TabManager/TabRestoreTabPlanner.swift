@@ -43,6 +43,10 @@ struct TabRestoreTabPlanner: Sendable {
         )
 
         for record in records.sorted(by: isOrderedBefore) {
+            guard isRetiredSettingsSurface(record) == false else {
+                repairReasons.insert("removed retired settings surface")
+                continue
+            }
             guard seenIds.insert(record.id).inserted else {
                 repairReasons.insert("removed duplicate tab")
                 continue
@@ -220,6 +224,19 @@ struct TabRestoreTabPlanner: Sendable {
         blocked: Set<UUID>
     ) -> UUID? {
         profileID.flatMap { blocked.contains($0) ? nil : $0 }
+    }
+
+    /// Settings moved to a standalone scene. Retired persisted surfaces are
+    /// rejected only at restore admission so the old URL never becomes an
+    /// active browser or WebKit surface again.
+    private func isRetiredSettingsSurface(_ record: TabRestoreTabRecord) -> Bool {
+        [record.urlString, record.currentURLString]
+            .compactMap { $0 }
+            .compactMap(URL.init(string:))
+            .contains { url in
+                url.scheme?.lowercased() == "sumi"
+                    && url.host?.lowercased() == "settings"
+            }
     }
 
     private func isOrderedBefore(

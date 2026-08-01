@@ -152,6 +152,10 @@ private final class SumiCommandsBrowserManagerAdapter:
         browserManager?.bookmarkBundle.bookmarkCommandOwner.bookmarkAllTabsFromMenu()
     }
 
+    func createBookmarkFolderFromMenu() {
+        browserManager?.bookmarkBundle.bookmarkCommandOwner.createBookmarkFolderFromMenu()
+    }
+
     func manageBookmarksFromMenu() {
         browserManager?.bookmarkBundle.bookmarkCommandOwner.manageBookmarksFromMenu()
     }
@@ -166,6 +170,16 @@ private final class SumiCommandsBrowserManagerAdapter:
 
     func openBookmarkURLFromMenuItem(_ url: URL) {
         browserManager?.bookmarkBundle.bookmarkCommandOwner.openBookmarkURLFromMenuItem(url)
+    }
+
+    func openBookmarkURLsInNewTabsFromMenuItem(_ urls: [URL]) {
+        browserManager?.bookmarkBundle.bookmarkCommandOwner
+            .openBookmarkURLsInNewTabsFromMenuItem(urls)
+    }
+
+    func replaceTabsWithBookmarkURLsFromMenuItem(_ urls: [URL]) {
+        browserManager?.bookmarkBundle.bookmarkCommandOwner
+            .replaceTabsWithBookmarkURLsFromMenuItem(urls)
     }
 }
 

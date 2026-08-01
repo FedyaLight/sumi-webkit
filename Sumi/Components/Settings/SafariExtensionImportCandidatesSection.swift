@@ -57,6 +57,7 @@ struct ExtensionSettingsFindingsSection: View {
                 .frame(minWidth: 96)
             }
             .buttonStyle(.bordered)
+            .controlSize(.small)
             .disabled(scanState.isScanning)
         } content: {
             ExtensionSettingsScanStatusView(state: scanState)
@@ -179,9 +180,10 @@ private struct SafariWebExtensionCandidateRow: View {
 
             Button(buttonTitle, action: onAdd)
                 .buttonStyle(.bordered)
+                .controlSize(.small)
                 .disabled(isBusy || candidate.isReadable == false)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 8)
     }
 
     private var buttonTitle: LocalizedStringResource {
@@ -331,6 +333,7 @@ private struct SafariContentBlockerCandidateRow: View {
             )
             .labelsHidden()
             .toggleStyle(.switch)
+            .controlSize(.small)
             .disabled(isBusy)
             .help(
                 record?.isEnabled == true
@@ -338,7 +341,7 @@ private struct SafariContentBlockerCandidateRow: View {
                     : "Enable content blocker"
             )
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 8)
     }
 
     private var statusText: String {
@@ -385,7 +388,7 @@ private struct SafariUnsupportedExtensionCandidateRow: View {
 
             Spacer()
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 8)
     }
 }
 

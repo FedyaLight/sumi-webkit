@@ -10,7 +10,10 @@ struct SumiSiteSettingsView: View {
     }
 
     @StateObject private var viewModel: SumiSiteSettingsViewModel
+    @EnvironmentObject private var toolbarOwner: SettingsWindowToolbarOwner
     @State private var route: Route = .main
+    @State private var backStack: [Route] = []
+    @State private var forwardStack: [Route] = []
     @State private var didApplyInitialFilter = false
 
     let profile: Profile?
@@ -41,17 +44,19 @@ struct SumiSiteSettingsView: View {
                     category: category,
                     repository: viewModel.repository,
                     profile: profile,
-                    onBack: { route = .main },
-                    onOpenSite: { route = .siteDetail($0) }
+                    onOpenSite: { navigate(to: .siteDetail($0)) }
                 )
             case .siteDetail(let scope):
                 SumiSiteSettingsSiteDetailView(
                     scope: scope,
                     repository: viewModel.repository,
-                    profile: profile,
-                    onBack: { route = .siteList }
+                    profile: profile
                 )
             }
+        }
+        .onAppear(perform: updateToolbar)
+        .onChange(of: route) { _, _ in
+            updateToolbar()
         }
         .task {
             await viewModel.load(profile: profile)
@@ -61,12 +66,6 @@ struct SumiSiteSettingsView: View {
 
     private var mainPage: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Button(action: onBack) {
-                Label("Privacy & Security", systemImage: "chevron.left")
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-
             SumiSiteSettingsRecentActivityView(items: viewModel.recentActivity)
 
             SettingsSection(title: "Sites") {
@@ -74,7 +73,7 @@ struct SumiSiteSettingsView: View {
                     title: SumiSiteSettingsStrings.viewSitesTitle,
                     subtitle: SumiSiteSettingsStrings.viewSitesSubtitle,
                     systemImage: "globe",
-                    action: { route = .siteList }
+                    action: { navigate(to: .siteList) }
                 )
             }
 
@@ -96,7 +95,7 @@ struct SumiSiteSettingsView: View {
                         systemImage: row.systemImage,
                         accessibilityLabel: "\(row.title), \(row.subtitle)"
                     ) {
-                        route = .category(row.category)
+                        navigate(to: .category(row.category))
                     }
 
                     if row.id != viewModel.categoryRows.last?.id {
@@ -159,14 +158,6 @@ struct SumiSiteSettingsView: View {
 
     private var siteListPage: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Button {
-                route = .main
-            } label: {
-                Label(SumiSiteSettingsStrings.title, systemImage: "chevron.left")
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-
             SettingsSection(title: SumiSiteSettingsStrings.siteListTitle) {
                 VStack(alignment: .leading, spacing: 12) {
                     SumiSiteSettingsSearchField(
@@ -194,7 +185,7 @@ struct SumiSiteSettingsView: View {
                                     subtitle: row.subtitle,
                                     systemImage: "globe"
                                 ) {
-                                    route = .siteDetail(row.scope)
+                                    navigate(to: .siteDetail(row.scope))
                                 }
                                 if row.id != viewModel.siteRows.last?.id {
                                     SettingsDivider()
@@ -228,9 +219,57 @@ struct SumiSiteSettingsView: View {
         }
 
         if let matchingRow {
+            backStack = [.main, .siteList]
             route = .siteDetail(matchingRow.scope)
         } else {
+            backStack = [.main]
             route = .siteList
+        }
+    }
+
+    private func navigate(to destination: Route) {
+        guard destination != route else { return }
+        backStack.append(route)
+        forwardStack.removeAll(keepingCapacity: true)
+        route = destination
+    }
+
+    private func navigateBack() {
+        guard let previous = backStack.popLast() else {
+            onBack()
+            return
+        }
+        forwardStack.append(route)
+        route = previous
+    }
+
+    private func navigateForward() {
+        guard let next = forwardStack.popLast() else { return }
+        backStack.append(route)
+        route = next
+    }
+
+    private func updateToolbar() {
+        let forwardAction: (() -> Void)? = forwardStack.isEmpty
+            ? nil
+            : { navigateForward() }
+        toolbarOwner.show(
+            title: toolbarTitle,
+            backAction: { navigateBack() },
+            forwardAction: forwardAction
+        )
+    }
+
+    private var toolbarTitle: String {
+        switch route {
+        case .main:
+            return SumiSiteSettingsStrings.title
+        case .siteList:
+            return SumiSiteSettingsStrings.siteListTitle
+        case .category(let category):
+            return category.title
+        case .siteDetail(let scope):
+            return scope.title
         }
     }
 }

@@ -56,13 +56,13 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
         )
         XCTAssertEqual(
             SumiExternalSchemePermissionRequest.classify(
-                targetURL: URL(string: "sumi://settings"),
+                targetURL: URL(string: "sumi://history"),
                 userActivation: .navigationAction,
                 isRedirectChain: false
             ),
             .internalOrBrowserOwned
         )
-        XCTAssertFalse(SumiExternalSchemePermissionRequest.isValidExternalSchemeURL(URL(string: "sumi://settings")!))
+        XCTAssertFalse(SumiExternalSchemePermissionRequest.isValidExternalSchemeURL(URL(string: "sumi://history")!))
         XCTAssertFalse(SumiExternalSchemePermissionRequest.isValidExternalSchemeURL(URL(string: "https://example.com")!))
     }
 

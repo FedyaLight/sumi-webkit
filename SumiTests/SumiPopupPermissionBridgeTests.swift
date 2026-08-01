@@ -40,7 +40,7 @@ final class SumiPopupPermissionBridgeTests: XCTestCase {
         )
         XCTAssertEqual(
             SumiPopupPermissionRequest.classify(
-                targetURL: URL(string: "sumi://settings"),
+                targetURL: URL(string: "sumi://history"),
                 sourceURL: URL(string: "https://top.example"),
                 userActivation: .directWebKit
             ),
@@ -272,7 +272,7 @@ final class SumiPopupPermissionBridgeTests: XCTestCase {
         let sumiBlocked = await bridge.evaluate(
             popupRequest(
                 id: "sumi-popup",
-                targetURL: URL(string: "sumi://settings"),
+                targetURL: URL(string: "sumi://history"),
                 sourceURL: URL(string: "https://top.example"),
                 userActivation: .directWebKit,
                 classification: .internalOrBrowserOwned
