@@ -126,6 +126,36 @@ final class UserscriptsLibraryProtocolServiceTests: XCTestCase {
         )
     }
 
+    func testPopupInstallAcceptsUserscripts486ContentOnlyPayload() async throws {
+        let fixture = try makeFixture()
+        let script = """
+        // ==UserScript==
+        // @name Popup Install
+        // @match https://example.com/*
+        // ==/UserScript==
+        window.__popupInstall = true;
+        """
+
+        let installed = await fixture.service.handle(
+            message: .init(value: [
+                "name": "POPUP_INSTALL_SCRIPT",
+                "content": script,
+            ]),
+            scriptsURL: fixture.scripts,
+            stateRootURL: fixture.state,
+            extensionVersion: "4.8.6"
+        )
+
+        let item = try XCTUnwrap(installed.value as? [String: Any])
+        XCTAssertNil(item["error"] as? String)
+        XCTAssertEqual(item["filename"] as? String, "Popup Install.user.js")
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: fixture.scripts.appendingPathComponent("Popup Install.user.js").path
+            )
+        )
+    }
+
     func testRequestScriptsAndPathTraversalAreHandledFailClosed() async throws {
         let fixture = try makeFixture()
         let rules = """

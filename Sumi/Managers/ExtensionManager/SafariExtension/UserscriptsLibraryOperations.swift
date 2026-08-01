@@ -177,10 +177,11 @@ actor UserscriptsLibrary {
                     value: try installCheck(content: content, scriptsURL: scriptsURL)
                 )
             case "POPUP_INSTALL_SCRIPT":
-                guard let content = message["content"] as? String,
-                      let type = message["type"] as? String else {
+                guard let content = message["content"] as? String else {
                     return reply(error: "failed to get script content (2)")
                 }
+                let type = message["type"] as? String
+                    ?? (content.contains("/* ==UserStyle==") ? "css" : "js")
                 return UserscriptsNativeReplyBox(
                     value: try await save(
                         oldFilename: nil,
