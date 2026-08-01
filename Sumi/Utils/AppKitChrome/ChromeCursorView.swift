@@ -25,7 +25,7 @@ enum ChromeCursorKind: Equatable {
     }
 }
 
-private final class ChromeCursorNSView: NSView {
+final class ChromeCursorNSView: NSView {
     var cursorKind: ChromeCursorKind = .arrow {
         didSet {
             guard cursorKind != oldValue else { return }
@@ -41,8 +41,6 @@ private final class ChromeCursorNSView: NSView {
             window?.invalidateCursorRects(for: self)
             if isCursorEnabled {
                 setCursorIfMouseInside()
-            } else {
-                setArrowCursorIfMouseInside()
             }
         }
     }
@@ -102,14 +100,6 @@ private final class ChromeCursorNSView: NSView {
         let location = convert(window.mouseLocationOutsideOfEventStream, from: nil)
         guard bounds.contains(location) else { return }
         cursorKind.set()
-    }
-
-    private func setArrowCursorIfMouseInside() {
-        guard let window else { return }
-
-        let location = convert(window.mouseLocationOutsideOfEventStream, from: nil)
-        guard bounds.contains(location) else { return }
-        NSCursor.arrow.set()
     }
 }
 

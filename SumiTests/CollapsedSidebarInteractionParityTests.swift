@@ -4,6 +4,45 @@ import XCTest
 
 @MainActor
 final class CollapsedSidebarInteractionParityTests: XCTestCase {
+    func testHiddenCollapsedSidebarDoesNotOwnArrowCursorRegion() {
+        XCTAssertFalse(
+            SidebarPresentationContext
+                .collapsedHidden(sidebarWidth: 280)
+                .ownsArrowCursorRegion
+        )
+    }
+
+    func testVisibleCollapsedSidebarOwnsArrowCursorRegion() {
+        XCTAssertTrue(
+            SidebarPresentationContext
+                .collapsedVisible(sidebarWidth: 280)
+                .ownsArrowCursorRegion
+        )
+    }
+
+    func testDockedSidebarDoesNotOwnCollapsedArrowCursorRegion() {
+        XCTAssertFalse(
+            SidebarPresentationContext
+                .docked(sidebarWidth: 280)
+                .ownsArrowCursorRegion
+        )
+    }
+
+    func testDisabledChromeCursorViewInstallsNoTrackingArea() {
+        let cursorView = ChromeCursorNSView(
+            frame: NSRect(x: 0, y: 0, width: 280, height: 600)
+        )
+
+        cursorView.updateTrackingAreas()
+        XCTAssertEqual(cursorView.trackingAreas.count, 1)
+
+        cursorView.isCursorEnabled = false
+        XCTAssertTrue(cursorView.trackingAreas.isEmpty)
+
+        cursorView.isCursorEnabled = true
+        XCTAssertEqual(cursorView.trackingAreas.count, 1)
+    }
+
     func testVisibleCollapsedSidebarPresentsMountedMiniPlayerCard() {
         XCTAssertTrue(
             SidebarMediaCardPresentationPolicy.shouldPresentCard(

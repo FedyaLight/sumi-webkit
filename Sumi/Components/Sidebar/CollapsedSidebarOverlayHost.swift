@@ -101,6 +101,10 @@ struct CollapsedSidebarOverlayHost: View {
             .id("collapsed-sidebar-overlay-column")
             .frame(width: presentationContext.sidebarWidth)
             .frame(maxHeight: .infinity)
+            .chromeCursor(
+                .arrow,
+                isEnabled: presentationContext.ownsArrowCursorRegion
+            )
             .modifier(ZenCompactSidebarOffset(
                 hiddenOffset: hiddenOffset,
                 usesTravel: motion.usesTravel,
@@ -108,7 +112,6 @@ struct CollapsedSidebarOverlayHost: View {
             ))
             .opacity(isRevealed || motion.usesTravel ? 1 : 0)
             .allowsHitTesting(isRevealed)
-            .alwaysArrowCursor()
             .accessibilityHidden(!isRevealed)
         }
     }

@@ -63,6 +63,11 @@ struct SidebarPresentationContext: Equatable {
         mode != .collapsedHidden
     }
 
+    /// The collapsed overlay owns the arrow cursor only while it is presented over the page.
+    var ownsArrowCursorRegion: Bool {
+        mode == .collapsedVisible
+    }
+
     static func collapsedSidebarWidth(
         sidebarWidth: CGFloat,
         savedSidebarWidth: CGFloat
