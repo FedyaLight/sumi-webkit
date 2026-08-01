@@ -136,6 +136,8 @@ final class WebKitChildWebViewTransaction {
         let navigationFlags = sourceWebView.gestures.resolvedModifierFlags(
             actionFlags: navigationAction.modifierFlags
         )
+        let isMiddleButtonClick = navigationAction.buttonNumber == 2
+            || sourceWebView.gestures.hasRecentAuxiliaryMouseDown
         if LinkGlanceRouting.routeExplicit(
             targetURL,
             isRequested: tab.isGlanceTriggerActive(navigationFlags),
@@ -145,27 +147,28 @@ final class WebKitChildWebViewTransaction {
             return .handled
         }
 
-        let shouldOpenDynamicGlance = isExtensionOriginated == false && (
-            targetURL.map {
-                tab.shouldOpenDynamicallyInGlance(
-                    url: $0,
-                    modifierFlags: navigationFlags
-                )
-            } ?? false
-        )
+        let isDynamicGlanceTarget = targetURL.map {
+            tab.shouldOpenDynamicallyInGlance(
+                url: $0,
+                modifierFlags: navigationFlags
+            )
+        } ?? false
+        let shouldOpenDynamicGlance = isExtensionOriginated == false
+            && isMiddleButtonClick == false
+            && isDynamicGlanceTarget
         if LinkGlanceRouting.routeDynamic(
             targetURL,
             isRequested: shouldOpenDynamicGlance,
             tab: tab,
             sourceWebView: sourceWebView,
-            isExtensionOriginated: isExtensionOriginated
+            isExtensionOriginated: isExtensionOriginated,
+            isMiddleButtonClick: isMiddleButtonClick
         ) {
             return .handled
         }
 
         let behavior = SumiLinkOpenBehavior(
-            buttonIsMiddle: navigationAction.buttonNumber == 2
-                || sourceWebView.gestures.hasRecentAuxiliaryMouseDown,
+            buttonIsMiddle: isMiddleButtonClick,
             modifierFlags: navigationFlags,
             switchToNewTabWhenOpenedPreference: false,
             canOpenLinkInCurrentTab: false,

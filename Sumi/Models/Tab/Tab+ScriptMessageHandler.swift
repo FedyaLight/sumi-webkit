@@ -27,15 +27,18 @@ extension Tab {
         guard modifierFlags.isDisjoint(with: [.command, .option, .control, .shift]) else {
             return false
         }
-        guard isPinned || shortcutPinRole == .essential else { return false }
+        guard usesPinnedLinkPolicy else { return false }
         guard url.sumiIsGlancePreviewableLink else { return false }
 
         if url.sumiNavigationalScheme == .file {
             return self.url != url
         }
 
-        guard let currentHost = self.url.host,
-              let newHost = url.host else { return false }
-        return currentHost != newHost
+        guard let newHost = url.host else { return false }
+        return self.url.host != newHost
+    }
+
+    var usesPinnedLinkPolicy: Bool {
+        isPinned || isSpacePinned || shortcutPinRole != nil
     }
 }

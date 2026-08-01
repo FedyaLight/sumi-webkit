@@ -24,7 +24,7 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         XCTAssertFalse(tab.isGlanceTriggerActive([.option]))
     }
 
-    func testDynamicGlanceRequiresEssentialExternalCleanClick() {
+    func testDynamicGlanceRequiresPinnedExternalCleanClick() {
         let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
         let tab = Tab(url: URL(string: "https://source.example/page")!)
         tab.sumiSettings = settings
@@ -33,12 +33,37 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
 
         XCTAssertFalse(tab.shouldOpenDynamicallyInGlance(url: externalURL, modifierFlags: []))
 
+        tab.isSpacePinned = true
+        XCTAssertTrue(tab.shouldOpenDynamicallyInGlance(url: externalURL, modifierFlags: []))
+        tab.isSpacePinned = false
+
+        tab.isPinned = true
+        XCTAssertTrue(tab.shouldOpenDynamicallyInGlance(url: externalURL, modifierFlags: []))
+        tab.isPinned = false
+
         tab.shortcutPinRole = .spacePinned
-        XCTAssertFalse(tab.shouldOpenDynamicallyInGlance(url: externalURL, modifierFlags: []))
+        XCTAssertTrue(tab.shouldOpenDynamicallyInGlance(url: externalURL, modifierFlags: []))
 
         tab.shortcutPinRole = .essential
         XCTAssertTrue(tab.shouldOpenDynamicallyInGlance(url: externalURL, modifierFlags: []))
+        XCTAssertTrue(
+            tab.shouldOpenDynamicallyInGlance(
+                url: URL(string: "https://sub.source.example/page")!,
+                modifierFlags: []
+            )
+        )
+        XCTAssertFalse(
+            tab.shouldOpenDynamicallyInGlance(
+                url: URL(string: "https://source.example:8443/page")!,
+                modifierFlags: []
+            )
+        )
         XCTAssertFalse(tab.shouldOpenDynamicallyInGlance(url: sameHostURL, modifierFlags: []))
+
+        tab.url = URL(string: "about:blank")!
+        XCTAssertTrue(tab.shouldOpenDynamicallyInGlance(url: externalURL, modifierFlags: []))
+        tab.url = URL(string: "https://source.example/page")!
+
         XCTAssertFalse(tab.shouldOpenDynamicallyInGlance(url: externalURL, modifierFlags: [.command]))
         XCTAssertFalse(tab.shouldOpenDynamicallyInGlance(url: externalURL, modifierFlags: [.option]))
         XCTAssertFalse(tab.shouldOpenDynamicallyInGlance(url: externalURL, modifierFlags: [.option, .command]))
@@ -339,6 +364,92 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         )
     }
 
+    func testPopupResponderSpacePinnedExternalCleanClickRoutesToGlance() async throws {
+        let harness = try await makePopupFocusHarness()
+        harness.sourceTab.shortcutPinRole = .spacePinned
+        let responder = popupResponder(for: harness.sourceTab)
+        let adapter = SumiNavigationResponderAdapter(target: responder)
+        let targetURL = URL(string: "https://destination.example/page")!
+        var preferences = NavigationPreferences.default
+
+        let policy = await adapter.decidePolicy(
+            for: navigationAction(
+                url: targetURL,
+                navigationType: .linkActivated(isMiddleClick: false),
+                webView: harness.sourceWebView,
+                sourceURL: harness.sourceTab.url
+            ),
+            preferences: &preferences
+        )
+
+        XCTAssertEqual(policy?.isCancel, true)
+        XCTAssertEqual(
+            harness.browserManager.glanceManager.currentSession?.currentURL,
+            targetURL
+        )
+    }
+
+    func testPopupResponderSpacePinnedSameHostCleanClickStaysInCurrentTab() async throws {
+        let harness = try await makePopupFocusHarness()
+        harness.sourceTab.shortcutPinRole = .spacePinned
+        let responder = popupResponder(for: harness.sourceTab)
+        let adapter = SumiNavigationResponderAdapter(target: responder)
+        let targetURL = URL(string: "https://source.example/internal")!
+        var preferences = NavigationPreferences.default
+
+        let policy = await adapter.decidePolicy(
+            for: navigationAction(
+                url: targetURL,
+                navigationType: .linkActivated(isMiddleClick: false),
+                webView: harness.sourceWebView,
+                sourceURL: harness.sourceTab.url
+            ),
+            preferences: &preferences
+        )
+
+        XCTAssertNil(policy)
+        XCTAssertNil(harness.browserManager.glanceManager.currentSession)
+        XCTAssertEqual(harness.windowState.currentTabId, harness.sourceTab.id)
+    }
+
+    func testPopupResponderSpacePinnedExternalClickOpensSelectedTabWhenGlanceDisabled()
+        async throws {
+        let harness = try await makePopupFocusHarness()
+        let settings = SumiSettingsService(
+            userDefaults: TestDefaultsHarness().defaults
+        )
+        harness.browserManager.sumiSettings = settings
+        harness.sourceTab.sumiSettings = settings
+        settings.glanceEnabled = false
+        harness.sourceTab.shortcutPinRole = .spacePinned
+        let initialRegularTabCount = harness.browserManager.tabStateStore
+            .regularTabs.allTabsSnapshot().count
+        let responder = popupResponder(for: harness.sourceTab)
+        let adapter = SumiNavigationResponderAdapter(target: responder)
+        let targetURL = URL(string: "https://destination.example/page")!
+        var preferences = NavigationPreferences.default
+
+        let policy = await adapter.decidePolicy(
+            for: navigationAction(
+                url: targetURL,
+                navigationType: .linkActivated(isMiddleClick: false),
+                webView: harness.sourceWebView,
+                sourceURL: harness.sourceTab.url
+            ),
+            preferences: &preferences
+        )
+
+        XCTAssertEqual(policy?.isCancel, true)
+        XCTAssertNil(harness.browserManager.glanceManager.currentSession)
+        let regularTabs = harness.browserManager.tabStateStore.regularTabs
+            .allTabsSnapshot()
+        XCTAssertEqual(regularTabs.count, initialRegularTabCount + 1)
+        let openedTab = try XCTUnwrap(
+            regularTabs.first(where: { $0.url == targetURL })
+        )
+        XCTAssertEqual(harness.windowState.currentTabId, openedTab.id)
+    }
+
     func testPopupResponderRegularExternalCleanClickDoesNotRouteToGlance() async throws {
         let harness = try await makePopupFocusHarness()
         let responder = popupResponder(for: harness.sourceTab)
@@ -478,6 +589,68 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         let childTab = harness.browserManager.tabStateStore.regularTabs.allTabsSnapshot().last
         XCTAssertIdentical(childTab?.resolvedCurrentWebView(), childWebView)
         XCTAssertNil(childTab?.webViewConfigurationOverride)
+    }
+
+    func testPopupCreateWebViewSpacePinnedExternalCleanClickRoutesToGlance() async throws {
+        let harness = try await makePopupFocusHarness()
+        harness.sourceTab.shortcutPinRole = .spacePinned
+        let initialRegularTabCount = harness.browserManager.tabStateStore
+            .regularTabs.allTabsSnapshot().count
+        let responder = popupResponder(for: harness.sourceTab)
+        let targetURL = URL(string: "https://destination.example/page")!
+
+        let childWebView = responder.createWebView(
+            from: harness.sourceWebView,
+            with: popupConfiguration(for: harness),
+            for: popupNavigationAction(
+                sourceURL: harness.sourceTab.url,
+                targetURL: targetURL,
+                webView: harness.sourceWebView
+            ),
+            windowFeatures: WKWindowFeatures()
+        )
+
+        XCTAssertNil(childWebView)
+        XCTAssertEqual(
+            harness.browserManager.tabStateStore.regularTabs
+                .allTabsSnapshot().count,
+            initialRegularTabCount
+        )
+        XCTAssertEqual(
+            harness.browserManager.glanceManager.currentSession?.currentURL,
+            targetURL
+        )
+    }
+
+    func testPopupCreateWebViewSpacePinnedMiddleClickOpensBackgroundTab() async throws {
+        let harness = try await makePopupFocusHarness()
+        harness.sourceTab.shortcutPinRole = .spacePinned
+        harness.sourceWebView.gestures.record(
+            makeMouseEvent(type: .otherMouseDown, modifierFlags: []),
+            kind: .auxiliaryMouseDown
+        )
+        let initialRegularTabCount = harness.browserManager.tabStateStore
+            .regularTabs.allTabsSnapshot().count
+        let responder = popupResponder(for: harness.sourceTab)
+        let targetURL = URL(string: "https://destination.example/page")!
+
+        let childWebView = responder.createWebView(
+            from: harness.sourceWebView,
+            with: popupConfiguration(for: harness),
+            for: popupNavigationAction(
+                sourceURL: harness.sourceTab.url,
+                targetURL: targetURL,
+                webView: harness.sourceWebView
+            ),
+            windowFeatures: WKWindowFeatures()
+        )
+
+        XCTAssertNotNil(childWebView)
+        XCTAssertNil(harness.browserManager.glanceManager.currentSession)
+        let regularTabs = harness.browserManager.tabStateStore.regularTabs
+            .allTabsSnapshot()
+        XCTAssertEqual(regularTabs.count, initialRegularTabCount + 1)
+        XCTAssertEqual(harness.windowState.currentTabId, harness.sourceTab.id)
     }
 
     func testPopupChildReclassifiesCopiedNormalConfigurationAsAuxiliarySurface()

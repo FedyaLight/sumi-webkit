@@ -192,7 +192,8 @@ final class SumiPopupHandlingNavigationResponder:
         }
 
         let canOpenLinkInCurrentTab: Bool = {
-            guard targetTab.isPinned, navigationAction.isForMainFrame else {
+            guard targetTab.usesPinnedLinkPolicy,
+                  navigationAction.isForMainFrame else {
                 return true
             }
             let exactTargetURL = targetWebView?.committedURL
