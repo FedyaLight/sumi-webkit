@@ -20,7 +20,16 @@ struct WindowSessionShortcutRestorer {
                 presentationSpaceID: session.presentationSpaceId
             ) { liveTab in
                 let previousURL = liveTab.url
-                liveTab.url = session.currentURL
+                if previousURL != session.currentURL {
+                    if liveTab.resolvedCurrentWebView() != nil {
+                        liveTab.loadURL(session.currentURL)
+                    } else {
+                        _ = liveTab.beginMainFrameNavigationIntent(
+                            to: session.currentURL
+                        )
+                        liveTab.url = session.currentURL
+                    }
+                }
                 let restoredTitle = session.title.trimmingCharacters(
                     in: .whitespacesAndNewlines
                 )
@@ -30,10 +39,6 @@ struct WindowSessionShortcutRestorer {
                 _ = liveTab.applyCachedFaviconOrPlaceholder(
                     for: session.currentURL
                 )
-                if previousURL != session.currentURL,
-                   liveTab.resolvedCurrentWebView() != nil {
-                    liveTab.loadURL(session.currentURL)
-                }
             }
         }
     }

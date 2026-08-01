@@ -119,6 +119,8 @@ final class WindowSessionShortcutRestorerTests: XCTestCase {
             )
         )
         XCTAssertEqual(liveTab.url, currentURL)
+        XCTAssertEqual(liveTab.mainFrameLoads.currentIntent.targetURL, currentURL)
+        XCTAssertNil(liveTab.resolvedCurrentWebView())
         XCTAssertEqual(liveTab.name, "Continued Work")
         XCTAssertEqual(pin.launchURL.absoluteString, "https://launcher.example")
         XCTAssertEqual(pin.resolvedDisplayTitle(liveTab: liveTab), "Continued Work")

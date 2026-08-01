@@ -11,7 +11,10 @@ final class SumiSessionRestoreUITests: SumiLaunchSmokeUITestCase {
         let app = try launchApp(preferencesHomeURL: restored.preferencesHomeURL)
         let window = app.windows.element(boundBy: 0)
 
-        XCTAssertTrue(window.waitForExistence(timeout: 5), "Restored browser window is missing")
+        XCTAssertTrue(
+            window.waitForExistence(timeout: 5),
+            "Restored browser window is missing"
+        )
 
         let spaceTitle = element(
             withIdentifier: "space-title-\(restored.sidebar.personalSpaceID)",
@@ -66,10 +69,65 @@ final class SumiSessionRestoreUITests: SumiLaunchSmokeUITestCase {
         )
     }
 
+    func testRestoresLiveLauncherAtContinuedURLAndRendersDocument() throws {
+        let restored = try prepareLiveLauncherRestoreFixture()
+        let app = try launchApp(preferencesHomeURL: restored.preferencesHomeURL)
+        let window = app.windows.element(boundBy: 0)
+
+        XCTAssertTrue(
+            window.waitForExistence(timeout: 5),
+            "Restored browser window is missing"
+        )
+
+        let launcher = element(
+            withIdentifier: "space-pinned-shortcut-\(restored.launcherID)",
+            in: app
+        )
+        XCTAssertTrue(
+            launcher.waitForExistence(timeout: 10),
+            "The restored launcher is missing"
+        )
+
+        let urlBar = app.staticTexts.matching(
+            identifier: "sidebar-urlbar"
+        ).firstMatch
+        XCTAssertTrue(
+            urlBar.waitForExistence(timeout: 10),
+            "Sidebar URL bar is missing"
+        )
+        wait(
+            for: NSPredicate(format: "value == %@", restored.currentURLString),
+            on: urlBar,
+            timeout: 30,
+            message: "The launcher did not resume its persisted current URL"
+        )
+
+        let renderedMarker = window.descendants(matching: .any).matching(
+            NSPredicate(
+                format: "value == %@ OR label == %@",
+                restored.bodyMarker,
+                restored.bodyMarker
+            )
+        ).firstMatch
+        wait(
+            for: NSPredicate(format: "exists == true"),
+            on: renderedMarker,
+            timeout: 30,
+            message: "The restored launcher URL never rendered in WebKit"
+        )
+    }
+
     private struct RestoreFixture {
         let preferencesHomeURL: URL
         let sidebar: PersonalSidebarFixture
         let pageURLString: String
+        let bodyMarker: String
+    }
+
+    private struct LiveLauncherRestoreFixture {
+        let preferencesHomeURL: URL
+        let launcherID: String
+        let currentURLString: String
         let bodyMarker: String
     }
 
@@ -101,6 +159,71 @@ final class SumiSessionRestoreUITests: SumiLaunchSmokeUITestCase {
             preferencesHomeURL: preferencesHomeURL,
             sidebar: sidebar,
             pageURLString: pageURLString,
+            bodyMarker: bodyMarker
+        )
+    }
+
+    private func prepareLiveLauncherRestoreFixture() throws
+        -> LiveLauncherRestoreFixture {
+        let sidebar = try loadPersonalSidebarFixture()
+        let launcherID = try XCTUnwrap(sidebar.topLevelLauncherID)
+        let token = UUID().uuidString.prefix(8)
+        let pageDirectory = try makeSmokeScratchDirectory(
+            prefix: "SumiLauncherSessionRestoreFixture"
+        )
+        smokeAppSupportDirectories.append(pageDirectory)
+
+        let bodyMarker = "SUMI-LAUNCHER-SESSION-RESTORE-ORACLE-\(token)"
+        let currentURL = pageDirectory
+            .appendingPathComponent("continued-\(token).html", isDirectory: false)
+            .resolvingSymlinksInPath()
+        try "<html><body><h1>\(bodyMarker)</h1></body></html>".write(
+            to: currentURL,
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let profileID = try accessibilityUUIDString(fromHex: sidebar.profileID)
+        let snapshot: [String: Any] = [
+            "currentTabId": UUID().uuidString,
+            "currentSpaceId": sidebar.personalSpaceID,
+            "currentProfileId": profileID,
+            "activeShortcutPinId": launcherID,
+            "activeShortcutPinRole": "spacePinned",
+            "isShowingEmptyState": false,
+            "activeTabsBySpace": [],
+            "activeShortcutsBySpace": [[
+                "spaceId": sidebar.personalSpaceID,
+                "shortcutPinId": launcherID,
+            ]],
+            "liveShortcuts": [[
+                "shortcutPinId": launcherID,
+                "presentationSpaceId": sidebar.personalSpaceID,
+                "currentURL": currentURL.absoluteString,
+                "title": "Continued Launcher",
+            ]],
+            "collapsedPinnedSpaceIDs": [],
+            "sidebarWidth": 250.0,
+            "savedSidebarWidth": 250.0,
+            "sidebarContentWidth": 234.0,
+            "isSidebarVisible": true,
+            "commandPaletteDraft": [
+                "text": "",
+                "navigateCurrentTab": false,
+            ],
+        ]
+        let snapshotData = try JSONSerialization.data(
+            withJSONObject: snapshot,
+            options: []
+        )
+        let preferencesHomeURL = try preparePreferencesHome(
+            windowSessionSnapshotData: snapshotData
+        )
+
+        return LiveLauncherRestoreFixture(
+            preferencesHomeURL: preferencesHomeURL,
+            launcherID: launcherID,
+            currentURLString: currentURL.absoluteString,
             bodyMarker: bodyMarker
         )
     }
