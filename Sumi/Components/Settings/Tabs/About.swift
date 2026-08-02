@@ -184,7 +184,7 @@ private struct SumiAboutLinkRow: View {
             )
         }
         .buttonStyle(.plain)
-        .sidebarHover { hovering in
+        .onHover { hovering in
             isHovered = hovering
         }
         .accessibilityLabel(Text(title))

@@ -30,6 +30,13 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertTrue(searchEnginesSource.contains("SumiSearchEngineTableLayout.preferredHeight"))
     }
 
+    func testAboutSettingsAvoidsSidebarOnlyEnvironmentDependencies() throws {
+        let aboutSource = try settingsSource("Tabs/About.swift")
+
+        XCTAssertFalse(aboutSource.contains(".sidebarHover"))
+        XCTAssertFalse(aboutSource.contains("BrowserWindowState"))
+    }
+
     func testSidebarOrderingKeepsAboutLast() {
         XCTAssertEqual(
             SettingsTabs.ordered,
