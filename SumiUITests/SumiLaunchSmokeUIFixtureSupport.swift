@@ -204,7 +204,9 @@ extension SumiLaunchSmokeUITestCase {
         return try prepareSmokePreferencesHome()
     }
 
-    func prepareEmptyDockedSidebarPreferencesHome() throws -> URL {
+    func prepareEmptyDockedSidebarPreferencesHome(
+        isSidebarVisible: Bool = true
+    ) throws -> URL {
         let storeURL = try requiredSmokeStoreURL()
         let fixture = try loadPersonalSidebarFixture()
         let personalSpaceHex = try hexUUIDString(
@@ -232,7 +234,7 @@ extension SumiLaunchSmokeUITestCase {
             "sidebarWidth": 250.0,
             "savedSidebarWidth": 250.0,
             "sidebarContentWidth": 234.0,
-            "isSidebarVisible": true,
+            "isSidebarVisible": isSidebarVisible,
             "commandPaletteDraft": [
                 "text": "",
                 "navigateCurrentTab": false,

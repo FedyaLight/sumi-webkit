@@ -129,6 +129,32 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
         }
     }
 
+    func testCollapsedEmptyFavoritesPlaceholderCanBeDismissed() throws {
+        try skipUnlessInteractionE2E()
+
+        let preferencesHome = try prepareEmptyDockedSidebarPreferencesHome(
+            isSidebarVisible: false
+        )
+        let app = try launchApp(preferencesHomeURL: preferencesHome)
+        let window = app.windows.element(boundBy: 0)
+
+        XCTAssertTrue(window.waitForExistence(timeout: 5))
+        revealHoverSidebar(in: window)
+
+        let dismissButton = app.buttons["essentials-placeholder-dismiss"]
+        XCTAssertTrue(
+            dismissButton.waitForExistence(timeout: 5),
+            "Collapsed empty Essentials should expose its dismiss button"
+        )
+
+        dismissButton.click()
+
+        XCTAssertTrue(
+            waitForNonExistence(dismissButton, timeout: 5),
+            "Dismissing the Favorites hint should collapse the placeholder"
+        )
+    }
+
     func testGreenTrafficLightHoverOpensCompactMenu() throws {
         let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
         let window = app.windows.element(boundBy: 0)

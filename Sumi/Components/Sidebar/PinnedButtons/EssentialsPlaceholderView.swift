@@ -41,6 +41,7 @@ struct EssentialsPlaceholderView: View {
     /// `nil` renders the decorative variant used by the drag-hover reveal and by
     /// space-transition snapshots, where there is nothing to dismiss.
     let onDismiss: (() -> Void)?
+    let isInteractionEnabled: Bool
 
     var body: some View {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -110,6 +111,11 @@ struct EssentialsPlaceholderView: View {
             .buttonStyle(.plain)
             .padding(EssentialsPlaceholderMetrics.dismissInset)
             .accessibilityLabel("Hide the Favorites hint")
+            .accessibilityIdentifier("essentials-placeholder-dismiss")
+            .sidebarAppKitPrimaryAction(
+                isInteractionEnabled: isInteractionEnabled,
+                action: onDismiss
+            )
         }
     }
 }
