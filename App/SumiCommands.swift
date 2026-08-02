@@ -13,6 +13,7 @@ struct SumiCommands: Commands {
     let browserContext: SumiCommandsBrowserContext
     let windowRegistry: WindowRegistry
     let shortcutManager: KeyboardShortcutManager
+    let settingsNavigation: SettingsNavigationOwner
     private let updaterService: SumiUpdaterService
     @ObservedObject private var recentlyClosedManager: RecentlyClosedManager
     @ObservedObject private var menuFaviconInvalidator: SumiMenuFaviconInvalidator
@@ -21,12 +22,14 @@ struct SumiCommands: Commands {
         browserContext: SumiCommandsBrowserContext,
         windowRegistry: WindowRegistry,
         shortcutManager: KeyboardShortcutManager,
+        settingsNavigation: SettingsNavigationOwner,
         updaterService: SumiUpdaterService,
         menuFaviconInvalidator: SumiMenuFaviconInvalidator = SumiMenuFaviconInvalidator()
     ) {
         self.browserContext = browserContext
         self.windowRegistry = windowRegistry
         self.shortcutManager = shortcutManager
+        self.settingsNavigation = settingsNavigation
         self.updaterService = updaterService
         self.recentlyClosedManager = browserContext.recentlyClosedManager
         self._menuFaviconInvalidator = ObservedObject(wrappedValue: menuFaviconInvalidator)
@@ -62,6 +65,15 @@ struct SumiCommands: Commands {
             Button("Make Sumi Default Browser") {
                 browserContext.setAsDefaultBrowser()
             }
+        }
+
+        CommandGroup(replacing: .appSettings) {
+            Button("Settings…") {
+                settingsNavigation.openSettings(
+                    selecting: settingsNavigation.currentSettingsTab
+                )
+            }
+            .keyboardShortcut(",", modifiers: .command)
         }
 
         CommandGroup(replacing: .saveItem) {

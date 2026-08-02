@@ -5,12 +5,13 @@ import SumiDomain
 
 @MainActor
 final class SettingsNavigationTests: XCTestCase {
-    func testSettingsSceneOwnsSingleApplicationMenuCommand() throws {
+    func testApplicationMenuOwnsExplicitSettingsShortcut() throws {
         let appSource = try repositorySource("App/SumiApp.swift")
         let commandsSource = try repositorySource("App/SumiCommands.swift")
 
         XCTAssertTrue(appSource.contains("Settings {"))
-        XCTAssertFalse(commandsSource.contains("CommandGroup(replacing: .appSettings)"))
+        XCTAssertTrue(commandsSource.contains("CommandGroup(replacing: .appSettings)"))
+        XCTAssertTrue(commandsSource.contains(".keyboardShortcut(\",\", modifiers: .command)"))
     }
 
     func testSettingsNativeSurfaceStructureAvoidsDuplicateChromeAndNestedScrolling() throws {

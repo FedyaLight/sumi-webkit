@@ -196,6 +196,7 @@ struct SumiApp: App {
                     browserContext: makeCommandsBrowserContext(),
                     windowRegistry: windowRegistry,
                     shortcutManager: keyboardShortcutManager,
+                    settingsNavigation: settingsManager.navigation,
                     updaterService: updaterService,
                     menuFaviconInvalidator: menuFaviconInvalidator
                 )

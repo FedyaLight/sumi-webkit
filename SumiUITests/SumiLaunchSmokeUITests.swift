@@ -15,6 +15,21 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
         )
     }
 
+    func testCommandCommaOpensSettingsWindow() throws {
+        let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
+        let browserWindow = app.windows.element(boundBy: 0)
+
+        XCTAssertTrue(browserWindow.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.windows.count, 1)
+
+        browserWindow.typeKey(",", modifierFlags: .command)
+
+        XCTAssertTrue(
+            waitForWindowCount(2, in: app, timeout: 5),
+            "Command-comma should open the Settings window."
+        )
+    }
+
     func testCompletedRetirementHistoryLaunchesBrowserWithoutPlaceholder()
         throws {
         let preferencesHome = try prepareCompletedRetirementTombstonePreferencesHome()
