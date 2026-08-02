@@ -11,6 +11,7 @@ import Carbon
 import Foundation
 import SumiDomain
 import SwiftUI
+import WebKit
 
 @MainActor
 @Observable
@@ -51,6 +52,11 @@ class KeyboardShortcutManager {
     private var shortcutsByAction: [ShortcutAction: KeyboardShortcut] = [:]
     private var enabledLookup: [String: ShortcutAction] = [:]
     private var eventMonitor: EventMonitorHandle?
+    // WebKit re-sends natively unhandled keys through NSApp using the same NSEvent.
+    // Weak pointer identity lets the monitor consume only that second delivery.
+    private let webContentKeyDownEvents = NSHashTable<NSEvent>(
+        options: [.weakMemory, .objectPointerPersonality]
+    )
     private let installsEventMonitorWhenAttached: Bool
 
     private enum LocalKeyRoutingResult {
@@ -337,6 +343,10 @@ class KeyboardShortcutManager {
         _ event: NSEvent,
         keyWindow: NSWindow?
     ) -> NSEvent? {
+        if shouldConsumeWebKitRedispatchedKeyDown(event, keyWindow: keyWindow) {
+            return nil
+        }
+
         if Self.isShortcutRecorderCaptureActive {
             return event
         }
@@ -381,6 +391,41 @@ class KeyboardShortcutManager {
         }
 
         return event
+    }
+
+    private func shouldConsumeWebKitRedispatchedKeyDown(
+        _ event: NSEvent,
+        keyWindow: NSWindow?
+    ) -> Bool {
+        if webContentKeyDownEvents.contains(event) {
+            webContentKeyDownEvents.remove(event)
+            return !isFindInPageCommand(event)
+        }
+
+        guard isWebContentFirstResponder(in: event.window ?? keyWindow) else {
+            return false
+        }
+        webContentKeyDownEvents.add(event)
+        return false
+    }
+
+    private func isWebContentFirstResponder(in window: NSWindow?) -> Bool {
+        var view = window?.firstResponder as? NSView
+        while let currentView = view {
+            if currentView is WKWebView {
+                return true
+            }
+            view = currentView.superview
+        }
+        return false
+    }
+
+    private func isFindInPageCommand(_ event: NSEvent) -> Bool {
+        let flags = event.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+            .subtracting(.capsLock)
+        return flags == [.command]
+            && event.charactersIgnoringModifiers?.lowercased() == "f"
     }
 
     private func shouldBypassShortcutRouting(
