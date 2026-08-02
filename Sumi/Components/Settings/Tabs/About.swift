@@ -39,6 +39,12 @@ struct SettingsAboutTab: View {
                 viewModel: updateViewModel,
                 onRetry: { updaterService.checkForUpdatesFromAboutView() }
             )
+
+            SumiAboutLinksPanel(
+                changelogURL: SumiUpdateReleaseNotesURL.url(
+                    forDisplayVersion: metadata.shortVersion
+                )
+            )
         }
         .onAppear {
             requestInitialUpdateCheckIfNeeded()
@@ -57,6 +63,9 @@ private enum SumiAboutLayout {
     static let cardVerticalPadding: CGFloat = 18
     static let appIconSize: CGFloat = 76
     static let appIconVisibleLeadingCorrection: CGFloat = -10
+    static let linkIconSize: CGFloat = 28
+    static let linkIconCornerRadius: CGFloat = 8
+    static let linkRowCornerRadius: CGFloat = 9
 }
 
 private struct SumiAboutCard<Content: View>: View {
@@ -80,6 +89,105 @@ private struct SumiAboutCard<Content: View>: View {
                     .strokeBorder(SettingsSurfaceStyle.stroke, lineWidth: 1)
             )
             .accessibilityElement(children: .contain)
+    }
+}
+
+private struct SumiAboutLinksPanel: View {
+    let changelogURL: URL
+
+    var body: some View {
+        SumiAboutCard {
+            VStack(spacing: 0) {
+                SumiAboutLinkRow(
+                    title: "What's new in Sumi",
+                    systemImageName: "heart.circle.fill",
+                    url: changelogURL,
+                    foreground: SumiUpdateSidebarNoticeThemeTokens.Colors.completedAccent
+                )
+
+                Divider()
+                    .padding(.leading, 50)
+
+                SumiAboutLinkRow(
+                    title: "Support us",
+                    systemImageName: "gift",
+                    url: SumiExternalLinks.support,
+                    foreground: .secondary
+                )
+
+                Divider()
+                    .padding(.leading, 50)
+
+                SumiAboutLinkRow(
+                    title: "Something broke?",
+                    systemImageName: "exclamationmark.bubble",
+                    url: SumiExternalLinks.issues,
+                    foreground: .secondary
+                )
+            }
+        }
+    }
+}
+
+private struct SumiAboutLinkRow: View {
+    let title: LocalizedStringResource
+    let systemImageName: String
+    let url: URL
+    let foreground: Color
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Link(destination: url) {
+            HStack(spacing: 12) {
+                Image(systemName: systemImageName)
+                    .font(.system(size: 14, weight: .medium))
+                    .symbolRenderingMode(.monochrome)
+                    .foregroundStyle(foreground)
+                    .frame(
+                        width: SumiAboutLayout.linkIconSize,
+                        height: SumiAboutLayout.linkIconSize
+                    )
+                    .background {
+                        RoundedRectangle(
+                            cornerRadius: SumiAboutLayout.linkIconCornerRadius,
+                            style: .continuous
+                        )
+                        .fill(foreground.opacity(0.11))
+                    }
+
+                Text(title)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(foreground)
+                    .lineLimit(1)
+
+                Spacer(minLength: 12)
+
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background {
+                RoundedRectangle(
+                    cornerRadius: SumiAboutLayout.linkRowCornerRadius,
+                    style: .continuous
+                )
+                .fill(isHovered ? Color.primary.opacity(0.05) : .clear)
+            }
+            .contentShape(
+                RoundedRectangle(
+                    cornerRadius: SumiAboutLayout.linkRowCornerRadius,
+                    style: .continuous
+                )
+            )
+        }
+        .buttonStyle(.plain)
+        .sidebarHover { hovering in
+            isHovered = hovering
+        }
+        .accessibilityLabel(Text(title))
     }
 }
 
