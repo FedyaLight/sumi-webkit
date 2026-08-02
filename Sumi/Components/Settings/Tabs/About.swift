@@ -30,13 +30,9 @@ struct SettingsAboutTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            SumiAboutStatusPanel(
+            SumiAboutUpdatePanel(
                 viewModel: updateViewModel,
-                appIconImage: appIconImage
-            )
-
-            SumiAboutVersionUpdatePanel(
-                viewModel: updateViewModel,
+                appIconImage: appIconImage,
                 onRetry: { updaterService.checkForUpdatesFromAboutView() }
             )
 
@@ -61,8 +57,7 @@ struct SettingsAboutTab: View {
 private enum SumiAboutLayout {
     static let cardHorizontalPadding: CGFloat = 18
     static let cardVerticalPadding: CGFloat = 18
-    static let appIconSize: CGFloat = 76
-    static let appIconVisibleLeadingCorrection: CGFloat = -10
+    static let appIconSize: CGFloat = 56
     static let linkIconSize: CGFloat = 28
     static let linkIconCornerRadius: CGFloat = 8
     static let linkRowCornerRadius: CGFloat = 9
@@ -105,18 +100,12 @@ private struct SumiAboutLinksPanel: View {
                     foreground: SumiUpdateSidebarNoticeThemeTokens.Colors.completedAccent
                 )
 
-                Divider()
-                    .padding(.leading, 50)
-
                 SumiAboutLinkRow(
                     title: "Support us",
                     systemImageName: "gift",
                     url: SumiExternalLinks.support,
                     foreground: .secondary
                 )
-
-                Divider()
-                    .padding(.leading, 50)
 
                 SumiAboutLinkRow(
                     title: "Something broke?",
@@ -191,36 +180,54 @@ private struct SumiAboutLinkRow: View {
     }
 }
 
-private struct SumiAboutStatusPanel: View {
+private struct SumiAboutUpdatePanel: View {
     let viewModel: SumiAboutUpdateViewModel
     let appIconImage: Image
+    let onRetry: () -> Void
 
     var body: some View {
         SumiAboutCard {
-            HStack(alignment: .center, spacing: 18) {
+            HStack(alignment: .center, spacing: 14) {
                 appIconImage
                     .resizable()
                     .scaledToFit()
                     .frame(width: SumiAboutLayout.appIconSize, height: SumiAboutLayout.appIconSize)
-                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                    .offset(x: SumiAboutLayout.appIconVisibleLeadingCorrection)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(statusTitle)
-                        .font(.title2.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    if let statusDetail {
-                        Text(statusDetail)
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(statusTitle)
+                            .font(.headline.weight(.semibold))
+                            .foregroundStyle(.primary)
                             .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
 
-                Spacer(minLength: 0)
+                        if let statusDetail {
+                            Text(statusDetail)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+
+                    versionRow
+                }
             }
+            .padding(.horizontal, 10)
+        }
+    }
+
+    private var versionRow: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Text(viewModel.metadata.versionLine)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+
+            SettingsPillBadge(title: viewModel.channelDisplayName.uppercased())
+
+            Spacer(minLength: 16)
+
+            actionButton
         }
     }
 
@@ -251,46 +258,6 @@ private struct SumiAboutStatusPanel: View {
             return message
         }
     }
-}
-
-private struct SumiAboutVersionUpdatePanel: View {
-    let viewModel: SumiAboutUpdateViewModel
-    let onRetry: () -> Void
-
-    var body: some View {
-        SumiAboutCard {
-            HStack(alignment: .center, spacing: 10) {
-                SumiAboutStatusBadge(kind: statusBadgeKind)
-
-                Text(viewModel.metadata.versionLine)
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-
-                SettingsPillBadge(title: viewModel.channelDisplayName.uppercased())
-
-                Spacer(minLength: 16)
-
-                actionButton
-            }
-        }
-    }
-
-    private var statusBadgeKind: SumiAboutStatusBadge.Kind {
-        switch viewModel.panelState {
-        case .ready, .checking:
-            return .progress
-        case .upToDate:
-            return .checkmark
-        case .updateAvailable:
-            return .download
-        case .checkFailed:
-            return .warning
-        case .unavailable:
-            return .info
-        }
-    }
-
     @ViewBuilder
     private var actionButton: some View {
         switch viewModel.panelState {
@@ -326,94 +293,6 @@ private struct SumiAboutVersionUpdatePanel: View {
                 .controlSize(.small)
                 .fixedSize()
                 .disabled(true)
-        }
-    }
-}
-
-private struct SumiAboutStatusBadge: View {
-    enum Kind: Equatable {
-        case progress
-        case checkmark
-        case download
-        case warning
-        case info
-    }
-
-    let kind: Kind
-
-    var body: some View {
-        Group {
-            if kind == .progress {
-                ProgressView()
-                    .controlSize(.small)
-            } else {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: backgroundColors,
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                        .shadow(color: Color.black.opacity(0.12), radius: 1, x: 0, y: 1)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
-                        )
-
-                    Image(systemName: systemImageName)
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(.white)
-                }
-            }
-        }
-        .frame(width: 28, height: 28)
-        .accessibilityHidden(true)
-    }
-
-    private var systemImageName: String {
-        switch kind {
-        case .progress:
-            return "clock"
-        case .checkmark:
-            return "checkmark"
-        case .download:
-            return "arrow.down"
-        case .warning:
-            return "exclamationmark"
-        case .info:
-            return "info"
-        }
-    }
-
-    private var backgroundColors: [Color] {
-        switch kind {
-        case .progress:
-            return [
-                Color(nsColor: .systemGray),
-                Color(nsColor: .systemGray),
-            ]
-        case .checkmark:
-            return [
-                Color(nsColor: NSColor(red: 52 / 255, green: 199 / 255, blue: 89 / 255, alpha: 1)),
-                Color(nsColor: NSColor(red: 46 / 255, green: 180 / 255, blue: 80 / 255, alpha: 1)),
-            ]
-        case .download:
-            return [
-                Color(nsColor: .systemBlue),
-                Color(nsColor: .controlAccentColor),
-            ]
-        case .warning:
-            return [
-                Color(nsColor: .systemOrange),
-                Color(nsColor: NSColor(red: 210 / 255, green: 120 / 255, blue: 24 / 255, alpha: 1)),
-            ]
-        case .info:
-            return [
-                Color(nsColor: .systemGray),
-                Color(nsColor: .secondaryLabelColor),
-            ]
         }
     }
 }

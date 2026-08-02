@@ -4,6 +4,7 @@ import SwiftUI
 
 struct SumiSettingsSceneRootView: View {
     @Environment(\.colorScheme) private var systemColorScheme
+    @StateObject private var toolbarOwner = SettingsWindowToolbarOwner()
 
     let settings: SumiSettingsService
     let browserContext: SettingsBrowserContext
@@ -21,12 +22,14 @@ struct SumiSettingsSceneRootView: View {
             keyboardShortcutManager: keyboardShortcutManager,
             updaterService: updaterService,
             defaultBrowserService: defaultBrowserService,
+            toolbarOwner: toolbarOwner,
             selectedPane: selectedPane,
             themeContext: themeContext
         )
         .frame(minWidth: 820, minHeight: 600)
         .ignoresSafeArea(.container, edges: .top)
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        .navigationTitle(toolbarOwner.presentation.title)
     }
 
     /// Settings is an independent system window, so browser chrome lightness
@@ -48,6 +51,7 @@ private struct SumiSettingsSplitView: NSViewControllerRepresentable {
     let keyboardShortcutManager: KeyboardShortcutManager
     let updaterService: SumiUpdaterService
     let defaultBrowserService: SumiDefaultBrowserService
+    let toolbarOwner: SettingsWindowToolbarOwner
     let selectedPane: SettingsTabs
     let themeContext: ResolvedThemeContext
 
@@ -58,6 +62,7 @@ private struct SumiSettingsSplitView: NSViewControllerRepresentable {
             keyboardShortcutManager: keyboardShortcutManager,
             updaterService: updaterService,
             defaultBrowserService: defaultBrowserService,
+            toolbarOwner: toolbarOwner,
             themeContext: themeContext
         )
     }
@@ -71,9 +76,12 @@ private struct SumiSettingsSplitView: NSViewControllerRepresentable {
 }
 
 @MainActor
-private final class SumiSettingsSplitViewController: NSSplitViewController {
+private final class SumiSettingsSplitViewController: NSSplitViewController, NSToolbarDelegate {
     private enum ToolbarIdentifier {
         static let windowChrome = NSToolbar.Identifier("SumiSettingsWindowChrome")
+        static let navigation = NSToolbarItem.Identifier("SumiSettingsNavigation")
+        static let back = NSToolbarItem.Identifier("SumiSettingsBack")
+        static let forward = NSToolbarItem.Identifier("SumiSettingsForward")
     }
 
     private let settings: SumiSettingsService
@@ -83,8 +91,11 @@ private final class SumiSettingsSplitViewController: NSSplitViewController {
     private let defaultBrowserService: SumiDefaultBrowserService
     private let sidebarController: SumiSettingsSidebarViewController
     private let detailController = SumiSettingsDetailViewController()
-    private let toolbarOwner = SettingsWindowToolbarOwner()
+    private let toolbarOwner: SettingsWindowToolbarOwner
     private let windowToolbar = NSToolbar(identifier: ToolbarIdentifier.windowChrome)
+    private var navigationToolbarItem: NSToolbarItemGroup?
+    private var backToolbarItem: NSToolbarItem?
+    private var forwardToolbarItem: NSToolbarItem?
     private var hostingController: NSHostingController<AnyView>?
     private var profileUpdates: AnyCancellable?
     private var toolbarUpdates: AnyCancellable?
@@ -98,6 +109,7 @@ private final class SumiSettingsSplitViewController: NSSplitViewController {
         keyboardShortcutManager: KeyboardShortcutManager,
         updaterService: SumiUpdaterService,
         defaultBrowserService: SumiDefaultBrowserService,
+        toolbarOwner: SettingsWindowToolbarOwner,
         themeContext: ResolvedThemeContext
     ) {
         self.settings = settings
@@ -105,6 +117,7 @@ private final class SumiSettingsSplitViewController: NSSplitViewController {
         self.keyboardShortcutManager = keyboardShortcutManager
         self.updaterService = updaterService
         self.defaultBrowserService = defaultBrowserService
+        self.toolbarOwner = toolbarOwner
         self.selectedPane = settings.currentSettingsTab
         self.currentProfile = browserContext.currentProfile()
         self.themeContext = themeContext
@@ -123,13 +136,6 @@ private final class SumiSettingsSplitViewController: NSSplitViewController {
         super.viewDidLoad()
         splitView.isVertical = true
         splitView.dividerStyle = .thin
-
-        detailController.onNavigateBack = { [weak self] in
-            self?.toolbarOwner.goBack()
-        }
-        detailController.onNavigateForward = { [weak self] in
-            self?.toolbarOwner.goForward()
-        }
 
         sidebarController.onSelect = { [weak self] pane in
             guard let self else { return }
@@ -231,8 +237,7 @@ private final class SumiSettingsSplitViewController: NSSplitViewController {
 
     private func configureWindowIfNeeded() {
         guard let window = view.window else { return }
-        window.title = String(localized: "Sumi Settings")
-        window.titleVisibility = .hidden
+        window.titleVisibility = .visible
         window.titlebarAppearsTransparent = true
         window.titlebarSeparatorStyle = .none
         window.toolbarStyle = .unified
@@ -242,8 +247,10 @@ private final class SumiSettingsSplitViewController: NSSplitViewController {
         window.styleMask.insert(.resizable)
         window.isMovableByWindowBackground = true
         window.standardWindowButton(.miniaturizeButton)?.isEnabled = true
+        windowToolbar.delegate = self
         windowToolbar.displayMode = .iconOnly
         windowToolbar.allowsUserCustomization = false
+        windowToolbar.allowsDisplayModeCustomization = false
         windowToolbar.autosavesConfiguration = false
         if window.toolbar !== windowToolbar {
             window.toolbar = windowToolbar
@@ -254,108 +261,104 @@ private final class SumiSettingsSplitViewController: NSSplitViewController {
     private func applyToolbarPresentation(
         _ presentation: SettingsWindowToolbarOwner.Presentation
     ) {
-        detailController.apply(presentation)
+        backToolbarItem?.isEnabled = presentation.canGoBack
+        forwardToolbarItem?.isEnabled = presentation.canGoForward
+        navigationToolbarItem?.isHidden = presentation.canGoBack == false
+            && presentation.canGoForward == false
+    }
+
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [
+            .sidebarTrackingSeparator,
+            ToolbarIdentifier.navigation,
+        ]
+    }
+
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        toolbarDefaultItemIdentifiers(toolbar)
+    }
+
+    func toolbar(
+        _ toolbar: NSToolbar,
+        itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
+        willBeInsertedIntoToolbar flag: Bool
+    ) -> NSToolbarItem? {
+        switch itemIdentifier {
+        case ToolbarIdentifier.navigation:
+            return makeNavigationToolbarItem()
+        default:
+            return nil
+        }
+    }
+
+    private func makeNavigationToolbarItem() -> NSToolbarItemGroup {
+        let backItem = makeNavigationItem(
+            identifier: ToolbarIdentifier.back,
+            label: String(localized: "Back"),
+            systemImage: "chevron.left",
+            action: #selector(navigateBack)
+        )
+        let forwardItem = makeNavigationItem(
+            identifier: ToolbarIdentifier.forward,
+            label: String(localized: "Forward"),
+            systemImage: "chevron.right",
+            action: #selector(navigateForward)
+        )
+        let group = NSToolbarItemGroup(itemIdentifier: ToolbarIdentifier.navigation)
+        group.label = String(localized: "Navigation")
+        group.controlRepresentation = .expanded
+        group.subitems = [backItem, forwardItem]
+        group.isNavigational = true
+
+        navigationToolbarItem = group
+        backToolbarItem = backItem
+        forwardToolbarItem = forwardItem
+        return group
+    }
+
+    private func makeNavigationItem(
+        identifier: NSToolbarItem.Identifier,
+        label: String,
+        systemImage: String,
+        action: Selector
+    ) -> NSToolbarItem {
+        let item = NSToolbarItem(itemIdentifier: identifier)
+        item.label = label
+        item.paletteLabel = label
+        item.toolTip = label
+        item.image = NSImage(systemSymbolName: systemImage, accessibilityDescription: label)
+        item.target = self
+        item.action = action
+        item.isNavigational = true
+        return item
+    }
+
+    @objc private func navigateBack() {
+        toolbarOwner.goBack()
+    }
+
+    @objc private func navigateForward() {
+        toolbarOwner.goForward()
     }
 }
 
 @MainActor
 private final class SumiSettingsDetailViewController: NSViewController {
     let contentView = NSView()
-    var onNavigateBack: (() -> Void)?
-    var onNavigateForward: (() -> Void)?
-
-    private let headerView = NSVisualEffectView()
-    private let navigationControl = NSSegmentedControl()
-    private let titleLabel = NSTextField(labelWithString: "")
 
     override func loadView() {
         let rootView = NSView()
         view = rootView
 
-        headerView.material = .headerView
-        headerView.blendingMode = .withinWindow
-        headerView.state = .followsWindowActiveState
-        headerView.translatesAutoresizingMaskIntoConstraints = false
-
-        navigationControl.segmentCount = 2
-        navigationControl.trackingMode = .momentary
-        navigationControl.segmentStyle = .automatic
-        navigationControl.controlSize = .regular
-        navigationControl.target = self
-        navigationControl.action = #selector(navigate(_:))
-        navigationControl.setImage(
-            NSImage(systemSymbolName: "chevron.left", accessibilityDescription: "Back"),
-            forSegment: 0
-        )
-        navigationControl.setImage(
-            NSImage(systemSymbolName: "chevron.right", accessibilityDescription: "Forward"),
-            forSegment: 1
-        )
-        navigationControl.setToolTip(String(localized: "Back"), forSegment: 0)
-        navigationControl.setToolTip(String(localized: "Forward"), forSegment: 1)
-        navigationControl.setWidth(30, forSegment: 0)
-        navigationControl.setWidth(30, forSegment: 1)
-
-        titleLabel.font = .systemFont(ofSize: 13, weight: .bold)
-        titleLabel.lineBreakMode = .byTruncatingTail
-        titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-        let headerStack = NSStackView(views: [navigationControl, titleLabel])
-        headerStack.orientation = .horizontal
-        headerStack.alignment = .centerY
-        headerStack.spacing = 12
-        headerStack.detachesHiddenViews = true
-        headerStack.translatesAutoresizingMaskIntoConstraints = false
-
-        let separator = NSBox()
-        separator.boxType = .separator
-        separator.translatesAutoresizingMaskIntoConstraints = false
-
         contentView.translatesAutoresizingMaskIntoConstraints = false
-        rootView.addSubview(headerView)
-        headerView.addSubview(headerStack)
-        headerView.addSubview(separator)
         rootView.addSubview(contentView)
 
         NSLayoutConstraint.activate([
-            headerView.leadingAnchor.constraint(equalTo: rootView.leadingAnchor),
-            headerView.trailingAnchor.constraint(equalTo: rootView.trailingAnchor),
-            headerView.topAnchor.constraint(equalTo: rootView.topAnchor),
-            headerView.heightAnchor.constraint(equalToConstant: 52),
-
-            headerStack.leadingAnchor.constraint(equalTo: headerView.leadingAnchor, constant: 18),
-            headerStack.trailingAnchor.constraint(lessThanOrEqualTo: headerView.trailingAnchor, constant: -8),
-            headerStack.centerYAnchor.constraint(equalTo: headerView.centerYAnchor),
-
-            separator.leadingAnchor.constraint(equalTo: headerView.leadingAnchor),
-            separator.trailingAnchor.constraint(equalTo: headerView.trailingAnchor),
-            separator.bottomAnchor.constraint(equalTo: headerView.bottomAnchor),
-
             contentView.leadingAnchor.constraint(equalTo: rootView.leadingAnchor),
             contentView.trailingAnchor.constraint(equalTo: rootView.trailingAnchor),
-            contentView.topAnchor.constraint(equalTo: headerView.bottomAnchor),
+            contentView.topAnchor.constraint(equalTo: rootView.safeAreaLayoutGuide.topAnchor),
             contentView.bottomAnchor.constraint(equalTo: rootView.bottomAnchor),
         ])
-    }
-
-    func apply(_ presentation: SettingsWindowToolbarOwner.Presentation) {
-        loadViewIfNeeded()
-        titleLabel.stringValue = presentation.title
-        navigationControl.setEnabled(presentation.canGoBack, forSegment: 0)
-        navigationControl.setEnabled(presentation.canGoForward, forSegment: 1)
-        navigationControl.isHidden = presentation.canGoBack == false
-            && presentation.canGoForward == false
-    }
-
-    @objc private func navigate(_ sender: NSSegmentedControl) {
-        switch sender.selectedSegment {
-        case 0:
-            onNavigateBack?()
-        case 1:
-            onNavigateForward?()
-        default:
-            break
-        }
     }
 }
 
