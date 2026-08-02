@@ -119,7 +119,7 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
 
         XCTAssertEqual(BrowserWindowTrafficLightMetrics.clusterHeight, 30)
         XCTAssertEqual(BrowserWindowTrafficLightMetrics.clusterWidth, snapshot.size.width)
-        XCTAssertEqual(BrowserWindowTrafficLightMetrics.clusterTrailingInset, 14)
+        XCTAssertEqual(BrowserWindowTrafficLightMetrics.clusterTrailingInset, 4)
         XCTAssertEqual(BrowserWindowTrafficLightMetrics.placeholderOpacity, 0.16)
         XCTAssertEqual(
             BrowserWindowTrafficLightMetrics.sidebarReservedWidth,

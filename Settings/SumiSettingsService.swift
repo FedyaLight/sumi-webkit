@@ -122,11 +122,6 @@ class SumiSettingsService {
         set { chrome.glanceEnabled = newValue }
     }
 
-    var showSidebarToggleButton: Bool {
-        get { chrome.showSidebarToggleButton }
-        set { chrome.showSidebarToggleButton = newValue }
-    }
-
     var showNewTabButtonInTabList: Bool {
         get { chrome.showNewTabButtonInTabList }
         set { chrome.showNewTabButtonInTabList = newValue }
@@ -339,7 +334,6 @@ class SumiSettingsService {
             "settings.sidebarPosition": SidebarPosition.left.rawValue,
             "settings.sidebarMiniPlayerEnabled": true,
             "settings.glanceEnabled": true,
-            "settings.showSidebarToggleButton": true,
             "settings.showNewTabButtonInTabList": true,
             "settings.tabListNewTabButtonPosition": TabListNewTabButtonPosition.bottom.rawValue,
             "settings.showLinkStatusBar": true,
@@ -379,7 +373,6 @@ class SumiSettingsService {
             sidebarPositionKey: "settings.sidebarPosition",
             sidebarMiniPlayerEnabledKey: "settings.sidebarMiniPlayerEnabled",
             glanceEnabledKey: "settings.glanceEnabled",
-            showSidebarToggleButtonKey: "settings.showSidebarToggleButton",
             showNewTabButtonInTabListKey: "settings.showNewTabButtonInTabList",
             tabListNewTabButtonPositionKey: "settings.tabListNewTabButtonPosition",
             showLinkStatusBarKey: "settings.showLinkStatusBar",

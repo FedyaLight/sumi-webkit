@@ -68,20 +68,18 @@ struct SidebarWindowControlsView: View {
                 presentation: windowState.chromePresentation.trafficLights
             )
 
-            if sumiSettings.showSidebarToggleButton {
-                Button(
-                    "Toggle Sidebar",
-                    systemImage: sumiSettings.sidebarPosition.shellEdge.toggleSidebarSymbolName,
-                    action: toggleSidebar
-                )
-                .labelStyle(.iconOnly)
-                .font(.system(size: SidebarChromeMetrics.navigationIconSize, weight: .medium))
-                .buttonStyle(NavButtonStyle(
-                    diameter: SidebarChromeMetrics.navigationButtonSize,
-                    hoverTracking: .sidebarSession
-                ))
-                .sidebarAppKitPrimaryAction(action: toggleSidebar)
-            }
+            Button(
+                "Toggle Sidebar",
+                systemImage: sumiSettings.sidebarPosition.shellEdge.toggleSidebarSymbolName,
+                action: toggleSidebar
+            )
+            .labelStyle(.iconOnly)
+            .font(.system(size: SidebarChromeMetrics.navigationIconSize, weight: .medium))
+            .buttonStyle(NavButtonStyle(
+                diameter: SidebarChromeMetrics.navigationButtonSize,
+                hoverTracking: .sidebarSession
+            ))
+            .sidebarAppKitPrimaryAction(action: toggleSidebar)
         }
     }
 }

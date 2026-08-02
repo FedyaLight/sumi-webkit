@@ -1777,10 +1777,11 @@ extension SumiLaunchSmokeUITestCase {
             file: file,
             line: line
         )
-        XCTAssertGreaterThanOrEqual(
+        XCTAssertEqual(
             sidebarToggle.frame.minX - zoomButton.frame.maxX,
-            10,
-            "Traffic lights should keep a visible gap before the sidebar toggle. zoom=\(zoomButton.frame) toggle=\(sidebarToggle.frame)",
+            4,
+            accuracy: 1,
+            "Traffic lights should keep a 4-point gap before the sidebar toggle. zoom=\(zoomButton.frame) toggle=\(sidebarToggle.frame)",
             file: file,
             line: line
         )

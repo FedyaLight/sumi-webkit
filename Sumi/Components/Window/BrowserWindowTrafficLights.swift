@@ -25,7 +25,7 @@ enum BrowserWindowTrafficLightGeometry {
 
 enum BrowserWindowTrafficLightMetrics {
     static let clusterHeight: CGFloat = 30
-    static let clusterTrailingInset: CGFloat = 14
+    static let clusterTrailingInset: CGFloat = 4
     static let placeholderOpacity: Double = 0.16
 
     @MainActor

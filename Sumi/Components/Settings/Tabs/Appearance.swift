@@ -29,15 +29,6 @@ struct SettingsAppearanceTab: View {
                 SettingsDivider()
 
                 SettingsRow(
-                    title: "Sidebar toggle button",
-                    systemImage: "sidebar.left"
-                ) {
-                    Toggle("", isOn: $settings.showSidebarToggleButton)
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                }
-
-                SettingsRow(
                     title: "Sidebar side",
                     systemImage: "rectangle.split.2x1"
                 ) {

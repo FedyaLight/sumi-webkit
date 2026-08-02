@@ -14,7 +14,6 @@ final class ChromeLayoutSettingsStore {
     private let sidebarPositionKey: String
     private let sidebarMiniPlayerEnabledKey: String
     private let glanceEnabledKey: String
-    private let showSidebarToggleButtonKey: String
     private let showNewTabButtonInTabListKey: String
     private let tabListNewTabButtonPositionKey: String
     private let showLinkStatusBarKey: String
@@ -52,16 +51,6 @@ final class ChromeLayoutSettingsStore {
     var glanceEnabled: Bool {
         didSet {
             Persisted.bool(glanceEnabled, key: glanceEnabledKey, defaults: userDefaults)
-        }
-    }
-
-    var showSidebarToggleButton: Bool {
-        didSet {
-            Persisted.bool(
-                showSidebarToggleButton,
-                key: showSidebarToggleButtonKey,
-                defaults: userDefaults
-            )
         }
     }
 
@@ -133,7 +122,6 @@ final class ChromeLayoutSettingsStore {
         sidebarPositionKey: String,
         sidebarMiniPlayerEnabledKey: String,
         glanceEnabledKey: String,
-        showSidebarToggleButtonKey: String,
         showNewTabButtonInTabListKey: String,
         tabListNewTabButtonPositionKey: String,
         showLinkStatusBarKey: String,
@@ -149,7 +137,6 @@ final class ChromeLayoutSettingsStore {
         self.sidebarPositionKey = sidebarPositionKey
         self.sidebarMiniPlayerEnabledKey = sidebarMiniPlayerEnabledKey
         self.glanceEnabledKey = glanceEnabledKey
-        self.showSidebarToggleButtonKey = showSidebarToggleButtonKey
         self.showNewTabButtonInTabListKey = showNewTabButtonInTabListKey
         self.tabListNewTabButtonPositionKey = tabListNewTabButtonPositionKey
         self.showLinkStatusBarKey = showLinkStatusBarKey
@@ -173,11 +160,6 @@ final class ChromeLayoutSettingsStore {
             self.glanceEnabled = true
         } else {
             self.glanceEnabled = userDefaults.bool(forKey: glanceEnabledKey)
-        }
-        if userDefaults.object(forKey: showSidebarToggleButtonKey) == nil {
-            self.showSidebarToggleButton = true
-        } else {
-            self.showSidebarToggleButton = userDefaults.bool(forKey: showSidebarToggleButtonKey)
         }
         if userDefaults.object(forKey: showNewTabButtonInTabListKey) == nil {
             self.showNewTabButtonInTabList = true
