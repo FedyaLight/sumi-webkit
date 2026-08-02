@@ -16,6 +16,28 @@ enum SumiUpdateChannel: String, CaseIterable, Equatable, Sendable {
     }
 }
 
+enum SumiUpdateReleaseNotesURL {
+    static let baseURL = URL(string: "https://sumi-browser.netlify.app/changelog/")!
+
+    static func url(forDisplayVersion displayVersion: String) -> URL {
+        guard !displayVersion.isEmpty, displayVersion != "Unknown" else {
+            return baseURL
+        }
+
+        var components = URLComponents(
+            url: baseURL,
+            resolvingAgainstBaseURL: false
+        )
+        components?.fragment = displayVersion
+        return components?.url ?? baseURL
+    }
+}
+
+enum SumiUpdateSidebarExternalLinks {
+    static let support = URL(string: "https://sumi-browser.netlify.app/support/")!
+    static let issues = URL(string: "https://github.com/FedyaLight/sumi-webkit/issues")!
+}
+
 struct SumiAvailableUpdate: Equatable, Sendable {
     let displayVersion: String
     let buildVersion: String
@@ -265,6 +287,11 @@ enum SumiUpdateSidebarNotice: Equatable, Sendable {
         let percentage = Int((min(max(progress, 0), 1) * 100).rounded(.down))
         return "\(percentage)%"
     }
+
+    var installedReleaseNotesURL: URL? {
+        guard case .installed(let update) = self else { return nil }
+        return SumiUpdateReleaseNotesURL.url(forDisplayVersion: update.displayVersion)
+    }
 }
 
 protocol SumiUpdateNoticeDismissalPersisting: AnyObject {
@@ -502,20 +529,15 @@ final class SumiUpdaterService: ObservableObject {
         self.sidebarNotice = nil
         syncStateFromBackend()
 
-        #if DEBUG
+#if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--sumi-debug-update-notice") {
-            recordAvailableUpdate(
-                SumiAvailableUpdate(
-                    displayVersion: "Debug",
-                    buildVersion: "debug",
-                    title: nil,
-                    subtitle: nil,
-                    releaseNotesURL: nil,
-                    isInformationOnly: false
-                )
+            installedUpdateNotice = SumiInstalledUpdate(
+                displayVersion: currentVersion.shortVersion,
+                buildVersion: currentVersion.buildNumber
             )
+            refreshSidebarNotice()
         }
-        #endif
+#endif
     }
 
     func start() {

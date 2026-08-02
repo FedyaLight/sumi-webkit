@@ -26,6 +26,7 @@ Run this only for a Sumi bundle you intentionally downloaded. Sumi itself never 
 - Sparkle verifies update archives using the signature in the appcast enclosure.
 - Users explicitly start installation from Settings > About or the sidebar notice.
 - Sparkle handles download, installation, and relaunch.
+- After relaunch, the completed sidebar notice links to `https://sumi-browser.netlify.app/changelog/#<display-version>`; each public release entry must use its display version as the Changelog anchor.
 
 The appcast for the first release is intentionally empty because no older public build exists to update. End-to-end update validation requires a later controlled build with a higher build number and an architecture-aware update artifact strategy.
 

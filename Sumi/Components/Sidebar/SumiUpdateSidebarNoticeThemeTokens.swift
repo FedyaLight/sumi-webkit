@@ -5,6 +5,9 @@ enum SumiUpdateSidebarNoticeThemeTokens {
         static let availableTitle = Font.system(size: 12, weight: .regular)
         static let availableAction = Font.system(size: 12, weight: .medium)
         static let compactIcon = Font.system(size: 17, weight: .semibold)
+        static let completedHeading = Font.system(size: 12, weight: .medium)
+        static let completedLink = Font.system(size: 12, weight: .regular)
+        static let completedIcon = Font.system(size: 16, weight: .regular)
     }
 
     enum Colors {
@@ -33,6 +36,44 @@ enum SumiUpdateSidebarNoticeThemeTokens {
 
         static func availableActionForeground(tokens: ChromeThemeTokens?) -> Color {
             tokens?.buttonPrimaryText ?? .white
+        }
+
+        static func completedCardBackground(tokens: ChromeThemeTokens?) -> Color {
+            tokens?.floatingSurfaceBackground ?? Color(nsColor: .controlBackgroundColor)
+        }
+
+        static func completedCardBorder(tokens: ChromeThemeTokens?) -> Color {
+            tokens?.floatingSurfaceBorder ?? Color.primary.opacity(0.14)
+        }
+
+        static func completedSeparator(tokens: ChromeThemeTokens?) -> Color {
+            tokens?.separator ?? Color.primary.opacity(0.10)
+        }
+
+        static func completedHeadingForeground(tokens: ChromeThemeTokens?) -> Color {
+            tokens?.primaryText ?? .primary
+        }
+
+        static func completedCloseForeground(tokens: ChromeThemeTokens?) -> Color {
+            tokens?.secondaryText ?? .secondary
+        }
+
+        static func completedAccent(tokens _: ChromeThemeTokens?) -> Color {
+            Color(
+                .sRGB,
+                red: 156.0 / 255.0,
+                green: 116.0 / 255.0,
+                blue: 101.0 / 255.0,
+                opacity: 1
+            )
+        }
+
+        static func completedNeutralForeground(tokens: ChromeThemeTokens?) -> Color {
+            tokens?.secondaryText ?? .secondary
+        }
+
+        static func completedRowHover(tokens: ChromeThemeTokens?) -> Color {
+            tokens?.floatingSurfaceHover ?? Color.primary.opacity(0.06)
         }
 
         static func symbol(for visualStyle: SumiUpdateSidebarNoticeVisualStyle) -> Color {

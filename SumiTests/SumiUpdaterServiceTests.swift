@@ -192,6 +192,24 @@ final class SumiUpdaterServiceTests: XCTestCase {
         XCTAssertNil(service.sidebarNotice)
     }
 
+    func testInstalledNoticeUsesVersionedReleaseNotesURL() {
+        let notice = SumiUpdateSidebarNotice.installed(
+            SumiInstalledUpdate(displayVersion: "2.0.0", buildVersion: "200")
+        )
+
+        XCTAssertEqual(
+            notice.installedReleaseNotesURL,
+            URL(string: "https://sumi-browser.netlify.app/changelog/#2.0.0")
+        )
+    }
+
+    func testReleaseNotesURLFallsBackToChangelogRootForUnknownVersion() {
+        XCTAssertEqual(
+            SumiUpdateReleaseNotesURL.url(forDisplayVersion: "Unknown"),
+            SumiUpdateReleaseNotesURL.baseURL
+        )
+    }
+
     func testInstalledUpdateStoreShowsSuccessOnlyForNewerVersionOrBuild() throws {
         let suiteName = "SumiUpdaterServiceTests-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))

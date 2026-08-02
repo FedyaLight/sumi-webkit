@@ -250,7 +250,10 @@ struct SpacesSideBarView: View {
 
             VStack(spacing: 8) {
                 if allowsSidebarInteractiveWork {
-                    SpaceSidebarUpdateNoticeReader(updaterService: updaterService)
+                    SpaceSidebarUpdateNoticeReader(
+                        updaterService: updaterService,
+                        browserContext: browserContext
+                    )
 
                     SpaceSidebarMiniPlayer(
                         nowPlayingController: nowPlayingController,

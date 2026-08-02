@@ -3,9 +3,33 @@
 //  Sumi
 //
 
+import Foundation
 import SwiftUI
 
 struct SumiUpdateSidebarNoticeView: View {
+    let notice: SumiUpdateSidebarNotice
+    let onUpdate: () -> Void
+    let onDismiss: () -> Void
+    let onOpenURL: (URL) -> Void
+
+    var body: some View {
+        if case .installed = notice {
+            SumiUpdateSidebarInstalledNoticeView(
+                notice: notice,
+                onDismiss: onDismiss,
+                onOpenURL: onOpenURL
+            )
+        } else {
+            SumiUpdateSidebarProgressNoticeView(
+                notice: notice,
+                onUpdate: onUpdate,
+                onDismiss: onDismiss
+            )
+        }
+    }
+}
+
+private struct SumiUpdateSidebarProgressNoticeView: View {
     private static let hoverExpandAnimation = Animation.spring(
         response: 0.3,
         dampingFraction: 0.86
@@ -93,6 +117,192 @@ struct SumiUpdateSidebarNoticeView: View {
         } else if notice.isDismissible {
             onDismiss()
         }
+    }
+}
+
+private struct SumiUpdateSidebarInstalledNoticeView: View {
+    let notice: SumiUpdateSidebarNotice
+    let onDismiss: () -> Void
+    let onOpenURL: (URL) -> Void
+
+    @Environment(\.chromeThemeTokens) private var chromeTokens
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 13, style: .continuous)
+
+        VStack(spacing: 0) {
+            SumiUpdateSidebarInstalledNoticeHeader(onDismiss: onDismiss)
+
+            VStack(spacing: 2) {
+                if let releaseNotesURL = notice.installedReleaseNotesURL {
+                    SumiUpdateSidebarLinkRow(
+                        title: "What's new in Sumi",
+                        systemImageName: "heart.circle.fill",
+                        url: releaseNotesURL,
+                        foreground: SumiUpdateSidebarNoticeThemeTokens.Colors.completedAccent(
+                            tokens: chromeTokens
+                        ),
+                        onOpenURL: openLink
+                    )
+                }
+
+                SumiUpdateSidebarLinkRow(
+                    title: "Support us",
+                    systemImageName: "gift",
+                    url: SumiUpdateSidebarExternalLinks.support,
+                    foreground: SumiUpdateSidebarNoticeThemeTokens.Colors.completedNeutralForeground(
+                        tokens: chromeTokens
+                    ),
+                    onOpenURL: openLink
+                )
+
+                SumiUpdateSidebarLinkRow(
+                    title: "Something broke?",
+                    systemImageName: "exclamationmark.bubble",
+                    url: SumiUpdateSidebarExternalLinks.issues,
+                    foreground: SumiUpdateSidebarNoticeThemeTokens.Colors.completedNeutralForeground(
+                        tokens: chromeTokens
+                    ),
+                    onOpenURL: openLink
+                )
+            }
+            .padding(6)
+        }
+        .frame(maxWidth: .infinity)
+        .background(shape.fill(
+            SumiUpdateSidebarNoticeThemeTokens.Colors.completedCardBackground(
+                tokens: chromeTokens
+            )
+        ))
+        .clipShape(shape)
+        .overlay {
+            shape.strokeBorder(
+                SumiUpdateSidebarNoticeThemeTokens.Colors.completedCardBorder(
+                    tokens: chromeTokens
+                ),
+                lineWidth: 0.75
+            )
+        }
+        .shadow(color: .black.opacity(0.08), radius: 7, x: 0, y: 2)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func openLink(_ url: URL) {
+        onOpenURL(url)
+        onDismiss()
+    }
+}
+
+private struct SumiUpdateSidebarInstalledNoticeHeader: View {
+    let onDismiss: () -> Void
+
+    @Environment(\.chromeThemeTokens) private var chromeTokens
+    @State private var isCloseHovered = false
+
+    var body: some View {
+        ZStack {
+            Text("Update Complete!")
+                .font(SumiUpdateSidebarNoticeThemeTokens.Typography.completedHeading)
+                .foregroundStyle(
+                    SumiUpdateSidebarNoticeThemeTokens.Colors.completedHeadingForeground(
+                        tokens: chromeTokens
+                    )
+                )
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 6)
+        .overlay(alignment: .trailing) {
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
+                    .font(SidebarThemeTokens.Typography.essentialsPlaceholderDismiss)
+                    .foregroundStyle(
+                        SumiUpdateSidebarNoticeThemeTokens.Colors.completedCloseForeground(
+                            tokens: chromeTokens
+                        )
+                    )
+                    .frame(
+                        width: EssentialsPlaceholderMetrics.dismissHitSize,
+                        height: EssentialsPlaceholderMetrics.dismissHitSize
+                    )
+                    .background {
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(
+                                isCloseHovered
+                                    ? SumiUpdateSidebarNoticeThemeTokens.Colors.completedRowHover(
+                                        tokens: chromeTokens
+                                    )
+                                    : .clear
+                            )
+                    }
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(EssentialsPlaceholderMetrics.dismissInset)
+            .sidebarHover { hovering in
+                isCloseHovered = hovering
+            }
+            .accessibilityLabel("Dismiss update complete notice")
+        }
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(
+                    SumiUpdateSidebarNoticeThemeTokens.Colors.completedSeparator(
+                        tokens: chromeTokens
+                    )
+                )
+                .frame(height: 0.75)
+        }
+    }
+}
+
+private struct SumiUpdateSidebarLinkRow: View {
+    let title: LocalizedStringResource
+    let systemImageName: String
+    let url: URL
+    let foreground: Color
+    let onOpenURL: (URL) -> Void
+
+    @Environment(\.chromeThemeTokens) private var chromeTokens
+    @State private var isHovered = false
+
+    var body: some View {
+        Button {
+            onOpenURL(url)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: systemImageName)
+                    .font(SumiUpdateSidebarNoticeThemeTokens.Typography.completedIcon)
+                    .symbolRenderingMode(.monochrome)
+                    .frame(width: 16, height: 16)
+
+                Text(title)
+                    .font(SumiUpdateSidebarNoticeThemeTokens.Typography.completedLink)
+                    .lineLimit(1)
+
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(foreground)
+            .padding(4)
+            .frame(maxWidth: .infinity, minHeight: 22, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(
+                        isHovered
+                            ? SumiUpdateSidebarNoticeThemeTokens.Colors.completedRowHover(
+                                tokens: chromeTokens
+                            )
+                            : .clear
+                    )
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .sidebarHover { hovering in
+            isHovered = hovering
+        }
+        .accessibilityLabel(Text(title))
     }
 }
 

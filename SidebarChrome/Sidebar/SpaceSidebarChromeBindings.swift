@@ -4,6 +4,7 @@
 //
 //
 
+import Foundation
 import SumiDomain
 import SwiftUI
 
@@ -48,6 +49,7 @@ struct SpaceSidebarUpdateNoticeStrip: View {
     let notice: SumiUpdateSidebarNotice
     let onUpdate: () -> Void
     let onDismiss: () -> Void
+    let onOpenURL: (URL) -> Void
 
     var body: some View {
         Group {
@@ -65,7 +67,8 @@ struct SpaceSidebarUpdateNoticeStrip: View {
                 SumiUpdateSidebarNoticeView(
                     notice: notice,
                     onUpdate: onUpdate,
-                    onDismiss: onDismiss
+                    onDismiss: onDismiss,
+                    onOpenURL: onOpenURL
                 )
                 .padding(.horizontal, 8)
             }
@@ -75,15 +78,30 @@ struct SpaceSidebarUpdateNoticeStrip: View {
 
 struct SpaceSidebarUpdateNoticeReader: View {
     @ObservedObject var updaterService: SumiUpdaterService
+    let browserContext: SidebarBrowserContext
+
+    @Environment(BrowserWindowState.self) private var windowState
 
     var body: some View {
         if let notice = updaterService.sidebarNotice {
             SpaceSidebarUpdateNoticeStrip(
                 notice: notice,
                 onUpdate: { updaterService.startUpdateFromSidebarNotice() },
-                onDismiss: { updaterService.dismissSidebarNotice(notice) }
+                onDismiss: { updaterService.dismissSidebarNotice(notice) },
+                onOpenURL: openURLInNewTab
             )
         }
+    }
+
+    private func openURLInNewTab(_ url: URL) {
+        _ = browserContext.tabOpening.openNewTab(
+            url: url.absoluteString,
+            context: .foreground(
+                windowState: windowState,
+                preferredSpaceId: windowState.currentSpaceId,
+                loadPolicy: .immediate
+            )
+        )
     }
 }
 
