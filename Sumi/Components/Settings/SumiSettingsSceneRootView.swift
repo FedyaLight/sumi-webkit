@@ -26,7 +26,6 @@ struct SumiSettingsSceneRootView: View {
         )
         .frame(minWidth: 820, minHeight: 600)
         .ignoresSafeArea(.container, edges: .top)
-        .toolbar(removing: .title)
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
     }
 
@@ -73,6 +72,10 @@ private struct SumiSettingsSplitView: NSViewControllerRepresentable {
 
 @MainActor
 private final class SumiSettingsSplitViewController: NSSplitViewController {
+    private enum ToolbarIdentifier {
+        static let windowChrome = NSToolbar.Identifier("SumiSettingsWindowChrome")
+    }
+
     private let settings: SumiSettingsService
     private let browserContext: SettingsBrowserContext
     private let keyboardShortcutManager: KeyboardShortcutManager
@@ -81,6 +84,7 @@ private final class SumiSettingsSplitViewController: NSSplitViewController {
     private let sidebarController: SumiSettingsSidebarViewController
     private let detailController = SumiSettingsDetailViewController()
     private let toolbarOwner = SettingsWindowToolbarOwner()
+    private let windowToolbar = NSToolbar(identifier: ToolbarIdentifier.windowChrome)
     private var hostingController: NSHostingController<AnyView>?
     private var profileUpdates: AnyCancellable?
     private var toolbarUpdates: AnyCancellable?
@@ -238,6 +242,12 @@ private final class SumiSettingsSplitViewController: NSSplitViewController {
         window.styleMask.insert(.resizable)
         window.isMovableByWindowBackground = true
         window.standardWindowButton(.miniaturizeButton)?.isEnabled = true
+        windowToolbar.displayMode = .iconOnly
+        windowToolbar.allowsUserCustomization = false
+        windowToolbar.autosavesConfiguration = false
+        if window.toolbar !== windowToolbar {
+            window.toolbar = windowToolbar
+        }
         applyToolbarPresentation(toolbarOwner.presentation)
     }
 

@@ -16,8 +16,6 @@ final class SettingsNavigationTests: XCTestCase {
     func testSettingsNativeSurfaceStructureAvoidsDuplicateChromeAndNestedScrolling() throws {
         let windowSource = try settingsSource("SumiSettingsSceneRootView.swift")
         XCTAssertFalse(windowSource.contains("view.window?.title = presentation.title"))
-        XCTAssertTrue(windowSource.contains(".toolbar(removing: .title)"))
-        XCTAssertFalse(windowSource.contains("NSToolbar("))
 
         let componentsSource = try settingsSource("SettingsComponents.swift")
         XCTAssertFalse(componentsSource.contains("struct SettingsPopUpButton"))
