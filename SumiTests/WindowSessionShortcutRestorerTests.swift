@@ -1,3 +1,4 @@
+import SumiDomain
 import XCTest
 
 @testable import Sumi
@@ -127,6 +128,62 @@ final class WindowSessionShortcutRestorerTests: XCTestCase {
         XCTAssertTrue(
             windowState.restorationState.pendingShortcutLiveSessions.isEmpty
         )
+    }
+
+    func testSelectionHistoryRoundTripsThroughWindowSessionSnapshot() throws {
+        let spaceID = UUID()
+        let regularTabID = UUID()
+        let currentPinID = UUID()
+        let previousPinID = UUID()
+        var sourceHistory = WindowSelectionHistory()
+        sourceHistory.recentRegularTabIdsBySpace[spaceID] = [regularTabID]
+        sourceHistory.recentSelectionItemsBySpace[spaceID] = [
+            .shortcutPin(currentPinID),
+            .shortcutPin(previousPinID),
+            .regularTab(regularTabID),
+        ]
+        let sourceWindow = BrowserWindowState()
+        sourceWindow.currentSpaceId = spaceID
+        sourceWindow.selectionHistory = sourceHistory
+
+        let snapshot = WindowSessionSnapshotFactory(
+            glanceManager: GlanceManager()
+        ).make(for: sourceWindow)
+        let decoded = try JSONDecoder().decode(
+            WindowSessionSnapshot.self,
+            from: JSONEncoder().encode(snapshot)
+        )
+        let restoredWindow = BrowserWindowState()
+        WindowSessionSnapshotApplier(glanceManager: GlanceManager()).apply(
+            decoded,
+            to: restoredWindow
+        )
+
+        XCTAssertEqual(restoredWindow.selectionHistory, sourceHistory)
+        XCTAssertEqual(
+            decoded.selectionHistory.spaces.map(\.spaceId),
+            [spaceID]
+        )
+    }
+
+    func testLegacySnapshotWithoutSelectionHistoryRestoresEmptyHistory()
+        throws {
+        let snapshot = WindowSessionSnapshotFactory(
+            glanceManager: GlanceManager()
+        ).make(for: BrowserWindowState())
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(
+                with: JSONEncoder().encode(snapshot)
+            ) as? [String: Any]
+        )
+        object.removeValue(forKey: "selectionHistory")
+
+        let decoded = try JSONDecoder().decode(
+            WindowSessionSnapshot.self,
+            from: JSONSerialization.data(withJSONObject: object)
+        )
+
+        XCTAssertTrue(decoded.selectionHistory.spaces.isEmpty)
     }
 
     func testCustomLauncherTitleWinsOverRestoredPageTitle() throws {

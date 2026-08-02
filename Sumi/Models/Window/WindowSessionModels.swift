@@ -24,6 +24,170 @@ struct SpaceShortcutSelectionSnapshot: Codable, Equatable, Hashable {
     var shortcutPinId: UUID
 }
 
+struct WindowSelectionHistoryItemSnapshot: Codable, Equatable, Hashable {
+    enum Kind: String, Codable {
+        case regularTab
+        case shortcutPin
+    }
+
+    var kind: Kind
+    var id: UUID
+
+    init(_ item: BrowserWindowSelectionHistoryItem) {
+        switch item {
+        case let .regularTab(tabID):
+            kind = .regularTab
+            id = tabID
+        case let .shortcutPin(pinID):
+            kind = .shortcutPin
+            id = pinID
+        }
+    }
+
+    var domainItem: BrowserWindowSelectionHistoryItem {
+        switch kind {
+        case .regularTab:
+            return .regularTab(id)
+        case .shortcutPin:
+            return .shortcutPin(id)
+        }
+    }
+}
+
+struct WindowSelectionHistorySpaceSnapshot: Codable, Equatable, Hashable {
+    var spaceId: UUID
+    var recentRegularTabIds: [UUID]
+    var recentSelectionItems: [WindowSelectionHistoryItemSnapshot]
+
+    private enum CodingKeys: String, CodingKey {
+        case spaceId
+        case recentRegularTabIds
+        case recentSelectionItems
+    }
+
+    init(
+        spaceId: UUID,
+        recentRegularTabIds: [UUID],
+        recentSelectionItems: [WindowSelectionHistoryItemSnapshot]
+    ) {
+        self.spaceId = spaceId
+        self.recentRegularTabIds = Self.boundedUnique(recentRegularTabIds)
+        self.recentSelectionItems = Self.boundedUnique(recentSelectionItems)
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            spaceId: try container.decode(UUID.self, forKey: .spaceId),
+            recentRegularTabIds: try container.decode(
+                [UUID].self,
+                forKey: .recentRegularTabIds
+            ),
+            recentSelectionItems: try container.decode(
+                [WindowSelectionHistoryItemSnapshot].self,
+                forKey: .recentSelectionItems
+            )
+        )
+    }
+
+    private static let historyLimit = 20
+
+    private static func boundedUnique<Value: Hashable>(
+        _ values: [Value]
+    ) -> [Value] {
+        var seen = Set<Value>()
+        return values.filter { seen.insert($0).inserted }.prefix(historyLimit)
+            .map { $0 }
+    }
+}
+
+struct WindowSelectionHistorySnapshot: Codable, Equatable, Hashable {
+    private(set) var spaces: [WindowSelectionHistorySpaceSnapshot]
+
+    private enum CodingKeys: String, CodingKey {
+        case spaces
+    }
+
+    init(_ history: WindowSelectionHistory = .init()) {
+        let spaceIDs = Set(
+            Array(history.recentRegularTabIdsBySpace.keys)
+                + Array(history.recentSelectionItemsBySpace.keys)
+        )
+        self.init(spaces: spaceIDs.compactMap { spaceID in
+            let regularTabIDs = history.recentRegularTabIdsBySpace[spaceID] ?? []
+            let selectionItems = history.recentSelectionItemsBySpace[spaceID]
+                ?? []
+            guard regularTabIDs.isEmpty == false || selectionItems.isEmpty == false
+            else { return nil }
+            return WindowSelectionHistorySpaceSnapshot(
+                spaceId: spaceID,
+                recentRegularTabIds: regularTabIDs,
+                recentSelectionItems: selectionItems.map(
+                    WindowSelectionHistoryItemSnapshot.init
+                )
+            )
+        })
+    }
+
+    init(spaces: [WindowSelectionHistorySpaceSnapshot]) {
+        let bySpace = spaces.reduce(
+            into: [UUID: WindowSelectionHistorySpaceSnapshot]()
+        ) { result, space in
+            guard space.recentRegularTabIds.isEmpty == false
+                || space.recentSelectionItems.isEmpty == false
+            else { return }
+            guard let current = result[space.spaceId] else {
+                result[space.spaceId] = space
+                return
+            }
+            if Self.stableKey(space) < Self.stableKey(current) {
+                result[space.spaceId] = space
+            }
+        }
+        self.spaces = bySpace.values.sorted {
+            $0.spaceId.uuidString < $1.spaceId.uuidString
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            spaces: try container.decodeIfPresent(
+                [WindowSelectionHistorySpaceSnapshot].self,
+                forKey: .spaces
+            ) ?? []
+        )
+    }
+
+    func materialized() -> WindowSelectionHistory {
+        var history = WindowSelectionHistory()
+        for space in spaces {
+            history.recentRegularTabIdsBySpace[space.spaceId] =
+                space.recentRegularTabIds
+            history.recentSelectionItemsBySpace[space.spaceId] =
+                space.recentSelectionItems.map(\.domainItem)
+        }
+        return history
+    }
+
+    private static func stableKey(
+        _ space: WindowSelectionHistorySpaceSnapshot
+    ) -> String {
+        let regular = space.recentRegularTabIds
+            .map(\.uuidString)
+            .joined(separator: ",")
+        let selection = space.recentSelectionItems.map { item in
+            switch item.kind {
+            case .regularTab:
+                return "regular:\(item.id.uuidString)"
+            case .shortcutPin:
+                return "shortcut:\(item.id.uuidString)"
+            }
+        }.joined(separator: ",")
+        return "\(regular)|\(selection)"
+    }
+}
+
 struct ShortcutLiveSessionSnapshot: Codable, Equatable, Hashable {
     var shortcutPinId: UUID
     var presentationSpaceId: UUID
@@ -105,6 +269,8 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
     /// before any dictionary materialization can trap.
     private(set) var activeTabsBySpace: [SpaceTabSelectionSnapshot]
     private(set) var activeShortcutsBySpace: [SpaceShortcutSelectionSnapshot]
+    /// Bounded close-fallback history stored as stable per-Space arrays.
+    private(set) var selectionHistory: WindowSelectionHistorySnapshot
     private(set) var liveShortcuts: [ShortcutLiveSessionSnapshot]
     private(set) var collapsedPinnedSpaceIDs: [UUID]
     var sidebarWidth: Double
@@ -126,6 +292,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         case commandPaletteReason
         case activeTabsBySpace
         case activeShortcutsBySpace
+        case selectionHistory
         case liveShortcuts
         case collapsedPinnedSpaceIDs
         case sidebarWidth
@@ -148,6 +315,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         commandPaletteReason: CommandPalettePresentationReason?,
         activeTabsBySpace: [SpaceTabSelectionSnapshot],
         activeShortcutsBySpace: [SpaceShortcutSelectionSnapshot],
+        selectionHistory: WindowSelectionHistorySnapshot = .init(),
         liveShortcuts: [ShortcutLiveSessionSnapshot] = [],
         collapsedPinnedSpaceIDs: [UUID] = [],
         sidebarWidth: Double,
@@ -168,6 +336,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         self.commandPaletteReason = commandPaletteReason
         self.activeTabsBySpace = Self.canonicalized(activeTabsBySpace)
         self.activeShortcutsBySpace = Self.canonicalized(activeShortcutsBySpace)
+        self.selectionHistory = selectionHistory
         self.liveShortcuts = Self.canonicalized(liveShortcuts)
         self.collapsedPinnedSpaceIDs = Self.canonicalized(collapsedPinnedSpaceIDs)
         self.sidebarWidth = sidebarWidth
@@ -201,6 +370,10 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
                 forKey: .activeShortcutsBySpace
             ) ?? []
         )
+        selectionHistory = try container.decodeIfPresent(
+            WindowSelectionHistorySnapshot.self,
+            forKey: .selectionHistory
+        ) ?? .init()
         liveShortcuts = Self.canonicalized(
             try container.decodeIfPresent(
                 [ShortcutLiveSessionSnapshot].self,
@@ -240,6 +413,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         try container.encodeIfPresent(commandPaletteReason, forKey: .commandPaletteReason)
         try container.encode(activeTabsBySpace, forKey: .activeTabsBySpace)
         try container.encode(activeShortcutsBySpace, forKey: .activeShortcutsBySpace)
+        try container.encode(selectionHistory, forKey: .selectionHistory)
         try container.encode(liveShortcuts, forKey: .liveShortcuts)
         try container.encode(collapsedPinnedSpaceIDs, forKey: .collapsedPinnedSpaceIDs)
         try container.encode(sidebarWidth, forKey: .sidebarWidth)

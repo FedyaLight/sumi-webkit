@@ -118,6 +118,54 @@ final class BrowserTabCloseFallbackPlannerTests: XCTestCase {
         XCTAssertEqual(fallback?.id, remembered.id)
     }
 
+    func testShortcutLiveCloseUsesRestoredPreviousShortcutSelection() throws {
+        let space = Space(name: "Work")
+        let previousPin = makeShortcutPin(role: .spacePinned, spaceId: space.id)
+        let currentPin = makeShortcutPin(role: .spacePinned, spaceId: space.id)
+        let previousLiveTab = makeShortcutTab(
+            pin: previousPin,
+            spaceId: space.id
+        )
+        let currentLiveTab = makeShortcutTab(
+            pin: currentPin,
+            spaceId: space.id
+        )
+        var history = WindowSelectionHistory()
+        history.recentSelectionItemsBySpace[space.id] = [
+            .shortcutPin(currentPin.id),
+            .shortcutPin(previousPin.id),
+        ]
+        let persistedHistory = WindowSelectionHistorySnapshot(history)
+        let restoredHistory = try JSONDecoder().decode(
+            WindowSelectionHistorySnapshot.self,
+            from: JSONEncoder().encode(persistedHistory)
+        )
+        let windowState = BrowserWindowState()
+        windowState.currentSpaceId = space.id
+        windowState.selectionHistory = restoredHistory.materialized()
+        let store = FakeCloseFallbackTabStore(
+            spaces: [space],
+            tabsBySpace: [space.id: []],
+            liveShortcutTabsByPin: [
+                previousPin.id: previousLiveTab,
+                currentPin.id: currentLiveTab,
+            ]
+        )
+        let planner = BrowserTabCloseFallbackPlanner(
+            selectionService: ShellSelectionService(
+                splitQuery: BrowserManager().splitQuery
+            ),
+            tabStore: store
+        )
+
+        let fallback = planner.fallbackAfterClosingShortcutLiveTab(
+            currentLiveTab,
+            in: windowState
+        )
+
+        XCTAssertIdentical(fallback, previousLiveTab)
+    }
+
     private func makeTab(_ name: String, spaceId: UUID, index: Int) -> Tab {
         Tab(
             url: URL(string: "https://example.com/\(name.lowercased())")!,

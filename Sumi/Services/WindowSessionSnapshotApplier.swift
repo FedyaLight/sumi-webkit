@@ -45,6 +45,7 @@ struct WindowSessionSnapshotApplier {
                 ($0.spaceId, $0.shortcutPinId)
             }
         )
+        windowState.selectionHistory = snapshot.selectionHistory.materialized()
         windowState.sidebarSpacePinnedCollapse.restoreCollapsedSpaceIDs(
             snapshot.collapsedPinnedSpaceIDs
         )

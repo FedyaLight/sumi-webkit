@@ -41,6 +41,9 @@ struct WindowSessionSnapshotFactory {
                     shortcutPinId: $0.value
                 )
             },
+            selectionHistory: WindowSelectionHistorySnapshot(
+                windowState.selectionHistory
+            ),
             liveShortcuts: liveShortcuts(windowState),
             collapsedPinnedSpaceIDs: windowState.sidebarSpacePinnedCollapse
                 .persistedCollapsedSpaceIDs,
