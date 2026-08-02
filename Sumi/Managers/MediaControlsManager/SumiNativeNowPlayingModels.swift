@@ -9,6 +9,7 @@ struct SumiNativeNowPlayingInfo: Equatable {
     let title: String
     let artist: String?
     let playbackState: SumiBackgroundMediaPlaybackState
+    let canPictureInPicture: Bool
 }
 
 struct SumiBackgroundMediaFaviconSource: Equatable {
@@ -29,6 +30,7 @@ struct SumiBackgroundMediaCardState: Identifiable, Equatable {
     let faviconSource: SumiBackgroundMediaFaviconSource?
     let canPlayPause: Bool
     let canMute: Bool
+    let canPictureInPicture: Bool
 
     var isPlaying: Bool {
         playbackState == .playing
@@ -47,7 +49,8 @@ struct SumiBackgroundMediaCardState: Identifiable, Equatable {
             isMuted: muted,
             faviconSource: faviconSource,
             canPlayPause: canPlayPause,
-            canMute: canMute
+            canMute: canMute,
+            canPictureInPicture: canPictureInPicture
         )
     }
 }

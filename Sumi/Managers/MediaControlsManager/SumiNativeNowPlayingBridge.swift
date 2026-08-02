@@ -6,12 +6,14 @@ protocol SumiNowPlayingWebViewAdapter: AnyObject {
     func sumiRequestNowPlayingInfo() async -> SumiNativeNowPlayingInfo
     func sumiPlayPredominantOrNowPlayingMediaSession() async -> Bool
     func sumiPauseNowPlayingMediaSession() async -> Bool
+    func sumiTogglePictureInPicture() -> Bool
 }
 
 enum SumiNowPlayingInfoMapper {
     static func makeInfo(
         titleAndArtist: (title: String?, artist: String?),
-        playbackState: SumiBackgroundMediaPlaybackState
+        playbackState: SumiBackgroundMediaPlaybackState,
+        canPictureInPicture: Bool = false
     ) -> SumiNativeNowPlayingInfo {
         let artist = normalize(titleAndArtist.artist)
         let title =
@@ -21,7 +23,8 @@ enum SumiNowPlayingInfoMapper {
         return SumiNativeNowPlayingInfo(
             title: title,
             artist: artist,
-            playbackState: playbackState
+            playbackState: playbackState,
+            canPictureInPicture: canPictureInPicture
         )
     }
 
@@ -36,10 +39,12 @@ enum SumiNowPlayingInfoMapper {
 extension WKWebView: SumiNowPlayingWebViewAdapter {
     func sumiRequestNowPlayingInfo() async -> SumiNativeNowPlayingInfo {
         let titleAndArtist = await _nowPlayingMediaTitleAndArtist()
+        _updateMediaPlaybackControlsManager()
 
         return SumiNowPlayingInfoMapper.makeInfo(
             titleAndArtist: titleAndArtist,
-            playbackState: await sumiRequestBackgroundMediaPlaybackState()
+            playbackState: await sumiRequestBackgroundMediaPlaybackState(),
+            canPictureInPicture: _canTogglePictureInPicture
         )
     }
 
@@ -74,5 +79,12 @@ extension WKWebView: SumiNowPlayingWebViewAdapter {
                 continuation.resume(returning: success)
             }
         }
+    }
+
+    func sumiTogglePictureInPicture() -> Bool {
+        _updateMediaPlaybackControlsManager()
+        guard _canTogglePictureInPicture else { return false }
+        _togglePictureInPicture()
+        return true
     }
 }

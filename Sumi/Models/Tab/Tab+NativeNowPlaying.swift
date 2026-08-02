@@ -45,6 +45,18 @@ extension Tab {
         }
     }
 
+    func toggleSumiNativePictureInPicture(
+        using context: SumiNativeNowPlayingRuntimeContext,
+        in windowState: BrowserWindowState
+    ) async -> Bool {
+        await performSumiNativeNowPlayingCommand(
+            using: context,
+            in: windowState
+        ) { webView in
+            webView.sumiTogglePictureInPicture()
+        }
+    }
+
     private func resolvedNowPlayingWebView(
         using context: SumiNativeNowPlayingRuntimeContext,
         in windowState: BrowserWindowState

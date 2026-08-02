@@ -662,6 +662,7 @@ final class FakeNativeNowPlayingController: SumiNativeNowPlayingRuntimeControlli
     private(set) var activateOwnerCallCount = 0
     private(set) var togglePlayPauseCallCount = 0
     private(set) var toggleMuteCallCount = 0
+    private(set) var togglePictureInPictureCallCount = 0
 
     var cardState: SumiBackgroundMediaCardState? {
         subject.value
@@ -705,6 +706,10 @@ final class FakeNativeNowPlayingController: SumiNativeNowPlayingRuntimeControlli
 
     func toggleMute() async {
         toggleMuteCallCount += 1
+    }
+
+    func togglePictureInPicture() async {
+        togglePictureInPictureCallCount += 1
     }
 }
 

@@ -83,7 +83,8 @@ final class SumiNativeNowPlayingControllerFeatureGateTests: XCTestCase {
             isMuted: false,
             faviconSource: nil,
             canPlayPause: true,
-            canMute: true
+            canMute: true,
+            canPictureInPicture: false
         )
 
         XCTAssertFalse(
@@ -163,7 +164,8 @@ final class SumiNativeNowPlayingControllerFeatureGateTests: XCTestCase {
             isMuted: false,
             faviconSource: source,
             canPlayPause: true,
-            canMute: true
+            canMute: true,
+            canPictureInPicture: false
         )
 
         XCTAssertEqual(state.withMuted(true).faviconSource, source)
@@ -303,10 +305,62 @@ final class SumiNativeNowPlayingRuntimeContextTests: XCTestCase {
         XCTAssertEqual(selectionCount, 0)
     }
 
+    func testPictureInPictureCommandUsesResolvedWebViewWithoutSelectingSource() async {
+        let tab = makeTab("https://example.com/video")
+        let window = BrowserWindowState()
+        let webView = PictureInPictureNowPlayingWebViewStub(toggleResult: true)
+        var selectionCount = 0
+        let context = SumiNativeNowPlayingRuntimeContext(
+            candidateTabs: { [] },
+            windowState: { _ in window },
+            windowRegistry: { nil },
+            resolvedTab: { _, _ in tab },
+            resolvedNowPlayingWebView: { _, _ in webView },
+            selectTab: { _, _ in selectionCount += 1 }
+        )
+
+        let didToggle = await tab.toggleSumiNativePictureInPicture(
+            using: context,
+            in: window
+        )
+
+        XCTAssertTrue(didToggle)
+        XCTAssertEqual(webView.togglePictureInPictureCallCount, 1)
+        XCTAssertEqual(selectionCount, 0)
+    }
+
     private func makeTab(_ url: String) -> Tab {
         Tab(
             url: URL(string: url)!,
             loadsCachedFaviconOnInit: false
         )
+    }
+}
+
+@MainActor
+private final class PictureInPictureNowPlayingWebViewStub: SumiNowPlayingWebViewAdapter {
+    private let toggleResult: Bool
+    private(set) var togglePictureInPictureCallCount = 0
+
+    init(toggleResult: Bool) {
+        self.toggleResult = toggleResult
+    }
+
+    func sumiRequestNowPlayingInfo() async -> SumiNativeNowPlayingInfo {
+        SumiNativeNowPlayingInfo(
+            title: "Video",
+            artist: nil,
+            playbackState: .playing,
+            canPictureInPicture: true
+        )
+    }
+
+    func sumiPlayPredominantOrNowPlayingMediaSession() async -> Bool { false }
+
+    func sumiPauseNowPlayingMediaSession() async -> Bool { false }
+
+    func sumiTogglePictureInPicture() -> Bool {
+        togglePictureInPictureCallCount += 1
+        return toggleResult
     }
 }

@@ -20,6 +20,7 @@ protocol SumiNativeNowPlayingRuntimeControlling: SumiNativeNowPlayingFeatureCont
     func activateOwner()
     func togglePlayPause() async
     func toggleMute() async
+    func togglePictureInPicture() async
 }
 
 @MainActor
@@ -178,6 +179,8 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
             pausedCardOwner = OwnerContext(tabId: owner.tab.id, windowId: owner.windowState.id)
         case .play:
             pausedCardOwner = nil
+        case .pictureInPicture:
+            return
         }
 
         if var updatedCardState = self.cardState {
@@ -221,6 +224,23 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
 
         self.cardState = cardState.withMuted(owner.tab.audioState.isMuted)
         scheduleRefresh(delayNanoseconds: 0)
+    }
+
+    func togglePictureInPicture() async {
+        guard isFeatureEnabled,
+              let runtimeContext,
+              let owner = resolvedOwner(using: runtimeContext),
+              cardState?.canPictureInPicture == true
+        else {
+            return
+        }
+
+        _ = await commandExecutor(
+            .pictureInPicture,
+            owner.tab,
+            runtimeContext,
+            owner.windowState
+        )
     }
 
     private var shouldPreferFreshDiscovery: Bool {
@@ -365,7 +385,8 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
             isMuted: tab.audioState.isMuted,
             faviconSource: faviconSource,
             canPlayPause: true,
-            canMute: playbackState == .playing
+            canMute: playbackState == .playing,
+            canPictureInPicture: info?.canPictureInPicture == true
         )
     }
 
@@ -443,6 +464,7 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
     enum SumiNativeNowPlayingCommand {
         case play
         case pause
+        case pictureInPicture
     }
 }
 
@@ -478,6 +500,11 @@ extension SumiNativeNowPlayingController {
             )
         case .pause:
             return await tab.pauseSumiNativeNowPlayingSession(
+                using: context,
+                in: windowState
+            )
+        case .pictureInPicture:
+            return await tab.toggleSumiNativePictureInPicture(
                 using: context,
                 in: windowState
             )
@@ -541,6 +568,10 @@ final class SumiBackgroundMediaCardStore: ObservableObject {
 
     func toggleMute() async {
         await controller.toggleMute()
+    }
+
+    func togglePictureInPicture() async {
+        await controller.togglePictureInPicture()
     }
 
     private func applyVisibleState(_ state: SumiBackgroundMediaCardState?) {

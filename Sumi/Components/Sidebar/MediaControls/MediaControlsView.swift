@@ -48,7 +48,10 @@ struct MediaControlsView: View {
                     faviconImageReader: faviconImageReader,
                     onFocus: mediaStore.activateSource,
                     onPlayPause: { Task { await mediaStore.togglePlayPause() } },
-                    onToggleMute: { Task { await mediaStore.toggleMute() } }
+                    onToggleMute: { Task { await mediaStore.toggleMute() } },
+                    onTogglePictureInPicture: {
+                        Task { await mediaStore.togglePictureInPicture() }
+                    }
                 )
                 .padding(.horizontal, 8)
                 .padding(.bottom, 4)
@@ -96,6 +99,7 @@ private struct SumiBackgroundMediaCardView: View {
     private static let focusButtonSourceIDPrefix = "sidebar-mini-player-focus"
     private static let playPauseButtonSourceIDPrefix = "sidebar-mini-player-play-pause"
     private static let muteButtonSourceIDPrefix = "sidebar-mini-player-mute"
+    private static let pictureInPictureButtonSourceIDPrefix = "sidebar-mini-player-pip"
     // The expanded card can visually cover sidebar rows; route mini-player hits above row owners.
     private static let cardSurfaceRoutingPriorityBoost = 40
     private static let controlRoutingPriorityBoost = 50
@@ -105,6 +109,7 @@ private struct SumiBackgroundMediaCardView: View {
     let onFocus: () -> Void
     let onPlayPause: () -> Void
     let onToggleMute: () -> Void
+    let onTogglePictureInPicture: () -> Void
 
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
@@ -154,6 +159,10 @@ private struct SumiBackgroundMediaCardView: View {
 
     private var muteButtonSourceID: String {
         "\(Self.muteButtonSourceIDPrefix)-\(cardSourceIDComponent)"
+    }
+
+    private var pictureInPictureButtonSourceID: String {
+        "\(Self.pictureInPictureButtonSourceIDPrefix)-\(cardSourceIDComponent)"
     }
 
     var body: some View {
@@ -234,6 +243,14 @@ private struct SumiBackgroundMediaCardView: View {
             }
 
             Spacer(minLength: 4)
+
+            compactIconButton(
+                systemName: "pip.enter",
+                help: "Picture in Picture",
+                isEnabled: cardState.canPictureInPicture,
+                sourceID: pictureInPictureButtonSourceID,
+                action: onTogglePictureInPicture
+            )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
