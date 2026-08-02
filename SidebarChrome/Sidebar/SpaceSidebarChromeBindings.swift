@@ -54,15 +54,17 @@ struct SpaceSidebarUpdateNoticeStrip: View {
     var body: some View {
         Group {
             if sidebarPresentationContext.inputMode == .collapsedOverlay {
-                HStack {
-                    Spacer(minLength: 0)
-                    SumiUpdateSidebarCompactIndicator(
-                        notice: notice,
-                        onUpdate: onUpdate
-                    )
-                    .disabled(notice.primaryActionTitle == nil)
+                if case .progress(let progressNotice) = notice {
+                    HStack {
+                        Spacer(minLength: 0)
+                        SumiUpdateSidebarCompactIndicator(
+                            notice: progressNotice,
+                            onUpdate: onUpdate
+                        )
+                        .disabled(progressNotice.primaryActionTitle == nil)
+                    }
+                    .padding(.horizontal, 8)
                 }
-                .padding(.horizontal, 8)
             } else {
                 SumiUpdateSidebarNoticeView(
                     notice: notice,

@@ -13,15 +13,16 @@ struct SumiUpdateSidebarNoticeView: View {
     let onOpenURL: (URL) -> Void
 
     var body: some View {
-        if case .installed = notice {
+        switch notice {
+        case .installed(let update):
             SumiUpdateSidebarInstalledNoticeView(
-                notice: notice,
+                update: update,
                 onDismiss: onDismiss,
                 onOpenURL: onOpenURL
             )
-        } else {
+        case .progress(let progressNotice):
             SumiUpdateSidebarProgressNoticeView(
-                notice: notice,
+                notice: progressNotice,
                 onUpdate: onUpdate,
                 onDismiss: onDismiss
             )
@@ -35,7 +36,7 @@ private struct SumiUpdateSidebarProgressNoticeView: View {
         dampingFraction: 0.86
     )
 
-    let notice: SumiUpdateSidebarNotice
+    let notice: SumiUpdateSidebarProgressNotice
     let onUpdate: () -> Void
     let onDismiss: () -> Void
 
@@ -121,7 +122,7 @@ private struct SumiUpdateSidebarProgressNoticeView: View {
 }
 
 private struct SumiUpdateSidebarInstalledNoticeView: View {
-    let notice: SumiUpdateSidebarNotice
+    let update: SumiInstalledUpdate
     let onDismiss: () -> Void
     let onOpenURL: (URL) -> Void
 
@@ -134,22 +135,20 @@ private struct SumiUpdateSidebarInstalledNoticeView: View {
             SumiUpdateSidebarInstalledNoticeHeader(onDismiss: onDismiss)
 
             VStack(spacing: 2) {
-                if let releaseNotesURL = notice.installedReleaseNotesURL {
-                    SumiUpdateSidebarLinkRow(
-                        title: "What's new in Sumi",
-                        systemImageName: "heart.circle.fill",
-                        url: releaseNotesURL,
-                        foreground: SumiUpdateSidebarNoticeThemeTokens.Colors.completedAccent(
-                            tokens: chromeTokens
-                        ),
-                        onOpenURL: openLink
-                    )
-                }
+                SumiUpdateSidebarLinkRow(
+                    title: "What's new in Sumi",
+                    systemImageName: "heart.circle.fill",
+                    url: SumiUpdateReleaseNotesURL.url(
+                        forDisplayVersion: update.displayVersion
+                    ),
+                    foreground: SumiUpdateSidebarNoticeThemeTokens.Colors.completedAccent,
+                    onOpenURL: openLink
+                )
 
                 SumiUpdateSidebarLinkRow(
                     title: "Support us",
                     systemImageName: "gift",
-                    url: SumiUpdateSidebarExternalLinks.support,
+                    url: SumiExternalLinks.support,
                     foreground: SumiUpdateSidebarNoticeThemeTokens.Colors.completedNeutralForeground(
                         tokens: chromeTokens
                     ),
@@ -159,7 +158,7 @@ private struct SumiUpdateSidebarInstalledNoticeView: View {
                 SumiUpdateSidebarLinkRow(
                     title: "Something broke?",
                     systemImageName: "exclamationmark.bubble",
-                    url: SumiUpdateSidebarExternalLinks.issues,
+                    url: SumiExternalLinks.issues,
                     foreground: SumiUpdateSidebarNoticeThemeTokens.Colors.completedNeutralForeground(
                         tokens: chromeTokens
                     ),
@@ -345,7 +344,7 @@ private struct SumiUpdateSidebarActionButton: View {
 }
 
 struct SumiUpdateSidebarCompactIndicator: View {
-    let notice: SumiUpdateSidebarNotice
+    let notice: SumiUpdateSidebarProgressNotice
     let onUpdate: () -> Void
 
     var body: some View {

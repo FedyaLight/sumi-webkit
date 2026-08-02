@@ -75,14 +75,14 @@ final class SumiUpdaterServiceTests: XCTestCase {
     }
 
     func testSidebarActionTitleTracksUpdateProgressInOneNotice() {
-        let available = SumiUpdateSidebarNotice.available(
+        let available = SumiUpdateSidebarProgressNotice.available(
             update(displayVersion: "1.1.0", buildVersion: "110")
         )
         XCTAssertEqual(available.title, "New Sumi Version Available")
         XCTAssertEqual(available.sidebarActionTitle, "Restart and Update")
         XCTAssertFalse(available.showsPersistentStatus)
 
-        let downloading = SumiUpdateSidebarNotice.operation(
+        let downloading = SumiUpdateSidebarProgressNotice.operation(
             SumiUpdateOperationNotice(
                 stage: .downloading,
                 title: "Updating Sumi",
@@ -94,7 +94,7 @@ final class SumiUpdaterServiceTests: XCTestCase {
         XCTAssertEqual(downloading.sidebarActionTitle, "42%")
         XCTAssertTrue(downloading.showsPersistentStatus)
 
-        let extracting = SumiUpdateSidebarNotice.operation(
+        let extracting = SumiUpdateSidebarProgressNotice.operation(
             SumiUpdateOperationNotice(
                 stage: .extracting,
                 title: "Preparing update",
@@ -104,7 +104,7 @@ final class SumiUpdaterServiceTests: XCTestCase {
         )
         XCTAssertEqual(extracting.sidebarActionTitle, "Installing…")
 
-        let installing = SumiUpdateSidebarNotice.operation(
+        let installing = SumiUpdateSidebarProgressNotice.operation(
             SumiUpdateOperationNotice(
                 stage: .installing,
                 title: "Installing update",
@@ -137,7 +137,7 @@ final class SumiUpdaterServiceTests: XCTestCase {
             installedUpdate: nil,
             dismissalStore: store
         )
-        XCTAssertEqual(firstNotice, .available(first))
+        XCTAssertEqual(firstNotice, .progress(.available(first)))
 
         let operation = SumiUpdateOperationNotice(
             stage: .downloading,
@@ -152,7 +152,7 @@ final class SumiUpdaterServiceTests: XCTestCase {
                 installedUpdate: nil,
                 dismissalStore: store
             ),
-            .operation(operation)
+            .progress(.operation(operation))
         )
 
         store.dismissNotice(identifier: first.noticeIdentifier)
@@ -171,7 +171,7 @@ final class SumiUpdaterServiceTests: XCTestCase {
             installedUpdate: nil,
             dismissalStore: store
         )
-        XCTAssertEqual(secondNotice, .available(second))
+        XCTAssertEqual(secondNotice, .progress(.available(second)))
     }
 
     func testInstalledVersionChangeShowsSuccessSidebarNoticeOnce() {
@@ -193,12 +193,8 @@ final class SumiUpdaterServiceTests: XCTestCase {
     }
 
     func testInstalledNoticeUsesVersionedReleaseNotesURL() {
-        let notice = SumiUpdateSidebarNotice.installed(
-            SumiInstalledUpdate(displayVersion: "2.0.0", buildVersion: "200")
-        )
-
         XCTAssertEqual(
-            notice.installedReleaseNotesURL,
+            SumiUpdateReleaseNotesURL.url(forDisplayVersion: "2.0.0"),
             URL(string: "https://sumi-browser.netlify.app/changelog/#2.0.0")
         )
     }

@@ -33,7 +33,7 @@ enum SumiUpdateReleaseNotesURL {
     }
 }
 
-enum SumiUpdateSidebarExternalLinks {
+enum SumiExternalLinks {
     static let support = URL(string: "https://sumi-browser.netlify.app/support/")!
     static let issues = URL(string: "https://github.com/FedyaLight/sumi-webkit/issues")!
 }
@@ -161,23 +161,16 @@ enum SumiUpdateVersionComparator {
 
 enum SumiUpdateSidebarNoticeVisualStyle: Equatable, Sendable {
     case accent
-    case success
     case progress
     case warning
 }
 
-enum SumiUpdateSidebarNotice: Equatable, Sendable {
+enum SumiUpdateSidebarProgressNotice: Equatable, Sendable {
     case available(SumiAvailableUpdate)
     case operation(SumiUpdateOperationNotice)
-    case installed(SumiInstalledUpdate)
 
     var title: String {
-        switch self {
-        case .available, .operation:
-            return "New Sumi Version Available"
-        case .installed:
-            return "Sumi Was Updated"
-        }
+        "New Sumi Version Available"
     }
 
     var sidebarActionTitle: String {
@@ -195,8 +188,6 @@ enum SumiUpdateSidebarNotice: Equatable, Sendable {
             case .failed:
                 return "Update Failed"
             }
-        case .installed:
-            return "Update Complete"
         }
     }
 
@@ -213,7 +204,7 @@ enum SumiUpdateSidebarNotice: Equatable, Sendable {
         switch self {
         case .available:
             return false
-        case .operation, .installed:
+        case .operation:
             return true
         }
     }
@@ -224,8 +215,6 @@ enum SumiUpdateSidebarNotice: Equatable, Sendable {
             return update.versionLine
         case .operation(let notice):
             return notice.detail
-        case .installed(let update):
-            return "\(update.versionLine) installed"
         }
     }
 
@@ -233,14 +222,14 @@ enum SumiUpdateSidebarNotice: Equatable, Sendable {
         switch self {
         case .available:
             return "Restart and Update"
-        case .operation, .installed:
+        case .operation:
             return nil
         }
     }
 
     var isDismissible: Bool {
         switch self {
-        case .available, .installed:
+        case .available:
             return true
         case .operation(let notice):
             return notice.stage == .failed
@@ -266,8 +255,6 @@ enum SumiUpdateSidebarNotice: Equatable, Sendable {
             case .failed:
                 return "exclamationmark.triangle.fill"
             }
-        case .installed:
-            return "checkmark.circle.fill"
         }
     }
 
@@ -277,8 +264,6 @@ enum SumiUpdateSidebarNotice: Equatable, Sendable {
             return .accent
         case .operation(let notice):
             return notice.stage == .failed ? .warning : .progress
-        case .installed:
-            return .success
         }
     }
 
@@ -288,10 +273,11 @@ enum SumiUpdateSidebarNotice: Equatable, Sendable {
         return "\(percentage)%"
     }
 
-    var installedReleaseNotesURL: URL? {
-        guard case .installed(let update) = self else { return nil }
-        return SumiUpdateReleaseNotesURL.url(forDisplayVersion: update.displayVersion)
-    }
+}
+
+enum SumiUpdateSidebarNotice: Equatable, Sendable {
+    case progress(SumiUpdateSidebarProgressNotice)
+    case installed(SumiInstalledUpdate)
 }
 
 protocol SumiUpdateNoticeDismissalPersisting: AnyObject {
@@ -341,7 +327,7 @@ enum SumiUpdateNoticeVisibilityResolver {
         dismissalStore: SumiUpdateNoticeDismissalPersisting
     ) -> SumiUpdateSidebarNotice? {
         if let operationNotice {
-            return .operation(operationNotice)
+            return .progress(.operation(operationNotice))
         }
 
         guard case .available(let update) = availability else {
@@ -354,7 +340,7 @@ enum SumiUpdateNoticeVisibilityResolver {
         guard dismissalStore.dismissedNoticeIdentifier() != update.noticeIdentifier else {
             return nil
         }
-        return .available(update)
+        return .progress(.available(update))
     }
 }
 
@@ -605,15 +591,15 @@ final class SumiUpdaterService: ObservableObject {
 
     func dismissSidebarNotice(_ notice: SumiUpdateSidebarNotice) {
         switch notice {
-        case .available(let update):
-            dismissUpdateNotice(for: update)
         case .installed(let update):
             dismissalStore.dismissInstalledNotice(identifier: update.noticeIdentifier)
             refreshSidebarNotice()
-        case .operation(let operation) where operation.stage == .failed:
+        case .progress(.available(let update)):
+            dismissUpdateNotice(for: update)
+        case .progress(.operation(let operation)) where operation.stage == .failed:
             operationNotice = nil
             refreshSidebarNotice()
-        case .operation:
+        case .progress(.operation):
             break
         }
     }

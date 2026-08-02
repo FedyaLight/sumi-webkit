@@ -58,15 +58,13 @@ enum SumiUpdateSidebarNoticeThemeTokens {
             tokens?.secondaryText ?? .secondary
         }
 
-        static func completedAccent(tokens _: ChromeThemeTokens?) -> Color {
-            Color(
-                .sRGB,
-                red: 156.0 / 255.0,
-                green: 116.0 / 255.0,
-                blue: 101.0 / 255.0,
-                opacity: 1
-            )
-        }
+        static let completedAccent = Color(
+            .sRGB,
+            red: 156.0 / 255.0,
+            green: 116.0 / 255.0,
+            blue: 101.0 / 255.0,
+            opacity: 1
+        )
 
         static func completedNeutralForeground(tokens: ChromeThemeTokens?) -> Color {
             tokens?.secondaryText ?? .secondary
@@ -80,8 +78,6 @@ enum SumiUpdateSidebarNoticeThemeTokens {
             switch visualStyle {
             case .accent, .progress:
                 return .accentColor
-            case .success:
-                return .green
             case .warning:
                 return .yellow
             }
