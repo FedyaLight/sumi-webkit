@@ -145,6 +145,7 @@ struct SpacesSideBarView: View {
                     cancelTheme: true
                 )
                 scrollHoverCoordinator.reset()
+                windowState.sidebarInteractionState.hoverSession.setScrollSuppressed(false)
             }
             .onAppear {
                 syncSpaceSwitchConsumer(isEnabled: allowsSidebarInteractiveWork)

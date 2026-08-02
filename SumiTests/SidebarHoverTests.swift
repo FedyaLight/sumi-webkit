@@ -460,6 +460,62 @@ final class SidebarHoverTests: XCTestCase {
         XCTAssertNil(view.hitTest(NSPoint(x: 12, y: 12)))
     }
 
+    func testScrollRestoreDoesNotAccumulateHoveringRows() async {
+        let window = Self.makeHoverWindow()
+        let windowState = BrowserWindowState()
+        let coordinator = NativeSurfaceScrollHoverCoordinator(
+            hoverRestoreDelayNanoseconds: 0,
+            sleepForNanoseconds: { _ in }
+        )
+        let model = ScrollHoverHarnessModel()
+        var firstHovered = false
+        var secondHovered = false
+        let host = NSHostingView(
+            rootView: ScrollHoverHarness(
+                windowState: windowState,
+                coordinator: coordinator,
+                model: model,
+                firstHovered: Binding(
+                    get: { firstHovered },
+                    set: { firstHovered = $0 }
+                ),
+                secondHovered: Binding(
+                    get: { secondHovered },
+                    set: { secondHovered = $0 }
+                )
+            )
+        )
+        host.frame = NSRect(x: 0, y: 0, width: 120, height: 72)
+        window.contentView?.addSubview(host)
+        host.layoutSubtreeIfNeeded()
+        await waitForHoverPasses()
+
+        let session = windowState.sidebarInteractionState.hoverSession
+        // Model a reused row whose SwiftUI state is still hovered while its
+        // native registration has not published hover for this incarnation.
+        firstHovered = true
+        XCTAssertTrue(firstHovered)
+        XCTAssertFalse(secondHovered)
+
+        coordinator.setScrolling(true, region: "sidebar")
+        model.contentOffset = -36
+        await waitForHoverPasses()
+        host.layoutSubtreeIfNeeded()
+
+        XCTAssertFalse(firstHovered)
+        XCTAssertFalse(secondHovered)
+
+        coordinator.setScrolling(false, region: "sidebar")
+        await waitForHoverPasses()
+        session.reconcile(
+            window: window,
+            mouseLocationInWindow: NSPoint(x: 24, y: 54)
+        )
+
+        XCTAssertFalse(firstHovered)
+        XCTAssertTrue(secondHovered)
+    }
+
     func testStaleMouseEnteredAfterNewerExitDoesNotPublishHover() {
         let window = Self.makeHoverWindow()
         let view = Self.addHoverView(
@@ -547,6 +603,101 @@ final class SidebarHoverTests: XCTestCase {
         session.setSuspended(true)
 
         XCTAssertFalse(isHovered)
+    }
+
+    func testScrollSuppressionClearsHoverBeforeRestoringCurrentGeometry() {
+        let window = Self.makeHoverWindow()
+        let firstView = Self.addHoverView(
+            to: window,
+            frame: NSRect(x: 0, y: 0, width: 120, height: 36)
+        )
+        let secondView = Self.addHoverView(
+            to: window,
+            frame: NSRect(x: 0, y: 36, width: 120, height: 36)
+        )
+        let session = SidebarHoverSession()
+        let firstRegistration = SidebarHoverRegistration()
+        let secondRegistration = SidebarHoverRegistration()
+        var firstHovered = false
+        var secondHovered = false
+        firstRegistration.update(
+            view: firstView,
+            session: session,
+            isEnabled: true
+        ) { hovering, _ in
+            firstHovered = hovering
+        }
+        secondRegistration.update(
+            view: secondView,
+            session: session,
+            isEnabled: true
+        ) { hovering, _ in
+            secondHovered = hovering
+        }
+
+        session.reconcile(
+            window: window,
+            mouseLocationInWindow: NSPoint(x: 12, y: 12)
+        )
+        XCTAssertTrue(firstHovered)
+        XCTAssertFalse(secondHovered)
+
+        session.setScrollSuppressed(true)
+
+        XCTAssertFalse(firstHovered)
+        XCTAssertFalse(secondHovered)
+
+        firstView.frame.origin.y = 36
+        secondView.frame.origin.y = 0
+        session.setScrollSuppressed(false)
+        session.reconcile(
+            window: window,
+            mouseLocationInWindow: NSPoint(x: 12, y: 12)
+        )
+
+        XCTAssertFalse(firstHovered)
+        XCTAssertTrue(secondHovered)
+    }
+
+    func testScrollRestoreDoesNotOverrideInteractionSuspension() {
+        let window = Self.makeHoverWindow()
+        let view = Self.addHoverView(
+            to: window,
+            frame: NSRect(x: 0, y: 0, width: 120, height: 36)
+        )
+        let session = SidebarHoverSession()
+        let registration = SidebarHoverRegistration()
+        var isHovered = false
+        registration.update(
+            view: view,
+            session: session,
+            isEnabled: true
+        ) { hovering, _ in
+            isHovered = hovering
+        }
+        session.reconcile(
+            window: window,
+            mouseLocationInWindow: NSPoint(x: 12, y: 12)
+        )
+        XCTAssertTrue(isHovered)
+
+        session.setSuspended(true)
+        session.setScrollSuppressed(true)
+        session.setScrollSuppressed(false)
+        session.reconcile(
+            window: window,
+            mouseLocationInWindow: NSPoint(x: 12, y: 12)
+        )
+
+        XCTAssertFalse(isHovered)
+
+        session.setSuspended(false)
+        session.reconcile(
+            window: window,
+            mouseLocationInWindow: NSPoint(x: 12, y: 12)
+        )
+
+        XCTAssertTrue(isHovered)
     }
 
     func testApplicationDeactivationClearsEveryRegisteredHover() {
@@ -661,5 +812,56 @@ final class SidebarHoverTests: XCTestCase {
             fatalError("Failed to create \(type) event")
         }
         return event
+    }
+
+    private func waitForHoverPasses() async {
+        for _ in 0..<5 {
+            await Task.yield()
+        }
+    }
+}
+
+@MainActor
+private final class ScrollHoverHarnessModel: ObservableObject {
+    @Published var contentOffset: CGFloat = 0
+}
+
+@MainActor
+private struct ScrollHoverHarness: View {
+    let windowState: BrowserWindowState
+    let coordinator: NativeSurfaceScrollHoverCoordinator
+    @ObservedObject var model: ScrollHoverHarnessModel
+    @Binding var firstHovered: Bool
+    @Binding var secondHovered: Bool
+
+    var body: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: 0) {
+                Color.clear
+                    .frame(width: 120, height: 36)
+                    .contentShape(Rectangle())
+                    .sidebarHover($firstHovered)
+
+                Color.clear
+                    .frame(width: 120, height: 36)
+                    .contentShape(Rectangle())
+                    .sidebarHover($secondHovered)
+            }
+            .offset(y: model.contentOffset)
+        }
+        .frame(width: 120, height: 72)
+        .environment(windowState)
+        .modifier(ScrollHoverEnvironmentHarnessModifier(coordinator: coordinator))
+    }
+}
+
+private struct ScrollHoverEnvironmentHarnessModifier: ViewModifier {
+    @ObservedObject var coordinator: NativeSurfaceScrollHoverCoordinator
+
+    func body(content: Content) -> some View {
+        content.environment(
+            \.nativeSurfaceHoverUpdatesEnabled,
+            coordinator.hoverUpdatesEnabled
+        )
     }
 }

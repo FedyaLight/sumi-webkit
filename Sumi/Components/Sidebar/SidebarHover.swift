@@ -67,6 +67,11 @@ private struct SidebarHoverModifier: ViewModifier {
             .allowsHitTesting(false)
             .accessibilityHidden(true)
         }
+        .onChange(of: effectiveIsEnabled) { _, enabled in
+            if !enabled {
+                isHovered = false
+            }
+        }
     }
 }
 
@@ -134,6 +139,11 @@ private struct SidebarHoverActionModifier: ViewModifier {
             )
             .allowsHitTesting(false)
             .accessibilityHidden(true)
+        }
+        .onChange(of: effectiveIsEnabled) { _, enabled in
+            if !enabled {
+                onChange(false)
+            }
         }
     }
 }

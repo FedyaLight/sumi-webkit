@@ -137,6 +137,7 @@ final class SidebarHoverSession: NSObject {
     private var lastPointerTimestampByWindow: [ObjectIdentifier: TimeInterval] = [:]
     private var lifecycleReconcileScheduled = false
     private var isSuspended = false
+    private var isScrollSuppressed = false
     private var isApplicationActive = true
     private var observesLifecycle = false
     private let pointerScreenLocation: () -> NSPoint
@@ -170,7 +171,7 @@ final class SidebarHoverSession: NSObject {
                   let mouseLocation = signal.mouseLocationInWindow,
                   acceptPointerTimestamp(signal.timestamp, in: window)
             else { return }
-            guard !isSuspended, isApplicationActive else { return }
+            guard !isHoverResolutionSuspended, isApplicationActive else { return }
 
             // A BrowserWindowState can briefly own both docked and overlay
             // hosts. One physical pointer event belongs to exactly one window.
@@ -196,6 +197,20 @@ final class SidebarHoverSession: NSObject {
         }
     }
 
+    /// Scroll suppression is independent from drag/transient suspension. A
+    /// scroll can finish while another interaction is still holding hover
+    /// suspended, so the two reasons must not overwrite each other.
+    func setScrollSuppressed(_ suppressed: Bool) {
+        guard isScrollSuppressed != suppressed else { return }
+        isScrollSuppressed = suppressed
+        if suppressed {
+            pendingLifecycleRegistrations.removeAll()
+            clearAll()
+        } else {
+            requestLifecycleReconcileForAllWindows()
+        }
+    }
+
     /// Internal seam used by deterministic tests and by the coalesced lifecycle pass.
     func reconcile(
         window: NSWindow,
@@ -203,7 +218,7 @@ final class SidebarHoverSession: NSObject {
         source: SidebarHoverChangeSource = .lifecycle
     ) {
         pruneRegistrations()
-        guard !isSuspended, isApplicationActive else {
+        guard !isHoverResolutionSuspended, isApplicationActive else {
             clearRegistrations(in: window)
             return
         }
@@ -237,7 +252,7 @@ final class SidebarHoverSession: NSObject {
             self.lifecycleReconcileScheduled = false
             let pendingRegistrations = self.pendingLifecycleRegistrations.values.compactMap(\.value)
             self.pendingLifecycleRegistrations.removeAll()
-            guard !self.isSuspended, self.isApplicationActive else {
+            guard !self.isHoverResolutionSuspended, self.isApplicationActive else {
                 self.clearAll()
                 return
             }
@@ -291,6 +306,10 @@ final class SidebarHoverSession: NSObject {
 
     private var liveRegistrations: [SidebarHoverRegistration] {
         registrations.values.compactMap(\.value)
+    }
+
+    private var isHoverResolutionSuspended: Bool {
+        isSuspended || isScrollSuppressed
     }
 
     private func clearAll() {

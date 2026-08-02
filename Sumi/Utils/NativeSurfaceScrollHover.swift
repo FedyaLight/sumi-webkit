@@ -157,6 +157,11 @@ private struct NativeSurfaceHoverModifier: ViewModifier {
             .allowsHitTesting(false)
             .accessibilityHidden(true)
         }
+        .onChange(of: effectiveIsEnabled) { _, enabled in
+            if !enabled {
+                isHovered = false
+            }
+        }
     }
 }
 

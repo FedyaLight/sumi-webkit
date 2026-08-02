@@ -47,6 +47,7 @@ struct SpaceScrollChromeSurface<Content: View>: View {
     @Environment(\.resolvedThemeContext) var themeContext
     @Environment(\.chromeThemeTokens) var scopedChromeTokens
     @Environment(\.sumiSettings) var sumiSettings
+    @Environment(BrowserWindowState.self) private var windowState
 
     private var tokens: ChromeThemeTokens {
         scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
@@ -89,7 +90,8 @@ struct SpaceScrollChromeSurface<Content: View>: View {
         .frame(width: contentWidth, alignment: .leading)
         .modifier(
             SidebarScrollHoverEnvironmentModifier(
-                coordinator: scrollHoverCoordinator
+                coordinator: scrollHoverCoordinator,
+                hoverSession: windowState.sidebarInteractionState.hoverSession
             )
         )
         .suppressesNativeSurfaceHoverWhileScrolling(scrollHoverCoordinator, region: "sidebar-tabs-\(spaceId.uuidString)")
@@ -134,12 +136,23 @@ struct SpaceScrollChromeSurface<Content: View>: View {
 
 private struct SidebarScrollHoverEnvironmentModifier: ViewModifier {
     @ObservedObject var coordinator: NativeSurfaceScrollHoverCoordinator
+    let hoverSession: SidebarHoverSession
 
     func body(content: Content) -> some View {
         content.environment(
             \.nativeSurfaceHoverUpdatesEnabled,
             coordinator.hoverUpdatesEnabled
         )
+        .onAppear {
+            synchronizeHoverSession()
+        }
+        .onChange(of: coordinator.hoverUpdatesEnabled) { _, _ in
+            synchronizeHoverSession()
+        }
+    }
+
+    private func synchronizeHoverSession() {
+        hoverSession.setScrollSuppressed(!coordinator.hoverUpdatesEnabled)
     }
 }
 
