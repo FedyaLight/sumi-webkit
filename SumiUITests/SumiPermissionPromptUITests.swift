@@ -1,12 +1,62 @@
 import Foundation
 import XCTest
 
-/// End-to-end oracle for Sumi's own permission surface. A loopback page
-/// initiates a user-activated external-scheme navigation and the test denies
-/// it in Sumi, so no external application is launched and no network or macOS
-/// TCC state participates in the result.
+/// End-to-end oracles for browser-owned native UI triggered by loopback pages.
 @MainActor
 final class SumiPermissionPromptUITests: SumiLaunchSmokeUITestCase {
+    func testUserActivatedFileInputPresentsSystemOpenPanel() throws {
+        let buttonLabel = "Add photo"
+        let server = try SumiUIOracleHTTPServer(
+            path: "file-picker-oracle.html",
+            html: """
+            <!DOCTYPE html>
+            <html>
+            <head><meta charset="utf-8"><title>File Picker Oracle</title></head>
+            <body>
+              <button type="button" onclick="document.getElementById('photo').click()">
+                \(buttonLabel)
+              </button>
+              <input id="photo" type="file" accept="image/*" hidden>
+            </body>
+            </html>
+            """
+        )
+        defer { server.stop() }
+
+        let preferencesHomeURL = try prepareSelectedRegularTabPreferencesHome(
+            tabURLString: server.pageURL.absoluteString,
+            tabName: "File Picker UI Oracle"
+        )
+        let appSupportRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SumiFilePickerUITests-\(UUID().uuidString)", isDirectory: true)
+        let app = try launchApp(
+            preferencesHomeURL: preferencesHomeURL,
+            additionalEnvironment: [
+                "AppleLanguages": "(en)",
+                "AppleLocale": "en_US",
+                "SUMI_APP_SUPPORT_OVERRIDE": appSupportRoot.path,
+            ]
+        )
+        let browserWindow = app.windows.element(boundBy: 0)
+        XCTAssertTrue(browserWindow.waitForExistence(timeout: 10), "The browser window did not appear")
+
+        let addPhotoButton = renderedElement(label: buttonLabel, in: browserWindow)
+        wait(
+            for: NSPredicate(format: "exists == true AND hittable == true"),
+            on: addPhotoButton,
+            timeout: 20,
+            message: "The file input trigger did not render"
+        )
+        addPhotoButton.click()
+
+        let openPanel = app.sheets.firstMatch
+        XCTAssertTrue(
+            openPanel.waitForExistence(timeout: 5),
+            "A user-activated HTML file input did not present the system open panel"
+        )
+        openPanel.buttons["Cancel"].click()
+    }
+
     func testExternalSchemePermissionPromptCanDenyWithoutLeavingPage() throws {
         let token = UUID().uuidString.prefix(8)
         let bodyMarker = "SUMI-PERMISSION-ORACLE-\(token)"
