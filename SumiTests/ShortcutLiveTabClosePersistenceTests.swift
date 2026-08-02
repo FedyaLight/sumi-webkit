@@ -9,12 +9,77 @@ final class ShortcutLiveTabClosePersistenceTests: XCTestCase {
     func testSelectedCloseWithFallbackCommitsWindowSessionOnce() throws {
         let fixture = try makeFixture(hasFallback: true, liveTabIsSelected: true)
 
-        XCTAssertTrue(fixture.closeLiveTab())
+        XCTAssertTrue(
+            fixture.tabManager.tabCloseOrchestration.closeTab(
+                fixture.liveTab,
+                in: fixture.windowState
+            )
+        )
 
         XCTAssertEqual(fixture.probe.commits, [.retirement])
         XCTAssertEqual(fixture.windowState.currentTabId, fixture.fallback?.id)
         XCTAssertNil(fixture.windowState.currentShortcutPinId)
         XCTAssertTrue(fixture.probe.teardownObservedAfterVisualHandoff)
+        XCTAssertNil(
+            fixture.tabManager.shortcutPresentationOwner.shortcutLiveTab(
+                for: fixture.pin.id,
+                in: fixture.windowState.id
+            )
+        )
+    }
+
+    func testRestoredSelectedCloseUsesPreviousRegularCandidate() throws {
+        let fixture = try makeFixture(
+            hasFallback: true,
+            liveTabIsSelected: true,
+            restoredLiveSession: true
+        )
+
+        XCTAssertEqual(
+            fixture.liveTab.url,
+            URL(string: "https://shortcut.example/continued")
+        )
+        XCTAssertEqual(fixture.windowState.currentTabId, fixture.liveTab.id)
+        XCTAssertEqual(
+            fixture.windowState.currentShortcutPinId,
+            fixture.pin.id
+        )
+
+        XCTAssertTrue(
+            fixture.tabManager.tabCloseOrchestration.closeTab(
+                fixture.liveTab,
+                in: fixture.windowState
+            )
+        )
+
+        XCTAssertEqual(fixture.windowState.currentTabId, fixture.fallback?.id)
+        XCTAssertNil(fixture.windowState.currentShortcutPinId)
+        XCTAssertNil(
+            fixture.tabManager.shortcutPresentationOwner.shortcutLiveTab(
+                for: fixture.pin.id,
+                in: fixture.windowState.id
+            )
+        )
+    }
+
+    func testRestoredSelectedUnloadUsesPreviousRegularCandidate() throws {
+        let fixture = try makeFixture(
+            hasFallback: true,
+            liveTabIsSelected: true,
+            restoredLiveSession: true
+        )
+
+        let unloaded = fixture.tabManager
+            .composeSidebarShortcutPinUnloadOwner()
+            .unloadShortcutPin(
+                fixture.pin,
+                in: fixture.windowState,
+                suppressNotification: true
+            )
+
+        XCTAssertTrue(unloaded)
+        XCTAssertEqual(fixture.windowState.currentTabId, fixture.fallback?.id)
+        XCTAssertNil(fixture.windowState.currentShortcutPinId)
         XCTAssertNil(
             fixture.tabManager.shortcutPresentationOwner.shortcutLiveTab(
                 for: fixture.pin.id,
@@ -122,7 +187,8 @@ private extension ShortcutLiveTabClosePersistenceTests {
 
     func makeFixture(
         hasFallback: Bool,
-        liveTabIsSelected: Bool
+        liveTabIsSelected: Bool,
+        restoredLiveSession: Bool = false
     ) throws -> Fixture {
         let windowState = BrowserWindowState()
         let probe = PersistenceProbe()
@@ -145,6 +211,9 @@ private extension ShortcutLiveTabClosePersistenceTests {
             profileID: profile.id
         ))
         windowState.currentSpaceId = space.id
+        tabManager.tabResidenceAuthority.establishResidenceSession(
+            on: windowState
+        )
         let fallback = hasFallback
             ? tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://fallback.example",
@@ -152,6 +221,14 @@ private extension ShortcutLiveTabClosePersistenceTests {
                 activate: false
             )
             : nil
+        if restoredLiveSession, let fallback {
+            _ = tabManager.regularTabLifecycleOwner.createNewTab(
+                url: "https://other-fallback.example",
+                in: space,
+                activate: false
+            )
+            windowState.activeTabForSpace[space.id] = fallback.id
+        }
         let pin = ShortcutPin(
             id: UUID(),
             role: .spacePinned,
@@ -164,15 +241,52 @@ private extension ShortcutLiveTabClosePersistenceTests {
             [pin],
             for: space.id
         )
-        let liveTab = tabManager.shortcutTabMaterializer.materialize(
-            pin,
-            in: windowState.id,
-            currentSpaceId: space.id
-        )!
-        if liveTabIsSelected {
-            windowState.currentTabId = liveTab.id
+        let liveTab: Tab
+        if restoredLiveSession {
+            windowState.currentTabId = UUID()
             windowState.currentShortcutPinId = pin.id
             windowState.currentShortcutPinRole = pin.role
+            windowState.restorationState.stageShortcutLiveSessions([
+                ShortcutLiveSessionSnapshot(
+                    shortcutPinId: pin.id,
+                    presentationSpaceId: space.id,
+                    currentURL: try XCTUnwrap(
+                        URL(string: "https://shortcut.example/continued")
+                    ),
+                    title: "Restored Shortcut"
+                ),
+            ])
+            let restorer = WindowSessionShortcutRestorer(
+                pins: tabManager.shortcutPinCollectionStateOwner,
+                activation: tabManager.shortcutPresentationActivation
+            )
+            restorer.materializeRestoredLiveSessions(in: windowState)
+            liveTab = try XCTUnwrap(
+                tabManager.shortcutPresentationOwner.shortcutLiveTab(
+                    for: pin.id,
+                    in: windowState.id
+                )
+            )
+        } else {
+            liveTab = tabManager.shortcutTabMaterializer.materialize(
+                pin,
+                in: windowState.id,
+                currentSpaceId: space.id
+            )!
+        }
+        if liveTabIsSelected {
+            if restoredLiveSession {
+                XCTAssertTrue(
+                    WindowSessionShortcutRestorer(
+                        pins: tabManager.shortcutPinCollectionStateOwner,
+                        activation: tabManager.shortcutPresentationActivation
+                    ).materializeSelectionIfNeeded(in: windowState)
+                )
+            } else {
+                windowState.currentTabId = liveTab.id
+                windowState.currentShortcutPinId = pin.id
+                windowState.currentShortcutPinRole = pin.role
+            }
         } else {
             windowState.currentTabId = fallback?.id
         }
