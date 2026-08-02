@@ -262,7 +262,8 @@ struct EssentialsSnapshotGrid: View {
             EssentialsPlaceholderView(
                 tokens: tokens,
                 cornerRadius: sumiSettings.resolvedCornerRadius(PinnedTileMetrics.cornerRadius),
-                onDismiss: nil
+                onDismiss: nil,
+                isInteractionEnabled: false
             )
         } else {
             Color.clear

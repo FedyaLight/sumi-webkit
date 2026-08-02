@@ -240,7 +240,8 @@ struct PinnedGrid: View {
                     cornerRadius: sumiSettings.resolvedCornerRadius(
                         PinnedTileMetrics.cornerRadius
                     ),
-                    onDismiss: dismiss
+                    onDismiss: dismiss,
+                    isInteractionEnabled: isAppKitInteractionEnabled
                 )
             case .collapsed:
                 Color.clear
