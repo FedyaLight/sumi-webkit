@@ -225,6 +225,7 @@ struct SplitGroupSegmentLabel<Icon: View>: View {
         .padding(.trailing, trailingPadding)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
+        .help(title)
     }
 }
 

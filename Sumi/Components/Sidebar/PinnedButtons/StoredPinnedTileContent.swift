@@ -58,6 +58,7 @@ struct StoredPinnedTileContent: View {
             faviconImageReader: faviconImageReader,
             essentialBackdropReader: essentialBackdropReader
         )
+        .help(resolvedTitle)
         .task(id: storedFaviconLoadKey) {
             await loadStoredFavicon()
         }

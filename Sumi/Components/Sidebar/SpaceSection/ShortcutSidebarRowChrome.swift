@@ -76,6 +76,7 @@ struct ShortcutSidebarRowChrome: View {
             sourceID: rowSourceID,
             entries: contextMenuEntries
         )
+        .help(resolvedTitle)
         // Expose the outer row so context-menu and action overlays cannot
         // replace its stable accessibility identity or selection value.
         .accessibilityElement(children: .contain)

@@ -80,6 +80,7 @@ struct SpaceTab: View {
             sourceID: rowSourceID,
             entries: contextMenuEntries
         )
+        .help(tab.name)
         .task(id: tab.url) {
             guard fetchesVisiblePresentation else { return }
             await tab.fetchFaviconForVisiblePresentation()

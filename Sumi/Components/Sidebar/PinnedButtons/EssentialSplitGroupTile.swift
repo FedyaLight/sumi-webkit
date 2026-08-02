@@ -42,6 +42,7 @@ struct EssentialSplitGroupTile: View {
             sourceIDs: pressSourceIDs,
             kind: .split
         )
+        .help(groupDisplayTitle)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("essential-split-group-\(group.id.uuidString)")
         .task(id: accentLoadKey) {
@@ -144,6 +145,7 @@ struct EssentialSplitGroupTile: View {
                             .accessibilityIdentifier(
                                 "essential-split-member-\(member.persistentID.uuidString)"
                             )
+                            .help(member.title)
                     }
                 }
             }
