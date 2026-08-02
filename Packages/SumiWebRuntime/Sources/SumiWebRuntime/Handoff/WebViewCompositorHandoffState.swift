@@ -198,6 +198,19 @@ public final class WebViewCompositorHandoffState {
         return host
     }
 
+    public func hasPendingPromotedHost(
+        for tabID: UUID,
+        in windowID: UUID,
+        containerRegistration: WebViewCompositorContainerRegistration
+    ) -> Bool {
+        let key = PromotionKey(tabID: tabID, windowID: windowID)
+        guard let promotion = pendingPromotions[key] else { return false }
+        return containerRegistration.windowID == windowID
+            && isCurrentContainerRegistration(containerRegistration)
+            && promotion.containerRegistration == containerRegistration
+            && promotion.host != nil
+    }
+
     public func completePromotedHostAttachment(
         for tabID: UUID,
         in windowID: UUID,

@@ -122,6 +122,18 @@ final class WebViewCompositorRuntime {
         )
     }
 
+    func hasPendingPromotedHost(
+        for tabID: UUID,
+        in windowID: UUID,
+        containerRegistration: WebViewCompositorContainerRegistration
+    ) -> Bool {
+        visibleRuntime.hasPendingPromotedHost(
+            for: tabID,
+            in: windowID,
+            containerRegistration: containerRegistration
+        )
+    }
+
     func completePromotedHostAttachment(
         for tabID: UUID,
         in windowID: UUID,

@@ -66,6 +66,79 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertTrue(host.isHiddenOrHasHiddenAncestor)
     }
 
+    func testPromotedGlanceHandoffDoesNotCoverIncomingPageWithSourceHost() {
+        let graph = makeTestWebViewRuntimeGraph()
+        let browserManager = BrowserManager()
+        let browserContext = CompositorBrowserContextStub()
+        let windowState = BrowserWindowState()
+        let container = WindowWebContentSplitHostLayoutView(
+            splitLayout: browserManager.splitWindowContext.layout,
+            splitDrops: browserManager.splitWindowContext.drops,
+            splitDropTargets: browserManager.splitWindowContext.dropTargets,
+            splitPreviews: browserManager.splitWindowContext.previews,
+            sidebarDragState: browserContext.sidebarDragState,
+            windowState: windowState,
+            resolveDragTab: { _ in nil },
+            surfaceStyle: BrowserContentSurfaceStyle(
+                geometry: BrowserChromeGeometry(),
+                backgroundColor: .white
+            )
+        )
+        container.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
+
+        let hostRegistry = WindowWebContentHostRegistry()
+        let hostAttachments = WindowWebContentHostAttachmentService(
+            containerView: container,
+            hostRegistry: hostRegistry,
+            compositorRuntime: graph.compositorRuntime,
+            protectionRuntime: graph.protectionRuntime,
+            windowID: windowState.id,
+            surfaceStyle: BrowserContentSurfaceStyle(
+                geometry: BrowserChromeGeometry(),
+                backgroundColor: .white
+            )
+        )
+        let registration = graph.compositorRuntime.registerContainer(
+            container,
+            for: windowState.id
+        )
+
+        let sourceHost = SumiWebViewContainerView(
+            tabID: UUID(),
+            webView: WKWebView()
+        )
+        sourceHost.frame = container.bounds
+        hostRegistry.setHost(sourceHost, for: .single)
+        container.singlePaneView.placeContentHost(sourceHost)
+
+        let promotedTabID = UUID()
+        let promotedHost = SumiWebViewContainerView(
+            tabID: promotedTabID,
+            webView: WKWebView()
+        )
+        XCTAssertTrue(graph.compositorRuntime.registerPromotedHost(
+            promotedHost,
+            for: promotedTabID,
+            in: windowState.id
+        ))
+
+        let handoff = WindowWebContentVisualHandoffSession(
+            containerView: container,
+            hostRegistry: hostRegistry,
+            hostAttachments: hostAttachments,
+            compositorRuntime: graph.compositorRuntime,
+            protectionRuntime: graph.protectionRuntime
+        )
+
+        XCTAssertFalse(
+            handoff.begin(
+                excluding: [promotedTabID],
+                containerRegistration: registration
+            ),
+            "Glance already owns the visual bridge; showing the source host again causes the post-expand glitch"
+        )
+    }
+
     func testFindChromeFocusedTextFieldUsesIBeamFieldEditor() throws {
         let viewController = FindInPageViewController.create()
         let window = NSWindow(

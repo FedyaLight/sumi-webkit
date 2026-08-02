@@ -45,6 +45,16 @@ final class WindowWebContentVisualHandoffSession {
         guard !outgoingHosts.isEmpty else { return false }
 
         covers.releaseCovers()
+        let usesPromotedHostHandoff = incomingTabIDs.count == 1
+            && incomingTabIDs.contains { tabID in
+                compositorRuntime.hasPendingPromotedHost(
+                    for: tabID,
+                    in: containerRegistration.windowID,
+                    containerRegistration: containerRegistration
+                )
+            }
+        guard !usesPromotedHostHandoff else { return false }
+
         for host in outgoingHosts {
             guard compositorRuntime.owns(containerRegistration) else { break }
             let webViewID = ObjectIdentifier(host.webView)
