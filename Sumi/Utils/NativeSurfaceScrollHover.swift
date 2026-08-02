@@ -10,7 +10,6 @@ final class NativeSurfaceScrollHoverCoordinator: ObservableObject {
     private let hoverRestoreDelayNanoseconds: UInt64
     private let sleepForNanoseconds: @Sendable (UInt64) async throws -> Void
     private var phaseScrollingRegions: Set<String> = []
-    private var activityRegions: Set<String> = []
     private var activeTokensByRegion: [String: UUID] = [:]
     private var restoreTask: Task<Void, Never>?
 
@@ -35,7 +34,6 @@ final class NativeSurfaceScrollHoverCoordinator: ObservableObject {
 
         activeTokensByRegion.removeValue(forKey: region)
         phaseScrollingRegions.remove(region)
-        activityRegions.remove(region)
         scheduleHoverRestoreIfIdle()
     }
 
@@ -50,17 +48,10 @@ final class NativeSurfaceScrollHoverCoordinator: ObservableObject {
         scheduleHoverRestoreIfIdle()
     }
 
-    func notifyScrollActivity(region: String) {
-        activityRegions.insert(region)
-        setHoverUpdatesEnabled(false)
-        scheduleHoverRestoreIfIdle()
-    }
-
     func reset() {
         restoreTask?.cancel()
         restoreTask = nil
         phaseScrollingRegions.removeAll()
-        activityRegions.removeAll()
         activeTokensByRegion.removeAll()
         setHoverUpdatesEnabled(true)
     }
@@ -81,16 +72,13 @@ final class NativeSurfaceScrollHoverCoordinator: ObservableObject {
                 return
             }
             guard !Task.isCancelled else { return }
-            self?.activityRegions.removeAll()
             self?.restoreHoverIfIdle()
             self?.restoreTask = nil
         }
     }
 
     private func restoreHoverIfIdle() {
-        guard phaseScrollingRegions.isEmpty,
-              activityRegions.isEmpty
-        else { return }
+        guard phaseScrollingRegions.isEmpty else { return }
 
         setHoverUpdatesEnabled(true)
     }
@@ -186,12 +174,6 @@ private struct NativeScrollHoverSuppressionModifier: ViewModifier {
             .onScrollPhaseChange { _, newPhase in
                 registerRegionIfNeeded()
                 coordinator.setScrolling(newPhase.isScrolling, region: region)
-            }
-            .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                geometry.contentOffset.y
-            } action: { _, _ in
-                registerRegionIfNeeded()
-                coordinator.notifyScrollActivity(region: region)
             }
             .onDisappear {
                 guard let token = regionToken else { return }

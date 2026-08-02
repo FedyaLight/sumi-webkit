@@ -142,7 +142,6 @@ struct SpaceView: View {
                 isInteractive: isInteractive,
                 spaceId: space.id,
                 selectedItemRevealPath: selectedItemRevealPath,
-                selection: sidebarSelection,
                 selectedItemRevealMode: SidebarMotionPolicy.currentMode(
                     reduceMotion: reduceMotion || sumiSettings.shouldReduceChromeMotion
                 ),

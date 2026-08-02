@@ -20,8 +20,8 @@ struct SidebarSelectedItemRevealPath: Equatable {
     }
 }
 
-/// Settled, scroll-content-local geometry produced by the unified list
-/// presentation. Its absence withholds autofocus during an in-flight reflow.
+/// Settled, scroll-content-local geometry produced by the unified list.
+/// Its absence withholds autofocus during an in-flight reflow.
 struct SidebarAutofocusLayout: Equatable {
     struct Target: Equatable {
         let minY: CGFloat
@@ -29,9 +29,10 @@ struct SidebarAutofocusLayout: Equatable {
     }
 
     let targets: [SidebarScrollTargetID: Target]
+    let contentHeight: CGFloat
 }
 
-fileprivate struct SidebarSelectedItemSurfaceGeometry: Equatable {
+struct SidebarSelectedItemSurfaceGeometry: Equatable {
     let contentOffsetY: CGFloat
     let viewportHeight: CGFloat
     let contentHeight: CGFloat
@@ -54,9 +55,8 @@ fileprivate struct SidebarSelectedItemSurfaceGeometry: Equatable {
 }
 
 private extension SidebarAutofocusLayout.Target {
-    /// Preserves nearest-edge behavior while reserving one complete row gap
-    /// beside either revealing edge. The full 4pt rhythm also keeps the
-    /// selected row's 3pt shadow out of the viewport clip.
+    /// Uses the nearest edge and preserves one full row gap beside it, keeping
+    /// the selected row shadow clear of the viewport clip.
     func revealOffset(
         in geometry: SidebarSelectedItemSurfaceGeometry
     ) -> CGFloat? {
@@ -90,9 +90,8 @@ private extension SidebarAutofocusLayout.Target {
 }
 
 /// Resolves selection and hover into repeatable scroll commands. The unified
-/// sidebar supplies complete settled geometry, so production autofocus emits
-/// one exact offset instead of materializing an ancestor chain. The identity
-/// mode remains available to small standalone lazy-list surfaces.
+/// sidebar emits one exact offset from settled presentation geometry. Identity
+/// resolution remains available to small standalone lazy-list surfaces.
 @MainActor
 @Observable
 final class SidebarSelectedItemRevealOwner {
@@ -148,11 +147,12 @@ final class SidebarSelectedItemRevealOwner {
 
     func updateAutofocusLayout(_ layout: SidebarAutofocusLayout?) {
         guard targetResolution == .presentedLayout else { return }
+        guard autofocusLayout != layout else { return }
         autofocusLayout = layout
         advanceReveal()
     }
 
-    fileprivate func updateSurfaceGeometry(
+    func updateSurfaceGeometry(
         _ geometry: SidebarSelectedItemSurfaceGeometry
     ) {
         surfaceGeometry = geometry
@@ -163,8 +163,7 @@ final class SidebarSelectedItemRevealOwner {
     func targetDidAppear(_ targetID: SidebarScrollTargetID) {
         guard targetResolution == .lazyIdentity else { return }
         mountedTargets.insert(targetID)
-        guard isSurfaceReady else { return }
-        guard pendingTargets.first == targetID else { return }
+        guard isSurfaceReady, pendingTargets.first == targetID else { return }
         pendingTargets.removeFirst()
         advanceReveal()
     }
@@ -213,12 +212,16 @@ final class SidebarSelectedItemRevealOwner {
         guard let autofocusLayout,
               let targetID = pendingTargets.last,
               let target = autofocusLayout.targets[targetID],
-              let surfaceGeometry else {
+              let surfaceGeometry,
+              surfaceGeometry.contentHeight + 1
+                >= autofocusLayout.contentHeight else {
             return
         }
 
         pendingTargets.removeAll()
-        guard let destinationY = target.revealOffset(in: surfaceGeometry) else {
+        guard let destinationY = target.revealOffset(
+            in: surfaceGeometry
+        ) else {
             return
         }
 
@@ -236,366 +239,6 @@ extension EnvironmentValues {
     @Entry var sidebarSelectedItemRevealOwner: SidebarSelectedItemRevealOwner?
 }
 
-private struct SidebarSelectedItemSelectionRequest: Equatable {
-    let revealPath: SidebarSelectedItemRevealPath?
-    let selection: SidebarWindowSelectionSnapshot
-    let isEnabled: Bool
-}
-
-private enum SidebarScrollRestorationTarget: Equatable {
-    case automatic
-    case top
-    case bottom
-    case point(CGFloat)
-
-    init(viewport: SpaceSidebarSnapshotViewport?) {
-        guard let viewport else {
-            self = .automatic
-            return
-        }
-
-        let offset = viewport.clampedOffset()
-        let maximumOffset = max(
-            viewport.contentHeight - viewport.viewportHeight,
-            0
-        )
-        let tolerance: CGFloat = 1
-        if offset <= tolerance {
-            self = .top
-        } else if maximumOffset - offset <= tolerance {
-            self = .bottom
-        } else {
-            self = .point(offset)
-        }
-    }
-
-    var mountScrollPosition: ScrollPosition {
-        switch self {
-        case .automatic:
-            ScrollPosition(idType: SidebarScrollTargetID.self)
-        case .top, .bottom, .point:
-            ScrollPosition(
-                idType: SidebarScrollTargetID.self,
-                edge: .top
-            )
-        }
-    }
-
-    func matches(_ geometry: SidebarSelectedItemSurfaceGeometry) -> Bool {
-        guard geometry.hasUsableLayout else { return false }
-        let tolerance: CGFloat = 1
-
-        switch self {
-        case .automatic:
-            return true
-        case .top:
-            return abs(geometry.contentOffsetY) <= tolerance
-        case .bottom:
-            return abs(geometry.contentOffsetY - geometry.maximumOffset) <= tolerance
-        case .point(let offset):
-            let reachableOffset = min(offset, geometry.maximumOffset)
-            return abs(geometry.contentOffsetY - reachableOffset) <= tolerance
-        }
-    }
-}
-
-/// Owns programmatic scrolling for one sidebar scroll surface. Saved viewport
-/// intent is applied to its first usable geometry before a frame is presented.
-/// The unified sidebar then reveals from settled presentation geometry;
-/// standalone lazy lists can use the identity adapter.
-struct SidebarSelectedItemVisibilityScope<Content: View>: View {
-    let revealPath: SidebarSelectedItemRevealPath?
-    let selection: SidebarWindowSelectionSnapshot
-    let isEnabled: Bool
-    let motionMode: SidebarMotionPolicy.Mode
-    let targetResolution: SidebarSelectedItemRevealOwner.TargetResolution
-    let onCommittedViewportChange: (SpaceSidebarSnapshotViewport) -> Void
-    @ViewBuilder let content: () -> Content
-
-    private let restorationTarget: SidebarScrollRestorationTarget
-    @State private var revealOwner: SidebarSelectedItemRevealOwner
-    @State private var scrollPosition: ScrollPosition
-    @State private var restorationReceipt: SidebarSelectedItemSurfaceGeometry?
-    @State private var didApplyRestorationIntent = false
-
-    init(
-        revealPath: SidebarSelectedItemRevealPath?,
-        selection: SidebarWindowSelectionSnapshot,
-        isEnabled: Bool,
-        motionMode: SidebarMotionPolicy.Mode,
-        targetResolution: SidebarSelectedItemRevealOwner.TargetResolution =
-            .lazyIdentity,
-        restoredViewport: SpaceSidebarSnapshotViewport?,
-        onCommittedViewportChange: @escaping (SpaceSidebarSnapshotViewport) -> Void = { _ in },
-        @ViewBuilder content: @escaping () -> Content
-    ) {
-        self.revealPath = revealPath
-        self.selection = selection
-        self.isEnabled = isEnabled
-        self.motionMode = motionMode
-        self.targetResolution = targetResolution
-        self.onCommittedViewportChange = onCommittedViewportChange
-        self.content = content
-        let restorationTarget = SidebarScrollRestorationTarget(
-            viewport: restoredViewport
-        )
-        self.restorationTarget = restorationTarget
-        _revealOwner = State(
-            initialValue: SidebarSelectedItemRevealOwner(
-                targetResolution: targetResolution
-            )
-        )
-        _scrollPosition = State(
-            initialValue: restorationTarget.mountScrollPosition
-        )
-    }
-
-    @ViewBuilder
-    var body: some View {
-        switch targetResolution {
-        case .presentedLayout:
-            visibilitySurface(proxy: nil)
-        case .lazyIdentity:
-            ScrollViewReader { proxy in
-                visibilitySurface(proxy: proxy)
-            }
-        }
-    }
-
-    private func visibilitySurface(
-        proxy: ScrollViewProxy?
-    ) -> some View {
-        content()
-            .scrollPosition($scrollPosition)
-            .environment(\.sidebarSelectedItemRevealOwner, revealOwner)
-            .background {
-                if isEnabled,
-                   restorationReceipt != nil,
-                   !revealOwner.isSurfaceReady {
-                    SidebarSurfacePresentationReceiptBridge(
-                        onFirstDisplay: acknowledgePresentedSurface
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-                }
-            }
-            .onScrollGeometryChange(
-                for: SidebarSelectedItemSurfaceGeometry.self
-            ) { geometry in
-                SidebarSelectedItemSurfaceGeometry(
-                    contentOffsetY: geometry.contentOffset.y,
-                    viewportHeight: geometry.visibleRect.height,
-                    contentHeight: geometry.contentSize.height
-                )
-            } action: { _, geometry in
-                handleSurfaceGeometry(geometry)
-            }
-            .task(id: selectionRequest) {
-                guard isEnabled, let revealPath else {
-                    revealOwner.cancelReveal()
-                    return
-                }
-                revealOwner.reveal(revealPath)
-            }
-            .onChange(of: revealOwner.request) { _, request in
-                guard isEnabled, let request else { return }
-                reveal(request, with: proxy)
-            }
-    }
-
-    private func handleSurfaceGeometry(
-        _ geometry: SidebarSelectedItemSurfaceGeometry
-    ) {
-        revealOwner.updateSurfaceGeometry(geometry)
-        guard !applyRestorationIntentIfNeeded(to: geometry) else { return }
-
-        if !revealOwner.isSurfaceReady {
-            restorationReceipt = restorationTarget.matches(geometry)
-                ? geometry
-                : nil
-        }
-
-        guard isEnabled, revealOwner.isSurfaceReady else { return }
-        onCommittedViewportChange(geometry.scrollViewport)
-    }
-
-    /// Returns true when restoration issued a scroll command and the surface
-    /// must wait for the resulting geometry before accepting a display receipt.
-    private func applyRestorationIntentIfNeeded(
-        to geometry: SidebarSelectedItemSurfaceGeometry
-    ) -> Bool {
-        guard !didApplyRestorationIntent, geometry.hasUsableLayout else {
-            return false
-        }
-        didApplyRestorationIntent = true
-
-        switch restorationTarget {
-        case .bottom:
-            SidebarMotionTransaction.withoutAnimation {
-                scrollPosition.scrollTo(edge: .bottom)
-            }
-        case .point(let offset):
-            SidebarMotionTransaction.withoutAnimation {
-                scrollPosition.scrollTo(y: offset)
-            }
-        case .automatic, .top:
-            return false
-        }
-
-        restorationReceipt = nil
-        return true
-    }
-
-    private func acknowledgePresentedSurface() {
-        guard isEnabled,
-              !revealOwner.isSurfaceReady,
-              let restorationReceipt else {
-            return
-        }
-
-        revealOwner.surfaceDidBecomeReady()
-        onCommittedViewportChange(restorationReceipt.scrollViewport)
-    }
-
-    private var selectionRequest: SidebarSelectedItemSelectionRequest {
-        SidebarSelectedItemSelectionRequest(
-            revealPath: revealPath,
-            selection: selection,
-            isEnabled: isEnabled
-        )
-    }
-
-    private func reveal(
-        _ request: SidebarSelectedItemRevealOwner.Request,
-        with proxy: ScrollViewProxy?
-    ) {
-        if let destinationY = request.destinationY {
-            let animation = SidebarMotionPolicy.selectedItemRevealAnimation(
-                for: motionMode
-            )
-            if let animation {
-                withAnimation(animation) {
-                    scrollPosition.scrollTo(y: destinationY)
-                }
-            } else {
-                SidebarMotionTransaction.withoutAnimation {
-                    scrollPosition.scrollTo(y: destinationY)
-                }
-            }
-            return
-        }
-
-        guard let proxy else { return }
-        let animation = request.purpose == .revealSelection
-            ? SidebarMotionPolicy.selectedItemRevealAnimation(for: motionMode)
-            : nil
-        if let animation {
-            withAnimation(animation) {
-                proxy.scrollTo(request.targetID)
-            }
-        } else {
-            SidebarMotionTransaction.withoutAnimation {
-                proxy.scrollTo(request.targetID)
-            }
-        }
-    }
-}
-
-/// Receives the first display pass after scroll restoration, keeping the
-/// initial reveal out of the surface's mount transaction.
-private struct SidebarSurfacePresentationReceiptBridge: NSViewRepresentable {
-    let onFirstDisplay: @MainActor () -> Void
-
-    func makeNSView(context: Context) -> SidebarSurfacePresentationReceiptView {
-        let view = SidebarSurfacePresentationReceiptView(frame: .zero)
-        view.update(onFirstDisplay: onFirstDisplay)
-        return view
-    }
-
-    func updateNSView(
-        _ nsView: SidebarSurfacePresentationReceiptView,
-        context: Context
-    ) {
-        nsView.update(onFirstDisplay: onFirstDisplay)
-    }
-
-    static func dismantleNSView(
-        _ nsView: SidebarSurfacePresentationReceiptView,
-        coordinator: Void
-    ) {
-        nsView.invalidate()
-    }
-}
-
-@MainActor
-private final class SidebarSurfacePresentationReceiptView: NSView {
-    private var onFirstDisplay: @MainActor () -> Void = {}
-    private var isValid = true
-    private var didDisplay = false
-    private var generation = 0
-
-    override var wantsUpdateLayer: Bool { true }
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    func update(onFirstDisplay: @escaping @MainActor () -> Void) {
-        self.onFirstDisplay = onFirstDisplay
-        if !didDisplay {
-            needsDisplay = true
-        }
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        guard window != nil else {
-            generation &+= 1
-            didDisplay = false
-            return
-        }
-        if !didDisplay {
-            needsDisplay = true
-        }
-    }
-
-    override func updateLayer() {
-        super.updateLayer()
-        guard isValid,
-              !didDisplay,
-              window != nil,
-              !bounds.isEmpty,
-              !visibleRect.isEmpty else {
-            return
-        }
-
-        didDisplay = true
-        let displayGeneration = generation
-        DispatchQueue.main.async { [weak self] in
-            guard let self,
-                  self.generation == displayGeneration,
-                  self.isValid,
-                  self.window != nil else {
-                return
-            }
-            self.onFirstDisplay()
-        }
-    }
-
-    func invalidate() {
-        generation &+= 1
-        isValid = false
-        onFirstDisplay = {}
-    }
-}
-
 private struct SidebarSelectedItemVisibilityModifier: ViewModifier {
     let itemID: SidebarScrollTargetID
     let isSelected: Bool
@@ -610,18 +253,17 @@ private struct SidebarSelectedItemVisibilityModifier: ViewModifier {
     }
 
     func body(content: Content) -> some View {
-        content
-            .overlay {
-                if installsSelectedHoverRegion {
-                    SidebarSelectedItemHoverRevealBridge(
-                        session: windowState.sidebarInteractionState.hoverSession,
-                        itemID: itemID,
-                        revealOwner: revealOwner
-                    )
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-                }
+        content.overlay {
+            if installsSelectedHoverRegion {
+                SidebarSelectedItemHoverRevealBridge(
+                    session: windowState.sidebarInteractionState.hoverSession,
+                    itemID: itemID,
+                    revealOwner: revealOwner
+                )
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
             }
+        }
     }
 }
 
@@ -659,9 +301,8 @@ private struct SidebarScrollTargetModifier: ViewModifier {
 }
 
 extension View {
-    /// Must be installed on the direct child emitted by a LazyVStack. An ID
-    /// nested inside that child cannot materialize the slot while off-screen,
-    /// and SwiftUI reveals this outermost frame — not one nested inside it.
+    /// Install on the direct child emitted by a LazyVStack so SwiftUI can
+    /// materialize and reveal the full off-screen slot.
     func sidebarScrollTarget(_ targetID: SidebarScrollTargetID) -> some View {
         modifier(SidebarScrollTargetModifier(targetID: targetID))
     }

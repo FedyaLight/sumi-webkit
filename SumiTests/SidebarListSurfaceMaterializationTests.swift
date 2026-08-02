@@ -18,10 +18,8 @@ private struct SidebarMaterializationProbeRow: View {
     }
 }
 
-/// `LazyVStack` refuses to materialize anything below two consecutive
-/// zero-height children. An empty space is that exact scene — pinned top,
-/// boundary, and both regular-run markers collapse to zero — and it used to
-/// take the New Tab row down with it.
+/// LazyVStack must materialize the only sized row after the zero-height
+/// structural markers of an empty space.
 final class SidebarListSurfaceMaterializationTests: XCTestCase {
     @MainActor
     func testEmptySpaceSceneStillMaterializesItsOnlySizedRow() {

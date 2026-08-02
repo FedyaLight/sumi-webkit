@@ -92,6 +92,7 @@ final class ShortcutEditorPopoverPresenter: NSObject, NSPopoverDelegate {
                 }
             )
             .environment(windowState)
+            .environment(windowState.sidebarFaviconImageStore)
             .environment(\.sumiSettings, presentationContext.settings)
             .sumiNativeSurfaceColorScheme(
                 surfaceColorScheme,

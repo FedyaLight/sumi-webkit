@@ -66,6 +66,7 @@ struct SidebarListSurface<ID: Hashable, Payload, Content: View>: View {
                 )
             }
         }
+        .scrollTargetLayout()
         .background {
             if observesPresentedGeometry {
                 GeometryReader { proxy in
@@ -131,7 +132,8 @@ struct SidebarListSurface<ID: Hashable, Payload, Content: View>: View {
 
         revealOwner.updateAutofocusLayout(
             SidebarAutofocusLayout(
-                targets: targets
+                targets: targets,
+                contentHeight: minY
             )
         )
     }
@@ -254,7 +256,7 @@ private struct SidebarListPresentedElement<
 }
 
 private struct SidebarPresentedExtentReporter: @preconcurrency AnimatableModifier {
-    /// Keeps semantic zero-extent markers visible to `LazyVStack` materialization.
+    /// Keeps semantic zero-extent markers visible to LazyVStack materialization.
     private static let materializationFloor = CGFloat.ulpOfOne
 
     let id: AnyHashable

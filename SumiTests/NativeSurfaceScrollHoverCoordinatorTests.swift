@@ -4,11 +4,10 @@ import XCTest
 
 @MainActor
 final class NativeSurfaceScrollHoverCoordinatorTests: XCTestCase {
-    func testPhaseScrollKeepsHoverSuppressedAcrossActivityRestore() async {
+    func testPhaseScrollKeepsHoverSuppressedUntilPhaseEnds() async {
         let coordinator = makeImmediateRestoreCoordinator()
 
         coordinator.setScrolling(true, region: "sidebar")
-        coordinator.notifyScrollActivity(region: "sidebar")
         await waitForScheduledRestore()
 
         XCTAssertFalse(coordinator.hoverUpdatesEnabled)
@@ -19,22 +18,10 @@ final class NativeSurfaceScrollHoverCoordinatorTests: XCTestCase {
         XCTAssertTrue(coordinator.hoverUpdatesEnabled)
     }
 
-    func testTransientActivityRestoresHoverWhenNoPhaseScrollIsActive() async {
-        let coordinator = makeImmediateRestoreCoordinator()
-
-        coordinator.notifyScrollActivity(region: "sidebar")
-
-        XCTAssertFalse(coordinator.hoverUpdatesEnabled)
-
-        await waitForScheduledRestore()
-
-        XCTAssertTrue(coordinator.hoverUpdatesEnabled)
-    }
-
     func testResetCancelsPendingRestoreAndEnablesHover() async {
         let coordinator = makeImmediateRestoreCoordinator()
 
-        coordinator.notifyScrollActivity(region: "sidebar")
+        coordinator.setScrolling(true, region: "sidebar")
         coordinator.reset()
         await waitForScheduledRestore()
 

@@ -16,6 +16,8 @@ final class SidebarTabListScrollRegistrationView: NSView {
 
     var dragAutoscrollRegistry: SidebarTabListDragAutoscrollRegistry?
 
+    private var surfaceObservation = SidebarScrollSurfaceObservation.disabled
+
     var indicatorColor: NSColor = .clear {
         didSet {
             indicatorPresenter.indicatorColor = indicatorColor
@@ -40,6 +42,9 @@ final class SidebarTabListScrollRegistrationView: NSView {
     private let scrollBoundsObserver = SidebarScrollBoundsObserver()
     private let indicatorPresenter = SidebarPassiveScrollIndicatorPresenter()
     private var isScrollViewSyncScheduled = false
+    private var pendingGeometry: SidebarSelectedItemSurfaceGeometry?
+    private var lastDeliveredGeometry: SidebarSelectedItemSurfaceGeometry?
+    private var isGeometryDeliveryScheduled = false
 
     override var isOpaque: Bool { false }
 
@@ -98,7 +103,18 @@ final class SidebarTabListScrollRegistrationView: NSView {
         }
     }
 
+    func updateSurfaceObservation(
+        _ observation: SidebarScrollSurfaceObservation
+    ) {
+        if surfaceObservation.surfaceID != observation.surfaceID {
+            lastDeliveredGeometry = nil
+        }
+        surfaceObservation = observation
+    }
+
     func detachScrollView() {
+        surfaceObservation = .disabled
+        pendingGeometry = nil
         unregisterScrollView()
         scrollBoundsObserver.stop()
         indicatorPresenter.removeIndicator()
@@ -138,7 +154,10 @@ final class SidebarTabListScrollRegistrationView: NSView {
               let scrollView else {
             scrollBoundsObserver.stop()
             indicatorPresenter.removeIndicator()
-            reportAutoscrollBoundaries(hasContentAbove: false, hasContentBelow: false)
+            reportAutoscrollBoundaries(
+                hasContentAbove: false,
+                hasContentBelow: false
+            )
             return
         }
 
@@ -161,13 +180,22 @@ final class SidebarTabListScrollRegistrationView: NSView {
         let visibleHeight = scrollView.contentView.bounds.height
         let documentHeight = documentView.bounds.height
         let maximumOffset = max(documentHeight - visibleHeight, 0)
+        let rawY = scrollView.contentView.bounds.origin.y
+        let offset = documentView.isFlipped
+            ? rawY
+            : maximumOffset - rawY
+        let geometry = SidebarSelectedItemSurfaceGeometry(
+            contentOffsetY: offset,
+            viewportHeight: visibleHeight,
+            contentHeight: documentHeight
+        )
+
+        if surfaceObservation.capturesLiveViewport {
+            surfaceObservation.onLiveViewportChange(geometry.scrollViewport)
+        }
+        scheduleGeometryDelivery(geometry)
 
         if maximumOffset > 0 {
-            let rawY = scrollView.contentView.bounds.origin.y
-            let offset = documentView.isFlipped
-                ? rawY
-                : maximumOffset - rawY
-
             let hasContentAbove = offset > 0.5
             let hasContentBelow = offset < (maximumOffset - 0.5)
             indicatorPresenter.updateIndicator(
@@ -176,14 +204,44 @@ final class SidebarTabListScrollRegistrationView: NSView {
                 documentHeight: documentHeight,
                 offset: offset
             )
-            reportAutoscrollBoundaries(hasContentAbove: hasContentAbove, hasContentBelow: hasContentBelow)
+            reportAutoscrollBoundaries(
+                hasContentAbove: hasContentAbove,
+                hasContentBelow: hasContentBelow
+            )
         } else {
-            reportAutoscrollBoundaries(hasContentAbove: false, hasContentBelow: false)
+            reportAutoscrollBoundaries(
+                hasContentAbove: false,
+                hasContentBelow: false
+            )
             indicatorPresenter.hideImmediately(resetState: true)
         }
     }
 
-    private func reportAutoscrollBoundaries(hasContentAbove: Bool, hasContentBelow: Bool) {
+    /// Geometry mutates observable reveal state, so it is coalesced outside
+    /// AppKit's layout pass. Live viewport capture stays synchronous above so
+    /// mouse and trackpad navigation see the latest offset in the same event.
+    private func scheduleGeometryDelivery(
+        _ geometry: SidebarSelectedItemSurfaceGeometry
+    ) {
+        pendingGeometry = geometry
+        guard !isGeometryDeliveryScheduled else { return }
+        isGeometryDeliveryScheduled = true
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            isGeometryDeliveryScheduled = false
+            guard let geometry = pendingGeometry else { return }
+            pendingGeometry = nil
+            guard lastDeliveredGeometry != geometry else { return }
+            lastDeliveredGeometry = geometry
+            surfaceObservation.onGeometryChange(geometry)
+        }
+    }
+
+    private func reportAutoscrollBoundaries(
+        hasContentAbove: Bool,
+        hasContentBelow: Bool
+    ) {
         guard let scrollView = scrollBoundsObserver.scrollView else { return }
         dragAutoscrollRegistry?.updateBoundaries(
             for: scrollView,

@@ -12,22 +12,37 @@ struct SidebarPassiveScrollIndicatorState: Equatable {
     let contentOffset: CGFloat
 }
 
+private struct SidebarScrollBoundaryVisibility: Equatable {
+    let hasContentAbove: Bool
+    let hasContentBelow: Bool
+
+    init(hasContentAbove: Bool = false, hasContentBelow: Bool = false) {
+        self.hasContentAbove = hasContentAbove
+        self.hasContentBelow = hasContentBelow
+    }
+
+    init(_ state: SidebarScrollBoundaryState) {
+        hasContentAbove = state.hasContentAbove
+        hasContentBelow = state.hasContentBelow
+    }
+}
+
 /// A layout-stable wrapper that isolates scroll offsets and boundary state to prevent invalidating the parent SpaceView.
 struct SpaceScrollChromeSurface<Content: View>: View {
     let isInteractive: Bool
     let spaceId: UUID
     let selectedItemRevealPath: SidebarSelectedItemRevealPath?
-    let selection: SidebarWindowSelectionSnapshot
     let selectedItemRevealMode: SidebarMotionPolicy.Mode
     let restoredViewport: SpaceSidebarSnapshotViewport?
     let dragAutoscrollRegistry: SidebarTabListDragAutoscrollRegistry
-    @ObservedObject var scrollHoverCoordinator: NativeSurfaceScrollHoverCoordinator
+    let scrollHoverCoordinator: NativeSurfaceScrollHoverCoordinator
     let outerWidth: CGFloat
-    let onViewportChange: (SpaceSidebarSnapshotViewport) -> Void
+    let onViewportChange: @MainActor (
+        SpaceSidebarSnapshotViewport
+    ) -> Void
     @ViewBuilder let content: () -> Content
 
-    @State private var hasContentAbove = false
-    @State private var hasContentBelow = false
+    @State private var boundaryVisibility = SidebarScrollBoundaryVisibility()
 
     @Environment(\.resolvedThemeContext) var themeContext
     @Environment(\.chromeThemeTokens) var scopedChromeTokens
@@ -47,13 +62,12 @@ struct SpaceScrollChromeSurface<Content: View>: View {
 
         SidebarSelectedItemVisibilityScope(
             revealPath: selectedItemRevealPath,
-            selection: selection,
             isEnabled: isInteractive,
             motionMode: selectedItemRevealMode,
             targetResolution: .presentedLayout,
             restoredViewport: isInteractive ? restoredViewport : nil,
-            onCommittedViewportChange: onViewportChange
-        ) {
+            onViewportChange: onViewportChange
+        ) { surfaceObservation in
             ScrollView(.vertical, showsIndicators: false) {
                 // The parent SpaceView owns the sidebar's horizontal inset; keep scroll content aligned with SpaceTitle.
                 content()
@@ -64,7 +78,8 @@ struct SpaceScrollChromeSurface<Content: View>: View {
                             indicatorColor: scrollIndicatorColor,
                             contentViewportWidth: contentWidth,
                             trailingProjection: scrollIndicatorTrailingProjection,
-                            dragAutoscrollRegistry: dragAutoscrollRegistry
+                            dragAutoscrollRegistry: dragAutoscrollRegistry,
+                            surfaceObservation: surfaceObservation
                         )
                         .frame(width: 0, height: 0)
                         .allowsHitTesting(false)
@@ -72,19 +87,24 @@ struct SpaceScrollChromeSurface<Content: View>: View {
             }
         }
         .frame(width: contentWidth, alignment: .leading)
-        .environment(\.nativeSurfaceHoverUpdatesEnabled, scrollHoverCoordinator.hoverUpdatesEnabled)
+        .modifier(
+            SidebarScrollHoverEnvironmentModifier(
+                coordinator: scrollHoverCoordinator
+            )
+        )
         .suppressesNativeSurfaceHoverWhileScrolling(scrollHoverCoordinator, region: "sidebar-tabs-\(spaceId.uuidString)")
         .accessibilityIdentifier("space-view-scroll-\(spaceId.uuidString)")
         .scrollIndicators(.hidden, axes: .vertical)
-        .onScrollGeometryChange(for: SidebarScrollBoundaryState.self) { geometry in
-            SidebarScrollBoundaryState(
-                contentOffsetY: geometry.contentOffset.y,
-                visibleRect: geometry.visibleRect,
-                contentHeight: geometry.contentSize.height
+        .onScrollGeometryChange(for: SidebarScrollBoundaryVisibility.self) { geometry in
+            SidebarScrollBoundaryVisibility(
+                SidebarScrollBoundaryState(
+                    contentOffsetY: geometry.contentOffset.y,
+                    visibleRect: geometry.visibleRect,
+                    contentHeight: geometry.contentSize.height
+                )
             )
         } action: { _, state in
-            hasContentAbove = state.hasContentAbove
-            hasContentBelow = state.hasContentBelow
+            boundaryVisibility = state
         }
         .contentShape(Rectangle())
         .clipped() // Hardware-accelerated viewport-bound clipping
@@ -92,17 +112,34 @@ struct SpaceScrollChromeSurface<Content: View>: View {
             Rectangle()
                 .fill(tokens.separator)
                 .frame(width: contentWidth, height: 1)
-                .opacity(hasContentAbove ? 1.0 : 0.0)
-                .animation(.easeInOut(duration: 0.15), value: hasContentAbove)
+                .opacity(boundaryVisibility.hasContentAbove ? 1.0 : 0.0)
+                .animation(
+                    .easeInOut(duration: 0.15),
+                    value: boundaryVisibility.hasContentAbove
+                )
         }
         .overlay(alignment: .bottomLeading) {
             Rectangle()
                 .fill(tokens.separator)
                 .frame(width: contentWidth, height: 1)
-                .opacity(hasContentBelow ? 1.0 : 0.0)
-                .animation(.easeInOut(duration: 0.15), value: hasContentBelow)
+                .opacity(boundaryVisibility.hasContentBelow ? 1.0 : 0.0)
+                .animation(
+                    .easeInOut(duration: 0.15),
+                    value: boundaryVisibility.hasContentBelow
+                )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+}
+
+private struct SidebarScrollHoverEnvironmentModifier: ViewModifier {
+    @ObservedObject var coordinator: NativeSurfaceScrollHoverCoordinator
+
+    func body(content: Content) -> some View {
+        content.environment(
+            \.nativeSurfaceHoverUpdatesEnabled,
+            coordinator.hoverUpdatesEnabled
+        )
     }
 }
 
@@ -113,6 +150,7 @@ private struct SpaceScrollDragRegistration: View {
     let contentViewportWidth: CGFloat
     let trailingProjection: CGFloat
     let dragAutoscrollRegistry: SidebarTabListDragAutoscrollRegistry
+    let surfaceObservation: SidebarScrollSurfaceObservation
 
     var body: some View {
         SidebarTabListScrollRegistrationViewRepresentable(
@@ -120,7 +158,8 @@ private struct SpaceScrollDragRegistration: View {
             indicatorColor: indicatorColor,
             contentViewportWidth: contentViewportWidth,
             trailingProjection: trailingProjection,
-            dragAutoscrollRegistry: dragAutoscrollRegistry
+            dragAutoscrollRegistry: dragAutoscrollRegistry,
+            surfaceObservation: surfaceObservation
         )
     }
 }
@@ -131,6 +170,7 @@ struct SidebarTabListScrollRegistrationViewRepresentable: NSViewRepresentable {
     let contentViewportWidth: CGFloat
     let trailingProjection: CGFloat
     let dragAutoscrollRegistry: SidebarTabListDragAutoscrollRegistry
+    let surfaceObservation: SidebarScrollSurfaceObservation
 
     func makeNSView(context: Context) -> SidebarTabListScrollRegistrationView {
         let view = SidebarTabListScrollRegistrationView()
@@ -140,6 +180,7 @@ struct SidebarTabListScrollRegistrationViewRepresentable: NSViewRepresentable {
 
     func updateNSView(_ nsView: SidebarTabListScrollRegistrationView, context: Context) {
         nsView.dragAutoscrollRegistry = dragAutoscrollRegistry
+        nsView.updateSurfaceObservation(surfaceObservation)
         nsView.indicatorColor = indicatorColor
         nsView.scrollIndicatorContentViewportWidth = contentViewportWidth
         nsView.scrollIndicatorTrailingProjection = trailingProjection
