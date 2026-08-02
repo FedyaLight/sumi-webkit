@@ -16,13 +16,38 @@ enum SumiWebViewShutdown {
     @MainActor
     static func perform(
         on webView: WKWebView,
-        runtime: NormalTabRuntime
+        runtime: NormalTabRuntime,
+        closeActiveMediaPresentations: Bool
     ) {
-        performLifecycle(
-            on: webView,
-            scope: .normal,
-            normalTabRuntime: runtime
-        )
+        guard closeActiveMediaPresentations else {
+            performLifecycle(
+                on: webView,
+                scope: .normal,
+                normalTabRuntime: runtime
+            )
+            return
+        }
+        webView.closeAllMediaPresentations {
+            Task { @MainActor in
+                performLifecycle(
+                    on: webView,
+                    scope: .normal,
+                    normalTabRuntime: runtime
+                )
+            }
+        }
+    }
+
+    @MainActor
+    static func hasActiveMediaPresentation(on webView: WKWebView) -> Bool {
+        if webView.sumiIsInFullscreenElementPresentation {
+            return true
+        }
+        guard let focusableWebView = webView as? FocusableWKWebView,
+              let tab = focusableWebView.owningTab else {
+            return false
+        }
+        return tab.mediaRuntime.isPictureInPictureActive(for: webView)
     }
 
     /// Terminal browser-session shutdown cannot initiate another navigation:
@@ -32,10 +57,10 @@ enum SumiWebViewShutdown {
         on webView: WKWebView,
         runtime: NormalTabRuntime
     ) {
-        performLifecycle(
+        perform(
             on: webView,
-            scope: .normal,
-            normalTabRuntime: runtime
+            runtime: runtime,
+            closeActiveMediaPresentations: hasActiveMediaPresentation(on: webView)
         )
     }
 
@@ -113,7 +138,6 @@ enum TabWebViewCleanupOwner {
         let remainingOwnedWebViews: () -> [WKWebView]
         let clearDetachedWebViews: () -> Void
         let removeAllWebViews: (
-            _ closeActiveFullscreenMedia: Bool,
             _ intent: TabWebViewTeardownIntent
         ) -> WebViewTabTeardownResult
         let currentPermissionPageId: () -> String
@@ -153,11 +177,14 @@ enum TabWebViewCleanupOwner {
                 )
             )
         }
+        let hasActiveMediaPresentation = SumiWebViewShutdown
+            .hasActiveMediaPresentation(on: webView)
         context.webViewDidLeaveRuntime(webView)
 
         SumiWebViewShutdown.perform(
             on: webView,
-            runtime: context.shutdownRuntime
+            runtime: context.shutdownRuntime,
+            closeActiveMediaPresentations: hasActiveMediaPresentation
         )
         return true
     }
@@ -165,7 +192,7 @@ enum TabWebViewCleanupOwner {
     @MainActor
     @discardableResult
     static func performComprehensiveCleanup(context: Context) -> Bool {
-        let teardown = context.removeAllWebViews(true, .retirement)
+        let teardown = context.removeAllWebViews(.retirement)
         let remainingWebViews = uniqueWebViews(context.remainingOwnedWebViews())
         guard teardown.foundWebViews || remainingWebViews.isEmpty == false else {
             return teardown.isComplete
@@ -197,7 +224,7 @@ enum TabWebViewCleanupOwner {
     static func unloadWebView(context: Context) {
         context.invalidatePermissionPageForReplacement("normal-tab-webview-unload")
 
-        let teardown = context.removeAllWebViews(true, .suspension)
+        let teardown = context.removeAllWebViews(.suspension)
         let remainingWebViews = uniqueWebViews(context.remainingOwnedWebViews())
 
         guard teardown.foundWebViews || remainingWebViews.isEmpty == false else {

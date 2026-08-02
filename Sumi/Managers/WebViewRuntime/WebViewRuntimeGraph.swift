@@ -80,18 +80,11 @@ final class WebViewRuntimeGraph {
         mediaProtectionOwner: mediaProtectionOwner,
         trackingLifecycleOwner: webViewTrackingLifecycleOwner,
         trackedCleanupExecutionOwner: trackedCleanupExecutionOwner,
-        containsWindow: windowServices.containsWindow,
-        currentTabID: windowServices.currentTabID,
-        selectTab: windowServices.selectTab,
-        refreshCompositor: windowServices.refreshCompositor,
         removeWebViewFromContainers: { [weak self] webView in
             self?.compositorRuntime.removeWebViewFromContainers(webView)
         },
         pruneInvalidDeferredCommands: { [weak self] reason in
             self?.protectionRuntime.pruneInvalidCommands(reason: reason)
-        },
-        flushDeferredProtectedCommands: { [weak self] webViewID in
-            self?.protectionRuntime.flush(for: webViewID)
         },
         cancelProcessRecovery: { [weak self] webView in
             self?.processRecoveryService.cancel(webView)
@@ -274,7 +267,7 @@ final class WebViewRuntimeGraph {
             pipeline: replacementPipeline,
             installTrackedObservations: { [weak self] webView in
                 self?.trackedRegistrationOwner
-                    .installMediaProtectionObservationsIfNeeded(on: webView)
+                    .noteProtectedCommandIdentity(webView)
             },
             restorePresentation: { [weak self] tabID, snapshot in
                 guard let self else { return }

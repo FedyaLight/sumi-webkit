@@ -68,11 +68,6 @@ static inline BOOL SumiSetWKPreferenceBool(WKPreferences *preferences, NSString 
     }
 }
 
-static inline void SumiSetMediaSessionEnabled(WKPreferences *preferences, BOOL enabled)
-{
-    SumiSetWKPreferenceBool(preferences, @"mediaSessionEnabled", enabled);
-}
-
 static inline void SumiSetAllowsPictureInPictureMediaPlayback(WKPreferences *preferences, BOOL enabled)
 {
     SumiSetWKPreferenceBool(preferences, @"allowsPictureInPictureMediaPlayback", enabled);
@@ -80,7 +75,6 @@ static inline void SumiSetAllowsPictureInPictureMediaPlayback(WKPreferences *pre
 
 @interface WKWebView (SumiWKNowPlayingPrivate)
 @property (nonatomic, readonly, getter=_isPlayingAudio) BOOL _playingAudio;
-@property (nonatomic, readonly) BOOL _hasActiveNowPlayingSession;
 - (void)_nowPlayingMediaTitleAndArtist:(void (^)(NSString * _Nullable title, NSString * _Nullable artist))completionHandler;
 - (void)_playPredominantOrNowPlayingMediaSession:(void(^)(BOOL success))completionHandler;
 - (void)_pauseNowPlayingMediaSession:(void(^)(BOOL success))completionHandler;

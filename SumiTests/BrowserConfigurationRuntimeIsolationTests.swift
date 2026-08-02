@@ -381,7 +381,6 @@ extension BrowserConfigurationNormalTabTests {
             "__sumiFaviconTransportInstalled",
             "__sumiTabSuspension",
             "__sumiDocumentSuspensionSensor",
-            "__sumiSubframePictureInPicture",
             SumiTransientChromeInteractionShieldUserScript.sourceMarker,
             "sumiFavicons",
             "sumiLinkInteraction",
@@ -413,7 +412,6 @@ extension BrowserConfigurationNormalTabTests {
             "__sumiFaviconTransportInstalled",
             "__sumiTabSuspension",
             "__sumiDocumentSuspensionSensor",
-            "__sumiSubframePictureInPicture",
             SumiTransientChromeInteractionShieldUserScript.sourceMarker,
             "sumiFavicons",
             "sumiLinkInteraction",
@@ -463,7 +461,7 @@ extension BrowserConfigurationNormalTabTests {
         })
     }
 
-    func testTabSuspensionSeparatesPageAPIFromIsolatedSensors() throws {
+    func testTabSuspensionSeparatesPageAPIFromIsolatedDocumentSensor() throws {
         let tab = Tab(name: "Bridge")
         let scripts = tab.normalTabCoreUserScripts()
         let bridgeScript = try XCTUnwrap(
@@ -476,12 +474,6 @@ extension BrowserConfigurationNormalTabTests {
                 script.source.contains("__sumiDocumentSuspensionSensor")
             }
         )
-        let subframeSensor = try XCTUnwrap(
-            scripts.first { script in
-                script.source.contains("__sumiSubframePictureInPictureBootstrap")
-            }
-        )
-
         XCTAssertTrue(bridgeScript.source.contains("sumiTabSuspension"))
         XCTAssertTrue(bridgeScript.source.contains("let pageAllowsSuspension = true"))
         XCTAssertTrue(
@@ -496,10 +488,8 @@ extension BrowserConfigurationNormalTabTests {
         XCTAssertTrue(documentSensor.forMainFrameOnly)
         XCTAssertFalse(documentSensor.requiresRunInPageContentWorld)
         XCTAssertTrue(documentSensor.source.contains("documentLeaseToken"))
-        XCTAssertTrue(documentSensor.source.contains("webkitpresentationmodechanged"))
-
-        XCTAssertFalse(subframeSensor.forMainFrameOnly)
-        XCTAssertFalse(subframeSensor.requiresRunInPageContentWorld)
+        XCTAssertFalse(documentSensor.source.contains("pictureInPicture"))
+        XCTAssertFalse(documentSensor.source.contains("webkitpresentationmodechanged"))
     }
 
 }

@@ -7,7 +7,6 @@ enum TabDocumentSuspensionDecision: Equatable {
 
     enum Reason: Equatable {
         case pageReportedUnableToSuspend
-        case pictureInPicture
         case pdfDocument
     }
 }
@@ -19,14 +18,4 @@ struct TabDocumentSuspensionReport: Equatable {
     let documentLeaseToken: String
     let sequence: UInt64
     let canBeSuspended: Bool
-    let hasPictureInPictureVideo: Bool
-}
-
-/// Veto-only PiP evidence from one subframe document. Subframes never receive
-/// authority to allow suspension or to change the canonical page veto.
-struct TabSubframePictureInPictureReport: Equatable {
-    let documentNonce: String
-    let documentLeaseToken: String
-    let sequence: UInt64
-    let isActive: Bool
 }

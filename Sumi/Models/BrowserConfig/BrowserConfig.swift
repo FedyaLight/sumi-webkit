@@ -52,7 +52,6 @@ class BrowserConfiguration {
         "__sumiFaviconTransportInstalled",
         "__sumiTabSuspension",
         "__sumiDocumentSuspensionSensor",
-        "__sumiSubframePictureInPicture",
         SumiTransientChromeInteractionShieldUserScript.sourceMarker,
         "sumiFavicons",
         "sumiLinkInteraction",
@@ -92,7 +91,6 @@ class BrowserConfiguration {
 
         // Core WebKit preferences for extensions
         config.preferences.javaScriptCanOpenWindowsAutomatically = true
-        SumiSetMediaSessionEnabled(config.preferences, true)
 
         // Media settings
         config.mediaTypesRequiringUserActionForPlayback = []

@@ -823,8 +823,7 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
                     documentNonce: "settled-recovery",
                     documentLeaseToken: token,
                     sequence: 1,
-                    canBeSuspended: true,
-                    hasPictureInPictureVideo: false
+                    canBeSuspended: true
                 ),
                 from: webView,
                 matching: lease
@@ -869,7 +868,7 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
         )
     }
 
-    func testRejectedAndPictureInPictureReportsPublishOnlyRealDecisionChanges() throws {
+    func testRejectedSuspensionReportsPublishOnlyRealDecisionChanges() throws {
         let targetURL = try XCTUnwrap(
             URL(string: "https://example.com/report-settlement")
         )
@@ -908,8 +907,7 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
             documentNonce: "main-document",
             documentLeaseToken: token,
             sequence: 1,
-            canBeSuspended: true,
-            hasPictureInPictureVideo: false
+            canBeSuspended: true
         )
         XCTAssertTrue(
             transaction.committedDocumentRuntime.recordSuspensionReport(
@@ -928,37 +926,6 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
             )
         )
         XCTAssertTrue(effects.reasons.isEmpty)
-
-        XCTAssertTrue(
-            transaction.committedDocumentRuntime
-                .recordSubframePictureInPictureReport(
-                    TabSubframePictureInPictureReport(
-                        documentNonce: "frame-document",
-                        documentLeaseToken: token,
-                        sequence: 1,
-                        isActive: true
-                    ),
-                    from: webView,
-                    matching: lease
-                )
-        )
-        XCTAssertEqual(effects.reasons, ["subframe-picture-in-picture-state"])
-        effects.reset()
-
-        XCTAssertTrue(
-            transaction.committedDocumentRuntime
-                .recordSubframePictureInPictureReport(
-                    TabSubframePictureInPictureReport(
-                        documentNonce: "frame-document",
-                        documentLeaseToken: token,
-                        sequence: 2,
-                        isActive: false
-                    ),
-                    from: webView,
-                    matching: lease
-                )
-        )
-        XCTAssertEqual(effects.reasons, ["subframe-picture-in-picture-state"])
     }
 
     func testHeldAuthorityPlanCannotOverwriteNewerSnapshot() {

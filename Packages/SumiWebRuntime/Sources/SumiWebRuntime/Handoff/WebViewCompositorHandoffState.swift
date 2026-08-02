@@ -194,7 +194,6 @@ public final class WebViewCompositorHandoffState {
             pendingPromotions[key] = promotion
         }
 
-        host.prepareForSuperviewTransferPreservingDisplayedContent()
         return host
     }
 

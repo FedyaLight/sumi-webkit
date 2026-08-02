@@ -66,12 +66,10 @@ private final class BrowserTabWebViewOwnershipParticipant:
     }
 
     func removeAllWebViews(
-        for tab: Tab,
-        closeActiveFullscreenMedia: Bool
+        for tab: Tab
     ) {
         lifecycle.removeAllWebViews(
             for: tab,
-            closeActiveFullscreenMedia: closeActiveFullscreenMedia,
             intent: .retirement
         )
     }

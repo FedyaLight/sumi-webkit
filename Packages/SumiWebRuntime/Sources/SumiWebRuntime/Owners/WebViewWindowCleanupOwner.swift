@@ -100,7 +100,7 @@ public final class WebViewWindowCleanupOwner {
         if didDrainRuntime {
             visibleWebViewRuntimeOwner.resetWindowRegistrations()
             let newlyUnprotectedSourceIDs = mediaProtectionOwner
-                .removeVisualHandoffFullscreenAndNowPlayingState()
+                .removeVisualHandoffState()
             newlyUnprotectedSourceIDs.forEach(flushDeferredProtectedCommands)
         }
 

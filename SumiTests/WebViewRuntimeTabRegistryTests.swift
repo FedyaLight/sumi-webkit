@@ -228,7 +228,6 @@ final class WebViewRuntimeTabRegistryTests: XCTestCase {
 
         let result = graph.lifecycleService.removeAllWebViews(
             for: conflicting,
-            closeActiveFullscreenMedia: true,
             intent: .retirement
         )
 
@@ -446,7 +445,6 @@ final class WebViewRuntimeTabRegistryTests: XCTestCase {
         XCTAssertEqual(
             graph.lifecycleService.removeAllWebViews(
                 for: tab,
-                closeActiveFullscreenMedia: true,
                 intent: .retirement
             ),
             expected
@@ -467,7 +465,6 @@ final class WebViewRuntimeTabRegistryTests: XCTestCase {
         XCTAssertEqual(
             graph.lifecycleService.removeAllWebViews(
                 for: tab,
-                closeActiveFullscreenMedia: true,
                 intent: .retirement
             ),
             expected

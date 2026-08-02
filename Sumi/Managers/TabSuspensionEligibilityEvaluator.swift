@@ -43,12 +43,6 @@ struct TabSuspensionWebViewState: Equatable {
 
 @MainActor
 final class TabSuspensionEligibilityEvaluator {
-    private let dateProvider: () -> Date
-
-    init(dateProvider: @escaping () -> Date = Date.init) {
-        self.dateProvider = dateProvider
-    }
-
     func evaluateWebViews(
         liveWebViews: [WKWebView],
         isProtectedFromCompositorMutation: (WKWebView) -> Bool
@@ -116,7 +110,9 @@ final class TabSuspensionEligibilityEvaluator {
         }
         guard !tab.isLoading else { return .ineligible(reason: .loading) }
         guard !tab.audioState.isPlayingAudio else { return .ineligible(reason: .playingAudio) }
-        guard !isRecentlyAudible(tab) else { return .ineligible(reason: .recentlyAudible) }
+        guard !tab.mediaRuntime.hasActivePictureInPicture else {
+            return .ineligible(reason: .pictureInPicture)
+        }
         switch tab.committedDocumentRuntime.suspensionDecision {
         case .awaitingEvidence:
             return .ineligible(reason: .documentEvidencePending)
@@ -124,8 +120,6 @@ final class TabSuspensionEligibilityEvaluator {
             break
         case .vetoed(.pageReportedUnableToSuspend):
             return .ineligible(reason: .pageVeto)
-        case .vetoed(.pictureInPicture):
-            return .ineligible(reason: .pictureInPicture)
         case .vetoed(.pdfDocument):
             return .ineligible(reason: .pdfDocument)
         }
@@ -135,11 +129,5 @@ final class TabSuspensionEligibilityEvaluator {
     private func isSuspensibleContentURL(_ url: URL) -> Bool {
         guard let scheme = url.scheme?.lowercased() else { return false }
         return scheme == "http" || scheme == "https"
-    }
-
-    private func isRecentlyAudible(_ tab: Tab) -> Bool {
-        guard tab.mediaRuntime.lastMediaActivityAt != .distantPast else { return false }
-        return dateProvider().timeIntervalSince(tab.mediaRuntime.lastMediaActivityAt)
-            < TabSuspensionPolicy.recentlyAudibleProtectionInterval
     }
 }

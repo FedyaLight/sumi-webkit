@@ -19,7 +19,6 @@ final class FocusableWKWebView: WKWebView {
     private static let controlClickFixAllowlistedHosts: Set<String> = ["drive.google.com"]
 
     private var webKitMouseTrackingLoadSheddingOwner: WebKitMouseTrackingLoadSheddingOwner?
-    private let webKitClientMediaControlsOwner = WebKitClientMediaControlsOwner()
     private lazy var webPageMenuPresenter = SumiWebPageMenuPresenter()
     private var transientChromeInteractionShieldOwner: WebKitTransientChromeInteractionShieldOwner?
     private var glanceCursorStabilizationOwner: WebKitGlanceCursorStabilizationOwner?
@@ -389,22 +388,6 @@ final class FocusableWKWebView: WKWebView {
         // WebKit element fullscreen is owned by WKWebView.fullscreenState, not by
         // AppKit's NSView fullscreen mode flag.
         sumiIsInFullscreenElementPresentation
-    }
-
-    override func makeTouchBar() -> NSTouchBar? {
-        super.makeTouchBar() ?? webKitClientMediaControlsOwner.makeTouchBar()
-    }
-
-    @objc(_addMediaPlaybackControlsView:)
-    func addMediaPlaybackControlsView(_ mediaControlsView: AnyObject) {
-        guard let controlsView = mediaControlsView as? NSView else { return }
-        touchBar = webKitClientMediaControlsOwner.addMediaPlaybackControlsView(controlsView)
-    }
-
-    @objc(_removeMediaPlaybackControlsView)
-    func removeMediaPlaybackControlsView() {
-        webKitClientMediaControlsOwner.removeMediaPlaybackControlsView()
-        touchBar = nil
     }
 
     override func mouseUp(with event: NSEvent) {

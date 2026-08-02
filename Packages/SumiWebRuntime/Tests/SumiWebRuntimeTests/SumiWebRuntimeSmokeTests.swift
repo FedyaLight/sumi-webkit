@@ -162,14 +162,12 @@ final class SumiWebRuntimeSmokeTests: XCTestCase {
         }
 
         let registry = WebViewSessionRepository()
-        let mediaProtectionOwner = WebViewMediaProtectionOwner()
         let tab = StubTeardownTab(repository: registry)
         let webView = WKWebView()
         tab.webViewSession.replaceUntracked(with: webView)
 
         let owner = WebViewTabTeardownOwner(
             webViewSessions: registry,
-            mediaProtectionOwner: mediaProtectionOwner,
             isWebViewProtectedFromCompositorMutation: { _ in false },
             enqueueDeferredProtectedCommand: { _, _, _ in false },
             cleanupUnprotectedTrackedWebView: { _, _, _ in true },
@@ -245,11 +243,6 @@ final class SumiWebRuntimeSmokeTests: XCTestCase {
         final class StubHost: WebRuntimePromotedHost {
             let tabID = UUID()
             let webView = WKWebView()
-            private(set) var prepareCount = 0
-
-            func prepareForSuperviewTransferPreservingDisplayedContent() {
-                prepareCount += 1
-            }
         }
 
         let handoffState = WebViewCompositorHandoffState()
@@ -280,7 +273,6 @@ final class SumiWebRuntimeSmokeTests: XCTestCase {
             expectedWebView: host.webView
         )
         XCTAssertIdentical(taken as AnyObject?, host)
-        XCTAssertEqual(host.prepareCount, 1)
         XCTAssertNil(
             handoffState.takePromotedHost(
                 for: host.tabID,
@@ -308,7 +300,6 @@ final class SumiWebRuntimeSmokeTests: XCTestCase {
         final class StubHost: WebRuntimePromotedHost {
             let tabID = UUID()
             let webView = WKWebView()
-            func prepareForSuperviewTransferPreservingDisplayedContent() {}
         }
 
         let state = WebViewCompositorHandoffState()
@@ -362,7 +353,6 @@ final class SumiWebRuntimeSmokeTests: XCTestCase {
         final class StubHost: WebRuntimePromotedHost {
             let tabID = UUID()
             let webView = WKWebView()
-            func prepareForSuperviewTransferPreservingDisplayedContent() {}
         }
 
         let state = WebViewCompositorHandoffState()
@@ -395,7 +385,6 @@ final class SumiWebRuntimeSmokeTests: XCTestCase {
         final class StubHost: WebRuntimePromotedHost {
             let tabID = UUID()
             let webView = WKWebView()
-            func prepareForSuperviewTransferPreservingDisplayedContent() {}
         }
 
         let state = WebViewCompositorHandoffState()
@@ -440,7 +429,6 @@ final class SumiWebRuntimeSmokeTests: XCTestCase {
                 self.tabID = tabID
             }
 
-            func prepareForSuperviewTransferPreservingDisplayedContent() {}
         }
 
         let state = WebViewCompositorHandoffState()
@@ -494,7 +482,6 @@ final class SumiWebRuntimeSmokeTests: XCTestCase {
         final class StubHost: WebRuntimePromotedHost {
             let tabID = UUID()
             let webView = WKWebView()
-            func prepareForSuperviewTransferPreservingDisplayedContent() {}
         }
 
         let state = WebViewCompositorHandoffState()
@@ -522,7 +509,6 @@ final class SumiWebRuntimeSmokeTests: XCTestCase {
         final class StubHost: WebRuntimePromotedHost {
             let tabID = UUID()
             let webView = WKWebView()
-            func prepareForSuperviewTransferPreservingDisplayedContent() {}
         }
 
         let state = WebViewCompositorHandoffState()

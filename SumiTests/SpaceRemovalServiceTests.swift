@@ -175,7 +175,6 @@ final class SpaceRemovalServiceTests: XCTestCase {
         XCTAssertEqual(runtimeProbe.extensionNotifications, fixture.removedTabIds)
         XCTAssertEqual(runtimeProbe.unloadedTabIds, fixture.removedTabIds)
         XCTAssertEqual(runtimeProbe.removedWebViewTabIds, fixture.removedTabIds)
-        XCTAssertEqual(runtimeProbe.fullscreenCloseRequests, [true, true, true, true])
         XCTAssertEqual(runtimeProbe.auxiliaryCloseTabIds, [fixture.auxiliary.id])
         XCTAssertTrue(tabManager.splitGroupStore.groups.isEmpty)
         XCTAssertTrue(
@@ -219,7 +218,7 @@ final class SpaceRemovalServiceTests: XCTestCase {
             removedSpaceId: fixture.removedSpace.id
         )
         var blockedRuntime = TabWebViewCleanupRuntime.inactive
-        blockedRuntime.removeAllWebViews = { _, _, _ in
+        blockedRuntime.removeAllWebViews = { _, _ in
             WebViewTabTeardownResult(
                 discoveredWebViewCount: 1,
                 cleanedWebViewCount: 0,
@@ -562,7 +561,6 @@ private final class SpaceRemovalRuntimeProbe {
     var extensionNotifications = Set<UUID>()
     var unloadedTabIds = Set<UUID>()
     var removedWebViewTabIds = Set<UUID>()
-    var fullscreenCloseRequests: [Bool] = []
     var auxiliaryCloseTabIds = Set<UUID>()
     var validationCount = 0
     var persistedStateWasClean: [Bool] = []
@@ -578,8 +576,7 @@ private final class SpaceRemovalRuntimeProbe {
             webViewLifecycle: TestRuntimePorts.webViewLifecycle(
                 retirement: .rejecting,
                 unloadTab: { [weak self] in self?.unloadedTabIds.insert($0.id) },
-                requireRemoveAllWebViews: { [weak self] tab, closeFullscreen in
-                    self?.fullscreenCloseRequests.append(closeFullscreen)
+                requireRemoveAllWebViews: { [weak self] tab in
                     self?.removedWebViewTabIds.insert(tab.id)
                 }
             ),
@@ -609,9 +606,8 @@ private final class SpaceRemovalRuntimeProbe {
     func installCleanupRuntimes(on tabs: [Tab]) {
         for tab in tabs {
             var runtime = TabWebViewCleanupRuntime.inactive
-            runtime.removeAllWebViews = { [weak self] tab, closeFullscreen, intent in
+            runtime.removeAllWebViews = { [weak self] tab, intent in
                 XCTAssertEqual(intent, .retirement)
-                self?.fullscreenCloseRequests.append(closeFullscreen)
                 self?.removedWebViewTabIds.insert(tab.id)
                 return WebViewTabTeardownResult(
                     discoveredWebViewCount: 1,

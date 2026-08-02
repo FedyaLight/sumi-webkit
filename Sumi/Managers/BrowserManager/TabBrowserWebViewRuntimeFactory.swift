@@ -138,10 +138,9 @@ extension TabWebViewCleanupRuntime {
             removeWebViewFromContainers: { webView in
                 compositor.removeWebViewFromContainers(webView)
             },
-            removeAllWebViews: { tab, closeActiveFullscreenMedia, intent in
+            removeAllWebViews: { tab, intent in
                 lifecycle.removeAllWebViews(
                     for: tab,
-                    closeActiveFullscreenMedia: closeActiveFullscreenMedia,
                     intent: intent
                 )
             }

@@ -55,7 +55,6 @@ final class GlancePromotionHandoffOwner {
               ) == true
         else { return false }
 
-        previewHostView.prepareForSuperviewTransferPreservingDisplayedContent()
         return true
     }
 

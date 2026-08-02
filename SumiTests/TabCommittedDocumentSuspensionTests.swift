@@ -114,22 +114,6 @@ final class TabCommittedDocumentSuspensionTests: XCTestCase {
         ))
         XCTAssertEqual(ledger.suspensionDecision(), .allowed)
 
-        XCTAssertTrue(ledger.recordSuspensionReport(
-            report(
-                nonce: "authority",
-                token: authorityToken,
-                sequence: 2,
-                allows: true,
-                hasPictureInPictureVideo: true
-            ),
-            from: authorityWebView,
-            matching: authorityLease
-        ))
-        XCTAssertEqual(
-            ledger.suspensionDecision(),
-            .vetoed(.pictureInPicture)
-        )
-
         ledger.removeWebView(authorityWebView)
         XCTAssertEqual(ledger.suspensionDecision(), .allowed)
     }
@@ -242,94 +226,6 @@ final class TabCommittedDocumentSuspensionTests: XCTestCase {
         ))
 
         XCTAssertEqual(ledger.suspensionDecision(), .vetoed(.pdfDocument))
-    }
-
-    func testSubframePictureInPictureCanOnlyVetoItsExactMainDocumentEpoch() throws {
-        let url = try XCTUnwrap(URL(string: "https://example.com/frames"))
-        let webView = WKWebView()
-        let ledger = TabCommittedDocumentLedger(initialURL: url)
-        let document = evidence(
-            webView: webView,
-            url: url,
-            revision: 1,
-            generation: 1
-        )
-        ledger.adoptCanonicalDocument(document)
-        let documentLease = lease(document, isAuthority: true)
-        let token = try XCTUnwrap(ledger.suspensionToken(
-            for: webView,
-            matching: documentLease
-        ))
-        XCTAssertTrue(ledger.recordSuspensionReport(
-            report(
-                nonce: "main",
-                token: token,
-                sequence: 1,
-                allows: true
-            ),
-            from: webView,
-            matching: documentLease
-        ))
-
-        XCTAssertTrue(ledger.recordSubframePictureInPictureReport(
-            subframeReport(
-                nonce: "frame",
-                token: token,
-                sequence: 1,
-                isActive: true
-            ),
-            from: webView,
-            matching: documentLease
-        ))
-        XCTAssertEqual(
-            ledger.suspensionDecision(),
-            .vetoed(.pictureInPicture)
-        )
-        XCTAssertFalse(ledger.recordSubframePictureInPictureReport(
-            subframeReport(
-                nonce: "frame",
-                token: "wrong-epoch",
-                sequence: 2,
-                isActive: false
-            ),
-            from: webView,
-            matching: documentLease
-        ))
-        XCTAssertEqual(
-            ledger.suspensionDecision(),
-            .vetoed(.pictureInPicture)
-        )
-        XCTAssertTrue(ledger.recordSubframePictureInPictureReport(
-            subframeReport(
-                nonce: "frame",
-                token: token,
-                sequence: 2,
-                isActive: false
-            ),
-            from: webView,
-            matching: documentLease
-        ))
-        XCTAssertEqual(ledger.suspensionDecision(), .allowed)
-
-        let successor = evidence(
-            webView: webView,
-            url: url,
-            revision: 2,
-            generation: 2
-        )
-        ledger.adoptCanonicalDocument(successor)
-        let successorLease = lease(successor, isAuthority: true)
-        XCTAssertFalse(ledger.recordSubframePictureInPictureReport(
-            subframeReport(
-                nonce: "old-frame",
-                token: token,
-                sequence: 1,
-                isActive: true
-            ),
-            from: webView,
-            matching: successorLease
-        ))
-        XCTAssertEqual(ledger.suspensionDecision(), .awaitingEvidence)
     }
 
     func testFailedSensorActivationRetriesOnlyForExactTokenAndIsBounded() throws {
@@ -602,29 +498,13 @@ final class TabCommittedDocumentSuspensionTests: XCTestCase {
         nonce: String,
         token: String,
         sequence: UInt64,
-        allows: Bool,
-        hasPictureInPictureVideo: Bool = false
+        allows: Bool
     ) -> TabDocumentSuspensionReport {
         TabDocumentSuspensionReport(
             documentNonce: nonce,
             documentLeaseToken: token,
             sequence: sequence,
-            canBeSuspended: allows,
-            hasPictureInPictureVideo: hasPictureInPictureVideo
-        )
-    }
-
-    private func subframeReport(
-        nonce: String,
-        token: String,
-        sequence: UInt64,
-        isActive: Bool
-    ) -> TabSubframePictureInPictureReport {
-        TabSubframePictureInPictureReport(
-            documentNonce: nonce,
-            documentLeaseToken: token,
-            sequence: sequence,
-            isActive: isActive
+            canBeSuspended: allows
         )
     }
 }

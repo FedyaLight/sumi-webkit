@@ -197,7 +197,7 @@ final class SpaceClearingServiceTests: XCTestCase {
             for: clearedSpace.id
         )
         var blockedRuntime = TabWebViewCleanupRuntime.inactive
-        blockedRuntime.removeAllWebViews = { _, _, _ in
+        blockedRuntime.removeAllWebViews = { _, _ in
             WebViewTabTeardownResult(
                 discoveredWebViewCount: 1,
                 cleanedWebViewCount: 0,

@@ -474,14 +474,12 @@ extension SumiNativeNowPlayingController {
         case .play:
             return await tab.playSumiNativeNowPlayingSession(
                 using: context,
-                in: windowState,
-                focusIfNeeded: true
+                in: windowState
             )
         case .pause:
             return await tab.pauseSumiNativeNowPlayingSession(
                 using: context,
-                in: windowState,
-                focusIfNeeded: true
+                in: windowState
             )
         }
     }

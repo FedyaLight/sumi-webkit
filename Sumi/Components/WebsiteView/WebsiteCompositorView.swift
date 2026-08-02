@@ -104,35 +104,6 @@ final class WindowWebContentController: NSViewController {
         compositorRuntime: webViewCompositorRuntime,
         protectionRuntime: webViewProtectionRuntime
     )
-    private lazy var mediaTouchBarRestoration = WindowMediaTouchBarRestorationService(
-        windowID: windowState.id,
-        windowState: windowState,
-        browserContext: browserContext,
-        hostRegistry: hostRegistry,
-        mutationGate: compositorMutationGate,
-        protectionRuntime: webViewProtectionRuntime,
-        window: { [weak self] in
-            guard let self, self.isViewLoaded else { return nil }
-            return self.view.window
-        },
-        restoreDisplayedHost: { [weak self] currentTab, registration in
-            self?.restoreDisplayedHostForMediaTouchBar(
-                currentTab: currentTab,
-                containerRegistration: registration
-            ) ?? false
-        }
-    )
-    private lazy var mediaTouchBarRecoveryScheduler =
-        WindowMediaTouchBarRecoveryScheduler(
-            windowID: windowState.id,
-            recover: { [weak self] tabID, webView in
-                self?.mediaTouchBarRestoration.recover(
-                    tabID: tabID,
-                    webView: webView
-                )
-            }
-        )
-
     init(
         browserContext: any WindowWebContentBrowserContext,
         splitQuery: WindowSplitQuery,
@@ -171,8 +142,6 @@ final class WindowWebContentController: NSViewController {
             }
         )
         compositorMutationGate.activate(registration)
-        mediaTouchBarRecoveryScheduler.start()
-
         DispatchQueue.main.async { [weak self] in
             guard let self,
                   self.compositorMutationGate.owns(registration) else { return }
@@ -188,16 +157,12 @@ final class WindowWebContentController: NSViewController {
         isDisplayStateApplyScheduled = false
         hoveredLinkHandler = nil
         hoverSession.invalidate()
-        mediaTouchBarRecoveryScheduler.stop()
         visualHandoffSession.release()
         guard let registration else { return }
 
         _ = webViewCompositorRuntime.tearDownContainer(
             registration
         ) { [self] in
-            if webViewProtectionRuntime.hasActiveFullscreen(in: windowState.id) {
-                webViewProtectionRuntime.closeActiveFullscreenMedia(in: windowState.id)
-            }
             hostAttachments.clearSinglePane()
             hostAttachments.clearAllSplitPaneHosts()
         }
@@ -212,7 +177,6 @@ final class WindowWebContentController: NSViewController {
                 .refreshCompositor,
                 for: windowState
             )
-            view.layoutSubtreeIfNeeded()
         }
     }
 
@@ -407,27 +371,6 @@ final class WindowWebContentController: NSViewController {
         guard window.firstResponder !== focusTarget else { return }
         guard compositorMutationGate.owns(containerRegistration) else { return }
         window.makeFirstResponder(focusTarget)
-    }
-
-    private func restoreDisplayedHostForMediaTouchBar(
-        currentTab: Tab,
-        containerRegistration: WebViewCompositorContainerRegistration
-    ) -> Bool {
-        guard let displayState = pendingDisplayState ?? appliedDisplayState else {
-            return false
-        }
-        guard apply(
-            displayState: displayState,
-            currentTab: currentTab,
-            containerRegistration: containerRegistration
-        ), compositorMutationGate.owns(containerRegistration) else {
-            return false
-        }
-        appliedDisplayState = displayState
-        refreshHoverSession(
-            containerRegistration: containerRegistration
-        )
-        return hostRegistry.displayedHost(for: currentTab.id) != nil
     }
 
     private func refreshHoverSession(

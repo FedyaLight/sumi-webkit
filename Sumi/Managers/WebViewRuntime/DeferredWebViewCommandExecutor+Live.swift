@@ -37,7 +37,9 @@ extension DeferredWebViewCleanupExecutor {
                 processRecovery.cancel(webView)
                 SumiWebViewShutdown.perform(
                     on: webView,
-                    runtime: shutdownRuntime
+                    runtime: shutdownRuntime,
+                    closeActiveMediaPresentations: SumiWebViewShutdown
+                        .hasActiveMediaPresentation(on: webView)
                 )
             },
             finishRetirementIfDrained: { tabID in

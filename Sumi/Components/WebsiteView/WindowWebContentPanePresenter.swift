@@ -33,7 +33,6 @@ final class WindowWebContentPanePresenter {
     ) -> Bool {
         guard compositorRuntime.owns(containerRegistration) else { return false }
         containerView.setPaneLayout(.single)
-        containerView.layoutSubtreeIfNeeded()
         containerView.singlePaneView.isHidden = false
 
         if let tab,
@@ -71,7 +70,6 @@ final class WindowWebContentPanePresenter {
     ) -> Bool {
         guard compositorRuntime.owns(containerRegistration) else { return false }
         containerView.setPaneLayout(.split(presentation))
-        containerView.layoutSubtreeIfNeeded()
 
         let visibleTabIDs = Set(presentation.visibleTabIDs)
         for tabID in hostRegistry.splitPaneTabIds where !visibleTabIDs.contains(tabID) {

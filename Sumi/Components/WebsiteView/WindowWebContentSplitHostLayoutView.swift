@@ -177,7 +177,6 @@ final class WindowWebContentSplitHostLayoutView: NSView, WindowWebContentVisualH
         _ host: SumiWebViewContainerView,
         frameInContainer: NSRect
     ) {
-        host.prepareForSuperviewTransferPreservingDisplayedContent()
         visualHandoffOverlayView.addSubview(host)
         host.frame = frameInContainer
         host.autoresizingMask = []
@@ -196,7 +195,6 @@ final class WindowWebContentSplitHostLayoutView: NSView, WindowWebContentVisualH
 
     func parkHost(_ host: SumiWebViewContainerView) {
         guard host.superview !== parkedHostView else { return }
-        host.prepareForSuperviewTransferPreservingDisplayedContent()
         parkedHostView.addSubview(host)
     }
 

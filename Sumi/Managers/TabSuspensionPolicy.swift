@@ -8,7 +8,6 @@ struct TabSuspensionPolicy: Equatable {
     static let balancedRevisitProtectionLimit = 15
     static let maximumRevisitProtectionLimit = 15
     static let customRevisitProtectionLimit = 15
-    static let recentlyAudibleProtectionInterval: TimeInterval = 60
 
     let memoryMode: SumiMemoryMode
     let proactiveDeactivationDelay: TimeInterval
@@ -73,7 +72,6 @@ enum TabSuspensionEligibility: Equatable {
         case visible
         case loading
         case playingAudio
-        case recentlyAudible
         case cameraCapture
         case microphoneCapture
         case fullscreen

@@ -32,7 +32,6 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
         return retainedWebView
     }
 
-    private var preservesDisplayedContentOnNextRemoval = false
     private let overlayScrollChrome = WebContentOverlayScrollChrome()
     private var readerPresentationSession: ReaderPresentationSession?
     private var certificateTrustWarningView: CertificateTrustWarningView?
@@ -62,7 +61,7 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
         webView.translatesAutoresizingMaskIntoConstraints = true
         webView.autoresizingMask = [.width, .height]
 
-        addDisplayedContent(webView.sumiFullscreenPresentation.tabContentView)
+        addDisplayedContent(webView)
         overlayScrollChrome.install(in: self, webView: webView)
         if let focusable = webView as? FocusableWKWebView {
             focusable.overlayScrollChrome = overlayScrollChrome
@@ -74,28 +73,14 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
     }
 
     func attachDisplayedContentIfNeeded() {
-        let displayedView = webView.sumiFullscreenPresentation.tabContentView
-        frameDisplayedContent(displayedView)
-        for subview in subviews where subview !== displayedView {
-            // Keep the AppKit overlay scroll indicator; only strip stray hosts.
-            if subview === overlayScrollChrome.indicatorHostingView {
-                continue
-            }
-            if subview === readerPresentationSession?.webView {
-                continue
-            }
-            if subview === certificateTrustWarningView {
-                continue
-            }
-            subview.removeFromSuperview()
-        }
-        if displayedView.superview !== self {
-            addDisplayedContent(displayedView)
+        if webView.superview === self {
+            frameDisplayedContent(webView)
+        } else if webView.superview == nil {
+            addDisplayedContent(webView)
         }
         overlayScrollChrome.ensureIndicatorAboveContent()
         ensureReaderPresentationAboveContent()
         ensureCertificateTrustWarningAboveContent()
-        recenterFullscreenPlaceholderLabelIfNeeded(displayedView)
     }
 
     @discardableResult
@@ -154,14 +139,13 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
         let presentationWindow = readerPresentationSession.webView.window
         readerPresentationSession.invalidate()
         (webView as? FocusableWKWebView)?.resetPageInteractionState()
-        let ownsCanonicalContent = webView.sumiFullscreenPresentation
-            .tabContentView.superview === self
+        let ownsCanonicalContent = webView.superview === self
         readerPresentationSession.webView.removeFromSuperview()
         readerPresentationSession.detach(from: self)
         self.readerPresentationSession = nil
         if ownsCanonicalContent {
             webView.pageZoom = readerPresentationSession.webView.pageZoom
-            webView.sumiFullscreenPresentation.tabContentView.isHidden = false
+            webView.isHidden = false
         }
         overlayScrollChrome.refreshGeometry(revealIfChanged: false)
         notifyActivePresentationChanged()
@@ -209,32 +193,6 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
         dismissReader()
     }
 
-    /// WebKit centres the "exit full screen" label for the fullscreen screen's
-    /// dimensions and never re-centres it once the placeholder is hosted at the
-    /// tab's (smaller) content size, stranding the label in a corner. The label's
-    /// autoresizing mask keeps whatever margins it currently has, so a one-time
-    /// re-centre against the live bounds makes it stay centred on later resizes.
-    private func recenterFullscreenPlaceholderLabelIfNeeded(_ displayedView: NSView) {
-        guard displayedView !== webView,
-              let label = displayedView.sumiFirstDescendant(ofType: NSTextField.self),
-              let container = label.superview
-        else {
-            return
-        }
-        let centeredX = ((container.bounds.width - label.frame.width) / 2).rounded()
-        let centeredY = ((container.bounds.height - label.frame.height) / 2).rounded()
-        guard abs(label.frame.origin.x - centeredX) > 1
-            || abs(label.frame.origin.y - centeredY) > 1
-        else {
-            return
-        }
-        label.setFrameOrigin(NSPoint(x: centeredX, y: centeredY))
-    }
-
-    func prepareForSuperviewTransferPreservingDisplayedContent() {
-        preservesDisplayedContentOnNextRemoval = true
-    }
-
     func setRuntimeEvictionHandler(
         _ handler: @escaping (SumiWebViewContainerView) -> Void
     ) {
@@ -244,10 +202,12 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
     func evictFromRuntime() {
         runtimeEvictionHandler?(self)
         runtimeEvictionHandler = nil
-        preservesDisplayedContentOnNextRemoval = false
         dismissCertificateTrustWarning()
         dismissReader()
         removeFromSuperview()
+        if let retainedWebView, retainedWebView.superview === self {
+            retainedWebView.removeFromSuperview()
+        }
         if let focusable = retainedWebView as? FocusableWKWebView,
            focusable.overlayScrollChrome === overlayScrollChrome {
             focusable.overlayScrollChrome = nil
@@ -269,7 +229,7 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
         session.attach(to: self)
         session.webView.frame = bounds
         session.webView.autoresizingMask = [.width, .height]
-        webView.sumiFullscreenPresentation.tabContentView.isHidden = true
+        webView.isHidden = true
         addSubview(session.webView)
         overlayScrollChrome.hideImmediately()
         notifyActivePresentationChanged()
@@ -320,10 +280,10 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
     override func layout() {
         super.layout()
         guard let webView = retainedWebView else { return }
-        let displayedView = webView.sumiFullscreenPresentation.tabContentView
-        displayedView.frame = bounds
+        if webView.superview === self {
+            webView.frame = bounds
+        }
         readerPresentationSession?.webView.frame = bounds
-        recenterFullscreenPlaceholderLabelIfNeeded(displayedView)
         overlayScrollChrome.layoutIndicator()
     }
 
@@ -348,19 +308,6 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
         }
     }
 
-    override func removeFromSuperview() {
-        if preservesDisplayedContentOnNextRemoval {
-            preservesDisplayedContentOnNextRemoval = false
-        } else if let webView = retainedWebView {
-            let displayedContent = webView.sumiFullscreenPresentation.tabContentView
-            if displayedContent.superview === self {
-                dismissReader()
-                displayedContent.removeFromSuperview()
-            }
-        }
-        super.removeFromSuperview()
-    }
-
     private func recordInlineUIContainerClippingIfNeeded() {
         SafariExtensionAutofillFillDiagnostics.recordAppKitContainerClipping(
             clipsToBounds: clipsToBounds,
@@ -380,21 +327,6 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
         addSubview(certificateTrustWarningView, positioned: .above, relativeTo: nil)
     }
 
-}
-
-private extension NSView {
-    /// Depth-first search for the first descendant of the given type.
-    func sumiFirstDescendant<T: NSView>(ofType type: T.Type) -> T? {
-        for subview in subviews {
-            if let match = subview as? T {
-                return match
-            }
-            if let match = subview.sumiFirstDescendant(ofType: type) {
-                return match
-            }
-        }
-        return nil
-    }
 }
 
 @MainActor

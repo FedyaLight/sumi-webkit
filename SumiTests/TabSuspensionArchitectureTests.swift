@@ -20,6 +20,53 @@ final class TabSuspensionArchitectureTests: XCTestCase {
         )
     }
 
+    func testNativePictureInPictureDelegateProtectsEveryActiveWebView() {
+        let url = URL(string: "https://example.com/picture-in-picture")!
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: url)
+        let tab = Tab(
+            url: url,
+            loadsCachedFaviconOnInit: false,
+            mainFrameRuntimeTransaction: transaction
+        )
+        let firstWebView = WKWebView()
+        let secondWebView = WKWebView()
+        establishAllowedSuspensionDocument(
+            on: firstWebView,
+            for: tab,
+            transaction: transaction
+        )
+        let delegate = TabWebKitUIDelegateOwner(tab: tab)
+        let evaluator = TabSuspensionEligibilityEvaluator()
+        let context = TabSuspensionEvaluationContext(
+            visibleTabIDs: [],
+            selectedTabIDs: [],
+            policy: TabSuspensionPolicy(memoryMode: .balanced)
+        )
+
+        delegate.webView(
+            firstWebView,
+            hasVideoInPictureInPictureDidChange: true
+        )
+        delegate.webView(
+            secondWebView,
+            hasVideoInPictureInPictureDidChange: true
+        )
+        XCTAssertEqual(
+            evaluator.tabIneligibility(for: tab, context: context),
+            .ineligible(reason: .pictureInPicture)
+        )
+
+        delegate.webView(
+            firstWebView,
+            hasVideoInPictureInPictureDidChange: false
+        )
+        XCTAssertTrue(tab.mediaRuntime.hasActivePictureInPicture)
+
+        tab.unbindAudioState(from: secondWebView)
+        XCTAssertFalse(tab.mediaRuntime.hasActivePictureInPicture)
+        XCTAssertNil(evaluator.tabIneligibility(for: tab, context: context))
+    }
+
     func testInstallPublishesCompletePolicyAndVisibilityContextToCatalog() {
         let harness = TabSuspensionHarness(installImmediately: false)
         let windowID = UUID()
@@ -295,8 +342,7 @@ final class TabSuspensionArchitectureTests: XCTestCase {
                 documentNonce: "test-document",
                 documentLeaseToken: token,
                 sequence: 1,
-                canBeSuspended: true,
-                hasPictureInPictureVideo: false
+                canBeSuspended: true
             ),
             from: webView,
             matching: lease

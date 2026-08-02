@@ -26,18 +26,6 @@ enum SumiBrowserChromeConfiguration {
         to window: NSWindow,
         displayMode: BrowserWindowDisplayMode = .normal
     ) {
-        guard displayMode != .fullScreen else {
-            window.titleVisibility = .hidden
-            window.titlebarAppearsTransparent = false
-            window.titlebarSeparatorStyle = .automatic
-            window.toolbar = nil
-            return
-        }
-
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
-        window.titlebarSeparatorStyle = .none
-
         if window.toolbar?.identifier != toolbarIdentifier {
             let toolbar = NSToolbar(identifier: toolbarIdentifier)
             toolbar.allowsUserCustomization = false
@@ -47,6 +35,17 @@ enum SumiBrowserChromeConfiguration {
         }
         window.toolbar?.isVisible = true
         window.toolbarStyle = .unifiedCompact
+
+        if displayMode == .fullScreen {
+            window.titleVisibility = .hidden
+            window.titlebarAppearsTransparent = false
+            window.titlebarSeparatorStyle = .automatic
+            return
+        }
+
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
     }
 }
 

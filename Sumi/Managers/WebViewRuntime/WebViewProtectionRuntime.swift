@@ -78,16 +78,6 @@ final class WebViewProtectionRuntime {
         mediaProtection.hasActiveHistorySwipe(in: windowID)
     }
 
-    func hasActiveFullscreen(in windowID: UUID) -> Bool {
-        mediaProtection.hasActiveFullscreen(in: windowID)
-    }
-
-    func closeActiveFullscreenMedia(in windowID: UUID) {
-        mediaProtection.closeActiveFullscreenMedia(in: windowID) { [weak self] webViewID in
-            self?.resolveWebView(with: webViewID)
-        }
-    }
-
     func isProtected(_ webView: WKWebView) -> Bool {
         mediaProtection.isProtected(webView)
     }

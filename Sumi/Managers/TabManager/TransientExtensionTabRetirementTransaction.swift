@@ -30,10 +30,7 @@ final class TransientExtensionTabRetirementTransaction {
             runtimePorts.notifyTabClosedIfLoaded(tab)
         }
         runtimePorts.webViewLifecycle.unloadTab(tab)
-        runtimePorts.webViewLifecycle.requireRemoveAllWebViews(
-            for: tab,
-            closeActiveFullscreenMedia: true
-        )
+        runtimePorts.webViewLifecycle.requireRemoveAllWebViews(for: tab)
         membership.detach(tab)
         NotificationCenter.default.post(
             name: .sumiTabLifecycleDidChange,

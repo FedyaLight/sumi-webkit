@@ -24,7 +24,6 @@ final class TabCommittedDocumentRuntime {
         case processRecovery = "web-content-process-recovery"
         case sameDocumentPresentation = "same-document-presentation"
         case suspensionReport = "document-suspension-state"
-        case subframePictureInPicture = "subframe-picture-in-picture-state"
     }
 
     private let evidenceSource: any TabMainFrameDocumentEvidenceSource
@@ -182,26 +181,6 @@ final class TabCommittedDocumentRuntime {
                 return false
             }
             return self.ledger.recordSuspensionReport(
-                report,
-                from: webView,
-                matching: currentLease
-            )
-        }
-    }
-
-    @discardableResult
-    func recordSubframePictureInPictureReport(
-        _ report: TabSubframePictureInPictureReport,
-        from webView: WKWebView,
-        matching lease: TabMainFrameDocumentLease
-    ) -> Bool {
-        performAcceptedMutation(reason: .subframePictureInPicture) {
-            guard let currentLease = self.lease(for: webView),
-                  Self.matches(currentLease, lease, includingDocument: false)
-            else {
-                return false
-            }
-            return self.ledger.recordSubframePictureInPictureReport(
                 report,
                 from: webView,
                 matching: currentLease

@@ -279,7 +279,7 @@ final class BrowserWindowChromeTests: XCTestCase {
         XCTAssertFalse(window.styleMask.contains(.fullSizeContentView))
         XCTAssertFalse(window.titlebarAppearsTransparent)
         XCTAssertEqual(window.titlebarSeparatorStyle, .automatic)
-        XCTAssertNil(window.toolbar)
+        assertBrowserToolbarConfiguration(window)
         guard let contentView = window.contentView else {
             XCTFail("A browser window must keep its AppKit content view in fullscreen.")
             return

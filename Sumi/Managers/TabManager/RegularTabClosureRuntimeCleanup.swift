@@ -31,10 +31,7 @@ final class RegularTabClosureRuntimeCleanup {
             }
 
             runtime.webViewLifecycle.unloadTab(tab)
-            runtime.webViewLifecycle.requireRemoveAllWebViews(
-                for: tab,
-                closeActiveFullscreenMedia: true
-            )
+            runtime.webViewLifecycle.requireRemoveAllWebViews(for: tab)
             membership.detach(tab)
 
             NotificationCenter.default.post(

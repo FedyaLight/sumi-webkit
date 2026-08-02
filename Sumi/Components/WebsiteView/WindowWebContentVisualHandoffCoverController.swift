@@ -9,7 +9,6 @@ protocol WindowWebContentVisualHandoffCoverContainer: AnyObject {
         frameInContainer: NSRect
     )
     func removeVisualHandoffCover(_ host: SumiWebViewContainerView)
-    func layoutSubtreeIfNeeded()
     func displayIfNeeded()
 }
 
@@ -79,7 +78,6 @@ final class WindowWebContentVisualHandoffCoverController {
             else {
                 return
             }
-            self.containerView.layoutSubtreeIfNeeded()
             self.containerView.displayIfNeeded()
             DispatchQueue.main.async { [weak self] in
                 guard let self,

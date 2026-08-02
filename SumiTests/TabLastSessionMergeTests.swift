@@ -269,9 +269,7 @@ final class TabLastSessionMergeTests: XCTestCase {
             var cleanupRuntime = TabWebViewCleanupRuntime.inactive
             cleanupRuntime.removeAllWebViews = {
                 tab,
-                closeActiveFullscreenMedia,
                 intent in
-                XCTAssertTrue(closeActiveFullscreenMedia)
                 XCTAssertEqual(intent, .retirement)
                 retiredTabIds.insert(tab.id)
                 return WebViewTabTeardownResult(
@@ -312,7 +310,7 @@ final class TabLastSessionMergeTests: XCTestCase {
         space.activeTabId = tab.id
         tabManager.stateStore.selection.replaceCurrentTab(tab)
         var cleanupRuntime = TabWebViewCleanupRuntime.inactive
-        cleanupRuntime.removeAllWebViews = { _, _, _ in
+        cleanupRuntime.removeAllWebViews = { _, _ in
             WebViewTabTeardownResult(
                 discoveredWebViewCount: 1,
                 cleanedWebViewCount: 0,

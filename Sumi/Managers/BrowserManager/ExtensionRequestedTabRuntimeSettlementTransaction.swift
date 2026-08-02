@@ -36,10 +36,7 @@ final class ExtensionRequestedTabRuntimeSettlementTransaction {
                     .removeFromRegularTabHistory(tab.id)
             }
             runtime.webViewLifecycle.unloadTab(tab)
-            runtime.webViewLifecycle.requireRemoveAllWebViews(
-                for: tab,
-                closeActiveFullscreenMedia: true
-            )
+            runtime.webViewLifecycle.requireRemoveAllWebViews(for: tab)
             membership.detach(tab)
             restoreSelection()
             NotificationCenter.default.post(

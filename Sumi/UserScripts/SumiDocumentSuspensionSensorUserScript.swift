@@ -3,8 +3,8 @@ import SumiWebRuntime
 import WebKit
 
 /// Main-frame isolated-world sensor. It alone receives the native token for a
-/// committed document and combines the page's declared veto with physical PiP
-/// state before publishing exact replica evidence.
+/// committed document and publishes the page's declared suspension veto as
+/// exact replica evidence.
 @MainActor
 final class SumiDocumentSuspensionSensorUserScript: NSObject, SumiPageScript,
     WKScriptMessageHandlerWithReply {
@@ -42,8 +42,6 @@ final class SumiDocumentSuspensionSensorUserScript: NSObject, SumiPageScript,
             let pageDocumentIdentity = null;
             let pageSequence = 0;
             let pageAllowsSuspension = true;
-            let hasPictureInPictureVideo = false;
-            let pictureInPictureListenersInstalled = false;
 
             async function publishCurrentState() {
                 if (!documentLeaseToken) { return false; }
@@ -57,20 +55,13 @@ final class SumiDocumentSuspensionSensorUserScript: NSObject, SumiPageScript,
                             documentLeaseToken,
                             sequence,
                             documentURL: document.URL,
-                            canBeSuspended: pageAllowsSuspension,
-                            hasPictureInPictureVideo:
-                                hasPictureInPictureVideo
-                                || !!document.pictureInPictureElement
+                            canBeSuspended: pageAllowsSuspension
                         }
                     });
                     return reply?.accepted === true;
                 } catch (_) {
                     return false;
                 }
-            }
-
-            function publishCurrentStateWithoutReply() {
-                publishCurrentState().catch(() => {});
             }
 
             async function setPageState(identity, nextSequence, canBeSuspended) {
@@ -115,59 +106,6 @@ final class SumiDocumentSuspensionSensorUserScript: NSObject, SumiPageScript,
                 documentLeaseEpoch = epoch;
                 documentLeaseToken = token;
                 return await publishCurrentState();
-            }
-
-            function installPictureInPictureListeners() {
-                if (pictureInPictureListenersInstalled) { return; }
-                pictureInPictureListenersInstalled = true;
-                const handlePictureInPictureChange = event => {
-                    const video = event.target instanceof HTMLVideoElement
-                        ? event.target
-                        : null;
-                    if (event.type === "enterpictureinpicture") {
-                        hasPictureInPictureVideo = true;
-                    } else if (event.type === "leavepictureinpicture") {
-                        hasPictureInPictureVideo =
-                            !!document.pictureInPictureElement
-                            || video?.webkitPresentationMode
-                                === "picture-in-picture";
-                    } else {
-                        hasPictureInPictureVideo =
-                            !!document.pictureInPictureElement
-                            || video?.webkitPresentationMode === "picture-in-picture";
-                    }
-                    publishCurrentStateWithoutReply();
-                };
-                for (const eventName of [
-                    "enterpictureinpicture",
-                    "leavepictureinpicture",
-                    "webkitpresentationmodechanged"
-                ]) {
-                    document.addEventListener(
-                        eventName,
-                        handlePictureInPictureChange,
-                        true
-                    );
-                }
-            }
-
-            const unsubscribeVideoPlay =
-                window.__sumiMediaPlaybackBroker?.subscribe(handleVideoPlay);
-            function handleVideoPlay(event) {
-                if (!(event.target instanceof HTMLVideoElement)) { return; }
-                if (unsubscribeVideoPlay) {
-                    unsubscribeVideoPlay();
-                } else {
-                    document.removeEventListener(
-                        "play",
-                        handleVideoPlay,
-                        true
-                    );
-                }
-                installPictureInPictureListeners();
-            }
-            if (!unsubscribeVideoPlay) {
-                document.addEventListener("play", handleVideoPlay, true);
             }
 
             Object.defineProperty(window, "__sumiDocumentSuspensionSensor", {
@@ -266,9 +204,7 @@ private extension SumiDocumentSuspensionSensorUserScript {
                   let sequenceNumber = params["sequence"] as? NSNumber,
                   let documentURLString = params["documentURL"] as? String,
                   let documentURL = URL(string: documentURLString),
-                  let canBeSuspended = params["canBeSuspended"] as? Bool,
-                  let hasPictureInPictureVideo =
-                    params["hasPictureInPictureVideo"] as? Bool else {
+                  let canBeSuspended = params["canBeSuspended"] as? Bool else {
                 return nil
             }
             let sequenceValue = sequenceNumber.doubleValue
@@ -283,8 +219,7 @@ private extension SumiDocumentSuspensionSensorUserScript {
                 documentNonce: documentIdentity,
                 documentLeaseToken: documentLeaseToken,
                 sequence: UInt64(sequenceValue),
-                canBeSuspended: canBeSuspended,
-                hasPictureInPictureVideo: hasPictureInPictureVideo
+                canBeSuspended: canBeSuspended
             )
         }
 

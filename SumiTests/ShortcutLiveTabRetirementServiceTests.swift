@@ -548,7 +548,7 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
             webViewLifecycle: TestRuntimePorts.webViewLifecycle(
                 retirement: retirement,
                 unloadTab: { probe.unloadedTabIds.append($0.id) },
-                requireRemoveAllWebViews: { _, _ in }
+                requireRemoveAllWebViews: { _ in }
             ),
             handleTabClosures: { tabIds in
                 probe.tabClosureBatches.append(tabIds)

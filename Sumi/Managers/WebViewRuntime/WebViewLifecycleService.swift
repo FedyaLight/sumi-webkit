@@ -68,7 +68,6 @@ final class WebViewLifecycleService {
 
     private lazy var tabTeardown = WebViewTabTeardownOwner(
         webViewSessions: webViewSessions,
-        mediaProtectionOwner: mediaProtection,
         isWebViewProtectedFromCompositorMutation: { [weak self] webView in
             self?.protection.isProtected(webView) ?? false
         },
@@ -126,7 +125,6 @@ final class WebViewLifecycleService {
     @discardableResult
     func removeAllWebViews(
         for tab: Tab,
-        closeActiveFullscreenMedia: Bool = false,
         intent: TabWebViewTeardownIntent
     ) -> WebViewTabTeardownResult {
         switch intent {
@@ -139,10 +137,7 @@ final class WebViewLifecycleService {
                 reason: .tabDeparture
             )
         }
-        let result = tabTeardown.removeAllWebViews(
-            for: tab,
-            closeActiveFullscreenMedia: closeActiveFullscreenMedia
-        )
+        let result = tabTeardown.removeAllWebViews(for: tab)
         if intent == .retirement {
             websiteDataCleanup.cancelDeferredAdmissions(for: tab.id)
             if result.isComplete {
@@ -173,7 +168,6 @@ final class WebViewLifecycleService {
             for: webView,
             reason: "webViewDidClose"
         ).wasScheduled {
-            mediaProtection.closeFullscreenMediaIfNeeded(on: webView)
             return .deferred
         }
 

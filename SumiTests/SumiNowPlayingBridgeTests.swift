@@ -277,6 +277,32 @@ final class SumiNativeNowPlayingRuntimeContextTests: XCTestCase {
         XCTAssertNil(context.resolvedTab(lookupTab.id, incognitoWindow))
     }
 
+    func testPlaybackCommandDoesNotSelectOrMaterializeMissingSourceWebView() async {
+        let tab = makeTab("https://example.com/media")
+        let window = BrowserWindowState()
+        var selectionCount = 0
+        let context = SumiNativeNowPlayingRuntimeContext(
+            candidateTabs: { [] },
+            windowState: { _ in window },
+            windowRegistry: { nil },
+            resolvedTab: { _, _ in tab },
+            resolvedNowPlayingWebView: { _, _ in nil },
+            selectTab: { _, _ in selectionCount += 1 }
+        )
+
+        let didPlay = await tab.playSumiNativeNowPlayingSession(
+            using: context,
+            in: window
+        )
+        let didPause = await tab.pauseSumiNativeNowPlayingSession(
+            using: context,
+            in: window
+        )
+        XCTAssertFalse(didPlay)
+        XCTAssertFalse(didPause)
+        XCTAssertEqual(selectionCount, 0)
+    }
+
     private func makeTab(_ url: String) -> Tab {
         Tab(
             url: URL(string: url)!,

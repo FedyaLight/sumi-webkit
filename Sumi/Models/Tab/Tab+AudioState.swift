@@ -26,6 +26,7 @@ extension Tab {
     func unbindAudioState(from webView: WKWebView) {
         let key = ObjectIdentifier(webView)
         mediaRuntime.audioStateCancellables.removeValue(forKey: key)?.cancel()
+        mediaRuntime.removePictureInPictureState(for: webView)
     }
 
     func applyAudioState(_ newState: SumiWebViewAudioState) {

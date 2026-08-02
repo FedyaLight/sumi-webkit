@@ -11,6 +11,14 @@ final class TabWebKitUIDelegateOwner: NSObject, WKUIDelegate {
         super.init()
     }
 
+    @objc(_webView:hasVideoInPictureInPictureDidChange:)
+    func webView(
+        _ webView: WKWebView,
+        hasVideoInPictureInPictureDidChange isActive: Bool
+    ) {
+        tab?.mediaRuntime.setPictureInPictureActive(isActive, for: webView)
+    }
+
     func webView(
         _ webView: WKWebView,
         createWebViewWith configuration: WKWebViewConfiguration,

@@ -58,7 +58,6 @@ public protocol WebRuntimeTabResolving {
 public protocol WebRuntimePromotedHost: AnyObject {
     var tabID: UUID { get }
     var webView: WKWebView { get }
-    func prepareForSuperviewTransferPreservingDisplayedContent()
 }
 
 /// Normal-tab WebView construction surface used by assignment/rebuild.

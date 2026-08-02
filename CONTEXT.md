@@ -40,6 +40,14 @@ _Avoid_: WebView identity, loaded tab
 The exact window-scoped placement of one materialized page instance. A Durable Page Identity may outlive every residence and may have distinct residences in different windows.
 _Avoid_: Tab-owned WebView, global page view
 
+**Media Fullscreen Session**:
+A native system presentation initiated by media in one page. It remains bound to that page, but does not own the browser's current tab or Space selection: changing that selection does not end the presentation, and ending the presentation does not roll the selection back. The browser requests its end only when the initiating page itself is explicitly destroyed.
+_Avoid_: Fullscreen-protected tab, browser fullscreen overlay
+
+**Sidebar Mini Player**:
+Browser-owned controls for media playing in background pages, presented in the sidebar. Clicking the card explicitly activates the source tab. Its separate play, pause, and mute commands act through the page's native media session without selecting a tab or Space, changing focus, or materializing a page. The Mini Player is independent of the native Media Fullscreen Session and native system media controls.
+_Avoid_: Media Touch Bar, fullscreen controls
+
 **Split Group**:
 A durable sidebar item containing two to four ordered page identities and one layout. The group keeps its identity when moved between Regular, Pinned, Folder, and Essentials.
 _Avoid_: Split placeholder row, ghost row

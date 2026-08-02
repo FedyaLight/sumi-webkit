@@ -19,10 +19,7 @@ final class WebViewTabTeardownOwnerTests: XCTestCase {
             }
         )
 
-        let result = owner.removeAllWebViews(
-            for: tab,
-            closeActiveFullscreenMedia: true
-        )
+        let result = owner.removeAllWebViews(for: tab)
 
         XCTAssertEqual(result, .init(
             discoveredWebViewCount: 1,
@@ -70,10 +67,7 @@ final class WebViewTabTeardownOwnerTests: XCTestCase {
             }
         )
 
-        let result = owner.removeAllWebViews(
-            for: tab,
-            closeActiveFullscreenMedia: false
-        )
+        let result = owner.removeAllWebViews(for: tab)
 
         XCTAssertEqual(result, .init(
             discoveredWebViewCount: 2,
@@ -107,10 +101,7 @@ final class WebViewTabTeardownOwnerTests: XCTestCase {
             cleanupTracked: { _, _, _ in false }
         )
 
-        let result = owner.removeAllWebViews(
-            for: tab,
-            closeActiveFullscreenMedia: false
-        )
+        let result = owner.removeAllWebViews(for: tab)
 
         XCTAssertEqual(result, .init(
             discoveredWebViewCount: 1,
@@ -144,7 +135,6 @@ final class WebViewTabTeardownOwnerTests: XCTestCase {
     ) -> WebViewTabTeardownOwner {
         WebViewTabTeardownOwner(
             webViewSessions: repository,
-            mediaProtectionOwner: WebViewMediaProtectionOwner(),
             isWebViewProtectedFromCompositorMutation: isProtected,
             enqueueDeferredProtectedCommand: enqueue,
             cleanupUnprotectedTrackedWebView: cleanupTracked,

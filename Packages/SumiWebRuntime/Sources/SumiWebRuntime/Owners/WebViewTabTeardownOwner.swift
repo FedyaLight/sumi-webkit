@@ -50,7 +50,6 @@ public struct WebViewTabTeardownResult: Equatable, Sendable {
 @MainActor
 public final class WebViewTabTeardownOwner {
     private let webViewSessions: WebViewSessionRepository
-    private let mediaProtectionOwner: WebViewMediaProtectionOwner
     private let isWebViewProtectedFromCompositorMutation: @MainActor (WKWebView) -> Bool
     private let enqueueDeferredProtectedCommand:
         @MainActor (DeferredWebViewCommand, WKWebView, String) -> Bool
@@ -65,7 +64,6 @@ public final class WebViewTabTeardownOwner {
 
     public init(
         webViewSessions: WebViewSessionRepository,
-        mediaProtectionOwner: WebViewMediaProtectionOwner,
         isWebViewProtectedFromCompositorMutation: @escaping @MainActor (WKWebView) -> Bool,
         enqueueDeferredProtectedCommand:
             @escaping @MainActor (DeferredWebViewCommand, WKWebView, String) -> Bool,
@@ -79,7 +77,6 @@ public final class WebViewTabTeardownOwner {
             @escaping @MainActor (TrackedWebViewOwner, WKWebView) -> WKWebView?
     ) {
         self.webViewSessions = webViewSessions
-        self.mediaProtectionOwner = mediaProtectionOwner
         self.isWebViewProtectedFromCompositorMutation = isWebViewProtectedFromCompositorMutation
         self.enqueueDeferredProtectedCommand = enqueueDeferredProtectedCommand
         self.cleanupUnprotectedTrackedWebView = cleanupUnprotectedTrackedWebView
@@ -95,8 +92,7 @@ public final class WebViewTabTeardownOwner {
     }
 
     public func removeAllWebViews(
-        for tab: any WebRuntimeTabHandle,
-        closeActiveFullscreenMedia: Bool
+        for tab: any WebRuntimeTabHandle
     ) -> WebViewTabTeardownResult {
         let tabID = tab.id
         tab.webViewSession.requireBacking(by: webViewSessions)
@@ -115,7 +111,6 @@ public final class WebViewTabTeardownOwner {
         var deferredWebViewCount = 0
         var unscheduledProtectedWebViewCount = 0
         var blockedWebViewCount = 0
-        var closedMediaWebViewIDs: Set<ObjectIdentifier> = []
 
         func deferCleanup(
             of webView: WKWebView,
@@ -124,10 +119,6 @@ public final class WebViewTabTeardownOwner {
         ) -> Bool {
             guard enqueueDeferredProtectedCommand(command, webView, reason) else {
                 return false
-            }
-            if closeActiveFullscreenMedia,
-               closedMediaWebViewIDs.insert(ObjectIdentifier(webView)).inserted {
-                mediaProtectionOwner.closeFullscreenMediaIfNeeded(on: webView)
             }
             deferredWebViewCount += 1
             return true

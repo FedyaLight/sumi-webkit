@@ -21,13 +21,13 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
     }
 
     func testRemoveTabUsesRequiredRuntimeWebViewCleanup() throws {
-        var cleanupCalls: [(tabId: UUID, closeActiveFullscreenMedia: Bool)] = []
+        var cleanupCalls: [UUID] = []
         let tabManager = makeBrowser(
             runtimePorts: TestRuntimePorts.make(
                 webViewLifecycle: TestRuntimePorts.webViewLifecycle(
                     retirement: .rejecting,
-                    requireRemoveAllWebViews: { tab, closeActiveFullscreenMedia in
-                        cleanupCalls.append((tab.id, closeActiveFullscreenMedia))
+                    requireRemoveAllWebViews: { tab in
+                        cleanupCalls.append(tab.id)
                     }
                 )
             )
@@ -38,8 +38,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
         tabManager.tabClosureService.removeTab(tab.id)
 
         XCTAssertEqual(cleanupCalls.count, 1)
-        XCTAssertEqual(cleanupCalls.first?.tabId, tab.id)
-        XCTAssertEqual(cleanupCalls.first?.closeActiveFullscreenMedia, true)
+        XCTAssertEqual(cleanupCalls.first, tab.id)
     }
 
     func testClearRegularTabs_secondClearRemovesLastActiveTab() throws {

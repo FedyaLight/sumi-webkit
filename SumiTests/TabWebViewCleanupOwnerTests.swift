@@ -113,7 +113,7 @@ final class TabWebViewCleanupOwnerTests: XCTestCase {
         var receivedIntent: TabWebViewTeardownIntent?
         let context = makeContext(
             tabId: UUID(),
-            removeAllWebViews: { _, intent in
+            removeAllWebViews: { intent in
                 receivedIntent = intent
                 return .none
             }
@@ -148,7 +148,7 @@ final class TabWebViewCleanupOwnerTests: XCTestCase {
         var receivedIntent: TabWebViewTeardownIntent?
         let context = makeContext(
             tabId: UUID(),
-            removeAllWebViews: { _, intent in
+            removeAllWebViews: { intent in
                 receivedIntent = intent
                 return .none
             }
@@ -172,9 +172,8 @@ final class TabWebViewCleanupOwnerTests: XCTestCase {
         remainingOwnedWebViews: @escaping () -> [WKWebView] = { [] },
         clearDetachedWebViews: @escaping () -> Void = { /* No-op. */ },
         removeAllWebViews: @escaping (
-            Bool,
             TabWebViewTeardownIntent
-        ) -> WebViewTabTeardownResult = { _, _ in .none }
+        ) -> WebViewTabTeardownResult = { _ in .none }
     ) -> TabWebViewCleanupOwner.Context {
         TabWebViewCleanupOwner.Context(
             tabId: tabId,

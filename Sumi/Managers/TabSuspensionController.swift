@@ -39,9 +39,7 @@ final class TabSuspensionController {
         let contextSource = TabSuspensionContextSource()
         let executor = TabSuspensionExecutor(
             contextSource: contextSource,
-            eligibilityEvaluator: TabSuspensionEligibilityEvaluator(
-                dateProvider: dateProvider
-            ),
+            eligibilityEvaluator: TabSuspensionEligibilityEvaluator(),
             dateProvider: dateProvider
         )
         let proactiveLifecycle = ProactiveTabSuspensionLifecycle(

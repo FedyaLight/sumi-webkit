@@ -77,7 +77,9 @@ final class WebViewPhysicalCleanupService {
         }
         SumiWebViewShutdown.perform(
             on: webView,
-            runtime: shutdownRuntime
+            runtime: shutdownRuntime,
+            closeActiveMediaPresentations: SumiWebViewShutdown
+                .hasActiveMediaPresentation(on: webView)
         )
     }
 }

@@ -18,8 +18,7 @@ protocol TabWebViewAvailabilityParticipant: AnyObject {
 @MainActor
 protocol TabWebViewOwnershipParticipant: AnyObject {
     func removeAllWebViews(
-        for tab: Tab,
-        closeActiveFullscreenMedia: Bool
+        for tab: Tab
     )
     func trackingWindowIDs(for tabID: UUID) -> [UUID]
     func primaryTrackedWindowID(for tabID: UUID) -> UUID?
@@ -123,14 +122,8 @@ struct TabManagerWebViewLifecycleService {
         availability.unload(tab)
     }
 
-    func requireRemoveAllWebViews(
-        for tab: Tab,
-        closeActiveFullscreenMedia: Bool
-    ) {
-        ownership.removeAllWebViews(
-            for: tab,
-            closeActiveFullscreenMedia: closeActiveFullscreenMedia
-        )
+    func requireRemoveAllWebViews(for tab: Tab) {
+        ownership.removeAllWebViews(for: tab)
     }
 
     func windowIDsTrackingWebViews(for tabId: UUID) -> [UUID] {

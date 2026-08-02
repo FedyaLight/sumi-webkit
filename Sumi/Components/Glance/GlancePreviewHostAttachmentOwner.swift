@@ -41,7 +41,6 @@ final class GlancePreviewHostAttachmentOwner {
             return
         }
 
-        hostView.prepareForSuperviewTransferPreservingDisplayedContent()
         hostView.removeFromSuperview()
         webClipView.addSubview(hostView)
         hostView.frame = webClipView.bounds
@@ -53,7 +52,6 @@ final class GlancePreviewHostAttachmentOwner {
     func clear(preservingDisplayedContent: Bool) {
         clearPreviewWebViewFlags()
         if preservingDisplayedContent {
-            previewHostView?.prepareForSuperviewTransferPreservingDisplayedContent()
         } else {
             webClipView.subviews.forEach { $0.removeFromSuperview() }
         }

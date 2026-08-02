@@ -239,7 +239,7 @@ final class TabClosureServiceCompositionTests: XCTestCase {
             webViewLifecycle: TestRuntimePorts.webViewLifecycle(
                 retirement: .rejecting,
                 unloadTab: { _ in events.append("unload") },
-                requireRemoveAllWebViews: { _, _ in events.append("remove") }
+                requireRemoveAllWebViews: { _ in events.append("remove") }
             ),
             handleTabClosures: { _ in
                 events.append("closures")

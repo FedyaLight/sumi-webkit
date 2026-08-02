@@ -91,7 +91,6 @@ final class WindowWebContentHostAttachmentService {
             guard self.compositorRuntime.owns(containerRegistration) else { return }
             self.hostRegistry.removeParkedProtectedHost(for: host.webView)
             if host.superview != nil && host.superview !== paneView {
-                host.prepareForSuperviewTransferPreservingDisplayedContent()
                 host.removeFromSuperview()
             }
             if host.superview == nil {
@@ -103,8 +102,6 @@ final class WindowWebContentHostAttachmentService {
 
             host.attachDisplayedContentIfNeeded()
             host.isHidden = false
-            paneView.layoutSubtreeIfNeeded()
-            host.layoutSubtreeIfNeeded()
         }
         containerView.contentVisibilityDidChange()
 

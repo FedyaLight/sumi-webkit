@@ -3,7 +3,7 @@ import WebKit
 import SumiWebRuntime
 
 /// Owns the tracked-WebView registration lifecycle: registry slots,
-/// media-protection observations installed on registration, and teardown of
+/// protected-command identity registration and teardown of
 /// unprotected tracked WebViews.
 @MainActor
 final class WebViewTrackedRegistrationOwner {
@@ -11,13 +11,8 @@ final class WebViewTrackedRegistrationOwner {
     private let mediaProtectionOwner: WebViewMediaProtectionOwner
     private let trackingLifecycleOwner: WebViewTrackingLifecycleOwner
     private let trackedCleanupExecutionOwner: WebViewTrackedCleanupExecutionOwner
-    private let containsWindow: @MainActor @Sendable (UUID) -> Bool
-    private let currentTabID: @MainActor @Sendable (UUID) -> UUID?
-    private let selectTab: @MainActor @Sendable (UUID, UUID) -> Void
-    private let refreshCompositor: @MainActor @Sendable (UUID) -> Void
     private let removeWebViewFromContainers: @MainActor (WKWebView) -> Void
     private let pruneInvalidDeferredCommands: @MainActor (String) -> Void
-    private let flushDeferredProtectedCommands: @MainActor (ObjectIdentifier) -> Void
     private let finishDestructiveCleanupNavigation: @MainActor (WKWebView) -> Void
     private let cancelProcessRecovery: @MainActor (WKWebView) -> Void
     private let performFallbackWebViewCleanup: @MainActor (WKWebView, UUID) -> Void
@@ -30,13 +25,8 @@ final class WebViewTrackedRegistrationOwner {
         mediaProtectionOwner: WebViewMediaProtectionOwner,
         trackingLifecycleOwner: WebViewTrackingLifecycleOwner,
         trackedCleanupExecutionOwner: WebViewTrackedCleanupExecutionOwner,
-        containsWindow: @escaping @MainActor @Sendable (UUID) -> Bool,
-        currentTabID: @escaping @MainActor @Sendable (UUID) -> UUID?,
-        selectTab: @escaping @MainActor @Sendable (UUID, UUID) -> Void,
-        refreshCompositor: @escaping @MainActor @Sendable (UUID) -> Void,
         removeWebViewFromContainers: @escaping @MainActor (WKWebView) -> Void,
         pruneInvalidDeferredCommands: @escaping @MainActor (String) -> Void,
-        flushDeferredProtectedCommands: @escaping @MainActor (ObjectIdentifier) -> Void,
         cancelProcessRecovery: @escaping @MainActor (WKWebView) -> Void,
         finishDestructiveCleanupNavigation: @escaping @MainActor (WKWebView) -> Void,
         performFallbackWebViewCleanup: @escaping @MainActor (WKWebView, UUID) -> Void,
@@ -48,13 +38,8 @@ final class WebViewTrackedRegistrationOwner {
         self.mediaProtectionOwner = mediaProtectionOwner
         self.trackingLifecycleOwner = trackingLifecycleOwner
         self.trackedCleanupExecutionOwner = trackedCleanupExecutionOwner
-        self.containsWindow = containsWindow
-        self.currentTabID = currentTabID
-        self.selectTab = selectTab
-        self.refreshCompositor = refreshCompositor
         self.removeWebViewFromContainers = removeWebViewFromContainers
         self.pruneInvalidDeferredCommands = pruneInvalidDeferredCommands
-        self.flushDeferredProtectedCommands = flushDeferredProtectedCommands
         self.cancelProcessRecovery = cancelProcessRecovery
         self.finishDestructiveCleanupNavigation = finishDestructiveCleanupNavigation
         self.performFallbackWebViewCleanup = performFallbackWebViewCleanup
@@ -78,9 +63,7 @@ final class WebViewTrackedRegistrationOwner {
             removeFromContainers: { [removeWebViewFromContainers] webView in
                 removeWebViewFromContainers(webView)
             },
-            installRuntimeObservations: { [weak self] webView in
-                self?.installMediaProtectionObservationsIfNeeded(on: webView)
-            },
+            installRuntimeObservations: { _ in },
             uninstallRuntimeObservationsIfUntracked: { [weak self] webView in
                 self?.uninstallMediaProtectionObservationsIfUntracked(webView)
             },
@@ -195,39 +178,8 @@ final class WebViewTrackedRegistrationOwner {
         )
     }
 
-    func installMediaProtectionObservationsIfNeeded(on webView: WKWebView) {
-        mediaProtectionOwner.installFullscreenStateObservationIfNeeded(
-            on: webView,
-            trackedOwner: { [webViewSessions] webView in
-                webViewSessions.trackedOwner(containing: webView)
-            },
-            fallbackWindowID: { [webViewSessions] webView in
-                webViewSessions.trackedOwner(containing: webView)?.windowID
-            },
-            flushDeferredProtectedCommands: { [flushDeferredProtectedCommands] webViewID in
-                flushDeferredProtectedCommands(webViewID)
-            },
-            refreshCompositor: { [containsWindow, refreshCompositor] windowID in
-                guard containsWindow(windowID) else { return }
-                refreshCompositor(windowID)
-            },
-            selectTab: { [selectTab] tabID, windowID in
-                selectTab(tabID, windowID)
-            },
-            isOwnerTabCurrent: { [containsWindow, currentTabID] tabID, windowID in
-                containsWindow(windowID) && currentTabID(windowID) == tabID
-            }
-        )
-
-        mediaProtectionOwner.installNowPlayingSessionObservationIfNeeded(
-            on: webView,
-            trackedOwner: { [webViewSessions] webView in
-                webViewSessions.trackedOwner(containing: webView)
-            },
-            fallbackWindowID: { [webViewSessions] webView in
-                webViewSessions.trackedOwner(containing: webView)?.windowID
-            }
-        )
+    func noteProtectedCommandIdentity(_ webView: WKWebView) {
+        mediaProtectionOwner.note(webView)
     }
 
     private func cleanupExecutionRuntime() -> WebViewTrackedCleanupExecutionOwner.Runtime {

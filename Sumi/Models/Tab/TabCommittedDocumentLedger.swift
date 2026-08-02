@@ -94,10 +94,6 @@ final class TabCommittedDocumentLedger {
         var suspensionActivationRequested: Bool
         var suspensionActivationAttemptCount: Int
         var suspensionReport: SuspensionReport?
-        var subframePictureInPictureReports: [
-            String: TabSubframePictureInPictureReport
-        ]
-        var hasSubframePictureInPictureOverflowVeto: Bool
     }
 
     private struct SuspensionReport {
@@ -158,13 +154,7 @@ final class TabCommittedDocumentLedger {
                 : 0,
             suspensionReport: preservesDocument
                 ? existing?.suspensionReport
-                : nil,
-            subframePictureInPictureReports: preservesDocument
-                ? existing?.subframePictureInPictureReports ?? [:]
-                : [:],
-            hasSubframePictureInPictureOverflowVeto: preservesDocument
-                ? existing?.hasSubframePictureInPictureOverflowVeto ?? false
-                : false
+                : nil
         )
     }
 
@@ -291,50 +281,6 @@ final class TabCommittedDocumentLedger {
         return true
     }
 
-    func recordSubframePictureInPictureReport(
-        _ report: TabSubframePictureInPictureReport,
-        from webView: WKWebView,
-        matching lease: TabMainFrameDocumentLease
-    ) -> Bool {
-        let webViewID = ObjectIdentifier(webView)
-        guard lease.webViewID == webViewID,
-              report.documentNonce.isEmpty == false,
-              report.documentNonce.utf8.count <= 256,
-              var replica = replicasByWebViewID[webViewID],
-              replica.webViewReference.matches(webView),
-              replica.document.revision == lease.revision,
-              replica.document.documentGeneration == lease.documentGeneration,
-              replica.document.participantID == lease.participantID,
-              replica.suspensionToken == report.documentLeaseToken,
-              isCanonicalReplica(replica.document) else {
-            return false
-        }
-
-        if let previous = replica.subframePictureInPictureReports[
-            report.documentNonce
-        ] {
-            guard report.sequence > previous.sequence else { return false }
-        }
-
-        if report.isActive {
-            if replica.subframePictureInPictureReports[report.documentNonce]
-                == nil,
-               replica.subframePictureInPictureReports.count >= 64 {
-                replica.hasSubframePictureInPictureOverflowVeto = true
-            } else {
-                replica.subframePictureInPictureReports[
-                    report.documentNonce
-                ] = report
-            }
-        } else {
-            replica.subframePictureInPictureReports.removeValue(
-                forKey: report.documentNonce
-            )
-        }
-        replicasByWebViewID[webViewID] = replica
-        return true
-    }
-
     func suspensionToken(
         for webView: WKWebView,
         matching lease: TabMainFrameDocumentLease
@@ -416,7 +362,6 @@ final class TabCommittedDocumentLedger {
         var hasCanonicalReplica = false
         var awaitsEvidence = false
         var pageVeto = false
-        var pictureInPictureVeto = false
 
         for replica in replicasByWebViewID.values {
             guard replica.webViewReference.resolve() != nil else { continue }
@@ -430,15 +375,6 @@ final class TabCommittedDocumentLedger {
                 continue
             }
             pageVeto = pageVeto || report.value.canBeSuspended == false
-            pictureInPictureVeto = pictureInPictureVeto
-                || report.value.hasPictureInPictureVideo
-                || replica.hasSubframePictureInPictureOverflowVeto
-                || replica.subframePictureInPictureReports.values.contains(
-                    where: \.isActive
-                )
-        }
-        if pictureInPictureVeto {
-            return .vetoed(.pictureInPicture)
         }
         if pageVeto {
             return .vetoed(.pageReportedUnableToSuspend)

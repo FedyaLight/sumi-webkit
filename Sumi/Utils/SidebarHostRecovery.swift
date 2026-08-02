@@ -4,7 +4,7 @@ import AppKit
 
 @MainActor
 enum SidebarTransientUIHitTestingRecovery {
-    /// Walks superviews from `leaf` and forces layout so `NSHostingView` hit-testing recovers after menus/popovers.
+    /// Invalidates the superview chain so AppKit can restore hit-testing after menus/popovers.
     static func invalidateLayoutChain(from leaf: NSView?) {
         guard var view = leaf else { return }
         RuntimeDiagnostics.emit(
@@ -12,7 +12,6 @@ enum SidebarTransientUIHitTestingRecovery {
         )
         while true {
             view.needsLayout = true
-            view.layoutSubtreeIfNeeded()
             guard let superview = view.superview else { break }
             view = superview
         }

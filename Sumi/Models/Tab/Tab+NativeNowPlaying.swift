@@ -23,13 +23,11 @@ extension Tab {
 
     func playSumiNativeNowPlayingSession(
         using context: SumiNativeNowPlayingRuntimeContext,
-        in windowState: BrowserWindowState,
-        focusIfNeeded: Bool
+        in windowState: BrowserWindowState
     ) async -> Bool {
         await performSumiNativeNowPlayingCommand(
             using: context,
-            in: windowState,
-            focusIfNeeded: focusIfNeeded
+            in: windowState
         ) { webView in
             await webView.sumiPlayPredominantOrNowPlayingMediaSession()
         }
@@ -37,13 +35,11 @@ extension Tab {
 
     func pauseSumiNativeNowPlayingSession(
         using context: SumiNativeNowPlayingRuntimeContext,
-        in windowState: BrowserWindowState,
-        focusIfNeeded: Bool
+        in windowState: BrowserWindowState
     ) async -> Bool {
         await performSumiNativeNowPlayingCommand(
             using: context,
-            in: windowState,
-            focusIfNeeded: focusIfNeeded
+            in: windowState
         ) { webView in
             await webView.sumiPauseNowPlayingMediaSession()
         }
@@ -59,25 +55,12 @@ extension Tab {
     private func performSumiNativeNowPlayingCommand(
         using context: SumiNativeNowPlayingRuntimeContext,
         in windowState: BrowserWindowState,
-        focusIfNeeded: Bool,
         perform: @escaping @MainActor (SumiNowPlayingWebViewAdapter) async -> Bool
     ) async -> Bool {
-        if let webView = resolvedNowPlayingWebView(using: context, in: windowState) {
-            return await perform(webView)
-        }
-
-        guard focusIfNeeded else { return false }
-
-        context.selectTab(self, windowState)
-        try? await Task.sleep(nanoseconds: 180_000_000)
-
-        guard let focusedWebView = resolvedNowPlayingWebView(
+        guard let webView = resolvedNowPlayingWebView(
             using: context,
             in: windowState
-        ) else {
-            return false
-        }
-
-        return await perform(focusedWebView)
+        ) else { return false }
+        return await perform(webView)
     }
 }

@@ -98,7 +98,6 @@ final class SidebarColumnViewController: NSViewController {
                 wc,
             ])
             widthConstraint = wc
-            nextHostingController.view.layoutSubtreeIfNeeded()
         }
 
         containerView?.hostedSidebarView = hostingController?.view

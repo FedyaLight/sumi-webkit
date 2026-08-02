@@ -346,7 +346,6 @@ struct TabWebViewCleanupRuntime {
     var removeWebViewFromContainers: (WKWebView) -> Void
     var removeAllWebViews: (
         _ tab: Tab,
-        _ closeActiveFullscreenMedia: Bool,
         _ intent: TabWebViewTeardownIntent
     ) -> WebViewTabTeardownResult
 
@@ -356,7 +355,7 @@ struct TabWebViewCleanupRuntime {
         deferWebsiteDataMutationMainFrameSubmission: { _, _, _, _ in false },
         retireParkedWebView: { _, _, _ in false },
         removeWebViewFromContainers: { _ in /* No-op. */ },
-        removeAllWebViews: { _, _, _ in .none }
+        removeAllWebViews: { _, _ in .none }
     )
 }
 
@@ -668,6 +667,7 @@ final class TabNavigationRuntime {
 final class TabMediaRuntime {
     var lastMediaActivityAt: Date = .distantPast
     var audioStateCancellables: [ObjectIdentifier: AnyCancellable] = [:]
+    private(set) var pictureInPictureWebViewIDs: Set<ObjectIdentifier> = []
     private var browserRuntime = TabBrowserRuntimeReference(.inactive)
     private var sharesAttachedBrowserRuntime = false
 
@@ -687,5 +687,26 @@ final class TabMediaRuntime {
     func attach(browserRuntime: TabBrowserRuntimeReference) {
         self.browserRuntime = browserRuntime
         sharesAttachedBrowserRuntime = true
+    }
+
+    var hasActivePictureInPicture: Bool {
+        !pictureInPictureWebViewIDs.isEmpty
+    }
+
+    func isPictureInPictureActive(for webView: WKWebView) -> Bool {
+        pictureInPictureWebViewIDs.contains(ObjectIdentifier(webView))
+    }
+
+    func setPictureInPictureActive(_ isActive: Bool, for webView: WKWebView) {
+        let webViewID = ObjectIdentifier(webView)
+        if isActive {
+            pictureInPictureWebViewIDs.insert(webViewID)
+        } else {
+            pictureInPictureWebViewIDs.remove(webViewID)
+        }
+    }
+
+    func removePictureInPictureState(for webView: WKWebView) {
+        pictureInPictureWebViewIDs.remove(ObjectIdentifier(webView))
     }
 }

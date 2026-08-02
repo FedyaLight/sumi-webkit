@@ -77,12 +77,12 @@
 				Sidebar/SpaceSidebarPageChrome.swift,
 				Sidebar/SpaceSidebarRenderPolicy.swift,
 				Sidebar/SpaceSidebarShellActions.swift,
-				Sidebar/SpaceSidebarSnapshots.swift,
 				Sidebar/SpaceSidebarSnapshotItemViews.swift,
+				Sidebar/SpaceSidebarSnapshots.swift,
 				Sidebar/SpaceSidebarSnapshotViews.swift,
 				Sidebar/SpaceSidebarTransitionCoordinator.swift,
-				Sidebar/SpaceSidebarTransitionLayers.swift,
 				Sidebar/SpaceSidebarTransitionItemSnapshotBuilder.swift,
+				Sidebar/SpaceSidebarTransitionLayers.swift,
 				Sidebar/SpaceSidebarTransitionSnapshotBuilder.swift,
 				Sidebar/SpaceSidebarTransitionState.swift,
 				Sidebar/SpacesList/HoverLabel/SpaceHoverLabel.swift,
@@ -449,8 +449,8 @@
 		2C8925402E88DFF9002236DC /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_ENTITLEMENTS = SumiUITests/SumiUITests.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 2ZJ6H8V8AZ;
@@ -472,8 +472,8 @@
 		2C8925412E88DFF9002236DC /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_ENTITLEMENTS = SumiUITests/SumiUITests.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 2ZJ6H8V8AZ;
 				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;

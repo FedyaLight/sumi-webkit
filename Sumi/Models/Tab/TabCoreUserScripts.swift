@@ -10,10 +10,6 @@ func makeNormalTabCoreUserScripts(for tab: Tab) -> [SumiPageScript] {
             committedDocumentRuntime: tab.committedDocumentRuntime
         ),
         SumiTabSuspensionUserScript(tabID: tab.id),
-        SumiSubframePictureInPictureUserScript(
-            tabID: tab.id,
-            committedDocumentRuntime: tab.committedDocumentRuntime
-        ),
         SumiWebNotificationUserScript(tab: tab),
         SumiNativeScrollbarHideUserScript(),
     ]

@@ -40,7 +40,7 @@ private final class ClosureTabWebViewAvailabilityParticipant:
 @MainActor
 private final class ClosureTabWebViewOwnershipParticipant:
     TabWebViewOwnershipParticipant {
-    private let removeAction: (Tab, Bool) -> Void
+    private let removeAction: (Tab) -> Void
     private let trackingWindowIDs: (UUID) -> [UUID]
     private let primaryWindowID: (UUID) -> UUID?
     private let rebuildAction: (Tab, UUID?, URL?) -> Void
@@ -48,7 +48,7 @@ private final class ClosureTabWebViewOwnershipParticipant:
     private let hasUntrackedWebView: (Tab) -> Bool
 
     init(
-        remove: @escaping (Tab, Bool) -> Void,
+        remove: @escaping (Tab) -> Void,
         trackingWindowIDs: @escaping (UUID) -> [UUID],
         primaryWindowID: @escaping (UUID) -> UUID?,
         rebuild: @escaping (Tab, UUID?, URL?) -> Void,
@@ -63,11 +63,8 @@ private final class ClosureTabWebViewOwnershipParticipant:
         self.hasUntrackedWebView = hasUntrackedWebView
     }
 
-    func removeAllWebViews(
-        for tab: Tab,
-        closeActiveFullscreenMedia: Bool
-    ) {
-        removeAction(tab, closeActiveFullscreenMedia)
+    func removeAllWebViews(for tab: Tab) {
+        removeAction(tab)
     }
 
     func trackingWindowIDs(for tabID: UUID) -> [UUID] {
@@ -251,7 +248,7 @@ enum TestRuntimePorts {
         materializeVisibleTabWebViewIfNeeded: @escaping (Tab, BrowserWindowState) -> Void = { _, _ in /* No-op. */ },
         loadTab: @escaping (Tab) -> Void = { _ in /* No-op. */ },
         unloadTab: @escaping (Tab) -> Void = { _ in /* No-op. */ },
-        requireRemoveAllWebViews: @escaping (Tab, Bool) -> Void = { _, _ in /* No-op. */ },
+        requireRemoveAllWebViews: @escaping (Tab) -> Void = { _ in /* No-op. */ },
         windowIDsTrackingWebViews: @escaping (UUID) -> [UUID] = { _ in [] },
         primaryTrackedWindowId: @escaping (UUID) -> UUID? = { _ in nil },
         rebuildLiveWebViews: @escaping (Tab, UUID?, URL?) -> Void = { _, _, _ in /* No-op. */ },
