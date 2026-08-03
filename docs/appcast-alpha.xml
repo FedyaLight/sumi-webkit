@@ -7,11 +7,11 @@
         <language>en</language>
         <item>
             <title>0.0.2</title>
-            <pubDate>Mon, 03 Aug 2026 18:06:03 +0300</pubDate>
-            <sparkle:version>2</sparkle:version>
+            <pubDate>Mon, 03 Aug 2026 19:03:40 +0300</pubDate>
+            <sparkle:version>3</sparkle:version>
             <sparkle:shortVersionString>0.0.2</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.5</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/FedyaLight/sumi-webkit/releases/download/v0.0.2/Sumi-0.0.2-macos-universal.dmg" length="67964554" type="application/octet-stream" sparkle:edSignature="Scy6DatQdEzKgfaoNlwyBItGn4Aj/+MN5x21O6ZjeUJW5usGVBTjmfCxZRbVpCgBqzsiWcT5z3a5DLTUNgSoAg=="/>
+            <enclosure url="https://github.com/FedyaLight/sumi-webkit/releases/download/v0.0.2/Sumi-0.0.2-build3-macos-universal.dmg" length="67971762" type="application/octet-stream" sparkle:edSignature="MnboIAbtVqHVr8SJRAVBL++BUxxFAKLPTVw14tpIv8f+5eOVEMe4gW2xcV44kM/faJsYKdDOMApgOFeLybPeDw=="/>
         </item>
     </channel>
 </rss>

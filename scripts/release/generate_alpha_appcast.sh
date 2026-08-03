@@ -6,6 +6,7 @@ archive_dir="${1:-${repo_root}/release/artifacts}"
 download_url_prefix="${DOWNLOAD_URL_PREFIX:-}"
 output_appcast="${OUTPUT_APPCAST:-${repo_root}/docs/appcast-alpha.xml}"
 bridge_output_appcast="${BRIDGE_OUTPUT_APPCAST:-}"
+maximum_versions="${MAXIMUM_VERSIONS:-3}"
 generate_appcast="$("${repo_root}/scripts/release/find_sparkle_tool.sh" generate_appcast)"
 
 if [[ ! -d "${archive_dir}" ]]; then
@@ -15,7 +16,7 @@ fi
 
 mkdir -p "$(dirname "${output_appcast}")"
 
-args=("-o" "${output_appcast}")
+args=("-o" "${output_appcast}" "--maximum-versions" "${maximum_versions}")
 
 if [[ -n "${download_url_prefix}" ]]; then
   args+=("--download-url-prefix" "${download_url_prefix}")
