@@ -11,6 +11,16 @@ app_path="${APP_PATH:-}"
 skip_build="${SKIP_BUILD:-0}"
 skip_guardrails="${SKIP_ARCHITECTURE_GUARDRAILS:-0}"
 
+if [[ "${derived_data_path}" != /* ]]; then
+  derived_data_path="${repo_root}/${derived_data_path}"
+fi
+if [[ "${output_dir}" != /* ]]; then
+  output_dir="${repo_root}/${output_dir}"
+fi
+if [[ -n "${app_path}" && "${app_path}" != /* ]]; then
+  app_path="${repo_root}/${app_path}"
+fi
+
 case "${architecture}" in
   arm64 | x86_64) ;;
   *)
