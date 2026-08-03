@@ -11,7 +11,7 @@
             <sparkle:version>4</sparkle:version>
             <sparkle:shortVersionString>0.0.2</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.5</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/FedyaLight/sumi-webkit/releases/download/v0.0.2/Sumi-0.0.2-build4-macos-universal.dmg" length="67912206" type="application/octet-stream" sparkle:edSignature="UxDVWDLz8VM5/lNh1AaCYpSsm/eBU/Zpvy2sdAyLeJjR6ncocsgyM0vQ7kFU3RuyoeV06k9l+Fj+k8DUjCBdDA=="/>
+            <enclosure url="https://github.com/FedyaLight/sumi-webkit/releases/download/v0.0.2/Sumi-0.0.2-build4-macos-universal.dmg" length="67917798" type="application/octet-stream" sparkle:edSignature="N79es8uRs14O80Tiw8gt4BLaSEzxRkMria/m9UNVkO2an57BZvxs7SBa4kKseNuCRmVrwJA2boPD8rhkIip7DA=="/>
         </item>
     </channel>
 </rss>
