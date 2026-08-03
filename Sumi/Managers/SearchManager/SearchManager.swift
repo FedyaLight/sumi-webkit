@@ -258,11 +258,14 @@ class SearchManager {
         // Cancel previous request
         webSuggestionTask?.cancel()
         historySuggestionTask?.cancel()
-        isLoadingSuggestions = true
-        notifyStateChange()
         webSuggestionRequestGeneration &+= 1
         activeWebSuggestionGeneration = webSuggestionRequestGeneration
         let generation = activeWebSuggestionGeneration
+        isLoadingSuggestions = true
+        notifyStateChange()
+        guard generation == activeWebSuggestionGeneration,
+              isLoadingSuggestions
+        else { return }
 
         let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let readsBrowserProfile = Self.readsBrowserProfile(in: windowState)
