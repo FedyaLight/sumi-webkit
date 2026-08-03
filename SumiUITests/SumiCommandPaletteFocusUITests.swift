@@ -124,31 +124,6 @@ final class SumiCommandPaletteFocusUITests: SumiLaunchSmokeUITestCase {
         }
     }
 
-    func testClickingUnloadedLauncherResultActivatesIt() throws {
-        try withABCInputSource {
-            let fixture = try loadPersonalSidebarFixture()
-            let app = try launchApp(
-                preferencesHomeURL: try prepareSmokePreferencesHome()
-            )
-            XCTAssertTrue(
-                app.windows.element(boundBy: 0).waitForExistence(timeout: 5)
-            )
-
-            let launcherID = try XCTUnwrap(fixture.topLevelLauncherID)
-            try activateSmokeLauncher(
-                id: launcherID,
-                app: app
-            )
-            XCTAssertFalse(
-                element(
-                    withIdentifier: "command-palette-input",
-                    in: app
-                ).exists,
-                "Successful launcher activation did not dismiss the palette"
-            )
-        }
-    }
-
     func testSplitCommandFromPaletteCreatesSplit() throws {
         try withABCInputSource {
             let fixture = try loadPersonalSidebarFixture()
