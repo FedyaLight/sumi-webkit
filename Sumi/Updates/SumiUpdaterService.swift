@@ -6,13 +6,27 @@
 import Foundation
 
 enum SumiUpdateChannel: String, CaseIterable, Equatable, Sendable {
+    case alpha
     case stable
 
     var displayName: String {
         switch self {
+        case .alpha:
+            return "Alpha"
         case .stable:
             return "Stable"
         }
+    }
+
+    static func resolve(infoDictionary: [String: Any]) -> SumiUpdateChannel {
+        guard let rawValue = infoDictionary["SumiReleaseChannel"] as? String else {
+            return .stable
+        }
+        return SumiUpdateChannel(rawValue: rawValue) ?? .stable
+    }
+
+    static func resolve(bundle: Bundle = .main) -> SumiUpdateChannel {
+        resolve(infoDictionary: bundle.infoDictionary ?? [:])
     }
 }
 
@@ -498,7 +512,7 @@ final class SumiUpdaterService: ObservableObject {
     }
 
     init(
-        channel: SumiUpdateChannel = .stable,
+        channel: SumiUpdateChannel = .resolve(),
         dismissalStore: SumiUpdateNoticeDismissalPersisting = SumiUpdateNoticeDismissalStore(),
         installedUpdateStore: SumiInstalledUpdateNoticePersisting = SumiInstalledUpdateNoticeStore(),
         currentVersion: SumiAppVersionMetadata = SumiAppVersionMetadata.resolve(),

@@ -21,7 +21,7 @@
 
 ## Status
 
-`v0.0.1` is Sumi's first public release. The app builds and runs as a working browser, but it is still an early release and is not yet recommended as a primary browser. Download the build for your Mac from [GitHub Releases](https://github.com/FedyaLight/sumi-webkit/releases/tag/v0.0.1): `arm64` for Apple silicon or `x86_64` for Intel.
+`v0.0.1` is Sumi's first public Alpha release. The app builds and runs as a working browser, but it is still early software and is not yet recommended as a primary browser. Download the build for your Mac from [GitHub Releases](https://github.com/FedyaLight/sumi-webkit/releases/tag/v0.0.1): `arm64` for Apple silicon or `x86_64` for Intel.
 
 The first release is intentionally narrow about its guarantees:
 

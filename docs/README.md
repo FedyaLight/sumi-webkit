@@ -22,7 +22,8 @@ The README is the product-level entry point. The documents here separate user-fa
 - [Safari Web Extension engineering log](SumiSafariExtensionCompatibility.md)
 - [Safari extension manual checks](SafariExtensionManualE2E.md)
 - [Maintainer release process](RELEASES.md)
-- [v0.0.1 release notes](releases/0.0.1.md)
+- [v0.0.1 Alpha 1 release notes](releases/0.0.1.md)
+- [v0.0.2 Alpha 2 release notes](releases/0.0.2.md)
 - [CI and test ownership](../scripts/ci/README.md)
 
 Documents describe the current `main` branch unless a version is named explicitly. Historical investigation notes are labeled as such and are not release claims.

@@ -309,6 +309,14 @@ final class SumiUpdaterServiceTests: XCTestCase {
         XCTAssertTrue(didCheck)
     }
 
+    func testReleaseChannelResolvesFromApplicationMetadata() {
+        XCTAssertEqual(
+            SumiUpdateChannel.resolve(infoDictionary: ["SumiReleaseChannel": "alpha"]),
+            .alpha
+        )
+        XCTAssertEqual(SumiUpdateChannel.alpha.displayName, "Alpha")
+    }
+
     func testAboutViewModelMapsSinglePanelStates() {
         let metadata = SumiAppVersionMetadata.resolve(
             infoDictionary: [
@@ -351,12 +359,13 @@ final class SumiUpdaterServiceTests: XCTestCase {
         )
     }
 
-    func testInfoPlistUsesStableAppcastAndPublicEdDSAKey() throws {
+    func testInfoPlistUsesAlphaAppcastReleaseChannelAndPublicEdDSAKey() throws {
         let plist = try infoPlist()
         XCTAssertEqual(
             plist["SUFeedURL"] as? String,
-            "https://fedyalight.github.io/sumi-webkit/appcast.xml"
+            "https://fedyalight.github.io/sumi-webkit/appcast-alpha.xml"
         )
+        XCTAssertEqual(plist["SumiReleaseChannel"] as? String, "alpha")
         let publicKey = try XCTUnwrap(plist["SUPublicEDKey"] as? String)
         XCTAssertFalse(publicKey.isEmpty)
         XCTAssertNotEqual(publicKey, "REPLACE_ME")

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-output_dir="${OUTPUT_DIR:-${repo_root}/release/artifacts}"
+output_dir="${OUTPUT_DIR:-${repo_root}/release/artifacts/0.0.2}"
 
 "${repo_root}/scripts/release/run_release_gates.sh"
 
@@ -17,4 +17,4 @@ for architecture in arm64 x86_64; do
 done
 
 printf 'Created alpha DMGs:\n'
-find "${output_dir}" -maxdepth 1 -type f -name 'Sumi-*-alpha-macos-*.dmg' -print | sort
+find "${output_dir}" -maxdepth 1 -type f -name 'Sumi-*-macos-*.dmg' -print | sort

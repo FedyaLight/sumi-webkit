@@ -4,7 +4,7 @@ Sumi uses Sparkle 2 for update checks, archive verification, download, installat
 
 ## First Install
 
-For `v0.0.1`:
+For Alpha 1 (`v0.0.1`):
 
 1. Download the matching DMG from [GitHub Releases](https://github.com/FedyaLight/sumi-webkit/releases/tag/v0.0.1): `arm64` for Apple silicon or `x86_64` for Intel.
 2. Open the DMG and drag `Sumi.app` to Applications.
@@ -21,14 +21,15 @@ Run this only for a Sumi bundle you intentionally downloaded. Sumi itself never 
 
 ## Update Flow
 
-- Sumi reads the stable appcast from `https://fedyalight.github.io/sumi-webkit/appcast.xml`.
+- Alpha 1 reads `appcast.xml`; Alpha 2 is published there once as a migration bridge for existing installations.
+- Alpha 2 and later Alpha builds read `https://fedyalight.github.io/sumi-webkit/appcast-alpha.xml`.
 - `Sumi/Info.plist` contains the Sparkle EdDSA public key as `SUPublicEDKey`.
 - Sparkle verifies update archives using the signature in the appcast enclosure.
 - Users explicitly start installation from Settings > About or the sidebar notice.
 - Sparkle handles download, installation, and relaunch.
 - After relaunch, the completed sidebar notice links to `https://sumi-browser.netlify.app/changelog/#<display-version>`; each public release entry must use its display version as the Changelog anchor.
 
-The appcast for the first release is intentionally empty because no older public build exists to update. End-to-end update validation requires a later controlled build with a higher build number and an architecture-aware update artifact strategy.
+The appcast for Alpha 1 was intentionally empty because no older public build existed. Alpha 2 has a higher build number and uses Sparkle's architecture-aware branch selection for independently built Apple silicon and Intel artifacts.
 
 ## Signing Boundaries
 

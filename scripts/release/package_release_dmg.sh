@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 architecture="${ARCHITECTURE:-arm64}"
 configuration="${CONFIGURATION:-Release}"
-release_channel="${RELEASE_CHANNEL:-release}"
+release_channel="${RELEASE_CHANNEL:-stable}"
 derived_data_path="${DERIVED_DATA_PATH:-${repo_root}/build/ReleaseDmg-${architecture}}"
 output_dir="${OUTPUT_DIR:-${repo_root}/release/artifacts}"
 app_path="${APP_PATH:-}"
@@ -39,6 +39,16 @@ fi
 
 if [[ ! -d "${app_path}" ]]; then
   echo "error: Missing app bundle: ${app_path}" >&2
+  exit 1
+fi
+
+info_plist="${app_path}/Contents/Info.plist"
+version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${info_plist}")"
+build="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${info_plist}")"
+declared_channel="$(/usr/libexec/PlistBuddy -c 'Print :SumiReleaseChannel' "${info_plist}")"
+
+if [[ "${declared_channel}" != "${release_channel}" ]]; then
+  echo "error: App declares ${declared_channel} channel, but packaging requested ${release_channel}." >&2
   exit 1
 fi
 
@@ -104,14 +114,7 @@ fi
 
 codesign --verify --deep --strict --verbose=1 "${app_path}"
 
-info_plist="${app_path}/Contents/Info.plist"
-version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${info_plist}")"
-build="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${info_plist}")"
-if [[ "${release_channel}" == "release" ]]; then
-  archive_name="Sumi-${version}-macos-${architecture}.dmg"
-else
-  archive_name="Sumi-${version}-${build}-${release_channel}-macos-${architecture}.dmg"
-fi
+archive_name="Sumi-${version}-macos-${architecture}.dmg"
 output_path="${OUTPUT_PATH:-${output_dir}/${archive_name}}"
 staging_dir="${temporary_root}/staging"
 rw_dmg="${temporary_root}/Sumi-release-rw.dmg"

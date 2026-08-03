@@ -44,7 +44,6 @@ class KeyboardShortcutManager {
     private let store: KeyboardShortcutStore
     private let validator: ShortcutValidator
     private let systemOwnedShortcuts: Set<KeyCombination> = [
-        KeyCombination(key: ",", modifiers: [.command]),
         KeyCombination(key: "h", modifiers: [.command]),
         KeyCombination(key: "m", modifiers: [.command]),
     ]

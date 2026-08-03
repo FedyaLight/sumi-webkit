@@ -2,24 +2,30 @@
 
 Sumi releases are built on a local release Mac with the checked-in Xcode project signing settings. GitHub-hosted runners run portable guardrails, but do not produce the public DMGs because their macOS image may lag the SDK required by Sumi's WebKit runtime.
 
-## 0.0.1 Identity
+## Alpha 2 Identity
 
-- Product version: `0.0.1`
-- Build number: `1`
-- Tag: `v0.0.1`
-- Apple silicon DMG: `Sumi-0.0.1-macos-arm64.dmg`
-- Intel DMG: `Sumi-0.0.1-macos-x86_64.dmg`
-- Stable appcast: `https://fedyalight.github.io/sumi-webkit/appcast.xml`
+- Product version: `0.0.2`
+- Build number: `2`
+- Product stage: `Alpha 2`
+- Update channel: `alpha`
+- Tag: `v0.0.2`
+- GitHub release: ordinary public Release, not draft and not GitHub prerelease
+- Apple silicon DMG: `release/artifacts/0.0.2/Sumi-0.0.2-macos-arm64.dmg`
+- Intel DMG: `release/artifacts/0.0.2/Sumi-0.0.2-macos-x86_64.dmg`
+- Alpha appcast: `https://fedyalight.github.io/sumi-webkit/appcast-alpha.xml`
+- Legacy `0.0.1` bridge appcast: `https://fedyalight.github.io/sumi-webkit/appcast.xml`
+
+The `0.0.x` version line is Sumi's public Alpha line. GitHub's prerelease flag is not used: Alpha builds are ordinary Releases, like the project's release model requires. Alpha status remains explicit in the release title, notes, application About panel, update channel, and repository documentation.
 
 ## Build Both DMGs
 
 Run:
 
 ```sh
-scripts/release/package_stable_release.sh
+scripts/release/package_alpha_release.sh
 ```
 
-The command runs the repository release gates and independently builds each architecture. Packaging verifies the executable architecture and code signature before and after mounting each DMG.
+The command runs the repository release gates and independently builds each architecture. Packaging verifies the executable architecture and code signature before and after mounting each DMG. It also refuses to package the app when `SumiReleaseChannel` does not match the requested channel, so an Alpha build cannot accidentally be packaged by the stable release script.
 
 Each DMG has a repository-owned Finder layout:
 
@@ -29,38 +35,41 @@ Each DMG has a repository-owned Finder layout:
 - the volume uses Sumi's application icon;
 - no script or quarantine workaround is embedded in the image.
 
-## Publish
+## Publish Alpha 2
 
-Create or update the ordinary GitHub Release:
+Do not run this command until the release artifacts, signatures, and update path have passed the checks below:
 
 ```sh
-gh release create v0.0.1 \
-  release/artifacts/Sumi-0.0.1-macos-arm64.dmg \
-  release/artifacts/Sumi-0.0.1-macos-x86_64.dmg \
-  --title "Sumi 0.0.1" \
-  --notes-file docs/releases/0.0.1.md
+gh release create v0.0.2 \
+  release/artifacts/0.0.2/Sumi-0.0.2-macos-arm64.dmg \
+  release/artifacts/0.0.2/Sumi-0.0.2-macos-x86_64.dmg \
+  --title "Sumi 0.0.2 Alpha 2" \
+  --notes-file docs/releases/0.0.2.md \
+  --latest
 ```
 
-Release notes must state that the artifacts are not Apple-notarized and include the exact quarantine workaround from `docs/releases/0.0.1.md`.
+Do not pass `--prerelease`. Alpha 2 is a normal public GitHub Release. Creating the Release is intentionally outside release preparation and must be an explicit later action.
 
-## Appcast
+## Update Installed 0.0.1 Builds
 
-The first stable appcast is empty because there is no older public build to update. Before publishing a later release:
+The published `0.0.1` app reads `appcast.xml`. Alpha 2 reads `appcast-alpha.xml`. To migrate existing installations without permanently mixing the feeds:
 
-1. Increment at least `CURRENT_PROJECT_VERSION`.
-2. Choose and validate an architecture-aware Sparkle update payload.
-3. Generate the signed appcast with the private EdDSA key stored outside git.
-4. Test the update from an installed older release on the supported architectures.
-5. Publish the appcast only after the release artifact URL is final.
+1. Upload both final `0.0.2` DMGs to the GitHub Release.
+2. Set `DOWNLOAD_URL_PREFIX` to the final release asset URL prefix and `SPARKLE_ED_KEY_FILE` to the private EdDSA key stored outside git.
+3. Run `scripts/release/generate_alpha_2_appcasts.sh`.
+4. Confirm that Sparkle generated distinct architecture branches for Apple silicon and Intel and that both appcasts contain the same signed `0.0.2` enclosures.
+5. Install the public `0.0.1` build and prove it offers and installs `0.0.2` from `appcast.xml`.
+6. Install the resulting `0.0.2` build and prove that its About panel says `Alpha`, its feed is `appcast-alpha.xml`, and it no longer depends on the bridge feed.
+7. Commit and publish both appcasts through GitHub Pages only after those checks pass.
 
-Do not pass two same-version, single-architecture DMGs to Sparkle without proving that it selects the correct payload on both architectures.
+The bridge is specific to Alpha 2. Later Alpha releases update only `appcast-alpha.xml`. The next stable release replaces `appcast.xml` with the stable feed again.
 
 ## Manual Verification
 
 - Open each DMG and confirm the Finder layout is intact.
 - Drag Sumi to Applications and launch it.
-- Confirm the bundle version and executable architecture.
-- Verify `codesign --verify --deep --strict`.
+- Confirm version `0.0.2`, build `2`, channel `alpha`, feed URL, and executable architecture.
+- Verify every application and test bundle with `codesign --verify --deep --strict` and confirm the signing authority belongs to the configured Apple development account.
 - Test the Apple-silicon artifact on Apple silicon.
 - Test the Intel artifact on physical Intel hardware when available.
 - Confirm release notes, asset names, SHA-256 values, and the `latest` release link.

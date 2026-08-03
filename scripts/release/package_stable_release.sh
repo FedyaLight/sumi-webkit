@@ -11,7 +11,7 @@ for architecture in arm64 x86_64; do
   CONFIGURATION="${CONFIGURATION:-Release}" \
   DERIVED_DATA_PATH="${DERIVED_DATA_PATH_ROOT:-${repo_root}/build/ReleaseStable}/${architecture}" \
   OUTPUT_DIR="${output_dir}" \
-  RELEASE_CHANNEL=release \
+  RELEASE_CHANNEL=stable \
   SKIP_ARCHITECTURE_GUARDRAILS=1 \
     "${repo_root}/scripts/release/package_release_dmg.sh"
 done

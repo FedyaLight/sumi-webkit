@@ -216,6 +216,7 @@ struct SumiApp: App {
         }
         .defaultSize(width: 940, height: 680)
         .windowResizability(.contentMinSize)
+        .commandsRemoved()
     }
 
     // MARK: - Application Lifecycle Setup

@@ -1,6 +1,6 @@
 # Security Policy
 
-Sumi Browser is preparing `v0.1.0-alpha.1` and does not have a stable public release. The current `main` branch represents active Alpha development, and Sumi is not recommended as a primary browser at this time.
+Sumi Browser is in public Alpha. The current `main` branch represents active Alpha development, and Sumi is not recommended as a primary browser at this time.
 
 ## Supported Versions
 

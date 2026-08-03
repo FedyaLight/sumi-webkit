@@ -46,6 +46,7 @@ enum DefaultKeyboardShortcuts {
         KeyboardShortcut(action: .openDevTools, keyCombination: KeyCombination(key: "i", modifiers: [.command, .option])),
         KeyboardShortcut(action: .viewDownloads, keyCombination: KeyCombination(key: "j", modifiers: [.command, .shift])),
         KeyboardShortcut(action: .viewHistory, keyCombination: KeyCombination(key: "y", modifiers: [.command])),
+        KeyboardShortcut(action: .openSettings, keyCombination: KeyCombination(key: ",", modifiers: [.command])),
         KeyboardShortcut(action: .expandAllFolders, keyCombination: KeyCombination(key: "e", modifiers: [.command, .shift])),
         KeyboardShortcut(action: .focusAddressBar, keyCombination: KeyCombination(key: "l", modifiers: [.command])),
         KeyboardShortcut(action: .findInPage, keyCombination: KeyCombination(key: "f", modifiers: [.command])),

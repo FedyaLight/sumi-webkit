@@ -125,6 +125,7 @@ final class KeyboardShortcutStoreTests: XCTestCase {
             ("w", 0x0D, [.command, .shift], .closeWindow),
             ("t", 0x11, [.command], .newTab),
             ("t", 0x11, [.command, .shift], .undoCloseTab),
+            (",", 0x2B, [.command], .openSettings),
             ("\t", 0x30, [.control], .nextTab),
             ("\t", 0x30, [.control, .shift], .previousTab),
             ("1", 0x12, [.command], .goToTab1),

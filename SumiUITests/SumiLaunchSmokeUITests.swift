@@ -21,11 +21,40 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
 
         XCTAssertTrue(browserWindow.waitForExistence(timeout: 5))
         app.menuBars.menuBarItems["Sumi"].click()
-        app.menuItems["Settings…"].firstMatch.click()
+        let settingsMenuItems = app.menuItems.matching(identifier: "Settings…")
+        XCTAssertEqual(
+            settingsMenuItems.count,
+            1,
+            "The application menu should contain exactly one Settings command."
+        )
+        settingsMenuItems.firstMatch.click()
+
+        let settingsWindow = app.windows["General"]
+        XCTAssertTrue(
+            settingsWindow.waitForExistence(timeout: 5),
+            "The application menu should open the Settings window."
+        )
+
+        app.menuBars.menuBarItems["Sumi"].click()
+        XCTAssertEqual(
+            app.menuItems.matching(identifier: "Settings…").count,
+            1,
+            "The Settings window should preserve the single Settings command."
+        )
+    }
+
+    func testCommandCommaOpensSettingsWindow() throws {
+        let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
+        let browserWindow = app.windows.element(boundBy: 0)
+
+        XCTAssertTrue(browserWindow.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.windows.count, 1)
+
+        browserWindow.typeKey(",", modifierFlags: .command)
 
         XCTAssertTrue(
             app.windows["General"].waitForExistence(timeout: 5),
-            "The application menu should open the Settings window."
+            "Command-comma should open the Settings window."
         )
     }
 

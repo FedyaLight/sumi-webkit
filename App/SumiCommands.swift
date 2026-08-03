@@ -73,7 +73,7 @@ struct SumiCommands: Commands {
                     selecting: settingsNavigation.currentSettingsTab
                 )
             }
-            .keyboardShortcut(",", modifiers: .command)
+            .modifier(dynamicShortcut(.openSettings))
         }
 
         CommandGroup(replacing: .saveItem) {

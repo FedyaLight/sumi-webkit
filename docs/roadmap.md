@@ -1,6 +1,6 @@
 # Roadmap
 
-`v0.0.1` is Sumi's first public release. This document records its boundaries and likely next areas of work; it is not a promise of dates or blanket compatibility.
+`v0.0.1` is Sumi's first public Alpha release. This document records its boundaries and likely next areas of work; it is not a promise of dates or blanket compatibility.
 
 ## 0.0.1 Scope
 

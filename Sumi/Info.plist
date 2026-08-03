@@ -11,7 +11,9 @@
 	<key>SUEnableSystemProfiling</key>
 	<false/>
 	<key>SUFeedURL</key>
-	<string>https://fedyalight.github.io/sumi-webkit/appcast.xml</string>
+	<string>https://fedyalight.github.io/sumi-webkit/appcast-alpha.xml</string>
+	<key>SumiReleaseChannel</key>
+	<string>alpha</string>
 	<key>SUPublicEDKey</key>
 	<string>Ok+chOHOCsw5mUQWvf+kJg9k8HwkaQIVUqnW47PzMBQ=</string>
 	<key>SUScheduledCheckInterval</key>
