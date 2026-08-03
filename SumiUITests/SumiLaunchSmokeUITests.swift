@@ -15,6 +15,47 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
         )
     }
 
+    func testCollapsedFolderHoverPresentsPreviewWithoutTerminatingApp() throws {
+        let fixture = try loadPersonalSidebarFixture()
+        let folderID = try XCTUnwrap(fixture.folderID)
+        let app = try launchApp()
+        let window = app.windows.element(boundBy: 0)
+
+        XCTAssertTrue(window.waitForExistence(timeout: 5))
+        activatePersonalSpace(
+            fixture,
+            app: app,
+            window: window,
+            collapsedSidebar: false
+        )
+
+        let header = requireElement(
+            withIdentifier: "folder-header-\(folderID)",
+            in: app,
+            window: window,
+            collapsedSidebar: false
+        )
+        if accessibilityValue(of: header) == "expanded" {
+            header.coordinate(
+                withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)
+            ).click()
+        }
+
+        window.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5)
+        ).hover()
+        header.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)
+        ).hover()
+
+        XCTAssertTrue(
+            element(withIdentifier: "folder-preview-panel", in: app)
+                .waitForExistence(timeout: 3),
+            "Hovering a collapsed folder did not present its preview panel"
+        )
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
     func testSettingsMenuOpensSettingsWindow() throws {
         let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
         let browserWindow = app.windows.element(boundBy: 0)

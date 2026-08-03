@@ -54,6 +54,7 @@ struct SidebarFolderPreviewOverlay: View {
                         windowState.sidebarFolderPreview.close(folderID: presentation.folderID)
                     }
                 )
+                .environment(windowState.sidebarFaviconImageStore)
                 // Native surfaces resolve their lightness from the space theme,
                 // the same scope the downloads popover installs on its content.
                 .sumiNativeSurfaceColorScheme(

@@ -5,6 +5,46 @@ import XCTest
 
 @MainActor
 final class SidebarHoverTests: XCTestCase {
+    func testFolderPreviewOverlayRendersItsCandidateRows() {
+        let windowState = BrowserWindowState()
+        windowState.sidebarFolderPreview.open(
+            request: SidebarFolderPreviewRequest(
+                folderID: UUID(),
+                folderName: "Preview fixture",
+                candidates: [
+                    FolderSearchCandidate(
+                        id: "preview-candidate",
+                        kind: .shortcut(UUID()),
+                        title: "Preview candidate",
+                        secondaryText: "example.com",
+                        icon: .systemImage("globe"),
+                        searchText: "Preview candidate example.com",
+                        activate: {}
+                    ),
+                ],
+                anchorRect: CGRect(x: 20, y: 20, width: 180, height: 36)
+            ),
+            sidebarPosition: .left,
+            source: SidebarTransientPresentationSource(
+                windowID: windowState.id,
+                window: nil,
+                originOwnerView: nil,
+                coordinator: nil
+            )
+        )
+
+        let host = NSHostingView(
+            rootView: SidebarFolderPreviewOverlay(
+                sidebarDragState: SidebarDragState()
+            )
+            .environment(windowState)
+        )
+        host.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
+        host.layoutSubtreeIfNeeded()
+
+        XCTAssertGreaterThan(host.fittingSize.width, 0)
+    }
+
     func testCommandPaletteLayoutPolicyCapsWideWindowsAndShrinksNarrowWindows() {
         XCTAssertEqual(
             CommandPaletteLayoutPolicy.effectiveWidth(availableWindowWidth: 1_200),
