@@ -173,12 +173,6 @@ enum SumiUpdateVersionComparator {
     }
 }
 
-enum SumiUpdateSidebarNoticeVisualStyle: Equatable, Sendable {
-    case accent
-    case progress
-    case warning
-}
-
 enum SumiUpdateSidebarProgressNotice: Equatable, Sendable {
     case available(SumiAvailableUpdate)
     case operation(SumiUpdateOperationNotice)
@@ -223,15 +217,6 @@ enum SumiUpdateSidebarProgressNotice: Equatable, Sendable {
         }
     }
 
-    var detail: String {
-        switch self {
-        case .available(let update):
-            return update.versionLine
-        case .operation(let notice):
-            return notice.detail
-        }
-    }
-
     var primaryActionTitle: String? {
         switch self {
         case .available:
@@ -247,37 +232,6 @@ enum SumiUpdateSidebarProgressNotice: Equatable, Sendable {
             return true
         case .operation(let notice):
             return notice.stage == .failed
-        }
-    }
-
-    var systemImageName: String {
-        switch self {
-        case .available:
-            return "arrow.down.circle.fill"
-        case .operation(let notice):
-            switch notice.stage {
-            case .checking:
-                return "arrow.triangle.2.circlepath"
-            case .downloading:
-                return "arrow.down.circle.fill"
-            case .extracting:
-                return "archivebox.fill"
-            case .installing:
-                return "arrow.triangle.2.circlepath.circle.fill"
-            case .readyToInstall:
-                return "restart.circle.fill"
-            case .failed:
-                return "exclamationmark.triangle.fill"
-            }
-        }
-    }
-
-    var visualStyle: SumiUpdateSidebarNoticeVisualStyle {
-        switch self {
-        case .available:
-            return .accent
-        case .operation(let notice):
-            return notice.stage == .failed ? .warning : .progress
         }
     }
 
@@ -479,7 +433,7 @@ enum SumiAboutUpdatePanelState: Equatable, Sendable {
 @MainActor
 protocol SumiUpdaterBackend: AnyObject {
     var canCheckForUpdates: Bool { get }
-    var automaticallyChecksForUpdates: Bool { get set }
+    var automaticallyChecksForUpdates: Bool { get }
     var lastUpdateCheckDate: Date? { get }
     var feedURL: URL? { get }
     var isSparkleAvailable: Bool { get }
@@ -537,6 +491,20 @@ final class SumiUpdaterService: ObservableObject {
             )
             refreshSidebarNotice()
         }
+
+        if ProcessInfo.processInfo.arguments.contains("--sumi-debug-available-update") {
+            state.availability = .available(
+                SumiAvailableUpdate(
+                    displayVersion: currentVersion.shortVersion,
+                    buildVersion: currentVersion.buildNumber,
+                    title: nil,
+                    subtitle: nil,
+                    releaseNotesURL: nil,
+                    isInformationOnly: false
+                )
+            )
+            refreshSidebarNotice()
+        }
 #endif
     }
 
@@ -566,13 +534,6 @@ final class SumiUpdaterService: ObservableObject {
     func checkForUpdatesFromUserAction() {
         ensureBackendStarted()
         guard state.canCheckForUpdates else { return }
-        recordUpdateCheckStarted()
-        backend?.checkForUpdateInformation()
-    }
-
-    func checkForUpdatesInBackgroundIfAllowed() {
-        ensureBackendStarted()
-        guard state.automaticallyChecksForUpdates else { return }
         recordUpdateCheckStarted()
         backend?.checkForUpdateInformation()
     }
@@ -616,12 +577,6 @@ final class SumiUpdaterService: ObservableObject {
         case .progress(.operation):
             break
         }
-    }
-
-    func setAutomaticallyChecksForUpdates(_ enabled: Bool) {
-        ensureBackendStarted()
-        backend?.automaticallyChecksForUpdates = enabled
-        syncStateFromBackend()
     }
 
     func recordAvailableUpdate(_ update: SumiAvailableUpdate) {

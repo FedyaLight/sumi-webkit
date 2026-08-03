@@ -44,37 +44,19 @@ enum SpaceSidebarChromeBindings {
 
 /// Updater strip shown above the mini-player / bottom bar in the sidebar shell.
 struct SpaceSidebarUpdateNoticeStrip: View {
-    @Environment(\.sidebarPresentationContext) private var sidebarPresentationContext
-
     let notice: SumiUpdateSidebarNotice
     let onUpdate: () -> Void
     let onDismiss: () -> Void
     let onOpenURL: (URL) -> Void
 
     var body: some View {
-        Group {
-            if sidebarPresentationContext.inputMode == .collapsedOverlay {
-                if case .progress(let progressNotice) = notice {
-                    HStack {
-                        Spacer(minLength: 0)
-                        SumiUpdateSidebarCompactIndicator(
-                            notice: progressNotice,
-                            onUpdate: onUpdate
-                        )
-                        .disabled(progressNotice.primaryActionTitle == nil)
-                    }
-                    .padding(.horizontal, 8)
-                }
-            } else {
-                SumiUpdateSidebarNoticeView(
-                    notice: notice,
-                    onUpdate: onUpdate,
-                    onDismiss: onDismiss,
-                    onOpenURL: onOpenURL
-                )
-                .padding(.horizontal, 8)
-            }
-        }
+        SumiUpdateSidebarNoticeView(
+            notice: notice,
+            onUpdate: onUpdate,
+            onDismiss: onDismiss,
+            onOpenURL: onOpenURL
+        )
+        .padding(.horizontal, 8)
     }
 }
 

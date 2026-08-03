@@ -4,7 +4,6 @@ enum SumiUpdateSidebarNoticeThemeTokens {
     enum Typography {
         static let availableTitle = Font.system(size: 12, weight: .regular)
         static let availableAction = Font.system(size: 12, weight: .medium)
-        static let compactIcon = Font.system(size: 17, weight: .semibold)
         static let completedHeading = Font.system(size: 12, weight: .medium)
         static let completedLink = Font.system(size: 12, weight: .regular)
         static let completedIcon = Font.system(size: 16, weight: .regular)
@@ -72,15 +71,6 @@ enum SumiUpdateSidebarNoticeThemeTokens {
 
         static func completedRowHover(tokens: ChromeThemeTokens?) -> Color {
             tokens?.floatingSurfaceHover ?? Color.primary.opacity(0.06)
-        }
-
-        static func symbol(for visualStyle: SumiUpdateSidebarNoticeVisualStyle) -> Color {
-            switch visualStyle {
-            case .accent, .progress:
-                return .accentColor
-            case .warning:
-                return .yellow
-            }
         }
 
     }

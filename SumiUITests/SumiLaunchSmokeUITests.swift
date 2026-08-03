@@ -350,6 +350,65 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
         assertNativeTrafficLightsHittable(in: app, window: window)
     }
 
+    func testCollapsedHoverSidebarShowsAvailableUpdatePill() throws {
+        let app = try launchApp(
+            preferencesHomeURL: try prepareSmokePreferencesHome(isSidebarVisible: false),
+            additionalArguments: ["--sumi-debug-available-update"]
+        )
+        let window = app.windows.element(boundBy: 0)
+
+        XCTAssertTrue(window.waitForExistence(timeout: 5))
+        revealHoverSidebar(in: window)
+
+        let updatePill = app.staticTexts["New Sumi Version Available"]
+        XCTAssertTrue(
+            updatePill.waitForExistence(timeout: 3),
+            "An available update should use the standard hover-expanding pill in a collapsed sidebar."
+        )
+        updatePill.hover()
+        XCTAssertTrue(app.buttons["Restart and Update"].waitForExistence(timeout: 3))
+    }
+
+    func testCollapsedHoverSidebarShowsCompletedUpdateCard() throws {
+        let app = try launchApp(
+            preferencesHomeURL: try prepareSmokePreferencesHome(isSidebarVisible: false),
+            additionalArguments: ["--sumi-debug-update-notice"]
+        )
+        let window = app.windows.element(boundBy: 0)
+
+        XCTAssertTrue(window.waitForExistence(timeout: 5))
+        revealHoverSidebar(in: window)
+
+        XCTAssertTrue(app.staticTexts["Update Complete!"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.descendants(matching: .any)["What's new in Sumi"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["Support us"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["Something broke?"].exists)
+    }
+
+    func testAboutAvailableUpdateHasNoExplanatorySubtitle() throws {
+        let app = try launchApp(
+            preferencesHomeURL: try prepareSmokePreferencesHome(),
+            additionalArguments: ["--sumi-debug-available-update"]
+        )
+        let browserWindow = app.windows.element(boundBy: 0)
+
+        XCTAssertTrue(browserWindow.waitForExistence(timeout: 5))
+        app.menuBars.menuBarItems["Sumi"].click()
+        app.menuItems.matching(identifier: "Settings…").firstMatch.click()
+
+        let settingsWindow = app.windows["General"]
+        XCTAssertTrue(settingsWindow.waitForExistence(timeout: 5))
+        let aboutRow = app.staticTexts["About Sumi"].firstMatch
+        XCTAssertTrue(aboutRow.waitForExistence(timeout: 3))
+        aboutRow.click()
+
+        let updateButton = app.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "Update to Sumi ")
+        ).firstMatch
+        XCTAssertTrue(updateButton.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.staticTexts["Download and install the update with Sparkle."].exists)
+    }
+
     func testCollapsedSidebarCarriesTrafficLightPlaceholderDuringReveal() throws {
         let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
         let window = app.windows.element(boundBy: 0)

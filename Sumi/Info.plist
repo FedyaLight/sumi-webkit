@@ -17,7 +17,7 @@
 	<key>SUPublicEDKey</key>
 	<string>Ok+chOHOCsw5mUQWvf+kJg9k8HwkaQIVUqnW47PzMBQ=</string>
 	<key>SUScheduledCheckInterval</key>
-	<integer>86400</integer>
+	<integer>21600</integer>
 	<key>SUVerifyUpdateBeforeExtraction</key>
 	<true/>
 	<key>CFBundleDocumentTypes</key>

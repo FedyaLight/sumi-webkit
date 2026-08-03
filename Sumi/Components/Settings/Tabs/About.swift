@@ -50,6 +50,7 @@ struct SettingsAboutTab: View {
     private func requestInitialUpdateCheckIfNeeded() {
         guard didRequestInitialUpdateCheck == false else { return }
         didRequestInitialUpdateCheck = true
+        guard case .none = updaterService.state.availability else { return }
         updaterService.checkForUpdatesFromAboutView()
     }
 }
@@ -253,7 +254,7 @@ private struct SumiAboutUpdatePanel: View {
         case .upToDate:
             return nil
         case .updateAvailable:
-            return "Download and install the update with Sparkle."
+            return nil
         case .checkFailed(let message), .unavailable(let message):
             return message
         }

@@ -34,22 +34,6 @@ final class SumiUpdaterServiceTests: XCTestCase {
         XCTAssertEqual(backend.informationCheckCount, 1)
     }
 
-    func testBackgroundCheckDoesNotRunWhenAutomaticChecksAreDisabled() {
-        let backend = FakeUpdaterBackend()
-        backend.canCheckForUpdates = true
-        backend.automaticallyChecksForUpdates = false
-        let service = makeService(backend: backend)
-
-        service.checkForUpdatesInBackgroundIfAllowed()
-
-        XCTAssertEqual(backend.informationCheckCount, 0)
-
-        service.setAutomaticallyChecksForUpdates(true)
-        service.checkForUpdatesInBackgroundIfAllowed()
-
-        XCTAssertEqual(backend.informationCheckCount, 1)
-    }
-
     func testAboutViewStartsBackgroundCheckIndependentOfAutomaticChecks() {
         let backend = FakeUpdaterBackend()
         backend.canCheckForUpdates = true
@@ -371,6 +355,8 @@ final class SumiUpdaterServiceTests: XCTestCase {
         XCTAssertNotEqual(publicKey, "REPLACE_ME")
         XCTAssertEqual(plist["SUVerifyUpdateBeforeExtraction"] as? Bool, true)
         XCTAssertEqual(plist["SUEnableSystemProfiling"] as? Bool, false)
+        XCTAssertEqual(plist["SUEnableAutomaticChecks"] as? Bool, true)
+        XCTAssertEqual(plist["SUScheduledCheckInterval"] as? Int, 6 * 60 * 60)
     }
 
     private func makeService(

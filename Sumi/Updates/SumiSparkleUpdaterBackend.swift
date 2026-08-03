@@ -36,12 +36,7 @@ final class SumiSparkleUpdaterBackend: SumiUpdaterBackend {
     }
 
     var automaticallyChecksForUpdates: Bool {
-        get {
-            updater.automaticallyChecksForUpdates
-        }
-        set {
-            updater.automaticallyChecksForUpdates = newValue
-        }
+        updater.automaticallyChecksForUpdates
     }
 
     var lastUpdateCheckDate: Date? {

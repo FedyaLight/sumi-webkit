@@ -342,34 +342,3 @@ private struct SumiUpdateSidebarActionButton: View {
         .accessibilityLabel(accessibilityLabel)
     }
 }
-
-struct SumiUpdateSidebarCompactIndicator: View {
-    let notice: SumiUpdateSidebarProgressNotice
-    let onUpdate: () -> Void
-
-    var body: some View {
-        Button(action: onUpdate) {
-            Image(systemName: notice.systemImageName)
-                .font(SumiUpdateSidebarNoticeThemeTokens.Typography.compactIcon)
-                .symbolRenderingMode(.monochrome)
-                .frame(width: 30, height: 30)
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(symbolColor)
-        .background(
-            Circle()
-                .fill(symbolColor.opacity(0.18))
-        )
-        .overlay(
-            Circle()
-                .strokeBorder(symbolColor.opacity(0.26), lineWidth: 1)
-        )
-        .contentShape(Circle())
-        .help(notice.title)
-        .accessibilityLabel("\(notice.title), \(notice.detail)")
-    }
-
-    private var symbolColor: Color {
-        SumiUpdateSidebarNoticeThemeTokens.Colors.symbol(for: notice.visualStyle)
-    }
-}
