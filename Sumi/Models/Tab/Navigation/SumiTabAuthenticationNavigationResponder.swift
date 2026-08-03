@@ -20,7 +20,8 @@ final class SumiTabAuthenticationNavigationResponder:
             .resolveAuthenticationChallenge(
                 authenticationChallenge,
                 tab,
-                context?.webView
+                context?.webView,
+                context?.url
             )
     }
 

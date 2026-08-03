@@ -253,12 +253,26 @@ extension SumiNavigationResponderTests {
         tab.navigationRuntime.lifecycleNavigationRuntime = lifecycle.runtime
         let responder = tab.makeAuthenticationNavigationResponder()
         let challenge = makeAuthenticationChallenge()
+        let navigation = NSObject()
+        let mainFrameURL = URL(string: "https://auth.example/login")!
 
-        let disposition = await responder.didReceive(challenge)
+        let disposition = await responder.didReceive(
+            challenge,
+            context: SumiNavigationContext(
+                navigationID: ObjectIdentifier(navigation),
+                navigationLifetime: navigation,
+                action: nil,
+                url: mainFrameURL,
+                isCurrent: true,
+                isMainFrame: true,
+                webView: nil
+            )
+        )
 
         XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertEqual(lifecycle.authChallengeHosts, ["auth.example"])
         XCTAssertEqual(lifecycle.authTabIds, [tab.id])
+        XCTAssertEqual(lifecycle.authMainFrameURLs, [mainFrameURL])
         guard case .credential(let resolvedCredential)? = disposition else {
             return XCTFail("Expected credential disposition, got \(String(describing: disposition))")
         }

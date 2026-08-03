@@ -6,13 +6,14 @@ import XCTest
 
 @MainActor
 final class AuthenticationManagerTests: XCTestCase {
-    func testUntrustedServerTrustWaitsForUserAndUsesTrustAfterConfirmation() throws {
+    func testUntrustedServerTrustWaitsForUserAndUsesTrustAfterConfirmation() async throws {
         let manager = AuthenticationManager(
             credentialStore: BasicAuthCredentialStore(
                 service: "com.sumi.authentication.tests.\(UUID().uuidString)"
             )
         )
         let tab = Tab(url: URL(string: "https://untrusted.example")!)
+        let warningPresented = expectation(description: "Certificate warning presented")
         var capturedSession: CertificateTrustWarningSession?
         var result: (URLSession.AuthChallengeDisposition?, URLCredential?) = (nil, nil)
         manager.attach(
@@ -23,6 +24,7 @@ final class AuthenticationManagerTests: XCTestCase {
                 },
                 presentCertificateTrustWarning: { session, _ in
                     capturedSession = session
+                    warningPresented.fulfill()
                     return true
                 },
                 dismissNativeModalPresentation: {}
@@ -37,6 +39,7 @@ final class AuthenticationManagerTests: XCTestCase {
         }
 
         XCTAssertTrue(handled)
+        await fulfillment(of: [warningPresented], timeout: 1)
         XCTAssertNil(result.0)
         XCTAssertEqual(capturedSession?.host, "untrusted.example")
 
@@ -46,13 +49,14 @@ final class AuthenticationManagerTests: XCTestCase {
         XCTAssertNotNil(result.1)
     }
 
-    func testUntrustedServerTrustCancelsWhenUserClosesWarning() throws {
+    func testUntrustedServerTrustCancelsWhenUserClosesWarning() async throws {
         let manager = AuthenticationManager(
             credentialStore: BasicAuthCredentialStore(
                 service: "com.sumi.authentication.tests.\(UUID().uuidString)"
             )
         )
         let tab = Tab(url: URL(string: "https://untrusted.example")!)
+        let warningPresented = expectation(description: "Certificate warning presented")
         var capturedSession: CertificateTrustWarningSession?
         var result: URLSession.AuthChallengeDisposition?
         manager.attach(
@@ -60,6 +64,7 @@ final class AuthenticationManagerTests: XCTestCase {
                 presentBasicAuthSheet: { _, _ in false },
                 presentCertificateTrustWarning: { session, _ in
                     capturedSession = session
+                    warningPresented.fulfill()
                     return true
                 },
                 dismissNativeModalPresentation: {}
@@ -73,18 +78,20 @@ final class AuthenticationManagerTests: XCTestCase {
             result = disposition
         }
 
+        await fulfillment(of: [warningPresented], timeout: 1)
         capturedSession?.closePage()
 
         XCTAssertEqual(result, .cancelAuthenticationChallenge)
     }
 
-    func testClosingCertificateWarningClosesTab() throws {
+    func testClosingCertificateWarningClosesTab() async throws {
         let manager = AuthenticationManager(
             credentialStore: BasicAuthCredentialStore(
                 service: "com.sumi.authentication.tests.\(UUID().uuidString)"
             )
         )
         let tab = Tab(url: URL(string: "https://untrusted.example")!)
+        let warningPresented = expectation(description: "Certificate warning presented")
         var capturedSession: CertificateTrustWarningSession?
         var removedTabID: UUID?
         tab.navigationRuntime.closeLifecycleRuntime = TabCloseLifecycleRuntime(
@@ -97,6 +104,7 @@ final class AuthenticationManagerTests: XCTestCase {
                 presentBasicAuthSheet: { _, _ in false },
                 presentCertificateTrustWarning: { session, _ in
                     capturedSession = session
+                    warningPresented.fulfill()
                     return true
                 },
                 dismissNativeModalPresentation: {}
@@ -108,18 +116,21 @@ final class AuthenticationManagerTests: XCTestCase {
             for: tab
         ) { _, _ in }
 
+        await fulfillment(of: [warningPresented], timeout: 1)
         capturedSession?.closePage()
 
         XCTAssertEqual(removedTabID, tab.id)
     }
 
-    func testCertificateTrustApprovalCoversSubdomainsOfTheSameRegistrableDomain() throws {
+    func testCertificateTrustApprovalDoesNotCoverAnotherHost() async throws {
         let manager = AuthenticationManager(
             credentialStore: BasicAuthCredentialStore(
                 service: "com.sumi.authentication.tests.\(UUID().uuidString)"
             )
         )
         let tab = Tab(url: URL(string: "https://untrusted.com")!)
+        let firstWarningPresented = expectation(description: "First certificate warning presented")
+        let secondWarningPresented = expectation(description: "Second certificate warning presented")
         var capturedSession: CertificateTrustWarningSession?
         var presentedCount = 0
         var firstResult: URLSession.AuthChallengeDisposition?
@@ -130,6 +141,11 @@ final class AuthenticationManagerTests: XCTestCase {
                 presentCertificateTrustWarning: { session, _ in
                     presentedCount += 1
                     capturedSession = session
+                    if presentedCount == 1 {
+                        firstWarningPresented.fulfill()
+                    } else {
+                        secondWarningPresented.fulfill()
+                    }
                     return true
                 },
                 dismissNativeModalPresentation: {}
@@ -138,31 +154,74 @@ final class AuthenticationManagerTests: XCTestCase {
 
         _ = manager.handleAuthenticationChallenge(
             try makeUntrustedServerTrustChallenge(host: "untrusted.com"),
-            for: tab
+            for: tab,
+            mainFrameURL: URL(string: "https://untrusted.com")!
         ) { disposition, _ in
             firstResult = disposition
         }
+        await fulfillment(of: [firstWarningPresented], timeout: 1)
         capturedSession?.visitSite()
 
         _ = manager.handleAuthenticationChallenge(
             try makeUntrustedServerTrustChallenge(host: "cdn.untrusted.com"),
-            for: tab
+            for: tab,
+            mainFrameURL: URL(string: "https://cdn.untrusted.com")!
         ) { disposition, _ in
             secondResult = disposition
         }
+        await fulfillment(of: [secondWarningPresented], timeout: 1)
 
-        XCTAssertEqual(presentedCount, 1)
+        XCTAssertEqual(presentedCount, 2)
         XCTAssertEqual(firstResult, .useCredential)
-        XCTAssertEqual(secondResult, .useCredential)
+        XCTAssertNil(secondResult)
     }
 
-    func testPendingCertificateTrustChallengesShareOneWarning() throws {
+    func testUntrustedSubresourceTrustCancelsWithoutPresentingWarning() async throws {
+        let manager = AuthenticationManager(
+            credentialStore: BasicAuthCredentialStore(
+                service: "com.sumi.authentication.tests.\(UUID().uuidString)"
+            )
+        )
+        let tab = Tab(url: URL(string: "https://trusted.example")!)
+        let challengeCompleted = expectation(description: "Subresource challenge completed")
+        var presentedCount = 0
+        var result: URLSession.AuthChallengeDisposition?
+        manager.attach(
+            runtime: AuthenticationManagerRuntime(
+                presentBasicAuthSheet: { _, _ in false },
+                presentCertificateTrustWarning: { _, _ in
+                    presentedCount += 1
+                    return true
+                },
+                dismissNativeModalPresentation: {}
+            )
+        )
+
+        let handled = manager.handleAuthenticationChallenge(
+            try makeUntrustedServerTrustChallenge(host: "cdn.untrusted.example"),
+            for: tab,
+            mainFrameURL: URL(string: "https://trusted.example/page")!
+        ) { disposition, _ in
+            result = disposition
+            challengeCompleted.fulfill()
+        }
+
+        XCTAssertTrue(handled)
+        await fulfillment(of: [challengeCompleted], timeout: 1)
+        XCTAssertEqual(result, .cancelAuthenticationChallenge)
+        XCTAssertEqual(presentedCount, 0)
+    }
+
+    func testPendingCertificateTrustChallengesShareOneWarning() async throws {
         let manager = AuthenticationManager(
             credentialStore: BasicAuthCredentialStore(
                 service: "com.sumi.authentication.tests.\(UUID().uuidString)"
             )
         )
         let tab = Tab(url: URL(string: "https://untrusted.example")!)
+        let warningPresented = expectation(description: "Certificate warning presented")
+        let firstChallengeCompleted = expectation(description: "First challenge completed")
+        let secondChallengeCompleted = expectation(description: "Second challenge completed")
         var capturedSession: CertificateTrustWarningSession?
         var presentedCount = 0
         var firstResult: URLSession.AuthChallengeDisposition?
@@ -173,6 +232,7 @@ final class AuthenticationManagerTests: XCTestCase {
                 presentCertificateTrustWarning: { session, _ in
                     presentedCount += 1
                     capturedSession = session
+                    warningPresented.fulfill()
                     return true
                 },
                 dismissNativeModalPresentation: {}
@@ -184,19 +244,26 @@ final class AuthenticationManagerTests: XCTestCase {
             for: tab
         ) { disposition, _ in
             firstResult = disposition
+            firstChallengeCompleted.fulfill()
         }
         _ = manager.handleAuthenticationChallenge(
             try makeUntrustedServerTrustChallenge(),
             for: tab
         ) { disposition, _ in
             secondResult = disposition
+            secondChallengeCompleted.fulfill()
         }
 
+        await fulfillment(of: [warningPresented], timeout: 1)
         XCTAssertEqual(presentedCount, 1)
         XCTAssertNil(firstResult)
         XCTAssertNil(secondResult)
 
         capturedSession?.visitSite()
+        await fulfillment(
+            of: [firstChallengeCompleted, secondChallengeCompleted],
+            timeout: 1
+        )
 
         XCTAssertEqual(firstResult, .useCredential)
         XCTAssertEqual(secondResult, .useCredential)

@@ -398,6 +398,7 @@ final class RecordingTabLifecycleNavigationRuntime {
     private(set) var siteDataPolicyTabIds: [UUID] = []
     private(set) var authChallengeHosts: [String] = []
     private(set) var authTabIds: [UUID] = []
+    private(set) var authMainFrameURLs: [URL?] = []
     private(set) var cleanupCheckWebViewIds: [ObjectIdentifier] = []
     private(set) var finishedCleanupWebViewIds: [ObjectIdentifier] = []
 
@@ -436,10 +437,11 @@ final class RecordingTabLifecycleNavigationRuntime {
             enforceSiteDataPolicyAfterNavigation: { [weak self] tab in
                 self?.siteDataPolicyTabIds.append(tab.id)
             },
-            resolveAuthenticationChallenge: { [weak self] challenge, tab, _ in
+            resolveAuthenticationChallenge: { [weak self] challenge, tab, _, mainFrameURL in
                 guard let self else { return .next }
                 authChallengeHosts.append(challenge.protectionSpace.host)
                 authTabIds.append(tab.id)
+                authMainFrameURLs.append(mainFrameURL)
                 return authDisposition
             },
             destructiveDataCleanupNavigationWillStart: { _, _, _, _, _ in },
