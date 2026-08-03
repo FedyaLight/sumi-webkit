@@ -43,6 +43,7 @@ Do not run this command until the release artifacts, signatures, and update path
 gh release create v0.0.2 \
   release/artifacts/0.0.2/Sumi-0.0.2-macos-arm64.dmg \
   release/artifacts/0.0.2/Sumi-0.0.2-macos-x86_64.dmg \
+  release/artifacts/0.0.2/Sumi-0.0.2-macos-universal.dmg \
   --title "Sumi 0.0.2 Alpha 2" \
   --notes-file docs/releases/0.0.2.md \
   --latest
@@ -54,10 +55,10 @@ Do not pass `--prerelease`. Alpha 2 is a normal public GitHub Release. Creating 
 
 The published `0.0.1` app reads `appcast.xml`. Alpha 2 reads `appcast-alpha.xml`. To migrate existing installations without permanently mixing the feeds:
 
-1. Upload both final `0.0.2` DMGs to the GitHub Release.
+1. Upload the Apple silicon and Intel DMGs for direct downloads, plus the universal DMG used by Sparkle, to the GitHub Release.
 2. Set `DOWNLOAD_URL_PREFIX` to the final release asset URL prefix and `SPARKLE_ED_KEY_FILE` to the private EdDSA key stored outside git.
 3. Run `scripts/release/generate_alpha_2_appcasts.sh`.
-4. Confirm that Sparkle generated distinct architecture branches for Apple silicon and Intel and that both appcasts contain the same signed `0.0.2` enclosures.
+4. Confirm that both appcasts contain the same signed universal `0.0.2` enclosure. Sparkle intentionally rejects separate archives with the same bundle version; the universal enclosure preserves one update version for existing Apple silicon and Intel installations.
 5. Install the public `0.0.1` build and prove it offers and installs `0.0.2` from `appcast.xml`.
 6. Install the resulting `0.0.2` build and prove that its About panel says `Alpha`, its feed is `appcast-alpha.xml`, and it no longer depends on the bridge feed.
 7. Commit and publish both appcasts through GitHub Pages only after those checks pass.
@@ -69,6 +70,7 @@ The bridge is specific to Alpha 2. Later Alpha releases update only `appcast-alp
 - Open each DMG and confirm the Finder layout is intact.
 - Drag Sumi to Applications and launch it.
 - Confirm version `0.0.2`, build `2`, channel `alpha`, feed URL, and executable architecture.
+- Confirm the universal Sparkle artifact contains both `arm64` and `x86_64` executable slices.
 - Verify every application and test bundle with `codesign --verify --deep --strict` and confirm the signing authority belongs to the configured Apple development account.
 - Test the Apple-silicon artifact on Apple silicon.
 - Test the Intel artifact on physical Intel hardware when available.

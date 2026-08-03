@@ -6,7 +6,7 @@ output_dir="${OUTPUT_DIR:-${repo_root}/release/artifacts/0.0.2}"
 
 "${repo_root}/scripts/release/run_release_gates.sh"
 
-for architecture in arm64 x86_64; do
+for architecture in arm64 x86_64 universal; do
   ARCHITECTURE="${architecture}" \
   CONFIGURATION="${CONFIGURATION:-Release}" \
   DERIVED_DATA_PATH="${DERIVED_DATA_PATH_ROOT:-${repo_root}/build/ReleaseAlpha}/${architecture}" \

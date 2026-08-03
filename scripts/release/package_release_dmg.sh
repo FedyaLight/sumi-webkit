@@ -22,9 +22,9 @@ if [[ -n "${app_path}" && "${app_path}" != /* ]]; then
 fi
 
 case "${architecture}" in
-  arm64 | x86_64) ;;
+  arm64 | x86_64 | universal) ;;
   *)
-    echo "error: ARCHITECTURE must be arm64 or x86_64, got: ${architecture}" >&2
+    echo "error: ARCHITECTURE must be arm64, x86_64, or universal, got: ${architecture}" >&2
     exit 1
     ;;
 esac
@@ -35,14 +35,25 @@ fi
 
 if [[ -z "${app_path}" ]]; then
   if [[ "${skip_build}" != "1" ]]; then
-    xcodebuild \
-      -quiet \
-      -project "${repo_root}/Sumi.xcodeproj" \
-      -scheme Sumi \
-      -configuration "${configuration}" \
-      -destination "platform=macOS,arch=${architecture}" \
-      -derivedDataPath "${derived_data_path}" \
-      build
+    build_arguments=(
+      xcodebuild
+      -quiet
+      -project "${repo_root}/Sumi.xcodeproj"
+      -scheme Sumi
+      -configuration "${configuration}"
+      -derivedDataPath "${derived_data_path}"
+    )
+    if [[ "${architecture}" == "universal" ]]; then
+      build_arguments+=(
+        -destination "generic/platform=macOS"
+        "ARCHS=arm64 x86_64"
+        ONLY_ACTIVE_ARCH=NO
+      )
+    else
+      build_arguments+=(-destination "platform=macOS,arch=${architecture}")
+    fi
+    build_arguments+=(build)
+    "${build_arguments[@]}"
   fi
   app_path="${derived_data_path}/Build/Products/${configuration}/Sumi.app"
 fi
@@ -117,8 +128,13 @@ codesign \
 
 executable_path="${app_path}/Contents/MacOS/Sumi"
 actual_architectures="$(lipo -archs "${executable_path}")"
-if [[ "${actual_architectures}" != "${architecture}" ]]; then
-  echo "error: Expected ${architecture} app executable, got: ${actual_architectures}" >&2
+expected_architectures="${architecture}"
+if [[ "${architecture}" == "universal" ]]; then
+  expected_architectures="arm64 x86_64"
+fi
+normalized_actual_architectures="$(tr ' ' '\n' <<<"${actual_architectures}" | LC_ALL=C sort | paste -sd ' ' -)"
+if [[ "${normalized_actual_architectures}" != "${expected_architectures}" ]]; then
+  echo "error: Expected ${expected_architectures} app executable, got: ${actual_architectures}" >&2
   exit 1
 fi
 
@@ -190,7 +206,8 @@ diskutil image attach \
 mounted=1
 
 packaged_architectures="$(lipo -archs "${verification_mount}/Sumi.app/Contents/MacOS/Sumi")"
-if [[ "${packaged_architectures}" != "${architecture}" ]]; then
+normalized_packaged_architectures="$(tr ' ' '\n' <<<"${packaged_architectures}" | LC_ALL=C sort | paste -sd ' ' -)"
+if [[ "${normalized_packaged_architectures}" != "${expected_architectures}" ]]; then
   echo "error: Packaged executable architecture mismatch: ${packaged_architectures}" >&2
   exit 1
 fi
