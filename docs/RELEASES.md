@@ -5,14 +5,14 @@ Sumi releases are built on a local release Mac with the checked-in Xcode project
 ## Alpha 2 Identity
 
 - Product version: `0.0.2`
-- Build number: `3`
+- Build number: `4`
 - Product stage: `Alpha 2`
 - Update channel: `alpha`
 - Tag: `v0.0.2`
 - GitHub release: ordinary public Release, not draft and not GitHub prerelease
 - Apple silicon DMG: `release/artifacts/0.0.2/Sumi-0.0.2-macos-arm64.dmg`
 - Intel DMG: `release/artifacts/0.0.2/Sumi-0.0.2-macos-x86_64.dmg`
-- Sparkle hotfix archive: `Sumi-0.0.2-build3-macos-universal.dmg`
+- Sparkle hotfix archive: `Sumi-0.0.2-build4-macos-universal.dmg`
 - Alpha appcast: `https://fedyalight.github.io/sumi-webkit/appcast-alpha.xml`
 - Legacy `0.0.1` bridge appcast: `https://fedyalight.github.io/sumi-webkit/appcast.xml`
 
@@ -70,7 +70,7 @@ The bridge is specific to Alpha 2. Later Alpha releases update only `appcast-alp
 
 - Open each DMG and confirm the Finder layout is intact.
 - Drag Sumi to Applications and launch it.
-- Confirm version `0.0.2`, build `3`, channel `alpha`, feed URL, and executable architecture.
+- Confirm version `0.0.2`, build `4`, channel `alpha`, feed URL, and executable architecture.
 - Confirm the universal Sparkle artifact contains both `arm64` and `x86_64` executable slices.
 - Verify every application and test bundle with `codesign --verify --deep --strict` and confirm the signing authority belongs to the configured Apple development account.
 - Test the Apple-silicon artifact on Apple silicon.
