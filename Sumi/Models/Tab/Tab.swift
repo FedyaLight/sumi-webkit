@@ -239,6 +239,11 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         )
     }
 
+    func makeAuthenticationNavigationResponder()
+        -> SumiTabAuthenticationNavigationResponder {
+        SumiTabAuthenticationNavigationResponder(tab: self)
+    }
+
     @discardableResult
     func beginMainFrameNavigationIntent(to targetURL: URL) -> TabMainFrameNavigationIntent {
         let intent = mainFrameRuntimeTransaction.beginExplicitIntent(to: targetURL)

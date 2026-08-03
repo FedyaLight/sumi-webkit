@@ -10,8 +10,7 @@ final class SumiTabLifecycleNavigationResponder:
     SumiNavigationCommitResponding,
     SumiNavigationCompletionResponding,
     SumiNavigationTerminalResponding,
-    SumiSameDocumentNavigationResponding,
-    SumiNavigationAuthChallengeResponding {
+    SumiSameDocumentNavigationResponding {
     private weak var tab: Tab?
     private let submission: any TabMainFrameSubmissionSettlement
     private let lifecycle: any TabMainFrameLifecycleSettlement
@@ -470,32 +469,6 @@ final class SumiTabLifecycleNavigationResponder:
                 sourceWebView: webView
             )
         }
-    }
-
-    func didReceive(
-        _ authenticationChallenge: URLAuthenticationChallenge,
-        context: SumiNavigationContext?
-    ) async -> SumiAuthChallengeDisposition? {
-        await sumiAuthChallengeDisposition(
-            for: authenticationChallenge,
-            webView: context?.webView
-        )
-    }
-
-    func didReceive(_ authenticationChallenge: URLAuthenticationChallenge) async -> SumiAuthChallengeDisposition? {
-        await didReceive(authenticationChallenge, context: nil)
-    }
-
-    private func sumiAuthChallengeDisposition(
-        for authenticationChallenge: URLAuthenticationChallenge,
-        webView: WKWebView? = nil
-    ) async -> SumiAuthChallengeDisposition? {
-        guard let tab else { return .next }
-        return await tab.navigationRuntime.lifecycleNavigationRuntime.resolveAuthenticationChallenge(
-            authenticationChallenge,
-            tab,
-            webView
-        )
     }
 
     private func shouldSuppressForDestructiveDataCleanup(

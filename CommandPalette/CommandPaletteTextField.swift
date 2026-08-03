@@ -174,6 +174,7 @@ final class CommandPaletteTextFieldView: ChromeTextFieldFocusHostView {
             if editor.string != text {
                 editor.string = text
             }
+            textField.validateEditing()
             return
         }
 

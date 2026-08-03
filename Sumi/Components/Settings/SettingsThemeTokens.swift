@@ -69,6 +69,8 @@ enum SettingsThemeTokens {
         static let protectionWarningIcon = Font.system(size: 14, weight: .semibold)
         static let profileNameField = Font.system(size: 15)
         static let profileRowActionIcon = Font.system(size: 14, weight: .regular)
+        static let aboutLinkIcon = Font.system(size: 14, weight: .medium)
+        static let aboutExternalLinkIcon = Font.system(size: 10, weight: .semibold)
 
         static func sidebarRowTitle(isSelected: Bool) -> Font {
             .system(size: 14, weight: isSelected ? .semibold : .regular)

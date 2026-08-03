@@ -97,29 +97,31 @@ def declaration_body(source: str, kind: str, name: str) -> str:
 bridge = declaration_body(
     bridge_path.read_text(), "final class", "BrowserExtensionBridgeComposition"
 )
-bridge_fields = re.findall(r"(?m)^\s*let\s+(\w+)\s*:", bridge)
+bridge_fields = re.findall(r"(?m)^[ \t]{4}let\s+(\w+)\s*:", bridge)
 if not 8 <= len(bridge_fields) <= 14:
     raise SystemExit(
         f"error: browser bridge is not a bounded exact-capability composition ({len(bridge_fields)} fields)"
     )
-if re.search(r"(?m)^\s*(?:func|subscript)\b", bridge):
+if re.search(r"(?m)^[ \t]{4}(?:func|subscript)\b", bridge):
     raise SystemExit("error: browser bridge gained forwarding behavior")
 
 runtime = declaration_body(
     runtime_path.read_text(), "struct", "ExtensionAttachedBrowserRuntime"
 )
-runtime_fields = re.findall(r"(?m)^\s*let\s+(\w+)\s*:", runtime)
+runtime_fields = re.findall(r"(?m)^[ \t]{4}let\s+(\w+)\s*:", runtime)
 if not 6 <= len(runtime_fields) <= 12:
     raise SystemExit(
         f"error: attached runtime is not bounded lifetime storage ({len(runtime_fields)} fields)"
     )
-if re.search(r"(?m)^\s*(?:var|func|subscript|init)\b", runtime):
+if re.search(r"(?m)^[ \t]{4}(?:var|func|subscript|init)\b", runtime):
     raise SystemExit("error: attached runtime aggregate gained behavior or mutable state")
 
 assembler = declaration_body(
     assembler_path.read_text(), "final class", "ExtensionAttachedBrowserRuntimeAssembler"
 )
-factory_fields = re.findall(r"(?m)^\s*private let\s+(\w+)\s*:", assembler)
+factory_fields = re.findall(
+    r"(?m)^[ \t]{4}private let\s+(\w+)\s*:", assembler
+)
 if len(factory_fields) != 6:
     raise SystemExit(
         f"error: attachment assembler must coordinate six bounded factories, found {len(factory_fields)}"

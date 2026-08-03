@@ -7,6 +7,7 @@ import SumiDomain
 final class EmptySplitPlaceholderFactory {
     private let spaces: TabSpaceCollectionStateOwner
     private let regularTabs: TabRegularLifecycleOwner
+    private let selection: BrowserTabSelectionOwner
     private let retirement: any EmptySplitPlaceholderRetirementPreparing
     private let structuralTransactions:
         any EmptySplitStructuralTransactionAuthority
@@ -15,6 +16,7 @@ final class EmptySplitPlaceholderFactory {
     init(
         spaces: TabSpaceCollectionStateOwner,
         regularTabs: TabRegularLifecycleOwner,
+        selection: BrowserTabSelectionOwner,
         retirement: any EmptySplitPlaceholderRetirementPreparing,
         structuralTransactions:
             any EmptySplitStructuralTransactionAuthority,
@@ -22,19 +24,31 @@ final class EmptySplitPlaceholderFactory {
     ) {
         self.spaces = spaces
         self.regularTabs = regularTabs
+        self.selection = selection
         self.retirement = retirement
         self.structuralTransactions = structuralTransactions
         self.terminalMutations = terminalMutations
     }
 
-    func create(in windowState: BrowserWindowState) -> Tab {
+    func create(
+        in windowState: BrowserWindowState,
+        activate: Bool
+    ) -> Tab {
         let targetSpace = windowState.currentSpaceId.flatMap(spaces.space(with:))
             ?? spaces.currentSpace
-        return regularTabs.createNewTab(
+        let placeholder = regularTabs.createNewTab(
             url: SumiSurface.emptyTabURL.absoluteString,
             in: targetSpace,
             activate: false
         )
+        if activate {
+            _ = selection.selectTab(
+                placeholder,
+                in: windowState,
+                loadPolicy: .deferred
+            )
+        }
+        return placeholder
     }
 
     @discardableResult
@@ -89,7 +103,10 @@ final class EmptySplitService {
             side: side,
             in: windowState
         ) else { return false }
-        let placeholder = placeholders.create(in: windowState)
+        let placeholder = placeholders.create(
+            in: windowState,
+            activate: admission.targetMemberID.isShortcutPin
+        )
         guard insertion.enterSplit(
             with: placeholder,
             admission: admission,

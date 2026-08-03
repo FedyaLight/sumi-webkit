@@ -130,7 +130,7 @@ private struct SumiAboutLinkRow: View {
         Link(destination: url) {
             HStack(spacing: 12) {
                 Image(systemName: systemImageName)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(SettingsThemeTokens.Typography.aboutLinkIcon)
                     .symbolRenderingMode(.monochrome)
                     .foregroundStyle(foreground)
                     .frame(
@@ -153,7 +153,7 @@ private struct SumiAboutLinkRow: View {
                 Spacer(minLength: 12)
 
                 Image(systemName: "arrow.up.right")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(SettingsThemeTokens.Typography.aboutExternalLinkIcon)
                     .foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 10)

@@ -27,20 +27,17 @@ final class SumiPermissionPromptUITests: SumiLaunchSmokeUITestCase {
             tabURLString: server.pageURL.absoluteString,
             tabName: "File Picker UI Oracle"
         )
-        let appSupportRoot = FileManager.default.temporaryDirectory
-            .appendingPathComponent("SumiFilePickerUITests-\(UUID().uuidString)", isDirectory: true)
         let app = try launchApp(
             preferencesHomeURL: preferencesHomeURL,
             additionalEnvironment: [
                 "AppleLanguages": "(en)",
                 "AppleLocale": "en_US",
-                "SUMI_APP_SUPPORT_OVERRIDE": appSupportRoot.path,
             ]
         )
         let browserWindow = app.windows.element(boundBy: 0)
         XCTAssertTrue(browserWindow.waitForExistence(timeout: 10), "The browser window did not appear")
 
-        let addPhotoButton = renderedElement(label: buttonLabel, in: browserWindow)
+        let addPhotoButton = browserWindow.buttons[buttonLabel]
         wait(
             for: NSPredicate(format: "exists == true AND hittable == true"),
             on: addPhotoButton,

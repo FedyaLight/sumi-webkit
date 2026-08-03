@@ -4,6 +4,30 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 enum ExtensionActionPopupPresentation {
+    struct TransientSession {
+        let coordinator: SidebarTransientSessionCoordinator
+        let token: SidebarTransientSessionToken?
+    }
+
+    static func beginTransientSession(
+        for target: ExtensionActionPopupPresentationTarget
+    ) -> TransientSession {
+        let coordinator = target.source.windowState
+            .sidebarTransientSessionCoordinator
+        let source = coordinator.preparedPresentationSource(
+            window: target.presentationWindow,
+            ownerView: target.anchor?.buttonView
+        )
+        return TransientSession(
+            coordinator: coordinator,
+            token: coordinator.beginSession(
+                kind: .extensionActionPopover,
+                source: source,
+                path: "ExtensionActionPopupCoordinator.present"
+            )
+        )
+    }
+
     static func anchorRect(for anchorView: NSView) -> CGRect {
         let bounds = anchorView.bounds
         guard bounds.width < 4 || bounds.height < 4 else {

@@ -241,7 +241,7 @@ extension SumiNavigationResponderTests {
         ])
     }
 
-    func testTabLifecycleAuthChallengeUsesInjectedRuntimeWithoutBrowserManager() async {
+    func testTabAuthenticationResponderUsesInjectedRuntimeWithoutBrowserManager() async {
         let credential = URLCredential(
             user: "alice",
             password: "secret",
@@ -251,7 +251,7 @@ extension SumiNavigationResponderTests {
         let lifecycle = RecordingTabLifecycleNavigationRuntime()
         lifecycle.authDisposition = .credential(credential)
         tab.navigationRuntime.lifecycleNavigationRuntime = lifecycle.runtime
-        let responder = tab.makeMainFrameLifecycleResponder()
+        let responder = tab.makeAuthenticationNavigationResponder()
         let challenge = makeAuthenticationChallenge()
 
         let disposition = await responder.didReceive(challenge)

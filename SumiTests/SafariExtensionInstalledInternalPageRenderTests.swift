@@ -252,10 +252,12 @@ final class SafariExtensionInstalledInternalPageRenderTests: XCTestCase {
             .appendingPathComponent("Contents", isDirectory: true)
             .appendingPathComponent("Resources", isDirectory: true)
             .appendingPathComponent(resourcePath)
-        XCTAssertTrue(
-            FileManager.default.fileExists(atPath: resourceURL.path),
-            "Expected installed extension resource \(resourcePath) for \(candidate.extensionBundleIdentifier)"
-        )
+        guard FileManager.default.fileExists(atPath: resourceURL.path) else {
+            throw XCTSkip(
+                "Installed extension \(candidate.extensionBundleIdentifier) "
+                    + "does not provide \(resourcePath)"
+            )
+        }
 
         return try XCTUnwrap(
             URL(string: pagePath, relativeTo: extensionContext.baseURL)?.absoluteURL
@@ -272,10 +274,12 @@ final class SafariExtensionInstalledInternalPageRenderTests: XCTestCase {
             .appendingPathComponent("Contents", isDirectory: true)
             .appendingPathComponent("Resources", isDirectory: true)
             .appendingPathComponent(resourcePath)
-        XCTAssertTrue(
-            FileManager.default.fileExists(atPath: resourceURL.path),
-            "Expected installed extension resource \(resourcePath) for \(candidate.extensionBundleIdentifier)"
-        )
+        guard FileManager.default.fileExists(atPath: resourceURL.path) else {
+            throw XCTSkip(
+                "Installed extension \(candidate.extensionBundleIdentifier) "
+                    + "does not provide \(resourcePath)"
+            )
+        }
 
         guard let bundle = Bundle(url: candidate.appexURL) else {
             XCTFail("Unable to open installed appex bundle for \(candidate.extensionBundleIdentifier)")

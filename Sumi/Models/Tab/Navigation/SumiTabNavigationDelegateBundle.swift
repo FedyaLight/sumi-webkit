@@ -25,6 +25,8 @@ final class SumiTabNavigationDelegateAdapter {
     private let gpcAdapter: SumiNavigationResponderAdapter
     private let autoplayPolicy: SumiAutoplayPolicyNavigationResponder
     private let autoplayPolicyAdapter: SumiNavigationResponderAdapter
+    private let authentication: SumiTabAuthenticationNavigationResponder
+    private let authenticationAdapter: SumiNavigationResponderAdapter
     private let lifecycle: SumiTabLifecycleNavigationResponder
     private let lifecycleAdapter: SumiNavigationResponderAdapter
     private let inlineUIExtensionResources: SafariExtensionInlineUINavigationResponder
@@ -69,6 +71,10 @@ final class SumiTabNavigationDelegateAdapter {
             autoplayPolicy: tab.navigationRuntime.navigationDelegateRuntime.autoplayPolicy
         )
         self.autoplayPolicyAdapter = SumiNavigationResponderAdapter(target: autoplayPolicy)
+        self.authentication = tab.makeAuthenticationNavigationResponder()
+        self.authenticationAdapter = SumiNavigationResponderAdapter(
+            target: authentication
+        )
         self.lifecycle = tab.makeMainFrameLifecycleResponder()
         self.lifecycleAdapter = SumiNavigationResponderAdapter(target: lifecycle)
         self.inlineUIExtensionResources = SafariExtensionInlineUINavigationResponder()
@@ -86,6 +92,7 @@ final class SumiTabNavigationDelegateAdapter {
             .strong(scriptAttachmentAdapter),
             .strong(gpcAdapter),
             .strong(autoplayPolicyAdapter),
+            .strong(authenticationAdapter),
             .strong(lifecycleAdapter),
             .strong(inlineUIExtensionResourcesAdapter),
             .strong(findInPageAdapter)

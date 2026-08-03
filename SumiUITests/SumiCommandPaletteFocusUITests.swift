@@ -431,7 +431,9 @@ final class SumiCommandPaletteFocusUITests: SumiLaunchSmokeUITestCase {
             )
         ).firstMatch
         XCTAssertTrue(result.waitForExistence(timeout: 5))
-        result.click()
+        result.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)
+        ).click()
         XCTAssertTrue(
             waitForSelectionState(
                 selected: true,

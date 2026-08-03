@@ -916,8 +916,7 @@ fi
 
 document_script_tab_root_hits="$(
   guard_capture_matches '\b(private\s+)?weak\s+var\s+tab\s*:\s*Tab\?' \
-    Sumi/UserScripts/SumiDocumentSuspensionSensorUserScript.swift \
-    Sumi/UserScripts/SumiSubframePictureInPictureUserScript.swift
+    Sumi/UserScripts/SumiDocumentSuspensionSensorUserScript.swift
 )"
 if [[ -n "$document_script_tab_root_hits" ]]; then
   guard_record_failure "document sensor user script regained Tab root:

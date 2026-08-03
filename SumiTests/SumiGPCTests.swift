@@ -2,7 +2,7 @@ import WebKit
 import XCTest
 
 @testable import Sumi
-import Navigation
+@testable import Navigation
 import SumiDomain
 
 @MainActor
@@ -161,7 +161,7 @@ final class SumiGPCNavigationResponderTests: XCTestCase {
             isGPCEnabledProvider: { true }
         )
         var preferences = sumiPreferences()
-        preferences.globalPrivacyControlEnabled = false
+        preferences.globalPrivacyControlEnabled = nil
         let originalNavigation = NSObject()
 
         let policy = await responder.decidePolicy(
@@ -175,7 +175,7 @@ final class SumiGPCNavigationResponderTests: XCTestCase {
         )
 
         XCTAssertEqual(policy, .cancel)
-        XCTAssertEqual(preferences.globalPrivacyControlEnabled, true)
+        XCTAssertNil(preferences.globalPrivacyControlEnabled)
         XCTAssertEqual(webView.loadedRequests.count, 1)
         XCTAssertEqual(webView.loadedRequests.first?.value(forHTTPHeaderField: "Sec-GPC"), "1")
     }
@@ -498,7 +498,7 @@ final class SumiGPCNavigationResponderTests: XCTestCase {
         XCTAssertTrue(webView.loadedRequests.isEmpty)
     }
 
-    func testNativeWebKitGPCAlsoRewritesMissingHeader() async {
+    func testNativeWebKitGPCUsesNavigationPreferenceWithoutReloading() async {
         let webView = SumiGPCLoadRecordingWebView()
         let tab = makeTab()
         _ = tab.installNavigationDelegate(on: webView)
@@ -508,26 +508,36 @@ final class SumiGPCNavigationResponderTests: XCTestCase {
         )
         var preferences = sumiPreferences()
         preferences.globalPrivacyControlEnabled = false
-        let originalNavigation = NSObject()
-
         let policy = await responder.decidePolicy(
             for: mainFrameAction(url: URL(string: "https://example.com/")!),
             targetWebView: webView,
-            context: SumiNavigationActionContext(
-                navigationID: ObjectIdentifier(originalNavigation),
-                navigationLifetime: originalNavigation
-            ),
             preferences: &preferences
         )
 
-        XCTAssertEqual(policy, .cancel)
+        XCTAssertNil(policy)
         XCTAssertEqual(preferences.globalPrivacyControlEnabled, true)
-        XCTAssertEqual(
-            webView.loadedRequests.first?.value(
-                forHTTPHeaderField: "Sec-GPC"
-            ),
-            "1"
+        XCTAssertTrue(webView.loadedRequests.isEmpty)
+    }
+
+    func testNavigationPreferencesBridgeSupportsRuntimeGPCSelector() {
+        let webKitPreferences = WKWebpagePreferences()
+        var preferences = NavigationPreferences(
+            userAgent: nil,
+            preferences: webKitPreferences
         )
+
+        XCTAssertNotNil(
+            preferences.globalPrivacyControlEnabled,
+            "The adapter must recognize the GPC selector exposed by the running WebKit."
+        )
+
+        preferences.globalPrivacyControlEnabled = true
+        _ = preferences.applying(to: webKitPreferences)
+
+        let key = webKitPreferences.responds(
+            to: NSSelectorFromString("globalPrivacyControlStatus")
+        ) ? "globalPrivacyControlStatus" : "globalPrivacyControlEnabled"
+        XCTAssertEqual(webKitPreferences.value(forKey: key) as? Bool, true)
     }
 
     func testDoesNotRewriteBeforeSettingsAreAvailable() async {

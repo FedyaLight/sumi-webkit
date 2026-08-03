@@ -50,6 +50,10 @@ final class FocusableWKWebViewKeyDownTests: XCTestCase {
         await fulfillment(of: [navigationFinished], timeout: 2)
 
         let event = try Self.keyDownEvent(window: window, key: "j", keyCode: 38)
+        XCTAssertIdentical(
+            shortcutManager.routeLocalKeyDown(event, keyWindow: window),
+            event
+        )
         window.sendEvent(event)
 
         try await Task.sleep(for: .milliseconds(100))

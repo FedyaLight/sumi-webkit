@@ -575,6 +575,7 @@ private extension SplitInsertionServiceTests {
             placeholders: EmptySplitPlaceholderFactory(
                 spaces: manager.spaceStateOwner,
                 regularTabs: manager.regularTabLifecycleOwner,
+                selection: manager.browserTabSelection,
                 retirement: placeholderRetirement,
                 structuralTransactions: manager.structuralLookupCoordinator,
                 terminalMutations: manager.structuralCollectionMutationOwner

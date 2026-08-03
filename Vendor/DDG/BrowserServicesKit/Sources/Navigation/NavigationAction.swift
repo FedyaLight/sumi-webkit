@@ -204,12 +204,8 @@ public struct NavigationPreferences: Equatable {
         self.userAgent = userAgent
         self.contentMode = preferences.preferredContentMode
         self.javaScriptEnabledValue = preferences.allowsContentJavaScript
-        if preferences.responds(to: NSSelectorFromString("globalPrivacyControlEnabled")) {
-            self.globalPrivacyControlEnabled =
-                preferences.value(forKey: "globalPrivacyControlEnabled") as? Bool
-        } else {
-            self.globalPrivacyControlEnabled = nil
-        }
+        self.globalPrivacyControlEnabled =
+            GlobalPrivacyControlPreferenceCompatibility.read(from: preferences)
 
 #if _WEBPAGE_PREFS_AUTOPLAY_POLICY_ENABLED
         self.autoplayPolicy = .init(rawValue: preferences.autoplayPolicy)
@@ -220,11 +216,10 @@ public struct NavigationPreferences: Equatable {
     internal func applying(to preferences: WKWebpagePreferences) -> WKWebpagePreferences {
         preferences.preferredContentMode = contentMode
         preferences.allowsContentJavaScript = javaScriptEnabled
-        if let globalPrivacyControlEnabled,
-           preferences.responds(to: NSSelectorFromString("setGlobalPrivacyControlEnabled:")) {
-            preferences.setValue(
+        if let globalPrivacyControlEnabled {
+            GlobalPrivacyControlPreferenceCompatibility.write(
                 globalPrivacyControlEnabled,
-                forKey: "globalPrivacyControlEnabled"
+                to: preferences
             )
         }
 
@@ -237,6 +232,33 @@ public struct NavigationPreferences: Equatable {
         return preferences
     }
 
+}
+
+private enum GlobalPrivacyControlPreferenceCompatibility {
+    // WebKit renamed the navigation preference while the macOS 27 beta SDK and
+    // runtime were shipping out of sync. Prefer the current selector and keep
+    // the legacy spelling for older runtimes.
+    private static let keys = [
+        "globalPrivacyControlStatus",
+        "globalPrivacyControlEnabled",
+    ]
+
+    static func read(from preferences: WKWebpagePreferences) -> Bool? {
+        guard let key = keys.first(where: {
+            preferences.responds(to: NSSelectorFromString($0))
+        }) else { return nil }
+
+        return preferences.value(forKey: key) as? Bool
+    }
+
+    static func write(_ value: Bool, to preferences: WKWebpagePreferences) {
+        guard let key = keys.first(where: {
+            let setter = "set\($0.prefix(1).uppercased())\($0.dropFirst()):"
+            return preferences.responds(to: NSSelectorFromString(setter))
+        }) else { return }
+
+        preferences.setValue(value, forKey: key)
+    }
 }
 
 public enum NavigationActionPolicy: Sendable {

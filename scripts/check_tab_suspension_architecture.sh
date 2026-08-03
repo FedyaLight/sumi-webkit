@@ -16,7 +16,6 @@ state_files=(
 
 suspension_script=Sumi/UserScripts/SumiTabSuspensionUserScript.swift
 document_sensor=Sumi/UserScripts/SumiDocumentSuspensionSensorUserScript.swift
-subframe_pip_sensor=Sumi/UserScripts/SumiSubframePictureInPictureUserScript.swift
 
 required_runtime_files=(
   Sumi/Managers/TabSuspensionController.swift
@@ -28,7 +27,7 @@ for file in "${state_files[@]}"; do
   guard_require_file "$file"
 done
 
-for file in "$suspension_script" "$document_sensor" "$subframe_pip_sensor"; do
+for file in "$suspension_script" "$document_sensor"; do
   guard_require_file "$file"
 done
 
@@ -92,14 +91,6 @@ activation_epoch_count="$(guard_count_matches 'suspensionActivationEpoch' \
 if (( main_frame_count == 0 || lease_count == 0 || lease_token_count == 0 \
   || lease_epoch_count == 0 || activation_epoch_count == 0 )); then
   printf 'error: suspension message handler lacks physical main-document validation\n' >&2
-  status=1
-fi
-
-subframe_count="$(guard_count_matches 'forMainFrameOnly = false' "$subframe_pip_sensor")"
-world_count="$(guard_count_matches 'in: \.defaultClient' "$subframe_pip_sensor")"
-subframe_token_count="$(guard_count_matches 'documentLeaseToken' "$subframe_pip_sensor")"
-if (( subframe_count == 0 || world_count == 0 || subframe_token_count == 0 )); then
-  printf 'error: subframe PiP veto is not isolated and epoch-bound\n' >&2
   status=1
 fi
 

@@ -106,6 +106,45 @@ final class ExtensionActionPopupSession {
     private(set) var presentationRetired = false
     private(set) var focusRevision: UInt64 = 0
 
+    convenience init(
+        claim: ExtensionActionPopupSessionClaim,
+        evidence: ExtensionActionPopupCallbackEvidence,
+        action: WKWebExtension.Action,
+        popover: NSPopover,
+        popupWebView: WKWebView,
+        sourceReceipt: ExtensionActionPopupSourceReceipt?,
+        focusReceipt: ExtensionActionPopupFocusReceipt?,
+        telemetrySnapshot: ExtensionActionPopupTelemetrySnapshot,
+        completion: ExtensionActionPopupCompletion,
+        target: ExtensionActionPopupPresentationTarget,
+        popoverDidClose: @escaping @MainActor (
+            ExtensionActionPopupSessionClaim,
+            NSPopover
+        ) -> Void,
+        popoverWillClose: @escaping @MainActor (
+            ExtensionActionPopupSessionClaim,
+            NSPopover
+        ) -> Void
+    ) {
+        let transientSession = ExtensionActionPopupPresentation
+            .beginTransientSession(for: target)
+        self.init(
+            claim: claim,
+            evidence: evidence,
+            action: action,
+            popover: popover,
+            popupWebView: popupWebView,
+            sourceReceipt: sourceReceipt,
+            focusReceipt: focusReceipt,
+            telemetrySnapshot: telemetrySnapshot,
+            completion: completion,
+            sidebarTransientSessionCoordinator: transientSession.coordinator,
+            sidebarTransientSessionToken: transientSession.token,
+            popoverDidClose: popoverDidClose,
+            popoverWillClose: popoverWillClose
+        )
+    }
+
     init(
         claim: ExtensionActionPopupSessionClaim,
         evidence: ExtensionActionPopupCallbackEvidence,

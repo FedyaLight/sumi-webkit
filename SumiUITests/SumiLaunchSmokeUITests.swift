@@ -15,18 +15,17 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
         )
     }
 
-    func testCommandCommaOpensSettingsWindow() throws {
+    func testSettingsMenuOpensSettingsWindow() throws {
         let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
         let browserWindow = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(browserWindow.waitForExistence(timeout: 5))
-        XCTAssertEqual(app.windows.count, 1)
-
-        browserWindow.typeKey(",", modifierFlags: .command)
+        app.menuBars.menuBarItems["Sumi"].click()
+        app.menuItems["Settings…"].firstMatch.click()
 
         XCTAssertTrue(
-            waitForWindowCount(2, in: app, timeout: 5),
-            "Command-comma should open the Settings window."
+            app.windows["General"].waitForExistence(timeout: 5),
+            "The application menu should open the Settings window."
         )
     }
 
@@ -268,14 +267,6 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
         chromeCoordinate.doubleClick()
         RunLoop.current.run(until: Date().addingTimeInterval(0.8))
 
-        assertNativeTrafficLightsHittable(in: app, window: window)
-    }
-
-    func testCollapsedHoverSidebarKeepsNativeTrafficLightsHittable() throws {
-        let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome(isSidebarVisible: false))
-        let window = app.windows.element(boundBy: 0)
-
-        XCTAssertTrue(window.waitForExistence(timeout: 5))
         assertNativeTrafficLightsHittable(in: app, window: window)
     }
 

@@ -258,6 +258,7 @@ extension BrowserManager {
             placeholders: EmptySplitPlaceholderFactory(
                 spaces: spaceStateOwner,
                 regularTabs: regularTabLifecycleOwner,
+                selection: browserTabSelection,
                 retirement: splitPlaceholderRetirement,
                 structuralTransactions: structuralLookupCoordinator,
                 terminalMutations: structuralCollectionMutationOwner

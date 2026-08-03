@@ -5,7 +5,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 derived_data_root="${SUMI_RELEASE_GATES_DERIVED_DATA_PATH:-/tmp/SumiAlphaReleaseGates}"
 destination="platform=macOS,arch=arm64"
 
-xcode_version="$(xcodebuild -version | awk '/^Xcode / { print $2; exit }')"
+xcode_version="$(xcodebuild -version | awk '/^Xcode / { version=$2 } END { print version }')"
 xcode_major="${xcode_version%%.*}"
 if [[ -z "${xcode_version}" || -z "${xcode_major}" || "${xcode_major}" -lt 27 ]]; then
   echo "error: Sumi release gates require Xcode 27 or newer." >&2

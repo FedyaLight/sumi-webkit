@@ -61,13 +61,12 @@ final class SumiFirstNavigationRenderUITests: SumiLaunchSmokeUITestCase {
         }
 
         let app = try launchApp(
-            preferencesHomeURL: try prepareSmokePreferencesHome(
-                additionalPreferences: ["settings.privacy.gpcEnabled": true]
-            ),
+            preferencesHomeURL: try prepareSmokePreferencesHome(),
             additionalEnvironment: [
                 "AppleLanguages": "(en)",
                 "AppleLocale": "en_US",
-            ]
+            ],
+            additionalArguments: ["-settings.privacy.gpcEnabled", "YES"]
         )
         let window = app.windows.element(boundBy: 0)
         XCTAssertTrue(window.waitForExistence(timeout: 10), "The browser window did not appear")

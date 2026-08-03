@@ -69,16 +69,26 @@ final class SplitInsertionService {
         admission: SplitInsertionAdmission,
         in windowState: BrowserWindowState
     ) -> Bool {
-        guard admission.windowID == windowState.id,
-              currentTab(windowState) === admission.currentTab,
-              admission.currentTab.representsSumiNativeSurface == false,
-              (windowState.splitSelection?.activeMemberID
+        let windowMatches = admission.windowID == windowState.id
+        let currentMatches = currentTab(windowState) === admission.currentTab
+            || (
+                admission.targetMemberID.isShortcutPin
+                    && currentTab(windowState) === tab
+            )
+        let targetIsRegular =
+            admission.currentTab.representsSumiNativeSurface == false
+        let memberMatches = (windowState.splitSelection?.activeMemberID
                 ?? members.memberID(for: admission.currentTab))
-                    == admission.targetMemberID,
-              target(
-                  memberID: admission.targetMemberID,
-                  side: admission.target.side
-              ) == admission.target else { return false }
+            == admission.targetMemberID
+        let targetMatches = target(
+            memberID: admission.targetMemberID,
+            side: admission.target.side
+        ) == admission.target
+        guard windowMatches,
+              currentMatches,
+              targetIsRegular,
+              memberMatches,
+              targetMatches else { return false }
         return drops.drop(tab, on: admission.target, in: windowState)
     }
 
