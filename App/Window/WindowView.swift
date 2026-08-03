@@ -219,6 +219,7 @@ struct WindowView: View {
                         )
                     )
                         .environment(windowState)
+                        .environment(windowState.sidebarFaviconImageStore)
                         .environment(\.sumiSettings, sumiSettings)
                         .zIndex(WindowTransientChromeZIndex.sidebarDragPreview)
                         .allowsHitTesting(false)
