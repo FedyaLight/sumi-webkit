@@ -396,9 +396,18 @@ class KeyboardShortcutManager {
         _ event: NSEvent,
         keyWindow: NSWindow?
     ) -> Bool {
+        let shortcutModifiers = event.modifierFlags.intersection([
+            .command,
+            .control,
+            .option,
+        ])
+        guard shortcutModifiers.isEmpty else {
+            return false
+        }
+
         if webContentKeyDownEvents.contains(event) {
             webContentKeyDownEvents.remove(event)
-            return !isFindInPageCommand(event)
+            return true
         }
 
         guard isWebContentFirstResponder(in: event.window ?? keyWindow) else {
@@ -417,14 +426,6 @@ class KeyboardShortcutManager {
             view = currentView.superview
         }
         return false
-    }
-
-    private func isFindInPageCommand(_ event: NSEvent) -> Bool {
-        let flags = event.modifierFlags
-            .intersection(.deviceIndependentFlagsMask)
-            .subtracting(.capsLock)
-        return flags == [.command]
-            && event.charactersIgnoringModifiers?.lowercased() == "f"
     }
 
     private func shouldBypassShortcutRouting(

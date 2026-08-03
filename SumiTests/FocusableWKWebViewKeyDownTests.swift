@@ -86,6 +86,33 @@ final class FocusableWKWebViewKeyDownTests: XCTestCase {
         XCTAssertNil(shortcutManager.routeLocalKeyDown(firstEvent, keyWindow: window))
     }
 
+    func testNativeEditingKeyEventsSurviveWebKitRedispatch() throws {
+        let shortcutManager = try makeShortcutManager()
+        let webView = FocusableWKWebView()
+        let window = NSWindow(contentViewController: NSViewController())
+        window.contentView = webView
+        XCTAssertTrue(window.makeFirstResponder(webView))
+
+        for (key, keyCode) in [("c", UInt16(8)), ("v", UInt16(9))] {
+            let event = try Self.keyDownEvent(
+                window: window,
+                key: key,
+                keyCode: keyCode,
+                modifierFlags: [.command]
+            )
+
+            XCTAssertIdentical(
+                shortcutManager.routeLocalKeyDown(event, keyWindow: window),
+                event
+            )
+            XCTAssertIdentical(
+                shortcutManager.routeLocalKeyDown(event, keyWindow: window),
+                event,
+                "Cmd+\(key.uppercased()) must not be consumed when WebKit redispatches it"
+            )
+        }
+    }
+
     private func makeShortcutManager() throws -> KeyboardShortcutManager {
         let suiteName = "FocusableWKWebViewKeyDownTests-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
@@ -101,13 +128,14 @@ final class FocusableWKWebViewKeyDownTests: XCTestCase {
     private static func keyDownEvent(
         window: NSWindow,
         key: String,
-        keyCode: UInt16
+        keyCode: UInt16,
+        modifierFlags: NSEvent.ModifierFlags = []
     ) throws -> NSEvent {
         try XCTUnwrap(
             NSEvent.keyEvent(
                 with: .keyDown,
                 location: .zero,
-                modifierFlags: [],
+                modifierFlags: modifierFlags,
                 timestamp: 0,
                 windowNumber: window.windowNumber,
                 context: nil,
