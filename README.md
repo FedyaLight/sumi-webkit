@@ -12,7 +12,7 @@
   <a href="https://www.apple.com/macos/"><img src="https://img.shields.io/badge/macOS-15.5+-blue" alt="macOS 15.5+"></a>
   <a href="https://swift.org/"><img src="https://img.shields.io/badge/Swift-6-orange" alt="Swift 6"></a>
   <a href="https://www.gnu.org/licenses/gpl-3.0.html"><img src="https://img.shields.io/badge/License-GPL--3.0-green" alt="GPL-3.0"></a>
-  <a href="https://github.com/FedyaLight/sumi-webkit/releases/tag/v0.0.2"><img src="https://img.shields.io/badge/Release-v0.0.2_Alpha_2-blue" alt="v0.0.2 Alpha 2"></a>
+  <a href="https://github.com/FedyaLight/sumi-webkit/releases/tag/v0.0.2"><img src="https://img.shields.io/badge/Alpha-v0.0.2-blue" alt="Alpha v0.0.2"></a>
 </p>
 
 <p align="center">
