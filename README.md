@@ -12,7 +12,7 @@
   <a href="https://www.apple.com/macos/"><img src="https://img.shields.io/badge/macOS-15.5+-blue" alt="macOS 15.5+"></a>
   <a href="https://swift.org/"><img src="https://img.shields.io/badge/Swift-6-orange" alt="Swift 6"></a>
   <a href="https://www.gnu.org/licenses/gpl-3.0.html"><img src="https://img.shields.io/badge/License-GPL--3.0-green" alt="GPL-3.0"></a>
-  <a href="https://github.com/FedyaLight/sumi-webkit/releases/tag/v0.0.1"><img src="https://img.shields.io/badge/Release-v0.0.1-blue" alt="v0.0.1"></a>
+  <a href="https://github.com/FedyaLight/sumi-webkit/releases/tag/v0.0.2"><img src="https://img.shields.io/badge/Release-v0.0.2_Alpha_2-blue" alt="v0.0.2 Alpha 2"></a>
 </p>
 
 <p align="center">
@@ -21,16 +21,17 @@
 
 ## Status
 
-`v0.0.1` is Sumi's first public Alpha release. The app builds and runs as a working browser, but it is still early software and is not yet recommended as a primary browser. Download the build for your Mac from [GitHub Releases](https://github.com/FedyaLight/sumi-webkit/releases/tag/v0.0.1): `arm64` for Apple silicon or `x86_64` for Intel.
+`v0.0.2` is Sumi's second public Alpha release. The app builds and runs as a working browser, but it is still early software and is not yet recommended as a primary browser. Download the build for your Mac from [GitHub Releases](https://github.com/FedyaLight/sumi-webkit/releases/tag/v0.0.2): `arm64` for Apple silicon or `x86_64` for Intel.
 
-The first release is intentionally narrow about its guarantees:
+This Alpha release is intentionally narrow about its guarantees:
 
 - Separate Apple-silicon (`arm64`) and Intel (`x86_64`) DMGs are build- and package-verified on macOS 15.5+ with Xcode 27 preview. The Intel artifact has not yet had a hardware test pass on an Intel Mac.
 - The current distribution path is outside the Mac App Store and is not yet Developer ID signed or notarized.
 - Safari Web Extension support is experimental and verified per extension/workflow, not as blanket Safari compatibility.
-- End-to-end updating from this first release and Apple Passwords/iCloud Keychain AutoFill validation remain follow-up release work.
+- Sparkle updates are delivered through Sumi's Alpha channel. Existing `0.0.1` installations can update to Alpha 2, and Alpha 2 checks for newer builds automatically every six hours while Sumi is running.
+- Apple Passwords/iCloud Keychain AutoFill validation remains follow-up release work.
 
-See the [roadmap](docs/roadmap.md), [update behavior](docs/UPDATES.md), and [maintainer release process](docs/RELEASES.md).
+See the [Alpha 2 release notes](docs/releases/0.0.2.md), [roadmap](docs/roadmap.md), [update behavior](docs/UPDATES.md), and [maintainer release process](docs/RELEASES.md).
 
 ## What Makes Sumi Different
 
@@ -44,7 +45,7 @@ Sumi is an independent open-source browser application around system WebKit. It 
 
 Sumi implements the browser application layer. WebKit still owns HTML/CSS rendering, JavaScript execution, networking, web processes, and the underlying `WKWebExtension` runtime.
 
-## Included in 0.0.1
+## Included in Alpha 2
 
 ### Browsing and organization
 
@@ -102,7 +103,7 @@ Backup v1 intentionally excludes passwords, cookies, WebKit website data, histor
 
 ### Install Sumi
 
-Download the matching DMG from [v0.0.1](https://github.com/FedyaLight/sumi-webkit/releases/tag/v0.0.1), open it, and drag Sumi to Applications. Choose `arm64` for Apple silicon or `x86_64` for Intel.
+Download the matching DMG from [v0.0.2 Alpha 2](https://github.com/FedyaLight/sumi-webkit/releases/tag/v0.0.2), open it, and drag Sumi to Applications. Choose `arm64` for Apple silicon or `x86_64` for Intel. The Universal DMG is the Sparkle update payload for existing installations; new installations should use the architecture-specific download.
 
 Current release builds are development-signed rather than Developer ID signed or notarized. If macOS says the app is damaged, move it to `/Applications` and remove the quarantine flag:
 
@@ -115,7 +116,7 @@ open "/Applications/Sumi.app"
 
 - macOS 15.5 or newer.
 - Xcode 27 preview matching `scripts/ci/test-manifest.json`.
-- Apple silicon or Intel. Release tooling produces and verifies a separate app bundle and DMG for each architecture.
+- Apple silicon or Intel. Release tooling produces and verifies architecture-specific app bundles and DMGs plus the Universal Sparkle update payload.
 
 ```sh
 git clone https://github.com/FedyaLight/sumi-webkit.git
