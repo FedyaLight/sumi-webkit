@@ -457,7 +457,7 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         let targetURL = URL(string: "https://destination.example/page")!
         var preferences = NavigationPreferences.default
 
-        _ = await adapter.decidePolicy(
+        let policy = await adapter.decidePolicy(
             for: navigationAction(
                 url: targetURL,
                 navigationType: .linkActivated(isMiddleClick: false),
@@ -467,6 +467,7 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
             preferences: &preferences
         )
 
+        XCTAssertNil(policy)
         XCTAssertNil(harness.browserManager.glanceManager.currentSession)
     }
 
@@ -476,12 +477,14 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
             makeMouseEvent(type: .leftMouseDown, modifierFlags: [.command]),
             kind: .primaryMouseDown
         )
+        let initialRegularTabCount = harness.browserManager.tabStateStore
+            .regularTabs.allTabsSnapshot().count
         let responder = popupResponder(for: harness.sourceTab)
         let adapter = SumiNavigationResponderAdapter(target: responder)
         let targetURL = URL(string: "https://destination.example/page")!
         var preferences = NavigationPreferences.default
 
-        _ = await adapter.decidePolicy(
+        let policy = await adapter.decidePolicy(
             for: navigationAction(
                 url: targetURL,
                 navigationType: .linkActivated(isMiddleClick: false),
@@ -491,7 +494,14 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
             preferences: &preferences
         )
 
+        XCTAssertEqual(policy?.isCancel, true)
         XCTAssertNil(harness.browserManager.glanceManager.currentSession)
+        let regularTabs = harness.browserManager.tabStateStore.regularTabs
+            .allTabsSnapshot()
+        XCTAssertEqual(regularTabs.count, initialRegularTabCount + 1)
+        let openedTab = try XCTUnwrap(regularTabs.first(where: { $0.url == targetURL }))
+        XCTAssertEqual(harness.windowState.currentTabId, harness.sourceTab.id)
+        XCTAssertNotEqual(harness.windowState.currentTabId, openedTab.id)
         XCTAssertEqual(
             SumiLinkOpenBehavior(
                 buttonIsMiddle: false,
@@ -501,6 +511,35 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
             ),
             .newTab(selected: false)
         )
+    }
+
+    func testPopupResponderCommandClickDoesNotCancelWhenPhysicalOpenFails()
+        async throws {
+        let harness = try await makePopupFocusHarness()
+        harness.sourceWebView.gestures.record(
+            makeMouseEvent(type: .leftMouseDown, modifierFlags: [.command]),
+            kind: .primaryMouseDown
+        )
+        // Make the physical source unresolvable after the document lease has
+        // been established. The browser must not turn that failed browser
+        // command into a swallowed page navigation.
+        harness.windowState.currentSpaceId = nil
+        let responder = popupResponder(for: harness.sourceTab)
+        let adapter = SumiNavigationResponderAdapter(target: responder)
+        let targetURL = URL(string: "https://destination.example/page")!
+        var preferences = NavigationPreferences.default
+
+        let policy = await adapter.decidePolicy(
+            for: navigationAction(
+                url: targetURL,
+                navigationType: .linkActivated(isMiddleClick: false),
+                webView: harness.sourceWebView,
+                sourceURL: harness.sourceTab.url
+            ),
+            preferences: &preferences
+        )
+
+        XCTAssertFalse(policy?.isCancel == true)
     }
 
     func testPopupResponderRejectsNonFocusableSourceEvenWithCommittedDocumentLease() async {

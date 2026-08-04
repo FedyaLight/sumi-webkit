@@ -1,4 +1,5 @@
 import Foundation
+import Navigation
 import SumiDomain
 import SumiWebRuntime
 import WebKit
@@ -307,15 +308,16 @@ final class TabPermissionSurfaceOwner {
         guard let callbackCommittedURL = webView.committedURL,
               let lease = context.documentLease(webView),
               lease.webViewID == ObjectIdentifier(webView),
-              WebRuntimeNavigationIdentity.matches(
+              Self.matchesPhysicalDocument(
                   callbackCommittedURL,
-                  lease.committedURL
-              ) else {
+                  presentationURL: lease.presentationURL
+              )
+        else {
             return nil
         }
         return ExactPermissionDocument(
             lease: lease,
-            committedURL: callbackCommittedURL
+            committedURL: lease.committedURL
         )
     }
 
@@ -331,14 +333,22 @@ final class TabPermissionSurfaceOwner {
             guard let webView,
                   currentDocumentLease(webView) == documentLease,
                   let committedURL = webView.committedURL,
-                  WebRuntimeNavigationIdentity.matches(
+                  Self.matchesPhysicalDocument(
                       committedURL,
-                      documentLease.committedURL
+                      presentationURL: documentLease.presentationURL
                   ) else {
                 return false
             }
             return isCurrentPage(pageId, pageGeneration)
         }
+    }
+
+    private static func matchesPhysicalDocument(
+        _ callbackURL: URL,
+        presentationURL: URL
+    ) -> Bool {
+        WebRuntimeNavigationIdentity.matches(callbackURL, presentationURL)
+            || callbackURL.isSameDocument(presentationURL)
     }
 }
 

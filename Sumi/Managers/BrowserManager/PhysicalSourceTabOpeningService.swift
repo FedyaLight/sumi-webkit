@@ -8,6 +8,7 @@ final class PhysicalSourceTabOpeningService {
     private let regularTabs: RegularTabCollectionOwner
     private let regularLifecycle: TabRegularLifecycleOwner
     private weak var opening: BrowserTabOpeningOwner?
+    private weak var notifications: (any BackgroundTabOpenedNotifying)?
     private let select: @MainActor (
         Tab,
         BrowserWindowState,
@@ -19,6 +20,7 @@ final class PhysicalSourceTabOpeningService {
         regularTabs: RegularTabCollectionOwner,
         regularLifecycle: TabRegularLifecycleOwner,
         opening: BrowserTabOpeningOwner,
+        notifications: any BackgroundTabOpenedNotifying,
         select: @escaping @MainActor (
             Tab,
             BrowserWindowState,
@@ -29,6 +31,7 @@ final class PhysicalSourceTabOpeningService {
         self.regularTabs = regularTabs
         self.regularLifecycle = regularLifecycle
         self.opening = opening
+        self.notifications = notifications
         self.select = select
     }
 
@@ -94,6 +97,10 @@ final class PhysicalSourceTabOpeningService {
             select(child, source.window, foregroundLoadPolicy)
         } else {
             opening.prepareBackgroundTabIfNeeded(child, in: source.window)
+            notifications?.presentBackgroundTabOpenedNotification(
+                tabId: child.id,
+                in: source.window
+            )
         }
         return child
     }

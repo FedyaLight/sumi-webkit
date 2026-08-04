@@ -165,6 +165,37 @@ final class WebViewPresentationRoutingTests: XCTestCase {
         )
     }
 
+    func testBackgroundLinkPresentsOpenedTabNotification() throws {
+        let harness = try makeRegularHarness()
+        defer { closePublishedShells(in: harness.windowRegistry) }
+        let notifications = NotificationPresentingSpy()
+        let opening = PhysicalSourceTabOpeningService(
+            spaces: harness.browserManager.spaceStateOwner,
+            regularTabs: harness.browserManager.regularTabCollectionOwner,
+            regularLifecycle: harness.browserManager.regularTabLifecycleOwner,
+            opening: harness.browserManager.tabOpening,
+            notifications: notifications,
+            select: { [weak browserManager = harness.browserManager] tab, window, loadPolicy in
+                browserManager?.selectTab(tab, in: window, loadPolicy: loadPolicy)
+            }
+        )
+        let targetURL = try XCTUnwrap(URL(string: "https://target.example/background"))
+        let source = try XCTUnwrap(
+            physicalSourceResolver(for: harness).resolve(harness.sourceWebView)
+        )
+
+        let tab = try XCTUnwrap(opening.open(targetURL, from: source, selected: false))
+
+        XCTAssertEqual(
+            notifications.presentBackgroundTabOpenedNotificationCalls.map(\.tabId),
+            [tab.id]
+        )
+        XCTAssertIdentical(
+            notifications.presentBackgroundTabOpenedNotificationCalls.first?.windowState,
+            harness.sourceWindow
+        )
+    }
+
     func testPhysicalWebPopupRejectsSourceWithoutPublishedShellBeforeMutation()
         throws {
         let harness = try makeRegularHarness()
@@ -217,6 +248,7 @@ final class WebViewPresentationRoutingTests: XCTestCase {
             regularTabs: harness.browserManager.regularTabCollectionOwner,
             regularLifecycle: harness.browserManager.regularTabLifecycleOwner,
             opening: harness.browserManager.tabOpening,
+            notifications: harness.browserManager.notificationPresenter,
             select: { [weak browserManager = harness.browserManager]
                 tab,
                 window,
@@ -1120,6 +1152,8 @@ struct RegularHarness {
     let sourceTab: Tab
     let sourceWebView: FocusableWKWebView
 }
+
+extension NotificationPresentingSpy: BackgroundTabOpenedNotifying {}
 
 @MainActor
 final class ExtensionTabRegistrarSpy: ExtensionCreatedTabRegistering {

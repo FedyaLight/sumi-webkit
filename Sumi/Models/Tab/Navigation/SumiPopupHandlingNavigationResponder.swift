@@ -262,13 +262,14 @@ final class SumiPopupHandlingNavigationResponder:
             case .newWindow(let selected):
                 disposition = .newWindow(selected: selected)
             }
-            if sourceTab.linkPresentationCommands.open(
+            guard sourceTab.linkPresentationCommands.open(
                 url,
                 from: sourceWebView,
                 disposition: disposition
-            ) {
-                sourceWebView.gestures.clear(ifCurrent: gestureReceipt)
+            ) else {
+                return .next
             }
+            sourceWebView.gestures.clear(ifCurrent: gestureReceipt)
             return .cancel
         }
     }

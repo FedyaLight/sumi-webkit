@@ -7,6 +7,67 @@ import XCTest
 
 @MainActor
 final class ShortcutPhysicalSourceRoutingTests: XCTestCase {
+    func testDriftedLiveShortcutRoutesNewTabCommands() async throws {
+        let harness = try makeHarness(role: .spacePinned)
+        defer { closePublishedShells(in: harness.registry) }
+
+        let driftedURL = URL(string: "https://drifted.example/current")!
+        try await establishCommittedDocument(
+            on: harness,
+            at: driftedURL,
+            markStartupLoadFinished: true
+        )
+
+        XCTAssertNotNil(
+            try commandClickChild(
+                on: harness,
+                targetURL: URL(string: "https://destination.example/cmd")!
+            )
+        )
+        openLinkFromContextMenu(
+            on: harness,
+            targetURL: URL(string: "https://destination.example/menu")!
+        )
+    }
+
+    func testResetDriftedLiveShortcutRoutesNewTabCommands() async throws {
+        let harness = try makeHarness(role: .spacePinned)
+        defer { closePublishedShells(in: harness.registry) }
+
+        try await establishCommittedDocument(
+            on: harness,
+            at: URL(string: "https://drifted.example/current")!,
+            markStartupLoadFinished: true
+        )
+
+        XCTAssertTrue(
+            harness.browser.sidebarPinCommands.resetToLaunchURL(
+                harness.pin,
+                in: harness.sourceWindow,
+                preserveCurrentPage: false
+            )
+        )
+
+        try await establishCommittedDocument(
+            on: harness,
+            at: harness.pin.launchURL
+        )
+
+        XCTAssertNotNil(harness.sourceTab.popupPermissionTabContext(
+            for: harness.sourceWebView
+        ))
+        XCTAssertNotNil(
+            try commandClickChild(
+                on: harness,
+                targetURL: URL(string: "https://destination.example/reset-cmd")!
+            )
+        )
+        openLinkFromContextMenu(
+            on: harness,
+            targetURL: URL(string: "https://destination.example/reset-menu")!
+        )
+    }
+
     func testResolverRejectsMismatchedExecutionDataStore() throws {
         let harness = try makeHarness(
             role: .essential,
@@ -229,19 +290,38 @@ final class ShortcutPhysicalSourceRoutingTests: XCTestCase {
         )!
         sourceWindow.currentTabId = sourceTab.id
 
-        let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = sourceDataStore
-            ?? executionProfile.dataStore
-        let sourceWebView = FocusableWKWebView(
-            frame: .zero,
-            configuration: configuration
-        )
-        sourceWebView.owningTab = sourceTab
-        browser.testWebViewRuntime().trackedWebViewAdmission.registerAuxiliaryTrackedWebView(
-            sourceWebView,
-            for: sourceTab,
-            in: sourceWindow.id
-        )
+        let sourceWebView: FocusableWKWebView
+        if let sourceDataStore {
+            let configuration = WKWebViewConfiguration()
+            configuration.websiteDataStore = sourceDataStore
+            sourceWebView = FocusableWKWebView(
+                frame: .zero,
+                configuration: configuration
+            )
+            sourceWebView.owningTab = sourceTab
+            browser.testWebViewRuntime().trackedWebViewAdmission
+                .registerAuxiliaryTrackedWebView(
+                    sourceWebView,
+                    for: sourceTab,
+                    in: sourceWindow.id
+                )
+        } else {
+            sourceWebView = try XCTUnwrap(
+                sourceTab.makeNormalTabWebView(
+                    reason: "ShortcutPhysicalSourceRoutingTests.makeHarness"
+                ) as? FocusableWKWebView
+            )
+            let assignment = browser.testWebViewRuntime()
+                .trackedWebViewAdmission.attemptAssignment(
+                    sourceWebView,
+                    to: sourceTab,
+                    in: sourceWindow.id,
+                    replaySemanticOperation: {
+                        XCTFail("Unexpected WebView deferral")
+                    }
+                )
+            XCTAssertTrue(assignment.isAccepted)
+        }
         let resolver = PhysicalWebViewSourceResolver(
             ownership: browser.testWebViewRuntime().ownershipQuery,
             sourceContexts: BrowserWindowSourceContextResolver(
@@ -263,6 +343,7 @@ final class ShortcutPhysicalSourceRoutingTests: XCTestCase {
             presentationProfile: presentationProfile,
             executionProfile: executionProfile,
             space: space,
+            pin: canonicalPin,
             sourceTab: sourceTab,
             sourceWebView: sourceWebView,
             resolver: resolver
@@ -285,12 +366,179 @@ final class ShortcutPhysicalSourceRoutingTests: XCTestCase {
         )
     }
 
+    private func establishCommittedDocument(
+        on harness: Harness,
+        at url: URL,
+        markStartupLoadFinished: Bool = false
+    ) async throws {
+        await loadDocument(on: harness.sourceWebView, at: url)
+        harness.browser.selectTab(harness.sourceTab, in: harness.sourceWindow)
+        if markStartupLoadFinished {
+            harness.browser.startupRestoreLifecycle.markLoadFinished()
+        }
+        harness.sourceTab.installNavigationDelegate(on: harness.sourceWebView)
+        bindCommittedDocument(
+            on: harness.sourceWebView,
+            tab: harness.sourceTab,
+            committedURL: try XCTUnwrap(harness.sourceWebView.committedURL)
+        )
+    }
+
+    private func commandClickChild(
+        on harness: Harness,
+        targetURL: URL
+    ) throws -> WKWebView? {
+        harness.sourceWebView.gestures.record(
+            mouseEvent(modifierFlags: [.command]),
+            kind: .primaryMouseDown
+        )
+        let responder = SumiPopupHandlingNavigationResponder(
+            tab: harness.sourceTab,
+            permissions: harness.sourceTab.navigationRuntime.popupPermissionEvaluator,
+            extensionRequests: harness.sourceTab.navigationRuntime.extensionPopupRequestConsumer,
+            extensionTabs: harness.sourceTab.navigationRuntime.extensionExternalTabOpening,
+            webPopups: harness.sourceTab.navigationRuntime.physicalWebPopupOpening,
+            childTabs: harness.sourceTab.navigationRuntime.webKitChildTabOpening,
+            childWindows: harness.sourceTab.navigationRuntime.webKitChildWindowOpening
+        )
+        let sourceURL = try XCTUnwrap(
+            harness.sourceWebView.committedURL ?? harness.sourceTab.url
+        )
+        let sourceFrame = SumiWKFrameInfoMock(
+            isMainFrame: true,
+            request: URLRequest(url: sourceURL),
+            securityOrigin: SumiWKSecurityOriginMock.new(url: sourceURL),
+            webView: harness.sourceWebView
+        ).frameInfo
+        let actionMock = SumiWKNavigationActionMock(
+            sourceFrame: sourceFrame,
+            targetFrame: nil,
+            navigationType: .linkActivated,
+            request: URLRequest(url: targetURL)
+        )
+        actionMock.isUserInitiated = true
+        actionMock.modifierFlags = [.command]
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = harness.executionProfile.dataStore
+        return responder.createWebView(
+            from: harness.sourceWebView,
+            with: configuration,
+            for: actionMock.navigationAction,
+            windowFeatures: WKWindowFeatures()
+        )
+    }
+
+    private func openLinkFromContextMenu(
+        on harness: Harness,
+        targetURL: URL
+    ) {
+        let initialTabCount = harness.browser.tabStateStore.regularTabs
+            .allTabsSnapshot().count
+        let owner = SumiWebPageMenuActionOwner()
+        owner.prepare(
+            webView: harness.sourceWebView,
+            context: SumiWebPageMenuContext(
+                menu: NSMenu(),
+                snapshot: SumiWebPageContextMenuTargetSnapshot(
+                    kind: .link,
+                    linkHref: targetURL.absoluteString
+                ),
+                searchProviderName: "DuckDuckGo",
+                isLoading: false,
+                isDeveloperInspectionEnabled: false
+            )
+        )
+        owner.openLinkInNewTab(nil)
+
+        let regularTabs = harness.browser.tabStateStore.regularTabs
+            .allTabsSnapshot()
+        XCTAssertEqual(regularTabs.count, initialTabCount + 1)
+        XCTAssertNotNil(regularTabs.first(where: { $0.url == targetURL }))
+    }
+
+    private func loadDocument(on webView: WKWebView, at url: URL) async {
+        let loaded = expectation(description: "shortcut source document loaded")
+        let delegate = ShortcutDocumentNavigationDelegate { loaded.fulfill() }
+        webView.navigationDelegate = delegate
+        webView.loadHTMLString("<html><body>shortcut source</body></html>", baseURL: url)
+        await fulfillment(of: [loaded], timeout: 5)
+        webView.navigationDelegate = nil
+    }
+
+    private func mouseEvent(
+        modifierFlags: NSEvent.ModifierFlags
+    ) -> NSEvent {
+        NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: .zero,
+            modifierFlags: modifierFlags,
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: 0,
+            context: nil,
+            eventNumber: 1,
+            clickCount: 1,
+            pressure: 1
+        )!
+    }
+
+    @discardableResult
+    private func bindCommittedDocument(
+        on webView: WKWebView,
+        tab: Tab,
+        committedURL: URL
+    ) -> NSObject {
+        let intent = tab.beginMainFrameNavigationIntent(to: committedURL)
+        XCTAssertTrue(tab.mainFrameLoads.markDeferredLoad(on: webView, intent: intent))
+        XCTAssertEqual(
+            tab.mainFrameLoads.claimDeferredSubmission(
+                on: webView,
+                revision: intent.revision,
+                targetURL: committedURL
+            ),
+            .claimed
+        )
+        let navigation = NSObject()
+        XCTAssertTrue(
+            tab.mainFrameSubmission.bindSubmittedLoad(
+                on: webView,
+                navigationID: ObjectIdentifier(navigation),
+                navigationLifetime: navigation,
+                matching: nil
+            )
+        )
+        let context = SumiNavigationContext(
+            navigationID: ObjectIdentifier(navigation),
+            navigationLifetime: navigation,
+            action: nil,
+            url: committedURL,
+            isCurrent: nil,
+            isCommitted: true,
+            isMainFrame: true,
+            webView: webView
+        )
+        tab.makeMainFrameLifecycleResponder().navigationDidCommit(context)
+        return navigation
+    }
+
     private func closePublishedShells(in registry: WindowRegistry) {
         for window in registry.allWindows {
             let shell = registry.appKitWindow(for: window)
             registry.unregister(window.id)
             shell?.orderOut(nil)
         }
+    }
+}
+
+@MainActor
+private final class ShortcutDocumentNavigationDelegate: NSObject, WKNavigationDelegate {
+    private let onFinish: () -> Void
+
+    init(onFinish: @escaping () -> Void) {
+        self.onFinish = onFinish
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        onFinish()
     }
 }
 
@@ -303,6 +551,7 @@ private struct Harness {
     let presentationProfile: Profile
     let executionProfile: Profile
     let space: Space
+    let pin: ShortcutPin
     let sourceTab: Tab
     let sourceWebView: FocusableWKWebView
     let resolver: PhysicalWebViewSourceResolver

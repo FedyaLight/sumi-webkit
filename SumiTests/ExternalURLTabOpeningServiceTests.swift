@@ -42,6 +42,24 @@ final class ExternalURLTabOpeningServiceTests: XCTestCase {
         }
     }
 
+    func testExternalURLActivatesTheTargetBrowserWindow() throws {
+        let registry = WindowRegistry()
+        let activeWindow = BrowserWindowState()
+        registry.register(activeWindow)
+        registry.activeWindowId = activeWindow.id
+        let opening = RecordingURLTabOpening()
+        var focusedWindow: BrowserWindowState?
+        let service = ExternalURLTabOpeningService(
+            windowRegistry: registry,
+            tabOpening: opening,
+            focusWindow: { focusedWindow = $0 }
+        )
+
+        service.presentExternalURL(try XCTUnwrap(URL(string: "https://external.example")))
+
+        XCTAssertIdentical(focusedWindow, activeWindow)
+    }
+
     func testIncognitoWindowIdentityIsPreservedForEphemeralOpeningPolicy() throws {
         let registry = WindowRegistry()
         let incognitoWindow = BrowserWindowState()

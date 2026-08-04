@@ -126,18 +126,19 @@ final class TabPermissionSurfaceTests: XCTestCase {
         )
         let currentURL = URL(string: "https://visible.example/page")!
         let committedURL = URL(string: "https://committed.example/main")!
+        let presentationURL = URL(string: "https://visible.example/page#drifted")!
         let targetURL = URL(string: "https://next.example/")!
         var pageGeneration = 0
         var lifecycleEvents: [SumiPermissionLifecycleEvent] = []
         let webView = PermissionCommittedURLWebView()
-        webView.reportedCommittedURL = committedURL
+        webView.reportedCommittedURL = presentationURL
         let documentLease = TabMainFrameDocumentLease(
             revision: 7,
             documentGeneration: 3,
             webViewID: ObjectIdentifier(webView),
             participantID: UUID(),
             committedURL: committedURL,
-            presentationURL: committedURL,
+            presentationURL: presentationURL,
             isPDF: false,
             isAuthority: true
         )
@@ -184,6 +185,7 @@ final class TabPermissionSurfaceTests: XCTestCase {
         )
 
         let permissionContext = try XCTUnwrap(owner.externalSchemeContext(for: webView))
+        let popupContext = try XCTUnwrap(owner.popupContext(for: webView))
 
         XCTAssertEqual(permissionContext.tabId, tabId.uuidString.lowercased())
         XCTAssertEqual(permissionContext.pageId, "\(tabId.uuidString.lowercased()):0")
@@ -194,6 +196,9 @@ final class TabPermissionSurfaceTests: XCTestCase {
         XCTAssertTrue(permissionContext.isActiveTab)
         XCTAssertFalse(permissionContext.isVisibleTab)
         XCTAssertTrue(try XCTUnwrap(permissionContext.isCurrentPage)())
+        XCTAssertEqual(popupContext.committedURL, committedURL)
+        XCTAssertEqual(popupContext.visibleURL, currentURL)
+        XCTAssertTrue(try XCTUnwrap(popupContext.isCurrentPage)())
 
         owner.handleNormalTabPermissionNavigation(to: targetURL)
         owner.invalidatePageForWebViewReplacement(reason: "test-replacement")

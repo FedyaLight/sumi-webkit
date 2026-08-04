@@ -124,24 +124,40 @@ enum TabBrowserHostServicesRuntimeFactory {
                         return profile
                     }
 
+                    if let profileID = sourceTab.profileId {
+                        // Shortcuts execute in an explicit profile while
+                        // remaining presented in the window's Space/profile.
+                        guard let profile = profiles.profiles.first(where: {
+                            $0.id == profileID
+                        }),
+                              webView.configuration.websiteDataStore
+                                === profile.dataStore
+                        else {
+                            return nil
+                        }
+                        return profile
+                    }
+
                     let sourceSpaceID = sourceTab.spaceId
                         ?? sourceWindow.currentSpaceId
                     let spaceProfileID = sourceSpaceID.flatMap {
                         spaces.profileId(for: $0)
                     }
                     let candidates = [
-                        sourceTab.profileId,
                         spaceProfileID,
                         sourceWindow.currentProfileId,
                     ].compactMap(\.self)
                     guard Set(candidates).count == 1,
-                          let profileID = candidates.first
+                          let profileID = candidates.first,
+                          let profile = profiles.profiles.first(where: {
+                              $0.id == profileID
+                          }),
+                          webView.configuration.websiteDataStore
+                            === profile.dataStore
                     else {
                         return nil
                     }
-                    return profiles.profiles.first {
-                        $0.id == profileID
-                    }
+                    return profile
                 }
 
                 guard let sourceTab = (webView as? FocusableWKWebView)?

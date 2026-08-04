@@ -28,6 +28,7 @@ enum TabBrowserRuntimeFactory {
             regularTabs: tabs.regularTabCollectionOwner,
             regularLifecycle: tabs.regularTabLifecycleOwner,
             opening: browserManager.tabOpening,
+            notifications: browserManager.notificationPresenter,
             select: { [weak browserManager] tab, window, loadPolicy in
                 browserManager?.selectTab(
                     tab,
