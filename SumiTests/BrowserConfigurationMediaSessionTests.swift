@@ -15,6 +15,18 @@ final class BrowserConfigurationMediaSessionTests: XCTestCase {
         XCTAssertTrue(configuration.preferences.isElementFullscreenEnabled)
         XCTAssertTrue(configuration.allowsAirPlayForMediaPlayback)
 
+        let elementFullscreenSetter = NSSelectorFromString(
+            "_setVideoFullscreenRequiresElementFullscreen:"
+        )
+        if configuration.preferences.responds(to: elementFullscreenSetter) {
+            XCTAssertEqual(
+                configuration.preferences.value(
+                    forKey: "videoFullscreenRequiresElementFullscreen"
+                ) as? Bool,
+                true
+            )
+        }
+
         if ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] == nil {
             XCTAssertEqual(
                 configuration.preferences.value(forKey: "allowsPictureInPictureMediaPlayback") as? Bool,
@@ -22,5 +34,4 @@ final class BrowserConfigurationMediaSessionTests: XCTestCase {
             )
         }
     }
-
 }

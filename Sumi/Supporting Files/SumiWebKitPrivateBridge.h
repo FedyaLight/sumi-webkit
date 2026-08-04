@@ -73,6 +73,14 @@ static inline void SumiSetAllowsPictureInPictureMediaPlayback(WKPreferences *pre
     SumiSetWKPreferenceBool(preferences, @"allowsPictureInPictureMediaPlayback", enabled);
 }
 
+static inline BOOL SumiSetVideoFullscreenRequiresElementFullscreen(WKPreferences *preferences, BOOL enabled)
+{
+    SEL setter = NSSelectorFromString(@"_setVideoFullscreenRequiresElementFullscreen:");
+    if (![preferences respondsToSelector:setter])
+        return NO;
+    return SumiSetWKPreferenceBool(preferences, @"videoFullscreenRequiresElementFullscreen", enabled);
+}
+
 @interface WKWebView (SumiWKNowPlayingPrivate)
 @property (nonatomic, readonly, getter=_isPlayingAudio) BOOL _playingAudio;
 @property (nonatomic, readonly) BOOL _canTogglePictureInPicture;

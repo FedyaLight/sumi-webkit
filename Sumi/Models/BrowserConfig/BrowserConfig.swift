@@ -95,8 +95,9 @@ class BrowserConfiguration {
         // Media settings
         config.mediaTypesRequiringUserActionForPlayback = []
 
-        // DDG parity: WebKit owns normal media, fullscreen, and system MediaSession behavior.
+        // Keep DDG's WebKit-owned media path and Safari's element-fullscreen policy.
         config.preferences.isElementFullscreenEnabled = true
+        SumiSetVideoFullscreenRequiresElementFullscreen(config.preferences, true)
         if !NSApp.sumiIsSandboxed {
             SumiSetAllowsPictureInPictureMediaPlayback(config.preferences, true)
         }

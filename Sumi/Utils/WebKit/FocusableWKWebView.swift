@@ -384,12 +384,6 @@ final class FocusableWKWebView: WKWebView {
         webPageMenuPresenter.menuDidClose(menu)
     }
 
-    override var isInFullScreenMode: Bool {
-        // WebKit element fullscreen is owned by WKWebView.fullscreenState, not by
-        // AppKit's NSView fullscreen mode flag.
-        sumiIsInFullscreenElementPresentation
-    }
-
     override func mouseUp(with event: NSEvent) {
         super.mouseUp(with: event)
         let gestureReceipt = primaryMouseDownReceipt
