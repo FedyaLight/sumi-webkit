@@ -188,13 +188,15 @@ struct SpaceSidebarSceneBuilder {
             isPinnedCollapsed && stickyIDs.isEmpty
             ? 6
             : SidebarInsertionGuide.visualCenterY
-        elements.append(
-            .init(
-                id: .pinnedTop,
-                payload: .pinnedTop,
-                targetExtent: topPadding
+        if topPadding > 0 {
+            elements.append(
+                .init(
+                    id: .pinnedTop,
+                    payload: .pinnedTop,
+                    targetExtent: topPadding
+                )
             )
-        )
+        }
 
         if isPinnedCollapsed {
             appendCollapsedSpaceItems(

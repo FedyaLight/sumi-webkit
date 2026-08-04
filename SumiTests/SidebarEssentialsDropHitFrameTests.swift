@@ -39,11 +39,16 @@ final class SidebarEssentialsDropHitFrameTests: XCTestCase {
         )
     }
 
-    /// A collapsed empty zone is a 6pt strip — too thin to aim a drag at — so its
-    /// hit region still widens to at least one tile.
+    /// A collapsed empty zone has no visual height, so its hit region still
+    /// widens to at least one tile for drag-and-drop.
     func testCollapsedEmptyZoneWidensItsHitFrameToOneTile() {
         let metrics = makeMetrics(
-            frame: CGRect(x: 0, y: 100, width: 240, height: 6),
+            frame: CGRect(
+                x: 0,
+                y: 100,
+                width: 240,
+                height: PinnedTileMetrics.collapsedEssentialsRevealHeight
+            ),
             dropFrame: CGRect(
                 x: 0,
                 y: 100,

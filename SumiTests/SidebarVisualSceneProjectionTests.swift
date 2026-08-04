@@ -68,6 +68,64 @@ final class SidebarVisualSceneProjectionTests: XCTestCase {
         XCTAssertFalse(ids.contains(.regularTab(tabs[1].id)))
     }
 
+    func testPinnedSceneDoesNotStartWithZeroExtentMarker() throws {
+        let fixture = try PublicationFixture(pinCount: 2)
+        let spaceID = try XCTUnwrap(fixture.window.currentSpaceId)
+        let space = try XCTUnwrap(
+            fixture.browser.sidebarSpaceLifecycle.space(id: spaceID)
+        )
+        let inventory = makeInventory(
+            browser: fixture.browser,
+            spaceID: spaceID
+        )
+        let selection = makeSelection(browser: fixture.browser)
+        let dragFrame = SidebarListDragPresentationFrame()
+        let output = SpaceSidebarSceneBuilder(
+            space: space,
+            inventory: inventory,
+            launcherRuntime: selection.launcherRuntimeSnapshot(
+                pinIDs: Set(inventory.pinsByID.keys),
+                in: fixture.window
+            ),
+            selection: selection,
+            tabs: inventory.regularTabs,
+            inventoryTraversal: SpaceSidebarInventoryTraversal(
+                inventory: inventory,
+                includesVisibleFolders: true,
+                isLiveFolder: { _ in false }
+            ),
+            windowState: fixture.window,
+            hasPersistedTabs: false,
+            showsNewTab: false,
+            newTabAtTop: false,
+            selectionSnapshot: SidebarWindowSelectionSnapshot(
+                windowState: fixture.window
+            ),
+            liveSnapshots: [:],
+            dragSnapshots: SpaceSidebarDragSnapshots(
+                pinned: SpacePinnedDragSnapshot(
+                    frame: dragFrame,
+                    geometryGeneration: 0,
+                    spaceID: spaceID
+                ),
+                regular: SpaceRegularDragSnapshot(
+                    frame: dragFrame,
+                    geometryGeneration: 0
+                )
+            ),
+            isInteractive: true,
+            hasPinnedContent: true,
+            isPinnedCollapsed: false,
+            pinnedStickyItemIDs: []
+        ).build()
+
+        XCTAssertFalse(
+            output.scene.structure.layouts.contains {
+                $0.id == .pinnedTop
+            }
+        )
+    }
+
     func testSelectedRegularTabProjectsToItsOwnVisualRow() {
         let tab = makeTab()
         let browser = BrowserManager()

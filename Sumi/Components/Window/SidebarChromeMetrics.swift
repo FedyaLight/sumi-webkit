@@ -6,7 +6,20 @@ enum SidebarChromeMetrics {
     static let topControlInset: CGFloat = 0
     static let controlStripHeight: CGFloat = 40
     static let controlToURLBarSpacing: CGFloat = 4
+    static let urlBarToSpaceTitleSpacing: CGFloat = 4
+    static let essentialsToSpaceTitleSpacing: CGFloat = 8
     static let controlSpacing: CGFloat = 0
     static let navigationButtonSize: CGFloat = 30
     static let navigationIconSize: CGFloat = 14
+
+    static func essentialsTopPadding(
+        showsEssentialsSurface: Bool,
+        showsExtensionGrid: Bool
+    ) -> CGFloat {
+        guard showsEssentialsSurface, !showsExtensionGrid else { return 0 }
+        return max(
+            essentialsToSpaceTitleSpacing - urlBarToSpaceTitleSpacing,
+            0
+        )
+    }
 }

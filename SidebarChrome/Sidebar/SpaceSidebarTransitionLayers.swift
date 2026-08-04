@@ -97,13 +97,24 @@ extension SpacesSideBarView {
         width: CGFloat,
         travelProgress: Double
     ) -> some View {
-        VStack(spacing: 8) {
-            if let extensionActions = snapshot.source.extensionActions {
+        let showsExtensionGrid = snapshot.source.extensionActions?.slots.isEmpty == false
+        let showsEssentialsSurface = snapshot.stationaryEssentials.map {
+            !$0.items.isEmpty || $0.showsPlaceholder
+        } == true
+        let essentialsTopPadding = SidebarChromeMetrics.essentialsTopPadding(
+            showsEssentialsSurface: showsEssentialsSurface,
+            showsExtensionGrid: showsExtensionGrid
+        )
+
+        VStack(spacing: 0) {
+            if let extensionActions = snapshot.source.extensionActions,
+               !extensionActions.slots.isEmpty {
                 ExtensionActionSnapshotGrid(
                     snapshot: extensionActions,
                     tokens: themeContext.tokens(settings: sumiSettings)
                 )
                 .padding(.horizontal, 8)
+                .padding(.bottom, 8)
                 .allowsHitTesting(false)
             }
 
@@ -114,6 +125,13 @@ extension SpacesSideBarView {
                     tokens: themeContext.tokens(settings: sumiSettings)
                 )
                 .padding(.horizontal, 8)
+                .padding(.top, essentialsTopPadding)
+                .padding(
+                    .bottom,
+                    essentials.items.isEmpty && !essentials.showsPlaceholder
+                        ? 0
+                        : SidebarChromeMetrics.essentialsToSpaceTitleSpacing
+                )
                 .allowsHitTesting(false)
             }
 

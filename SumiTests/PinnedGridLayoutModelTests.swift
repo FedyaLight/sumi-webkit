@@ -63,11 +63,11 @@ final class PinnedGridLayoutModelTests: XCTestCase {
 
     // MARK: - Empty essentials
 
-    func testEmptyItemsWithoutHintOrHoverCollapsesToMinimalRevealHeight() {
+    func testEmptyItemsWithoutHintOrHoverHaveNoVisualRevealHeight() {
         let model = makeModel(items: [], showsHint: false)
 
         XCTAssertEqual(model.emptyPresentation, .collapsed)
-        XCTAssertEqual(model.revealHeight, PinnedTileMetrics.collapsedEssentialsRevealHeight)
+        XCTAssertEqual(model.revealHeight, 0)
         XCTAssertEqual(model.maxDropRowCount, 1)
         XCTAssertEqual(
             model.dropFrame,
@@ -75,7 +75,7 @@ final class PinnedGridLayoutModelTests: XCTestCase {
                 x: 0,
                 y: 0,
                 width: 300,
-                height: PinnedTileMetrics.collapsedEssentialsRevealHeight
+                height: 0
             )
         )
     }

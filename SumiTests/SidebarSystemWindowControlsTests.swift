@@ -130,6 +130,22 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         XCTAssertEqual(SidebarChromeMetrics.contentHorizontalPadding, 8)
         XCTAssertEqual(SidebarChromeMetrics.controlStripHeight, 40)
         XCTAssertEqual(SidebarChromeMetrics.controlToURLBarSpacing, 4)
+        XCTAssertEqual(SidebarChromeMetrics.urlBarToSpaceTitleSpacing, 4)
+        XCTAssertEqual(SidebarChromeMetrics.essentialsToSpaceTitleSpacing, 8)
+        XCTAssertEqual(
+            SidebarChromeMetrics.essentialsTopPadding(
+                showsEssentialsSurface: true,
+                showsExtensionGrid: false
+            ),
+            4
+        )
+        XCTAssertEqual(
+            SidebarChromeMetrics.essentialsTopPadding(
+                showsEssentialsSurface: true,
+                showsExtensionGrid: true
+            ),
+            0
+        )
         XCTAssertEqual(SidebarChromeMetrics.controlSpacing, 0)
         XCTAssertEqual(SidebarChromeMetrics.navigationButtonSize, 30)
         XCTAssertEqual(SidebarChromeMetrics.navigationIconSize, 14)

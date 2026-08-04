@@ -308,7 +308,28 @@ extension SpacesSideBarView {
                 profileId: pageProfileId,
                 allowsInteractiveWork: allowsInteractiveWork
             ) { extensionGrid in
-                VStack(spacing: 8) {
+                let showsExtensionGrid = includesPinnedGrid
+                    && !windowState.isIncognito
+                    && SpaceSidebarChromeBindings.shouldShowSidebarExtensionGrid(
+                        slotCount: extensionGrid.slotIDs.count
+                    )
+                let hasVisibleEssentials = includesPinnedGrid
+                    && !windowState.isIncognito
+                    && !SidebarEssentialVisualProjection.make(
+                        pins: pageInventory.essentialPins,
+                        splitGroups: Array(pageInventory.space.splitGroupsByID.values),
+                        profileID: pageProfileId
+                    ).isEmpty
+                let showsEssentialsSurface = hasVisibleEssentials
+                    || pageProfileId.map {
+                        sumiSettings.showsEssentialsPlaceholder(profileId: $0)
+                    } == true
+                let essentialsTopPadding = SidebarChromeMetrics.essentialsTopPadding(
+                    showsEssentialsSurface: showsEssentialsSurface,
+                    showsExtensionGrid: showsExtensionGrid
+                )
+
+                VStack(spacing: 0) {
                     if includesPinnedGrid && !windowState.isIncognito {
                         SpaceSidebarExtensionGridContent(
                             enabledExtensions: extensionGrid.enabledExtensions,
@@ -317,6 +338,7 @@ extension SpacesSideBarView {
                             browserContext: browserContext,
                             allowsInteractiveWork: allowsInteractiveWork
                         )
+                        .padding(.bottom, showsExtensionGrid ? 8 : 0)
 
                         makePinnedGrid(
                             spaceId: space.id,
@@ -326,6 +348,13 @@ extension SpacesSideBarView {
                             launcherRuntime: launcherRuntime,
                             isTransitioningProfile: isTransitioningProfile,
                             pageRenderMode: pageRenderMode
+                        )
+                        .padding(.top, essentialsTopPadding)
+                        .padding(
+                            .bottom,
+                            showsEssentialsSurface
+                                ? SidebarChromeMetrics.essentialsToSpaceTitleSpacing
+                                : 0
                         )
                     }
 

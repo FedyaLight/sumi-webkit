@@ -19,13 +19,27 @@ struct SpaceTransitionSnapshotPageView: View {
     }
 
     var body: some View {
-        VStack(spacing: 8) {
-            if includesTopSidebarContent, let extensionActions = snapshot.extensionActions {
+        let showsExtensionGrid = includesTopSidebarContent
+            && snapshot.extensionActions?.slots.isEmpty == false
+        let showsEssentialsSurface = includesTopSidebarContent
+            && snapshot.essentials.map {
+                !$0.items.isEmpty || $0.showsPlaceholder
+            } == true
+        let essentialsTopPadding = SidebarChromeMetrics.essentialsTopPadding(
+            showsEssentialsSurface: showsEssentialsSurface,
+            showsExtensionGrid: showsExtensionGrid
+        )
+
+        VStack(spacing: 0) {
+            if includesTopSidebarContent,
+               let extensionActions = snapshot.extensionActions,
+               !extensionActions.slots.isEmpty {
                 ExtensionActionSnapshotGrid(
                     snapshot: extensionActions,
                     tokens: tokens
                 )
                 .padding(.horizontal, 8)
+                .padding(.bottom, 8)
             }
 
             if includesTopSidebarContent, let essentials = snapshot.essentials {
@@ -35,6 +49,13 @@ struct SpaceTransitionSnapshotPageView: View {
                     tokens: tokens
                 )
                 .padding(.horizontal, 8)
+                .padding(.top, essentialsTopPadding)
+                .padding(
+                    .bottom,
+                    essentials.items.isEmpty && !essentials.showsPlaceholder
+                        ? 0
+                        : SidebarChromeMetrics.essentialsToSpaceTitleSpacing
+                )
             }
 
             VStack(spacing: SidebarRowLayout.rowGap) {
