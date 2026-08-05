@@ -7,6 +7,57 @@ import XCTest
 
 @MainActor
 final class BrowserWindowLifecycleWorkflowTests: XCTestCase {
+    func testWindowCloseDismissesGlanceOwnedByClosingWindow() async throws {
+        let browserManager = BrowserManager()
+        let space = browserManager.spaceStateOwner.currentSpace
+            ?? installTestSpace(in: browserManager.spaceStateOwner, name: "Glance Window Close")
+        let sourceTab = browserManager.regularTabLifecycleOwner.createNewTab(
+            url: "https://source.example/page",
+            in: space,
+            activate: false
+        )
+        let windowState = BrowserWindowState()
+        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
+        windowState.currentSpaceId = space.id
+        windowState.currentTabId = sourceTab.id
+        browserManager.windowRegistry.register(windowState)
+        browserManager.windowRegistry.setActive(windowState)
+
+        let url = try XCTUnwrap(URL(string: "https://destination.example/page"))
+        XCTAssertTrue(
+            browserManager.glanceManager.presentExternalURL(
+                url,
+                from: sourceTab,
+                in: windowState
+            )
+        )
+        let session = try XCTUnwrap(browserManager.glanceManager.currentSession)
+        let previewTab = session.previewTab
+        for _ in 0..<20 {
+            if previewTab.resolvedCurrentWebView() != nil { break }
+            await Task.yield()
+        }
+        XCTAssertNotNil(previewTab.resolvedCurrentWebView())
+
+        let windowSession = browserManager.windowSessionBundle
+        let workflow = BrowserWindowCloseWorkflow(
+            browserRuntime: browserManager,
+            recorder: windowSession.history.recorder,
+            persistence: browserManager.windowSessionPersistenceCoordinator,
+            extensions: browserManager.optionalModules.extensions,
+            webViews: browserManager.testWebViewRuntime().lifecycleService,
+            emptySplitPlaceholders: browserManager.splitEmptyPlaceholders,
+            splitPreviews: browserManager.splitWindowContext.previews,
+            commands: browserManager.windowCommands
+        )
+
+        workflow.handleWindowClose(windowState)
+
+        XCTAssertNil(browserManager.glanceManager.currentSession)
+        XCTAssertEqual(browserManager.glanceManager.phase, .idle)
+        XCTAssertNil(previewTab.resolvedCurrentWebView())
+    }
+
     func testCloseWorkflowCleansEveryCanonicalWebViewResidenceAfterRuntimeRelease() throws {
         var browserManager: BrowserManager? = BrowserManager()
         let repository = try XCTUnwrap(browserManager?.webViewSessions)

@@ -260,6 +260,11 @@ final class GlanceManager: ObservableObject {
         )
     }
 
+    func dismissGlanceIfOwned(by windowState: BrowserWindowState) {
+        guard currentSession?.windowId == windowState.id else { return }
+        dismissGlance(persistsWindowSession: false)
+    }
+
     @discardableResult
     func handleWebViewDidClose(_ webView: WKWebView) -> Bool {
         guard let session = currentSession,

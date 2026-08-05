@@ -165,6 +165,7 @@ final class GlanceOverlayController: NSObject {
     }
 
     func tearDown() {
+        dismissSessionIfStillOwned()
         presentationState.prepareForTearDown()
         promotionHandoff.reset()
         keyCommands.uninstall()
@@ -172,6 +173,16 @@ final class GlanceOverlayController: NSObject {
         rootView?.onLayout = nil
         rootView?.onBackgroundMouseDown = nil
         rootView?.onActionChromeMouseDown = nil
+    }
+
+    private func dismissSessionIfStillOwned() {
+        guard let manager,
+              let session,
+              manager.currentSession?.id == session.id,
+              manager.phase != .promoting
+        else { return }
+
+        manager.dismissGlance(persistsWindowSession: false)
     }
 
     private func rootViewDidLayout() {

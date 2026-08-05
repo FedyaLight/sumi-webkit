@@ -1,9 +1,8 @@
 import Foundation
 
-/// Performs the ordered cleanup for one WindowRegistry removal. It resolves no
-/// capabilities through BrowserManager; the weak root reference is only a
-/// lifetime gate for collaborators whose internals intentionally weak-hop to
-/// the live browser session.
+/// Performs the ordered cleanup for one WindowRegistry removal. The weak
+/// BrowserManager reference finalizes Glance for the closing window and gates
+/// collaborators whose internals intentionally weak-hop to the live session.
 @MainActor
 final class BrowserWindowCloseWorkflow {
     private weak var browserRuntime: BrowserManager?
@@ -61,6 +60,7 @@ final class BrowserWindowCloseWorkflow {
         }
         persistence.persistBeforeClosing(windowState)
         extensions.notifyWindowClosedIfLoaded(windowState)
+        browserRuntime.glanceManager.dismissGlanceIfOwned(by: windowState)
         webViews.cleanupWindow(windowState.id)
         emptySplitPlaceholders.removeWindow(windowState.id)
         splitPreviews.removeWindow(windowState.id)

@@ -260,6 +260,52 @@ final class GlanceManagerTests: XCTestCase {
         XCTAssertNil(previewTab.resolvedPrimaryWindowId())
     }
 
+    func testOverlayTearDownDismissesStillOwnedSession() throws {
+        let manager = GlanceManager()
+        manager.attach(runtime: makeRuntime())
+        let sourceTab = Tab(
+            url: try XCTUnwrap(URL(string: "https://source.example/page")),
+            name: "Source"
+        )
+        let windowState = BrowserWindowState()
+        let url = try XCTUnwrap(URL(string: "https://destination.example/page"))
+
+        XCTAssertTrue(
+            manager.presentExternalURL(
+                url,
+                from: sourceTab,
+                in: windowState
+            )
+        )
+        let session = try XCTUnwrap(manager.currentSession)
+        let rootView = GlanceOverlayRootView(frame: .zero)
+        let controller = GlanceOverlayController(rootView: rootView)
+        controller.update(
+            manager: manager,
+            session: session,
+            phase: manager.phase,
+            configuration: GlanceOverlayConfiguration(
+                isVisible: false,
+                isSidebarVisible: false,
+                sidebarWidth: 0,
+                sidebarPosition: .left,
+                cornerRadius: 14,
+                browserContentSurfaceStyle: BrowserContentSurfaceStyle(
+                    geometry: BrowserChromeGeometry(),
+                    backgroundColor: .windowBackgroundColor
+                ),
+                accentColor: .controlAccentColor,
+                surfaceColor: .windowBackgroundColor,
+                reduceMotion: false
+            )
+        )
+
+        controller.tearDown()
+
+        XCTAssertNil(manager.currentSession)
+        XCTAssertEqual(manager.phase, .idle)
+    }
+
     func testWebKitCloseForTrackedRegularWebViewClosesOwningTab() {
         let browserManager = makeBrowserManager()
         let sourceTab = makeSourceTab(in: browserManager)
