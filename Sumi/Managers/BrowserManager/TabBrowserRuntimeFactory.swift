@@ -21,6 +21,27 @@ enum TabBrowserRuntimeFactory {
             profiles: browserManager.profileManager,
             registry: { [weak browserManager] in
                 browserManager?.windowRegistry
+            },
+            glanceSource: { [weak browserManager] webView in
+                guard let browserManager,
+                      let session = browserManager.glanceManager.currentSession,
+                      let window = browserManager.windowRegistry.windows[session.windowId],
+                      browserManager.glanceManager.activeSession(for: window)?.id
+                        == session.id,
+                      browserManager.glanceManager.runtime?.ownsPreviewWebView(
+                          session.previewTab,
+                          webView
+                      ) == true,
+                      let presentationTab = session.sourceTab
+                        ?? browserManager.shellRuntime.windowTabs.currentTab(for: window)
+                else {
+                    return nil
+                }
+                return PhysicalGlanceWebViewSource(
+                    previewTab: session.previewTab,
+                    presentationTab: presentationTab,
+                    window: window
+                )
             }
         )
         let physicalTabOpening = PhysicalSourceTabOpeningService(
@@ -230,8 +251,11 @@ enum TabBrowserRuntimeFactory {
                     in: source.window
                 )
             },
-            activateSource: { [weak browserManager] source in
+            activateSource: { [sourceResolver, weak browserManager] source in
                 guard let browserManager else { return false }
+                if source.residence == .glancePreview {
+                    return sourceResolver.isCurrent(source)
+                }
                 browserManager.selectTab(
                     source.tab,
                     in: source.window,
@@ -240,7 +264,8 @@ enum TabBrowserRuntimeFactory {
                 return source.window.currentTabId == source.tab.id
             },
             presentGlance: { [weak browserManager] url, source, originRect in
-                browserManager?.glanceManager.presentExternalURL(
+                guard source.residence != .glancePreview else { return false }
+                return browserManager?.glanceManager.presentExternalURL(
                     url,
                     from: source.tab,
                     in: source.window,

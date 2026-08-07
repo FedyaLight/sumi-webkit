@@ -7,7 +7,15 @@ import WebKit
 enum PhysicalWebViewSourceResidence: Equatable {
     case regularSpaceMember
     case windowShortcut(ShortcutPinRole)
+    case glancePreview
     case privateEphemeral
+}
+
+@MainActor
+struct PhysicalGlanceWebViewSource {
+    let previewTab: Tab
+    let presentationTab: Tab
+    let window: BrowserWindowState
 }
 
 /// A synchronous proof that one physical WebView belongs to one exact browser
@@ -17,7 +25,7 @@ enum PhysicalWebViewSourceResidence: Equatable {
 @MainActor
 struct PhysicalWebViewSourceReceipt {
     let webView: FocusableWKWebView
-    let trackedWebView: TrackedWebViewOwner
+    let trackedWebView: TrackedWebViewOwner?
     let tab: Tab
     let window: BrowserWindowState
     let residence: PhysicalWebViewSourceResidence
@@ -55,6 +63,9 @@ final class PhysicalWebViewSourceResolver {
     private let shortcutResolution: ShortcutPinRuntimeResolutionOwner
     private let profiles: ProfileManager
     private let registry: @MainActor () -> WindowRegistry?
+    private let glanceSource: @MainActor (
+        FocusableWKWebView
+    ) -> PhysicalGlanceWebViewSource?
 
     init(
         ownership: WebViewOwnershipQuery,
@@ -62,7 +73,10 @@ final class PhysicalWebViewSourceResolver {
         pins: ShortcutPinCollectionStateOwner,
         shortcutResolution: ShortcutPinRuntimeResolutionOwner,
         profiles: ProfileManager,
-        registry: @escaping @MainActor () -> WindowRegistry?
+        registry: @escaping @MainActor () -> WindowRegistry?,
+        glanceSource: @escaping @MainActor (
+            FocusableWKWebView
+        ) -> PhysicalGlanceWebViewSource? = { _ in nil }
     ) {
         self.ownership = ownership
         self.sourceContexts = sourceContexts
@@ -70,14 +84,22 @@ final class PhysicalWebViewSourceResolver {
         self.shortcutResolution = shortcutResolution
         self.profiles = profiles
         self.registry = registry
+        self.glanceSource = glanceSource
     }
 
     func resolve(
         _ webView: FocusableWKWebView
     ) -> PhysicalWebViewSourceReceipt? {
         guard let registry = registry(),
-              let tab = webView.owningTab,
-              let tracked = ownership.trackedOwner(containing: webView),
+              let tab = webView.owningTab
+        else {
+            return nil
+        }
+
+        guard let tracked = ownership.trackedOwner(containing: webView) else {
+            return resolveGlance(webView, tab: tab, registry: registry)
+        }
+        guard
               tracked.tabID == tab.id,
               ownership.webView(
                   for: tracked.tabID,
@@ -106,6 +128,41 @@ final class PhysicalWebViewSourceResolver {
             window: window,
             registry: registry,
             profiles: profiles
+        )
+    }
+
+    private func resolveGlance(
+        _ webView: FocusableWKWebView,
+        tab: Tab,
+        registry: WindowRegistry
+    ) -> PhysicalWebViewSourceReceipt? {
+        guard let source = glanceSource(webView),
+              source.previewTab === tab,
+              registry.windows[source.window.id] === source.window,
+              let presentation = sourceContexts.resolve(
+                  tab: source.presentationTab,
+                  window: source.window
+              ),
+              let presentationProfile = profiles.profiles.first(where: {
+                  $0.id == presentation.context.profileID
+              }),
+              let executionProfile = tab.resolveProfile(),
+              webView.configuration.websiteDataStore === executionProfile.dataStore
+        else {
+            return nil
+        }
+
+        return PhysicalWebViewSourceReceipt(
+            webView: webView,
+            trackedWebView: nil,
+            tab: tab,
+            window: source.window,
+            residence: .glancePreview,
+            presentationSpace: presentation.space,
+            presentationProfile: presentationProfile,
+            executionProfile: executionProfile,
+            dataStore: executionProfile.dataStore,
+            appKitWindow: registry.appKitWindow(for: source.window)
         )
     }
 

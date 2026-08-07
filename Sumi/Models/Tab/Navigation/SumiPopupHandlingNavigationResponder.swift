@@ -1,8 +1,8 @@
 import AppKit
 import Foundation
 import SumiDomain
-import WebKit
 import SumiWebRuntime
+import WebKit
 
 @MainActor
 final class SumiGlanceNavigationResponder: SumiNavigationActionSourceWebViewResponding {
@@ -23,6 +23,11 @@ final class SumiGlanceNavigationResponder: SumiNavigationActionSourceWebViewResp
         let modifierFlags = sourceWebView.gestures.resolvedModifierFlags(
             actionFlags: flags
         )
+        guard sourceTab.navigationRuntime.permissionRuntime
+            .isActiveGlancePreviewSurface(sourceTab.id, sourceWebView) == false
+        else {
+            return .next
+        }
         guard sourceTab.isGlanceTriggerActive(modifierFlags) else { return .next }
 
         let signpostState = PerformanceTrace.beginInterval("NavigationPolicy.glanceResponder")
@@ -44,8 +49,7 @@ final class SumiGlanceNavigationResponder: SumiNavigationActionSourceWebViewResp
 
 @MainActor
 final class SumiPopupHandlingNavigationResponder:
-    SumiNavigationActionSourceAndTargetWebViewResponding
-{
+    SumiNavigationActionSourceAndTargetWebViewResponding {
     private weak var tab: Tab?
     private let permissions: (any PopupPermissionEvaluating)?
     private let childWebViewTransaction: WebKitChildWebViewTransaction
@@ -156,9 +160,12 @@ final class SumiPopupHandlingNavigationResponder:
         let modifierFlags = sourceWebView.gestures.resolvedModifierFlags(
             actionFlags: navigationAction.modifierFlags
         )
+        let isActiveGlancePreview = sourceTab.navigationRuntime.permissionRuntime
+            .isActiveGlancePreviewSurface(sourceTab.id, sourceWebView)
         if LinkGlanceRouting.routeExplicit(
             url,
-            isRequested: sourceTab.isGlanceTriggerActive(modifierFlags),
+            isRequested: !isActiveGlancePreview
+                && sourceTab.isGlanceTriggerActive(modifierFlags),
             tab: sourceTab,
             sourceWebView: sourceWebView
         ) {
@@ -273,7 +280,6 @@ final class SumiPopupHandlingNavigationResponder:
             return .cancel
         }
     }
-
 }
 
 private extension SumiNavigationAction {

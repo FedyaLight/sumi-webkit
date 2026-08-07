@@ -630,6 +630,81 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         XCTAssertNil(childTab?.webViewConfigurationOverride)
     }
 
+    func testGlanceCleanPopupLinkNavigatesInsidePreview() async throws {
+        let harness = try await makePopupFocusHarness()
+        let glance = try await makeGlancePopupSource(from: harness)
+        let initialRegularTabCount = harness.browserManager.tabStateStore
+            .regularTabs.allTabsSnapshot().count
+        let targetURL = URL(string: "https://destination.example/inside-glance")!
+
+        let childWebView = popupResponder(for: glance.tab).createWebView(
+            from: glance.webView,
+            with: popupConfiguration(for: harness),
+            for: popupNavigationAction(
+                sourceURL: glance.webView.committedURL,
+                targetURL: targetURL,
+                webView: glance.webView
+            ),
+            windowFeatures: WKWindowFeatures()
+        )
+
+        XCTAssertNil(childWebView)
+        XCTAssertEqual(
+            harness.browserManager.tabStateStore.regularTabs
+                .allTabsSnapshot().count,
+            initialRegularTabCount
+        )
+        for _ in 0..<100 where glance.session.currentURL != targetURL {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(glance.session.currentURL, targetURL)
+        XCTAssertIdentical(
+            harness.browserManager.glanceManager.currentSession,
+            glance.session
+        )
+    }
+
+    func testGlanceCommandPopupLinkStillOpensBackgroundTab() async throws {
+        let harness = try await makePopupFocusHarness()
+        let glance = try await makeGlancePopupSource(from: harness)
+        glance.webView.gestures.record(
+            makeMouseEvent(type: .leftMouseDown, modifierFlags: [.command]),
+            kind: .primaryMouseDown
+        )
+        let initialRegularTabCount = harness.browserManager.tabStateStore
+            .regularTabs.allTabsSnapshot().count
+        let targetURL = URL(string: "https://destination.example/new-tab")!
+        XCTAssertTrue(
+            glance.tab.linkPresentationCommands.activateSource(
+                of: glance.webView
+            )
+        )
+
+        let childWebView = popupResponder(for: glance.tab).createWebView(
+            from: glance.webView,
+            with: popupConfiguration(for: harness),
+            for: popupNavigationAction(
+                sourceURL: glance.webView.committedURL,
+                targetURL: targetURL,
+                webView: glance.webView,
+                modifierFlags: [.command]
+            ),
+            windowFeatures: WKWindowFeatures()
+        )
+
+        XCTAssertNil(childWebView)
+        XCTAssertEqual(
+            harness.browserManager.tabStateStore.regularTabs
+                .allTabsSnapshot().count,
+            initialRegularTabCount + 1
+        )
+        XCTAssertEqual(harness.windowState.currentTabId, harness.sourceTab.id)
+        XCTAssertIdentical(
+            harness.browserManager.glanceManager.currentSession,
+            glance.session
+        )
+    }
+
     func testPopupCreateWebViewSpacePinnedExternalCleanClickRoutesToGlance() async throws {
         let harness = try await makePopupFocusHarness()
         harness.sourceTab.shortcutPinRole = .spacePinned
@@ -1215,6 +1290,51 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = harness.sourceProfile.dataStore
         return configuration
+    }
+
+    private func makeGlancePopupSource(
+        from harness: PopupFocusHarness
+    ) async throws -> (
+        session: GlanceSession,
+        tab: Tab,
+        webView: FocusableWKWebView
+    ) {
+        let didPresent = harness.browserManager.glanceManager.presentExternalURL(
+            URL(string: "about:blank")!,
+            from: harness.sourceTab,
+            in: harness.windowState
+        )
+        XCTAssertTrue(didPresent)
+        let session = try XCTUnwrap(
+            harness.browserManager.glanceManager.currentSession
+        )
+
+        for _ in 0..<300 {
+            if let webView = session.previewTab.resolvedCurrentWebView()
+                as? FocusableWKWebView,
+               session.previewTab.committedDocumentRuntime.lease(
+                   for: webView
+               ) != nil {
+                let documentURL = URL(string: "https://glance.example/page")!
+                webView.loadHTMLString(
+                    "<html><body>glance source</body></html>",
+                    baseURL: documentURL
+                )
+                for _ in 0..<300 {
+                    if session.previewTab.committedDocumentRuntime.lease(
+                        for: webView
+                    )?.committedURL == documentURL {
+                        return (session, session.previewTab, webView)
+                    }
+                    try await Task.sleep(for: .milliseconds(10))
+                }
+                break
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        XCTFail("Glance preview did not publish a committed WebView")
+        throw CocoaError(.coderReadCorrupt)
     }
 
     private func loadPopupDocument(
