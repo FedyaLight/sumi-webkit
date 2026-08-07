@@ -183,14 +183,6 @@ struct SpaceSnapshotFolderView: View {
                 .padding(.leading, SpaceSidebarSnapshotFolderLayout.contentLeadingPadding)
                 .padding(.vertical, SpaceSidebarSnapshotFolderLayout.contentVerticalPadding)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(alignment: .leading) {
-                    Rectangle()
-                        .fill(tokens.separator.opacity(0.55))
-                        .frame(width: 1)
-                        .padding(.vertical, 6)
-                        .offset(x: 6)
-                        .accessibilityHidden(true)
-                }
             }
         }
     }
