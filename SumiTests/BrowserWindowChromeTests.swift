@@ -269,28 +269,16 @@ final class BrowserWindowChromeTests: XCTestCase {
         XCTAssertTrue(window.toolbar?.isVisible == true, file: file, line: line)
     }
 
-    func testFullScreenChromeReturnsTheTitlebarAreaToAppKit() {
+    func testBrowserChromeKeepsContentBehindNativeFullscreenTitlebar() {
         let window = WindowChromeTestSupport.makeBrowserWindow()
         WindowChromeTestSupport.retain(window)
 
-        window.applyBrowserChromeConfiguration(displayMode: .fullScreen)
+        window.styleMask.remove(.fullSizeContentView)
+        window.titlebarAppearsTransparent = false
+        window.titlebarSeparatorStyle = .automatic
+
+        window.applyBrowserChromeConfiguration()
         window.contentView?.layoutSubtreeIfNeeded()
-
-        XCTAssertFalse(window.styleMask.contains(.fullSizeContentView))
-        XCTAssertFalse(window.titlebarAppearsTransparent)
-        XCTAssertEqual(window.titlebarSeparatorStyle, .automatic)
-        assertBrowserToolbarConfiguration(window)
-        guard let contentView = window.contentView else {
-            XCTFail("A browser window must keep its AppKit content view in fullscreen.")
-            return
-        }
-        XCTAssertEqual(
-            contentView.frame.height,
-            window.contentLayoutRect.height,
-            accuracy: 0.5
-        )
-
-        window.applyBrowserChromeConfiguration(displayMode: .normal)
 
         XCTAssertTrue(window.styleMask.contains(.fullSizeContentView))
         XCTAssertTrue(window.titlebarAppearsTransparent)
@@ -343,6 +331,29 @@ final class BrowserWindowChromeTests: XCTestCase {
         assertNativeBrowserControlsHidden(window)
     }
 
+    func testBrowserWindowBridgeRequestsNativeFullscreenToolbarAutoHide() {
+        let window = WindowChromeTestSupport.makePlainWindow()
+        let coordinator = BrowserWindowBridge.Coordinator(
+            windowState: BrowserWindowState(),
+            windowRegistry: WindowRegistry()
+        )
+
+        coordinator.attach(to: window)
+        WindowChromeTestSupport.retain(window)
+
+        XCTAssertIdentical(window.delegate, coordinator)
+        let proposedOptions: NSApplication.PresentationOptions = [
+            .fullScreen,
+            .autoHideMenuBar,
+        ]
+        let resolvedOptions = window.delegate?.window?(
+            window,
+            willUseFullScreenPresentationOptions: proposedOptions
+        )
+
+        XCTAssertTrue(resolvedOptions?.contains(.autoHideToolbar) == true)
+    }
+
     func testBrowserWindowBridgeCoordinatorDetachClearsWindowState() {
         let window = WindowChromeTestSupport.makePlainWindow()
         let windowState = BrowserWindowState()
@@ -359,6 +370,7 @@ final class BrowserWindowChromeTests: XCTestCase {
         coordinator.detach()
 
         XCTAssertNil(windowRegistry.appKitWindow(for: windowState))
+        XCTAssertNil(window.delegate)
     }
 
     func testBrowserWindowBridgeCoordinatorUnregistersWindowOnWillCloseNotification() {

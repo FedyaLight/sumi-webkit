@@ -26,7 +26,7 @@ struct BrowserWindowBridge: NSViewRepresentable {
     }
 
     @MainActor
-    final class Coordinator: NSObject {
+    final class Coordinator: NSObject, NSWindowDelegate {
         let windowState: BrowserWindowState
         let windowRegistry: WindowRegistry
 
@@ -46,6 +46,8 @@ struct BrowserWindowBridge: NSViewRepresentable {
             windowRegistry.bindAppKitWindow(window, to: windowState)
 
             guard let window else { return }
+
+            window.delegate = self
 
             if !(window is SumiBrowserWindow) {
                 promoteToSumiBrowserWindowIfNeeded(window)
@@ -156,13 +158,26 @@ struct BrowserWindowBridge: NSViewRepresentable {
 
         func detach() {
             removeObservers()
+            if window?.delegate === self {
+                window?.delegate = nil
+            }
             windowRegistry.unbindAppKitWindow(window, from: windowState)
             window = nil
+        }
+
+        func window(
+            _ window: NSWindow,
+            willUseFullScreenPresentationOptions proposedOptions: NSApplication.PresentationOptions
+        ) -> NSApplication.PresentationOptions {
+            proposedOptions.union(.autoHideToolbar)
         }
 
         private func handleWindowWillClose() {
             windowRegistry.unregister(windowState.id)
             removeObservers()
+            if window?.delegate === self {
+                window?.delegate = nil
+            }
             windowRegistry.unbindAppKitWindow(window, from: windowState)
             window = nil
         }
@@ -199,7 +214,7 @@ struct BrowserWindowBridge: NSViewRepresentable {
             else { return }
             if mode == .fullScreen
                 || windowState.presentationState.nativeDisplayMode == .fullScreen {
-                window.applyBrowserChromeConfiguration(displayMode: mode)
+                window.applyBrowserChromeConfiguration()
             }
             windowState.presentationState.nativeDisplayMode = mode
         }
