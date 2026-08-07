@@ -94,8 +94,17 @@ final class SidebarColumnContainerView: SidebarColumnBaseContainerView {
 }
 
 final class CollapsedSidebarOverlayRootView: SidebarColumnBaseContainerView {
-    var isOverlayHitTestingEnabled = false
+    var isOverlayHitTestingEnabled = false {
+        didSet {
+            guard isOverlayHitTestingEnabled != oldValue else { return }
+            window?.invalidateCursorRects(for: self)
+        }
+    }
     private(set) var isCollapsedShadowVisible = false
+
+    var ownsArrowCursorRegion: Bool {
+        isOverlayHitTestingEnabled
+    }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -106,6 +115,12 @@ final class CollapsedSidebarOverlayRootView: SidebarColumnBaseContainerView {
     override func layout() {
         super.layout()
         CollapsedSidebarShadowChrome.updatePath(for: self)
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        guard ownsArrowCursorRegion else { return }
+        addCursorRect(bounds, cursor: .arrow)
     }
 
     func setCollapsedShadowVisible(_ isVisible: Bool, animationDuration: TimeInterval) {

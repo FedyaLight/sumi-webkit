@@ -11,6 +11,7 @@ struct SpacesListItem: View {
     @Environment(WindowRegistry.self) private var windowRegistry
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.sidebarPresentationContext) private var presentationContext
 
     let space: Space
     let browserContext: SidebarBrowserContext
@@ -83,7 +84,13 @@ struct SpacesListItem: View {
         .accessibilityAction {
             onSelect()
         }
-        .sidebarHover($isHovered)
+        .modifier(
+            SpacesListItemHoverModifier(
+                isHovered: $isHovered,
+                usesNativeHover: presentationContext.isCollapsedOverlay,
+                isEnabled: presentationContext.allowsInteractiveWork
+            )
+        )
         .onChange(of: displayIsHovering) { _, hovering in
             onHoverChange?(hovering)
         }
@@ -181,5 +188,30 @@ struct SpacesListItem: View {
             space,
             in: windowState
         )
+    }
+}
+
+/// The nested collapsed host needs SwiftUI's native tracking path; docked mode
+/// keeps the shared sidebar hover session and its scroll/drag suppression.
+private struct SpacesListItemHoverModifier: ViewModifier {
+    @Binding var isHovered: Bool
+    let usesNativeHover: Bool
+    let isEnabled: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if usesNativeHover {
+            content
+                .onHover { hovering in
+                    isHovered = isEnabled && hovering
+                }
+                .onChange(of: isEnabled) { _, enabled in
+                    if !enabled {
+                        isHovered = false
+                    }
+                }
+        } else {
+            content.sidebarHover($isHovered, isEnabled: isEnabled)
+        }
     }
 }
