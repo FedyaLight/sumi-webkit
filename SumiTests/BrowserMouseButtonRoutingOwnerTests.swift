@@ -82,7 +82,7 @@ final class BrowserMouseButtonRoutingOwnerTests: XCTestCase {
         XCTAssertTrue(router.forwardWindowIDs.isEmpty)
     }
 
-    func testSidebarDeferralDoesNotChangeMiddleMouseButtonRouting() {
+    func testMiddleMouseButtonDoesNotOpenCommandPalette() {
         let owner = BrowserMouseButtonRoutingOwner(
             sidebarMouseButtonCaptureRegistry: SidebarMouseButtonCaptureRegistry()
         )
@@ -92,15 +92,15 @@ final class BrowserMouseButtonRoutingOwnerTests: XCTestCase {
         registry.setActive(activeWindowState)
         let router = RecordingBrowserCommandRouter()
 
-        XCTAssertTrue(owner.handleMouseButton(
+        XCTAssertFalse(owner.handleMouseButton(
             2,
             eventWindow: nil,
             mouseButtonRouter: router,
             windowRegistry: registry,
-            deferSideButtonsToSidebar: true
+            deferSideButtonsToSidebar: false
         ))
 
-        XCTAssertEqual(router.focusedWindowIDs, [activeWindowState.id])
+        XCTAssertTrue(router.focusedWindowIDs.isEmpty)
         XCTAssertTrue(router.backWindowIDs.isEmpty)
         XCTAssertTrue(router.forwardWindowIDs.isEmpty)
     }

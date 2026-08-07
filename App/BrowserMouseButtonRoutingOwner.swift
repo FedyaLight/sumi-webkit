@@ -48,15 +48,7 @@ final class BrowserMouseButtonRoutingOwner {
 
         switch buttonNumber {
         case 2:
-            guard let windowState = targetWindow(eventWindow: eventWindow, windowRegistry: windowRegistry) else {
-                return false
-            }
-            mouseButtonRouter.focusCommandPalette(
-                in: windowState,
-                prefill: "",
-                navigateCurrentTab: false
-            )
-            return true
+            return false
         case 3:
             guard let windowState = targetWindow(eventWindow: eventWindow, windowRegistry: windowRegistry) else {
                 return false

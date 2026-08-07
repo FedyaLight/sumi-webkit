@@ -141,8 +141,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     /// Sets up global mouse button event monitoring for extra physical mouse buttons
     ///
-    /// Many mice have extra buttons beyond left/right click. This maps them to browser actions:
-    /// - **Button 2** (middle click/scroll wheel button): Open command palette
+    /// Many mice have extra buttons beyond left/right click. This maps side buttons to browser actions:
     /// - **Button 3** (typically a side button labeled "Back"): Navigate back in history
     /// - **Button 4** (typically a side button labeled "Forward"): Navigate forward in history
     ///
