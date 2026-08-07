@@ -9,13 +9,16 @@ final class SettingsWindowToolbarOwner: ObservableObject {
         var title: String
         var canGoBack: Bool
         var canGoForward: Bool
+        var showsSearchField: Bool
     }
 
     @Published private(set) var presentation = Presentation(
         title: "",
         canGoBack: false,
-        canGoForward: false
+        canGoForward: false,
+        showsSearchField: false
     )
+    @Published private(set) var searchText = ""
 
     private var backAction: (() -> Void)?
     private var forwardAction: (() -> Void)?
@@ -27,14 +30,19 @@ final class SettingsWindowToolbarOwner: ObservableObject {
     func show(
         title: String,
         backAction: (() -> Void)?,
-        forwardAction: (() -> Void)? = nil
+        forwardAction: (() -> Void)? = nil,
+        showsSearchField: Bool = false
     ) {
+        if !showsSearchField {
+            setSearchText("")
+        }
         self.backAction = backAction
         self.forwardAction = forwardAction
         let updated = Presentation(
             title: title,
             canGoBack: backAction != nil,
-            canGoForward: forwardAction != nil
+            canGoForward: forwardAction != nil,
+            showsSearchField: showsSearchField
         )
         if presentation != updated {
             presentation = updated
@@ -47,5 +55,10 @@ final class SettingsWindowToolbarOwner: ObservableObject {
 
     func goForward() {
         forwardAction?()
+    }
+
+    func setSearchText(_ text: String) {
+        guard searchText != text else { return }
+        searchText = text
     }
 }

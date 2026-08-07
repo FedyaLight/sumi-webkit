@@ -24,6 +24,10 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertFalse(windowSource.contains("private let navigationControl = NSSegmentedControl()"))
         XCTAssertFalse(windowSource.contains("private let headerView = NSVisualEffectView()"))
         XCTAssertTrue(windowSource.contains("item.isNavigational = true"))
+        XCTAssertTrue(windowSource.contains("NSSearchField"))
+        XCTAssertTrue(windowSource.contains("NSSearchToolbarItem"))
+        XCTAssertTrue(windowSource.contains("ToolbarIdentifier.search"))
+        XCTAssertTrue(windowSource.contains("showsSearchField"))
         XCTAssertFalse(windowSource.contains(".toggleSidebar,"))
 
         let componentsSource = try settingsSource("SettingsComponents.swift")
@@ -36,7 +40,29 @@ final class SettingsNavigationTests: XCTestCase {
 
         let searchEnginesSource = try settingsSource("Tabs/GeneralSearchEnginesSettingsSection.swift")
         XCTAssertFalse(searchEnginesSource.contains("NSScrollView"))
+        let nestedSearchEnginesSource = searchEnginesSource
+            .components(separatedBy: "struct GeneralSearchEnginesSettingsNavigationSection")
+            .first ?? searchEnginesSource
+        XCTAssertFalse(nestedSearchEnginesSource.contains("title: String(localized: \"Search Engines\")"))
         XCTAssertTrue(searchEnginesSource.contains("SumiSearchEngineTableLayout.preferredHeight"))
+        XCTAssertTrue(searchEnginesSource.contains(".frame(minHeight:"))
+
+        let tableSource = try settingsSource("Tabs/SumiSearchEngineTableController.swift")
+        XCTAssertFalse(tableSource.contains("NSSearchField"))
+        XCTAssertTrue(tableSource.contains("focusRingType = .none"))
+        XCTAssertTrue(tableSource.contains("restoreButton.title = String(localized: \"Restore Defaults…\")"))
+        XCTAssertTrue(tableSource.contains("addButton.bezelColor = .controlAccentColor"))
+        XCTAssertTrue(tableSource.contains("restoreButton.bezelStyle = .rounded"))
+        XCTAssertTrue(tableSource.contains("String(localized: \"Search Engine\")"))
+        XCTAssertTrue(tableSource.contains("String(localized: \"Tab Search\")"))
+        XCTAssertFalse(tableSource.contains("removeButton"))
+        XCTAssertFalse(tableSource.contains("editButton"))
+
+        let rowSource = try settingsSource("Tabs/SumiSearchEngineTableRowCell.swift")
+        XCTAssertFalse(rowSource.contains("tabSearchLabel"))
+        XCTAssertTrue(rowSource.contains("symbolName: \"pencil\""))
+        XCTAssertTrue(rowSource.contains("symbolName: \"trash\""))
+        XCTAssertTrue(rowSource.contains("SumiSearchEngineActionButton"))
     }
 
     func testAboutSettingsAvoidsSidebarOnlyEnvironmentDependencies() throws {
@@ -224,6 +250,15 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertEqual(navigation.privacySettingsRoute, .overview)
     }
 
+    func testOpeningRegularGeneralPaneLeavesSearchEnginesRoute() {
+        let navigation = SettingsNavigationOwner()
+        navigation.generalSettingsRoute = .searchEngines
+
+        navigation.openSettings(selecting: .general)
+
+        XCTAssertEqual(navigation.generalSettingsRoute, .overview)
+    }
+
     func testSettingsToolbarPresentationTracksNestedNavigationActions() {
         let toolbar = SettingsWindowToolbarOwner()
         var backCount = 0
@@ -248,6 +283,25 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertEqual(toolbar.presentation.title, "Privacy & Security")
         XCTAssertFalse(toolbar.presentation.canGoBack)
         XCTAssertFalse(toolbar.presentation.canGoForward)
+        XCTAssertFalse(toolbar.presentation.showsSearchField)
+    }
+
+    func testSettingsToolbarPresentationShowsSearchFieldOnlyForNestedSearchEngines() {
+        let toolbar = SettingsWindowToolbarOwner()
+
+        toolbar.show(
+            title: "Search Engines",
+            backAction: {},
+            showsSearchField: true
+        )
+
+        XCTAssertTrue(toolbar.presentation.showsSearchField)
+        toolbar.setSearchText("duck")
+
+        toolbar.showRoot(title: "General")
+
+        XCTAssertFalse(toolbar.presentation.showsSearchField)
+        XCTAssertEqual(toolbar.searchText, "")
     }
 
     func testSettingsPaneDescriptorsCoverVisiblePanes() {

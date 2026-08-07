@@ -147,6 +147,24 @@ final class GeneralSettingsBoundaryTests: XCTestCase {
         )
     }
 
+    func testEditorInputPreservesSelectedAccentColor() throws {
+        let engine = try XCTUnwrap(
+            makeEditorInput(
+                name: "Example",
+                template: "https://example.com/search?q={query}"
+            ).engine(id: "example")
+        )
+
+        XCTAssertEqual(engine.colorHex, "#123456")
+    }
+
+    func testSearchEngineTableGrowsWhenAnEngineIsAdded() {
+        XCTAssertGreaterThan(
+            SumiSearchEngineTableLayout.preferredHeight(engineCount: 5),
+            SumiSearchEngineTableLayout.preferredHeight(engineCount: 4)
+        )
+    }
+
     func testNewTabURLValidationSeamAcceptsDomainsAndRejectsSearchText() {
         XCTAssertNil(SumiNewTabPageURL.validationMessage(for: "example.com"))
         XCTAssertEqual(
@@ -219,7 +237,8 @@ final class GeneralSettingsBoundaryTests: XCTestCase {
                 engineChoices: [GeneralSearchEngineChoice(engine)]
             ),
             GeneralSearchEnginesSettingsSection(
-                searchEngines: .constant([engine])
+                searchEngines: .constant([engine]),
+                filterText: .constant("")
             ),
         ]
 

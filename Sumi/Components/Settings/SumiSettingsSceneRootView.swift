@@ -82,6 +82,7 @@ private final class SumiSettingsSplitViewController: NSSplitViewController, NSTo
         static let navigation = NSToolbarItem.Identifier("SumiSettingsNavigation")
         static let back = NSToolbarItem.Identifier("SumiSettingsBack")
         static let forward = NSToolbarItem.Identifier("SumiSettingsForward")
+        static let search = NSToolbarItem.Identifier("SumiSettingsSearch")
     }
 
     private let settings: SumiSettingsService
@@ -96,9 +97,11 @@ private final class SumiSettingsSplitViewController: NSSplitViewController, NSTo
     private var navigationToolbarItem: NSToolbarItemGroup?
     private var backToolbarItem: NSToolbarItem?
     private var forwardToolbarItem: NSToolbarItem?
+    private var searchToolbarItem: NSSearchToolbarItem?
     private var hostingController: NSHostingController<AnyView>?
     private var profileUpdates: AnyCancellable?
     private var toolbarUpdates: AnyCancellable?
+    private var searchTextUpdates: AnyCancellable?
     private var selectedPane: SettingsTabs
     private var currentProfile: Profile?
     private var themeContext: ResolvedThemeContext
@@ -140,7 +143,9 @@ private final class SumiSettingsSplitViewController: NSSplitViewController, NSTo
         sidebarController.onSelect = { [weak self] pane in
             guard let self else { return }
             settings.currentSettingsTab = pane
-            if pane == .privacy {
+            if pane == .general {
+                settings.generalSettingsRoute = .overview
+            } else if pane == .privacy {
                 settings.privacySettingsRoute = .overview
             }
             showDetail(for: pane)
@@ -169,6 +174,15 @@ private final class SumiSettingsSplitViewController: NSSplitViewController, NSTo
             .receive(on: RunLoop.main)
             .sink { [weak self] presentation in
                 self?.applyToolbarPresentation(presentation)
+            }
+
+        searchTextUpdates = toolbarOwner.$searchText
+            .receive(on: RunLoop.main)
+            .sink { [weak self] searchText in
+                guard let searchField = self?.searchToolbarItem?.searchField,
+                      searchField.stringValue != searchText
+                else { return }
+                searchField.stringValue = searchText
             }
 
         showDetail(for: selectedPane)
@@ -265,12 +279,14 @@ private final class SumiSettingsSplitViewController: NSSplitViewController, NSTo
         forwardToolbarItem?.isEnabled = presentation.canGoForward
         navigationToolbarItem?.isHidden = presentation.canGoBack == false
             && presentation.canGoForward == false
+        searchToolbarItem?.isHidden = !presentation.showsSearchField
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         [
             .sidebarTrackingSeparator,
             ToolbarIdentifier.navigation,
+            ToolbarIdentifier.search,
         ]
     }
 
@@ -286,9 +302,35 @@ private final class SumiSettingsSplitViewController: NSSplitViewController, NSTo
         switch itemIdentifier {
         case ToolbarIdentifier.navigation:
             return makeNavigationToolbarItem()
+        case ToolbarIdentifier.search:
+            return makeSearchToolbarItem()
         default:
             return nil
         }
+    }
+
+    private func makeSearchToolbarItem() -> NSSearchToolbarItem {
+        let searchField = NSSearchField()
+        searchField.placeholderString = String(localized: "Filter Search Engines")
+        searchField.controlSize = .small
+        searchField.sendsSearchStringImmediately = true
+        searchField.setAccessibilityLabel(String(localized: "Filter Search Engines"))
+        searchField.target = self
+        searchField.action = #selector(searchToolbarFieldChanged(_:))
+        searchField.stringValue = toolbarOwner.searchText
+
+        let item = NSSearchToolbarItem(itemIdentifier: ToolbarIdentifier.search)
+        let label = String(localized: "Filter Search Engines")
+        item.label = label
+        item.paletteLabel = label
+        item.toolTip = label
+        item.searchField = searchField
+        item.preferredWidthForSearchField = 230
+        item.resignsFirstResponderWithCancel = true
+        item.visibilityPriority = .high
+        item.isHidden = !toolbarOwner.presentation.showsSearchField
+        searchToolbarItem = item
+        return item
     }
 
     private func makeNavigationToolbarItem() -> NSToolbarItemGroup {
@@ -339,6 +381,10 @@ private final class SumiSettingsSplitViewController: NSSplitViewController, NSTo
 
     @objc private func navigateForward() {
         toolbarOwner.goForward()
+    }
+
+    @objc private func searchToolbarFieldChanged(_ sender: NSSearchField) {
+        toolbarOwner.setSearchText(sender.stringValue)
     }
 }
 

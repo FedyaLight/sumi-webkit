@@ -11,6 +11,7 @@ import Foundation
 @Observable
 final class SettingsNavigationOwner {
     var currentSettingsTab: SettingsTabs = .general
+    var generalSettingsRoute: SumiGeneralSettingsRoute = .overview
     var privacySettingsRoute: SumiPrivacySettingsRoute = .overview
 
     private var presentSettingsWindow: (() -> Void)?
@@ -21,7 +22,9 @@ final class SettingsNavigationOwner {
 
     func openSettings(selecting pane: SettingsTabs) {
         currentSettingsTab = pane
-        if pane == .privacy {
+        if pane == .general {
+            generalSettingsRoute = .overview
+        } else if pane == .privacy {
             privacySettingsRoute = .overview
         }
         presentSettingsWindow?()

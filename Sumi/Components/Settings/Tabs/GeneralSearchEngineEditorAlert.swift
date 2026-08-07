@@ -7,6 +7,7 @@ final class SumiSearchEngineEditorAlert: NSObject, NSTextFieldDelegate {
     private let nameField = NSTextField()
     private let domainField = NSTextField()
     private let templateField = NSTextField()
+    private let colorWell = NSColorWell()
     private let tabSearchCheckbox = NSButton(
         checkboxWithTitle: String(localized: "Enable for Tab Search"),
         target: nil,
@@ -19,6 +20,8 @@ final class SumiSearchEngineEditorAlert: NSObject, NSTextFieldDelegate {
         nameField.stringValue = engine?.name ?? ""
         domainField.stringValue = engine?.domain ?? ""
         templateField.stringValue = engine?.searchURLTemplate ?? ""
+        colorWell.color = NSColor(hex: engine?.colorHex ?? "#666666") ?? .controlAccentColor
+        colorWell.setAccessibilityLabel(String(localized: "Accent Color"))
         tabSearchCheckbox.state = engine?.tabSearchEnabled == true ? .on : .off
         nameField.delegate = self
         domainField.delegate = self
@@ -58,7 +61,7 @@ final class SumiSearchEngineEditorAlert: NSObject, NSTextFieldDelegate {
             name: nameField.stringValue,
             domain: domainField.stringValue,
             searchURLTemplate: templateField.stringValue,
-            colorHex: originalEngine?.colorHex ?? "#666666",
+            colorHex: colorWell.color.toHexString() ?? originalEngine?.colorHex ?? "#666666",
             tabSearchEnabled: tabSearchCheckbox.state == .on
         )
     }
@@ -76,6 +79,7 @@ final class SumiSearchEngineEditorAlert: NSObject, NSTextFieldDelegate {
             [NSTextField(labelWithString: String(localized: "Name:")), nameField],
             [NSTextField(labelWithString: String(localized: "Domain:")), domainField],
             [NSTextField(labelWithString: String(localized: "Search URL:")), templateField],
+            [NSTextField(labelWithString: String(localized: "Accent Color:")), colorWell],
             [NSTextField(labelWithString: ""), tabSearchCheckbox],
         ])
         grid.column(at: 0).xPlacement = .trailing
@@ -84,7 +88,7 @@ final class SumiSearchEngineEditorAlert: NSObject, NSTextFieldDelegate {
         grid.columnSpacing = 10
         grid.translatesAutoresizingMaskIntoConstraints = false
 
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 130))
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 520, height: 160))
         container.addSubview(grid)
         NSLayoutConstraint.activate([
             grid.leadingAnchor.constraint(equalTo: container.leadingAnchor),

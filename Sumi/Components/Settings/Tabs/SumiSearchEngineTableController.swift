@@ -3,10 +3,12 @@ import SwiftUI
 
 struct SumiSearchEngineTable: NSViewControllerRepresentable {
     @Binding var searchEngines: [SumiSearchEngine]
+    @Binding var filterText: String
 
     func makeNSViewController(context: Context) -> SumiSearchEngineTableViewController {
         SumiSearchEngineTableViewController(
             searchEngines: searchEngines,
+            filterText: filterText,
             onChange: { searchEngines = $0 }
         )
     }
@@ -16,19 +18,16 @@ struct SumiSearchEngineTable: NSViewControllerRepresentable {
         context: Context
     ) {
         controller.replaceSearchEngines(searchEngines)
+        controller.replaceFilterText(filterText)
     }
 }
 
 @MainActor
 final class SumiSearchEngineTableViewController: NSViewController,
-    NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate,
-    NSMenuDelegate {
+    NSTableViewDataSource, NSTableViewDelegate, NSMenuDelegate {
     private static let dragType = NSPasteboard.PasteboardType("dev.sumi.search-engine-row")
 
-    private let searchField = NSSearchField()
     private let addButton = NSButton()
-    private let removeButton = NSButton()
-    private let editButton = NSButton()
     private let restoreButton = NSButton()
     private let tableView = SumiContextSelectingTableView()
     private let tableContainer = NSView()
@@ -36,13 +35,16 @@ final class SumiSearchEngineTableViewController: NSViewController,
     private var tableHeightConstraint: NSLayoutConstraint?
 
     private var searchEngines: [SumiSearchEngine]
+    private var filterText: String
     private var displayedEngines: [SumiSearchEngine] = []
 
     init(
         searchEngines: [SumiSearchEngine],
+        filterText: String,
         onChange: @escaping ([SumiSearchEngine]) -> Void
     ) {
         self.searchEngines = searchEngines
+        self.filterText = filterText
         self.onChange = onChange
         super.init(nibName: nil, bundle: nil)
     }
@@ -54,28 +56,18 @@ final class SumiSearchEngineTableViewController: NSViewController,
 
     override func loadView() {
         view = NSView()
-        configureToolbar()
         configureTable()
-        configureFooter()
-
-        let toolbar = NSStackView(views: [searchField])
-        toolbar.orientation = .horizontal
-        toolbar.spacing = 8
-        toolbar.translatesAutoresizingMaskIntoConstraints = false
-        searchField.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        configureFooterButtons()
 
         let footerSpacer = NSView()
         footerSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let footer = NSStackView(views: [addButton, removeButton, editButton, footerSpacer, restoreButton])
+        let footer = NSStackView(views: [addButton, footerSpacer, restoreButton])
         footer.orientation = .horizontal
         footer.spacing = 8
         footer.translatesAutoresizingMaskIntoConstraints = false
         addButton.setContentHuggingPriority(.required, for: .horizontal)
-        removeButton.setContentHuggingPriority(.required, for: .horizontal)
-        editButton.setContentHuggingPriority(.required, for: .horizontal)
         restoreButton.setContentHuggingPriority(.required, for: .horizontal)
 
-        view.addSubview(toolbar)
         view.addSubview(tableContainer)
         view.addSubview(footer)
         let tableHeightConstraint = tableContainer.heightAnchor.constraint(
@@ -85,12 +77,9 @@ final class SumiSearchEngineTableViewController: NSViewController,
         )
         self.tableHeightConstraint = tableHeightConstraint
         NSLayoutConstraint.activate([
-            toolbar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            toolbar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            toolbar.topAnchor.constraint(equalTo: view.topAnchor),
             tableContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            tableContainer.topAnchor.constraint(equalTo: toolbar.bottomAnchor, constant: 10),
+            tableContainer.topAnchor.constraint(equalTo: view.topAnchor),
             tableHeightConstraint,
             footer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             footer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -107,43 +96,40 @@ final class SumiSearchEngineTableViewController: NSViewController,
         reload(preservingSelection: true)
     }
 
-    private func configureToolbar() {
-        searchField.placeholderString = String(localized: "Filter Search Engines")
-        searchField.delegate = self
-        searchField.controlSize = .small
+    func replaceFilterText(_ text: String) {
+        guard text != filterText else { return }
+        filterText = text
+        reload(preservingSelection: true)
+    }
 
+    private func configureFooterButtons() {
+        addButton.title = String(localized: "Add")
         addButton.image = NSImage(
             systemSymbolName: "plus",
             accessibilityDescription: String(localized: "Add")
         )
+        addButton.imagePosition = .imageLeading
         addButton.toolTip = String(localized: "Add Search Engine")
         addButton.bezelStyle = .rounded
+        addButton.bezelColor = .controlAccentColor
         addButton.controlSize = .small
         addButton.target = self
         addButton.action = #selector(addSearchEngine)
 
-        removeButton.image = NSImage(
-            systemSymbolName: "minus",
-            accessibilityDescription: String(localized: "Remove")
-        )
-        removeButton.toolTip = String(localized: "Remove Search Engine")
-        removeButton.bezelStyle = .rounded
-        removeButton.controlSize = .small
-        removeButton.target = self
-        removeButton.action = #selector(removeSelectedSearchEngine)
-
-        editButton.title = String(localized: "Edit…")
-        editButton.bezelStyle = .rounded
-        editButton.controlSize = .small
-        editButton.target = self
-        editButton.action = #selector(editSelectedSearchEngine)
+        restoreButton.title = String(localized: "Restore Defaults…")
+        restoreButton.bezelStyle = .rounded
+        restoreButton.controlSize = .small
+        restoreButton.target = self
+        restoreButton.action = #selector(restoreDefaults)
     }
 
     private func configureTable() {
+        let headerView = makeTableHeader()
         let engineColumn = NSTableColumn(identifier: .init("engine"))
         engineColumn.resizingMask = .autoresizingMask
         tableView.addTableColumn(engineColumn)
         tableView.headerView = nil
+        tableView.focusRingType = .none
         tableView.usesAlternatingRowBackgroundColors = false
         tableView.rowHeight = SumiSearchEngineTableLayout.rowHeight
         tableView.intercellSpacing = NSSize(
@@ -168,25 +154,51 @@ final class SumiSearchEngineTableViewController: NSViewController,
         tableContainer.layer?.borderColor = NSColor.separatorColor.cgColor
         tableContainer.layer?.masksToBounds = true
         tableContainer.translatesAutoresizingMaskIntoConstraints = false
+        tableContainer.addSubview(headerView)
         tableContainer.addSubview(tableView)
         NSLayoutConstraint.activate([
+            headerView.leadingAnchor.constraint(equalTo: tableContainer.leadingAnchor, constant: 1),
+            headerView.trailingAnchor.constraint(equalTo: tableContainer.trailingAnchor, constant: -1),
+            headerView.topAnchor.constraint(equalTo: tableContainer.topAnchor, constant: 1),
+            headerView.heightAnchor.constraint(equalToConstant: SumiSearchEngineTableLayout.headerHeight),
             tableView.leadingAnchor.constraint(equalTo: tableContainer.leadingAnchor, constant: 1),
             tableView.trailingAnchor.constraint(equalTo: tableContainer.trailingAnchor, constant: -1),
-            tableView.topAnchor.constraint(equalTo: tableContainer.topAnchor, constant: 1),
+            tableView.topAnchor.constraint(equalTo: headerView.bottomAnchor),
             tableView.bottomAnchor.constraint(equalTo: tableContainer.bottomAnchor, constant: -1),
         ])
     }
 
-    private func configureFooter() {
-        restoreButton.title = String(localized: "Restore Defaults…")
-        restoreButton.bezelStyle = .inline
-        restoreButton.controlSize = .small
-        restoreButton.target = self
-        restoreButton.action = #selector(restoreDefaults)
-    }
+    private func makeTableHeader() -> NSView {
+        let header = NSView()
+        header.translatesAutoresizingMaskIntoConstraints = false
 
-    func controlTextDidChange(_ notification: Notification) {
-        reload()
+        let engineLabel = NSTextField(labelWithString: String(localized: "Search Engine"))
+        let tabSearchLabel = NSTextField(labelWithString: String(localized: "Tab Search"))
+        for label in [engineLabel, tabSearchLabel] {
+            label.font = .systemFont(ofSize: NSFont.smallSystemFontSize, weight: .medium)
+            label.textColor = .secondaryLabelColor
+            label.translatesAutoresizingMaskIntoConstraints = false
+            header.addSubview(label)
+        }
+
+        let separator = NSBox()
+        separator.boxType = .separator
+        separator.translatesAutoresizingMaskIntoConstraints = false
+        header.addSubview(separator)
+
+        NSLayoutConstraint.activate([
+            engineLabel.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 33),
+            engineLabel.centerYAnchor.constraint(equalTo: header.centerYAnchor),
+            tabSearchLabel.centerXAnchor.constraint(
+                equalTo: header.trailingAnchor,
+                constant: -SumiSearchEngineTableLayout.tabSearchHeaderCenterTrailingOffset
+            ),
+            tabSearchLabel.centerYAnchor.constraint(equalTo: header.centerYAnchor),
+            separator.leadingAnchor.constraint(equalTo: header.leadingAnchor),
+            separator.trailingAnchor.constraint(equalTo: header.trailingAnchor),
+            separator.bottomAnchor.constraint(equalTo: header.bottomAnchor),
+        ])
+        return header
     }
 
     func numberOfRows(in tableView: NSTableView) -> Int {
@@ -201,10 +213,6 @@ final class SumiSearchEngineTableViewController: NSViewController,
         guard displayedEngines.indices.contains(row), tableColumn != nil else { return nil }
         let engine = displayedEngines[row]
         return engineCell(for: engine)
-    }
-
-    func tableViewSelectionDidChange(_ notification: Notification) {
-        updateActionAvailability()
     }
 
     func tableView(
@@ -257,9 +265,25 @@ final class SumiSearchEngineTableViewController: NSViewController,
         presentEditor(engine: engine)
     }
 
+    @objc private func editSearchEngine(_ sender: SumiSearchEngineActionButton) {
+        guard let engine = searchEngine(withID: sender.engineID) else { return }
+        select(engineID: engine.id)
+        presentEditor(engine: engine)
+    }
+
     @objc private func removeSelectedSearchEngine() {
-        guard let engine = selectedEngine,
-              searchEngines.count > 1,
+        guard let engine = selectedEngine else { return }
+        remove(engine: engine)
+    }
+
+    @objc private func removeSearchEngine(_ sender: SumiSearchEngineActionButton) {
+        guard let engine = searchEngine(withID: sender.engineID) else { return }
+        select(engineID: engine.id)
+        remove(engine: engine)
+    }
+
+    private func remove(engine: SumiSearchEngine) {
+        guard searchEngines.count > 1,
               let window = view.window
         else { return }
 
@@ -328,12 +352,12 @@ final class SumiSearchEngineTableViewController: NSViewController,
     }
 
     private var isFiltering: Bool {
-        !searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !filterText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func reload(preservingSelection: Bool = false) {
         let selectedID = preservingSelection ? selectedEngine?.id : nil
-        displayedEngines = searchEngines.filter { $0.matchesFilter(searchField.stringValue) }
+        displayedEngines = searchEngines.filter { $0.matchesFilter(filterText) }
         tableHeightConstraint?.constant = SumiSearchEngineTableLayout.tableHeight(
             engineCount: searchEngines.count
         )
@@ -341,7 +365,6 @@ final class SumiSearchEngineTableViewController: NSViewController,
         if let selectedID {
             select(engineID: selectedID)
         }
-        updateActionAvailability()
     }
 
     private func updateEngines(_ engines: [SumiSearchEngine], selecting engineID: String? = nil) {
@@ -360,10 +383,8 @@ final class SumiSearchEngineTableViewController: NSViewController,
         tableView.scrollRowToVisible(row)
     }
 
-    private func updateActionAvailability() {
-        let hasSelection = selectedEngine != nil
-        editButton.isEnabled = hasSelection
-        removeButton.isEnabled = hasSelection && searchEngines.count > 1
+    private func searchEngine(withID id: String) -> SumiSearchEngine? {
+        searchEngines.first { $0.id == id }
     }
 
     private func engineCell(for engine: SumiSearchEngine) -> NSView {
@@ -373,7 +394,9 @@ final class SumiSearchEngineTableViewController: NSViewController,
         cell.configure(
             engine: engine,
             target: self,
-            action: #selector(tabSearchSwitchChanged(_:))
+            tabSearchAction: #selector(tabSearchSwitchChanged(_:)),
+            editAction: #selector(editSearchEngine(_:)),
+            removeAction: #selector(removeSearchEngine(_:))
         )
         return cell
     }

@@ -249,6 +249,16 @@ enum SumiPrivacySettingsRoute: Equatable, Hashable {
     }
 }
 
+enum SumiGeneralSettingsRoute: Equatable, Hashable {
+    case overview
+    case searchEngines
+
+    var isSearchEngines: Bool {
+        if case .searchEngines = self { return true }
+        return false
+    }
+}
+
 enum SettingsTabs: Hashable, CaseIterable {
     case general
     case appearance

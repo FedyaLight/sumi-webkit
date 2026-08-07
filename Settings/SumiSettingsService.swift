@@ -49,6 +49,11 @@ class SumiSettingsService {
         set { navigation.currentSettingsTab = newValue }
     }
 
+    var generalSettingsRoute: SumiGeneralSettingsRoute {
+        get { navigation.generalSettingsRoute }
+        set { navigation.generalSettingsRoute = newValue }
+    }
+
     var privacySettingsRoute: SumiPrivacySettingsRoute {
         get { navigation.privacySettingsRoute }
         set { navigation.privacySettingsRoute = newValue }
