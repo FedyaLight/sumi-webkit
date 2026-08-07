@@ -392,9 +392,11 @@ struct SpaceSidebarSceneBuilder {
             )
 
         var body: [SpaceSidebarSceneElement] = []
-        for entry in SidebarFolderDisplayProjection.displayEntries(
+        let displayEntries = SidebarFolderDisplayProjection.displayEntries(
             from: bodyItems
-        ) {
+        )
+        for (entryIndex, entry) in displayEntries.enumerated() {
+            let firstElementIndex = body.count
             switch entry.item {
             case .folder(let childID):
                 guard let child = inventory.folder(id: childID) else { continue }
@@ -485,6 +487,13 @@ struct SpaceSidebarSceneBuilder {
                         )
                     )
                 )
+            }
+
+            if entryIndex < displayEntries.count - 1,
+               body.count > firstElementIndex {
+                let lastIndex = body.index(before: body.endIndex)
+                body[lastIndex] = body[lastIndex]
+                    .addingTrailingExtent(SidebarRowLayout.rowGap)
             }
         }
 

@@ -170,7 +170,7 @@ struct SpaceSnapshotFolderView: View {
             .clipShape(RoundedRectangle(cornerRadius: rowCornerRadius, style: .continuous))
 
             if showsBody {
-                VStack(spacing: 0) {
+                VStack(spacing: SidebarRowLayout.rowGap) {
                     ForEach(folder.bodyChildren) { child in
                         SpaceSnapshotPinnedItemView(
                             item: child,
