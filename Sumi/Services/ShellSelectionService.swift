@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 @MainActor
 protocol ShellSelectionTabStore: AnyObject {
@@ -37,7 +38,11 @@ final class ShellSelectionService {
         if let tabId = windowState.currentTabId,
            let current = tabStore.tab(for: tabId),
            isSelectableTab(current),
-           tabBelongsToDisplayedContext(current, in: windowState) {
+           tabBelongsToDisplayedContext(
+               current,
+               in: windowState,
+               tabStore: tabStore
+           ) {
             return current
         }
 
@@ -59,7 +64,11 @@ final class ShellSelectionService {
         if let currentTabId = windowState.currentTabId,
            let currentTab = tabStore.tab(for: currentTabId),
            currentTab.isShortcutLiveInstance,
-           currentTab.shortcutPinRole == .essential {
+           essentialTab(
+               currentTab,
+               belongsTo: space.profileId,
+               tabStore: tabStore
+           ) {
             return currentTab
         }
 
@@ -92,7 +101,11 @@ final class ShellSelectionService {
                 pinId: pin.id,
                 in: windowState
            ),
-           tabBelongsToDisplayedContext(candidate, in: windowState) {
+           tabBelongsToDisplayedContext(
+               candidate,
+               in: windowState,
+               tabStore: tabStore
+           ) {
             // Selection reads are used from SwiftUI body; activation must stay in explicit actions/restoration.
             return candidate
         }
@@ -163,6 +176,17 @@ final class ShellSelectionService {
 
         let regularTabs = tabStore.tabs(in: space)
         let regularTabById = tabLookup(for: regularTabs)
+        if let historyMatch = firstTab(
+            matching: windowState.selectionHistory
+                .recentSelectionItemsBySpace[space.id],
+            in: regularTabById,
+            space: space,
+            windowState: windowState,
+            tabStore: tabStore
+        ) {
+            return historyMatch
+        }
+
         if let historyMatch = firstTab(
             matching: windowState.selectionHistory.recentRegularTabIdsBySpace[space.id],
             in: regularTabById
@@ -267,15 +291,24 @@ final class ShellSelectionService {
             return false
         }
 
-        return isSelectableTab(tab) && tabBelongsToDisplayedContext(tab, in: windowState)
+        return isSelectableTab(tab) && tabBelongsToDisplayedContext(
+            tab,
+            in: windowState,
+            tabStore: tabStore
+        )
     }
 
     func tabBelongsToDisplayedContext(
         _ tab: Tab,
-        in windowState: BrowserWindowState
+        in windowState: BrowserWindowState,
+        tabStore: ShellSelectionTabStore
     ) -> Bool {
         if tab.isShortcutLiveInstance && tab.shortcutPinRole == .essential {
-            return true
+            return essentialTab(
+                tab,
+                belongsTo: windowState.currentProfileId,
+                tabStore: tabStore
+            )
         }
 
         guard let currentSpaceId = windowState.currentSpaceId else {
@@ -292,6 +325,19 @@ final class ShellSelectionService {
         }
 
         return tab.spaceId == currentSpaceId
+    }
+
+    private func essentialTab(
+        _ tab: Tab,
+        belongsTo profileID: UUID?,
+        tabStore: ShellSelectionTabStore
+    ) -> Bool {
+        guard let pinID = tab.shortcutPinId,
+              let pin = tabStore.shortcutPin(by: pinID)
+        else { return false }
+
+        guard pin.role == .essential else { return false }
+        return profileID == nil || pin.profileId == profileID
     }
 
     private func isSelectableTab(_ tab: Tab) -> Bool {
@@ -315,6 +361,41 @@ final class ShellSelectionService {
         for tabId in tabIds {
             if let tab = tabsById[tabId] {
                 return tab
+            }
+        }
+        return nil
+    }
+
+    private func firstTab(
+        matching items: [BrowserWindowSelectionHistoryItem]?,
+        in regularTabsByID: [UUID: Tab],
+        space: Space,
+        windowState: BrowserWindowState,
+        tabStore: ShellSelectionTabStore
+    ) -> Tab? {
+        guard let items else { return nil }
+        for item in items {
+            switch item {
+            case .regularTab(let tabID):
+                if let tab = regularTabsByID[tabID] {
+                    return tab
+                }
+            case .shortcutPin(let pinID):
+                guard let tab = tabStore.shortcutLiveTab(
+                    for: pinID,
+                    in: windowState.id
+                ) else { continue }
+                if tab.shortcutPinRole == .essential {
+                    if essentialTab(
+                        tab,
+                        belongsTo: space.profileId,
+                        tabStore: tabStore
+                    ) {
+                        return tab
+                    }
+                } else if tab.spaceId == space.id {
+                    return tab
+                }
             }
         }
         return nil

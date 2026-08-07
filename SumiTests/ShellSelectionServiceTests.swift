@@ -102,11 +102,13 @@ final class ShellSelectionServiceTests: XCTestCase {
 
     func testSelectionTargetForSpaceActivationPreservesCurrentEssentialShortcutAcrossSpaceChange() {
         let service = ShellSelectionService(splitQuery: BrowserManager().splitQuery)
-        let currentSpace = Space(name: "Current")
-        let targetSpace = Space(name: "Target")
+        let profileID = UUID()
+        let currentSpace = Space(name: "Current", profileId: profileID)
+        let targetSpace = Space(name: "Target", profileId: profileID)
         let essentialPin = ShortcutPin(
             id: UUID(),
             role: .essential,
+            profileId: profileID,
             index: 0,
             launchURL: URL(string: "https://essential.example")!,
             title: "Essential"
@@ -151,6 +153,7 @@ final class ShellSelectionServiceTests: XCTestCase {
 
         let windowState = BrowserWindowState()
         windowState.currentSpaceId = currentSpace.id
+        windowState.currentProfileId = profileID
         windowState.currentTabId = essentialLiveTab.id
         windowState.selectedShortcutPinForSpace[targetSpace.id] = targetPin.id
         windowState.selectionHistory.recentRegularTabIdsBySpace[targetSpace.id] = [recentRegular.id]
@@ -162,6 +165,77 @@ final class ShellSelectionServiceTests: XCTestCase {
         )
 
         XCTAssertEqual(resolved?.id, essentialLiveTab.id)
+        windowState.currentSpaceId = targetSpace.id
+        XCTAssertIdentical(
+            service.currentTab(for: windowState, tabStore: store),
+            essentialLiveTab
+        )
+    }
+
+    func testSelectionTargetBackgroundsOtherProfileEssentialAndRestoresItOnReturn() {
+        let service = ShellSelectionService(splitQuery: BrowserManager().splitQuery)
+        let currentProfileID = UUID()
+        let targetProfileID = UUID()
+        let currentSpace = Space(name: "Current", profileId: currentProfileID)
+        let targetSpace = Space(name: "Target", profileId: targetProfileID)
+        let essentialPin = ShortcutPin(
+            id: UUID(),
+            role: .essential,
+            profileId: currentProfileID,
+            index: 0,
+            launchURL: URL(string: "https://essential.example")!,
+            title: "Essential"
+        )
+        let essentialLiveTab = Tab(
+            url: essentialPin.launchURL,
+            name: essentialPin.title,
+            index: 0
+        )
+        essentialLiveTab.bindToShortcutPin(essentialPin)
+        let targetTab = Tab(
+            url: URL(string: "https://target.example")!,
+            name: "Target",
+            spaceId: targetSpace.id,
+            index: 0
+        )
+        let store = FakeShellSelectionTabStore(
+            spaces: [currentSpace, targetSpace],
+            allTabs: [essentialLiveTab, targetTab],
+            tabsBySpace: [targetSpace.id: [targetTab]],
+            shortcutPins: [essentialPin.id: essentialPin],
+            liveShortcutTabsByPin: [essentialPin.id: essentialLiveTab]
+        )
+        let windowState = BrowserWindowState()
+        windowState.currentSpaceId = currentSpace.id
+        windowState.currentProfileId = currentProfileID
+        windowState.currentTabId = essentialLiveTab.id
+        windowState.selectionHistory.recentSelectionItemsBySpace[currentSpace.id] = [
+            .shortcutPin(essentialPin.id)
+        ]
+
+        let resolved = service.selectionTargetForSpaceActivation(
+            in: targetSpace,
+            windowState: windowState,
+            tabStore: store
+        )
+
+        XCTAssertEqual(resolved?.id, targetTab.id)
+        windowState.currentSpaceId = targetSpace.id
+        windowState.currentProfileId = targetProfileID
+        XCTAssertNil(service.currentTab(for: windowState, tabStore: store))
+        XCTAssertIdentical(
+            store.shortcutLiveTab(for: essentialPin.id, in: windowState.id),
+            essentialLiveTab
+        )
+
+        windowState.currentTabId = targetTab.id
+        let restored = service.selectionTargetForSpaceActivation(
+            in: currentSpace,
+            windowState: windowState,
+            tabStore: store
+        )
+
+        XCTAssertIdentical(restored, essentialLiveTab)
     }
 
     func testSelectionTargetForSpaceActivationUsesPreferredSpaceOrderingAfterCurrentSelectionGuards() {
