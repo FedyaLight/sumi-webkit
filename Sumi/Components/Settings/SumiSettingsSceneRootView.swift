@@ -280,6 +280,13 @@ private final class SumiSettingsSplitViewController: NSSplitViewController, NSTo
         navigationToolbarItem?.isHidden = presentation.canGoBack == false
             && presentation.canGoForward == false
         searchToolbarItem?.isHidden = !presentation.showsSearchField
+        if let label = presentation.searchFieldLabel {
+            searchToolbarItem?.label = label
+            searchToolbarItem?.paletteLabel = label
+            searchToolbarItem?.toolTip = label
+            searchToolbarItem?.searchField.placeholderString = label
+            searchToolbarItem?.searchField.setAccessibilityLabel(label)
+        }
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -311,16 +318,17 @@ private final class SumiSettingsSplitViewController: NSSplitViewController, NSTo
 
     private func makeSearchToolbarItem() -> NSSearchToolbarItem {
         let searchField = NSSearchField()
-        searchField.placeholderString = String(localized: "Filter Search Engines")
+        let label = toolbarOwner.presentation.searchFieldLabel
+            ?? String(localized: "Search")
+        searchField.placeholderString = label
         searchField.controlSize = .small
         searchField.sendsSearchStringImmediately = true
-        searchField.setAccessibilityLabel(String(localized: "Filter Search Engines"))
+        searchField.setAccessibilityLabel(label)
         searchField.target = self
         searchField.action = #selector(searchToolbarFieldChanged(_:))
         searchField.stringValue = toolbarOwner.searchText
 
         let item = NSSearchToolbarItem(itemIdentifier: ToolbarIdentifier.search)
-        let label = String(localized: "Filter Search Engines")
         item.label = label
         item.paletteLabel = label
         item.toolTip = label

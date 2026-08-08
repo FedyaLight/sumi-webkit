@@ -9,14 +9,18 @@ final class SettingsWindowToolbarOwner: ObservableObject {
         var title: String
         var canGoBack: Bool
         var canGoForward: Bool
-        var showsSearchField: Bool
+        var searchFieldLabel: String?
+
+        var showsSearchField: Bool {
+            searchFieldLabel != nil
+        }
     }
 
     @Published private(set) var presentation = Presentation(
         title: "",
         canGoBack: false,
         canGoForward: false,
-        showsSearchField: false
+        searchFieldLabel: nil
     )
     @Published private(set) var searchText = ""
 
@@ -31,9 +35,9 @@ final class SettingsWindowToolbarOwner: ObservableObject {
         title: String,
         backAction: (() -> Void)?,
         forwardAction: (() -> Void)? = nil,
-        showsSearchField: Bool = false
+        searchFieldLabel: String? = nil
     ) {
-        if !showsSearchField {
+        if searchFieldLabel == nil {
             setSearchText("")
         }
         self.backAction = backAction
@@ -42,7 +46,7 @@ final class SettingsWindowToolbarOwner: ObservableObject {
             title: title,
             canGoBack: backAction != nil,
             canGoForward: forwardAction != nil,
-            showsSearchField: showsSearchField
+            searchFieldLabel: searchFieldLabel
         )
         if presentation != updated {
             presentation = updated

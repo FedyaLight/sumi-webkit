@@ -1,15 +1,14 @@
-import AppKit
 import SumiDomain
 import SwiftUI
 
 struct ShortcutsSettingsView: View {
+    @EnvironmentObject private var toolbarOwner: SettingsWindowToolbarOwner
+
     let shortcutManager: KeyboardShortcutManager
     let activeProfileID: UUID?
     let extensionsModule: SumiExtensionsModule
     @ObservedObject private var extensionSurfaceStore:
         BrowserExtensionSurfaceStore
-
-    @State private var searchText = ""
 
     init(
         shortcutManager: KeyboardShortcutManager,
@@ -26,7 +25,7 @@ struct ShortcutsSettingsView: View {
     }
 
     private var filteredShortcuts: [KeyboardShortcut] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let query = toolbarOwner.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         return shortcutManager.shortcuts
             .filter { shortcut in
                 query.isEmpty || shortcut.action.displayName.localizedCaseInsensitiveContains(query)
@@ -42,7 +41,7 @@ struct ShortcutsSettingsView: View {
         _ = shortcutManager.bindingRevision
         _ = extensionSurfaceStore.installedExtensions
         guard let activeProfileID else { return [] }
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let query = toolbarOwner.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         return shortcutManager.extensionCommandAssignments(
             profileID: activeProfileID
         ).filter { command in
@@ -54,11 +53,8 @@ struct ShortcutsSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 12) {
-                searchField
-
-                Spacer(minLength: 16)
-
+            HStack {
+                Spacer()
                 Button("Restore Defaults") {
                     shortcutManager.resetToDefaults()
                 }
@@ -110,16 +106,13 @@ struct ShortcutsSettingsView: View {
             }
         }
         .onAppear {
+            toolbarOwner.show(
+                title: String(localized: "Keyboard"),
+                backAction: nil,
+                searchFieldLabel: String(localized: "Search Shortcuts")
+            )
             extensionsModule.prepareForExtensionActivation()
         }
-    }
-
-    private var searchField: some View {
-        ShortcutSearchField(
-            text: $searchText,
-            placeholder: String(localized: "Search Shortcuts")
-        )
-            .frame(width: 220)
     }
 }
 
@@ -209,45 +202,6 @@ private struct ExtensionShortcutRow: View {
 
     private func clear() -> Bool {
         shortcutManager.clearExtensionCommand(identity: assignment.identity)
-    }
-}
-
-private struct ShortcutSearchField: NSViewRepresentable {
-    @Binding var text: String
-    let placeholder: String
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text)
-    }
-
-    func makeNSView(context: Context) -> NSSearchField {
-        let searchField = NSSearchField()
-        searchField.placeholderString = placeholder
-        searchField.controlSize = .small
-        searchField.delegate = context.coordinator
-        return searchField
-    }
-
-    func updateNSView(_ searchField: NSSearchField, context: Context) {
-        context.coordinator.text = $text
-        searchField.placeholderString = placeholder
-        if searchField.stringValue != text {
-            searchField.stringValue = text
-        }
-    }
-
-    @MainActor
-    final class Coordinator: NSObject, NSSearchFieldDelegate {
-        var text: Binding<String>
-
-        init(text: Binding<String>) {
-            self.text = text
-        }
-
-        func controlTextDidChange(_ notification: Notification) {
-            guard let searchField = notification.object as? NSSearchField else { return }
-            text.wrappedValue = searchField.stringValue
-        }
     }
 }
 

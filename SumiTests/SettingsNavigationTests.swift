@@ -30,6 +30,11 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertTrue(windowSource.contains("showsSearchField"))
         XCTAssertFalse(windowSource.contains(".toggleSidebar,"))
 
+        let shortcutsSource = try settingsSource("ShortcutsSettingsView.swift")
+        XCTAssertTrue(shortcutsSource.contains("searchFieldLabel: String(localized: \"Search Shortcuts\")"))
+        XCTAssertFalse(shortcutsSource.contains("NSSearchField"))
+        XCTAssertFalse(shortcutsSource.contains("ShortcutSearchField"))
+
         let componentsSource = try settingsSource("SettingsComponents.swift")
         XCTAssertFalse(componentsSource.contains("struct SettingsPopUpButton"))
         XCTAssertTrue(componentsSource.contains(".pickerStyle(.menu)"))
@@ -286,16 +291,17 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertFalse(toolbar.presentation.showsSearchField)
     }
 
-    func testSettingsToolbarPresentationShowsSearchFieldOnlyForNestedSearchEngines() {
+    func testSettingsToolbarPresentationOwnsSearchFieldLabelAndText() {
         let toolbar = SettingsWindowToolbarOwner()
 
         toolbar.show(
             title: "Search Engines",
-            backAction: {},
-            showsSearchField: true
+            backAction: { /* Navigation behavior is covered separately. */ },
+            searchFieldLabel: "Filter Search Engines"
         )
 
         XCTAssertTrue(toolbar.presentation.showsSearchField)
+        XCTAssertEqual(toolbar.presentation.searchFieldLabel, "Filter Search Engines")
         toolbar.setSearchText("duck")
 
         toolbar.showRoot(title: "General")

@@ -43,7 +43,7 @@ struct SettingsGeneralTab: View {
                     sumiSettings.generalSettingsRoute = .overview
                 },
                 forwardAction: nil,
-                showsSearchField: true
+                searchFieldLabel: String(localized: "Filter Search Engines")
             )
         } else {
             toolbarOwner.show(
