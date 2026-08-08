@@ -130,6 +130,64 @@ final class FaviconDiscoveryScriptTests: XCTestCase {
         await fulfillment(of: [updatedPayload], timeout: 5.0)
     }
 
+    func testDynamicFaviconMutationBurstPublishesOnlySettledState() async throws {
+        let (controller, normalTabController, scriptsProvider) = try makeFaviconController()
+        let recorder = FaviconUserScriptRecorder()
+        scriptsProvider.faviconScript.delegate = recorder
+        await normalTabController.waitForContentBlockingAssetsInstalled()
+
+        let webView = makeWebView(userContentController: controller)
+        let initialPayload = expectation(description: "initial payload delivered")
+        recorder.onLinks = { links, _, _ in
+            if links.contains(where: { $0.href.absoluteString == "https://example.com/initial.ico" }) {
+                initialPayload.fulfill()
+            }
+        }
+
+        await loadHTML(
+            """
+            <!doctype html>
+            <html>
+              <head>
+                <link id="fav" rel="icon" href="/initial.ico" type="image/x-icon">
+              </head>
+              <body>ok</body>
+            </html>
+            """,
+            baseURL: URL(string: "https://example.com/article")!,
+            into: webView
+        )
+
+        await fulfillment(of: [initialPayload], timeout: 5.0)
+
+        let settledPayload = expectation(description: "settled favicon payload delivered")
+        let intermediatePayload = expectation(description: "intermediate favicon payload suppressed")
+        intermediatePayload.isInverted = true
+        recorder.onLinks = { links, _, _ in
+            let hrefs = Set(links.map(\.href.absoluteString))
+            if hrefs.contains("https://example.com/final.ico") {
+                settledPayload.fulfill()
+            } else if hrefs.contains(where: { $0.contains("intermediate-") }) {
+                intermediatePayload.fulfill()
+            }
+        }
+
+        try await evaluate(
+            """
+            const favicon = document.getElementById('fav');
+            setTimeout(() => favicon.setAttribute('href', '/intermediate-one.ico'), 0);
+            setTimeout(() => favicon.setAttribute('href', '/intermediate-two.ico'), 80);
+            setTimeout(() => favicon.setAttribute('href', '/final.ico'), 160);
+            """,
+            in: webView
+        )
+
+        await fulfillment(
+            of: [settledPayload, intermediatePayload],
+            timeout: 0.8
+        )
+    }
+
     func testDDGUserContentControllerReportsSPANavigationChanges() async throws {
         let (controller, normalTabController, scriptsProvider) = try makeFaviconController()
         let recorder = FaviconUserScriptRecorder()

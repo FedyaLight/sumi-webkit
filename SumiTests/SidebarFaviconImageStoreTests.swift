@@ -1,5 +1,5 @@
-@testable import Sumi
 import AppKit
+@testable import Sumi
 import XCTest
 
 @MainActor
@@ -97,6 +97,91 @@ final class SidebarFaviconImageStoreTests: XCTestCase {
         XCTAssertEqual(
             store.loadKey(launchURL: launchURL, partition: otherPartition),
             otherKey
+        )
+    }
+
+    func testLiveAliasUpdateInvalidatesOnlyAffectedSidebarFavicons() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "SidebarFaviconScopedUpdate-\(UUID().uuidString)",
+                isDirectory: true
+            )
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let notificationCenter = NotificationCenter()
+        let store = SidebarFaviconImageStore(
+            notificationCenter: notificationCenter
+        )
+        let reader = SidebarFaviconImageReaderStub(image: solidImage())
+        let updatedURL = try XCTUnwrap(URL(string: "https://mail.example/inbox"))
+        let aliasURL = try XCTUnwrap(URL(string: "https://launcher.example/mail"))
+        let unrelatedURL = try XCTUnwrap(URL(string: "https://calendar.example/app"))
+        let iconURL = try XCTUnwrap(URL(string: "https://mail.example/favicon.png"))
+        let partition = SumiFaviconPartition.regular(nil)
+
+        for url in [updatedURL, aliasURL, unrelatedURL] {
+            await store.load(
+                launchURL: url,
+                partition: partition,
+                imageReader: reader
+            )
+        }
+        let updatedKey = store.loadKey(
+            launchURL: updatedURL,
+            partition: partition
+        )
+        let aliasKey = store.loadKey(
+            launchURL: aliasURL,
+            partition: partition
+        )
+        let unrelatedKey = store.loadKey(
+            launchURL: unrelatedURL,
+            partition: partition
+        )
+
+        let scopedUpdate = faviconUpdateExpectation(
+            domain: "mail.example",
+            notificationCenter: notificationCenter
+        )
+        let aliasUpdate = faviconUpdateExpectation(
+            domain: "launcher.example",
+            notificationCenter: notificationCenter
+        )
+        let broadUpdate = faviconUpdateExpectation(
+            domain: nil,
+            notificationCenter: notificationCenter,
+            isInverted: true
+        )
+        let image = try await ingestLiveFavicon(
+            rootDirectory: directory,
+            notificationCenter: notificationCenter,
+            documentURL: updatedURL,
+            aliasURL: aliasURL,
+            iconURL: iconURL,
+            partition: partition
+        )
+        XCTAssertNotNil(image)
+
+        await fulfillment(
+            of: [scopedUpdate, aliasUpdate, broadUpdate],
+            timeout: 0.5
+        )
+        await Task.yield()
+
+        XCTAssertNotEqual(
+            store.loadKey(launchURL: updatedURL, partition: partition),
+            updatedKey
+        )
+        XCTAssertNotEqual(
+            store.loadKey(launchURL: aliasURL, partition: partition),
+            aliasKey
+        )
+        XCTAssertEqual(
+            store.loadKey(launchURL: unrelatedURL, partition: partition),
+            unrelatedKey
+        )
+        XCTAssertNotNil(
+            store.nsImage(for: unrelatedURL, partition: partition)
         )
     }
 
@@ -257,6 +342,68 @@ final class SidebarFaviconImageStoreTests: XCTestCase {
                 matches: launchURL,
                 partition: partition
             )
+        )
+    }
+
+    private func faviconUpdateExpectation(
+        domain: String?,
+        notificationCenter: NotificationCenter,
+        isInverted: Bool = false
+    ) -> XCTestExpectation {
+        let result = expectation(
+            forNotification: .faviconCacheUpdated,
+            object: nil,
+            notificationCenter: notificationCenter
+        ) { notification in
+            notification.userInfo?[
+                NSNotification.Name.faviconCacheUpdatedDomainKey
+            ] as? String == domain
+        }
+        result.isInverted = isInverted
+        return result
+    }
+
+    private func ingestLiveFavicon(
+        rootDirectory: URL,
+        notificationCenter: NotificationCenter,
+        documentURL: URL,
+        aliasURL: URL,
+        iconURL: URL,
+        partition: SumiFaviconPartition
+    ) async throws -> NSImage? {
+        let fetcher = RoutingFaviconNetworkFetcher(
+            responses: [
+                iconURL.absoluteString: .success(
+                    SumiFaviconFetchResponse(
+                        data: try SumiFaviconTestImages.pngData(
+                            width: 64,
+                            height: 64
+                        ),
+                        mimeType: "image/png",
+                        statusCode: 200
+                    )
+                ),
+            ]
+        )
+        let runtime = SumiFaviconRuntime(
+            rootDirectory: rootDirectory,
+            fetcher: fetcher,
+            notificationCenter: notificationCenter
+        )
+        return await runtime.liveDiscovery.ingest(
+            links: [
+                SumiFaviconDiscoveredLink(
+                    href: iconURL.absoluteString,
+                    rel: "icon",
+                    type: "image/png",
+                    sizes: "64x64"
+                ),
+            ],
+            documentURL: documentURL,
+            baseURL: documentURL,
+            partition: partition,
+            webView: nil,
+            aliasPageURLs: [documentURL, aliasURL]
         )
     }
 

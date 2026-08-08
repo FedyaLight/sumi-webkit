@@ -70,12 +70,11 @@ final class SumiFaviconTransportUserScript: NSObject, SumiPageScript, @MainActor
             });
           };
 
-          let pending = false;
+          let pendingTimer = null;
           const schedule = () => {
-            if (pending) { return; }
-            pending = true;
-            setTimeout(() => {
-              pending = false;
+            if (pendingTimer !== null) { clearTimeout(pendingTimer); }
+            pendingTimer = setTimeout(() => {
+              pendingTimer = null;
               postPayload();
             }, 120);
           };

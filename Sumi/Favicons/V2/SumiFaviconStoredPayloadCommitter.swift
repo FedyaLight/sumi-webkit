@@ -51,18 +51,11 @@ final class SumiFaviconStoredPayloadCommitter: @unchecked Sendable {
                     revision: oldSelection.revision
                 )
             }
-            updatePublisher.publish(
-                domain: candidate.pageURL.host,
+            publishUpdates(
+                for: [candidate.pageURL] + aliasPageURLs,
                 partition: candidate.partition,
                 revision: selection.revision
             )
-            if !aliasPageURLs.isEmpty {
-                updatePublisher.publish(
-                    domain: nil,
-                    partition: candidate.partition,
-                    revision: selection.revision
-                )
-            }
             return selection
         }
     }
@@ -82,10 +75,33 @@ final class SumiFaviconStoredPayloadCommitter: @unchecked Sendable {
                     revision: invalidation.revision
                 )
             }
-            updatePublisher.publish(
-                domain: nil,
+            publishUpdates(
+                for: [selection.pageURL] + aliasPageURLs,
                 partition: selection.partition,
                 revision: selection.revision
+            )
+        }
+    }
+
+    private func publishUpdates(
+        for pageURLs: [URL],
+        partition: SumiFaviconPartition,
+        revision: String
+    ) {
+        let domains = Set(pageURLs.compactMap { $0.host?.lowercased() })
+        guard !domains.isEmpty else {
+            updatePublisher.publish(
+                domain: nil,
+                partition: partition,
+                revision: revision
+            )
+            return
+        }
+        for domain in domains.sorted() {
+            updatePublisher.publish(
+                domain: domain,
+                partition: partition,
+                revision: revision
             )
         }
     }
