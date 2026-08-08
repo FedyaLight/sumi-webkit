@@ -60,6 +60,10 @@ _Avoid_: Unsaved launcher
 A split participant owned by Pinned, a Pinned folder, or Essentials. A launcher may be loaded or unloaded without changing its durable identity; a saved launcher with no prior runtime session remains unloaded and is never background-loaded.
 _Avoid_: Placeholder tab
 
+**Shortcut**:
+A saved site launcher in the sidebar whose durable identity does not depend on whether its runtime page is currently materialized.
+_Avoid_: Keyboard shortcut, key binding, hotkey
+
 **Group Activation**:
 Loading every runtime page of a launcher-backed split and focusing one participant. Individual launcher members cannot be loaded or unloaded independently while grouped.
 _Avoid_: Member activation, partial loading
@@ -163,5 +167,71 @@ The exclusive search scope of a Command Palette Session: Everything, Actions, or
 _Avoid_: Parallel mode flags, tab-search state
 
 **Browser Action**:
-A browser behavior with one stable identity, presentation, availability rule, optional shortcut, and execution route shared by keyboard shortcuts and the Command Palette.
+A browser behavior with one stable identity, presentation, availability rule, optional Key Binding, and execution route shared by Keyboard Command Dispatch and the Command Palette.
 _Avoid_: Palette-only command, duplicate shortcut action
+
+**Browser Action Projection**:
+The exact-window presentation of one Browser Action: its menu and Command Palette titles, active or unassigned Key Binding, and current availability. Presentation surfaces read this projection, while execution revalidates the same identity against the same window.
+_Avoid_: Menu shortcut model, palette command copy, action closure row
+
+## Keyboard Command Language
+
+**Key Binding**:
+The user-configurable pairing of a key combination with one Browser Action.
+_Avoid_: Keyboard shortcut, hotkey, shortcut
+
+**Keyboard Command Dispatch**:
+The window-scoped resolution of a keyboard event to its native responder command, Browser Action, extension command, or transient-surface command.
+_Avoid_: Global shortcut handling, key interception
+
+**Command Authority**:
+The AppKit key-equivalent and responder-chain path that owns standard editing, focused-surface commands, and menu-exposed Browser Actions.
+_Avoid_: Monitor-first dispatch, global shortcut router
+
+**Command Ownership**:
+The exclusive assignment of one Key Binding to one command domain before event delivery. Runtime unavailability never transfers that binding to another command domain.
+_Avoid_: Runtime fallback chain, first handler wins
+
+**Extension Command**:
+A manifest-declared extension behavior identified by one extension identity and command name. Its manifest key is only a Suggested Binding; its active binding and ownership belong to the Browser Profile.
+_Avoid_: Extension shortcut, manifest accelerator
+
+**Unsupported Extension Command**:
+An Extension Command whose media-key or global activation capability Sumi does not implement. It remains declared and reports no active binding, owns no event, and is never downgraded to regular in-app delivery.
+_Avoid_: Disabled regular command, best-effort global command
+
+**Extension Command Adapter**:
+The window-scoped route from an active extension Key Binding to its loaded extension command after native and Browser Action ownership have been excluded.
+_Avoid_: Extension shortcut router, extension fallback chain
+
+**Native Reservation**:
+A key combination owned exclusively by macOS, AppKit editing, or the focused responder and unavailable to Browser Actions or extension commands.
+_Avoid_: Hard-coded shortcut exception, system-owned Browser Action
+
+**User Binding**:
+The one active Key Binding explicitly assigned by the user to a Browser Action or extension command.
+_Avoid_: Winning shortcut, runtime-selected binding
+
+**Suggested Binding**:
+A default Browser Action or extension-manifest Key Binding candidate that becomes active only when its combination has no owner.
+_Avoid_: Default active binding, fallback binding
+
+**Binding Assignment Projection**:
+The window-and-profile-specific view that gives one authoritative owner or inactive reason for every Key Binding across Browser Actions, extensions, and Native Reservations.
+_Avoid_: Shortcut lookup table, merged shortcut cache
+
+**Inactive Binding**:
+A preserved User Binding or Suggested Binding that owns no keyboard command because it conflicts with current policy, while retaining the reason it needs reassignment.
+_Avoid_: Invalid shortcut, discarded override
+
+**Transient Command Scope**:
+The window-local period in which an attached surface participates in AppKit key-equivalent and responder delivery. Attachment, key-window membership, and responder position define the scope; visibility alone does not.
+_Avoid_: Visible overlay priority, transient shortcut mode
+
+**Focus Return Target**:
+The responder that owned focus before a transient surface took it and is restored when that surface ends if it still belongs to the same window.
+_Avoid_: Previous focus flag, global active control
+
+**Keyboard Capture Session**:
+Temporary exclusive keyboard ownership held only while the Key Binding recorder is the focused responder, ending on commit, cancellation, focus loss, or teardown.
+_Avoid_: Recorder mode flag, shortcut monitor session

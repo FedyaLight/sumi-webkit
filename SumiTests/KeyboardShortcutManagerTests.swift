@@ -4,39 +4,16 @@ import XCTest
 @testable import Sumi
 import SumiDomain
 
-final class KeyboardShortcutStoreTests: XCTestCase {
-    private struct UnknownShortcutOverride: Codable {
-        var action: String
-        var keyCombination: KeyCombination?
-    }
-
-    func testLoadOverridesResetsUnknownActions() throws {
-        let suiteName = "KeyboardShortcutStoreTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        let overrides = [
-            UnknownShortcutOverride(
-                action: "unknown_action",
-                keyCombination: KeyCombination(key: "l", modifiers: [.command, .option])
-            ),
-        ]
-        defaults.set(try JSONEncoder().encode(overrides), forKey: "keyboard.shortcuts")
-
-        let store = KeyboardShortcutStore(userDefaults: defaults)
-        XCTAssertNil(store.loadOverrides())
-        XCTAssertNil(defaults.data(forKey: "keyboard.shortcuts"))
-    }
+final class KeyboardShortcutManagerTests: XCTestCase {
 
     @MainActor
     func testToastShortcutPresentationUsesCurrentShortcutManagerValue() {
-        let suiteName = "KeyboardShortcutStoreTests-\(UUID().uuidString)"
+        let suiteName = "KeyboardShortcutManagerTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         let shortcutManager = KeyboardShortcutManager(
-            userDefaults: defaults,
-            installEventMonitor: false
+            userDefaults: defaults
         )
 
         XCTAssertEqual(shortcutManager.shortcutDisplayString(for: .undoCloseTab), "⇧⌘T")
@@ -53,47 +30,12 @@ final class KeyboardShortcutStoreTests: XCTestCase {
     }
 
     @MainActor
-    func testRegisteredShortcutPassesThroughWhenActionRouterIsDetached() throws {
-        let suiteName = "KeyboardShortcutStoreTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let shortcutManager = KeyboardShortcutManager(
-            userDefaults: defaults,
-            installEventMonitor: false
-        )
-        let event = try XCTUnwrap(NSEvent.keyEvent(
-            with: .keyDown,
-            location: .zero,
-            modifierFlags: [.command],
-            timestamp: 0,
-            windowNumber: 0,
-            context: nil,
-            characters: "t",
-            charactersIgnoringModifiers: "t",
-            isARepeat: false,
-            keyCode: 17
-        ))
-
-        XCTAssertFalse(
-            shortcutManager.executeShortcut(
-                event,
-                in: BrowserShortcutContext(
-                    windowState: BrowserWindowState(),
-                    appKitWindow: NSWindow(),
-                    page: nil
-                )
-            )
-        )
-    }
-
-    @MainActor
     func testEveryEnabledDefaultShortcutResolvesToItsAction() {
-        let suiteName = "KeyboardShortcutStoreTests-\(UUID().uuidString)"
+        let suiteName = "KeyboardShortcutManagerTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let shortcutManager = KeyboardShortcutManager(
-            userDefaults: defaults,
-            installEventMonitor: false
+            userDefaults: defaults
         )
 
         for shortcut in DefaultKeyboardShortcuts.shortcuts {
@@ -108,12 +50,11 @@ final class KeyboardShortcutStoreTests: XCTestCase {
 
     @MainActor
     func testStandardBrowserKeyEventsResolveFromPhysicalKeys() throws {
-        let suiteName = "KeyboardShortcutStoreTests-\(UUID().uuidString)"
+        let suiteName = "KeyboardShortcutManagerTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let shortcutManager = KeyboardShortcutManager(
-            userDefaults: defaults,
-            installEventMonitor: false
+            userDefaults: defaults
         )
         let cases: [(
             key: String,
@@ -125,7 +66,6 @@ final class KeyboardShortcutStoreTests: XCTestCase {
             ("w", 0x0D, [.command, .shift], .closeWindow),
             ("t", 0x11, [.command], .newTab),
             ("t", 0x11, [.command, .shift], .undoCloseTab),
-            (",", 0x2B, [.command], .openSettings),
             ("\t", 0x30, [.control], .nextTab),
             ("\t", 0x30, [.control, .shift], .previousTab),
             ("1", 0x12, [.command], .goToTab1),
@@ -154,16 +94,37 @@ final class KeyboardShortcutStoreTests: XCTestCase {
                 combination.lookupKey
             )
         }
+
+        XCTAssertNil(
+            shortcutManager.resolvedShortcutAction(
+                for: KeyCombination(key: ",", modifiers: [.command])
+            ),
+            "Settings is owned by the native application menu"
+        )
+
+        for nativeEditingCombination in [
+            KeyCombination(key: "c", modifiers: [.command]),
+            KeyCombination(key: "v", modifiers: [.command]),
+            KeyCombination(
+                key: "v",
+                modifiers: [.command, .option, .shift]
+            ),
+        ] {
+            XCTAssertEqual(
+                shortcutManager.validate(nativeEditingCombination),
+                .systemOwned,
+                nativeEditingCombination.lookupKey
+            )
+        }
     }
 
     @MainActor
     func testCustomShortcutReplacesDefaultLookup() {
-        let suiteName = "KeyboardShortcutStoreTests-\(UUID().uuidString)"
+        let suiteName = "KeyboardShortcutManagerTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let shortcutManager = KeyboardShortcutManager(
-            userDefaults: defaults,
-            installEventMonitor: false
+            userDefaults: defaults
         )
         let replacement = KeyCombination(
             key: "k",
@@ -189,8 +150,8 @@ final class KeyboardShortcutStoreTests: XCTestCase {
     }
 
     @MainActor
-    func testCommandWUsesExactKeyBrowserWindowInsteadOfStaleActiveWindow() throws {
-        let suiteName = "KeyboardShortcutStoreTests-\(UUID().uuidString)"
+    func testMenuCommandUsesExactKeyBrowserWindowInsteadOfStaleActiveWindow() throws {
+        let suiteName = "KeyboardShortcutManagerTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let registry = WindowRegistry()
@@ -231,71 +192,18 @@ final class KeyboardShortcutStoreTests: XCTestCase {
         registry.setActive(staleActiveState)
 
         let shortcutManager = KeyboardShortcutManager(
-            userDefaults: defaults,
-            installEventMonitor: false
+            userDefaults: defaults
         )
         shortcutManager.attach(
             actionRouter: browser.shortcutActionRouter,
-            targetResolver: browser.shortcutTargetResolver,
-            extensionsModule: browser.optionalModules.extensions
+            targetResolver: browser.shortcutTargetResolver
         )
-        let event = try XCTUnwrap(
-            keyDownEvent(
-                key: "w",
-                keyCode: 0x0D,
-                modifiers: [.command]
-            )
-        )
-
-        XCTAssertNil(
-            shortcutManager.routeLocalKeyDown(
-                event,
-                keyWindow: keyWindow
-            )
+        XCTAssertTrue(
+            shortcutManager.perform(.closeTab, keyWindow: keyWindow)
         )
         XCTAssertIdentical(registry.activeWindow, staleActiveState)
         XCTAssertNotNil(browser.regularTabCollectionOwner.tab(for: staleTab.id))
         XCTAssertNil(browser.regularTabCollectionOwner.tab(for: keyTab.id))
-    }
-
-    @MainActor
-    func testChildWindowShortcutPassesToAppKitResponderChain() throws {
-        let suiteName = "KeyboardShortcutStoreTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let registry = WindowRegistry()
-        let browser = BrowserManager(windowRegistry: registry)
-        let windowState = BrowserWindowState()
-        browser.tabResidenceAuthority.establishResidenceSession(on: windowState)
-        XCTAssertEqual(registry.register(windowState), .registered)
-        let browserWindow = makeWindow()
-        let childWindow = makeWindow()
-        browserWindow.addChildWindow(childWindow, ordered: .above)
-        registry.bindAppKitWindow(browserWindow, to: windowState)
-        let shortcutManager = KeyboardShortcutManager(
-            userDefaults: defaults,
-            installEventMonitor: false
-        )
-        shortcutManager.attach(
-            actionRouter: browser.shortcutActionRouter,
-            targetResolver: browser.shortcutTargetResolver,
-            extensionsModule: browser.optionalModules.extensions
-        )
-        let event = try XCTUnwrap(
-            keyDownEvent(
-                key: "w",
-                keyCode: 0x0D,
-                modifiers: [.command]
-            )
-        )
-
-        XCTAssertIdentical(
-            shortcutManager.routeLocalKeyDown(
-                event,
-                keyWindow: childWindow
-            ),
-            event
-        )
     }
 
     @MainActor

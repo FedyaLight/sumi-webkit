@@ -38,15 +38,20 @@ final class SumiDatabase: @unchecked Sendable {
             switch schemaVersion {
             case 0:
                 try Self.createSchema(in: database)
-                try database.execute(sql: "PRAGMA user_version = 2")
+                try Self.createKeyboardCommandSchema(in: database)
+                try database.execute(sql: "PRAGMA user_version = 3")
             case 1:
                 try database.alter(table: "folders") { table in
                     table.add(column: "is_live", .boolean)
                         .notNull()
                         .defaults(to: false)
                 }
-                try database.execute(sql: "PRAGMA user_version = 2")
+                try Self.createKeyboardCommandSchema(in: database)
+                try database.execute(sql: "PRAGMA user_version = 3")
             case 2:
+                try Self.createKeyboardCommandSchema(in: database)
+                try database.execute(sql: "PRAGMA user_version = 3")
+            case 3:
                 break
             default:
                 throw SumiDatabaseError.unsupportedSchemaVersion(schemaVersion)
@@ -317,6 +322,25 @@ final class SumiDatabase: @unchecked Sendable {
                 table.column("override", .text).notNull()
             }
     }
+
+    private static func createKeyboardCommandSchema(in database: Database) throws {
+        try database.create(table: "browser_action_bindings") { table in
+            table.column("action_id", .text).primaryKey()
+            table.column("disposition", .text).notNull()
+            table.column("key", .text)
+            table.column("modifiers", .integer)
+        }
+
+        try database.create(table: "extension_command_bindings") { table in
+            table.column("profile_id", .blob).notNull()
+            table.column("extension_id", .text).notNull()
+            table.column("command_name", .text).notNull()
+            table.column("disposition", .text).notNull()
+            table.column("key", .text)
+            table.column("modifiers", .integer)
+            table.primaryKey(["profile_id", "extension_id", "command_name"])
+        }
+    }
 }
 
 struct SumiDatabaseConnection {
@@ -330,6 +354,7 @@ struct SumiDatabaseConnection {
     let extensions: ExtensionMetadataRecordStore
     let safariContentBlockers: SafariContentBlockerRecordStore
     let documents: BrowserDocumentRecordStore
+    let keyboardBindings: KeyboardBindingRecordStore
 
     fileprivate init(database: Database) {
         profiles = ProfileRecordStore(database: database)
@@ -344,6 +369,7 @@ struct SumiDatabaseConnection {
             database: database
         )
         documents = BrowserDocumentRecordStore(database: database)
+        keyboardBindings = KeyboardBindingRecordStore(database: database)
     }
 }
 

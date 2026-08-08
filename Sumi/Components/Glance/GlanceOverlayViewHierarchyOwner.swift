@@ -7,7 +7,6 @@ final class GlanceOverlayViewHierarchyOwner {
     private let contentShadowView: NSView
     private let webClipView: NSView
     private let actionChrome: GlanceOverlayActionChrome
-    private let keyCommands: GlanceOverlayKeyCommandOwner
     private let presentationState: GlanceOverlayPresentationStateOwner
     private let previewHostAttachment: GlancePreviewHostAttachmentOwner
     private let overlayLayout: GlanceOverlayLayout
@@ -22,7 +21,6 @@ final class GlanceOverlayViewHierarchyOwner {
         contentShadowView: NSView,
         webClipView: NSView,
         actionChrome: GlanceOverlayActionChrome,
-        keyCommands: GlanceOverlayKeyCommandOwner,
         presentationState: GlanceOverlayPresentationStateOwner,
         previewHostAttachment: GlancePreviewHostAttachmentOwner,
         overlayLayout: GlanceOverlayLayout,
@@ -36,7 +34,6 @@ final class GlanceOverlayViewHierarchyOwner {
         self.contentShadowView = contentShadowView
         self.webClipView = webClipView
         self.actionChrome = actionChrome
-        self.keyCommands = keyCommands
         self.presentationState = presentationState
         self.previewHostAttachment = previewHostAttachment
         self.overlayLayout = overlayLayout
@@ -85,11 +82,9 @@ final class GlanceOverlayViewHierarchyOwner {
         webContentShieldAnchorView.isHidden = !isVisible
 
         if isVisible {
-            keyCommands.installIfNeeded()
             contentShadowView.alphaValue = 1
             actionChrome.alphaValue = 1
         } else {
-            keyCommands.uninstall()
             publishContentFrame(nil, in: rootView)
             WebContentMouseTrackingShield.unregister(webContentShieldAnchorView)
             rootView?.sidebarPassthroughRect = nil
@@ -160,6 +155,5 @@ final class GlanceOverlayViewHierarchyOwner {
         contentShadowView.isHidden = false
         actionChrome.isHidden = false
         webContentShieldAnchorView.isHidden = false
-        keyCommands.installIfNeeded()
     }
 }

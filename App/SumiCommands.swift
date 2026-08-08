@@ -6,8 +6,8 @@
 //
 
 import AppKit
-import SwiftUI
 import SumiDomain
+import SwiftUI
 
 struct SumiCommands: Commands {
     let browserContext: SumiCommandsBrowserContext
@@ -15,7 +15,6 @@ struct SumiCommands: Commands {
     let shortcutManager: KeyboardShortcutManager
     let settingsNavigation: SettingsNavigationOwner
     private let updaterService: SumiUpdaterService
-    @ObservedObject private var recentlyClosedManager: RecentlyClosedManager
     @ObservedObject private var menuFaviconInvalidator: SumiMenuFaviconInvalidator
 
     init(
@@ -31,7 +30,6 @@ struct SumiCommands: Commands {
         self.shortcutManager = shortcutManager
         self.settingsNavigation = settingsNavigation
         self.updaterService = updaterService
-        self.recentlyClosedManager = browserContext.recentlyClosedManager
         self._menuFaviconInvalidator = ObservedObject(wrappedValue: menuFaviconInvalidator)
     }
 
@@ -49,6 +47,17 @@ struct SumiCommands: Commands {
 
     private func performShortcut(_ action: ShortcutAction) {
         _ = shortcutManager.perform(action, keyWindow: NSApp.keyWindow)
+    }
+
+    private func browserActionButton(
+        _ action: ShortcutAction,
+        title: String? = nil
+    ) -> some View {
+        Button(title ?? action.displayName) {
+            performShortcut(action)
+        }
+        .modifier(dynamicShortcut(action))
+        .disabled(!shortcutManager.canPerform(action, keyWindow: NSApp.keyWindow))
     }
 
     @CommandsBuilder
@@ -73,11 +82,15 @@ struct SumiCommands: Commands {
                     selecting: settingsNavigation.currentSettingsTab
                 )
             }
-            .modifier(dynamicShortcut(.openSettings))
+            .keyboardShortcut(",", modifiers: [.command])
         }
 
         CommandGroup(replacing: .saveItem) {
             EmptyView()
+        }
+
+        CommandGroup(replacing: .printItem) {
+            browserActionButton(.printPage)
         }
     }
 
@@ -95,9 +108,7 @@ struct SumiCommands: Commands {
         )
 
         CommandMenu("Extensions") {
-            Button("Manage Extensions...") {
-                browserContext.openSettingsTab(selecting: .extensions)
-            }
+            browserActionButton(.manageExtensions, title: "Manage Extensions…")
             #if DEBUG
             Divider()
             Button("Run Safari Extension Acceptance Check") {
@@ -121,17 +132,53 @@ struct SumiCommands: Commands {
             }
             .disabled(browserContext.activePageHost == nil)
 
+            browserActionButton(
+                .clearCookiesAndRefresh,
+                title: "Clear Cookies and Reload"
+            )
+
             Button("Clear Browsing History") {
                 browserContext.clearAllHistoryFromMenu()
             }
         }
 
         CommandMenu("Appearance") {
-            Button("Customize Space Gradient...") {
-                performShortcut(.customizeSpaceGradient)
+            browserActionButton(
+                .customizeSpaceGradient,
+                title: "Customize Space Gradient…"
+            )
+
+            Divider()
+
+            ForEach(
+                Array(BrowserActionMenuOwnershipCatalog.appearance.dropFirst()),
+                id: \.self
+            ) { action in
+                browserActionButton(action)
             }
-            .modifier(dynamicShortcut(.customizeSpaceGradient))
-            .disabled(browserContext.canCustomizeSpaceGradient == false)
+        }
+
+        CommandMenu("Tabs") {
+            ForEach(
+                Array(BrowserActionMenuOwnershipCatalog.tabs.dropFirst()),
+                id: \.self
+            ) { action in
+                browserActionButton(action)
+            }
+
+            Divider()
+
+            Menu("Split View") {
+                ForEach(BrowserActionMenuOwnershipCatalog.splitView, id: \.self) { action in
+                    browserActionButton(action)
+                }
+            }
+        }
+
+        CommandMenu("Spaces") {
+            ForEach(BrowserActionMenuOwnershipCatalog.spaces, id: \.self) { action in
+                browserActionButton(action)
+            }
         }
     }
 
@@ -139,57 +186,7 @@ struct SumiCommands: Commands {
         CommandGroup(replacing: .newItem) {
             EmptyView()
         }
-        CommandGroup(replacing: .appTermination) {
-            Button("Quit Sumi") {
-                _ = shortcutManager.perform(
-                    .closeBrowser,
-                    keyWindow: NSApp.keyWindow
-                )
-            }
-            .modifier(dynamicShortcut(.closeBrowser))
-        }
-        CommandGroup(replacing: .windowList) {
-            EmptyView()
-        }
-        CommandGroup(replacing: .windowArrangement) {
-            Button("Minimize") {
-                NSApp.keyWindow?.miniaturize(nil)
-            }
-            .keyboardShortcut("m", modifiers: [.command])
-
-            Button("Zoom") {
-                NSApp.keyWindow?.zoom(nil)
-            }
-
-            Divider()
-
-            Button("Close Tab") {
-                performShortcut(.closeTab)
-            }
-            .modifier(dynamicShortcut(.closeTab))
-
-            Button("Close Window") {
-                performShortcut(.closeWindow)
-            }
-            .modifier(dynamicShortcut(.closeWindow))
-
-            Divider()
-
-            Button("Bring All to Front") {
-                NSApp.arrangeInFront(nil)
-            }
-        }
-
         applicationCommands
-
-        // Edit Section
-        CommandGroup(replacing: .undoRedo) {
-            Button("Undo Close Tab") {
-                performShortcut(.undoCloseTab)
-            }
-            .modifier(dynamicShortcut(.undoCloseTab))
-            .disabled(recentlyClosedManager.canReopenRecentlyClosedItem == false)
-        }
 
         // File Section
         CommandGroup(after: .newItem) {
@@ -203,9 +200,9 @@ struct SumiCommands: Commands {
             .modifier(dynamicShortcut(.newWindow))
 
             Button("New Private Window") {
-                browserContext.createIncognitoWindow()
+                performShortcut(.newPrivateWindow)
             }
-            .keyboardShortcut("n", modifiers: [.command, .shift])
+            .modifier(dynamicShortcut(.newPrivateWindow))
 
             Divider()
             Button("Open Command Bar") {
@@ -219,6 +216,12 @@ struct SumiCommands: Commands {
             }
             .modifier(dynamicShortcut(.copyCurrentURL))
             .disabled(browserContext.hasActivePageTab == false)
+
+            Divider()
+
+            browserActionButton(.closeTab)
+
+            browserActionButton(.closeWindow)
         }
 
         // Sidebar commands
@@ -271,6 +274,10 @@ struct SumiCommands: Commands {
             .modifier(dynamicShortcut(.hardReload))
             .disabled(browserContext.canReloadActivePage == false)
 
+            browserActionButton(.toggleReaderMode)
+
+            browserActionButton(.newBoost)
+
             Divider()
 
             Button("Web Inspector") {
@@ -294,37 +301,13 @@ struct SumiCommands: Commands {
 
             Divider()
 
-            Menu("Split View") {
-                Button("Grid Layout") {
-                    performShortcut(.splitGrid)
-                }
-                .modifier(dynamicShortcut(.splitGrid))
+            browserActionButton(.viewDownloads)
 
-                Button("Vertical Layout") {
-                    performShortcut(.splitVertical)
-                }
-                .modifier(dynamicShortcut(.splitVertical))
+            browserActionButton(.captureScreenshot)
 
-                Button("Horizontal Layout") {
-                    performShortcut(.splitHorizontal)
-                }
-                .modifier(dynamicShortcut(.splitHorizontal))
+            browserActionButton(.toggleTabsOnRight)
 
-                Divider()
-
-                Button("New Empty Split") {
-                    performShortcut(.newEmptySplit)
-                }
-                .modifier(dynamicShortcut(.newEmptySplit))
-
-                Divider()
-
-                Button("Unsplit") {
-                    performShortcut(.unsplit)
-                }
-                .modifier(dynamicShortcut(.unsplit))
-            }
-            .disabled(browserContext.hasActivePageTab == false)
+            Divider()
         }
 
         secondaryCommandMenus

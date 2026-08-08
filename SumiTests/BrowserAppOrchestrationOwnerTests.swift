@@ -83,15 +83,11 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
         )
     }
 
-    func testSetupAttachesExactExtensionCommandSurface() throws {
+    func testSetupDoesNotMaterializeExtensionRuntime() throws {
         let harness = makeHarness()
 
         harness.owner.setupIfNeeded(dependencies: harness.dependencies)
 
-        XCTAssertIdentical(
-            harness.keyboardShortcutManager.extensionsModule,
-            harness.browserManager.optionalModules.extensions
-        )
         XCTAssertFalse(
             harness.browserManager.optionalModules.extensions.hasLoadedRuntime
         )
@@ -103,7 +99,7 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
         let nowPlayingController = SumiNativeNowPlayingController()
         let settings = SumiSettingsService(nowPlayingController: nowPlayingController)
         let registry = WindowRegistry()
-        let shortcuts = KeyboardShortcutManager(installEventMonitor: false)
+        let shortcuts = KeyboardShortcutManager()
         var browserManager: BrowserManager? = BrowserManager(
             windowRegistry: registry,
             nowPlayingController: nowPlayingController
@@ -173,7 +169,7 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
             windowRegistry: windowRegistry,
             nowPlayingController: nowPlayingController
         )
-        let keyboardShortcutManager = KeyboardShortcutManager(installEventMonitor: false)
+        let keyboardShortcutManager = KeyboardShortcutManager()
         var startUpdaterCallCount = 0
         let factory: BrowserWindowShellService.ContentViewFactory = { _, _ in
             NSView()

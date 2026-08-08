@@ -133,13 +133,10 @@ final class BrowserShortcutActionRouterTests: XCTestCase {
         windowState.currentShortcutPinId = pin.id
         windowState.currentShortcutPinRole = .spacePinned
 
-        let shortcuts = KeyboardShortcutManager(
-            installEventMonitor: false
-        )
+        let shortcuts = KeyboardShortcutManager()
         shortcuts.attach(
             actionRouter: browserManager.shortcutActionRouter,
-            targetResolver: browserManager.shortcutTargetResolver,
-            extensionsModule: browserManager.optionalModules.extensions
+            targetResolver: browserManager.shortcutTargetResolver
         )
 
         let presentations =

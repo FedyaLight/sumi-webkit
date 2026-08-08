@@ -429,6 +429,11 @@ final class FindInPageViewController: NSViewController {
     }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+            delegate?.findInPageDone(self)
+            return true
+        }
+
         guard NSApp.sumi_chromeIsReturnOrEnterPressed,
               var modifiers = NSApp.currentEvent?.modifierFlags.intersection(.deviceIndependentFlagsMask)
         else {

@@ -117,11 +117,12 @@ struct SumiApp: App {
         let initialWindowState = browserManager.makeInitialWindowState(
             preparesForLaunch: preparesInitialWindow
         )
-        let keyboardShortcutManager = KeyboardShortcutManager()
+        let keyboardShortcutManager = KeyboardShortcutManager(
+            database: SumiStartupPersistenceComposition.database
+        )
         keyboardShortcutManager.attach(
             actionRouter: browserManager.shortcutActionRouter,
-            targetResolver: browserManager.shortcutTargetResolver,
-            extensionsModule: browserManager.optionalModules.extensions
+            targetResolver: browserManager.shortcutTargetResolver
         )
         self.updaterService = updaterService
         self.defaultBrowserService = defaultBrowserService

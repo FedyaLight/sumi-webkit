@@ -6,7 +6,7 @@ import XCTest
 
 /// Safari parity for the two chrome surfaces WebKit leaves to the embedding
 /// app: manifest `commands` keyboard shortcuts (dispatched through
-/// `WKWebExtensionContext.performCommand(for: NSEvent)`) and extension
+/// exact `WKWebExtension.Command` dispatch) and extension
 /// context-menu items (`menuItems(for:)`, backed by the menus/contextMenus
 /// API from the extension's background script).
 @available(macOS 15.5, *)
@@ -21,6 +21,11 @@ final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
         )
         let manager = fixture.manager
         let inspection = fixture.inspection
+        XCTAssertFalse(
+            inspection.actionSurfaces.keyboardCommands
+                .hasEventMonitorForTesting,
+            "No extension binding means no keyboard monitor"
+        )
 
         let installed = try await installCommandAndMenuProbeExtension(
             manager: manager,
@@ -34,6 +39,11 @@ final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
             )
         )
         XCTAssertTrue(extensionContext.isLoaded)
+        XCTAssertTrue(
+            inspection.actionSurfaces.keyboardCommands
+                .hasEventMonitorForTesting,
+            "The adapter is resident only while a supported binding is active"
+        )
 
         let command = try XCTUnwrap(
             extensionContext.commands.first {
@@ -50,11 +60,33 @@ final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
         let matching = try XCTUnwrap(
             keyDownEvent(key: "u", keyCode: 32, modifiers: [.option, .shift])
         )
-        XCTAssertTrue(
+        XCTAssertFalse(
             inspection.actionSurfaces.keyboardCommands.performCommand(
                 for: matching
             ),
+            "An event without an exact registered window must fail closed"
+        )
+        XCTAssertTrue(
+            inspection.actionSurfaces.keyboardCommands.performCommand(
+                for: matching,
+                profileID: profile.id
+            ),
             "Alt+Shift+U must dispatch the manifest command"
+        )
+
+        let extraModifier = try XCTUnwrap(
+            keyDownEvent(
+                key: "u",
+                keyCode: 32,
+                modifiers: [.command, .option, .shift]
+            )
+        )
+        XCTAssertFalse(
+            inspection.actionSurfaces.keyboardCommands.performCommand(
+                for: extraModifier,
+                profileID: profile.id
+            ),
+            "MV3 accelerators require exact modifiers"
         )
 
         let differentKey = try XCTUnwrap(
@@ -62,7 +94,8 @@ final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
         )
         XCTAssertFalse(
             inspection.actionSurfaces.keyboardCommands.performCommand(
-                for: differentKey
+                for: differentKey,
+                profileID: profile.id
             ),
             "A non-declared shortcut must not be consumed"
         )
@@ -72,9 +105,35 @@ final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
         )
         XCTAssertFalse(
             inspection.actionSurfaces.keyboardCommands.performCommand(
-                for: unmodified
+                for: unmodified,
+                profileID: profile.id
             ),
             "Plain typing must never reach extension command dispatch"
+        )
+
+        try ExtensionCommandAssignments(database: container).clear(
+            ExtensionCommandBindingIdentity(
+                profileID: profile.id,
+                extensionID: installed.id,
+                commandName: command.id
+            )
+        )
+        await Task.yield()
+        XCTAssertNil(
+            command.activationKey,
+            "commands.getAll() must report a cleared binding as blank"
+        )
+        XCTAssertFalse(
+            inspection.actionSurfaces.keyboardCommands
+                .hasEventMonitorForTesting,
+            "Clearing the final active binding removes the monitor"
+        )
+        XCTAssertFalse(
+            inspection.actionSurfaces.keyboardCommands.performCommand(
+                for: matching,
+                profileID: profile.id
+            ),
+            "A cleared command must no longer own its former key"
         )
     }
 

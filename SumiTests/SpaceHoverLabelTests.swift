@@ -399,7 +399,7 @@ final class SpaceHoverLabelTests: XCTestCase {
         addTeardownBlock {
             defaults.removePersistentDomain(forName: suiteName)
         }
-        return KeyboardShortcutManager(userDefaults: defaults, installEventMonitor: false)
+        return KeyboardShortcutManager(userDefaults: defaults)
     }
 
     @MainActor

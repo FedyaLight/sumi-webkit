@@ -431,7 +431,7 @@ extension SidebarSpaceBodyInjectionRegressionTests {
             windowState: windowState,
             windowRegistry: windowRegistry,
             sumiSettings: SumiSettingsService(userDefaults: settingsDefaults),
-            keyboardShortcutManager: KeyboardShortcutManager(installEventMonitor: false),
+            keyboardShortcutManager: KeyboardShortcutManager(),
             nowPlayingController: nowPlayingController,
             updaterService: updaterService,
             resolvedThemeContext: .default,

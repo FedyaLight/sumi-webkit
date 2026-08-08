@@ -373,9 +373,7 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
             windowState: windowState,
             windowRegistry: registry,
             sumiSettings: SumiSettingsService(userDefaults: settingsDefaults),
-            keyboardShortcutManager: KeyboardShortcutManager(
-                installEventMonitor: false
-            ),
+            keyboardShortcutManager: KeyboardShortcutManager(),
             nowPlayingController: nowPlayingController,
             updaterService: updaterService,
             resolvedThemeContext: .default,

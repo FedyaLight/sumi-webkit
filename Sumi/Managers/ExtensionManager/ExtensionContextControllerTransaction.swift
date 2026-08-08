@@ -114,6 +114,7 @@ final class ExtensionContextControllerTransaction {
             )
             let contextLoadStart = CFAbsoluteTimeGetCurrent()
             try controller.load(context)
+            profileRuntime.contextLoadStateDidChange()
             try validateBoundContext(
                 receipt,
                 context: context,

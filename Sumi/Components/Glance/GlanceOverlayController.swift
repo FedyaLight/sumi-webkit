@@ -26,22 +26,6 @@ final class GlanceOverlayController: NSObject {
     private lazy var actionChrome = GlanceOverlayActionChrome { [weak self] action in
         self?.handleActionChromeAction(action)
     }
-    private lazy var keyCommands = GlanceOverlayKeyCommandOwner(
-        rootWindow: { [weak self] in self?.rootView?.window },
-        activeWindowID: { [weak self] in self?.session?.windowId },
-        dismissCommandPaletteIfVisible: { [weak self] windowID in
-            self?.manager?.dismissCommandPaletteIfVisible(in: windowID) == true
-        },
-        isFindBarVisible: { [weak self] in
-            self?.manager?.isFindBarVisible == true
-        },
-        hideFindBar: { [weak self] in
-            _ = self?.manager?.hideFindBar()
-        },
-        closeOverlay: { [weak self] in
-            _ = self?.closeFromBackdrop()
-        }
-    )
     private lazy var motion = GlanceOverlayMotionController(
         contentShadowView: contentShadowView,
         webClipView: webClipView
@@ -52,7 +36,6 @@ final class GlanceOverlayController: NSObject {
         contentShadowView: contentShadowView,
         webClipView: webClipView,
         actionChrome: actionChrome,
-        keyCommands: keyCommands,
         presentationState: presentationState,
         previewHostAttachment: previewHostAttachment,
         overlayLayout: overlayLayout,
@@ -91,6 +74,11 @@ final class GlanceOverlayController: NSObject {
         rootView.onActionChromeMouseDown = { [weak self] point in
             self?.actionChrome.handleMouseDown(at: point, from: self?.rootView) == true
         }
+        rootView.onCancelOperation = { [weak self] in
+            guard self?.session != nil else { return false }
+            self?.closeFromBackdrop()
+            return true
+        }
         configureViews()
     }
 
@@ -110,7 +98,6 @@ final class GlanceOverlayController: NSObject {
 
         guard let session else {
             presentationState.resetForMissingSession()
-            keyCommands.uninstall()
             viewHierarchy.tearDownPresentedViews(
                 preservingPromotionHandoff: promotionHandoff.preservesPresentedHostDuringTeardown
             )
@@ -168,11 +155,11 @@ final class GlanceOverlayController: NSObject {
         dismissSessionIfStillOwned()
         presentationState.prepareForTearDown()
         promotionHandoff.reset()
-        keyCommands.uninstall()
         viewHierarchy.tearDownPresentedViews()
         rootView?.onLayout = nil
         rootView?.onBackgroundMouseDown = nil
         rootView?.onActionChromeMouseDown = nil
+        rootView?.onCancelOperation = nil
     }
 
     private func dismissSessionIfStillOwned() {

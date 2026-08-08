@@ -1,6 +1,6 @@
 import AppKit
-import WebKit
 import SumiWebRuntime
+import WebKit
 
 @MainActor
 final class HostedWebViewPresentationObservation {
@@ -39,6 +39,18 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
     private var runtimeEvictionHandler: ((SumiWebViewContainerView) -> Void)?
 
     override var constraints: [NSLayoutConstraint] { [] }
+
+    override func keyDown(with event: NSEvent) {
+        let commandModifiers = event.modifierFlags.intersection([
+            .command, .control, .option,
+        ])
+        guard commandModifiers.isEmpty else {
+            super.keyDown(with: event)
+            return
+        }
+        // WebKit and its page responders have already declined this ordinary
+        // key. End the page-local responder path without a system beep.
+    }
 
     init(tabID: UUID, webView: WKWebView) {
         self.tabID = tabID
@@ -273,7 +285,7 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) {
+    required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
@@ -326,7 +338,6 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
               certificateTrustWarningView.superview === self else { return }
         addSubview(certificateTrustWarningView, positioned: .above, relativeTo: nil)
     }
-
 }
 
 @MainActor

@@ -12,10 +12,18 @@ extension KeyCombination {
         0x28: "k", 0x29: ";", 0x2A: "\\", 0x2B: ",", 0x2C: "/", 0x2D: "n", 0x2E: "m", 0x2F: ".",
         0x30: "tab", 0x31: "space", 0x33: "delete", 0x35: "escape", 0x7B: "leftarrow",
         0x7C: "rightarrow", 0x7D: "downarrow", 0x7E: "uparrow",
+        0x72: "insert", 0x73: "home", 0x74: "pageup", 0x75: "delete",
+        0x77: "end", 0x79: "pagedown",
+        0x7A: "f1", 0x78: "f2", 0x63: "f3", 0x76: "f4",
+        0x60: "f5", 0x61: "f6", 0x62: "f7", 0x64: "f8",
+        0x65: "f9", 0x6D: "f10", 0x67: "f11", 0x6F: "f12",
     ]
 
     private static let namedPhysicalKeys: Set<String> = [
         "return", "tab", "space", "delete", "escape", "leftarrow", "rightarrow", "downarrow", "uparrow",
+        "insert", "home", "end", "pageup", "pagedown",
+        "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9",
+        "f10", "f11", "f12",
     ]
 
     init?(from event: NSEvent) {

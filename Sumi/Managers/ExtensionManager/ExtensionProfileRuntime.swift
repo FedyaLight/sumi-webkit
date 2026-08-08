@@ -12,7 +12,14 @@ final class ExtensionProfileRuntime {
     /// attached. It is the evidence that lets store resolution distinguish a
     /// durable profile from a private partition it has not met yet.
     private var browserProfileQuery: ExtensionBrowserProfileQuery?
-    var currentProfileId: UUID?
+    var currentProfileId: UUID? {
+        didSet {
+            if currentProfileId != oldValue {
+                keyboardCommandBindingsDidChange?()
+            }
+        }
+    }
+    var keyboardCommandBindingsDidChange: (() -> Void)?
 
     init(
         initialProfileId: UUID?,
@@ -129,6 +136,7 @@ final class ExtensionProfileRuntime {
         state.replaceContexts(contexts.filter {
             profileReferenceAdmission.isReferenceAllowed($0.key)
         })
+        keyboardCommandBindingsDidChange?()
     }
 
     func replaceContextBindingGenerations(_ generations: [UUID: UInt64]) {
@@ -234,11 +242,13 @@ final class ExtensionProfileRuntime {
         else {
             return nil
         }
-        return state.setContext(
+        let receipt = state.setContext(
             context,
             extensionId: extensionId,
             profileId: profileId
         )
+        keyboardCommandBindingsDidChange?()
+        return receipt
     }
 
     #if DEBUG
@@ -265,7 +275,14 @@ final class ExtensionProfileRuntime {
         extensionId: String,
         profileId: UUID
     ) -> (context: WKWebExtensionContext, generation: UInt64)? {
-        state.removeContext(extensionId: extensionId, profileId: profileId)
+        let removal = state.removeContext(
+            extensionId: extensionId,
+            profileId: profileId
+        )
+        if removal != nil {
+            keyboardCommandBindingsDidChange?()
+        }
+        return removal
     }
 
     func contextBindingReceipt(
@@ -298,7 +315,15 @@ final class ExtensionProfileRuntime {
     func removeContext(
         ifCurrent receipt: ExtensionContextBindingReceipt
     ) -> (context: WKWebExtensionContext, generation: UInt64)? {
-        state.removeContext(ifCurrent: receipt)
+        let removal = state.removeContext(ifCurrent: receipt)
+        if removal != nil {
+            keyboardCommandBindingsDidChange?()
+        }
+        return removal
+    }
+
+    func contextLoadStateDidChange() {
+        keyboardCommandBindingsDidChange?()
     }
 
     func contextBindingGeneration(for profileId: UUID) -> UInt64 {

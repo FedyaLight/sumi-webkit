@@ -142,10 +142,10 @@ struct FindInPageChromeRepresentable: NSViewControllerRepresentable {
         (nsViewController.view as? FindInPageChromeContainerView)?.setHoverShieldEnabled(false)
         coordinator.findViewController?.cancelPendingTextFocus()
 
-        guard let window = nsViewController.view.window,
-              let responder = window.firstResponder as? NSView,
-              responder.isDescendant(of: nsViewController.view) else { return }
-        window.makeFirstResponder(nil)
+        coordinator.restoreFocusIfOwned(
+            by: nsViewController.view,
+            in: nsViewController.view.window
+        )
     }
 
     func updateNSViewController(_ container: NSViewController, context: Context) {
@@ -154,14 +154,19 @@ struct FindInPageChromeRepresentable: NSViewControllerRepresentable {
 
         if isVisible {
             context.coordinator.lastVisibleModel = model
+            context.coordinator.captureFocusReturnTargetIfNeeded(
+                excluding: container.view,
+                in: container.view.window
+            )
         }
         let displayModel = isVisible ? model : context.coordinator.lastVisibleModel
         let shouldRender = isVisible || displayModel != nil
 
-        if !isVisible, let window = container.view.window,
-           let responder = window.firstResponder as? NSView,
-           responder.isDescendant(of: container.view) {
-            window.makeFirstResponder(nil)
+        if !isVisible {
+            context.coordinator.restoreFocusIfOwned(
+                by: container.view,
+                in: container.view.window
+            )
         }
         if !isVisible {
             findVC.cancelPendingTextFocus()
@@ -203,6 +208,7 @@ struct FindInPageChromeRepresentable: NSViewControllerRepresentable {
         weak var findViewController: FindInPageViewController?
         var lastVisibleModel: FindInPageModel?
         var lastChromePaintSignature: FindChromePaintSignature?
+        weak var focusReturnTarget: NSResponder?
 
         init(findManager: FindManager) {
             self.findManager = findManager
@@ -218,6 +224,37 @@ struct FindInPageChromeRepresentable: NSViewControllerRepresentable {
 
         func findInPageDone(_ sender: Any) {
             findManager?.hideFindBar()
+        }
+
+        func captureFocusReturnTargetIfNeeded(
+            excluding findView: NSView,
+            in window: NSWindow?
+        ) {
+            guard focusReturnTarget == nil,
+                  let responder = window?.firstResponder else {
+                return
+            }
+            if let responderView = responder as? NSView,
+               responderView.isDescendant(of: findView) {
+                return
+            }
+            focusReturnTarget = responder
+        }
+
+        func restoreFocusIfOwned(
+            by findView: NSView,
+            in window: NSWindow?
+        ) {
+            guard let window,
+                  let responderView = window.firstResponder as? NSView,
+                  responderView.isDescendant(of: findView) else {
+                focusReturnTarget = nil
+                return
+            }
+            if let focusReturnTarget {
+                _ = window.makeFirstResponder(focusReturnTarget)
+            }
+            self.focusReturnTarget = nil
         }
     }
 }

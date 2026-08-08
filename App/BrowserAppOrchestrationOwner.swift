@@ -78,8 +78,7 @@ final class BrowserAppOrchestrationOwner {
         dependencies.startUpdater()
         keyboardShortcutManager.attach(
             actionRouter: browserManager.shortcutActionRouter,
-            targetResolver: browserManager.shortcutTargetResolver,
-            extensionsModule: browserManager.optionalModules.extensions
+            targetResolver: browserManager.shortcutTargetResolver
         )
 
         let windowCloseWorkflow = BrowserWindowCloseWorkflow(

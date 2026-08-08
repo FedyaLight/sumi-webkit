@@ -4,6 +4,7 @@ final class GlanceOverlayRootView: NSView {
     var onLayout: (() -> Void)?
     var onBackgroundMouseDown: (() -> Void)?
     var onActionChromeMouseDown: ((CGPoint) -> Bool)?
+    var onCancelOperation: (() -> Bool)?
     var acceptsBackgroundMouseEvents = false
     var sidebarPassthroughRect: CGRect? {
         didSet {
@@ -51,6 +52,11 @@ final class GlanceOverlayRootView: NSView {
     override func rightMouseDown(with event: NSEvent) {}
 
     override func otherMouseDown(with event: NSEvent) {}
+
+    override func cancelOperation(_ sender: Any?) {
+        guard onCancelOperation?() != true else { return }
+        super.cancelOperation(sender)
+    }
 
     override func scrollWheel(with event: NSEvent) {}
 

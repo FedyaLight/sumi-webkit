@@ -23,14 +23,6 @@ final class FocusableWKWebViewKeyDownTests: XCTestCase {
         window.contentView = webView
         XCTAssertTrue(window.makeFirstResponder(webView))
 
-        let shortcutManager = try makeShortcutManager()
-        let eventMonitor = try XCTUnwrap(
-            NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-                shortcutManager.routeLocalKeyDown(event, keyWindow: window)
-            }
-        )
-        defer { NSEvent.removeMonitor(eventMonitor) }
-
         let navigationFinished = expectation(description: "HTML loaded")
         let navigationDelegate = NavigationFinishedDelegate {
             navigationFinished.fulfill()
@@ -41,7 +33,10 @@ final class FocusableWKWebViewKeyDownTests: XCTestCase {
             <script>
               window.handledKeyCount = 0;
               addEventListener('keydown', event => {
-                if (event.key === 'j') window.handledKeyCount += 1;
+                if (event.key === 'j') {
+                  event.preventDefault();
+                  window.handledKeyCount += 1;
+                }
               });
             </script>
             """,
@@ -50,10 +45,6 @@ final class FocusableWKWebViewKeyDownTests: XCTestCase {
         await fulfillment(of: [navigationFinished], timeout: 2)
 
         let event = try Self.keyDownEvent(window: window, key: "j", keyCode: 38)
-        XCTAssertIdentical(
-            shortcutManager.routeLocalKeyDown(event, keyWindow: window),
-            event
-        )
         window.sendEvent(event)
 
         try await Task.sleep(for: .milliseconds(100))
@@ -66,63 +57,84 @@ final class FocusableWKWebViewKeyDownTests: XCTestCase {
         )
     }
 
-    func testDistinctEquivalentKeyEventsAreNotTreatedAsWebKitRedispatch() throws {
-        let shortcutManager = try makeShortcutManager()
-        let webView = FocusableWKWebView()
-        let window = NSWindow(contentViewController: NSViewController())
-        window.contentView = webView
-        XCTAssertTrue(window.makeFirstResponder(webView))
-        let firstEvent = try Self.keyDownEvent(window: window, key: "j", keyCode: 38)
-        let secondEvent = try Self.keyDownEvent(window: window, key: "j", keyCode: 38)
+    func testUnhandledPlainKeyTerminatesAtWebHostWithoutSystemBeep() async throws {
+        let noResponderProbe = try NoResponderProbe.install()
+        defer { noResponderProbe.uninstall() }
 
-        XCTAssertIdentical(
-            shortcutManager.routeLocalKeyDown(firstEvent, keyWindow: window),
-            firstEvent
+        let webView = FocusableWKWebView(
+            frame: NSRect(x: 0, y: 0, width: 320, height: 240),
+            configuration: WKWebViewConfiguration()
         )
-        XCTAssertIdentical(
-            shortcutManager.routeLocalKeyDown(secondEvent, keyWindow: window),
-            secondEvent
+        let container = SumiWebViewContainerView(
+            tabID: UUID(),
+            webView: webView
         )
-        XCTAssertNil(shortcutManager.routeLocalKeyDown(firstEvent, keyWindow: window))
-    }
-
-    func testNativeEditingKeyEventsSurviveWebKitRedispatch() throws {
-        let shortcutManager = try makeShortcutManager()
-        let webView = FocusableWKWebView()
-        let window = NSWindow(contentViewController: NSViewController())
-        window.contentView = webView
+        container.frame = webView.frame
+        let window = NSWindow(
+            contentRect: webView.frame,
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = container
         XCTAssertTrue(window.makeFirstResponder(webView))
 
-        for (key, keyCode) in [("c", UInt16(8)), ("v", UInt16(9))] {
-            let event = try Self.keyDownEvent(
-                window: window,
-                key: key,
-                keyCode: keyCode,
-                modifierFlags: [.command]
-            )
-
-            XCTAssertIdentical(
-                shortcutManager.routeLocalKeyDown(event, keyWindow: window),
-                event
-            )
-            XCTAssertIdentical(
-                shortcutManager.routeLocalKeyDown(event, keyWindow: window),
-                event,
-                "Cmd+\(key.uppercased()) must not be consumed when WebKit redispatches it"
-            )
+        let navigationFinished = expectation(description: "HTML loaded")
+        let navigationDelegate = NavigationFinishedDelegate {
+            navigationFinished.fulfill()
         }
+        webView.navigationDelegate = navigationDelegate
+        webView.loadHTMLString("<p>Passive page</p>", baseURL: nil)
+        await fulfillment(of: [navigationFinished], timeout: 2)
+
+        window.sendEvent(try Self.keyDownEvent(
+            window: window,
+            key: "j",
+            keyCode: 38
+        ))
+        try await Task.sleep(for: .milliseconds(100))
+
+        XCTAssertEqual(noResponderProbe.keyDownCount, 0)
     }
 
-    private func makeShortcutManager() throws -> KeyboardShortcutManager {
-        let suiteName = "FocusableWKWebViewKeyDownTests-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        addTeardownBlock {
-            defaults.removePersistentDomain(forName: suiteName)
-        }
-        return KeyboardShortcutManager(
-            userDefaults: defaults,
-            installEventMonitor: false
+    func testNativeCopyAndPasteKeyEquivalentsRemainWebKitOwned() async throws {
+        let webView = FocusableWKWebView(
+            frame: NSRect(x: 0, y: 0, width: 320, height: 240),
+            configuration: WKWebViewConfiguration()
         )
+        let window = NSWindow(contentViewController: NSViewController())
+        window.contentView = webView
+        window.makeKeyAndOrderFront(nil)
+        defer { window.close() }
+        XCTAssertTrue(window.makeFirstResponder(webView))
+        let navigationFinished = expectation(description: "HTML loaded")
+        let navigationDelegate = NavigationFinishedDelegate {
+            navigationFinished.fulfill()
+        }
+        webView.navigationDelegate = navigationDelegate
+        webView.loadHTMLString(
+            "<input id='editor' value='copy me' autofocus>",
+            baseURL: nil
+        )
+        await fulfillment(of: [navigationFinished], timeout: 2)
+        _ = try await webView.evaluateJavaScript(
+            "editor.focus(); editor.select();"
+        )
+        XCTAssertTrue(window.makeFirstResponder(webView))
+        let copyEvent = try Self.keyDownEvent(
+            window: window,
+            key: "c",
+            keyCode: 8,
+            modifierFlags: .command
+        )
+        XCTAssertTrue(webView.performKeyEquivalent(with: copyEvent))
+        let pasteEvent = try Self.keyDownEvent(
+            window: window,
+            key: "v",
+            keyCode: 9,
+            modifierFlags: .command
+        )
+        XCTAssertTrue(webView.performKeyEquivalent(with: pasteEvent))
     }
 
     private static func keyDownEvent(
@@ -189,7 +201,7 @@ private final class NavigationFinishedDelegate: NSObject, WKNavigationDelegate {
         self.onFinish = onFinish
     }
 
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+    func webView(_: WKWebView, didFinish _: WKNavigation?) {
         onFinish()
     }
 }

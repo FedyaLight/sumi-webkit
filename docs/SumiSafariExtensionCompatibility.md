@@ -92,8 +92,6 @@ directly (`BitwardenNativeMessagingAdapter`), bypassing the appex handler.
 
 ## Cycle 26 Extension Keyboard Commands + Page Context Menus (2026-07-03)
 
-## Cycle 26 Extension Keyboard Commands + Page Context Menus (2026-07-03)
-
 Two Safari-parity chrome surfaces WebKit leaves to the embedding app were
 unimplemented: manifest `commands` keyboard shortcuts (e.g. Bitwarden
 Cmd+Shift+L autofill) never dispatched, and extension context-menu items
@@ -102,12 +100,13 @@ never appeared in the page menu.
 
 ### Fixed
 
-- `ExtensionKeyboardCommandDispatchOwner`: routes keyboard events through
-  `WKWebExtensionContext.performCommand(for: NSEvent)` (macOS 15.4+) across
-  the current profile's loaded contexts. Wired at the end of
-  `KeyboardShortcutManager.handleLocalKeyDown` — Safari dispatch order:
-  browser shortcuts first, then extension commands, then the page. Events
-  without Command/Control/Option modifiers never touch extension contexts.
+- `ExtensionKeyboardCommandDispatchOwner`: projects profile-scoped active
+  bindings onto loaded WebKit commands and invokes the one exact matching
+  `WKWebExtension.Command` in the event's registered browser window. Its local
+  key monitor exists only while at least one supported regular command is
+  active; native and Browser Action menu equivalents stay AppKit-owned.
+  Media-key and global declarations remain visible but inactive because Sumi
+  does not implement those Chrome activation scopes.
 - `ExtensionPageContextMenuItemsOwner`: fetches
   `WKWebExtensionContext.menuItems(for:)` for the page's tab adapter at menu
   presentation time (WebKit requires fetch-before-show; items are not

@@ -5,10 +5,23 @@ enum ShortcutValidationResult: Equatable {
     case valid
     case invalid
     case conflict(ShortcutAction)
+    case namedConflict(String)
     case systemOwned
 
-    var allowsCommit: Bool {
-        self == .valid
+    var allowsAssignment: Bool {
+        switch self {
+        case .valid, .conflict, .namedConflict:
+            return true
+        case .invalid, .systemOwned:
+            return false
+        }
+    }
+
+    var requiresReplacementConfirmation: Bool {
+        switch self {
+        case .conflict, .namedConflict: return true
+        default: return false
+        }
     }
 
     var userMessage: String? {
@@ -16,22 +29,18 @@ enum ShortcutValidationResult: Equatable {
         case .valid:
             return nil
         case .invalid:
-            return "Use a key with a modifier, or a supported special key."
+            return "Use ⌘ with letters, ⌘ or ⌃ with numbers, or ⌃Tab."
         case .conflict(let action):
             return "Conflicts with \(action.displayName)."
+        case .namedConflict(let title):
+            return "Conflicts with \(title)."
         case .systemOwned:
-            return "Reserved by macOS."
+            return "Reserved by macOS or a fixed Sumi menu command."
         }
     }
 }
 
 struct ShortcutValidator {
-    private static let modifierOptionalKeys: Set<String> = [
-        "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12",
-        "escape", "delete", "forwarddelete", "home", "end", "pageup", "pagedown",
-        "help", "tab", "return", "space", "uparrow", "downarrow", "leftarrow", "rightarrow",
-    ]
-
     let systemOwnedShortcuts: Set<KeyCombination>
 
     func validate(
@@ -69,12 +78,8 @@ struct ShortcutValidator {
     }
 
     func isValidKeyCombination(_ keyCombination: KeyCombination) -> Bool {
-        guard !keyCombination.key.isEmpty else { return false }
-
-        if Self.modifierOptionalKeys.contains(keyCombination.key.lowercased()) {
-            return true
-        }
-
-        return !keyCombination.modifiers.isEmpty
+        KeyboardCommandAssignments.isValidBrowserActionCombination(
+            keyCombination
+        )
     }
 }

@@ -103,6 +103,7 @@ extension ExtensionManagerAssembler {
     }
 
     static func assembleRuntimeActionPhase(
+        installation: ExtensionInstallationGraphFoundation,
         runtime: ExtensionRuntimeAuthorityFoundation,
         contexts: ExtensionContextGraphFoundation,
         actions: ExtensionActionGraphFoundation,
@@ -124,7 +125,9 @@ extension ExtensionManagerAssembler {
                 runtimePopup: runtimePopup
             ),
             keyboardCommands: ExtensionKeyboardCommandDispatchOwner(
+                database: installation.database,
                 profileRuntime: runtime.profileRuntime,
+                browser: browser.action,
                 diagnostics: runtime.diagnostics
             )
         )

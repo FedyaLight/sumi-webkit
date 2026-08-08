@@ -2,10 +2,6 @@
 //  SumiBrowserWindow.swift
 //  Sumi
 //
-//  Portions adapted from DuckDuckGo for macOS (MainWindow.keyDown), used under the Apache License, Version 2.0.
-//  Copyright © 2020 DuckDuckGo. All rights reserved.
-//  See: https://www.apache.org/licenses/LICENSE-2.0
-//
 
 import AppKit
 import ObjectiveC.runtime
@@ -137,32 +133,5 @@ final class SumiBrowserWindow: NSWindow {
             NotificationCenter.default.post(name: Self.firstResponderDidChangeNotification, object: self)
         }
         return super.makeFirstResponder(responder)
-    }
-
-    // Adapted from DuckDuckGo MainWindow.keyDown:
-    // Keep shortcut routing through the menu chain, while letting native text responders
-    // receive ordinary key events so key repeat and text editing behave normally.
-    override func keyDown(with event: NSEvent) {
-        if isFindInPageCmdF(event) {
-            super.keyDown(with: event)
-            return
-        }
-
-        let shortcutModifiers = event.modifierFlags.intersection([.command, .control, .option])
-        if shortcutModifiers.isEmpty {
-            super.keyDown(with: event)
-            return
-        }
-
-        _ = super.performKeyEquivalent(with: event)
-    }
-
-    /// Match "Find in Page" when Cmd+F is pressed so WebKit can still emit the expected beep when find is unavailable.
-    private func isFindInPageCmdF(_ event: NSEvent) -> Bool {
-        guard event.type == .keyDown else { return false }
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting(.capsLock)
-        guard flags == [.command] else { return false }
-        let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
-        return key == "f"
     }
 }

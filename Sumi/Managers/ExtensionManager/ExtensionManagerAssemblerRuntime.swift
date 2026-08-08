@@ -78,6 +78,7 @@ extension ExtensionManagerAssembler {
             diagnostics: popupDiagnostics
         )
         let runtimeAction = assembleRuntimeActionPhase(
+            installation: f.installation,
             runtime: f.runtime, contexts: f.contexts, actions: f.actions,
             browser: f.browser, actionPolicy: core.actionPolicy,
             controller: core.controller, coordination: coordination,

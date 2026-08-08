@@ -469,7 +469,12 @@ private struct SumiSettingsPaneContent: View {
                 requestProfileDeletion: browserContext.requestProfileDeletion
             )
         case .shortcuts:
-            ShortcutsSettingsView(shortcutManager: keyboardShortcutManager)
+            ShortcutsSettingsView(
+                shortcutManager: keyboardShortcutManager,
+                activeProfileID: activeProfile?.id,
+                extensionsModule: browserContext.extensionsModule,
+                extensionSurfaceStore: browserContext.extensionSurfaceStore
+            )
         case .extensions:
             SumiExtensionsSettingsPane(
                 extensionsModule: browserContext.extensionsModule,

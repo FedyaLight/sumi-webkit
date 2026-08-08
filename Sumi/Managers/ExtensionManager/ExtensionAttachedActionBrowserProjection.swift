@@ -161,6 +161,21 @@ extension ExtensionBrowserAttachmentAuthority {
             attachedEnvironment()?.adapters.stableAdapter(for: tab)
         }
 
+        func keyboardProfileID(for appKitWindow: NSWindow?) -> UUID? {
+            guard let appKitWindow,
+                  let environment = attachedEnvironment(),
+                  let window = environment.browser.windows
+                    .allExtensionWindowStates.first(where: {
+                        environment.browser.windows.appKitWindow(for: $0)
+                            === appKitWindow
+                    }) else {
+                return nil
+            }
+            return window.isIncognito
+                ? window.ephemeralProfile?.id
+                : window.currentProfileId ?? profileRuntime.currentProfileId
+        }
+
         func registerActionInvocationTab(_ tab: Tab, reason: String) {
             attachedEnvironment()?.normalTabs.registration.register(
                 tab,

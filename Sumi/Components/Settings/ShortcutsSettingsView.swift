@@ -4,8 +4,26 @@ import SwiftUI
 
 struct ShortcutsSettingsView: View {
     let shortcutManager: KeyboardShortcutManager
+    let activeProfileID: UUID?
+    let extensionsModule: SumiExtensionsModule
+    @ObservedObject private var extensionSurfaceStore:
+        BrowserExtensionSurfaceStore
 
     @State private var searchText = ""
+
+    init(
+        shortcutManager: KeyboardShortcutManager,
+        activeProfileID: UUID?,
+        extensionsModule: SumiExtensionsModule,
+        extensionSurfaceStore: BrowserExtensionSurfaceStore
+    ) {
+        self.shortcutManager = shortcutManager
+        self.activeProfileID = activeProfileID
+        self.extensionsModule = extensionsModule
+        _extensionSurfaceStore = ObservedObject(
+            wrappedValue: extensionSurfaceStore
+        )
+    }
 
     private var filteredShortcuts: [KeyboardShortcut] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -17,6 +35,21 @@ struct ShortcutsSettingsView: View {
 
     private var shortcutsByCategory: [ShortcutCategory: [KeyboardShortcut]] {
         Dictionary(grouping: filteredShortcuts, by: \.action.category)
+    }
+
+    private var filteredExtensionCommands:
+        [ExtensionCommandBindingAssignment] {
+        _ = shortcutManager.bindingRevision
+        _ = extensionSurfaceStore.installedExtensions
+        guard let activeProfileID else { return [] }
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return shortcutManager.extensionCommandAssignments(
+            profileID: activeProfileID
+        ).filter { command in
+            query.isEmpty
+                || command.title.localizedCaseInsensitiveContains(query)
+                || command.extensionName.localizedCaseInsensitiveContains(query)
+        }
     }
 
     var body: some View {
@@ -33,7 +66,7 @@ struct ShortcutsSettingsView: View {
                 .controlSize(.small)
             }
 
-            if filteredShortcuts.isEmpty {
+            if filteredShortcuts.isEmpty && filteredExtensionCommands.isEmpty {
                 SettingsSection {
                     SettingsEmptyState(
                         systemImage: "keyboard",
@@ -57,12 +90,27 @@ struct ShortcutsSettingsView: View {
                             ShortcutCategorySection(
                                 category: category,
                                 shortcuts: categoryShortcuts,
-                                shortcutManager: shortcutManager
+                                shortcutManager: shortcutManager,
+                                activeProfileID: activeProfileID
                             )
                         }
                     }
+
+                    if filteredExtensionCommands.isEmpty == false {
+                        if visibleCategories.isEmpty == false {
+                            SettingsDivider()
+                                .padding(.vertical, 8)
+                        }
+                        ExtensionShortcutSection(
+                            assignments: filteredExtensionCommands,
+                            shortcutManager: shortcutManager
+                        )
+                    }
                 }
             }
+        }
+        .onAppear {
+            extensionsModule.prepareForExtensionActivation()
         }
     }
 
@@ -72,6 +120,95 @@ struct ShortcutsSettingsView: View {
             placeholder: String(localized: "Search Shortcuts")
         )
             .frame(width: 220)
+    }
+}
+
+private struct ExtensionShortcutSection: View {
+    let assignments: [ExtensionCommandBindingAssignment]
+    let shortcutManager: KeyboardShortcutManager
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Extensions")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 4)
+                .padding(.bottom, 4)
+
+            ForEach(Array(assignments.enumerated()), id: \.element.id) { index, assignment in
+                ExtensionShortcutRow(
+                    assignment: assignment,
+                    shortcutManager: shortcutManager
+                )
+                if index < assignments.count - 1 {
+                    SettingsDivider()
+                }
+            }
+        }
+    }
+}
+
+private struct ExtensionShortcutRow: View {
+    let assignment: ExtensionCommandBindingAssignment
+    let shortcutManager: KeyboardShortcutManager
+
+    var body: some View {
+        SettingsRow(
+            title: assignment.title,
+            subtitle: subtitle,
+            verticalPadding: 6
+        ) {
+            if isUnsupported {
+                Text("Not available")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ShortcutRecorderView(
+                    keyCombination: assignment.assignedCombination,
+                    onValidate: validate,
+                    onCommit: commit,
+                    onClear: clear
+                )
+            }
+        }
+    }
+
+    private var subtitle: String {
+        if let reason = assignment.inactiveReason {
+            return "\(assignment.extensionName) · \(reason.userMessage)"
+        }
+        return assignment.extensionName
+    }
+
+    private var isUnsupported: Bool {
+        switch assignment.inactiveReason {
+        case .unsupportedMedia, .unsupportedGlobal:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func validate(
+        _ combination: KeyCombination
+    ) -> ShortcutValidationResult {
+        shortcutManager.validateExtensionCommand(
+            combination,
+            identity: assignment.identity
+        )
+    }
+
+    private func commit(
+        _ combination: KeyCombination
+    ) -> ShortcutValidationResult {
+        shortcutManager.setExtensionCommand(
+            combination,
+            identity: assignment.identity
+        )
+    }
+
+    private func clear() -> Bool {
+        shortcutManager.clearExtensionCommand(identity: assignment.identity)
     }
 }
 
@@ -118,6 +255,7 @@ private struct ShortcutCategorySection: View {
     let category: ShortcutCategory
     let shortcuts: [KeyboardShortcut]
     let shortcutManager: KeyboardShortcutManager
+    let activeProfileID: UUID?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -128,7 +266,11 @@ private struct ShortcutCategorySection: View {
                 .padding(.bottom, 4)
 
             ForEach(Array(shortcuts.enumerated()), id: \.element.action) { index, shortcut in
-                ShortcutRowView(shortcut: shortcut, shortcutManager: shortcutManager)
+                ShortcutRowView(
+                    shortcut: shortcut,
+                    shortcutManager: shortcutManager,
+                    activeProfileID: activeProfileID
+                )
 
                 if index < shortcuts.count - 1 {
                     SettingsDivider()
@@ -141,11 +283,16 @@ private struct ShortcutCategorySection: View {
 private struct ShortcutRowView: View {
     let shortcut: KeyboardShortcut
     let shortcutManager: KeyboardShortcutManager
+    let activeProfileID: UUID?
 
     var body: some View {
-        SettingsRow(title: shortcut.action.displayName, verticalPadding: 6) {
+        SettingsRow(
+            title: shortcut.action.displayName,
+            subtitle: assignment.inactiveReason?.userMessage,
+            verticalPadding: 6
+        ) {
             ShortcutRecorderView(
-                keyCombination: shortcut.keyCombination,
+                keyCombination: assignment.assignedCombination,
                 onValidate: validate,
                 onCommit: commit,
                 onClear: clear
@@ -153,12 +300,24 @@ private struct ShortcutRowView: View {
         }
     }
 
+    private var assignment: BrowserActionBindingAssignment {
+        shortcutManager.bindingAssignment(for: shortcut.action)
+    }
+
     private func validate(_ combination: KeyCombination) -> ShortcutValidationResult {
-        shortcutManager.validate(combination, excludingAction: shortcut.action)
+        shortcutManager.validate(
+            combination,
+            excludingAction: shortcut.action,
+            profileID: activeProfileID
+        )
     }
 
     private func commit(_ combination: KeyCombination) -> ShortcutValidationResult {
-        shortcutManager.setShortcut(action: shortcut.action, keyCombination: combination)
+        shortcutManager.setShortcut(
+            action: shortcut.action,
+            keyCombination: combination,
+            profileID: activeProfileID
+        )
     }
 
     private func clear() -> Bool {

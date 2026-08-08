@@ -104,30 +104,6 @@ struct ExtensionCatalogDetailsPopover: View {
                 }
             }
 
-            detailSection("Shortcuts") {
-                if commandRows.isEmpty {
-                    Text("No keyboard shortcuts declared.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(commandRows) { command in
-                            HStack(spacing: 10) {
-                                Text(command.title)
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
-                                    .frame(
-                                        maxWidth: .infinity,
-                                        alignment: .leading
-                                    )
-                                Text(command.shortcut ?? "Not set")
-                                    .font(.caption.monospaced())
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                }
-            }
-
             detailSection("Settings") {
                 if extensionRecord.hasOptionsPage {
                     Button("Open Extension Settings") {
@@ -156,9 +132,11 @@ struct ExtensionCatalogDetailsPopover: View {
                     Image(nsImage: image)
                         .resizable()
                         .scaledToFit()
+                        .accessibilityHidden(true)
                 } else {
                     Image(systemName: "puzzlepiece.extension")
                         .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
                 }
             }
             .frame(width: 32, height: 32)
@@ -203,32 +181,6 @@ struct ExtensionCatalogDetailsPopover: View {
         siteAccessPolicy?.siteRules ?? []
     }
 
-    private var commandRows: [ExtensionCommandSummary] {
-        guard let commands = extensionRecord.manifest["commands"]
-            as? [String: Any]
-        else {
-            return []
-        }
-
-        return commands.compactMap { key, value in
-            guard let command = value as? [String: Any] else { return nil }
-            let title =
-                (command["description"] as? String)?
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                ?? humanizedCommandName(key)
-            let shortcut = shortcutString(from: command["suggested_key"])
-            return ExtensionCommandSummary(
-                id: key,
-                title: title.isEmpty ? humanizedCommandName(key) : title,
-                shortcut: shortcut
-            )
-        }
-        .sorted {
-            $0.title.localizedCaseInsensitiveCompare($1.title)
-                == .orderedAscending
-        }
-    }
-
     private func configuredSiteAccessBinding(
         for rule: SafariExtensionSiteAccessRule
     ) -> Binding<SafariExtensionSiteAccessLevel> {
@@ -255,28 +207,6 @@ struct ExtensionCatalogDetailsPopover: View {
         return host
     }
 
-    private func shortcutString(from value: Any?) -> String? {
-        if let raw = value as? String {
-            return raw.isEmpty ? nil : raw
-        }
-        guard let dictionary = value as? [String: Any] else { return nil }
-        let candidates = ["mac", "default", "chromeos", "linux", "windows"]
-        for key in candidates {
-            if let raw = dictionary[key] as? String,
-               raw.isEmpty == false {
-                return raw
-            }
-        }
-        return nil
-    }
-
-    private func humanizedCommandName(_ key: String) -> String {
-        key
-            .replacingOccurrences(of: "_", with: " ")
-            .replacingOccurrences(of: "-", with: " ")
-            .capitalized
-    }
-
     private func warningRow(systemImage: String, text: String) -> some View {
         Label {
             Text(text)
@@ -300,10 +230,4 @@ struct ExtensionCatalogDetailsPopover: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
-}
-
-private struct ExtensionCommandSummary: Identifiable {
-    let id: String
-    let title: String
-    let shortcut: String?
 }
