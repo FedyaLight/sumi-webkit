@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 import WebKit
 
@@ -19,7 +18,6 @@ extension ExtensionBrowserAttachmentAuthority {
             let createdTabRegistrar: ExtensionCreatedTabRuntimeRegistrar
             let auxiliaryIntegration: AuxiliaryWindowExtensionIntegration
             let windowRouter: ExtensionWindowRequestRouter
-            let pageContextMenu: ExtensionPageContextMenuItemsOwner
             let pageNavigation: ExtensionPageNavigationPreparationOwner
             let pageResolution: ExtensionPageResolutionOwner
         }
@@ -123,10 +121,6 @@ extension ExtensionBrowserAttachmentAuthority {
                     extensionContext: extensionContext,
                     completion: completion
                 )
-        }
-
-        func pageContextMenuItems(for tab: Tab) -> [NSMenuItem] {
-            attachedEnvironment()?.pageContextMenu.menuItems(for: tab) ?? []
         }
 
         func preparePageNavigation(

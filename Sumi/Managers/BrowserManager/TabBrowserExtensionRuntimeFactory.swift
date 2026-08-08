@@ -95,9 +95,6 @@ extension TabNormalWebViewExtensionRuntime {
                         profileId: profileId
                     )
             },
-            pageContextMenuItems: { tab in
-                extensionsModule()?.pageContextMenuItemsIfLoaded(for: tab) ?? []
-            },
             reconcileOnUserGesture: { tab, reason in
                 extensionsModule()?.reconcileExtensionRuntimeOnUserGestureIfNeeded(
                     tab,

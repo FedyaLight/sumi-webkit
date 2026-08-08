@@ -27,7 +27,6 @@ final class SumiWebPageMenuPresenter {
         currentWebView = webView
         hasRewrittenCurrentMenu = false
 
-        appendExtensionMenuItems(to: menu, for: webView)
         applyAppearance(to: menu, for: webView)
 
         if let snapshot = webView.contextMenu.recentTarget() {
@@ -86,26 +85,6 @@ final class SumiWebPageMenuPresenter {
     }
 
     // MARK: - Presentation-wide concerns
-
-    /// Safari places extension-provided items in their own group at the end
-    /// of the page menu. WebKit builds the items (targets included); Sumi only
-    /// hosts them, fetched fresh on every presentation.
-    private func appendExtensionMenuItems(
-        to menu: NSMenu,
-        for webView: FocusableWKWebView
-    ) {
-        guard let tab = webView.owningTab else { return }
-        let extensionItems = tab.navigationRuntime.normalWebViewExtensionRuntime
-            .pageContextMenuItems(tab)
-        guard extensionItems.isEmpty == false else { return }
-
-        if menu.items.isEmpty == false {
-            menu.addItem(.separator())
-        }
-        for item in extensionItems {
-            menu.addItem(item)
-        }
-    }
 
     private func applyAppearance(to menu: NSMenu, for webView: FocusableWKWebView) {
         guard let appearance = webView.owningTab?.webPageMenuCommands.appearance(

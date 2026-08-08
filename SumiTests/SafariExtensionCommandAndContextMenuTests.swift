@@ -4,11 +4,8 @@ import XCTest
 
 @testable import Sumi
 
-/// Safari parity for the two chrome surfaces WebKit leaves to the embedding
-/// app: manifest `commands` keyboard shortcuts (dispatched through
-/// exact `WKWebExtension.Command` dispatch) and extension
-/// context-menu items (`menuItems(for:)`, backed by the menus/contextMenus
-/// API from the extension's background script).
+/// Safari parity for manifest `commands` keyboard shortcuts and WebKit-owned
+/// extension context-menu items backed by the menus/contextMenus API.
 @available(macOS 15.5, *)
 @MainActor
 final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
@@ -242,8 +239,10 @@ final class SafariExtensionCommandAndContextMenuTests: XCTestCase {
         webView.navigationDelegate = nil
 
         try await waitForMenuRegistration(in: webView)
-        let menuItems = inspection.normalTabs.requestedTabs
-            .pageContextMenuItems(for: tab)
+        let tabAdapter = try XCTUnwrap(
+            attachedRuntime.runtime.adapters.stableAdapter(for: tab)
+        )
+        let menuItems = extensionContext.menuItems(for: tabAdapter)
 
         XCTAssertTrue(
             containsMenuItem(titled: "Sumi Probe Menu Item", in: menuItems),

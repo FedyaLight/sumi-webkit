@@ -5,10 +5,9 @@ import Foundation
 struct ExtensionRequestedTabPageSurfaceRoles {
     let resolution: ExtensionPageResolutionOwner
     let navigation: ExtensionPageNavigationPreparationOwner
-    let contextMenu: ExtensionPageContextMenuItemsOwner
 }
 
-/// Creates only page identity, navigation, and context-menu roles.
+/// Creates only page identity and navigation roles.
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionRequestedTabPageSurfaceFactory {
@@ -28,8 +27,7 @@ final class ExtensionRequestedTabPageSurfaceFactory {
 
     func assemble(
         bridge: BrowserExtensionBridgeComposition,
-        controller: ExtensionControllerRuntimeComposition,
-        windows: ExtensionWindowPublicationAssembly
+        controller: ExtensionControllerRuntimeComposition
     ) -> ExtensionRequestedTabPageSurfaceRoles {
         let resolution = ExtensionPageResolutionOwner(
             profileRuntime: profileRuntime,
@@ -41,18 +39,9 @@ final class ExtensionRequestedTabPageSurfaceFactory {
             webViews: controller.webViews,
             controllerProvisioning: controllerProvisioning
         )
-        let contextMenu = ExtensionPageContextMenuItemsOwner(
-            publishedTabs: windows.tabs.publishedTabs,
-            profileRuntime: profileRuntime,
-            profileID: { [profiles = controller.profiles] tab in
-                profiles.profileID(for: tab)
-            },
-            adapters: windows.adapters
-        )
         return ExtensionRequestedTabPageSurfaceRoles(
             resolution: resolution,
-            navigation: navigation,
-            contextMenu: contextMenu
+            navigation: navigation
         )
     }
 }

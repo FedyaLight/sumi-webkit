@@ -39,10 +39,6 @@ struct ExtensionNormalTabInteractionRuntime {
         keyboard.performCommand(for: event)
     }
 
-    func pageContextMenuItems(for tab: Tab) -> [NSMenuItem] {
-        requestedTabs.pageContextMenuItems(for: tab)
-    }
-
     func admitAfterCommittedNavigation(_ tab: Tab, reason: String) {
         lifecycle.markEligibleAfterCommittedNavigation(tab, reason: reason)
     }

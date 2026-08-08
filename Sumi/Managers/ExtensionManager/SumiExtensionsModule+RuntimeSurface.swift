@@ -95,10 +95,6 @@ extension SumiExtensionsModule {
         runtimeSurface.performKeyboardCommand(for: event)
     }
 
-    func pageContextMenuItemsIfLoaded(for tab: Tab) -> [NSMenuItem] {
-        runtimeSurface.pageContextMenuItems(for: tab)
-    }
-
     func markTabEligibleAfterCommittedNavigationIfLoaded(
         _ tab: Tab,
         reason: String

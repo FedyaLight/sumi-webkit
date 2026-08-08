@@ -92,11 +92,10 @@ directly (`BitwardenNativeMessagingAdapter`), bypassing the appex handler.
 
 ## Cycle 26 Extension Keyboard Commands + Page Context Menus (2026-07-03)
 
-Two Safari-parity chrome surfaces WebKit leaves to the embedding app were
-unimplemented: manifest `commands` keyboard shortcuts (e.g. Bitwarden
-Cmd+Shift+L autofill) never dispatched, and extension context-menu items
-(menus/contextMenus API — e.g. password managers' "autofill login" items)
-never appeared in the page menu.
+Manifest `commands` keyboard shortcuts (e.g. Bitwarden Cmd+Shift+L autofill)
+need embedding-app dispatch. Page context-menu items from the
+menus/contextMenus API are owned and inserted by WebKit when the page's
+`WKWebViewConfiguration` has the profile extension controller.
 
 ### Fixed
 
@@ -107,15 +106,12 @@ never appeared in the page menu.
   active; native and Browser Action menu equivalents stay AppKit-owned.
   Media-key and global declarations remain visible but inactive because Sumi
   does not implement those Chrome activation scopes.
-- `ExtensionPageContextMenuItemsOwner`: fetches
-  `WKWebExtensionContext.menuItems(for:)` for the page's tab adapter at menu
-  presentation time (WebKit requires fetch-before-show; items are not
-  cacheable). Appended as a trailing separator group in
-  `SumiWebPageMenuController.prepare`, gated on tab runtime eligibility
-  (private tabs stay excluded).
-- Both surfaces enter through `SumiExtensionsModule`
-  (`performExtensionKeyboardCommandIfLoaded`, `pageContextMenuItemsIfLoaded`)
-  and are no-ops without a loaded, enabled extensions runtime.
+- Command dispatch enters through
+  `SumiExtensionsModule.performExtensionKeyboardCommandIfLoaded` and is a
+  no-op without a loaded, enabled extensions runtime.
+- Sumi does not fetch or append page context-menu items. Manual hosting would
+  duplicate the items already inserted by WebKit and would repeat its
+  per-presentation menu construction work.
 
 ### WebKit contract captured
 
@@ -124,8 +120,9 @@ never appeared in the page menu.
   `activationKey` compared case-insensitively against
   `charactersIgnoringModifiers` (special keys via key-code map). Manifest
   `Alt+Shift+U` ⇒ option+shift + activation key `u`.
-- `menuItems(for:)` builds ready-to-host `NSMenuItem`s (targets included) and
-  resolves visibility/enablement at fetch time.
+- WebKit's macOS context-menu pipeline asks the configured extension
+  controller to add matching items before the embedding app receives the
+  proposed `NSMenu`.
 
 ### Tests
 
@@ -133,8 +130,8 @@ never appeared in the page menu.
   `testManifestCommandDispatchesFromKeyboardEvent` (synthetic MV3 manifest
   command dispatches for Alt+Shift+U, declines other keys and plain typing),
   `testBackgroundCreatedMenuItemsSurfaceOnPageContextMenu` (worker-side
-  `menus.create` item surfaces through the full tab stack for a real page
-  load).
+  `menus.create` item resolves for the exact WebKit tab adapter after a real
+  page load).
 - Regression: site-access, scripting runtime, web-page menu controller, and
   keyboard shortcut store suites pass; architecture guardrails pass.
 

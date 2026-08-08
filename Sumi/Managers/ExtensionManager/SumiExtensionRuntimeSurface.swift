@@ -128,11 +128,6 @@ final class SumiExtensionRuntimeSurface {
             .performKeyboardCommand(for: event) ?? false
     }
 
-    func pageContextMenuItems(for tab: Tab) -> [NSMenuItem] {
-        lifetime.loadedBrowserRuntimeIfEnabled()?.interaction
-            .pageContextMenuItems(for: tab) ?? []
-    }
-
     func admitTabAfterCommittedNavigation(_ tab: Tab, reason: String) {
         lifetime.loadedBrowserRuntimeIfEnabled()?.interaction
             .admitAfterCommittedNavigation(tab, reason: reason)

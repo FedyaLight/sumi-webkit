@@ -1,10 +1,10 @@
 import AppKit
 import Combine
 import Foundation
-import SumiDomain
 import ObjectiveC.runtime
-import WebKit
+import SumiDomain
 import SumiWebRuntime
+import WebKit
 
 @MainActor
 struct TabBrowserRuntime {
@@ -366,7 +366,6 @@ struct TabNormalWebViewExtensionRuntime {
     var prepareWebViewForExtensionRuntime: (WKWebView, URL?, String) -> Void
     var ensureInitialExtensionContextsIfNeeded: (UUID) async -> Void
     var warmInitialDocumentNativeMessagingIfNeeded: (UUID) async -> Void
-    var pageContextMenuItems: (Tab) -> [NSMenuItem] = { _ in [] }
     var reconcileOnUserGesture: (Tab, String) -> Void = { _, _ in }
 
     static let inactive = Self(
@@ -374,7 +373,6 @@ struct TabNormalWebViewExtensionRuntime {
         prepareWebViewForExtensionRuntime: { _, _, _ in /* No-op. */ },
         ensureInitialExtensionContextsIfNeeded: { _ in /* No-op. */ },
         warmInitialDocumentNativeMessagingIfNeeded: { _ in /* No-op. */ },
-        pageContextMenuItems: { _ in [] },
         reconcileOnUserGesture: { _, _ in /* No-op. */ }
     )
 }

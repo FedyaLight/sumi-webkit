@@ -146,7 +146,6 @@ final class ExtensionBrowserAttachmentAuthority {
             createdTabRegistrar: lifetime.requestedTabs.createdTabRegistrar,
             auxiliaryIntegration: lifetime.requestedTabs.auxiliaryIntegration,
             windowRouter: lifetime.requestedTabs.windowRouter,
-            pageContextMenu: lifetime.requestedTabs.pageContextMenu,
             pageNavigation: lifetime.requestedTabs.pageNavigation,
             pageResolution: lifetime.requestedTabs.pageResolution
         )

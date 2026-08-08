@@ -434,38 +434,30 @@ final class SumiWebPageMenuPresenterTests: XCTestCase {
 
     // MARK: - Extension items
 
-    func testExtensionMenuItemsUseInjectedTabRuntimeAndAppendAfterSeparator() {
+    func testWebKitHostedExtensionItemsRemainSingle() {
         let menu = NSMenu()
         menu.addItem(webKitItem(title: "Reload", identifier: .reload))
+        let webKitHostedItem = NSMenuItem(
+            title: "Extension Item",
+            action: nil,
+            keyEquivalent: ""
+        )
+        menu.addItem(webKitHostedItem)
         let webView = makeWebView()
         let tab = Tab(
             url: URL(string: "https://example.com")!,
             loadsCachedFaviconOnInit: false
         )
-        let extensionItem = NSMenuItem(
-            title: "Extension Item",
-            action: nil,
-            keyEquivalent: ""
-        )
-        var requestedTabIds: [UUID] = []
-        tab.navigationRuntime.normalWebViewExtensionRuntime = TabNormalWebViewExtensionRuntime(
-            registerTabWithExtensionRuntimeIfNeeded: { _, _ in /* No-op. */ },
-            prepareWebViewForExtensionRuntime: { _, _, _ in /* No-op. */ },
-            ensureInitialExtensionContextsIfNeeded: { _ in /* No-op. */ },
-            warmInitialDocumentNativeMessagingIfNeeded: { _ in /* No-op. */ },
-            pageContextMenuItems: { requestedTab in
-                requestedTabIds.append(requestedTab.id)
-                return [extensionItem]
-            }
-        )
         webView.owningTab = tab
-        webView.contextMenu.record(SumiWebPageContextMenuTargetSnapshot(kind: .page))
+        webView.contextMenu.record(SumiWebPageContextMenuTargetSnapshot(kind: .editable))
 
         SumiWebPageMenuPresenter().menuWillOpen(menu, for: webView)
 
-        XCTAssertEqual(requestedTabIds, [tab.id])
-        XCTAssertIdentical(menu.items.last, extensionItem)
-        XCTAssertTrue(menu.items.dropLast().last?.isSeparatorItem == true)
+        XCTAssertEqual(
+            menu.items.filter { $0.title == "Extension Item" }.count,
+            1
+        )
+        XCTAssertTrue(menu.items.contains { $0 === webKitHostedItem })
     }
 
     // MARK: - Validation and commands

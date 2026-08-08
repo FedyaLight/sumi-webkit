@@ -69,7 +69,6 @@ final class ExtensionAttachedBrowserRuntimeAssembler {
             bridge: bridge,
             controller: controller,
             windows: windowPublication,
-            normalTabs: normalTabRuntime,
             core: requestedCore
         )
         let runtime = ExtensionAttachedBrowserRuntime(

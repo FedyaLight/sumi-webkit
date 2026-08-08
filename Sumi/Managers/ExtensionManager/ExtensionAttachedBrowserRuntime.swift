@@ -61,6 +61,5 @@ struct ExtensionRequestedBrowserRuntimeServices {
     let windowRouter: ExtensionWindowRequestRouter
     let windowVisibility: ExtensionWindowVisibilityResolver
     let pageResolution: ExtensionPageResolutionOwner
-    let pageContextMenu: ExtensionPageContextMenuItemsOwner
     let pageNavigation: ExtensionPageNavigationPreparationOwner
 }

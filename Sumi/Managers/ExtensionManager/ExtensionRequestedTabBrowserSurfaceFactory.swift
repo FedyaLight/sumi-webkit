@@ -40,7 +40,6 @@ final class ExtensionRequestedTabBrowserSurfaceFactory {
         bridge: BrowserExtensionBridgeComposition,
         controller: ExtensionControllerRuntimeComposition,
         windows: ExtensionWindowPublicationAssembly,
-        normalTabs: ExtensionAttachedNormalTabRuntime,
         core: ExtensionRequestedTabCoreAssembly
     ) -> (
         services: ExtensionRequestedBrowserRuntimeServices,
@@ -48,8 +47,7 @@ final class ExtensionRequestedTabBrowserSurfaceFactory {
     ) {
         let pageRoles = pages.assemble(
             bridge: bridge,
-            controller: controller,
-            windows: windows
+            controller: controller
         )
         let callbackRoles = callbacks.assemble(
             bridge: bridge,
@@ -70,7 +68,6 @@ final class ExtensionRequestedTabBrowserSurfaceFactory {
                 windowRouter: core.windowRouter,
                 windowVisibility: callbackRoles.visibility,
                 pageResolution: pageRoles.resolution,
-                pageContextMenu: pageRoles.contextMenu,
                 pageNavigation: pageRoles.navigation
             ),
             callbackRoles.options
