@@ -261,6 +261,33 @@ final class SumiWebPageMenuPresenterTests: XCTestCase {
         XCTAssertNotNil(menu.item(identifier: SumiWebPageMenuCommand.copyImageAddress.rawValue))
     }
 
+    // MARK: - Media
+
+    func testMediaDownloadUsesSumiOwnedAction() throws {
+        let menu = NSMenu()
+        let nativeDownload = webKitItem(title: "Download Video", identifier: .downloadMedia)
+        nativeDownload.target = self
+        nativeDownload.action = #selector(noop(_:))
+        menu.addItem(nativeDownload)
+
+        let webView = makeWebView()
+        webView.contextMenu.record(
+            SumiWebPageContextMenuTargetSnapshot(
+                kind: .media,
+                mediaSrc: "https://example.com/video.mp4"
+            )
+        )
+        let presenter = SumiWebPageMenuPresenter()
+        presenter.menuWillOpen(menu, for: webView)
+
+        let download = try XCTUnwrap(
+            menu.items.first { $0.title == "Download Video" }
+        )
+        XCTAssertFalse(download === nativeDownload)
+        XCTAssertTrue(download.target is SumiWebPageMenuActionOwner)
+        XCTAssertNotNil(download.action)
+    }
+
     // MARK: - Selection
 
     func testSelectionMenuReplacesSearchWebInPlaceAndPreservesNatives() throws {
@@ -489,7 +516,8 @@ final class SumiWebPageMenuPresenterTests: XCTestCase {
             bookmarkLink: { _, url, title in
                 received = (url, title)
                 return true
-            }
+            },
+            download: { _, _ in false }
         )
 
         let webView = makeWebView()
@@ -497,6 +525,62 @@ final class SumiWebPageMenuPresenterTests: XCTestCase {
         XCTAssertTrue(commands.bookmarkLink(from: webView, url: url, title: "Example"))
         XCTAssertEqual(received?.url, url)
         XCTAssertEqual(received?.title, "Example")
+    }
+
+    func testDownloadCommandForwardsPhysicalWebViewAndURL() {
+        let webView = makeWebView()
+        let url = URL(string: "https://example.com/video.mp4")!
+        var received: (webView: FocusableWKWebView, url: URL)?
+        let commands = TabWebPageMenuCommands(
+            appearance: { _, fallback in fallback },
+            canBookmark: { _ in false },
+            requestBookmarkEditor: { _ in false },
+            bookmarkLink: { _, _, _ in false },
+            download: { sourceWebView, sourceURL in
+                received = (sourceWebView, sourceURL)
+                return true
+            }
+        )
+
+        XCTAssertTrue(commands.download(from: webView, url: url))
+        XCTAssertTrue(received?.webView === webView)
+        XCTAssertEqual(received?.url, url)
+    }
+
+    func testMediaDownloadActionDispatchesSnapshotURL() {
+        let url = URL(string: "https://example.com/video.mp4")!
+        let webView = makeWebView()
+        let tab = Tab(url: URL(string: "https://example.com")!)
+        var receivedURL: URL?
+        var runtime = TabBrowserRuntime.inactive
+        runtime.webPageMenuCommands = TabWebPageMenuCommands(
+            appearance: { _, fallback in fallback },
+            canBookmark: { _ in false },
+            requestBookmarkEditor: { _ in false },
+            bookmarkLink: { _, _, _ in false },
+            download: { _, sourceURL in
+                receivedURL = sourceURL
+                return true
+            }
+        )
+        tab.attachBrowserRuntime(runtime)
+        webView.owningTab = tab
+        let context = SumiWebPageMenuContext(
+            menu: NSMenu(),
+            snapshot: SumiWebPageContextMenuTargetSnapshot(
+                kind: .media,
+                mediaSrc: url.absoluteString
+            ),
+            searchProviderName: "DuckDuckGo",
+            isLoading: false,
+            isDeveloperInspectionEnabled: false
+        )
+        let owner = SumiWebPageMenuActionOwner()
+        owner.prepare(webView: webView, context: context)
+
+        owner.downloadMedia(nil)
+
+        XCTAssertEqual(receivedURL, url)
     }
 
     func testFactoryProducesNonEmptyTitleAndIconForEveryCommand() {

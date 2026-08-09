@@ -17,6 +17,7 @@ struct TabWebPageMenuCommands {
         URL,
         String?
     ) -> Bool
+    private let downloadAction: @MainActor (FocusableWKWebView, URL) -> Bool
 
     init(
         appearance: @escaping @MainActor (
@@ -31,12 +32,14 @@ struct TabWebPageMenuCommands {
             FocusableWKWebView,
             URL,
             String?
-        ) -> Bool
+        ) -> Bool,
+        download: @escaping @MainActor (FocusableWKWebView, URL) -> Bool
     ) {
         appearanceAction = appearance
         canBookmarkAction = canBookmark
         requestBookmarkEditorAction = requestBookmarkEditor
         bookmarkLinkAction = bookmarkLink
+        downloadAction = download
     }
 
     func appearance(
@@ -67,10 +70,19 @@ struct TabWebPageMenuCommands {
         bookmarkLinkAction(sourceWebView, url, title)
     }
 
+    @discardableResult
+    func download(
+        from sourceWebView: FocusableWKWebView,
+        url: URL
+    ) -> Bool {
+        downloadAction(sourceWebView, url)
+    }
+
     static let inactive = Self(
         appearance: { _, fallback in fallback },
         canBookmark: { _ in false },
         requestBookmarkEditor: { _ in false },
-        bookmarkLink: { _, _, _ in false }
+        bookmarkLink: { _, _, _ in false },
+        download: { _, _ in false }
     )
 }

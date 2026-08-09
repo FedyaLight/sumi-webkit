@@ -72,6 +72,9 @@ struct SumiWebPageMenuItemFactory {
             return SumiWebPageMenuStrings.openImageInNewWindow
         case .copyImageAddress:
             return SumiWebPageMenuStrings.copyImageAddress
+        case .downloadMedia:
+            return context.mediaDownloadTitle
+                ?? SumiWebPageMenuStrings.downloadMedia
         }
     }
 }

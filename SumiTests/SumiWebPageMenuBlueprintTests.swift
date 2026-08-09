@@ -312,7 +312,7 @@ final class SumiWebPageMenuBlueprintTests: XCTestCase {
         ])
     }
 
-    func testMediaMenuProducesNoRules() {
+    func testMediaMenuOwnsWebMediaDownloadAndPreservesOtherNativeActions() {
         let blueprint = makeBlueprint(
             identifiers: [
                 .copyMediaLink,
@@ -325,8 +325,23 @@ final class SumiWebPageMenuBlueprintTests: XCTestCase {
             mediaSrc: "https://example.com/video.mp4"
         )
 
-        XCTAssertTrue(blueprint.rules().isEmpty)
+        XCTAssertEqual(blueprint.rules(), [
+            Rule(
+                anchor: .downloadMedia,
+                operations: [.replace([.command(.downloadMedia)])]
+            )
+        ])
         XCTAssertEqual(blueprint.pageBackgroundSection(), [])
+    }
+
+    func testBlobMediaDownloadRemainsNative() {
+        let blueprint = makeBlueprint(
+            identifiers: [.downloadMedia],
+            kind: .media,
+            mediaSrc: "blob:https://example.com/asset"
+        )
+
+        XCTAssertTrue(blueprint.rules().isEmpty)
     }
 
     // MARK: - Helpers

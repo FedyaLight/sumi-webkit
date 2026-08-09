@@ -18,6 +18,8 @@ struct SumiWebPageMenuContext {
     let linkURL: URL?
     let linkText: String?
     let imageURL: URL?
+    let mediaURL: URL?
+    let mediaDownloadTitle: String?
     let searchProviderName: String
     let isLoading: Bool
     let isDeveloperInspectionEnabled: Bool
@@ -37,6 +39,10 @@ struct SumiWebPageMenuContext {
         linkURL = snapshot?.linkHref.flatMap(URL.init(string:))
         linkText = snapshot?.linkText
         imageURL = snapshot?.imageSrc.flatMap(URL.init(string:))
+        mediaURL = snapshot?.mediaSrc.flatMap(URL.init(string:))
+        mediaDownloadTitle = menu.items.first {
+            SumiWebKitMenuItemIdentifier($0.identifier) == .downloadMedia
+        }?.title
         self.searchProviderName = searchProviderName
         self.isLoading = isLoading
         self.isDeveloperInspectionEnabled = isDeveloperInspectionEnabled
@@ -60,6 +66,10 @@ struct SumiWebPageMenuContext {
 
     var isWebSchemeImage: Bool {
         isWebScheme(imageURL)
+    }
+
+    var isWebSchemeMedia: Bool {
+        isWebScheme(mediaURL)
     }
 
     /// Recipients of a `mailto:` link: the path list plus any `to=` query
@@ -121,6 +131,7 @@ enum SumiWebPageMenuCommand: String, CaseIterable {
     case openImageInNewTab = "SumiWebPageMenu.OpenImageInNewTab"
     case openImageInNewWindow = "SumiWebPageMenu.OpenImageInNewWindow"
     case copyImageAddress = "SumiWebPageMenu.CopyImageAddress"
+    case downloadMedia = "SumiWebPageMenu.DownloadMedia"
 
     init?(_ identifier: NSUserInterfaceItemIdentifier?) {
         guard let identifier else { return nil }
@@ -180,6 +191,8 @@ enum SumiWebPageMenuCommand: String, CaseIterable {
             return "rectangle.split.2x1"
         case .copyEmailAddress:
             return "envelope"
+        case .downloadMedia:
+            return "arrow.down.circle"
         }
     }
 }

@@ -76,6 +76,37 @@ enum TabWebPageMenuCommandsFactory {
                     url: url,
                     title: title ?? url.absoluteString
                 )) != nil
+            },
+            download: { [weak browserManager] webView, url in
+                guard let browserManager,
+                      source(
+                          for: webView,
+                          in: browserManager.windowRegistry
+                      ) != nil,
+                      browserManager.downloadManager.isAvailable
+                else {
+                    return false
+                }
+
+                webView.startDownload(using: URLRequest(url: url)) {
+                    [weak browserManager] download in
+                    guard let browserManager else {
+                        download.cancel(nil)
+                        return
+                    }
+                    _ = browserManager.downloadManager.addDownload(
+                        transport: browserManager.downloadTransportFactory
+                            .makeTransport(for: download),
+                        originalURL: url,
+                        suggestedFilename: DownloadFileUtilities
+                            .suggestedFilename(
+                                response: nil,
+                                requestURL: url,
+                                fallback: "download"
+                            )
+                    )
+                }
+                return true
             }
         )
     }

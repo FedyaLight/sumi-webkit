@@ -56,6 +56,8 @@ final class SumiWebPageMenuActionOwner: NSObject, NSMenuItemValidation {
             return #selector(SumiWebPageMenuActionOwner.openImageInNewWindow(_:))
         case .copyImageAddress:
             return #selector(SumiWebPageMenuActionOwner.copyImageAddress(_:))
+        case .downloadMedia:
+            return #selector(SumiWebPageMenuActionOwner.downloadMedia(_:))
         }
     }
 
@@ -99,6 +101,8 @@ final class SumiWebPageMenuActionOwner: NSObject, NSMenuItemValidation {
             return routableImageURL != nil && webView.owningTab != nil
         case .copyImageAddress:
             return context?.imageURL != nil
+        case .downloadMedia:
+            return context?.isWebSchemeMedia == true && webView.owningTab != nil
         }
     }
 
@@ -243,6 +247,14 @@ final class SumiWebPageMenuActionOwner: NSObject, NSMenuItemValidation {
 
     @objc func copyImageAddress(_: Any?) {
         copyString(context?.imageURL?.absoluteString)
+    }
+
+    @objc func downloadMedia(_: Any?) {
+        guard let webView, let url = context?.mediaURL else { return }
+        _ = webView.owningTab?.webPageMenuCommands.download(
+            from: webView,
+            url: url
+        )
     }
 
     // MARK: - Derived state

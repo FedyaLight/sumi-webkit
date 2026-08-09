@@ -29,6 +29,7 @@ struct SumiWebPageMenuBlueprint {
         var rules: [Rule] = []
         appendLinkRules(to: &rules)
         appendImageRules(to: &rules)
+        appendMediaRules(to: &rules)
         appendSelectionRules(to: &rules)
         appendInspectElementRule(to: &rules)
         return rules
@@ -160,6 +161,19 @@ struct SumiWebPageMenuBlueprint {
         rules.append(Rule(
             anchor: .copyImage,
             operations: [.insertBefore([.separator, .command(.copyImageAddress)])]
+        ))
+    }
+
+    // MARK: - Media
+
+    private func appendMediaRules(to rules: inout [Rule]) {
+        guard context.identifiers.contains(.downloadMedia),
+              context.isWebSchemeMedia
+        else { return }
+
+        rules.append(Rule(
+            anchor: .downloadMedia,
+            operations: [.replace([.command(.downloadMedia)])]
         ))
     }
 
