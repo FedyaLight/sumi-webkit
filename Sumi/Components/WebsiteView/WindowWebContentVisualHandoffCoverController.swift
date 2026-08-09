@@ -1,5 +1,4 @@
 import AppKit
-import QuartzCore
 import SumiWebRuntime
 
 @MainActor
@@ -70,7 +69,6 @@ final class WindowWebContentVisualHandoffCoverController {
         releaseWorkItem?.cancel()
         releaseGeneration &+= 1
         let generation = releaseGeneration
-        CATransaction.flush()
 
         let workItem = DispatchWorkItem { [weak self] in
             guard let self,

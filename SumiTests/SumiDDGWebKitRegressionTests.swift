@@ -88,6 +88,23 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertFalse(source.contains("sumiSetDrawsBackground(false)"))
     }
 
+    func testVisualHandoffReleaseDoesNotSynchronouslyFlushCoreAnimation() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Components/WebsiteView/WindowWebContentVisualHandoffCoverController.swift"
+            ),
+            encoding: .utf8
+        )
+
+        XCTAssertFalse(
+            source.contains("CATransaction.flush()"),
+            "A synchronous Core Animation flush can re-enter SwiftUI/AppKit layout while a tab-close keyboard event is still being handled"
+        )
+    }
+
     func testReleasedVisualHandoffDetachesDormantHostFromWindow() {
         let container = NSView()
         let window = NSWindow(
