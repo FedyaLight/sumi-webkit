@@ -1,6 +1,20 @@
 import AppKit
+import ObjectiveC.runtime
 import SumiWebRuntime
 import WebKit
+
+private final class WeakWebViewContainerHostBox {
+    weak var host: SumiWebViewContainerView?
+
+    init(_ host: SumiWebViewContainerView) {
+        self.host = host
+    }
+}
+
+@MainActor
+private enum WebViewContainerHostAssociation {
+    static var key: UInt8 = 0
+}
 
 @MainActor
 final class HostedWebViewPresentationObservation {
@@ -64,6 +78,8 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
         retainedWebView = webView
         super.init(frame: .zero)
 
+        precondition(webView.sumiWebViewContainerHost == nil)
+        webView.sumiWebViewContainerHost = self
         configure(webView: webView)
     }
 
@@ -227,8 +243,13 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
         dismissReader()
         uninstallPageScrollbarOverlay()
         removeFromSuperview()
-        if let retainedWebView, retainedWebView.superview === self {
-            retainedWebView.removeFromSuperview()
+        if let retainedWebView {
+            if retainedWebView.superview === self {
+                retainedWebView.removeFromSuperview()
+            }
+            if retainedWebView.sumiWebViewContainerHost === self {
+                retainedWebView.sumiWebViewContainerHost = nil
+            }
         }
         retainedWebView = nil
     }
@@ -360,6 +381,24 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
 
 @MainActor
 extension WKWebView {
+    var sumiWebViewContainerHost: SumiWebViewContainerView? {
+        get {
+            (objc_getAssociatedObject(
+                self,
+                &WebViewContainerHostAssociation.key
+            ) as? WeakWebViewContainerHostBox)?.host
+        }
+        set {
+            let box = newValue.map(WeakWebViewContainerHostBox.init)
+            objc_setAssociatedObject(
+                self,
+                &WebViewContainerHostAssociation.key,
+                box,
+                .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+            )
+        }
+    }
+
     /// WebKit moves the live web view into its fullscreen window and leaves a
     /// private placeholder in the browser window. Containers must manage the
     /// placeholder while that transition is active, not move the web view back.

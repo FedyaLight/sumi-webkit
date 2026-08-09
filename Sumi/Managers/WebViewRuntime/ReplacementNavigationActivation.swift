@@ -123,7 +123,10 @@ final class ReplacementNavigationActivation {
                 registrationReason: "\(reason).beforeInitialLoad",
                 updatesTabPresentation:
                     owner.windowID == replacement.snapshot.primaryWindowID,
-                replacementBinding: binding
+                replacementBinding: binding,
+                nativeSessionData: replacement.nativeSessionDataByWebViewID[
+                    ObjectIdentifier(webView)
+                ]
             )
             return
         }
@@ -133,7 +136,10 @@ final class ReplacementNavigationActivation {
             targetURL: replacement.targetURL,
             profileId: replacement.profileID,
             registrationReason: "\(reason).beforeInitialLoad",
-            replacementBinding: binding
+            replacementBinding: binding,
+            nativeSessionData: replacement.nativeSessionDataByWebViewID[
+                ObjectIdentifier(webView)
+            ]
         )
     }
 }

@@ -38,10 +38,16 @@ final class SumiDatabaseTests: XCTestCase {
                     titleIsCustom: false,
                     currentURLString: "https://example.com",
                     canGoBack: false,
-                    canGoForward: false
+                    canGoForward: false,
+                    pageKind: TabPersistedPageKind.web.rawValue
                 )
             )
         }
+
+        XCTAssertEqual(
+            try database.read { try $0.workspace.tabs().first?.pageKind },
+            TabPersistedPageKind.web.rawValue
+        )
 
         try database.transaction { transaction in
             try transaction.profiles.delete(id: profileID)

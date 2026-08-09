@@ -13,8 +13,9 @@ final class TabSuspensionController {
     private let proactiveLifecycle: ProactiveTabSuspensionLifecycle
     private let memoryPressureHandler: MemoryPressureTabSuspensionHandler
     private let memoryMonitor: SumiMemoryPressureMonitoring?
-    private var policyChangeMonitor: TabSuspensionPolicyChangeMonitor?
     private var lifecycleState: LifecycleState = .awaitingRuntime
+    private var participantsAreRunning = false
+    private var catalogRuntime: TabSuspensionCatalogRuntime = .inactive
 
 #if DEBUG
     var scheduledTimerDeadlineForTesting: TimeInterval? {
@@ -72,7 +73,7 @@ final class TabSuspensionController {
     ) {
         contextSource.configurePolicy(using: currentPolicy)
         guard lifecycleState == .running else { return }
-        proactiveLifecycle.rebuild(reason: "policy-source-configured")
+        applyPolicyActivation(reason: "policy-source-configured")
     }
 
     func install(runtime: TabSuspensionRuntimePorts) {
@@ -84,23 +85,28 @@ final class TabSuspensionController {
         contextSource.attach(runtime: runtime.context)
         executor.attach(runtime: runtime.webView)
         memoryPressureHandler.install(runtime: runtime.catalog)
+        catalogRuntime = runtime.catalog
         lifecycleState = .running
-        proactiveLifecycle.start(runtime: runtime.catalog)
-        startLifecycleObservers()
+        applyPolicyActivation(reason: "runtime-installed")
+    }
+
+    func policyDidChange(reason: String) {
+        guard lifecycleState == .running else { return }
+        applyPolicyActivation(reason: reason)
     }
 
     func scheduleReconciliation(reason: String) {
-        guard lifecycleState == .running else { return }
+        guard lifecycleState == .running, participantsAreRunning else { return }
         proactiveLifecycle.scheduleReconcile(reason: reason)
     }
 
     func reconcileNow(reason: String) {
-        guard lifecycleState == .running else { return }
+        guard lifecycleState == .running, participantsAreRunning else { return }
         proactiveLifecycle.reconcile(reason: reason)
     }
 
     func navigationDidStart(for tab: Tab) {
-        guard lifecycleState == .running else { return }
+        guard lifecycleState == .running, participantsAreRunning else { return }
         proactiveLifecycle.resetRevisitProtection(for: tab)
     }
 
@@ -108,29 +114,41 @@ final class TabSuspensionController {
         contextSource.globallyVisibleTabIDs()
     }
 
-    private func startLifecycleObservers() {
-        let policyChangeMonitor = TabSuspensionPolicyChangeMonitor {
-            [weak self] reason in
-            guard self?.lifecycleState == .running else { return }
-            self?.proactiveLifecycle.rebuild(reason: reason)
-        }
-        self.policyChangeMonitor = policyChangeMonitor
-        policyChangeMonitor.start()
-
+    private func startParticipants() {
+        guard participantsAreRunning == false else { return }
+        participantsAreRunning = true
+        proactiveLifecycle.start(runtime: catalogRuntime)
         memoryMonitor?.eventHandler = { [weak self] level in
-            guard self?.lifecycleState == .running else { return }
+            guard self?.lifecycleState == .running,
+                  self?.participantsAreRunning == true else { return }
             self?.memoryPressureHandler.handle(level)
         }
         memoryMonitor?.start()
     }
 
-    private func stop() {
-        guard lifecycleState == .running else { return }
-        lifecycleState = .stopped
-        policyChangeMonitor?.stop()
-        policyChangeMonitor = nil
+    private func stopParticipants() {
+        guard participantsAreRunning else { return }
+        participantsAreRunning = false
         memoryMonitor?.eventHandler = nil
         memoryMonitor?.stop()
         proactiveLifecycle.stop()
+    }
+
+    private func applyPolicyActivation(reason: String) {
+        if contextSource.context().policy.isEnabled {
+            if participantsAreRunning {
+                proactiveLifecycle.rebuild(reason: reason)
+            } else {
+                startParticipants()
+            }
+        } else {
+            stopParticipants()
+        }
+    }
+
+    private func stop() {
+        guard lifecycleState == .running else { return }
+        lifecycleState = .stopped
+        stopParticipants()
     }
 }

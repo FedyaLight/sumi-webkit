@@ -14,8 +14,6 @@ final class TabCloseLifecycleOwner {
         let setLoadingIdle: () -> Void
         let cleanupZoomForTab: (UUID) -> Void
         let updateTabVisibility: () -> Void
-        let currentWebView: () -> WKWebView?
-        let removeNavigationStateObservers: (WKWebView) -> Void
         let removeTab: (UUID) -> Void
         let cancelProfileAwait: () -> Void
         let cancelPendingMainFrameNavigation: () -> Void
@@ -25,6 +23,8 @@ final class TabCloseLifecycleOwner {
         RuntimeDiagnostics.emit("Closing tab: \(context.tabName())")
 
         context.cleanupNormalTabPermissionRuntime("normal-tab-close")
+        context.cancelProfileAwait()
+        context.cancelPendingMainFrameNavigation()
         context.performComprehensiveWebViewCleanup()
 
         context.resetPlaybackActivity()
@@ -34,13 +34,7 @@ final class TabCloseLifecycleOwner {
         context.cleanupZoomForTab(context.tabId)
         context.updateTabVisibility()
 
-        if let webView = context.currentWebView() {
-            context.removeNavigationStateObservers(webView)
-        }
-
         context.removeTab(context.tabId)
-        context.cancelProfileAwait()
-        context.cancelPendingMainFrameNavigation()
 
         RuntimeDiagnostics.debug("Tab close completed.", category: "Tab")
     }
@@ -72,12 +66,6 @@ extension TabCloseLifecycleOwner.Context {
             },
             updateTabVisibility: {
                 tab.navigationRuntime.closeLifecycleRuntime.updateTabVisibility()
-            },
-            currentWebView: {
-                tab.resolvedCurrentWebView()
-            },
-            removeNavigationStateObservers: { webView in
-                tab.removeNavigationStateObservers(from: webView)
             },
             removeTab: { tabId in
                 tab.navigationRuntime.closeLifecycleRuntime.removeTab(tabId)

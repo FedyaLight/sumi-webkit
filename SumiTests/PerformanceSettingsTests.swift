@@ -4,13 +4,13 @@ import XCTest
 
 @MainActor
 final class PerformanceSettingsTests: XCTestCase {
-    func testDefaultMemoryModeIsBalanced() {
+    func testDefaultMemoryModeIsOff() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
 
         let settings = SumiSettingsService(userDefaults: harness.defaults)
 
-        XCTAssertEqual(settings.memoryMode, .balanced)
+        XCTAssertEqual(settings.memoryMode, .off)
         XCTAssertEqual(settings.memorySaverCustomDeactivationDelay, 2 * 60 * 60)
     }
 
@@ -34,7 +34,7 @@ final class PerformanceSettingsTests: XCTestCase {
             ("lightweight", .maximum),
             ("performance", .moderate),
             ("balanced", .balanced),
-            ("unknown", .balanced),
+            ("unknown", .off),
         ]
 
         for testCase in cases {
@@ -84,7 +84,7 @@ final class PerformanceSettingsTests: XCTestCase {
     func testPerformanceSettingsExposeAllMemoryModes() {
         XCTAssertEqual(
             SumiMemoryModeSettingsDescriptor.all.map(\.mode),
-            [.moderate, .balanced, .maximum, .custom]
+            [.off, .moderate, .balanced, .maximum, .custom]
         )
         XCTAssertEqual(
             Set(SumiMemoryModeSettingsDescriptor.all.map(\.mode)),
@@ -92,7 +92,7 @@ final class PerformanceSettingsTests: XCTestCase {
         )
         XCTAssertEqual(
             SumiMemoryModeSettingsDescriptor.all.map(\.title),
-            ["Moderate", "Balanced", "Maximum", "Custom Deactivation Delay"]
+            ["Off", "Moderate", "Balanced", "Maximum", "Custom Deactivation Delay"]
         )
         let expectedPresetOptions: [TimeInterval] = [
             2 * 60 * 60,

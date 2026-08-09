@@ -254,7 +254,8 @@ private final class SchedulerFixture {
             removeFromContainers: effects.removeFromContainers,
             cleanupTrackedWebView: { _, _, _ in false },
             shutdownOwnerlessWebView: { _, _ in },
-            finishRetirementIfDrained: { _ in }
+            finishRetirementIfDrained: { _ in },
+            retireTabWebViewGeneration: { _, _ in true }
         )
         let windowMaintenance = DeferredWebViewWindowMaintenanceExecutor(
             cleanupWindow: { _ in false },

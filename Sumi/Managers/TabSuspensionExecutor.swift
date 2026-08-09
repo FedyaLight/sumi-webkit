@@ -1,4 +1,5 @@
 import Foundation
+import SumiWebRuntime
 import WebKit
 
 @MainActor
@@ -63,19 +64,40 @@ final class TabSuspensionExecutor {
     ) -> Bool {
         guard eligibility(for: tab, context: context).isEligible else { return false }
         let liveWebViews = runtime.liveWebViews(tab)
-        let interactionStateData = tab.resolvedCurrentWebView().flatMap(
-            SumiWebKitPageStateAdapter.interactionStateData
-        )
-        let processMemory = WebContentProcessResourceProbe
-            .residentBytesByProcess(for: liveWebViews)
+        let generation = tab.webViewSession.generation
+        guard let committedRevision = tab.committedDocumentRuntime
+            .authorityProof.revision else { return false }
+        let snapshots = liveWebViews.compactMap { webView -> PageSessionSnapshot? in
+            guard let residence = tab.webViewSession.residence(of: webView),
+                  tab.committedDocumentRuntime.lease(for: webView) != nil,
+                  let data = SumiWebKitPageStateAdapter.sessionStateData(from: webView)
+            else { return nil }
+            return PageSessionSnapshot(
+                residence: residence,
+                residenceGeneration: generation,
+                profileID: tab.resolveProfile()?.id,
+                dataStoreIdentity: PageSessionDataStoreIdentity(
+                    webView.configuration.websiteDataStore
+                ),
+                committedRevision: committedRevision,
+                destination: tab.url,
+                data: data
+            )
+        }
+        let capturedWebViewIDs = Set(liveWebViews.map(ObjectIdentifier.init))
+        guard generation == tab.webViewSession.generation,
+              committedRevision == tab.committedDocumentRuntime.authorityProof.revision,
+              capturedWebViewIDs == Set(
+                  runtime.liveWebViews(tab).map(ObjectIdentifier.init)
+              ),
+              eligibility(for: tab, context: context).isEligible else {
+            return false
+        }
         guard runtime.suspendWebViews(tab, reason) else { return false }
 
         tab.markSuspended(
-            interactionStateData: interactionStateData,
+            sessionSnapshots: snapshots,
             at: dateProvider()
-        )
-        WebContentProcessResourceProbe.measureReclaimedMemory(
-            afterSuspending: processMemory
         )
         RuntimeDiagnostics.debug(category: "TabSuspension") {
             "suspended tab=\(tab.id.uuidString.prefix(8)) reason=\(reason)"

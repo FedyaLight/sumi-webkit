@@ -286,6 +286,10 @@ extension Tab {
     @discardableResult
     func performMainFrameNavigation(
         on webView: WKWebView,
+        preparedTicket: TabMainFramePreparedLoadTicket? = nil,
+        didClaim: @escaping @MainActor @Sendable (
+            TabMainFramePendingAttemptOwner
+        ) -> Void = { _ in },
         didSubmit: @escaping @MainActor @Sendable (
             _ navigationID: ObjectIdentifier,
             _ navigationLifetime: AnyObject
@@ -310,6 +314,8 @@ extension Tab {
                     }
                     _ = self.performMainFrameNavigation(
                         on: webView,
+                        preparedTicket: preparedTicket,
+                        didClaim: didClaim,
                         didSubmit: didSubmit,
                         performLoad: performLoad
                     )
@@ -317,9 +323,21 @@ extension Tab {
             ) {
             return .alreadyScheduled
         }
-        guard let submissionLease = mainFrameLoads.claimDirectSubmission(on: webView) else {
+        let submissionLease = if let preparedTicket {
+            mainFrameLoads.claimPreparedSubmission(
+                on: webView,
+                ticket: preparedTicket
+            )
+        } else {
+            mainFrameLoads.claimDirectSubmission(on: webView)
+        }
+        guard let submissionLease else {
             return .alreadyScheduled
         }
+        didClaim(TabMainFramePendingAttemptOwner(
+            intent: intent,
+            lease: submissionLease
+        ))
         guard let navigator = webView.navigator() else {
             let failure = mainFrameSubmission.failSubmittedLoad(
                 on: webView,
@@ -354,6 +372,14 @@ extension Tab {
         on webView: WKWebView,
         revision: UInt64,
         targetURL: URL,
+        restoreWaiterAfterFailedSubmission: Bool = true,
+        didClaim: @escaping @MainActor (
+            TabMainFramePendingAttemptOwner
+        ) -> Void = { _ in },
+        didSubmit: @escaping @MainActor (
+            _ navigationID: ObjectIdentifier,
+            _ navigationLifetime: AnyObject
+        ) -> Void = { _, _ in },
         performLoad: @escaping @MainActor (WKWebView) -> WKNavigation?
     ) -> TabDeferredMainFrameLoadClaim {
         if navigationRuntime.webViewCleanupRuntime
@@ -375,6 +401,9 @@ extension Tab {
                         on: webView,
                         revision: revision,
                         targetURL: targetURL,
+                        restoreWaiterAfterFailedSubmission: restoreWaiterAfterFailedSubmission,
+                        didClaim: didClaim,
+                        didSubmit: didSubmit,
                         performLoad: performLoad
                     )
                 }
@@ -394,12 +423,20 @@ extension Tab {
         ) else {
             return .submissionFailed
         }
+        guard let intent = mainFrameLoads.currentIntent(revision: revision) else {
+            return .stale
+        }
+        didClaim(TabMainFramePendingAttemptOwner(
+            intent: intent,
+            lease: submissionLease
+        ))
         guard let navigator = webView.navigator() else {
-            mainFrameSubmission.restoreDeferredLoadAfterFailedSubmission(
+            settleDeferredSubmissionFailure(
                 on: webView,
                 revision: revision,
                 targetURL: targetURL,
-                matching: submissionLease
+                matching: submissionLease,
+                restoreWaiter: restoreWaiterAfterFailedSubmission
             )
             assertionFailure(
                 "Normal-tab deferred main-frame loads require DistributedNavigationDelegate"
@@ -410,18 +447,43 @@ extension Tab {
             on: webView,
             navigator: navigator,
             submissionLease: submissionLease,
+            didSubmit: didSubmit,
             performLoad: performLoad
         )
         guard didCreateNavigation else {
-            mainFrameSubmission.restoreDeferredLoadAfterFailedSubmission(
+            settleDeferredSubmissionFailure(
                 on: webView,
                 revision: revision,
                 targetURL: targetURL,
-                matching: submissionLease
+                matching: submissionLease,
+                restoreWaiter: restoreWaiterAfterFailedSubmission
             )
             return .submissionFailed
         }
         return .claimed
+    }
+
+    private func settleDeferredSubmissionFailure(
+        on webView: WKWebView,
+        revision: UInt64,
+        targetURL: URL,
+        matching lease: TabMainFrameSubmissionLease,
+        restoreWaiter: Bool
+    ) {
+        if restoreWaiter {
+            mainFrameSubmission.restoreDeferredLoadAfterFailedSubmission(
+                on: webView,
+                revision: revision,
+                targetURL: targetURL,
+                matching: lease
+            )
+            return
+        }
+        let failure = mainFrameSubmission.failSubmittedLoad(
+            on: webView,
+            matching: lease
+        )
+        settleFailedMainFrameSubmissionIfNeeded(failure, on: webView)
     }
 
     private func performClaimedMainFrameNavigation(

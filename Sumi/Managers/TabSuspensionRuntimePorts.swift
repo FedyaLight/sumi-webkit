@@ -47,7 +47,7 @@ struct TabSuspensionRuntimePorts {
 final class TabSuspensionContextSource {
     private var runtime: TabSuspensionContextRuntime = .inactive
     private var currentPolicy: @MainActor () -> TabSuspensionPolicy = {
-        TabSuspensionPolicy(memoryMode: .balanced)
+        TabSuspensionPolicy(memoryMode: .off)
     }
 
     func attach(runtime: TabSuspensionContextRuntime) {

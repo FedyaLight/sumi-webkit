@@ -1,4 +1,5 @@
 import Combine
+import SumiDomain
 import SumiWebRuntime
 import XCTest
 
@@ -6,6 +7,151 @@ import XCTest
 
 @MainActor
 final class TabStartupRestoreLifecycleTests: XCTestCase {
+    func testInvalidRestoreDestinationIsNeverRepairedToAboutBlank() {
+        var repairReasons = Set<String>()
+
+        let resolved = TabRestoreURLResolver().resolve(
+            primary: "%",
+            fallback: "%%",
+            repairReasons: &repairReasons
+        )
+
+        XCTAssertNil(resolved)
+        XCTAssertTrue(repairReasons.contains("repaired invalid restored url"))
+    }
+
+    func testDefaultLazyRestoreDoesNoBackgroundMaterialization() {
+        XCTAssertEqual(TabLazyRestorePolicy.default.maxTotalOpportunisticTabs, 0)
+        XCTAssertEqual(TabLazyRestorePolicy.default.maxAdjacentTabsPerAnchor, 0)
+        XCTAssertEqual(TabLazyRestorePolicy.default.maxConcurrentLoads, 0)
+    }
+
+    func testCrossLaunchRestoreDoesNotPublishPersistedHistoryHintsAsNativeCapability() {
+        let spaceID = UUID()
+        let tabID = UUID()
+        let payload = TabRestorePlanner().makePayload(
+            from: TabRestoreStoreRecords(
+                spaces: [
+                    TabRestoreSpaceRecord(
+                        id: spaceID,
+                        name: "Restored",
+                        icon: SumiPersistentGlyph.spaceDefaultIconValue,
+                        index: 0,
+                        workspaceThemeData: nil,
+                        profileId: nil
+                    ),
+                ],
+                tabs: [
+                    TabRestoreTabRecord(
+                        id: tabID,
+                        urlString: "https://example.com/page",
+                        name: "Page",
+                        isPinned: false,
+                        isSpacePinned: false,
+                        index: 0,
+                        spaceId: spaceID,
+                        profileId: nil,
+                        executionProfileId: nil,
+                        folderId: nil,
+                        iconAsset: nil,
+                        currentURLString: "https://example.com/current",
+                        canGoBack: true,
+                        canGoForward: true
+                    ),
+                ],
+                folders: [],
+                states: []
+            ),
+            defaultProfileId: nil
+        )
+        let state = TabRestoreRuntimeStateBuilder(tabFactory: TabFactory(
+            webViewSessions: WebViewSessionRepository(),
+            faviconService: TabDependencyIsolationDefaults.faviconService,
+            faviconCapabilities: TabDependencyIsolationDefaults.faviconCapabilities,
+            visitedLinkStore: TabDependencyIsolationDefaults.visitedLinkStore
+        ))
+            .makeState(from: payload)
+        let restored = state.tabsBySpace[spaceID]?.first
+
+        XCTAssertFalse(restored?.canGoBack == true)
+        XCTAssertFalse(restored?.canGoForward == true)
+    }
+
+    func testRestoreDistinguishesTrueEmptyCorruptLegacyBlankAndLauncher() {
+        let spaceID = UUID()
+        let emptyID = UUID()
+        let corruptID = UUID()
+        let legacyBlankID = UUID()
+        let webID = UUID()
+        let invalidLauncherID = UUID()
+        func record(
+            id: UUID,
+            value: String,
+            index: Int,
+            pinned: Bool = false,
+            pageKind: TabPersistedPageKind? = nil
+        ) -> TabRestoreTabRecord {
+            TabRestoreTabRecord(
+                id: id,
+                urlString: value,
+                name: value,
+                isPinned: pinned,
+                isSpacePinned: false,
+                index: index,
+                spaceId: pinned ? nil : spaceID,
+                profileId: nil,
+                executionProfileId: nil,
+                folderId: nil,
+                iconAsset: nil,
+                currentURLString: value,
+                canGoBack: true,
+                canGoForward: true,
+                pageKind: pageKind
+            )
+        }
+        let payload = TabRestorePlanner().makePayload(
+            from: TabRestoreStoreRecords(
+                spaces: [TabRestoreSpaceRecord(
+                    id: spaceID,
+                    name: "Restore",
+                    icon: SumiPersistentGlyph.spaceDefaultIconValue,
+                    index: 0,
+                    workspaceThemeData: nil,
+                    profileId: nil
+                )],
+                tabs: [
+                    record(id: emptyID, value: "about:blank", index: 0, pageKind: .empty),
+                    record(id: corruptID, value: "%", index: 1, pageKind: .web),
+                    record(id: legacyBlankID, value: "about:blank", index: 2),
+                    record(id: webID, value: "https://example.com", index: 3),
+                    record(id: invalidLauncherID, value: "%", index: 4, pinned: true),
+                ],
+                folders: [],
+                states: []
+            ),
+            defaultProfileId: nil
+        )
+        let tabs = Dictionary(uniqueKeysWithValues:
+            (payload.regularTabsBySpace[spaceID] ?? []).map { ($0.id, $0) }
+        )
+
+        XCTAssertEqual(tabs[emptyID]?.url, SumiSurface.emptyTabURL)
+        XCTAssertFalse(tabs[emptyID]?.isRestoreFailure == true)
+        XCTAssertEqual(tabs[webID]?.url.absoluteString, "https://example.com")
+        XCTAssertTrue(tabs[corruptID]?.isRestoreFailure == true)
+        XCTAssertTrue(tabs[legacyBlankID]?.isRestoreFailure == true)
+        XCTAssertNotEqual(tabs[corruptID]?.url, SumiSurface.emptyTabURL)
+        XCTAssertFalse(payload.snapshot.tabs.contains { $0.id == invalidLauncherID })
+        XCTAssertEqual(
+            payload.snapshot.tabs.first { $0.id == corruptID }?.pageKind,
+            .restoreFailure
+        )
+        XCTAssertEqual(
+            payload.snapshot.tabs.first { $0.id == corruptID }?.urlString,
+            "%"
+        )
+    }
+
     func testRestorePlannerSanitizesBlockedProfileReferences() throws {
         let blockedProfileID = UUID()
         let fallbackProfileID = UUID()

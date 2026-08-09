@@ -10,7 +10,7 @@ For the module map, state flow, source-of-truth table, and role vocabulary,
 start with [Architecture Overview](architecture-overview.md). This document is
 the maintainer reference for exact runtime invariants.
 
-## Target Module Graph
+## Module Graph
 
 The repository keeps only two package boundaries with independent tests and
 meaningful reuse constraints:
@@ -74,7 +74,7 @@ The boundary is behavioral as well as structural:
 The remaining sections are an implementation deep dive into how Sumi keeps
 its side of that boundary consistent.
 
-## Current Reality
+## Repository Boundaries
 
 Browser shell UI, its layout tokens, and the tab-structure event bus remain in
 the app target because they have no independent consumer or lifecycle. A
@@ -178,14 +178,16 @@ mutable execution value changing register, identity-rekey, or retirement
 invalidation. A caller without an exact mounted container cannot create the
 live residence. Moving an existing residence to another presented page is a
 separate transaction: it carries an explicit target receipt and atomically
-invalidates both the retained source and target pages.
-Updater and
-now-playing models are likewise observed only by mounted leaf chrome. A hidden
+invalidates both the retained source and target pages. Updater and now-playing
+models are likewise observed only by mounted leaf chrome. A hidden
 prewarmed sidebar installs none of these subscriptions. There is no
 BrowserManager structural revision, sidebar-wide relay, or discard-read
 invalidation counter.
 
 ## WebView Session Ownership
+
+The navigation, materialization, restore, recovery, and teardown contract is
+summarized in [Page runtime lifecycle](architecture/page-runtime-lifecycle.md).
 
 `SumiApp` creates exactly one `WebViewSessionRepository` for a browser process.
 The composition root passes it to `BrowserManager`, `TabManager`, and the
@@ -500,6 +502,8 @@ runtime under `Sumi/ContentBlocking`. Sumi consumes prepared bundles from
 the selected groups through WebKit, and keeps the previous generation available
 for rollback. The browser must not fetch raw filter lists, parse ABP/uBO syntax,
 run `adblock-rust`, or convert DuckDuckGo Tracker Radar data at runtime.
+The bundle format is defined in
+[Sumi Native Rule Bundle v1](adblock-native-rule-bundle-v1.md).
 
 ## Extensions
 
@@ -536,9 +540,3 @@ An extension action popup keeps the exact click-time window, tab, profile, and
 WebKit data-store receipt for its lifetime. Nested `window.open` requests must
 revalidate that receipt and fail closed; they must never rediscover an opener
 through whichever browser window happens to be active later.
-
-## AI Policy
-
-Sumi does not include a built-in AI panel. AI tools can be added later through
-extensions once extension compatibility matures, for example through official
-Safari extensions.

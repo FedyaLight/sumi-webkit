@@ -67,6 +67,28 @@ public final class DistributedNavigationDelegate: NSObject {
         }
     }
 
+    @MainActor
+    private var pendingDecisionTasks: [UUID: Task<Void, Never>] = [:]
+    @MainActor
+    private var decisionsFinishedBeforeRegistration = Set<UUID>()
+
+    @MainActor
+    public func cancelPendingNavigationDecisions() {
+        navigationActionDecisionTask = nil
+        let tasks = pendingDecisionTasks.values
+        pendingDecisionTasks.removeAll()
+        decisionsFinishedBeforeRegistration.removeAll()
+        tasks.forEach { $0.cancel() }
+    }
+
+    @MainActor
+    private func decisionDidFinish(_ decisionID: UUID) {
+        guard pendingDecisionTasks.removeValue(forKey: decisionID) == nil else {
+            return
+        }
+        decisionsFinishedBeforeRegistration.insert(decisionID)
+    }
+
     /// Gater for createWebView callbacks to ensure they are ordered behind any in-flight `decidePolicyForNavigationAction` evaluation.
     @MainActor
     private let createWebViewCallbackGater = CreateWebViewCallbackGater()
@@ -147,6 +169,8 @@ private extension DistributedNavigationDelegate {
 #endif
 
     /// continues until first non-nil Navigation Responder decision and returned to the `completion` callback
+    @MainActor
+    @discardableResult
     func makeAsyncDecision<T>(for actionDebugInfo: some CustomDebugStringConvertible,
                               boundToLifetimeOf webView: WKWebView,
                               with responders: ResponderChain,
@@ -160,7 +184,11 @@ private extension DistributedNavigationDelegate {
         let webViewDebugRef = Unmanaged.passUnretained(webView).toOpaque().hexValue
 
         // TO DO: ideally the Task should be executed synchronously until the first await, check it later when custom Executors arrive to Swift
-        let task = Task.detached { @MainActor [responders, weak webView, weak webViewDeinitObserver] in
+        let decisionID = UUID()
+        let task = Task.detached { @MainActor [weak self, responders, weak webView, weak webViewDeinitObserver] in
+            defer {
+                self?.decisionDidFinish(decisionID)
+            }
             await withTaskCancellationHandler {
                 for responder in responders {
                     // in case of the Task cancellation completion handler will be called in `onCancel:`
@@ -187,6 +215,10 @@ private extension DistributedNavigationDelegate {
 
             } onCancel: {
                 DispatchQueue.main.async {
+                    if let webViewDeinitObserver {
+                        webViewDeinitObserver.disarm()
+                        webView?.deinitObservers.remove(webViewDeinitObserver)
+                    }
                     cancellation()
                 }
             }
@@ -204,9 +236,15 @@ private extension DistributedNavigationDelegate {
             task.cancel()
         }
 
+        pendingDecisionTasks[decisionID] = task
+        if decisionsFinishedBeforeRegistration.remove(decisionID) != nil {
+            pendingDecisionTasks.removeValue(forKey: decisionID)
+        }
+
         return task
     }
 
+    @MainActor
     func makeAsyncDecision<T>(for actionDebugInfo: some CustomDebugStringConvertible,
                               boundToLifetimeOf webView: WKWebView,
                               with responders: ResponderChain,
@@ -544,6 +582,8 @@ extension DistributedNavigationDelegate: WKNavigationDelegate {
                 return
             }
             completionHandler(disposition, credential)
+        } cancellation: {
+            completionHandler(.cancelAuthenticationChallenge, nil)
         }
     }
 
@@ -665,6 +705,8 @@ extension DistributedNavigationDelegate: WKNavigationDelegate {
                 self?.willStartDownload(with: navigationResponse, in: webView)
                 decisionHandler(.downloadPolicy)
             }
+        } cancellation: {
+            decisionHandler(.cancel)
         }
     }
 

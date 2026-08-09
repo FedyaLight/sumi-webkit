@@ -98,10 +98,11 @@ final class ExtensionAuxiliaryWindowOpeningService {
             .profileNeedsInitialDocumentExtensionContextLoad(
                 profileId: profileID
             ) {
-            await runtime.contextLoading.ensureInitialExtensionContextsLoaded(
+            let result = await runtime.contextLoading.ensureInitialExtensionContextsLoaded(
                 for: profileID
             )
-            guard callbackAdmission.isCurrent(evidence) else { return nil }
+            guard result.maySubmitNavigation,
+                  callbackAdmission.isCurrent(evidence) else { return nil }
         }
 
         if let loadURL {

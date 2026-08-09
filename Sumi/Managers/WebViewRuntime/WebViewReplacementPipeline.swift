@@ -6,6 +6,7 @@ import WebKit
 struct PreparedWebViewReplacement {
     let tab: Tab
     let snapshot: WebViewSessionSnapshot
+    let retiredSnapshot: WebViewSessionSnapshot
     let placement: WebViewReplacementPlacement
     let replacements: [WKWebView]
     let trackedReplacements: [WKWebView]
@@ -16,6 +17,7 @@ struct PreparedWebViewReplacement {
     let requiresExtensionRuntimePreparation: Bool
     let configurationPolicyChangeSet:
         PreparedConfigurationPolicyChangeSet?
+    let nativeSessionDataByWebViewID: [ObjectIdentifier: Data]
 
     init?(
         tab: Tab,
@@ -29,7 +31,9 @@ struct PreparedWebViewReplacement {
         profileID: UUID?,
         requiresExtensionRuntimePreparation: Bool,
         configurationPolicyChangeSet:
-            PreparedConfigurationPolicyChangeSet?
+            PreparedConfigurationPolicyChangeSet?,
+        retiredSnapshot: WebViewSessionSnapshot? = nil,
+        nativeSessionDataByWebViewID: [ObjectIdentifier: Data] = [:]
     ) {
         let replacementIDs = Set(
             replacements.map(ObjectIdentifier.init)
@@ -52,6 +56,8 @@ struct PreparedWebViewReplacement {
         switch placement {
         case .windowSet:
             expectedTrackedReplacementIDs = replacementIDs
+        case .windowSubset:
+            expectedTrackedReplacementIDs = replacementIDs
         case .detached:
             expectedTrackedReplacementIDs = []
         }
@@ -66,6 +72,8 @@ struct PreparedWebViewReplacement {
                   bindingReplacements,
                   of: replacementIDs
               ),
+              Set(nativeSessionDataByWebViewID.keys)
+                .isSubset(of: replacementIDs),
               normalReplacements.isEmpty
                 || normalReplacements.count == replacements.count,
               normalReplacements.isEmpty
@@ -87,6 +95,7 @@ struct PreparedWebViewReplacement {
         }
         self.tab = tab
         self.snapshot = snapshot
+        self.retiredSnapshot = retiredSnapshot ?? snapshot
         self.placement = placement
         self.replacements = replacements
         self.trackedReplacements = trackedReplacements
@@ -97,6 +106,7 @@ struct PreparedWebViewReplacement {
         self.requiresExtensionRuntimePreparation =
             requiresExtensionRuntimePreparation
         self.configurationPolicyChangeSet = configurationPolicyChangeSet
+        self.nativeSessionDataByWebViewID = nativeSessionDataByWebViewID
     }
 
     private static func webViews(
@@ -104,6 +114,8 @@ struct PreparedWebViewReplacement {
     ) -> [WKWebView] {
         switch placement {
         case .windowSet(let webViewsByWindowID, _):
+            return Array(webViewsByWindowID.values)
+        case .windowSubset(let webViewsByWindowID):
             return Array(webViewsByWindowID.values)
         case .detached(let webView, _):
             return [webView]
@@ -278,7 +290,7 @@ final class WebViewReplacementPipeline {
         }
         let retired = Dictionary(
             uniqueKeysWithValues: replacements.map {
-                ($0.tab.id, $0.snapshot)
+                ($0.tab.id, $0.retiredSnapshot)
             }
         )
 

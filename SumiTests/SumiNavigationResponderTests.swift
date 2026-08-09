@@ -40,6 +40,93 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         XCTAssertEqual(responder.policyCallCount, 1)
     }
 
+    func testDelegateTeardownCancelsPendingActionDecisionExactlyOnce() {
+        let proxy = CountingNavigationDelegateProxy()
+        let started = expectation(description: "action decision started")
+        let completed = expectation(description: "action decision completed")
+        let responder = SuspendedActionPolicyResponder(onStart: {
+            started.fulfill()
+        })
+        let webView = WKWebView(frame: .zero)
+        proxy.onActionDecision = { policy in
+            XCTAssertEqual(policy, .cancel)
+            completed.fulfill()
+        }
+        proxy.distributedNavigationDelegate.setResponders(.strong(responder))
+        webView.navigationDelegate = proxy
+
+        webView.load(URLRequest(url: URL(string: "https://example.com/held")!))
+        wait(for: [started], timeout: 5)
+        proxy.distributedNavigationDelegate.cancelPendingNavigationDecisions()
+        wait(for: [completed], timeout: 1)
+        responder.resume(with: .allow)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+
+        XCTAssertEqual(proxy.actionDecisionCount, 1)
+    }
+
+    func testDelegateTeardownCancelsPendingAuthenticationDecisionExactlyOnce() {
+        let delegate = DistributedNavigationDelegate()
+        let started = expectation(description: "authentication decision started")
+        let completed = expectation(description: "authentication decision completed")
+        let responder = SuspendedAuthenticationResponder(onStart: {
+            started.fulfill()
+        })
+        let webView = WKWebView(frame: .zero)
+        var completionCount = 0
+        delegate.setResponders(.strong(responder))
+
+        delegate.webView(
+            webView,
+            didReceive: makeAuthenticationChallenge()
+        ) { disposition, credential in
+            completionCount += 1
+            XCTAssertEqual(disposition, .cancelAuthenticationChallenge)
+            XCTAssertNil(credential)
+            completed.fulfill()
+        }
+        wait(for: [started], timeout: 1)
+        delegate.cancelPendingNavigationDecisions()
+        wait(for: [completed], timeout: 1)
+        responder.resume(with: .cancel)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+
+        XCTAssertEqual(completionCount, 1)
+    }
+
+    func testDelegateTeardownCancelsPendingResponseDecisionExactlyOnce() {
+        let proxy = CountingNavigationDelegateProxy()
+        let started = expectation(description: "response decision started")
+        let completed = expectation(description: "response decision completed")
+        let responder = SuspendedResponsePolicyResponder(onStart: {
+            started.fulfill()
+        })
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        configuration.setURLSchemeHandler(
+            RespondingSchemeHandler(),
+            forURLScheme: RespondingSchemeHandler.scheme
+        )
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        proxy.onResponseDecision = { policy in
+            XCTAssertEqual(policy, .cancel)
+            completed.fulfill()
+        }
+        proxy.distributedNavigationDelegate.setResponders(.strong(responder))
+        webView.navigationDelegate = proxy
+
+        webView.load(URLRequest(
+            url: URL(string: "\(RespondingSchemeHandler.scheme)://example/document")!
+        ))
+        wait(for: [started], timeout: 5)
+        proxy.distributedNavigationDelegate.cancelPendingNavigationDecisions()
+        wait(for: [completed], timeout: 1)
+        responder.resumeAllow()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+
+        XCTAssertEqual(proxy.responseDecisionCount, 1)
+    }
+
     func testActionDecisionCompletesBeforeLifecycleSideEffectBegins() {
         let proxy = CountingNavigationDelegateProxy()
         let responder = LifecycleOrderingProbeResponder()

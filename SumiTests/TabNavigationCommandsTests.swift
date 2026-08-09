@@ -102,7 +102,6 @@ final class TabNavigationCommandsTests: XCTestCase {
         XCTAssertEqual(webView.loadedRequests.map(\.url), [targetURL])
     }
 
-
     func testRefreshMaterializesEmptyUntrackedWebViewAtExactTarget() throws {
         let targetURL = try XCTUnwrap(URL(string: "https://example.com/empty-untracked"))
         let webView = NavigationRecordingWebView()
@@ -122,6 +121,30 @@ final class TabNavigationCommandsTests: XCTestCase {
             webView.loadedRequests.map(\.cachePolicy),
             [.useProtocolCachePolicy]
         )
+    }
+
+    func testDestructiveCleanupRestoreUsesOrdinaryLoadInsteadOfReloadingBlank()
+        throws {
+        let targetURL = try XCTUnwrap(
+            URL(string: "https://example.com/restore-after-cleanup")
+        )
+        let webView = NavigationRecordingWebView()
+        webView.returnsConcreteLoad = true
+        let tab = Tab(
+            url: targetURL,
+            existingWebView: webView,
+            loadsCachedFaviconOnInit: false
+        )
+        tab.replaceUntrackedWebView(webView)
+        _ = tab.installNavigationDelegate(on: webView)
+
+        let outcome = tab.navigationCommandOwner
+            .restoreAfterDestructiveDataCleanup(tab, targetURL: targetURL)
+
+        XCTAssertTrue(outcome.containsConcreteSubmission)
+        XCTAssertEqual(webView.standardReloadCount, 0)
+        XCTAssertEqual(webView.fromOriginReloadCount, 0)
+        XCTAssertEqual(webView.loadedRequests.map(\.url), [targetURL])
     }
 
     func testDeferredHardReloadMaterializesEmptyCloneWithBypassPolicy() throws {
@@ -145,8 +168,9 @@ final class TabNavigationCommandsTests: XCTestCase {
             WebRuntimeMainFrameReloader.reloadOrLoad(
                 targetURL,
                 on: $0,
-                policy: .fromOrigin
-            )
+                policy: .fromOrigin,
+                fallback: .safeOrdinaryNavigation
+            ).navigation
         }
 
         XCTAssertEqual(result, .submissionFailed)
@@ -156,6 +180,171 @@ final class TabNavigationCommandsTests: XCTestCase {
             webView.loadedRequests.map(\.cachePolicy),
             [.reloadIgnoringLocalAndRemoteCacheData]
         )
+    }
+
+    func testExactNativeReloadDispositionMatrixBindsConcreteNavigation() throws {
+        let targetURL = try XCTUnwrap(URL(string: "https://example.com/native-item"))
+        for policy in [
+            WebRuntimeMainFrameReloadPolicy.standard,
+            .fromOrigin,
+        ] {
+            let webView = NavigationRecordingWebView()
+            webView.reportedCommittedURL = targetURL
+            webView.returnsConcreteReload = true
+            let tab = Tab(
+                url: targetURL,
+                existingWebView: webView,
+                loadsCachedFaviconOnInit: false
+            )
+            tab.replaceUntrackedWebView(webView)
+            _ = tab.installNavigationDelegate(on: webView)
+
+            let outcome = exactReloadOutcome(
+                tab: tab,
+                webView: webView,
+                policy: policy
+            )
+
+            guard case .submitted(let proof) = outcome.dispositions.only else {
+                XCTFail("Expected a concrete native reload for \(policy)")
+                continue
+            }
+            XCTAssertEqual(proof.owner.intent, tab.mainFrameLoads.currentIntent)
+            XCTAssertEqual(proof.owner.webViewID, ObjectIdentifier(webView))
+            XCTAssertEqual(
+                webView.standardReloadCount,
+                policy == .standard ? 1 : 0
+            )
+            XCTAssertEqual(
+                webView.fromOriginReloadCount,
+                policy == .fromOrigin ? 1 : 0
+            )
+            XCTAssertTrue(webView.loadedRequests.isEmpty)
+        }
+    }
+
+    func testReloadNilResultMatrixDistinguishesFailureFromSafeFallback() throws {
+        let targetURL = try XCTUnwrap(URL(string: "https://example.com/reload-target"))
+
+        let committedWebView = NavigationRecordingWebView()
+        committedWebView.reportedCommittedURL = targetURL
+        let committedTab = Tab(
+            url: targetURL,
+            existingWebView: committedWebView,
+            loadsCachedFaviconOnInit: false
+        )
+        committedTab.replaceUntrackedWebView(committedWebView)
+        _ = committedTab.installNavigationDelegate(on: committedWebView)
+
+        let failed = exactReloadOutcome(
+            tab: committedTab,
+            webView: committedWebView,
+            policy: .standard
+        )
+        guard case .failed(let failure) = failed.dispositions.only else {
+            return XCTFail("Committed current items must not fall back to URL GET")
+        }
+        XCTAssertEqual(failure.reason, .nativeReloadUnavailable)
+        XCTAssertTrue(committedWebView.loadedRequests.isEmpty)
+
+        let emptyWebView = NavigationRecordingWebView()
+        emptyWebView.returnsConcreteLoad = true
+        let emptyTab = Tab(
+            url: targetURL,
+            existingWebView: emptyWebView,
+            loadsCachedFaviconOnInit: false
+        )
+        emptyTab.replaceUntrackedWebView(emptyWebView)
+        _ = emptyTab.installNavigationDelegate(on: emptyWebView)
+
+        let fallback = exactReloadOutcome(
+            tab: emptyTab,
+            webView: emptyWebView,
+            policy: .standard
+        )
+        guard case .submittedFallbackNavigation(let proof) =
+            fallback.dispositions.only else {
+            return XCTFail("An empty residence may admit one labelled URL navigation")
+        }
+        XCTAssertEqual(proof.owner.intent.targetURL, targetURL)
+        XCTAssertEqual(emptyWebView.loadedRequests.map(\.url), [targetURL])
+    }
+
+    func testDuplicateDeliveryForSameReloadCoalescesBehindExactSubmittedOwner() throws {
+        let targetURL = try XCTUnwrap(URL(string: "https://example.com/coalesced-reload"))
+        let webView = NavigationRecordingWebView()
+        webView.reportedCommittedURL = targetURL
+        webView.returnsConcreteReload = true
+        let tab = Tab(
+            url: targetURL,
+            existingWebView: webView,
+            loadsCachedFaviconOnInit: false
+        )
+        tab.replaceUntrackedWebView(webView)
+        _ = tab.installNavigationDelegate(on: webView)
+
+        let first = exactReloadOutcome(tab: tab, webView: webView, policy: .standard)
+        guard case .submitted(let firstProof) = first.dispositions.only else {
+            return XCTFail("Expected first reload submission")
+        }
+        let duplicate = tab.navigationCommandOwner.submitExactReload(
+            on: webView,
+            tab: tab,
+            intent: tab.mainFrameLoads.currentIntent,
+            policy: .standard
+        )
+
+        guard case .coalesced(let owner) = duplicate.dispositions.only else {
+            return XCTFail("Same-command duplicate must name its coalescing owner")
+        }
+        XCTAssertEqual(owner, firstProof.owner)
+        XCTAssertEqual(webView.standardReloadCount, 1)
+    }
+
+    func testStopCancelsPreSubmitOwnerAndRejectsLatePrerequisiteCompletion() async throws {
+        let committedURL = try XCTUnwrap(URL(string: "https://example.com/committed"))
+        let targetURL = try XCTUnwrap(URL(string: "https://example.com/pending"))
+        let controller = DelayedNavigationUserContentController()
+        let configuration = WKWebViewConfiguration()
+        configuration.userContentController = controller
+        let webView = NavigationRecordingWebView(
+            frame: .zero,
+            configuration: configuration
+        )
+        let tab = Tab(
+            url: committedURL,
+            existingWebView: webView,
+            loadsCachedFaviconOnInit: false
+        )
+        tab.replaceUntrackedWebView(webView)
+        _ = tab.installNavigationDelegate(on: webView)
+
+        tab.navigationCommandOwner.loadURL(
+            targetURL,
+            for: tab,
+            resolvedWebView: { webView },
+            reason: "TabNavigationCommandsTests.stop",
+            configurationPolicyRebuilder: { _, _ in .replacedNavigationPending }
+        )
+        for _ in 0..<20 where controller.waitCallCount == 0 {
+            await Task.yield()
+        }
+        guard case .waiting = tab.mainFrameLoads.attemptStatus(on: webView) else {
+            return XCTFail("Expected an exact pre-submit owner")
+        }
+
+        tab.stopLoading(on: webView)
+        controller.finishInitialUserContentInstallation()
+        for _ in 0..<20 { await Task.yield() }
+
+        XCTAssertEqual(webView.stopLoadingCount, 1)
+        XCTAssertTrue(webView.loadedRequests.isEmpty)
+        guard case .unsubmitted = tab.mainFrameLoads.attemptStatus(on: webView) else {
+            return XCTFail("Stop must retire the pre-submit owner")
+        }
+        XCTAssertFalse(tab.loadingState.isLoading)
+        XCTAssertEqual(tab.url, committedURL)
+        XCTAssertEqual(tab.mainFrameLoads.currentIntent.targetURL, committedURL)
     }
 
     func testScopedLoadCreatesNavigationAndRebuildIntentsBeforePolicyReplacement() throws {
@@ -197,6 +386,31 @@ final class TabNavigationCommandsTests: XCTestCase {
         XCTAssertTrue(webView.loadedRequests.isEmpty)
     }
 
+    func testReplacementModelStagingKeepsDestinationCommitAuthoritative() throws {
+        let committedURL = try XCTUnwrap(URL(string: "https://example.com/committed"))
+        let targetURL = try XCTUnwrap(URL(string: "https://example.com/provisional"))
+        let tab = Tab(url: committedURL, loadsCachedFaviconOnInit: false)
+        _ = tab.beginMainFrameNavigationIntent(to: targetURL)
+        let rebuildRevision = tab.webViewRebuildEpoch.advance()
+        let model = TabWebViewRebuildModelTransaction(
+            tab: tab,
+            intentRevision: rebuildRevision,
+            sourceURL: committedURL,
+            targetURL: targetURL
+        )
+
+        XCTAssertTrue(model.validateForStaging())
+        try model.stage()
+
+        XCTAssertTrue(model.stagedModelIsExact())
+        XCTAssertEqual(tab.url, committedURL)
+        XCTAssertEqual(tab.mainFrameLoads.currentIntent.targetURL, targetURL)
+        XCTAssertEqual(model.claimTerminalModel(), .sealed)
+        XCTAssertTrue(model.claimedModelIsExact())
+        model.publishCommit()
+        XCTAssertEqual(tab.url, committedURL)
+    }
+
     func testWindowScopedHardReloadOwnsFreshSemanticRevisionBeforeDelivery() throws {
         let targetURL = try XCTUnwrap(URL(string: "https://example.com/hard-reload"))
         let webView = NavigationRecordingWebView()
@@ -206,8 +420,6 @@ final class TabNavigationCommandsTests: XCTestCase {
             loadsCachedFaviconOnInit: false
         )
         tab.replaceUntrackedWebView(webView)
-        var policyRevision: UInt64?
-        var policyRebuildRevision: UInt64?
         var deliveredIntent: TabMainFrameNavigationIntent?
         var deliveredPolicy: WebRuntimeMainFrameReloadPolicy?
 
@@ -216,22 +428,22 @@ final class TabNavigationCommandsTests: XCTestCase {
             resolvedWebView: { webView },
             reason: "TabNavigationCommandsTests.hardReload",
             policy: .fromOrigin,
-            configurationPolicyRebuilder: { candidateURL, _ in
-                policyRevision = tab.mainFrameLoads.currentIntent(
-                    matching: candidateURL
-                )?.revision
-                policyRebuildRevision = tab.webViewRebuildEpoch.current
-                return .notNeeded
-            },
             deliverTrackedReload: { intent, policy in
                 deliveredIntent = intent
                 deliveredPolicy = policy
-                return .accepted
+                return PageReloadCommandOutcome(.waiting(
+                    TabMainFramePendingAttemptOwner(
+                        intent: intent,
+                        documentGeneration: 0,
+                        participantID: UUID(),
+                        webViewID: ObjectIdentifier(webView),
+                        phase: .deferred
+                    )
+                ))
             }
         )
 
-        XCTAssertEqual(policyRevision, deliveredIntent?.revision)
-        XCTAssertEqual(policyRebuildRevision, 1)
+        XCTAssertEqual(tab.webViewRebuildEpoch.current, 1)
         XCTAssertEqual(deliveredIntent?.targetURL, targetURL)
         XCTAssertEqual(deliveredPolicy, .fromOrigin)
     }
@@ -261,7 +473,8 @@ final class TabNavigationCommandsTests: XCTestCase {
             reason: "TabNavigationCommandsTests.scheduledReplacement"
         )
 
-        XCTAssertEqual(tab.url, targetURL)
+        XCTAssertEqual(tab.url.absoluteString, "https://example.com/start")
+        XCTAssertEqual(tab.mainFrameLoads.currentIntent.targetURL, targetURL)
         XCTAssertTrue(webView.loadedRequests.isEmpty)
     }
 
@@ -541,6 +754,31 @@ final class TabNavigationCommandsTests: XCTestCase {
         XCTAssertEqual(controller.waitCallCount, 0)
         XCTAssertTrue(didLoad)
     }
+
+    private func exactReloadOutcome(
+        tab: Tab,
+        webView: WKWebView,
+        policy: WebRuntimeMainFrameReloadPolicy
+    ) -> PageReloadCommandOutcome {
+        tab.navigationCommandOwner.refresh(
+            tab,
+            resolvedWebView: { webView },
+            reason: "TabNavigationCommandsTests.exactReload",
+            policy: policy,
+            deliverTrackedReload: { intent, policy in
+                tab.navigationCommandOwner.submitExactReload(
+                    on: webView,
+                    tab: tab,
+                    intent: intent,
+                    policy: policy
+                )
+            }
+        )
+    }
+}
+
+private extension Array {
+    var only: Element? { count == 1 ? self[0] : nil }
 }
 
 @MainActor
@@ -548,6 +786,9 @@ private final class NavigationRecordingWebView: WKWebView {
     private(set) var loadedRequests: [URLRequest] = []
     private(set) var standardReloadCount = 0
     private(set) var fromOriginReloadCount = 0
+    private(set) var stopLoadingCount = 0
+    var returnsConcreteReload = false
+    var returnsConcreteLoad = false
     var reportedCommittedURL: URL?
 
     override func responds(to selector: Selector!) -> Bool {
@@ -567,17 +808,28 @@ private final class NavigationRecordingWebView: WKWebView {
 
     override func reload() -> WKNavigation? {
         standardReloadCount += 1
-        return nil
+        return returnsConcreteReload
+            ? super.loadHTMLString("", baseURL: reportedCommittedURL)
+            : nil
     }
 
     override func reloadFromOrigin() -> WKNavigation? {
         fromOriginReloadCount += 1
-        return nil
+        return returnsConcreteReload
+            ? super.loadHTMLString("", baseURL: reportedCommittedURL)
+            : nil
     }
 
     override func load(_ request: URLRequest) -> WKNavigation? {
         loadedRequests.append(request)
-        return nil
+        return returnsConcreteLoad
+            ? super.loadHTMLString("", baseURL: request.url)
+            : nil
+    }
+
+    override func stopLoading() {
+        stopLoadingCount += 1
+        super.stopLoading()
     }
 }
 
@@ -610,13 +862,15 @@ private final class DelayedNavigationUserContentController:
         normalTabUserScriptsProvider = provider
     }
 
-    func waitForContentBlockingAssetsInstalled() async {
+    func waitForContentBlockingAssetsInstalled() async
+        -> PageNavigationPrerequisiteResult {
         waitCallCount += 1
-        guard hasInstalledInitialUserContent == false else { return }
+        guard hasInstalledInitialUserContent == false else { return .ready }
 
         await withCheckedContinuation { continuation in
             self.continuation = continuation
         }
+        return Task.isCancelled ? .cancelled : .ready
     }
 
     func finishInitialUserContentInstallation() {

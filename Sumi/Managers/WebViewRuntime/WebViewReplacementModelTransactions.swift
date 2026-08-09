@@ -6,7 +6,9 @@ private enum WebViewReplacementAppModelError: Error {
     case stale
 }
 
-/// Exact URL/rebuild-epoch model half of a live Tab generation replacement.
+/// Exact intent/rebuild-epoch model half of a live Tab generation replacement.
+/// Replacement admission never publishes its provisional destination; the
+/// authoritative WebKit commit remains the only writer of `Tab.url`.
 @MainActor
 final class TabWebViewRebuildModelTransaction:
     WebViewReplacementModelTransaction {
@@ -14,6 +16,7 @@ final class TabWebViewRebuildModelTransaction:
 
     private let tab: Tab
     private let intentRevision: UInt64
+    private let semanticRevision: UInt64
     private let sourceURL: URL
     private let targetURL: URL
     private var state = State.prepared
@@ -26,6 +29,7 @@ final class TabWebViewRebuildModelTransaction:
     ) {
         self.tab = tab
         self.intentRevision = intentRevision
+        self.semanticRevision = tab.mainFrameLoads.currentIntent.revision
         self.sourceURL = sourceURL
         self.targetURL = targetURL
     }
@@ -34,6 +38,7 @@ final class TabWebViewRebuildModelTransaction:
         guard case .prepared = state else { return false }
         return tab.webViewRebuildEpoch.isCurrent(intentRevision)
             && tab.url == sourceURL
+            && currentIntentIsExact()
     }
 
     func stage() throws {
@@ -41,7 +46,6 @@ final class TabWebViewRebuildModelTransaction:
             throw WebViewReplacementAppModelError.stale
         }
         tab.cancelPendingMainFrameNavigation()
-        tab.url = targetURL
         state = .staged
     }
 
@@ -50,7 +54,8 @@ final class TabWebViewRebuildModelTransaction:
     func stagedModelIsExact() -> Bool {
         guard case .staged = state else { return false }
         return tab.webViewRebuildEpoch.isCurrent(intentRevision)
-            && tab.url == targetURL
+            && tab.url == sourceURL
+            && currentIntentIsExact()
     }
 
     func canClaimTerminalModel() -> Bool { stagedModelIsExact() }
@@ -64,7 +69,8 @@ final class TabWebViewRebuildModelTransaction:
     func claimedModelIsExact() -> Bool {
         guard case .committed = state else { return false }
         return tab.webViewRebuildEpoch.isCurrent(intentRevision)
-            && tab.url == targetURL
+            && tab.url == sourceURL
+            && currentIntentIsExact()
     }
 
     func publishCommit() {}
@@ -73,7 +79,6 @@ final class TabWebViewRebuildModelTransaction:
         guard stagedModelIsExact() else {
             throw WebViewReplacementAppModelError.stale
         }
-        tab.url = sourceURL
         state = .rolledBack
     }
 
@@ -91,5 +96,12 @@ final class TabWebViewRebuildModelTransaction:
             break
         }
         return true
+    }
+
+    private func currentIntentIsExact() -> Bool {
+        let intent = tab.mainFrameLoads.currentIntent
+        return intent.revision == semanticRevision
+            && WebRuntimeNavigationIdentity(intent.targetURL)
+                == WebRuntimeNavigationIdentity(targetURL)
     }
 }

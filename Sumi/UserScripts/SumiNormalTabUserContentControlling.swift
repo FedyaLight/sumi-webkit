@@ -51,15 +51,20 @@ protocol SumiNormalTabUserContentControlling: AnyObject {
 #endif
 
     func replaceNormalTabUserScripts(with provider: SumiNormalTabUserScripts) async
+    @discardableResult
     func waitForContentBlockingAssetsInstalled() async
+        -> PageNavigationPrerequisiteResult
     func cleanUpBeforeClosing()
 }
 
 extension SumiNormalTabUserContentControlling {
-    func waitForInitialUserContentInstallation() async {
+    @discardableResult
+    func waitForInitialUserContentInstallation() async
+        -> PageNavigationPrerequisiteResult {
         let signpostState = PerformanceTrace.beginInterval("ContentBlocking.assetsInstallWait")
-        await waitForContentBlockingAssetsInstalled()
+        let result = await waitForContentBlockingAssetsInstalled()
         PerformanceTrace.endInterval("ContentBlocking.assetsInstallWait", signpostState)
+        return result
     }
 }
 

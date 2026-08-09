@@ -100,6 +100,38 @@ public final class WebViewTabTeardownOwner {
         let allWebViews = uniqueWebViews(snapshot.allKnownWebViews)
         guard allWebViews.isEmpty == false else { return .none }
 
+        if let protectedAnchor = allWebViews.first(
+            where: isWebViewProtectedFromCompositorMutation
+        ) {
+            let command = DeferredWebViewCommand.retireTabWebViewGeneration(
+                tabID: tabID,
+                expectedGeneration: snapshot.generation
+            )
+            if enqueueDeferredProtectedCommand(
+                command,
+                protectedAnchor,
+                "removeAllWebViews.generation"
+            ) {
+                return WebViewTabTeardownResult(
+                    discoveredWebViewCount: allWebViews.count,
+                    cleanedWebViewCount: 0,
+                    deferredWebViewCount: allWebViews.count,
+                    unscheduledProtectedWebViewCount: 0
+                )
+            }
+            if allWebViews.contains(
+                where: isWebViewProtectedFromCompositorMutation
+            ) {
+                return WebViewTabTeardownResult(
+                    discoveredWebViewCount: allWebViews.count,
+                    cleanedWebViewCount: 0,
+                    deferredWebViewCount: 0,
+                    unscheduledProtectedWebViewCount: allWebViews.count
+                )
+            }
+            return removeAllWebViews(for: tab)
+        }
+
         let trackedEntries = snapshot.windowWebViews.map { windowId, webView in
             (TrackedWebViewOwner(tabID: tabID, windowID: windowId), webView)
         }
@@ -107,6 +139,9 @@ public final class WebViewTabTeardownOwner {
         let detachedWebViews = allWebViews.filter {
             trackedIDs.contains(ObjectIdentifier($0)) == false
         }
+        let teardownLifecycle = tab as? any WebRuntimeTabTeardownLifecycle
+        teardownLifecycle?.cancelPendingMainFrameNavigation()
+        teardownLifecycle?.webViewsWillLeaveRuntime(allWebViews)
         var cleanedWebViewCount = 0
         var deferredWebViewCount = 0
         var unscheduledProtectedWebViewCount = 0
@@ -185,7 +220,6 @@ public final class WebViewTabTeardownOwner {
             }
         }
 
-        (tab as? any WebRuntimeTabTeardownLifecycle)?.cancelPendingMainFrameNavigation()
         refreshPrimaryTrackedWebView(tab)
         webViewSessions.assertConsistency("removeAllWebViews")
         assert(
@@ -219,33 +253,25 @@ public final class WebViewTabTeardownOwner {
         }
 
         let trackedEntries = webViewSessions.queries.trackedWebViews(for: tabID)
-        var cleanedIdentifiers: Set<ObjectIdentifier> = []
         let teardownLifecycle = tab as? any WebRuntimeTabTeardownLifecycle
 
-        func cleanup(_ webView: WKWebView) {
-            let identifier = ObjectIdentifier(webView)
-            guard cleanedIdentifiers.insert(identifier).inserted else { return }
-            teardownLifecycle?.cleanupCloneWebView(webView)
-        }
+        teardownLifecycle?.cancelPendingMainFrameNavigation()
+        teardownLifecycle?.webViewsWillLeaveRuntime(liveWebViews)
 
         for (owner, webView) in trackedEntries {
             removeWebViewFromContainers(webView)
             _ = unregisterTrackedWebViewSlot(owner, webView)
-            cleanup(webView)
         }
-
-        for webView in liveWebViews {
-            cleanup(webView)
-        }
-
-        teardownLifecycle?.cancelPendingMainFrameNavigation()
         webViewSessions.placement.clearAll(for: tabID)
+        liveWebViews.forEach {
+            teardownLifecycle?.destroyRetiredWebView($0)
+        }
 
         SumiWebRuntimeDiagnostics.protectedWebViewTrace(
-            "Suspension released \(cleanedIdentifiers.count) WebView(s) for tab=\(tabID.uuidString.prefix(8)) reason=\(reason)."
+            "Suspension released \(liveWebViews.count) WebView(s) for tab=\(tabID.uuidString.prefix(8)) reason=\(reason)."
         )
 
-        return !cleanedIdentifiers.isEmpty
+        return !liveWebViews.isEmpty
     }
 
     private func uniqueWebViews(_ webViews: [WKWebView]) -> [WKWebView] {

@@ -46,7 +46,8 @@ enum TabDatabaseRecordTranslator {
             titleIsCustom: source.titleIsCustom,
             currentURLString: source.currentURLString ?? source.urlString,
             canGoBack: source.canGoBack,
-            canGoForward: source.canGoForward
+            canGoForward: source.canGoForward,
+            pageKind: source.pageKind?.rawValue
         )
     }
 

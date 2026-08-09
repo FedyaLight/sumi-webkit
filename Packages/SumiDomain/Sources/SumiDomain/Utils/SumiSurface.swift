@@ -9,6 +9,7 @@ import Foundation
 
 public enum SumiSurface {
     public static let emptyTabURL = URL(string: "about:blank")!
+    public static let restoreFailureURL = URL(string: "sumi://restore-failure")!
     /// Internal history UI opened as a browser tab (`sumi://history?range=…`).
     public static let historyURLHost = "history"
     /// Internal bookmarks manager opened as a browser tab (`sumi://bookmarks?folder=…`).

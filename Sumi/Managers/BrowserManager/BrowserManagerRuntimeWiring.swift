@@ -137,6 +137,10 @@ enum BrowserManagerRuntimeWiring {
             case .window(.refreshCompositor(let windowID)):
                 guard let window = windows.windows[windowID] else { return }
                 visuals.refreshCompositor(for: window)
+            case .window(.retryPageMaterialization(let windowID)):
+                guard let window = windows.windows[windowID] else { return }
+                selection.retryCurrentPageMaterializationRequests(in: window)
+                visuals.refreshCompositor(for: window)
             case .close(let request):
                 closeRequests.resolve(
                     request,

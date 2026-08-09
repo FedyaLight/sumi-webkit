@@ -1091,7 +1091,6 @@ final class SumiReaderPresentationTests: XCTestCase {
             splitDropTargets: browserManager.splitWindowContext.dropTargets,
             sidebarDragState: browserContext.sidebarDragState,
             webViewOwnershipQuery: webViewRuntime.ownershipQuery,
-            trackedWebViewAdmission: webViewRuntime.trackedWebViewAdmission,
             webViewCompositorRuntime: webViewRuntime.compositorRuntime,
             webViewProtectionRuntime: webViewRuntime.protectionRuntime,
             hoveredLink: .constant(nil),

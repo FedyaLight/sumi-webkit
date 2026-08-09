@@ -172,9 +172,8 @@ final class SafariExtension1PasswordRuntimeTests: XCTestCase {
         // the extension's OWN .appex SafariWebExtensionHandler. Hosting that
         // handler requires the Apple-private
         // `com.apple.private.can-load-any-content-blocker` entitlement, which
-        // AMFI grants only to Safari — see PlugInKit error 11 documented in
-        // SumiSafariExtensionCompatibility.md (Cycle 27). Sumi must therefore
-        // REJECT the native message cleanly (not hang), so 1Password's own
+        // AMFI grants only to Safari. Sumi must therefore reject the native
+        // message cleanly (not hang), so 1Password's own
         // "can't connect to the desktop app" UI can take over. Assert the
         // graceful rejection rather than a success that the OS forbids.
         let nativeResult = try await nativeMessageRejectionResult(

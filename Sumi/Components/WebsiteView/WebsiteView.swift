@@ -152,7 +152,6 @@ struct WebsiteView: View {
     private let splitDrops: SplitDropService
     private let splitDropTargets: SplitDropTargetService
     private let webViewOwnershipQuery: WebViewOwnershipQuery
-    private let trackedWebViewAdmission: TrackedWebViewAdmissionService
     private let webViewCompositorRuntime: WebViewCompositorRuntime
     private let webViewProtectionRuntime: WebViewProtectionRuntime
     private let dragCoordinateSpace = "splitPreview"
@@ -168,7 +167,6 @@ struct WebsiteView: View {
         splitDrops: SplitDropService,
         splitDropTargets: SplitDropTargetService,
         webViewOwnershipQuery: WebViewOwnershipQuery,
-        trackedWebViewAdmission: TrackedWebViewAdmissionService,
         webViewCompositorRuntime: WebViewCompositorRuntime,
         webViewProtectionRuntime: WebViewProtectionRuntime
     ) {
@@ -185,7 +183,6 @@ struct WebsiteView: View {
         self.splitDrops = splitDrops
         self.splitDropTargets = splitDropTargets
         self.webViewOwnershipQuery = webViewOwnershipQuery
-        self.trackedWebViewAdmission = trackedWebViewAdmission
         self.webViewCompositorRuntime = webViewCompositorRuntime
         self.webViewProtectionRuntime = webViewProtectionRuntime
     }
@@ -303,7 +300,6 @@ struct WebsiteView: View {
             splitDropTargets: splitDropTargets,
             sidebarDragState: sidebarDragState,
             webViewOwnershipQuery: webViewOwnershipQuery,
-            trackedWebViewAdmission: trackedWebViewAdmission,
             webViewCompositorRuntime: webViewCompositorRuntime,
             webViewProtectionRuntime: webViewProtectionRuntime,
             hoveredLink: $hoveredLink,

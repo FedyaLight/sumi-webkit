@@ -114,7 +114,8 @@ extension SumiExtensionsModule {
         )
     }
 
-    func ensureInitialExtensionContextsIfNeeded(profileId: UUID) async {
+    func ensureInitialExtensionContextsIfNeeded(profileId: UUID) async
+        -> PageNavigationPrerequisiteResult {
         await runtimeSurface.ensureInitialExtensionContexts(profileID: profileId)
     }
 

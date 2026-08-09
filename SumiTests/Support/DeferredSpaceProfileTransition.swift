@@ -68,6 +68,8 @@ final class DeferredSpaceProfileTransition:
         canRetireTabWebViews(tabs)
     }
 
+    func prepareRetirementOwners(_ tabs: [Tab]) {}
+
     func beginCommittedRetirement(_ tabs: [Tab]) -> Bool {
         guard beginCommittedTabRetirement(tabs) else { return false }
         committedRetirementTabs = Dictionary(

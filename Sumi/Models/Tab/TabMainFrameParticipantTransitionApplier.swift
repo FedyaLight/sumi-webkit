@@ -109,6 +109,25 @@ final class TabMainFrameParticipantTransitionApplier {
         participants.loadingWebViews(revision: revision)
     }
 
+    func activeAttemptOwner(
+        on webView: WKWebView,
+        currentIntent: TabMainFrameNavigationIntent
+    ) -> TabMainFramePendingAttemptOwner? {
+        guard let entry = participants.entry(for: ObjectIdentifier(webView)),
+              entry.webViewReference.matches(webView),
+              entry.revision == currentIntent.revision,
+              case .active = entry.phase else {
+            return nil
+        }
+        return TabMainFramePendingAttemptOwner(
+            intent: currentIntent,
+            documentGeneration: entry.documentGeneration,
+            participantID: entry.id,
+            webViewID: ObjectIdentifier(webView),
+            phase: .submitted
+        )
+    }
+
     func entry(for webViewID: ObjectIdentifier) -> TabMainFrameParticipantRegistry.Entry? {
         participants[webViewID]
     }

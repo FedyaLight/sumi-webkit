@@ -92,7 +92,7 @@ extension BrowserConfigurationNormalTabTests {
         let sources = provider.userScripts.map(\.source).joined(separator: "\n")
 
         XCTAssertTrue(sources.contains("sumiLinkInteraction"))
-        XCTAssertTrue(sources.contains("sumiTabSuspension"))
+        XCTAssertFalse(sources.contains("sumiTabSuspension"))
         XCTAssertNil(webView.configuration.webExtensionController)
         XCTAssertEqual(probe.managerCount, 0)
         XCTAssertFalse(module.hasLoadedRuntime)
@@ -130,7 +130,7 @@ extension BrowserConfigurationNormalTabTests {
         let sources = provider.userScripts.map(\.source).joined(separator: "\n")
 
         XCTAssertTrue(sources.contains("sumiLinkInteraction"))
-        XCTAssertTrue(sources.contains("sumiTabSuspension"))
+        XCTAssertFalse(sources.contains("sumiTabSuspension"))
         XCTAssertFalse(sources.contains(SumiBoostCSSBuilder.styleAttribute))
         XCTAssertFalse(sources.contains(SumiBoostCSSBuilder.filterStyleAttribute))
         XCTAssertEqual(probe.storeCount, 0)
@@ -435,8 +435,8 @@ extension BrowserConfigurationNormalTabTests {
         let sources = provider.userScripts.map(\.source).joined(separator: "\n")
 
         XCTAssertTrue(sources.contains("sumiLinkInteraction"))
-        XCTAssertTrue(sources.contains("sumiTabSuspension"))
-        XCTAssertTrue(sources.contains("__sumiTabSuspension"))
+        XCTAssertFalse(sources.contains("sumiTabSuspension"))
+        XCTAssertFalse(sources.contains("__sumiTabSuspension"))
 
         let linkInteractionScript = try XCTUnwrap(
             provider.userScripts.first { $0.source.contains("sumiLinkInteraction") }
@@ -463,6 +463,11 @@ extension BrowserConfigurationNormalTabTests {
 
     func testTabSuspensionSeparatesPageAPIFromIsolatedDocumentSensor() throws {
         let tab = Tab(name: "Bridge")
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let settings = SumiSettingsService(userDefaults: harness.defaults)
+        settings.memoryMode = .balanced
+        tab.sumiSettings = settings
         let scripts = tab.normalTabCoreUserScripts()
         let bridgeScript = try XCTUnwrap(
             scripts.first { script in
@@ -491,5 +496,4 @@ extension BrowserConfigurationNormalTabTests {
         XCTAssertFalse(documentSensor.source.contains("pictureInPicture"))
         XCTAssertFalse(documentSensor.source.contains("webkitpresentationmodechanged"))
     }
-
 }

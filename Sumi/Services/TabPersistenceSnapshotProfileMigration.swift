@@ -46,7 +46,8 @@ enum TabPersistenceSnapshotProfileMigration {
                 titleIsCustom: tab.titleIsCustom,
                 currentURLString: tab.currentURLString,
                 canGoBack: tab.canGoBack,
-                canGoForward: tab.canGoForward
+                canGoForward: tab.canGoForward,
+                pageKind: tab.pageKind
             )
         }
         let migratedGroups = snapshot.splitGroups.compactMap {

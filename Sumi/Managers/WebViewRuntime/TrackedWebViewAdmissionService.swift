@@ -64,10 +64,18 @@ final class TrackedWebViewAdmissionService: AuxiliaryTrackedWebViewPlacing {
         ))
     }
 
-    func webView(for tab: Tab, in windowID: UUID) -> WKWebView? {
+    func webView(
+        for tab: Tab,
+        in windowID: UUID,
+        replayMaterialization: (@MainActor () -> Void)? = nil
+    ) -> WKWebView? {
         guard runtimeTabs.bind(tab).isAccepted else { return nil }
         if query.webView(for: tab.id, in: windowID) == nil,
-           deferMaterializationIfNeeded(tab: tab, windowID: windowID) {
+           deferMaterializationIfNeeded(
+                tab: tab,
+                windowID: windowID,
+                replay: replayMaterialization
+           ) {
             return nil
         }
         return materialization.webView(for: tab, in: windowID)

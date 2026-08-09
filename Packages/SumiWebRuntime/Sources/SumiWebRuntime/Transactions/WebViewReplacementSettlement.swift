@@ -61,6 +61,7 @@ public struct WebViewReplacementNavigationBinding {
 
 public enum WebViewReplacementBindingFailureReason: Equatable, Sendable {
     case missingPreparation
+    case prerequisiteFailed
     case missingNavigator
     case submissionFailed
     case alreadyScheduled

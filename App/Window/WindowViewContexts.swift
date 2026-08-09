@@ -7,7 +7,6 @@ final class WindowWebContentContext {
     let browserContext: WebsiteViewBrowserContext
     let nativeSurfaceRootBuilders: WebsiteNativeSurfaceRootBuilders
     let webViewOwnershipQuery: WebViewOwnershipQuery
-    let trackedWebViewAdmission: TrackedWebViewAdmissionService
     let webViewCompositorRuntime: WebViewCompositorRuntime
     let webViewProtectionRuntime: WebViewProtectionRuntime
 
@@ -15,14 +14,12 @@ final class WindowWebContentContext {
         browserContext: WebsiteViewBrowserContext,
         nativeSurfaceRootBuilders: WebsiteNativeSurfaceRootBuilders,
         webViewOwnershipQuery: WebViewOwnershipQuery,
-        trackedWebViewAdmission: TrackedWebViewAdmissionService,
         webViewCompositorRuntime: WebViewCompositorRuntime,
         webViewProtectionRuntime: WebViewProtectionRuntime
     ) {
         self.browserContext = browserContext
         self.nativeSurfaceRootBuilders = nativeSurfaceRootBuilders
         self.webViewOwnershipQuery = webViewOwnershipQuery
-        self.trackedWebViewAdmission = trackedWebViewAdmission
         self.webViewCompositorRuntime = webViewCompositorRuntime
         self.webViewProtectionRuntime = webViewProtectionRuntime
     }

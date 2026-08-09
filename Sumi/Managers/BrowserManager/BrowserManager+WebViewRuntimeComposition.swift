@@ -134,11 +134,11 @@ extension BrowserManager {
                     .needsInitialDocumentExtensionContextLoadIfNeeded(profileId: profileId)
             },
             ensureInitialExtensionContextsLoaded: { [extensions] profileId in
-                await extensions
+                _ = await extensions
                     .ensureInitialExtensionContextsIfNeeded(profileId: profileId)
             },
             refreshCompositorForWindow: { [commands] windowID in
-                commands.refreshCompositor(in: windowID)
+                commands.retryPageMaterialization(in: windowID)
             }
         )
     }

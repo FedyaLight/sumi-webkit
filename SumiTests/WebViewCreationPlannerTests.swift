@@ -158,6 +158,59 @@ final class WebViewCreationPlannerTests: XCTestCase {
         }
     }
 
+    func testWarmupCompletionRefreshesEveryWindowThatJoinedTheProfile() async {
+        let planner = WebViewCreationPlanner()
+        let profileId = UUID()
+        let tab = makeWarmupTab(profileId: profileId)
+        let starterWindowId = UUID()
+        let joinedWindowId = UUID()
+        let warmupStarted = expectation(description: "warmup started")
+        let refreshExpectation = expectation(description: "refresh both joined windows")
+        refreshExpectation.expectedFulfillmentCount = 2
+        var releaseWarmup: CheckedContinuation<Void, Never>?
+        var refreshedWindowIds: [UUID] = []
+        let runtime = makeWarmupRuntime(
+            needsInitialDocumentExtensionContextLoad: { _ in true },
+            ensureInitialExtensionContextsLoaded: { _ in
+                warmupStarted.fulfill()
+                await withCheckedContinuation { releaseWarmup = $0 }
+            },
+            refreshCompositorForWindow: { windowId in
+                refreshedWindowIds.append(windowId)
+                refreshExpectation.fulfill()
+            }
+        )
+
+        let starterPlan = planner.creationPlan(
+            for: tab,
+            in: starterWindowId,
+            initialDocumentWarmupRuntime: runtime,
+            existingWebView: nil,
+            windowWebViews: [:]
+        )
+        guard case let .deferForInitialDocumentWarmup(deferral) = starterPlan else {
+            return XCTFail("Expected starter warmup deferral")
+        }
+        planner.startInitialDocumentWarmupIfNeeded(deferral, runtime: runtime)
+
+        await fulfillment(of: [warmupStarted], timeout: 1)
+        let joinedPlan = planner.creationPlan(
+            for: tab,
+            in: joinedWindowId,
+            initialDocumentWarmupRuntime: runtime,
+            existingWebView: nil,
+            windowWebViews: [:]
+        )
+        guard case .deferForInitialDocumentWarmup(.waitForInFlight) = joinedPlan else {
+            return XCTFail("Expected second window to join in-flight warmup")
+        }
+
+        releaseWarmup?.resume()
+        await fulfillment(of: [refreshExpectation], timeout: 1)
+
+        XCTAssertEqual(Set(refreshedWindowIds), Set([starterWindowId, joinedWindowId]))
+    }
+
     private func makeWarmupTab(profileId: UUID = UUID()) -> Tab {
         let tab = Tab(
             url: URL(string: "https://example.com")!,

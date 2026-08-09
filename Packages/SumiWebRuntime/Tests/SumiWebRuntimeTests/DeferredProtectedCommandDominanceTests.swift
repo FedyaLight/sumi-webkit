@@ -76,6 +76,55 @@ final class DeferredProtectedCommandDominanceTests: XCTestCase {
         XCTAssertEqual(buffer.count, 4)
     }
 
+    func testWholeGenerationRetirementSupersedesOnlyItsExactTabWork() {
+        let tabID = UUID()
+        let otherTabID = UUID()
+        let webView = NSObject()
+        let detachedWebView = NSObject()
+        let otherWebView = NSObject()
+        let windowID = UUID()
+        var buffer = DeferredProtectedCommandBuffer()
+
+        _ = buffer.enqueue(navigation(
+            webViewID: ObjectIdentifier(webView),
+            tabID: tabID,
+            windowID: windowID
+        ))
+        _ = buffer.enqueue(.cleanupTabWebView(
+            webViewID: ObjectIdentifier(detachedWebView),
+            tabID: tabID
+        ))
+        _ = buffer.enqueue(rebuild(tabID: tabID))
+        _ = buffer.enqueue(navigation(
+            webViewID: ObjectIdentifier(otherWebView),
+            tabID: otherTabID,
+            windowID: windowID
+        ))
+
+        let result = buffer.enqueueReportingSupersededCommands(
+            .retireTabWebViewGeneration(
+                tabID: tabID,
+                expectedGeneration: 17
+            )
+        )
+
+        assertOutcome(result.outcome, is: .enqueued)
+        XCTAssertEqual(result.supersededCommands.count, 3)
+        XCTAssertEqual(buffer.count, 2)
+        guard case .retireTabWebViewGeneration(
+            let retainedTabID,
+            let retainedGeneration
+        ) = buffer.commands[0],
+              case .synchronizeTrackedNavigation(
+                  _, let retainedOtherTabID, _, _
+              ) = buffer.commands[1] else {
+            return XCTFail("Expected exact retirement plus unrelated Tab work")
+        }
+        XCTAssertEqual(retainedTabID, tabID)
+        XCTAssertEqual(retainedGeneration, 17)
+        XCTAssertEqual(retainedOtherTabID, otherTabID)
+    }
+
     func testWindowCleanupOnlySupersedesCommandsWithTheSameProvenWindow() {
         let firstWebView = NSObject()
         let secondWebView = NSObject()

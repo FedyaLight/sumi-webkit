@@ -5,11 +5,11 @@ import SumiWebRuntime
 import WebKit
 
 struct WebsiteDataCleanupRestoreCommandReceipt {
-    let outcome: TabMainFrameReloadCommandOutcome
+    let outcome: PageReloadCommandOutcome
     let semanticRevision: UInt64?
 
     init(
-        outcome: TabMainFrameReloadCommandOutcome,
+        outcome: PageReloadCommandOutcome,
         semanticRevision: UInt64?
     ) {
         self.outcome = outcome
@@ -125,6 +125,10 @@ final class WebsiteDataCleanupNavigationBarrier {
             tab: tab
         )
         session.participants.append(participant)
+        tab.beginWebsiteDataMutationPresentation(
+            sessionID: session.id,
+            destination: tab.mainFrameLoads.currentIntent.targetURL
+        )
         return participant
     }
 
@@ -154,15 +158,19 @@ final class WebsiteDataCleanupNavigationBarrier {
             return true
         }
 
-        guard let navigation = loadBlankNavigation(participant.webView) else {
+        participantLedger.beginBlankSubmission(
+            for: participant.ledgerParticipant,
+            targetURL: SumiSurface.emptyTabURL,
+            deadline: ContinuousClock.now + blankAttemptTimeout
+        )
+        guard let navigation = loadBlankNavigation(participant.webView),
+              participantLedger.bindBlankNavigation(
+                  navigation,
+                  to: participant.ledgerParticipant
+              ) else {
             participantLedger.abandon(participant.ledgerParticipant)
             return false
         }
-        participantLedger.beginBlankWait(
-            for: participant.ledgerParticipant,
-            navigation: navigation,
-            deadline: ContinuousClock.now + blankAttemptTimeout
-        )
 
         guard await participantLedger.awaitTerminalResult(
             for: participant.ledgerParticipant
@@ -191,47 +199,24 @@ final class WebsiteDataCleanupNavigationBarrier {
         }
     }
 
-    func beginRestoreAttempt(
+    func beginRestoreSubmission(
         _ participants: [Participant],
-        targetURL: URL,
-        timeout: Duration
+        targetURL: URL
     ) {
-        participantLedger.beginRestoreAttempt(
-            participants.map(\.ledgerParticipant),
-            targetURL: targetURL,
-            deadline: ContinuousClock.now + timeout
-        )
-    }
-
-    func bindRestoreReceipt(
-        _ receipt: WebsiteDataCleanupRestoreCommandReceipt,
-        to participant: Participant
-    ) {
-        participantLedger.bindRestoreSemanticRevision(
-            receipt.semanticRevision,
-            to: participant.ledgerParticipant
-        )
-    }
-
-    func rejectRestoreAttempt(_ participants: [Participant]) {
-        participantLedger.rejectRestoreAttempt(
-            participants.map(\.ledgerParticipant)
-        )
-    }
-
-    func awaitRestoreTermination(for participant: Participant) async -> Bool {
-        await participantLedger.awaitTerminalResult(
-            for: participant.ledgerParticipant
-        )
-    }
-
-    func finishRestoreAttempt(
-        _ participants: [Participant],
-        succeeded: Bool
-    ) {
-        participantLedger.finishRestoreAttempt(
+        participantLedger.beginRestoreSubmission(
             participants.filter(stillOwns).map(\.ledgerParticipant),
-            succeeded: succeeded
+            targetURL: targetURL
+        )
+    }
+
+    @discardableResult
+    func transferRestoreSubmission(
+        for participant: Participant,
+        targetURL: URL
+    ) -> Bool {
+        participantLedger.transferRestoreSubmission(
+            for: participant.ledgerParticipant,
+            targetURL: targetURL
         )
     }
 
@@ -265,17 +250,6 @@ final class WebsiteDataCleanupNavigationBarrier {
         }
     }
 
-    func pendingRestoreParticipants(
-        among participants: [Participant]
-    ) -> [Participant] {
-        let pending = participantLedger.pendingRestoreParticipants(
-            among: participants.map(\.ledgerParticipant)
-        )
-        return participants.filter { participant in
-            pending.contains { $0 === participant.ledgerParticipant }
-        }
-    }
-
     func abandon(_ participant: Participant) {
         participantLedger.abandon(participant.ledgerParticipant)
     }
@@ -286,8 +260,15 @@ final class WebsiteDataCleanupNavigationBarrier {
 
     func release(_ session: Session) {
         guard activeSession === session else { return }
+        let tabs = Dictionary(
+            session.participants.map { ($0.tab.id, $0.tab) },
+            uniquingKeysWith: { first, _ in first }
+        ).values
         participantLedger.release(session.ledgerSession)
         activeSession = nil
+        for tab in tabs {
+            tab.endWebsiteDataMutationPresentation(sessionID: session.id)
+        }
     }
 
     func isSuppressingNavigation(

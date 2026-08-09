@@ -129,13 +129,28 @@ final class WebViewRuntimeGraph {
         isProtected: { [mediaProtectionOwner] webView in
             mediaProtectionOwner.isProtected(webView)
         },
+        isVisible: { [weak self] tab, webView in
+            guard let self,
+                  let residence = self.webViewSessions.residence(of: webView)
+            else { return false }
+            switch residence {
+            case .window(let owner):
+                return self.visibilityRuntime.visibleTabIDs(in: owner.windowID)
+                    .contains(tab.id)
+            case .parked, .untracked:
+                return self.visibleContext.globallyVisibleTabIDs()
+                    .contains(tab.id)
+            case .retiring, .pendingCleanup:
+                return false
+            }
+        },
         submit: { tab, webView, intent in
             tab.navigationCommandOwner.submitExactReload(
                 on: webView,
                 tab: tab,
                 intent: intent,
                 policy: .standard
-            )
+            ).legacyRecoveryOutcome
         }
     )
 
@@ -211,10 +226,8 @@ final class WebViewRuntimeGraph {
                           tabID,
                           resolveRuntimeTab: self.resolveRuntimeTab
                       ) else { return }
-                tab.webViewsDidLeaveNavigationRuntime(
-                    webViews,
-                    preferredAuthorityWebView: preferredWebView
-                )
+                _ = preferredWebView
+                tab.webViewsWillLeaveRuntime(webViews)
             },
             destroy: { [weak self] tabID, webView in
                 guard let self else { return }
@@ -449,7 +462,18 @@ final class WebViewRuntimeGraph {
         runtimeTabs: runtimeTabs,
         materialization: tabWebViewMaterialization,
         processRecovery: processRecoveryService,
-        shutdownRuntime: shutdownRuntime
+        shutdownRuntime: shutdownRuntime,
+        retireTabWebViewGeneration: { [weak self] tab, expectedGeneration in
+            guard let self else { return false }
+            guard tab.webViewSession.generation == expectedGeneration else {
+                return true
+            }
+            let result = self.lifecycleService.removeAllWebViews(
+                for: tab,
+                intent: .retirement
+            )
+            return result.isComplete || result.deferredWebViewCount > 0
+        }
     )
 
     private lazy var deferredWindowMaintenanceExecutor =
@@ -523,7 +547,16 @@ final class WebViewRuntimeGraph {
             webViewSessions: webViewSessions,
             ownershipQuery: ownershipQuery,
             trackedAdmission: trackedWebViewAdmission,
-            regularTab: resolveCollectionTab
+            regularTab: resolveCollectionTab,
+            activateRecovery: { [weak self] tabID, windowID in
+                guard let webView = self?.webViewSessions.webView(
+                    for: tabID,
+                    in: windowID
+                ) else { return }
+                self?.processRecoveryService.retryPendingImmediately(
+                    for: ObjectIdentifier(webView)
+                )
+            }
         )
 
     private lazy var tabWebViewRebuild: TabWebViewRebuildService = TabWebViewRebuildService(
@@ -555,6 +588,23 @@ final class WebViewRuntimeGraph {
             }
         )
     )
+
+    @discardableResult
+    func repairFailedPage(
+        _ tab: Tab,
+        in windowID: UUID,
+        useNativeSnapshot: Bool
+    ) -> TabWebViewRebuildResult {
+        guard let webView = webViewSessions.webView(
+            for: tab.id,
+            in: windowID
+        ) else { return .failed }
+        return tabWebViewRebuild.repairFailedResidence(
+            tab: tab,
+            webView: webView,
+            useNativeSnapshot: useNativeSnapshot
+        )
+    }
 
     private(set) lazy var rebuildService: WebViewRebuildService = WebViewRebuildService(
         runtimeTabs: runtimeTabs,

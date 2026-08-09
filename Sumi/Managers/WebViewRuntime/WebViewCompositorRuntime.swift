@@ -167,6 +167,7 @@ final class WebViewCompositorRuntime {
             return
         }
 
+        webView.sumiWebViewContainerHost?.evictFromRuntime()
         for (_, container) in containers() {
             removeMatchingWebView(webView, from: container)
         }

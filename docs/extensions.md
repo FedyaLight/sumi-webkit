@@ -36,7 +36,7 @@ The module is lazy: disabled extensions do not create controllers, contexts, obs
 4. Import and enable the extension.
 5. Verify the action popup and its core workflow on a non-private HTTPS page.
 
-The release checklist is in [SafariExtensionManualE2E.md](SafariExtensionManualE2E.md). The detailed investigation history and runtime evidence remain in [SumiSafariExtensionCompatibility.md](SumiSafariExtensionCompatibility.md).
+The release checklist is in [SafariExtensionManualE2E.md](SafariExtensionManualE2E.md).
 
 ## Known Boundaries
 

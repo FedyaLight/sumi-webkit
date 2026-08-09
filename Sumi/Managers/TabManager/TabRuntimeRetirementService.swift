@@ -109,6 +109,20 @@ final class TabRuntimeRetirementService {
     func commit(
         _ batch: TabRuntimeRetirementBatch
     ) -> TabRuntimeRetirementCommitOutcome {
+        guard webViewSessions.canCommitRetirementBatch(batch.lease) else {
+            let staleTab = batch.tabs.first(where: {
+                batch.runtimeTabIDs.contains($0.id)
+            })
+            return .conflict(
+                tabID: staleTab?.id ?? batch.tabs[0].id,
+                currentGeneration: staleTab?.webViewSession.generation ?? 0
+            )
+        }
+        batch.runtime.webViewLifecycle
+            .prepareTabWebViewRetirementOwners(batch.tabs)
+        for tab in batch.tabs where batch.runtimeTabIDs.contains(tab.id) {
+            tab.webViewsWillLeaveRuntime(tab.webViewSession.runtimeOwnedWebViews)
+        }
         switch webViewSessions.commitRetirementBatch(batch.lease) {
         case .committed(let retired):
             precondition(

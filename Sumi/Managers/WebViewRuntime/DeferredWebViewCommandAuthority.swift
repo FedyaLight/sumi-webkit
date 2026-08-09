@@ -95,6 +95,7 @@ final class DeferredWebViewCommandAuthority {
         )
         case evictHiddenWebViews(windowID: UUID)
         case cleanupTabWebView(webView: WKWebView, tabID: UUID, tab: Tab?)
+        case retireTabWebViewGeneration(tab: Tab, expectedGeneration: UInt64)
         case performFallbackWebViewCleanup(
             webView: WKWebView,
             lease: WebViewPendingCleanupLease,
@@ -245,6 +246,17 @@ final class DeferredWebViewCommandAuthority {
                 webView: webView,
                 tabID: tabID,
                 tab: tabs.resolveTabForCleanup(with: tabID)
+            )
+
+        case .retireTabWebViewGeneration(let tabID, let expectedGeneration):
+            guard let tab = tabs.resolveTabForCleanup(with: tabID),
+                  tab.webViewSession.generation == expectedGeneration,
+                  tab.webViewSession.allKnownWebViews.isEmpty == false else {
+                return nil
+            }
+            return .retireTabWebViewGeneration(
+                tab: tab,
+                expectedGeneration: expectedGeneration
             )
 
         case .performFallbackWebViewCleanup(let webViewID, let lease):

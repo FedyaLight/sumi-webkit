@@ -195,6 +195,12 @@ class SumiSettingsService {
         set { performance.memoryMode = newValue }
     }
 
+    func setTabSuspensionPolicyChangedHandler(
+        _ handler: (@MainActor () -> Void)?
+    ) {
+        performance.setSuspensionPolicyChangedHandler(handler)
+    }
+
     var memorySaverCustomDeactivationDelay: TimeInterval {
         get { performance.memorySaverCustomDeactivationDelay }
         set { performance.memorySaverCustomDeactivationDelay = newValue }
@@ -347,7 +353,7 @@ class SumiSettingsService {
             "settings.newTabMode": SumiNewTabMode.commandPalette.rawValue,
             "settings.newTab.pageURL": SumiNewTabPageURL.defaultURLString,
             "settings.didFinishOnboarding": true,
-            "settings.memoryMode": SumiMemoryMode.balanced.rawValue,
+            "settings.memoryMode": SumiMemoryMode.off.rawValue,
             "settings.memorySaver.customDeactivationDelay": SumiMemorySaverCustomDelay.defaultDelay,
             "settings.energySaver.mode": SumiEnergySaverMode.automatic.rawValue,
             "settings.energySaver.batteryThreshold": SumiEnergySaverPolicy.defaultBatteryThreshold,

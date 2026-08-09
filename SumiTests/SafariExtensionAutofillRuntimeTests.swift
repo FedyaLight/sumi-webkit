@@ -196,7 +196,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         let reloadOutcome = session.previewTab.navigationCommandOwner.refresh(
             session.previewTab
         )
-        XCTAssertNotEqual(reloadOutcome, .failed)
+        XCTAssertTrue(reloadOutcome.ownsFutureOrSubmittedNavigation)
 
         let reloadedDocumentHasProbe = await waitForAutofillProbe(in: webView)
         XCTAssertTrue(

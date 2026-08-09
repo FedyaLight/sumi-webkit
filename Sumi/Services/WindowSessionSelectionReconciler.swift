@@ -33,6 +33,16 @@ struct WindowSessionSelectionReconciler {
         }
     }
 
+    func activateResolvedSelectionAfterInitialDataLoad(
+        _ windowState: BrowserWindowState
+    ) {
+        guard let currentTabID = windowState.currentTabId,
+              let currentTab = membership.tab(for: currentTabID) else {
+            return
+        }
+        apply(currentTab, to: windowState)
+    }
+
     func reconcileFinalSelection(
         _ windowState: BrowserWindowState
     ) {

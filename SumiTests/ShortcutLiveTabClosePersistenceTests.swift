@@ -1,4 +1,5 @@
 import AppKit
+import SumiDomain
 import WebKit
 import XCTest
 
@@ -6,6 +7,22 @@ import XCTest
 
 @MainActor
 final class ShortcutLiveTabClosePersistenceTests: XCTestCase {
+    func testSidebarUnloadReleasesFavoriteAndPinnedRuntimeInstances() throws {
+        for role in [ShortcutPinRole.favorite, .spacePinned] {
+            try assertSidebarUnloadReleasesRuntimeInstance(role: role)
+        }
+    }
+
+    func testSidebarUnloadReleasesDriftedFavoriteAndPinnedRuntimeInstances()
+        throws {
+        for role in [ShortcutPinRole.favorite, .spacePinned] {
+            try assertSidebarUnloadReleasesRuntimeInstance(
+                role: role,
+                drifted: true
+            )
+        }
+    }
+
     func testSelectedCloseWithFallbackCommitsWindowSessionOnce() throws {
         let fixture = try makeFixture(hasFallback: true, liveTabIsSelected: true)
 
@@ -308,6 +325,121 @@ private extension ShortcutLiveTabClosePersistenceTests {
             compositorContainer: compositorContainer,
             transaction: transaction,
             probe: probe
+        )
+    }
+
+    private func assertSidebarUnloadReleasesRuntimeInstance(
+        role: ShortcutPinRole,
+        drifted: Bool = false
+    ) throws {
+        let windowRegistry = WindowRegistry()
+        let browser = BrowserManager(windowRegistry: windowRegistry)
+        let profile = Profile(name: "Runtime release")
+        let space = Space(name: "Runtime release", profileId: profile.id)
+        let window = BrowserWindowState()
+
+        browser.profileManager.profiles = [profile]
+        browser.currentProfile = profile
+        browser.spaceStateOwner.replaceSpaces([space])
+        browser.spaceStateOwner.replaceCurrentSpace(space)
+        browser.tabResidenceAuthority.establishResidenceSession(on: window)
+        window.currentSpaceId = space.id
+        window.currentProfileId = profile.id
+        XCTAssertEqual(windowRegistry.register(window), .registered)
+
+        let pin = try XCTUnwrap(browser.shortcutPinStoreOwner.insert(
+            ShortcutPin(
+                id: UUID(),
+                role: role,
+                profileId: role == .favorite ? profile.id : nil,
+                spaceId: role == .spacePinned ? space.id : nil,
+                index: 0,
+                launchURL: try XCTUnwrap(
+                    URL(string: "https://runtime-release.example")
+                ),
+                title: "Runtime release"
+            ),
+            at: 0
+        ))
+        let hostRegistry = WindowWebContentHostRegistry()
+        var retainedHost: SumiWebViewContainerView?
+        weak var releasedTab: Tab?
+        weak var releasedWebView: WKWebView?
+        try autoreleasepool {
+            let liveTab = try XCTUnwrap(
+                browser.shortcutTabMaterializer.materialize(
+                    pin,
+                    in: window.id,
+                    currentSpaceId: space.id
+                )
+            )
+            let webView = WKWebView()
+            liveTab.replaceUntrackedWebView(webView)
+            if drifted {
+                liveTab.url = try XCTUnwrap(
+                    URL(string: "https://runtime-release.example/current")
+                )
+                XCTAssertNotEqual(liveTab.url, pin.launchURL)
+                XCTAssertTrue(
+                    browser.shortcutPresentationOwner.shortcutHasDrifted(
+                        pin,
+                        in: window
+                    )
+                )
+                XCTAssertIdentical(
+                    browser.shortcutTabMaterializer.materialize(
+                        pin,
+                        in: window.id,
+                        currentSpaceId: space.id
+                    ),
+                    liveTab
+                )
+            }
+            XCTAssertEqual(liveTab.webViewSession.allKnownWebViews.count, 1)
+            XCTAssertIdentical(
+                liveTab.webViewSession.allKnownWebViews.first,
+                webView
+            )
+            let host = SumiWebViewContainerView(
+                tabID: liveTab.id,
+                webView: webView
+            )
+            retainedHost = host
+            hostRegistry.parkHost(host)
+            window.currentTabId = liveTab.id
+            window.currentShortcutPinId = pin.id
+            window.currentShortcutPinRole = role
+            releasedTab = liveTab
+            releasedWebView = webView
+
+            XCTAssertTrue(
+                browser.composeSidebarShortcutPinUnloadOwner()
+                    .unloadShortcutPin(
+                        pin,
+                        in: window,
+                        suppressNotification: true
+                    )
+            )
+            XCTAssertNil(
+                browser.liveShortcutTabs.tab(for: pin.id, in: window.id)
+            )
+            XCTAssertNil(browser.webViewSessions.residence(of: webView))
+            XCTAssertNil(
+                hostRegistry.parkedHost(
+                    for: liveTab.id,
+                    webView: webView
+                )
+            )
+        }
+
+        XCTAssertNotNil(retainedHost)
+        XCTAssertNil(
+            releasedTab,
+            "Unloading a \(role) launcher must release its transient Tab"
+        )
+        XCTAssertNil(
+            releasedWebView,
+            "Unloading a \(role) launcher must release its WKWebView"
         )
     }
 

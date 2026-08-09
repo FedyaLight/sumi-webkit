@@ -2,14 +2,13 @@ import Foundation
 import SumiWebRuntime
 import WebKit
 
-/// Owns physical WebContent-process repair independently from the semantic
-/// main-frame transaction. A crash marker is retained by
-/// the Tab's exact recovery capability; this service keeps attempting delivery
-/// until a concrete Navigation binds and consumes that marker, or the exact
-/// WebView leaves its canonical residence.
+/// Owns delivery of one exact physical recovery attempt. Requests are woken
+/// only by lifecycle events (visibility, protection release, registration, or
+/// navigation binding); there is deliberately no timer or retry task.
 @MainActor
 final class WebContentProcessRecoveryService {
     typealias ProtectionResolver = @MainActor (WKWebView) -> Bool
+    typealias VisibilityResolver = @MainActor (Tab, WKWebView) -> Bool
     typealias Submission = @MainActor (
         Tab,
         WKWebView,
@@ -24,60 +23,42 @@ final class WebContentProcessRecoveryService {
         let tabID: UUID
         let tabReference: WeakTabReference
         let webViewReference: WeakWebViewReference
-        var retryAttempt: Int
     }
 
-    private static let initialRetryDelayNanoseconds: UInt64 = 25_000_000
-    private static let maximumRetryDelayNanoseconds: UInt64 = 1_000_000_000
-
     private let isProtected: ProtectionResolver
+    private let isVisible: VisibilityResolver
     private let submit: Submission
     private var requestsByWebViewID: [ObjectIdentifier: Request] = [:]
-    private var retryTasksByWebViewID: [ObjectIdentifier: Task<Void, Never>] = [:]
 
     init(
         isProtected: @escaping ProtectionResolver,
+        isVisible: @escaping VisibilityResolver = { _, _ in true },
         submit: @escaping Submission
     ) {
         self.isProtected = isProtected
+        self.isVisible = isVisible
         self.submit = submit
     }
 
-    deinit {
-        retryTasksByWebViewID.values.forEach { $0.cancel() }
-    }
-
-    /// Accepts responsibility for repairing one exact physical WebView. Once
-    /// accepted, transient protection and submission failures are represented
-    /// as `.scheduled`; callers never need to invent a second retry policy.
     @discardableResult
     func recover(
         _ webView: WKWebView,
         for tab: Tab
     ) -> TabMainFrameReloadCommandOutcome {
         guard retain(webView, for: tab) else { return .failed }
-        let webViewID = ObjectIdentifier(webView)
-        guard let request = requestsByWebViewID[webViewID] else {
-            return .failed
-        }
-        retryTasksByWebViewID.removeValue(forKey: webViewID)?.cancel()
-        return attempt(
-            requestID: request.id,
-            webViewID: webViewID,
-            expectedWebView: webView
-        )
+        return attempt(webView)
     }
 
-    /// Retains responsibility before higher-level configuration recovery runs.
-    /// That pipeline can fail before it reaches physical delivery; the retained
-    /// retry guarantees the crash marker still has an owner and a wake-up.
+    /// Retains identity only. Hidden pages stay dormant until an activation
+    /// event explicitly wakes this request.
     @discardableResult
     func retain(
         _ webView: WKWebView,
         for tab: Tab
     ) -> Bool {
         guard tab.webViewSession.owns(webView),
-              tab.webContentRecoveryMarkers.isRecoveryRequired(on: webView) else {
+              tab.webContentRecoveryMarkers.recoveryState(on: webView)?
+                .ownsFutureOrSubmittedNavigation == true else {
             return false
         }
         let webViewID = ObjectIdentifier(webView)
@@ -87,34 +68,23 @@ final class WebContentProcessRecoveryService {
            request.webViewReference.matches(webView) {
             return true
         }
-
-        finish(webViewID: webViewID)
-        let request = Request(
+        requestsByWebViewID[webViewID] = Request(
             id: UUID(),
             tabID: tab.id,
             tabReference: WeakTabReference(tab),
-            webViewReference: WeakWebViewReference(webView),
-            retryAttempt: 1
+            webViewReference: WeakWebViewReference(webView)
         )
-        requestsByWebViewID[webViewID] = request
-        scheduleRetry(for: request, webViewID: webViewID)
         return true
     }
 
-    /// Protection transitions and canonical registration changes can wake a
-    /// retained recovery immediately instead of waiting for its bounded retry.
+    /// Event seam used by visibility, protection, and registration owners.
     func retryPendingImmediately(for webViewID: ObjectIdentifier) {
         guard let request = requestsByWebViewID[webViewID],
               let webView = request.webViewReference.resolve() else {
-            finish(webViewID: webViewID)
+            requestsByWebViewID.removeValue(forKey: webViewID)
             return
         }
-        retryTasksByWebViewID.removeValue(forKey: webViewID)?.cancel()
-        _ = attempt(
-            requestID: request.id,
-            webViewID: webViewID,
-            expectedWebView: webView
-        )
+        _ = attempt(webView, matching: request.id)
     }
 
     func hasPendingRecovery(for webView: WKWebView) -> Bool {
@@ -125,106 +95,64 @@ final class WebContentProcessRecoveryService {
     func cancel(_ webView: WKWebView) {
         let webViewID = ObjectIdentifier(webView)
         guard requestsByWebViewID[webViewID]?.webViewReference
-                .matches(webView) == true else {
-            return
-        }
-        finish(webViewID: webViewID)
+                .matches(webView) == true else { return }
+        requestsByWebViewID.removeValue(forKey: webViewID)
     }
 
     func resetForTerminalShutdown() {
-        retryTasksByWebViewID.values.forEach { $0.cancel() }
-        retryTasksByWebViewID.removeAll()
         requestsByWebViewID.removeAll()
     }
 
     private func attempt(
-        requestID: UUID,
-        webViewID: ObjectIdentifier,
-        expectedWebView: WKWebView
+        _ webView: WKWebView,
+        matching requestID: UUID? = nil
     ) -> TabMainFrameReloadCommandOutcome {
-        guard var request = requestsByWebViewID[webViewID],
-              request.id == requestID,
-              request.webViewReference.matches(expectedWebView),
+        let webViewID = ObjectIdentifier(webView)
+        guard let request = requestsByWebViewID[webViewID],
+              requestID == nil || request.id == requestID,
+              request.webViewReference.matches(webView),
               let tab = request.tabReference.resolve(),
               tab.id == request.tabID,
-              tab.webViewSession.owns(expectedWebView),
-              tab.webContentRecoveryMarkers.isRecoveryRequired(on: expectedWebView) else {
-            finish(webViewID: webViewID, matching: requestID)
+              tab.webViewSession.owns(webView),
+              let state = tab.webContentRecoveryMarkers.recoveryState(on: webView),
+              state.ownsFutureOrSubmittedNavigation else {
+            requestsByWebViewID.removeValue(forKey: webViewID)
             return .failed
         }
 
-        guard isProtected(expectedWebView) == false else {
-            request.retryAttempt += 1
-            requestsByWebViewID[webViewID] = request
-            scheduleRetry(for: request, webViewID: webViewID)
-            return .scheduled
+        if case .pendingActivation = state.phase {
+            guard isVisible(tab, webView) else { return .scheduled }
+            guard tab.webContentRecoveryAdmission
+                .activatePendingRecovery(on: webView) else {
+                requestsByWebViewID.removeValue(forKey: webViewID)
+                return .failed
+            }
         }
+        guard isProtected(webView) == false else { return .scheduled }
 
-        let outcome = submit(
-            tab,
-            expectedWebView,
-            tab.mainFrameLoads.currentIntent
-        )
-
-        guard let currentRequest = requestsByWebViewID[webViewID],
-              currentRequest.id == requestID,
-              currentRequest.webViewReference.matches(expectedWebView) else {
+        let outcome = submit(tab, webView, tab.mainFrameLoads.currentIntent)
+        guard requestsByWebViewID[webViewID]?.id == request.id else {
             return outcome
         }
-        guard tab.webViewSession.owns(expectedWebView),
-              tab.webContentRecoveryMarkers.isRecoveryRequired(on: expectedWebView) else {
-            finish(webViewID: webViewID, matching: requestID)
+        let updatedState = tab.webContentRecoveryMarkers.recoveryState(on: webView)
+        if case .recovering = updatedState?.phase {
+            requestsByWebViewID.removeValue(forKey: webViewID)
             return outcome
         }
-
-        request.retryAttempt += 1
-        requestsByWebViewID[webViewID] = request
-        scheduleRetry(for: request, webViewID: webViewID)
+        if outcome == .failed {
+            tab.webContentRecoveryAdmission.failRecoveryDelivery(on: webView)
+            requestsByWebViewID.removeValue(forKey: webViewID)
+            settleFailure(tab, on: webView)
+            return .failed
+        }
         return .scheduled
     }
 
-    private func scheduleRetry(
-        for request: Request,
-        webViewID: ObjectIdentifier
-    ) {
-        retryTasksByWebViewID.removeValue(forKey: webViewID)?.cancel()
-        let shift = min(max(request.retryAttempt - 1, 0), 6)
-        let delay = min(
-            Self.initialRetryDelayNanoseconds << UInt64(shift),
-            Self.maximumRetryDelayNanoseconds
+    private func settleFailure(_ tab: Tab, on webView: WKWebView) {
+        tab.loadingState = .idle
+        tab.navigationRuntime.webViewRouting.pagePresentationDidChange(
+            tab.id,
+            webView
         )
-        retryTasksByWebViewID[webViewID] = Task { @MainActor [
-            weak self,
-            weak webView = request.webViewReference.value
-        ] in
-            do {
-                try await Task.sleep(nanoseconds: delay)
-            } catch {
-                return
-            }
-            guard Task.isCancelled == false,
-                  let self else { return }
-            guard let webView else {
-                self.finish(webViewID: webViewID, matching: request.id)
-                return
-            }
-            _ = self.attempt(
-                requestID: request.id,
-                webViewID: webViewID,
-                expectedWebView: webView
-            )
-        }
-    }
-
-    private func finish(
-        webViewID: ObjectIdentifier,
-        matching requestID: UUID? = nil
-    ) {
-        if let requestID,
-           requestsByWebViewID[webViewID]?.id != requestID {
-            return
-        }
-        requestsByWebViewID.removeValue(forKey: webViewID)
-        retryTasksByWebViewID.removeValue(forKey: webViewID)?.cancel()
     }
 }

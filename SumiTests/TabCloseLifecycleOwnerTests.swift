@@ -8,13 +8,11 @@ import SumiWebRuntime
 final class TabCloseLifecycleOwnerTests: XCTestCase {
     func testCloseRunsTabLocalTeardownInOrder() {
         let tabId = UUID()
-        let webView = WKWebView(frame: .zero)
         let spy = Spy()
         let owner = TabCloseLifecycleOwner()
 
         owner.close(context: context(
             tabId: tabId,
-            currentWebView: { webView },
             spy: spy
         ))
 
@@ -22,39 +20,36 @@ final class TabCloseLifecycleOwnerTests: XCTestCase {
             spy.events,
             [
                 .cleanupPermission("normal-tab-close"),
+                .cancelProfileAwait,
+                .cancelPendingMainFrameNavigation,
                 .comprehensiveWebViewCleanup,
                 .resetPlayback,
                 .applyAudioState(.unmuted(isPlayingAudio: false)),
                 .setLoadingIdle,
                 .cleanupZoom(tabId),
                 .updateTabVisibility,
-                .currentWebView,
-                .removeNavigationStateObservers,
                 .removeTab(tabId),
-                .cancelProfileAwait,
-                .cancelPendingMainFrameNavigation,
             ]
         )
     }
 
-    func testCloseSkipsObserverRemovalWhenCurrentWebViewWasAlreadyCleared() {
+    func testCloseLeavesCallbackDetachmentToSealedRetirement() {
         let tabId = UUID()
         let spy = Spy()
         let owner = TabCloseLifecycleOwner()
 
         owner.close(context: context(
             tabId: tabId,
-            currentWebView: { nil },
             spy: spy
         ))
 
+        XCTAssertFalse(spy.events.contains(.currentWebView))
         XCTAssertFalse(spy.events.contains(.removeNavigationStateObservers))
-        XCTAssertEqual(spy.events.last, .cancelPendingMainFrameNavigation)
+        XCTAssertEqual(spy.events.last, .removeTab(tabId))
     }
 
     private func context(
         tabId: UUID,
-        currentWebView: @escaping () -> WKWebView?,
         spy: Spy
     ) -> TabCloseLifecycleOwner.Context {
         TabCloseLifecycleOwner.Context(
@@ -80,13 +75,6 @@ final class TabCloseLifecycleOwnerTests: XCTestCase {
             },
             updateTabVisibility: {
                 spy.events.append(.updateTabVisibility)
-            },
-            currentWebView: {
-                spy.events.append(.currentWebView)
-                return currentWebView()
-            },
-            removeNavigationStateObservers: { _ in
-                spy.events.append(.removeNavigationStateObservers)
             },
             removeTab: { closedTabId in
                 spy.events.append(.removeTab(closedTabId))

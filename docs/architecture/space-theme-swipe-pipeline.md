@@ -43,6 +43,11 @@ render the unified list. It withholds settled geometry during structural reflow.
 - Committing the selected space must not create a second theme transition.
 - Browser chrome reads `ResolvedThemeContext`; it should not depend on workspace-specific `colorScheme` injection.
 - Global `System / Light / Dark` appearance remains independent from workspace color styling.
+- Theme picker preview and runtime switching use `WorkspaceThemeCoordinator`;
+  `ChromeThemeTokens` resolves the concrete colors consumed by browser chrome.
+- A window-local Space creation draft previews through the same coordinator
+  without entering the Space catalog. Commit preserves its reserved identity;
+  cancel restores the source Space theme.
 - A committed space freezes the viewport intent used by its transition snapshot:
   automatic, top, bottom, or a concrete point. The real surface starts without a
   pending non-top scroll command; its first usable geometry applies that intent

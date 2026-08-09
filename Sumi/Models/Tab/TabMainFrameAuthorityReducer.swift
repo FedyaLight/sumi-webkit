@@ -532,6 +532,7 @@ enum TabMainFrameAuthorityReducer {
             targetURL: participant.targetURL,
             isPDF: participant.isPDFResponse ?? false,
             isCompleted: isCompleted,
+            hasCommittedDocument: participant.hasCommittedDocument,
             needsSharedCommitEffects: participant.hasCommittedDocument
                 && hasPublishedSharedCommit == false,
             needsSharedFinishEffects: isCompleted

@@ -640,7 +640,7 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         webView.stopLoading()
     }
 
-    func testVisibleTabSelectionDefersInitialWebViewCreationUntilNativeMessagingWarmup()
+    func testVisibleTabSelectionWarmsContentScriptsWithoutWakingNativeMessaging()
         async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
@@ -696,12 +696,8 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         inspection.actionSurfaces.publication.markRuntimePublicationReady()
 
         var backgroundWakeCount = 0
-        let backgroundWakeExpectation = expectation(
-            description: "nativeMessaging warmup before WebView creation"
-        )
         manager.testHooks.backgroundContentWake = { _, _ in
             backgroundWakeCount += 1
-            backgroundWakeExpectation.fulfill()
         }
         defer {
             manager.testHooks.backgroundContentWake = nil
@@ -727,17 +723,6 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         XCTAssertNil(tab.resolvedCurrentWebView())
         XCTAssertNil(webViewQuery.webView(for: tab.id, in: windowState.id))
 
-        await fulfillment(of: [backgroundWakeExpectation], timeout: 3.0)
-        XCTAssertEqual(backgroundWakeCount, 1)
-        XCTAssertEqual(
-            backgroundRuntimeState(
-                in: inspection,
-                extensionID: installed.id,
-                profileID: profile.id
-            ),
-            .loaded
-        )
-
         var createdWebView: WKWebView?
         for _ in 0..<20 {
             await Task.yield()
@@ -754,6 +739,15 @@ final class SafariExtensionWebViewControllerWiringTests: SafariExtensionWebViewC
         XCTAssertIdentical(
             webView.configuration.webExtensionController,
             inspection.controller.provisioning.ensureExtensionController(for: profile.id)
+        )
+        XCTAssertEqual(backgroundWakeCount, 0)
+        XCTAssertEqual(
+            backgroundRuntimeState(
+                in: inspection,
+                extensionID: installed.id,
+                profileID: profile.id
+            ),
+            .neverLoaded
         )
     }
 

@@ -161,8 +161,14 @@ final class BrowserTabSelectionOwner {
     func materializeVisibleTabWebViewIfNeeded(
         _ tab: Tab,
         in windowState: BrowserWindowState
-    ) {
+    ) -> PageMaterializationRequestSettlement? {
         materialization.materialize(tab, in: windowState)
+    }
+
+    func retryCurrentPageMaterializationRequests(
+        in windowState: BrowserWindowState
+    ) {
+        materialization.retryCurrent(in: windowState)
     }
 
     func syncShortcutSelectionState(for windowState: BrowserWindowState) {

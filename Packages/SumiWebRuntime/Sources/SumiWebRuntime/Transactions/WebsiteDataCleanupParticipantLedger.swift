@@ -30,7 +30,7 @@ public final class WebsiteDataCleanupParticipantLedger {
         public let webView: WKWebView
         fileprivate var phase: ParticipantPhase = .discovered
         fileprivate var terminalWait: WebsiteDataCleanupTerminalReceipt?
-        fileprivate var bufferedRestoreStarts: [RestoreStartCandidate] = []
+        fileprivate var bufferedBlankStarts: [BlankStartCandidate] = []
         fileprivate var wasTouched = false
 
         fileprivate init(sessionID: UUID, webView: WKWebView) {
@@ -41,18 +41,16 @@ public final class WebsiteDataCleanupParticipantLedger {
 
     fileprivate enum ParticipantPhase {
         case discovered
+        case submittingBlank(targetURL: URL)
         case awaitingBlank(NavigationIdentity)
         case blanked
-        case awaitingRestoreStart(targetURL: URL, semanticRevision: UInt64?)
-        case awaitingRestore(NavigationIdentity)
+        case awaitingRestoreSubmission(targetURL: URL)
         case completed
         case abandoned
     }
 
-    fileprivate struct RestoreStartCandidate {
+    fileprivate struct BlankStartCandidate {
         let navigation: NavigationIdentity
-        let targetURL: URL
-        let semanticRevision: UInt64?
         var terminalResult: Bool?
     }
 
@@ -144,74 +142,78 @@ public final class WebsiteDataCleanupParticipantLedger {
         return false
     }
 
-    public func beginBlankWait(
+    public func beginBlankSubmission(
         for participant: Participant,
-        navigation: NavigationIdentity,
+        targetURL: URL,
         deadline: ContinuousClock.Instant
     ) {
         guard owns(participant) else { return }
         beginTerminalWait(for: participant, deadline: deadline)
-        participant.phase = .awaitingBlank(navigation)
+        participant.bufferedBlankStarts.removeAll()
+        participant.phase = .submittingBlank(targetURL: targetURL)
     }
 
-    public func beginRestoreAttempt(
-        _ participants: [Participant],
-        targetURL: URL,
-        deadline: ContinuousClock.Instant
-    ) {
-        for participant in participants where owns(participant) {
-            beginTerminalWait(for: participant, deadline: deadline)
-            participant.bufferedRestoreStarts.removeAll()
-            participant.phase = .awaitingRestoreStart(
-                targetURL: targetURL,
-                semanticRevision: nil
-            )
-        }
-    }
-
-    public func bindRestoreSemanticRevision(
-        _ semanticRevision: UInt64?,
+    @discardableResult
+    public func bindBlankNavigation(
+        _ navigation: NavigationIdentity,
         to participant: Participant
-    ) {
+    ) -> Bool {
         guard owns(participant),
-              case .awaitingRestoreStart(let targetURL, _) = participant.phase,
-              let semanticRevision else {
-            return
+              case .submittingBlank = participant.phase else {
+            return false
         }
-        participant.phase = .awaitingRestoreStart(
-            targetURL: targetURL,
-            semanticRevision: semanticRevision
-        )
-        guard let candidate = participant.bufferedRestoreStarts.first(where: {
-            $0.semanticRevision == semanticRevision
-                && WebRuntimeNavigationIdentity.matches($0.targetURL, targetURL)
-        }) else {
-            return
+        let candidate = participant.bufferedBlankStarts.first {
+            $0.navigation.id == navigation.id
+                && $0.navigation.lifetime === navigation.lifetime
         }
-        participant.bufferedRestoreStarts.removeAll()
-        participant.phase = .awaitingRestore(candidate.navigation)
-        if let terminalResult = candidate.terminalResult {
+        if candidate == nil, participant.bufferedBlankStarts.isEmpty == false {
+            activeSession?.isInvalidated = true
+            discardTerminalWait(for: participant)
+            participant.phase = .abandoned
+            participant.bufferedBlankStarts.removeAll()
+            return false
+        }
+        participant.bufferedBlankStarts.removeAll()
+        participant.phase = .awaitingBlank(navigation)
+        if let terminalResult = candidate?.terminalResult {
             completeTerminalWait(for: participant, result: terminalResult)
         }
+        return true
     }
 
-    public func rejectRestoreAttempt(_ participants: [Participant]) {
-        participants.forEach {
-            completeTerminalWait(for: $0, result: false)
+    public func beginRestoreSubmission(
+        _ participants: [Participant],
+        targetURL: URL
+    ) {
+        for participant in participants where owns(participant) {
+            switch participant.phase {
+            case .blanked, .awaitingRestoreSubmission:
+                participant.phase = .awaitingRestoreSubmission(
+                    targetURL: targetURL
+                )
+            case .discovered, .submittingBlank, .awaitingBlank,
+                 .completed, .abandoned:
+                break
+            }
         }
+    }
+
+    @discardableResult
+    public func transferRestoreSubmission(
+        for participant: Participant,
+        targetURL: URL
+    ) -> Bool {
+        guard owns(participant),
+              case .awaitingRestoreSubmission(let expectedTargetURL) = participant.phase,
+              WebRuntimeNavigationIdentity.matches(targetURL, expectedTargetURL) else {
+            return false
+        }
+        participant.phase = .completed
+        return true
     }
 
     public func awaitTerminalResult(for participant: Participant) async -> Bool {
         await terminalResult(for: participant)
-    }
-
-    public func finishRestoreAttempt(
-        _ participants: [Participant],
-        succeeded: Bool
-    ) {
-        for participant in participants where owns(participant) {
-            participant.phase = succeeded ? .completed : .blanked
-        }
     }
 
     public func markBlanked(_ participants: [Participant]) {
@@ -224,26 +226,17 @@ public final class WebsiteDataCleanupParticipantLedger {
         markBlanked([participant])
     }
 
-    public func pendingRestoreParticipants(
-        among participants: [Participant]
-    ) -> [Participant] {
-        participants.filter { participant in
-            guard owns(participant) else { return false }
-            if case .completed = participant.phase { return false }
-            return true
-        }
-    }
-
     public func abandon(_ participant: Participant) {
         guard owns(participant) else { return }
         switch participant.phase {
-        case .awaitingBlank, .awaitingRestore, .awaitingRestoreStart:
+        case .submittingBlank, .awaitingBlank:
             discardTerminalWait(for: participant)
-        case .discovered, .blanked, .completed, .abandoned:
+        case .discovered, .blanked, .awaitingRestoreSubmission,
+             .completed, .abandoned:
             break
         }
         participant.phase = .abandoned
-        participant.bufferedRestoreStarts.removeAll()
+        participant.bufferedBlankStarts.removeAll()
     }
 
     public func abandon(_ participants: [Participant]) {
@@ -269,12 +262,22 @@ public final class WebsiteDataCleanupParticipantLedger {
         navigationID: ObjectIdentifier,
         navigationLifetime: AnyObject
     ) -> Bool {
-        guard let participant = participant(for: webView),
-              case .awaitingBlank(let expected) = participant.phase else {
+        guard let participant = participant(for: webView) else {
             return false
         }
-        return expected.id == navigationID
-            && expected.lifetime === navigationLifetime
+        switch participant.phase {
+        case .submittingBlank:
+            return participant.bufferedBlankStarts.contains {
+                $0.navigation.id == navigationID
+                    && $0.navigation.lifetime === navigationLifetime
+            }
+        case .awaitingBlank(let expected):
+            return expected.id == navigationID
+                && expected.lifetime === navigationLifetime
+        case .discovered, .blanked, .awaitingRestoreSubmission,
+             .completed, .abandoned:
+            return false
+        }
     }
 
     public func navigationWillStart(
@@ -286,37 +289,35 @@ public final class WebsiteDataCleanupParticipantLedger {
     ) {
         guard let participant = participant(for: webView) else { return }
 
+        if case .submittingBlank(let expectedTargetURL) = participant.phase {
+            guard let targetURL,
+                  WebRuntimeNavigationIdentity.matches(
+                      targetURL,
+                      expectedTargetURL
+                  ) else {
+                activeSession?.isInvalidated = true
+                return
+            }
+            participant.bufferedBlankStarts.append(
+                BlankStartCandidate(
+                    navigation: NavigationIdentity(
+                        id: navigationID,
+                        lifetime: navigationLifetime
+                    ),
+                    terminalResult: nil
+                )
+            )
+            return
+        }
+
         if case .blanked = participant.phase {
             activeSession?.isInvalidated = true
             return
         }
 
-        guard case .awaitingRestoreStart(
-            let expectedTargetURL,
-            let expectedSemanticRevision
-        ) = participant.phase,
-        let targetURL,
-        WebRuntimeNavigationIdentity.matches(targetURL, expectedTargetURL) else {
-            return
-        }
-
-        let candidate = RestoreStartCandidate(
-            navigation: NavigationIdentity(
-                id: navigationID,
-                lifetime: navigationLifetime
-            ),
-            targetURL: targetURL,
-            semanticRevision: semanticRevision,
-            terminalResult: nil
-        )
-        guard let expectedSemanticRevision else {
-            participant.bufferedRestoreStarts.append(candidate)
-            return
-        }
-        guard candidate.semanticRevision == expectedSemanticRevision else {
-            return
-        }
-        participant.phase = .awaitingRestore(candidate.navigation)
+        // Restore callbacks belong to the ordinary successor document. The
+        // cleanup transaction transfers authority only from the concrete
+        // native submission proof returned by the command owner.
     }
 
     public func navigationDidTerminate(
@@ -328,10 +329,8 @@ public final class WebsiteDataCleanupParticipantLedger {
         guard let participant = participant(for: webView) else { return }
         let expected: NavigationIdentity
         switch participant.phase {
-        case .awaitingBlank(let navigation), .awaitingRestore(let navigation):
-            expected = navigation
-        case .awaitingRestoreStart:
-            guard let index = participant.bufferedRestoreStarts.firstIndex(
+        case .submittingBlank:
+            guard let index = participant.bufferedBlankStarts.firstIndex(
                 where: {
                     $0.navigation.id == navigationID
                         && $0.navigation.lifetime === navigationLifetime
@@ -339,9 +338,12 @@ public final class WebsiteDataCleanupParticipantLedger {
             ) else {
                 return
             }
-            participant.bufferedRestoreStarts[index].terminalResult = succeeded
+            participant.bufferedBlankStarts[index].terminalResult = succeeded
             return
-        case .discovered, .blanked, .completed, .abandoned:
+        case .awaitingBlank(let navigation):
+            expected = navigation
+        case .discovered, .blanked, .awaitingRestoreSubmission,
+             .completed, .abandoned:
             return
         }
         guard expected.id == navigationID,
@@ -356,9 +358,9 @@ public final class WebsiteDataCleanupParticipantLedger {
             return false
         }
         switch participant.phase {
-        case .awaitingBlank, .awaitingRestore, .awaitingRestoreStart:
+        case .submittingBlank, .awaitingBlank:
             discardTerminalWait(for: participant)
-        case .discovered, .blanked:
+        case .discovered, .blanked, .awaitingRestoreSubmission:
             break
         case .completed, .abandoned:
             return false

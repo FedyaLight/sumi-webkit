@@ -29,3 +29,6 @@ database is created.
 The normative storage inventory is
 [`persistence-map.json`](persistence-map.json). Run
 `scripts/check_persistence_inventory.sh` after changing persistence code.
+
+The schema and transaction contract is described in
+[Unified browser database](unified-browser-database-spec.md).

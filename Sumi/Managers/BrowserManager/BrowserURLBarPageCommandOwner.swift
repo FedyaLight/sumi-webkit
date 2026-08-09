@@ -40,7 +40,8 @@ final class BrowserURLBarPageCommandOwner {
     }
 
     func reload(_ page: ActivePageResolution, reason: String) -> Bool {
-        pageCommands.reload(page, reason: reason) != .failed
+        pageCommands.reload(page, reason: reason)
+            .ownsFutureOrSubmittedNavigation
     }
 
     func copyURL(_ urlString: String, in windowState: BrowserWindowState) {

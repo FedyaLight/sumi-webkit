@@ -282,32 +282,42 @@ extension TabLifecycleNavigationRuntime {
                 guard let authenticationManager = dependencies.authenticationManager() else {
                     return .next
                 }
+                let requestID = UUID()
 
-                return await withCheckedContinuation { continuation in
-                    let handled = authenticationManager.handleAuthenticationChallenge(
-                        challenge,
-                        for: tab,
-                        webView: webView,
-                        mainFrameURL: mainFrameURL
-                    ) { disposition, credential in
-                        switch disposition {
-                        case .useCredential:
-                            if let credential {
-                                continuation.resume(returning: .credential(credential))
-                            } else {
+                return await withTaskCancellationHandler {
+                    await withCheckedContinuation { continuation in
+                        let handled = authenticationManager.handleAuthenticationChallenge(
+                            challenge,
+                            for: tab,
+                            webView: webView,
+                            mainFrameURL: mainFrameURL,
+                            requestID: requestID
+                        ) { disposition, credential in
+                            switch disposition {
+                            case .useCredential:
+                                if let credential {
+                                    continuation.resume(returning: .credential(credential))
+                                } else {
+                                    continuation.resume(returning: .next)
+                                }
+                            case .cancelAuthenticationChallenge:
+                                continuation.resume(returning: .cancel)
+                            case .rejectProtectionSpace:
+                                continuation.resume(returning: .rejectProtectionSpace)
+                            default:
                                 continuation.resume(returning: .next)
                             }
-                        case .cancelAuthenticationChallenge:
-                            continuation.resume(returning: .cancel)
-                        case .rejectProtectionSpace:
-                            continuation.resume(returning: .rejectProtectionSpace)
-                        default:
+                        }
+
+                        if !handled {
                             continuation.resume(returning: .next)
                         }
                     }
-
-                    if !handled {
-                        continuation.resume(returning: .next)
+                } onCancel: {
+                    Task { @MainActor [weak authenticationManager] in
+                        authenticationManager?.cancelAuthenticationChallenge(
+                            requestID: requestID
+                        )
                     }
                 }
             },

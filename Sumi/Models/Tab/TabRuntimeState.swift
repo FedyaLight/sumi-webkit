@@ -88,17 +88,18 @@ final class TabBrowserRuntimeReference {
 @MainActor
 struct TabWebViewRoutingRuntime {
     var syncTabAcrossWindows: (UUID, WKWebView?) -> Void
+    var pagePresentationDidChange: (UUID, WKWebView) -> Void
     var reloadTabAcrossWindows: (
         UUID,
         TabMainFrameNavigationIntent,
         WebRuntimeMainFrameReloadPolicy
-    ) -> Void
+    ) -> PageReloadCommandOutcome
     var reloadTabInWindow: (
         UUID,
         UUID,
         TabMainFrameNavigationIntent,
         WebRuntimeMainFrameReloadPolicy
-    ) -> TabMainFrameReloadCommandOutcome
+    ) -> PageReloadCommandOutcome
     var retainWebContentProcessRecovery: (UUID, WKWebView) -> Bool
     var recoverWebContentProcess: (
         UUID,
@@ -110,8 +111,13 @@ struct TabWebViewRoutingRuntime {
 
     static let inactive = Self(
         syncTabAcrossWindows: { _, _ in /* No-op. */ },
-        reloadTabAcrossWindows: { _, _, _ in /* No-op. */ },
-        reloadTabInWindow: { _, _, _, _ in .failed },
+        pagePresentationDidChange: { _, _ in /* No-op. */ },
+        reloadTabAcrossWindows: { _, intent, _ in
+            .failed(intent: intent, reason: .deliveryContextUnavailable)
+        },
+        reloadTabInWindow: { _, _, intent, _ in
+            .failed(intent: intent, reason: .deliveryContextUnavailable)
+        },
         retainWebContentProcessRecovery: { _, _ in false },
         recoverWebContentProcess: { _, _ in .failed },
         cancelWebContentProcessRecovery: { _ in /* No-op. */ },
@@ -364,15 +370,14 @@ struct TabWebViewCleanupRuntime {
 struct TabNormalWebViewExtensionRuntime {
     var registerTabWithExtensionRuntimeIfNeeded: (Tab, String) -> Void
     var prepareWebViewForExtensionRuntime: (WKWebView, URL?, String) -> Void
-    var ensureInitialExtensionContextsIfNeeded: (UUID) async -> Void
-    var warmInitialDocumentNativeMessagingIfNeeded: (UUID) async -> Void
+    var ensureInitialExtensionContextsIfNeeded: (UUID) async
+        -> PageNavigationPrerequisiteResult
     var reconcileOnUserGesture: (Tab, String) -> Void = { _, _ in }
 
     static let inactive = Self(
         registerTabWithExtensionRuntimeIfNeeded: { _, _ in /* No-op. */ },
         prepareWebViewForExtensionRuntime: { _, _, _ in /* No-op. */ },
-        ensureInitialExtensionContextsIfNeeded: { _ in /* No-op. */ },
-        warmInitialDocumentNativeMessagingIfNeeded: { _ in /* No-op. */ },
+        ensureInitialExtensionContextsIfNeeded: { _ in .ready },
         reconcileOnUserGesture: { _, _ in /* No-op. */ }
     )
 }

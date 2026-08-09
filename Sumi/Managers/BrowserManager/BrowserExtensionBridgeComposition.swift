@@ -261,12 +261,22 @@ final class BrowserExtensionBridgeComposition {
                 ).committedWebView
             },
             reload: { [weak browserManager] tab, webView, window, policy in
-                guard let browserManager else { return .failed }
+                guard let browserManager else {
+                    return .failed(
+                        intent: tab.mainFrameLoads.currentIntent,
+                        webView: webView,
+                        reason: .deliveryContextUnavailable
+                    )
+                }
                 if let window {
                     guard browserManager.webViewRoutingService
                         .windowOwnedWebView(for: tab, in: window.id) === webView
                     else {
-                        return .failed
+                        return .failed(
+                            intent: tab.mainFrameLoads.currentIntent,
+                            webView: webView,
+                            reason: .noResidence
+                        )
                     }
                     return browserManager.webViewRoutingService.refreshPage(
                         for: tab,
@@ -277,7 +287,11 @@ final class BrowserExtensionBridgeComposition {
                 }
 
                 guard tab.webViewSession.untrackedWebView === webView else {
-                    return .failed
+                    return .failed(
+                        intent: tab.mainFrameLoads.currentIntent,
+                        webView: webView,
+                        reason: .noResidence
+                    )
                 }
                 return tab.navigationCommandOwner.refresh(
                     tab,
@@ -291,7 +305,10 @@ final class BrowserExtensionBridgeComposition {
                               let currentWebView =
                                 tab.webViewSession.untrackedWebView
                         else {
-                            return .failed
+                            return .failed(
+                                intent: intent,
+                                reason: .deliveryContextUnavailable
+                            )
                         }
                         return tab.navigationCommandOwner.submitExactReload(
                             on: currentWebView,

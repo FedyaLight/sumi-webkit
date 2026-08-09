@@ -111,6 +111,11 @@ final class SumiTabLifecycleNavigationResponder:
         ) {
             return
         }
+        if tab.webContentRecoveryMarkers.recoveryState(on: webView)?.phase
+            == .recovering(navigationID: context.navigationID) {
+            tab.navigationRuntime.webViewRouting
+                .cancelWebContentProcessRecovery(webView)
+        }
         var role = lifecycle.role(
             from: webView,
             navigationID: context.navigationID,
@@ -143,24 +148,6 @@ final class SumiTabLifecycleNavigationResponder:
         tab.navigationRuntime.extensionPropertiesRuntime.notifyTabPropertiesChanged(tab, [.loading])
         guard lifecycle.remainsCurrent(authorityLease) else { return }
         tab.resetPlaybackActivity()
-
-        if let newURL = webView.url {
-            if newURL.absoluteString != tab.url.absoluteString {
-                guard tab.applyAcceptedMainFrameLifecycleURL(
-                    newURL,
-                    from: webView,
-                    navigationID: context.navigationID
-                ) else { return }
-                tab.applyCachedFaviconOrPlaceholder(for: newURL)
-                tab.refreshFaviconExtensionCache()
-            } else {
-                guard tab.applyAcceptedMainFrameLifecycleURL(
-                    newURL,
-                    from: webView,
-                    navigationID: context.navigationID
-                ) else { return }
-            }
-        }
     }
 
     func decidePolicy(
@@ -197,6 +184,41 @@ final class SumiTabLifecycleNavigationResponder:
             isCurrent: nil
         )
         guard initialRole.isParticipant else { return }
+        guard let committedURL = webView.committedURL
+                ?? webView.backForwardList.currentItem?.url else {
+            return
+        }
+        let isUnexpectedRestoreBlank =
+            tab.suspensionState.isRestoreInProgress
+            && (committedURL.isSumiBlankDocumentURL
+                || context.url?.isSumiBlankDocumentURL == true)
+            && tab.suspensionState.lastSuspendedURL?.isSumiBlankDocumentURL != true
+        guard isUnexpectedRestoreBlank == false,
+              tab.mainFrameLoads.admitsCommit(to: committedURL) else {
+            let wasRestoreFallback = tab.suspensionState.phase == .fallingBack
+            let shouldSubmitRestoreFallback =
+                (committedURL.isSumiBlankDocumentURL
+                    || context.url?.isSumiBlankDocumentURL == true)
+                && tab.suspensionState.beginFallback(
+                    webViewID: ObjectIdentifier(webView),
+                    navigationID: context.navigationID
+                )
+            let result = tab.abortMainFrameNavigation(
+                from: webView,
+                navigationID: context.navigationID,
+                navigationLifetime: context.navigationLifetime
+            )
+            if result != .ignored {
+                settleAbortedNavigationPresentation(tab, on: webView)
+                settleSuspendedRestoreFailureIfNeeded(
+                    tab: tab,
+                    webView: webView,
+                    wasFallback: wasRestoreFallback,
+                    shouldSubmitFallback: shouldSubmitRestoreFallback
+                )
+            }
+            return
+        }
         publishLocalStartEffectsIfNeeded(context, tab: tab, webView: webView)
         guard lifecycle.role(
             from: webView,
@@ -215,9 +237,6 @@ final class SumiTabLifecycleNavigationResponder:
                 webView: webView
             ) != nil else { return }
         }
-        guard let committedURL = webView.committedURL ?? webView.url ?? context.url else {
-            return
-        }
         let decision = lifecycle.settleCommit(
             from: webView,
             navigationID: context.navigationID, navigationLifetime: context.navigationLifetime,
@@ -229,6 +248,10 @@ final class SumiTabLifecycleNavigationResponder:
             publication,
             tab: tab,
             lifecycle: lifecycle
+        )
+        _ = tab.commitSuspendedRestoreIfMatching(
+            webView: webView,
+            navigationID: context.navigationID
         )
     }
 
@@ -278,12 +301,24 @@ final class SumiTabLifecycleNavigationResponder:
             // A terminal success callback proves the document committed;
             // compensate missed commit callbacks before terminal settlement.
             navigationDidCommit(context)
+            guard tab.committedDocumentRuntime.lease(for: webView) != nil else {
+                let result = tab.abortMainFrameNavigation(
+                    from: webView,
+                    navigationID: context.navigationID,
+                    navigationLifetime: context.navigationLifetime
+                )
+                if result != .ignored {
+                    settleAbortedNavigationPresentation(tab, on: webView)
+                }
+                return
+            }
         }
         let decision = lifecycle.settleFinish(
             from: webView,
             navigationID: context.navigationID,
             navigationLifetime: context.navigationLifetime,
-            terminalURL: webView.url ?? context.url
+            terminalURL: webView.committedURL
+                ?? webView.backForwardList.currentItem?.url
         )
         guard case .publish(let publication) = decision else { return }
 
@@ -343,6 +378,11 @@ final class SumiTabLifecycleNavigationResponder:
         else { return }
 
         guard let webView = context.webView else { return }
+        if error.sumiIsContentPluginHandledLoad,
+           tab.committedDocumentRuntime.lease(for: webView) != nil {
+            navigationDidFinish(context)
+            return
+        }
         defer {
             finishDestructiveDataCleanupNavigation(
                 on: webView,
@@ -356,6 +396,15 @@ final class SumiTabLifecycleNavigationResponder:
             navigationLifetime: context.navigationLifetime
         ) {
             return
+        }
+        let wasRestoreFallback = tab.suspensionState.phase == .fallingBack
+        let shouldSubmitRestoreFallback = error.sumiIsNavigationCancelled == false
+            && tab.suspensionState.beginFallback(
+                webViewID: ObjectIdentifier(webView),
+                navigationID: context.navigationID
+            )
+        if error.sumiIsNavigationCancelled {
+            tab.cancelSuspendedRestoreIfNeeded()
         }
         let terminationResult = tab.abortMainFrameNavigation(
             from: webView,
@@ -379,7 +428,13 @@ final class SumiTabLifecycleNavigationResponder:
             return
         case .authoritativeRollback:
             tab.finishBackForwardNavigationTrackingIfOwned(by: webView)
-            settleAbortedNavigationPresentation(tab)
+            settleAbortedNavigationPresentation(tab, on: webView)
+            settleSuspendedRestoreFailureIfNeeded(
+                tab: tab,
+                webView: webView,
+                wasFallback: wasRestoreFallback,
+                shouldSubmitFallback: shouldSubmitRestoreFallback
+            )
             return
         case .authoritativeTerminated:
             tab.finishBackForwardNavigationTrackingIfOwned(by: webView)
@@ -389,8 +444,49 @@ final class SumiTabLifecycleNavigationResponder:
         tab.loadingState = context.isCommitted == true
             ? .didFail(error)
             : .didFailProvisionalNavigation(error)
+        tab.navigationRuntime.webViewRouting.pagePresentationDidChange(
+            tab.id,
+            webView
+        )
         tab.updateNavigationState()
         tab.navigationRuntime.extensionPropertiesRuntime.notifyTabPropertiesChanged(tab, [.loading])
+        settleSuspendedRestoreFailureIfNeeded(
+            tab: tab,
+            webView: webView,
+            wasFallback: wasRestoreFallback,
+            shouldSubmitFallback: shouldSubmitRestoreFallback
+        )
+    }
+
+    private func settleSuspendedRestoreFailureIfNeeded(
+        tab: Tab,
+        webView: WKWebView,
+        wasFallback: Bool,
+        shouldSubmitFallback: Bool
+    ) {
+        if wasFallback {
+            guard tab.suspensionState.failFallback() else { return }
+            tab.isRestoreFailure = true
+            tab.restoreFailureDestination = tab.mainFrameLoads.currentIntent.targetURL
+            tab.restoreFailureRawDestination =
+                tab.mainFrameLoads.currentIntent.targetURL.absoluteString
+            tab.loadingState = .idle
+            tab.navigationRuntime.webViewRouting.pagePresentationDidChange(
+                tab.id,
+                webView
+            )
+            return
+        }
+        guard shouldSubmitFallback,
+              let residence = tab.webViewSession.residence(of: webView) else {
+            return
+        }
+        _ = NormalTabInitialDocumentRuntimeHandoff.submitRestoreFallback(
+            tab: tab,
+            webView: webView,
+            expectedResidence: residence,
+            intentRevision: tab.mainFrameLoads.currentIntent.revision
+        )
     }
 
     func mainFrameNavigationDidTerminate(
@@ -430,7 +526,10 @@ final class SumiTabLifecycleNavigationResponder:
             tab.finishBackForwardNavigationTrackingIfOwned(
                 by: termination.webView
             )
-            settleAbortedNavigationPresentation(tab)
+            settleAbortedNavigationPresentation(
+                tab,
+                on: termination.webView
+            )
         case .participant:
             tab.finishBackForwardNavigationTrackingIfOwned(
                 by: termination.webView
@@ -448,7 +547,11 @@ final class SumiTabLifecycleNavigationResponder:
             .handleDestructiveDataCleanupProcessTermination(webView) {
             return
         }
-        let recoveryPlan = recovery.beginRecovery(on: webView)
+        let snapshot = pageRecoverySnapshot(for: tab, webView: webView)
+        let recoveryPlan = recovery.beginRecovery(
+            on: webView,
+            snapshot: snapshot
+        )
         if let continuation = recoveryPlan.authorityContinuation {
             TabMainFrameLifecycleReducer.replayIfNeeded(
                 continuation,
@@ -458,17 +561,48 @@ final class SumiTabLifecycleNavigationResponder:
         }
         tab.finishBackForwardNavigationTrackingIfOwned(by: webView)
 
-        switch recoveryPlan.scope {
-        case .replica:
+        switch recoveryPlan.disposition {
+        case .duplicate:
+            if tab.webContentRecoveryMarkers.recoveryState(on: webView)?
+                .isFailure == true {
+                settleRecoveryFailure(tab, on: webView)
+            }
+        case .failed:
+            settleRecoveryFailure(tab, on: webView)
+        case .pendingActivation, .deliver:
             _ = tab.navigationRuntime.webViewRouting
                 .recoverWebContentProcess(tab.id, webView)
-        case .global(let targetURL):
-            _ = tab.navigationCommandOwner.recoverWebContentProcess(
-                tab,
-                targetURL: targetURL,
-                sourceWebView: webView
-            )
         }
+    }
+
+    private func pageRecoverySnapshot(
+        for tab: Tab,
+        webView: WKWebView
+    ) -> PageRecoverySessionSnapshot? {
+        guard let residence = tab.webViewSession.residence(of: webView),
+              let committedRevision = tab.committedDocumentRuntime
+                .lease(for: webView)?.revision,
+              let data = SumiWebKitPageStateAdapter.sessionStateData(from: webView)
+        else { return nil }
+        return PageRecoverySessionSnapshot(
+            residence: residence,
+            residenceGeneration: tab.webViewSession.generation,
+            profileID: tab.resolveProfile()?.id,
+            dataStoreIdentity: PageSessionDataStoreIdentity(
+                webView.configuration.websiteDataStore
+            ),
+            committedRevision: committedRevision,
+            destination: tab.url,
+            data: data
+        )
+    }
+
+    private func settleRecoveryFailure(_ tab: Tab, on webView: WKWebView) {
+        tab.loadingState = .idle
+        tab.navigationRuntime.webViewRouting.pagePresentationDidChange(
+            tab.id,
+            webView
+        )
     }
 
     private func shouldSuppressForDestructiveDataCleanup(
@@ -492,11 +626,17 @@ final class SumiTabLifecycleNavigationResponder:
     ) -> TabMainFrameLifecycleRole {
         let isFreshUserAction = allowUserInitiatedSupersession
             && context.action?.isUserInitiated == true
+        let targetURL = context.url ?? context.action?.request.url
         return tab.beginMainFrameLifecycle(
             from: webView,
             navigationID: context.navigationID,
             navigationLifetime: context.navigationLifetime,
-            targetURL: context.url ?? context.action?.request.url,
+            targetURL: targetURL,
+            blankAdmission: blankAdmission(
+                for: targetURL,
+                context: context,
+                tab: tab
+            ),
             allowsUserInitiatedSupersession: isFreshUserAction,
             continuationKind: context.action.flatMap {
                 if $0.isClientRedirect { return .clientRedirect }
@@ -506,6 +646,29 @@ final class SumiTabLifecycleNavigationResponder:
                 return nil
             }
         )
+    }
+
+    private func blankAdmission(
+        for targetURL: URL?,
+        context: SumiNavigationContext,
+        tab: Tab
+    ) -> BlankDocumentAdmission? {
+        guard targetURL?.isSumiBlankDocumentURL == true else { return nil }
+        guard let action = context.action else { return nil }
+        let sourceURL = action.sourceFrame?.url
+        let source: BlankDocumentAdmission.Source
+        if action.navigationType.isBackForward {
+            source = .history
+        } else if tab.isPopupHost {
+            source = .popup(openerPageID: nil, origin: sourceURL)
+        } else if action.isUserInitiated {
+            source = .explicitUserCommand
+        } else if sourceURL != nil {
+            source = .siteNavigation(origin: sourceURL)
+        } else {
+            return nil
+        }
+        return BlankDocumentAdmission(id: UUID(), source: source)
     }
 
     private func publishLocalStartEffectsIfNeeded(
@@ -589,10 +752,17 @@ final class SumiTabLifecycleNavigationResponder:
         return lifecycle.remainsCurrent(lease)
     }
 
-    private func settleAbortedNavigationPresentation(_ tab: Tab) {
+    private func settleAbortedNavigationPresentation(
+        _ tab: Tab,
+        on webView: WKWebView
+    ) {
         if tab.loadingState.isLoading {
             tab.loadingState = .idle
         }
+        tab.navigationRuntime.webViewRouting.pagePresentationDidChange(
+            tab.id,
+            webView
+        )
         tab.applyCachedFaviconOrPlaceholder(for: tab.url)
         tab.refreshFaviconExtensionCache()
         tab.updateNavigationState()
@@ -620,6 +790,13 @@ final class SumiTabLifecycleNavigationResponder:
 }
 
 private extension WKError {
+    var sumiIsContentPluginHandledLoad: Bool {
+        let nsError = self as NSError
+        return (nsError.domain == WKErrorDomain
+                || nsError.domain == "WebKitErrorDomain")
+            && nsError.code == 204
+    }
+
     var sumiIsNavigationCancelled: Bool {
         let nsError = self as NSError
         return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled

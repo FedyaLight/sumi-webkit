@@ -6,15 +6,15 @@ enum SumiWebKitPageStateAdapter {
     private static let webProcessIdentifierSelector =
         NSSelectorFromString("_webProcessIdentifier")
 
-    static func interactionStateData(from webView: WKWebView) -> Data? {
-        webView.interactionState as? Data
+    static func sessionStateData(from webView: WKWebView) -> Data? {
+        SumiWKSessionStateData(webView) as Data?
     }
 
-    static func restoreInteractionState(
+    static func restoreSessionState(
         _ data: Data,
         to webView: WKWebView
-    ) {
-        webView.interactionState = data
+    ) -> WKNavigation? {
+        SumiRestoreWKSessionState(webView, data)
     }
 
     static func webProcessIdentifier(for webView: WKWebView) -> pid_t? {

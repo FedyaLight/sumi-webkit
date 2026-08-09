@@ -121,6 +121,9 @@ final class WindowSessionRestoreService {
             selection.syncShortcutSelectionState(for: windowState)
             splitRestorer.restorePendingSelectionIfNeeded(in: windowState)
             glanceManager.restorePendingSessionIfPossible(in: windowState)
+            selectionReconciler.activateResolvedSelectionAfterInitialDataLoad(
+                windowState
+            )
             themeRestorer.restore(
                 for: windowState,
                 source: "tabManagerDataLoaded"

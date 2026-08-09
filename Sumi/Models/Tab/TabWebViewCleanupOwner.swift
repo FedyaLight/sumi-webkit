@@ -3,6 +3,32 @@ import SumiDomain
 import SumiWebRuntime
 import WebKit
 
+@MainActor
+final class TabWebViewRetirementLedger {
+    private let logicallyDeparted = NSHashTable<WKWebView>.weakObjects()
+    private let physicallyDestroyed = NSHashTable<WKWebView>.weakObjects()
+
+    func claimLogicalDeparture(_ webViews: [WKWebView]) -> [WKWebView] {
+        var seen = Set<ObjectIdentifier>()
+        return webViews.filter { webView in
+            guard seen.insert(ObjectIdentifier(webView)).inserted,
+                  logicallyDeparted.contains(webView) == false else {
+                return false
+            }
+            logicallyDeparted.add(webView)
+            return true
+        }
+    }
+
+    func claimPhysicalDestruction(_ webView: WKWebView) -> Bool {
+        guard physicallyDestroyed.contains(webView) == false else {
+            return false
+        }
+        physicallyDestroyed.add(webView)
+        return true
+    }
+}
+
 enum SumiWebViewShutdown {
     private enum Scope {
         case normal
@@ -143,6 +169,8 @@ enum TabWebViewCleanupOwner {
         let currentPermissionPageId: () -> String
         let profilePartitionId: () -> String?
         let invalidatePermissionPageForReplacement: (String) -> Void
+        let claimLogicalDeparture: ([WKWebView]) -> [WKWebView]
+        let claimPhysicalDestruction: (WKWebView) -> Bool
         let webViewDidLeaveRuntime: (WKWebView) -> Void
         let resetPlaybackActivity: () -> Void
         let setLoadingIdle: () -> Void
@@ -162,31 +190,55 @@ enum TabWebViewCleanupOwner {
             return false
         }
 
-        let hasSurvivingOwnedWebView = context.remainingOwnedWebViews().contains {
-            $0 !== webView
-        }
-        if hasSurvivingOwnedWebView == false {
-            let pageId = context.currentPermissionPageId()
-            let tabId = context.tabId.uuidString.lowercased()
-            context.handlePermissionLifecycleEvent(
-                .webViewDeallocated(
-                    pageId: pageId,
-                    tabId: tabId,
-                    profilePartitionId: context.profilePartitionId(),
-                    reason: "normal-tab-last-webview-cleanup"
-                )
+        let departing = context.claimLogicalDeparture([webView])
+        if departing.isEmpty == false {
+            preparePermissionLifecycleForRetirement(
+                departing,
+                context: context
             )
+            departing.forEach(context.webViewDidLeaveRuntime)
         }
+        if context.claimPhysicalDestruction(webView) {
+            destroyRetiredWebView(webView, context: context)
+        }
+        return true
+    }
+
+    @MainActor
+    static func preparePermissionLifecycleForRetirement(
+        _ webViews: [WKWebView],
+        context: Context
+    ) {
+        let departingIDs = Set(webViews.map(ObjectIdentifier.init))
+        let hasSurvivingOwnedWebView = context.remainingOwnedWebViews()
+            .contains { departingIDs.contains(ObjectIdentifier($0)) == false }
+        guard hasSurvivingOwnedWebView == false else { return }
+
+        let pageId = context.currentPermissionPageId()
+        let tabId = context.tabId.uuidString.lowercased()
+        context.handlePermissionLifecycleEvent(
+            .webViewDeallocated(
+                pageId: pageId,
+                tabId: tabId,
+                profilePartitionId: context.profilePartitionId(),
+                reason: "normal-tab-last-webview-cleanup"
+            )
+        )
+    }
+
+    @MainActor
+    static func destroyRetiredWebView(
+        _ webView: WKWebView,
+        context: Context
+    ) {
         let hasActiveMediaPresentation = SumiWebViewShutdown
             .hasActiveMediaPresentation(on: webView)
-        context.webViewDidLeaveRuntime(webView)
 
         SumiWebViewShutdown.perform(
             on: webView,
             runtime: context.shutdownRuntime,
             closeActiveMediaPresentations: hasActiveMediaPresentation
         )
-        return true
     }
 
     @MainActor

@@ -86,7 +86,6 @@ final class TabNormalWebViewSetupServiceTests: XCTestCase {
         var currentWebView: WKWebView?
         var handoffCount = 0
         var beginRestoreCount = 0
-        var finishRestoreCount = 0
         setup.attach(
             to: tab,
             installation: TabNormalWebViewTestInstaller { webView, installedTab in
@@ -116,8 +115,7 @@ final class TabNormalWebViewSetupServiceTests: XCTestCase {
                 }
         )
         let admission = makeAdmissionStage(
-            begin: { beginRestoreCount += 1 },
-            finish: { finishRestoreCount += 1 }
+            begin: { beginRestoreCount += 1 }
         )
         let initialDocument = makeInitialDocumentStage(
             loadExtensionOwnedInitialURL: { _, _ in
@@ -150,7 +148,6 @@ final class TabNormalWebViewSetupServiceTests: XCTestCase {
         XCTAssertIdentical(currentWebView, replacementWebView)
         XCTAssertEqual(handoffCount, 0)
         XCTAssertEqual(beginRestoreCount, 1)
-        XCTAssertEqual(finishRestoreCount, 1)
     }
 
     func testWebsiteDataMutationDefersPhysicalMaterializationAndRetainsReplay() {
@@ -254,7 +251,6 @@ final class TabNormalWebViewSetupServiceTests: XCTestCase {
         let tab = Tab()
         let profile = Profile(name: "Process Prewarming")
         var currentWebView: WKWebView?
-        var restoreCount = 0
         var handoffCount = 0
         setup.attach(
             to: tab,
@@ -286,10 +282,6 @@ final class TabNormalWebViewSetupServiceTests: XCTestCase {
             ),
             preparation: makePreparationStage(),
             initialDocument: makeInitialDocumentStage(
-                restoreSuspendedInteractionState: { _ in
-                    restoreCount += 1
-                    return false
-                },
                 scheduleRuntimeHandoff: { _, _, _, _ in
                     handoffCount += 1
                 }
@@ -302,7 +294,6 @@ final class TabNormalWebViewSetupServiceTests: XCTestCase {
 
         XCTAssertNotNil(outcome.webView)
         XCTAssertIdentical(outcome.webView, currentWebView)
-        XCTAssertEqual(restoreCount, 0)
         XCTAssertEqual(handoffCount, 0)
     }
 
@@ -394,7 +385,6 @@ final class TabNormalWebViewSetupServiceTests: XCTestCase {
 
     private func makeAdmissionStage(
         begin: @escaping () -> Void = {},
-        finish: @escaping () -> Void = {},
         deferMaterialization: @escaping (
             @MainActor @Sendable @escaping () -> Void
         ) -> Bool = { _ in false },
@@ -403,7 +393,6 @@ final class TabNormalWebViewSetupServiceTests: XCTestCase {
         TabNormalWebViewCreationAdmissionStage(
             deferUntilProfileAvailable: { false },
             beginSuspendedRestore: begin,
-            finishSuspendedRestore: finish,
             deferMaterialization: deferMaterialization,
             replaySetup: replaySetup
         )
@@ -439,14 +428,12 @@ final class TabNormalWebViewSetupServiceTests: XCTestCase {
     private func makeInitialDocumentStage(
         loadExtensionOwnedInitialURL: @escaping (WKWebView, URL) -> Void = { _, _ in },
         registerExtensionRuntime: @escaping (String) -> Void = { _ in },
-        restoreSuspendedInteractionState: @escaping (WKWebView) -> Bool = { _ in false },
         scheduleRuntimeHandoff: @escaping (WKWebView?, URL, UUID?, String) -> Void = { _, _, _, _ in }
     ) -> TabNormalWebViewInitialDocumentStage {
         TabNormalWebViewInitialDocumentStage(
             replaceNormalTabUserScripts: { _, _ in },
             loadExtensionOwnedInitialURL: loadExtensionOwnedInitialURL,
             registerExtensionRuntime: registerExtensionRuntime,
-            restoreSuspendedInteractionState: restoreSuspendedInteractionState,
             scheduleRuntimeHandoff: scheduleRuntimeHandoff
         )
     }

@@ -2,14 +2,20 @@ import Foundation
 
 struct TabLazyRestorePolicy: Equatable {
     static let `default` = Self(
-        maxTotalOpportunisticTabs: 20,
-        maxAdjacentTabsPerAnchor: 10,
-        maxConcurrentLoads: 3
+        maxTotalOpportunisticTabs: 0,
+        maxAdjacentTabsPerAnchor: 0,
+        maxConcurrentLoads: 0
     )
 
     let maxTotalOpportunisticTabs: Int
     let maxAdjacentTabsPerAnchor: Int
     let maxConcurrentLoads: Int
+
+    var isEnabled: Bool {
+        maxTotalOpportunisticTabs > 0
+            && maxAdjacentTabsPerAnchor > 0
+            && maxConcurrentLoads > 0
+    }
 }
 
 struct TabLazyRestoreAnchor: Equatable {
@@ -160,6 +166,7 @@ final class TabLazyRestoreCoordinator {
         self.membership = membership
         self.policy = policy
         self.loadWebView = loadWebView
+        guard policy.isEnabled else { return }
         self.loadingObserver = NotificationCenter.default.addObserver(
             forName: .sumiTabLoadingStateDidChange,
             object: nil,
@@ -198,6 +205,7 @@ final class TabLazyRestoreCoordinator {
         selectedTabIDs: Set<UUID>,
         visibleTabIDs: Set<UUID>
     ) {
+        guard policy.isEnabled else { return }
         pruneEligibility()
         foregroundTabIDs = selectedTabIDs.union(visibleTabIDs)
         preferredWarmupViewportSize = foregroundTabIDs.lazy

@@ -179,6 +179,7 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
         let addedToUserContentControllerIdentifiers: [String]
         let ruleListLookupDuration: TimeInterval?
         let tabAttachmentDuration: TimeInterval?
+        let installationResult: PageNavigationPrerequisiteResult
     }
 
     private let privacyConfigurationManager: SumiContentBlockingPrivacyConfigurationManager
@@ -186,7 +187,9 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
     private lazy var messageHandlerRegistry = SumiUserScriptMessageHandlerRegistry(userContentController: self)
     private var globalContentRuleLists = [String: WKContentRuleList]()
     private var assetsPublisherCancellable: AnyCancellable?
-    private var assetWaiters = [UUID: CheckedContinuation<Void, Never>]()
+    private var assetWaiters = [
+        UUID: CheckedContinuation<PageNavigationPrerequisiteResult, Never>
+    ]()
     private var isCleanedUp = false
 
     @Published private var contentBlockingAssets: ContentBlockingAssets?
@@ -286,11 +289,14 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
         await messageHandlerRegistry.replaceUserScripts(with: provider)
     }
 
-    func waitForContentBlockingAssetsInstalled() async {
-        await awaitContentBlockingAssetsInstalled()
+    func waitForContentBlockingAssetsInstalled() async
+        -> PageNavigationPrerequisiteResult {
+        let result = await awaitContentBlockingAssetsInstalled()
+        guard result.maySubmitNavigation else { return result }
         if let provider = normalTabUserScriptsProvider {
             await messageHandlerRegistry.replaceUserScripts(with: provider)
         }
+        return result
     }
 
     func cleanUpBeforeClosing() {
@@ -299,6 +305,7 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
         isCleanedUp = true
         assetsPublisherCancellable?.cancel()
         assetsPublisherCancellable = nil
+        resumeAssetWaiters(with: .cancelled)
         messageHandlerRegistry.cleanUpBeforeClosing()
         removeAllUserScripts()
         removeAllContentRuleLists()
@@ -326,7 +333,9 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
             update,
             isContentBlockingFeatureEnabled: isContentBlockingFeatureEnabled
         ) {
-            resumeAssetWaiters()
+            resumeAssetWaiters(
+                with: contentBlockingAssets?.installationResult ?? .ready
+            )
             return
         }
 
@@ -360,6 +369,10 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
             addedIdentifiers.append(identifier)
         }
         let didTouchRuleLists = !addedIdentifiers.isEmpty || !removedIdentifiers.isEmpty
+        let installationResult = Self.installationResult(
+            for: update,
+            isContentBlockingFeatureEnabled: isContentBlockingFeatureEnabled
+        )
         contentBlockingAssets = ContentBlockingAssets(
             globalRuleLists: globalContentRuleLists,
             updateRuleCount: update.updateRuleCount,
@@ -368,9 +381,10 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
             lookupFailedIdentifiers: update.lookupFailedIdentifiers,
             addedToUserContentControllerIdentifiers: addedIdentifiers,
             ruleListLookupDuration: update.ruleListLookupDuration,
-            tabAttachmentDuration: didTouchRuleLists ? Date().timeIntervalSince(start) : nil
+            tabAttachmentDuration: didTouchRuleLists ? Date().timeIntervalSince(start) : nil,
+            installationResult: installationResult
         )
-        resumeAssetWaiters()
+        resumeAssetWaiters(with: installationResult)
     }
 
     private func hasInstalledEquivalentUpdate(
@@ -385,34 +399,60 @@ final class SumiNormalTabUserContentController: WKUserContentController, SumiNor
             && contentBlockingAssets.lookupFailedIdentifiers == update.lookupFailedIdentifiers.sorted()
     }
 
-    private func awaitContentBlockingAssetsInstalled() async {
-        guard contentBlockingAssets == nil else { return }
+    private func awaitContentBlockingAssetsInstalled() async
+        -> PageNavigationPrerequisiteResult {
+        guard !isCleanedUp else { return .cancelled }
+        if let contentBlockingAssets {
+            return contentBlockingAssets.installationResult
+        }
 
         let id = UUID()
-        await withTaskCancellationHandler {
+        return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
-                if contentBlockingAssets != nil {
-                    continuation.resume()
+                if isCleanedUp {
+                    continuation.resume(returning: .cancelled)
+                } else if let contentBlockingAssets {
+                    continuation.resume(
+                        returning: contentBlockingAssets.installationResult
+                    )
                 } else {
                     assetWaiters[id] = continuation
                 }
             }
         } onCancel: { [weak self, id] in
             Task { @MainActor [weak self, id] in
-                self?.resumeAssetWaiter(id)
+                self?.resumeAssetWaiter(id, with: .cancelled)
             }
         }
     }
 
-    private func resumeAssetWaiter(_ id: UUID) {
+    private func resumeAssetWaiter(
+        _ id: UUID,
+        with result: PageNavigationPrerequisiteResult
+    ) {
         guard let waiter = assetWaiters.removeValue(forKey: id) else { return }
-        waiter.resume()
+        waiter.resume(returning: result)
     }
 
-    private func resumeAssetWaiters() {
+    private func resumeAssetWaiters(
+        with result: PageNavigationPrerequisiteResult
+    ) {
         let waiters = assetWaiters.values
         assetWaiters.removeAll(keepingCapacity: true)
-        waiters.forEach { $0.resume() }
+        waiters.forEach { $0.resume(returning: result) }
+    }
+
+    private static func installationResult(
+        for update: SumiNormalTabContentBlockingUpdate,
+        isContentBlockingFeatureEnabled: Bool
+    ) -> PageNavigationPrerequisiteResult {
+        guard isContentBlockingFeatureEnabled,
+              update.lookupFailedIdentifiers.isEmpty == false else {
+            return .ready
+        }
+        let hasUsableResult = update.globalRuleLists.isEmpty == false
+            || update.lookupSucceededIdentifiers.isEmpty == false
+        return hasUsableResult ? .degraded : .failed
     }
 }
 

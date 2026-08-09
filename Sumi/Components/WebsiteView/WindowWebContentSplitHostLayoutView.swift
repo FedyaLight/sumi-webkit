@@ -408,6 +408,15 @@ final class PaneContainerView: NSView {
         }
     }
 
+    func placePresentationSurface(_ surface: NSView) {
+        addSubview(surface)
+        surface.frame = bounds
+        surface.autoresizingMask = [.width, .height]
+        if let splitControlsView {
+            addSubview(splitControlsView, positioned: .above, relativeTo: surface)
+        }
+    }
+
     func configureSplitControls(
         tab: Tab,
         windowState: BrowserWindowState,

@@ -1,6 +1,6 @@
+import SumiWebRuntime
 import WebKit
 import XCTest
-import SumiWebRuntime
 
 @testable import Sumi
 
@@ -98,6 +98,37 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
         XCTAssertEqual(commandRecorder.muteCalls.first?.tabId, tab.id)
     }
 
+    func testPagePresentationChangeRefreshesOnlyExactTrackedResidence() {
+        let tab = Tab(loadsCachedFaviconOnInit: false)
+        let commandRecorder = RecordingWebViewRoutingCommands()
+        let windowID = UUID()
+        let tracked = WKWebView()
+        let foreign = WKWebView()
+        registerTrackedWebView(
+            tracked,
+            for: tab.id,
+            in: windowID,
+            repository: commandRecorder.webViewSessions
+        )
+        let service = BrowserWebViewRoutingService(
+            tabLookup: { tabID in tabID == tab.id ? tab : nil },
+            webViewSessions: commandRecorder.webViewSessions,
+            ownershipQuery: WebViewOwnershipQuery(
+                webViewSessions: commandRecorder.webViewSessions
+            ),
+            commands: commandRecorder.commands
+        )
+
+        service.pagePresentationDidChange(tab.id, on: foreign)
+        XCTAssertTrue(commandRecorder.compositorRefreshWindowIDs.isEmpty)
+
+        service.pagePresentationDidChange(tab.id, on: tracked)
+        XCTAssertEqual(
+            commandRecorder.compositorRefreshWindowIDs,
+            [windowID]
+        )
+    }
+
     func testNavigationBroadcastSyncDefersProtectedReplicaWithExactIntent() throws {
         let repository = WebViewSessionRepository()
         let targetURL = try XCTUnwrap(URL(string: "https://example.com/broadcast"))
@@ -183,7 +214,7 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
             policy: .standard
         )
 
-        XCTAssertEqual(outcome, .failed)
+        XCTAssertFalse(outcome.ownsFutureOrSubmittedNavigation)
         XCTAssertTrue(webView.loadedRequests.isEmpty)
         XCTAssertEqual(webView.reloadCount, 0)
     }
@@ -289,7 +320,7 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
             policy: .fromOrigin
         )
 
-        XCTAssertEqual(outcome, .accepted)
+        XCTAssertTrue(outcome.ownsFutureOrSubmittedNavigation)
         XCTAssertTrue(commandRecorder.materializeCalls.isEmpty)
         let reload = try XCTUnwrap(commandRecorder.windowReloadCalls.first)
         XCTAssertIdentical(reload.tab, tab)
@@ -317,13 +348,12 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
             commands: commandRecorder.commands
         )
 
-        XCTAssertEqual(
+        XCTAssertTrue(
             service.refreshPage(
                 for: tab,
                 in: windowState,
                 reason: "test"
-            ),
-            .accepted
+            ).ownsFutureOrSubmittedNavigation
         )
         XCTAssertFalse(commandRecorder.materializeCalls.isEmpty)
         XCTAssertTrue(commandRecorder.materializeCalls.allSatisfy {
@@ -359,7 +389,7 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
         XCTAssertTrue(service.ownsLiveWebView(untracked, for: tab))
     }
 
-    func testProcessRecoveryServiceRetainsFailedSubmissionUntilConcreteBind() throws {
+    func testProcessRecoveryServiceFailedSubmissionSettlesWithoutRetry() throws {
         let targetURL = try XCTUnwrap(URL(string: "https://example.com/recovery"))
         let transaction = TabMainFrameRuntimeTransaction(initialURL: targetURL)
         let tab = Tab(
@@ -372,9 +402,7 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
         let originalIntent = tab.mainFrameLoads.currentIntent
         _ = transaction.beginRecovery(on: webView)
 
-        var shouldBind = false
         var submissionCount = 0
-        var boundNavigation: NSObject?
         let recoveryService = WebContentProcessRecoveryService(
             isProtected: { _ in false },
             submit: { submittedTab, submittedWebView, intent in
@@ -382,31 +410,21 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
                 XCTAssertIdentical(submittedTab, tab)
                 XCTAssertIdentical(submittedWebView, webView)
                 XCTAssertEqual(intent, originalIntent)
-                guard shouldBind else { return .failed }
-                let navigation = NSObject()
-                boundNavigation = navigation
-                XCTAssertNotNil(tab.mainFrameLoads.claimDirectSubmission(on: webView))
-                XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
-                    on: webView,
-                    navigationID: ObjectIdentifier(navigation),
-                    navigationLifetime: navigation,
-                    matching: nil
-                ))
-                return TabMainFrameReloadCommandOutcome.accepted
+                return .failed
             }
         )
 
-        XCTAssertEqual(recoveryService.recover(webView, for: tab), .scheduled)
+        XCTAssertEqual(recoveryService.recover(webView, for: tab), .failed)
         XCTAssertEqual(submissionCount, 1)
-        XCTAssertTrue(tab.webContentRecoveryMarkers.isRecoveryRequired(on: webView))
-        XCTAssertTrue(recoveryService.hasPendingRecovery(for: webView))
+        XCTAssertTrue(
+            tab.webContentRecoveryMarkers.recoveryState(on: webView)?.isFailure
+                == true
+        )
+        XCTAssertFalse(recoveryService.hasPendingRecovery(for: webView))
         XCTAssertEqual(tab.mainFrameLoads.currentIntent, originalIntent)
 
-        shouldBind = true
         recoveryService.retryPendingImmediately(for: ObjectIdentifier(webView))
-
-        XCTAssertNotNil(boundNavigation)
-        XCTAssertEqual(submissionCount, 2)
+        XCTAssertEqual(submissionCount, 1)
         XCTAssertFalse(tab.webContentRecoveryMarkers.isRecoveryRequired(on: webView))
         XCTAssertFalse(recoveryService.hasPendingRecovery(for: webView))
         XCTAssertEqual(tab.mainFrameLoads.currentIntent, originalIntent)
@@ -439,8 +457,11 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
         recoveryService.retryPendingImmediately(for: ObjectIdentifier(webView))
 
         XCTAssertEqual(submissionCount, 1)
-        XCTAssertTrue(recoveryService.hasPendingRecovery(for: webView))
-        XCTAssertTrue(tab.webContentRecoveryMarkers.isRecoveryRequired(on: webView))
+        XCTAssertFalse(recoveryService.hasPendingRecovery(for: webView))
+        XCTAssertTrue(
+            tab.webContentRecoveryMarkers.recoveryState(on: webView)?.isFailure
+                == true
+        )
         recoveryService.cancel(webView)
     }
 
@@ -587,7 +608,49 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
         XCTAssertFalse(recoveryService.hasPendingRecovery(for: webView))
     }
 
-    func testProcessRecoveryServiceRetriesLatestSemanticIntentWithoutCreatingRevision() throws {
+    func testProcessRecoveryServiceHiddenPageWaitsForActivationEvent() throws {
+        let targetURL = try XCTUnwrap(
+            URL(string: "https://example.com/background-recovery")
+        )
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: targetURL)
+        let tab = Tab(
+            url: targetURL,
+            loadsCachedFaviconOnInit: false,
+            mainFrameRuntimeTransaction: transaction
+        )
+        let webView = WKWebView()
+        tab.replaceUntrackedWebView(webView)
+        _ = transaction.beginRecovery(on: webView)
+        var isVisible = false
+        var submissions = 0
+        let recoveryService = WebContentProcessRecoveryService(
+            isProtected: { _ in false },
+            isVisible: { _, _ in isVisible },
+            submit: { _, _, _ in
+                submissions += 1
+                return .failed
+            }
+        )
+
+        XCTAssertEqual(recoveryService.recover(webView, for: tab), .scheduled)
+        XCTAssertEqual(submissions, 0)
+        XCTAssertEqual(
+            tab.webContentRecoveryMarkers.recoveryState(on: webView)?.phase,
+            .pendingActivation
+        )
+
+        isVisible = true
+        recoveryService.retryPendingImmediately(for: ObjectIdentifier(webView))
+
+        XCTAssertEqual(submissions, 1)
+        XCTAssertFalse(recoveryService.hasPendingRecovery(for: webView))
+        XCTAssertTrue(
+            tab.webContentRecoveryMarkers.recoveryState(on: webView)?.isFailure
+                == true
+        )
+    }
+
+    func testProcessRecoveryServiceDoesNotRetryAfterTerminalFailure() throws {
         let initialURL = try XCTUnwrap(URL(string: "https://example.com/initial"))
         let latestURL = try XCTUnwrap(URL(string: "https://example.com/latest"))
         let transaction = TabMainFrameRuntimeTransaction(initialURL: initialURL)
@@ -610,20 +673,27 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
         )
 
         let initialIntent = tab.mainFrameLoads.currentIntent
-        XCTAssertEqual(recoveryService.recover(webView, for: tab), .scheduled)
+        XCTAssertEqual(recoveryService.recover(webView, for: tab), .failed)
         XCTAssertEqual(tab.mainFrameLoads.currentIntent, initialIntent)
 
         let latestIntent = tab.beginMainFrameNavigationIntent(to: latestURL)
         recoveryService.retryPendingImmediately(for: ObjectIdentifier(webView))
 
-        XCTAssertEqual(submittedIntents, [initialIntent, latestIntent])
+        XCTAssertEqual(submittedIntents, [initialIntent])
         XCTAssertEqual(tab.mainFrameLoads.currentIntent, latestIntent)
-        XCTAssertTrue(tab.webContentRecoveryMarkers.isRecoveryRequired(on: webView))
+        XCTAssertTrue(
+            tab.webContentRecoveryMarkers.recoveryState(on: webView)?.isFailure
+                == true
+        )
 
         recoveryService.cancel(webView)
 
         XCTAssertFalse(recoveryService.hasPendingRecovery(for: webView))
-        XCTAssertTrue(tab.webContentRecoveryMarkers.isRecoveryRequired(on: webView))
+        XCTAssertFalse(tab.webContentRecoveryMarkers.isRecoveryRequired(on: webView))
+        XCTAssertTrue(
+            tab.webContentRecoveryMarkers.recoveryState(on: webView)?.isFailure
+                == true
+        )
     }
 
     private func registerTrackedWebView(
@@ -699,6 +769,7 @@ private final class RecordingWebViewRoutingCommands {
     }
 
     private(set) var syncCalls: [SyncCall] = []
+    private(set) var compositorRefreshWindowIDs: [UUID] = []
     private(set) var reloadCalls: [Tab] = []
     private(set) var windowReloadCalls: [WindowReloadCall] = []
     private(set) var processRecoveryCalls: [ProcessRecoveryCall] = []
@@ -718,8 +789,12 @@ private final class RecordingWebViewRoutingCommands {
                     )
                 )
             },
-            reloadAll: { [weak self] tab, _, _ in
+            refreshCompositor: { [weak self] windowID in
+                self?.compositorRefreshWindowIDs.append(windowID)
+            },
+            reloadAll: { [weak self] tab, intent, _ in
                 self?.reloadCalls.append(tab)
+                return pageReloadWaiting(intent)
             },
             reloadWindow: { [weak self] tab, windowID, intent, policy in
                 self?.windowReloadCalls.append(
@@ -730,7 +805,7 @@ private final class RecordingWebViewRoutingCommands {
                         policy: policy
                     )
                 )
-                return .accepted
+                return pageReloadWaiting(intent)
             },
             retainRecovery: { _, _ in true },
             recover: { [weak self] tab, webView in
@@ -752,4 +827,17 @@ private final class RecordingWebViewRoutingCommands {
             rebuildWindowConfiguration: { _, _, _, _ in .notNeeded }
         )
     }
+}
+
+@MainActor
+private func pageReloadWaiting(
+    _ intent: TabMainFrameNavigationIntent
+) -> PageReloadCommandOutcome {
+    PageReloadCommandOutcome(.waiting(TabMainFramePendingAttemptOwner(
+        intent: intent,
+        documentGeneration: 0,
+        participantID: UUID(),
+        webViewID: ObjectIdentifier(RecordingWebViewRoutingCommands()),
+        phase: .deferred
+    )))
 }

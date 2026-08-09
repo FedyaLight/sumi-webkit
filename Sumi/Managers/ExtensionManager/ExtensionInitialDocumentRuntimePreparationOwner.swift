@@ -33,16 +33,12 @@ final class ExtensionInitialDocumentRuntimePreparationOwner:
     }
 
     func ensureContentScriptContextsLoaded(for profileId: UUID) async {
-        await contentScripts.ensureLoaded(profileID: profileId)
+        _ = await contentScripts.ensureLoaded(profileID: profileId)
     }
 
-    func ensureInitialExtensionContextsLoaded(for profileId: UUID) async {
+    func ensureInitialExtensionContextsLoaded(for profileId: UUID) async
+        -> PageNavigationPrerequisiteResult {
         await contentScripts.ensureLoaded(profileID: profileId)
-        // Initial-document materialization is the browser's bootstrap
-        // boundary. Complete the background/native-messaging wake before a
-        // WebView is created so document-start scripts observe the same ready
-        // runtime as Safari.
-        await nativeMessaging.ensureLoaded(profileID: profileId)
     }
 
     func warmInitialDocumentNativeMessaging(for profileId: UUID) async {

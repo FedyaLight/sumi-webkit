@@ -7,17 +7,18 @@ final class BrowserWebViewRoutingService {
 
     struct Commands {
         let sync: @MainActor (Tab, URL, WKWebView?) -> Void
+        let refreshCompositor: @MainActor (UUID) -> Void
         let reloadAll: @MainActor (
             Tab,
             TabMainFrameNavigationIntent,
             WebRuntimeMainFrameReloadPolicy
-        ) -> Void
+        ) -> PageReloadCommandOutcome
         let reloadWindow: @MainActor (
             Tab,
             UUID,
             TabMainFrameNavigationIntent,
             WebRuntimeMainFrameReloadPolicy
-        ) -> TabMainFrameReloadCommandOutcome
+        ) -> PageReloadCommandOutcome
         let retainRecovery: @MainActor (Tab, WKWebView) -> Bool
         let recover: @MainActor (Tab, WKWebView) -> TabMainFrameReloadCommandOutcome
         let cancelRecovery: @MainActor (WKWebView) -> Void
@@ -116,16 +117,25 @@ final class BrowserWebViewRoutingService {
         commands.sync(tab, tab.url, originatingWebView)
     }
 
+    func pagePresentationDidChange(
+        _ tabId: UUID,
+        on webView: WKWebView
+    ) {
+        guard let owner = ownershipQuery.trackedOwner(containing: webView),
+              owner.tabID == tabId else { return }
+        commands.refreshCompositor(owner.windowID)
+    }
+
     func reloadTabAcrossWindows(
         _ tabId: UUID,
         intent: TabMainFrameNavigationIntent,
         policy: WebRuntimeMainFrameReloadPolicy
-    ) {
+    ) -> PageReloadCommandOutcome {
         guard let tab = tabLookup(tabId),
               tab.mainFrameLoads.isCurrent(intent) else {
-            return
+            return .failed(intent: intent, reason: .staleAttempt)
         }
-        commands.reloadAll(tab, intent, policy)
+        return commands.reloadAll(tab, intent, policy)
     }
 
     @discardableResult
@@ -134,10 +144,10 @@ final class BrowserWebViewRoutingService {
         in windowId: UUID,
         intent: TabMainFrameNavigationIntent,
         policy: WebRuntimeMainFrameReloadPolicy
-    ) -> TabMainFrameReloadCommandOutcome {
+    ) -> PageReloadCommandOutcome {
         guard let tab = tabLookup(tabId),
               tab.mainFrameLoads.isCurrent(intent) else {
-            return .failed
+            return .failed(intent: intent, reason: .staleAttempt)
         }
         return commands.reloadWindow(tab, windowId, intent, policy)
     }
@@ -213,7 +223,7 @@ final class BrowserWebViewRoutingService {
         in windowState: BrowserWindowState,
         reason: String,
         policy: WebRuntimeMainFrameReloadPolicy = .standard
-    ) -> TabMainFrameReloadCommandOutcome {
+    ) -> PageReloadCommandOutcome {
         tab.navigationCommandOwner.refresh(
             tab,
             resolvedWebView: windowWebViewResolver(
@@ -222,19 +232,14 @@ final class BrowserWebViewRoutingService {
             ),
             reason: reason,
             policy: policy,
-            configurationPolicyRebuilder: {
-                [weak self, weak tab, weak windowState] targetURL, reason in
-                guard let self, let tab, let windowState else { return .failed }
-                return self.rebuildWindowConfigurationIfNeeded(
-                    for: tab,
-                    targetURL: targetURL,
-                    in: windowState.id,
-                    reason: reason
-                )
-            },
             deliverTrackedReload: {
                 [weak self, weak tab, weak windowState] intent, policy in
-                guard let self, let tab, let windowState else { return .failed }
+                guard let self, let tab, let windowState else {
+                    return .failed(
+                        intent: intent,
+                        reason: .deliveryContextUnavailable
+                    )
+                }
                 return self.reloadTab(
                     tab.id,
                     in: windowState.id,
@@ -279,7 +284,8 @@ extension BrowserWebViewRoutingService.Commands {
         navigationBroadcast: WebViewNavigationBroadcastOwner,
         processRecovery: WebContentProcessRecoveryService,
         trackedAdmission: TrackedWebViewAdmissionService,
-        rebuild: WebViewRebuildService
+        rebuild: WebViewRebuildService,
+        refreshCompositor: @escaping @MainActor (UUID) -> Void
     ) -> Self {
         Self(
             sync: { tab, url, originatingWebView in
@@ -289,6 +295,7 @@ extension BrowserWebViewRoutingService.Commands {
                     originatingWebView: originatingWebView
                 )
             },
+            refreshCompositor: refreshCompositor,
             reloadAll: { tab, intent, policy in
                 navigationBroadcast.reloadTab(
                     tab,

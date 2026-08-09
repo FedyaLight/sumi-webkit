@@ -322,11 +322,30 @@ private final class NavigationToolbarReloadRecorder {
         ownershipQuery: WebViewOwnershipQuery(webViewSessions: webViewSessions),
         commands: BrowserWebViewRoutingService.Commands(
             sync: { _, _, _ in },
-            reloadAll: { _, _, _ in },
+            refreshCompositor: { _ in },
+            reloadAll: { [weak self] _, intent, _ in
+                guard let self else {
+                    return .failed(
+                        intent: intent,
+                        reason: .deliveryContextUnavailable
+                    )
+                }
+                return PageReloadCommandOutcome(.waiting(
+                    self.owner(for: intent)
+                ))
+            },
             reloadWindow: { [weak self] _, windowID, intent, _ in
                 self?.windowIDs.append(windowID)
                 self?.targetURLs.append(intent.targetURL)
-                return .accepted
+                guard let self else {
+                    return .failed(
+                        intent: intent,
+                        reason: .deliveryContextUnavailable
+                    )
+                }
+                return PageReloadCommandOutcome(.waiting(
+                    self.owner(for: intent)
+                ))
             },
             retainRecovery: { _, _ in false },
             recover: { _, _ in .failed },
@@ -336,4 +355,16 @@ private final class NavigationToolbarReloadRecorder {
             rebuildWindowConfiguration: { _, _, _, _ in .notNeeded }
         )
     )
+
+    private func owner(
+        for intent: TabMainFrameNavigationIntent
+    ) -> TabMainFramePendingAttemptOwner {
+        TabMainFramePendingAttemptOwner(
+            intent: intent,
+            documentGeneration: 0,
+            participantID: UUID(),
+            webViewID: ObjectIdentifier(webView),
+            phase: .deferred
+        )
+    }
 }

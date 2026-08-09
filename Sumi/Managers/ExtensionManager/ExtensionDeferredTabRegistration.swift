@@ -4,6 +4,7 @@ import Foundation
 @MainActor
 protocol ExtensionInitialDocumentContextLoading: AnyObject {
     func ensureInitialExtensionContextsLoaded(for profileId: UUID) async
+        -> PageNavigationPrerequisiteResult
 }
 
 @available(macOS 15.5, *)
@@ -97,10 +98,12 @@ final class ExtensionDeferredTabRegistration:
                   self.profiles?.profileID(for: tab) == profileId
             else { return }
 
-            await self.contextLoading?
+            let result = await self.contextLoading?
                 .ensureInitialExtensionContextsLoaded(for: profileId)
+                ?? .cancelled
 
-            guard Task.isCancelled == false,
+            guard result.maySubmitNavigation,
+                  Task.isCancelled == false,
                   self.extensionLoadRevisions?.isCurrent(
                       extensionLoadRevision
                   ) == true,

@@ -15,6 +15,7 @@ final class DeferredWebViewCleanupExecutor {
     ) -> Bool
     typealias ShutdownOwnerlessWebView = @MainActor (WKWebView, UUID) -> Void
     typealias FinishRetirementIfDrained = @MainActor (UUID) -> Void
+    typealias RetireTabWebViewGeneration = @MainActor (Tab, UInt64) -> Bool
 
     private let sessions: WebViewSessionRepository
     private let closeWebView: CloseWebView
@@ -22,6 +23,7 @@ final class DeferredWebViewCleanupExecutor {
     private let cleanupTrackedWebView: CleanupTrackedWebView
     private let shutdownOwnerlessWebView: ShutdownOwnerlessWebView
     private let finishRetirementIfDrained: FinishRetirementIfDrained
+    private let retireTabWebViewGeneration: RetireTabWebViewGeneration
 
     init(
         sessions: WebViewSessionRepository,
@@ -29,7 +31,8 @@ final class DeferredWebViewCleanupExecutor {
         removeFromContainers: @escaping RemoveFromContainers,
         cleanupTrackedWebView: @escaping CleanupTrackedWebView,
         shutdownOwnerlessWebView: @escaping ShutdownOwnerlessWebView,
-        finishRetirementIfDrained: @escaping FinishRetirementIfDrained
+        finishRetirementIfDrained: @escaping FinishRetirementIfDrained,
+        retireTabWebViewGeneration: @escaping RetireTabWebViewGeneration
     ) {
         self.sessions = sessions
         self.closeWebView = closeWebView
@@ -37,6 +40,7 @@ final class DeferredWebViewCleanupExecutor {
         self.cleanupTrackedWebView = cleanupTrackedWebView
         self.shutdownOwnerlessWebView = shutdownOwnerlessWebView
         self.finishRetirementIfDrained = finishRetirementIfDrained
+        self.retireTabWebViewGeneration = retireTabWebViewGeneration
     }
 
     func removeFromContainers(_ webView: WKWebView) -> DeferredProtectedCommandExecutionOutcome {
@@ -62,11 +66,12 @@ final class DeferredWebViewCleanupExecutor {
         tabID: UUID,
         tab: Tab?
     ) -> DeferredProtectedCommandExecutionOutcome {
+        tab?.webViewsWillLeaveRuntime([webView])
         guard sessions.removeDetachedWebView(webView, for: tabID) else {
             return .retry
         }
         if let tab {
-            tab.cleanupCloneWebView(webView)
+            tab.destroyRetiredWebView(webView)
         } else {
             shutdownOwnerlessWebView(webView, tabID)
         }
@@ -83,12 +88,19 @@ final class DeferredWebViewCleanupExecutor {
             return .retry
         }
         if let tab {
-            tab.cleanupCloneWebView(webView)
+            tab.destroyRetiredWebView(webView)
         } else {
             shutdownOwnerlessWebView(webView, lease.tabID)
         }
         finishRetirementIfDrained(lease.tabID)
         return .executed
+    }
+
+    func retireGeneration(
+        of tab: Tab,
+        expectedGeneration: UInt64
+    ) -> DeferredProtectedCommandExecutionOutcome {
+        outcome(retireTabWebViewGeneration(tab, expectedGeneration))
     }
 
     private func outcome(_ didExecute: Bool) -> DeferredProtectedCommandExecutionOutcome {
@@ -249,12 +261,17 @@ final class DeferredWebViewCommandExecutor {
                     intent.targetURL,
                     on: $0,
                     policy: intent.policy
-                )
+                ).navigation
             }
         case .evictHiddenWebViews(let windowID):
             return windowMaintenance.evictHidden(in: windowID)
         case .cleanupTabWebView(let webView, let tabID, let tab):
             return cleanup.cleanDetached(webView, tabID: tabID, tab: tab)
+        case .retireTabWebViewGeneration(let tab, let expectedGeneration):
+            return cleanup.retireGeneration(
+                of: tab,
+                expectedGeneration: expectedGeneration
+            )
         case .performFallbackWebViewCleanup(let webView, let lease, let tab):
             return cleanup.cleanFallback(webView, lease: lease, tab: tab)
         }

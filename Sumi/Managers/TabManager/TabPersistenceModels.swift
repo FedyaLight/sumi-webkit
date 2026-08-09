@@ -1,6 +1,12 @@
 import Foundation
 import SumiDomain
 
+enum TabPersistedPageKind: String, Codable, Sendable {
+    case web
+    case empty
+    case restoreFailure
+}
+
 struct TabPersistenceTab: Codable, Sendable {
     let id: UUID
     let urlString: String
@@ -17,6 +23,7 @@ struct TabPersistenceTab: Codable, Sendable {
     let currentURLString: String?
     let canGoBack: Bool
     let canGoForward: Bool
+    let pageKind: TabPersistedPageKind?
 
     init(
         id: UUID,
@@ -33,7 +40,8 @@ struct TabPersistenceTab: Codable, Sendable {
         titleIsCustom: Bool = false,
         currentURLString: String?,
         canGoBack: Bool,
-        canGoForward: Bool
+        canGoForward: Bool,
+        pageKind: TabPersistedPageKind? = nil
     ) {
         self.id = id
         self.urlString = urlString
@@ -50,6 +58,7 @@ struct TabPersistenceTab: Codable, Sendable {
         self.currentURLString = currentURLString
         self.canGoBack = canGoBack
         self.canGoForward = canGoForward
+        self.pageKind = pageKind
     }
 
     init(from decoder: Decoder) throws {
@@ -78,6 +87,10 @@ struct TabPersistenceTab: Codable, Sendable {
         )
         canGoBack = try container.decode(Bool.self, forKey: .canGoBack)
         canGoForward = try container.decode(Bool.self, forKey: .canGoForward)
+        pageKind = try container.decodeIfPresent(
+            TabPersistedPageKind.self,
+            forKey: .pageKind
+        )
     }
 }
 
@@ -194,6 +207,26 @@ struct TabRuntimeStateUpdate: Sendable {
     let name: String
     let canGoBack: Bool
     let canGoForward: Bool
+
+    let pageKind: TabPersistedPageKind?
+
+    init(
+        id: UUID,
+        urlString: String,
+        currentURLString: String?,
+        name: String,
+        canGoBack: Bool,
+        canGoForward: Bool,
+        pageKind: TabPersistedPageKind? = nil
+    ) {
+        self.id = id
+        self.urlString = urlString
+        self.currentURLString = currentURLString
+        self.name = name
+        self.canGoBack = canGoBack
+        self.canGoForward = canGoForward
+        self.pageKind = pageKind
+    }
 }
 
 enum TabPersistenceError: Error, Equatable {

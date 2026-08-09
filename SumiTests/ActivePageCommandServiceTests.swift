@@ -17,17 +17,17 @@ final class ActivePageCommandServiceTests: XCTestCase {
             glance: { recorder.glance },
             reloadSelected: { tab, window, _ in
                 recorder.selectedReloads.append((tab.id, window.id))
-                return .accepted
+                return Self.acceptedOutcome(for: tab)
             },
             reloadPreview: { tab in
                 recorder.previewReloads.append(tab.id)
-                return .accepted
+                return Self.acceptedOutcome(for: tab)
             }
         )
 
-        XCTAssertEqual(service.reloadActivePage(), .accepted)
+        XCTAssertTrue(service.reloadActivePage().ownsFutureOrSubmittedNavigation)
         recorder.glance = .init(tab: previewTab, url: previewTab.url, webView: WKWebView())
-        XCTAssertEqual(service.reloadActivePage(), .accepted)
+        XCTAssertTrue(service.reloadActivePage().ownsFutureOrSubmittedNavigation)
 
         XCTAssertEqual(recorder.selectedReloads.map(\.0), [selectedTab.id])
         XCTAssertEqual(recorder.selectedReloads.map(\.1), [window.id])
@@ -45,15 +45,15 @@ final class ActivePageCommandServiceTests: XCTestCase {
             webView: nativeWebView,
             reloadSelected: { _, _, _ in
                 recorder.selectedReloadCount += 1
-                return .accepted
+                return Self.acceptedOutcome(for: historyTab)
             },
             reloadPreview: { _ in
                 recorder.previewReloadCount += 1
-                return .accepted
+                return Self.acceptedOutcome(for: historyTab)
             }
         )
 
-        XCTAssertEqual(service.reloadActivePage(), .failed)
+        XCTAssertFalse(service.reloadActivePage().ownsFutureOrSubmittedNavigation)
         service.toggleMuteForActivePage()
         XCTAssertFalse(service.copyActivePageURL())
         XCTAssertFalse(service.inspectActivePage())
@@ -126,10 +126,14 @@ final class ActivePageCommandServiceTests: XCTestCase {
             Tab,
             BrowserWindowState,
             String
-        ) -> TabMainFrameReloadCommandOutcome = { _, _, _ in .accepted },
+        ) -> PageReloadCommandOutcome = { tab, _, _ in
+            ActivePageCommandServiceTests.acceptedOutcome(for: tab)
+        },
         reloadPreview: @escaping @MainActor @Sendable (
             Tab
-        ) -> TabMainFrameReloadCommandOutcome = { _ in .accepted },
+        ) -> PageReloadCommandOutcome = { tab in
+            ActivePageCommandServiceTests.acceptedOutcome(for: tab)
+        },
         notifications: NotificationPresentingSpy = NotificationPresentingSpy()
     ) -> ActivePageCommandService {
         let resolver = ActivePageResolver(
@@ -156,6 +160,19 @@ final class ActivePageCommandServiceTests: XCTestCase {
             name: url,
             loadsCachedFaviconOnInit: false
         )
+    }
+
+    private static func acceptedOutcome(for tab: Tab) -> PageReloadCommandOutcome {
+        let intent = tab.mainFrameLoads.currentIntent
+        return PageReloadCommandOutcome(.waiting(
+            TabMainFramePendingAttemptOwner(
+                intent: intent,
+                documentGeneration: 0,
+                participantID: UUID(),
+                webViewID: ObjectIdentifier(tab),
+                phase: .deferred
+            )
+        ))
     }
 }
 

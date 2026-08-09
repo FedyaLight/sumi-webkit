@@ -79,6 +79,7 @@ struct TabRecord: Codable, Equatable, FetchableRecord, PersistableRecord {
     var currentURLString: String
     var canGoBack: Bool
     var canGoForward: Bool
+    var pageKind: String? = nil
 
     private enum CodingKeys: String, CodingKey {
         case id
@@ -96,6 +97,7 @@ struct TabRecord: Codable, Equatable, FetchableRecord, PersistableRecord {
         case currentURLString = "current_url"
         case canGoBack = "can_go_back"
         case canGoForward = "can_go_forward"
+        case pageKind = "page_kind"
     }
 }
 
@@ -244,6 +246,7 @@ struct WorkspaceRecordStore {
         tab.name = update.name
         tab.canGoBack = update.canGoBack
         tab.canGoForward = update.canGoForward
+        tab.pageKind = update.pageKind?.rawValue
         try tab.update(database)
     }
 

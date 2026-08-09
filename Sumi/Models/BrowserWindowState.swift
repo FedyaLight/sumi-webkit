@@ -95,6 +95,7 @@ class BrowserWindowState {
     /// Runtime-only presentation, restoration and split-focus authorities.
     /// Durable selection/sidebar/split values remain the session state below.
     let presentationState = WindowPresentationState()
+    let pageMaterializationRequests = PageMaterializationRequestLedger()
     let restorationState: WindowRestorationState
     let sidebarFaviconImageStore = SidebarFaviconImageStore()
 

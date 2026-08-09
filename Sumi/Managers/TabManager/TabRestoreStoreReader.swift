@@ -33,7 +33,8 @@ actor TabRestoreStoreReader {
                     titleIsCustom: record.titleIsCustom,
                     currentURLString: record.currentURLString,
                     canGoBack: record.canGoBack,
-                    canGoForward: record.canGoForward
+                    canGoForward: record.canGoForward,
+                    pageKind: record.pageKind.flatMap(TabPersistedPageKind.init)
                 )
             }
             let folders = try connection.workspace.folders().map { record in

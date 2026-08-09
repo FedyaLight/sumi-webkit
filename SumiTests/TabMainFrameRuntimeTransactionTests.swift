@@ -666,7 +666,8 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
         ))
 
         let firstPlan = transaction.beginRecovery(on: webView)
-        XCTAssertEqual(firstPlan.scope, .global(targetURL))
+        XCTAssertEqual(firstPlan.scope, .replica(intent))
+        XCTAssertEqual(firstPlan.disposition, .deliver)
         XCTAssertTrue(tab.webContentRecoveryMarkers.isRecoveryRequired(on: webView))
 
         let duplicatePlan = transaction.beginRecovery(on: webView)
@@ -735,7 +736,7 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
         )
     }
 
-    func testAcceptedUnboundLifecycleConsumesOnlyItsExactRecoveryMarker() throws {
+    func testUnownedLifecycleCannotConsumeExactRecoveryEpoch() throws {
         let targetURL = try XCTUnwrap(
             URL(string: "https://example.com/unbound-recovery")
         )
@@ -760,11 +761,15 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
             continuationKind: nil
         ), .authority)
 
-        XCTAssertFalse(
+        XCTAssertTrue(
             tab.webContentRecoveryMarkers.isRecoveryRequired(on: recoveredWebView)
         )
-        XCTAssertTrue(
+        XCTAssertFalse(
             tab.webContentRecoveryMarkers.isRecoveryRequired(on: unrelatedWebView)
+        )
+        XCTAssertTrue(
+            tab.webContentRecoveryMarkers.recoveryState(on: unrelatedWebView)?
+                .isFailure == true
         )
     }
 
@@ -779,6 +784,84 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
         }
 
         XCTAssertNil(releasedWebView)
+    }
+
+    func testRecoveryEpochRejectsSecondTerminationAfterConcreteBinding() throws {
+        let targetURL = try XCTUnwrap(
+            URL(string: "https://example.com/recovery-epoch")
+        )
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: targetURL)
+        let webView = WKWebView()
+
+        XCTAssertEqual(
+            transaction.beginRecovery(on: webView).disposition,
+            .deliver
+        )
+        XCTAssertTrue(transaction.activatePendingRecovery(on: webView))
+        let lease = try XCTUnwrap(
+            transaction.mainFrameLoads.claimDirectSubmission(on: webView)
+        )
+        let navigation = NSObject()
+        XCTAssertTrue(transaction.bindSubmittedLoad(
+            on: webView,
+            navigationID: ObjectIdentifier(navigation),
+            navigationLifetime: navigation,
+            matching: lease
+        ))
+        XCTAssertEqual(
+            transaction.recoveryState(on: webView)?.phase,
+            .recovering(navigationID: ObjectIdentifier(navigation))
+        )
+
+        XCTAssertEqual(
+            transaction.beginRecovery(on: webView).disposition,
+            .failed
+        )
+        XCTAssertTrue(transaction.recoveryState(on: webView)?.isFailure == true)
+    }
+
+    func testRecoveryEpochResetsOnlyAfterAuthorizedCandidateCommit() throws {
+        let targetURL = try XCTUnwrap(
+            URL(string: "https://example.com/recovery-reset")
+        )
+        let transaction = TabMainFrameRuntimeTransaction(initialURL: targetURL)
+        let failed = WKWebView()
+        _ = transaction.beginRecovery(on: failed)
+        transaction.failRecoveryDelivery(on: failed)
+
+        let candidate = WKWebView()
+        let intent = transaction.beginExplicitIntent(to: targetURL)
+        let lease = try XCTUnwrap(
+            transaction.mainFrameLoads.claimDirectSubmission(on: candidate)
+        )
+        transaction.authorizeRecoveryEpochReset(onCommitFrom: candidate)
+        let navigation = NSObject()
+        let navigationID = ObjectIdentifier(navigation)
+        XCTAssertTrue(transaction.bindSubmittedLoad(
+            on: candidate,
+            navigationID: navigationID,
+            navigationLifetime: navigation,
+            matching: lease
+        ))
+        let probeBeforeCommit = WKWebView()
+        XCTAssertEqual(
+            transaction.beginRecovery(on: probeBeforeCommit).disposition,
+            .failed,
+            "Authorization alone must not reset the failed epoch"
+        )
+        _ = transaction.settleCommit(
+            from: candidate,
+            navigationID: navigationID,
+            navigationLifetime: navigation,
+            committedURL: targetURL
+        )
+        XCTAssertEqual(transaction.mainFrameLoads.currentIntent, intent)
+
+        let next = WKWebView()
+        XCTAssertEqual(
+            transaction.beginRecovery(on: next).disposition,
+            .deliver
+        )
     }
 
     func testProcessRecoveryPublishesOneSettledDecisionAfterLifecycleDeparture() throws {
@@ -845,7 +928,10 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
         }
         let plan = transaction.beginRecovery(on: webView)
 
-        XCTAssertEqual(plan.scope, .global(targetURL))
+        XCTAssertEqual(
+            plan.scope,
+            .replica(transaction.mainFrameLoads.currentIntent)
+        )
         XCTAssertEqual(effects.reasons, ["web-content-process-recovery"])
         XCTAssertEqual(roleObservedByEffect, .stale)
         XCTAssertEqual(
@@ -860,6 +946,7 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
             duplicatePlan.scope,
             .replica(transaction.mainFrameLoads.currentIntent)
         )
+        XCTAssertEqual(duplicatePlan.disposition, .duplicate)
         XCTAssertNil(duplicatePlan.authorityContinuation)
         XCTAssertTrue(effects.reasons.isEmpty)
         XCTAssertEqual(

@@ -523,7 +523,6 @@ struct WindowView: View {
                 splitDrops: splitContext.drops,
                 splitDropTargets: splitContext.dropTargets,
                 webViewOwnershipQuery: webContentContext.webViewOwnershipQuery,
-                trackedWebViewAdmission: webContentContext.trackedWebViewAdmission,
                 webViewCompositorRuntime: webContentContext.webViewCompositorRuntime,
                 webViewProtectionRuntime: webContentContext.webViewProtectionRuntime
             )

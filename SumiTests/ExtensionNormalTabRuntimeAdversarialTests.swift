@@ -500,23 +500,27 @@ private final class AdversarialPublishedTabQuery:
 private final class SuspendedInitialDocumentContextLoader:
     ExtensionInitialDocumentContextLoading {
     private let onStart: () -> Void
-    private var continuation: CheckedContinuation<Void, Never>?
+    private var continuation: CheckedContinuation<
+        PageNavigationPrerequisiteResult,
+        Never
+    >?
     private(set) var loadedProfileIDs: [UUID] = []
 
     init(onStart: @escaping () -> Void) {
         self.onStart = onStart
     }
 
-    func ensureInitialExtensionContextsLoaded(for profileId: UUID) async {
+    func ensureInitialExtensionContextsLoaded(for profileId: UUID) async
+        -> PageNavigationPrerequisiteResult {
         loadedProfileIDs.append(profileId)
-        await withCheckedContinuation { continuation in
+        return await withCheckedContinuation { continuation in
             self.continuation = continuation
             onStart()
         }
     }
 
     func resume() {
-        continuation?.resume()
+        continuation?.resume(returning: .ready)
         continuation = nil
     }
 }

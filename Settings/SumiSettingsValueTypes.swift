@@ -53,6 +53,7 @@ enum SumiStartupMode: String, CaseIterable, Codable, Hashable, Identifiable, Sen
 }
 
 enum SumiMemoryMode: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
+    case off
     case moderate
     case balanced
     case maximum
@@ -62,6 +63,8 @@ enum SumiMemoryMode: String, CaseIterable, Codable, Hashable, Identifiable, Send
 
     static func persistedValue(_ rawValue: String?) -> SumiMemoryMode {
         switch rawValue {
+        case Self.off.rawValue:
+            return .off
         case Self.moderate.rawValue:
             return .moderate
         case Self.balanced.rawValue:
@@ -75,12 +78,13 @@ enum SumiMemoryMode: String, CaseIterable, Codable, Hashable, Identifiable, Send
         case "performance":
             return .moderate
         default:
-            return .balanced
+            return .off
         }
     }
 
     var displayName: String {
         switch self {
+        case .off: return "Off"
         case .moderate: return "Moderate"
         case .balanced: return "Balanced"
         case .maximum: return "Maximum"

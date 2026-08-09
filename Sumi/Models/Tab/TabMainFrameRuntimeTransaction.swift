@@ -54,8 +54,14 @@ final class TabMainFrameRuntimeTransaction:
         )
     }
 
-    func beginExplicitIntent(to targetURL: URL) -> TabMainFrameNavigationIntent {
-        let intent = mainFrameLoads.beginExplicitIntent(to: targetURL)
+    func beginExplicitIntent(
+        to targetURL: URL,
+        blankAdmission: BlankDocumentAdmission? = nil
+    ) -> TabMainFrameNavigationIntent {
+        let intent = mainFrameLoads.beginExplicitIntent(
+            to: targetURL,
+            blankAdmission: blankAdmission
+        )
         lifecycle.resetForNewIntent()
         return intent
     }
@@ -81,7 +87,10 @@ final class TabMainFrameRuntimeTransaction:
         ) else {
             return false
         }
-        recoveryMarkers.clear(on: webView)
+        _ = recoveryMarkers.bind(
+            on: webView,
+            navigationID: navigationID
+        )
         return true
     }
 
@@ -179,14 +188,21 @@ final class TabMainFrameRuntimeTransaction:
     }
 
     func beginRecovery(
-        on webView: WKWebView
+        on webView: WKWebView,
+        snapshot: PageRecoverySessionSnapshot?
     ) -> TabWebContentProcessRecoveryPlan {
         committedDocumentRuntime.performTransition(
             reason: .processRecovery
         ) {
             let intent = mainFrameLoads.currentIntent
-            guard recoveryMarkers.markRequired(on: webView) else {
+            let admission = recoveryMarkers.begin(
+                on: webView,
+                destination: intent.targetURL,
+                snapshot: snapshot
+            )
+            guard admission != .duplicate else {
                 return TabWebContentProcessRecoveryPlan(
+                    disposition: .duplicate,
                     scope: .replica(intent),
                     authorityContinuation: nil
                 )
@@ -207,18 +223,38 @@ final class TabMainFrameRuntimeTransaction:
                 )
             }
 
-            let scope: TabWebContentProcessRecoveryScope = hasCurrentAuthority()
-                ? .replica(mainFrameLoads.currentIntent)
-                : .global(mainFrameLoads.currentIntent.targetURL)
             return TabWebContentProcessRecoveryPlan(
-                scope: scope,
+                disposition: admission == .failed ? .failed : .deliver,
+                scope: .replica(mainFrameLoads.currentIntent),
                 authorityContinuation: continuation
             )
         }
     }
 
+    func beginRecovery(
+        on webView: WKWebView
+    ) -> TabWebContentProcessRecoveryPlan {
+        beginRecovery(on: webView, snapshot: nil)
+    }
+
+    func activatePendingRecovery(on webView: WKWebView) -> Bool {
+        recoveryMarkers.activate(on: webView)
+    }
+
+    func failRecoveryDelivery(on webView: WKWebView) {
+        recoveryMarkers.failDelivery(on: webView)
+    }
+
+    func authorizeRecoveryEpochReset(onCommitFrom webView: WKWebView) {
+        recoveryMarkers.authorizeReset(onCommitFrom: webView)
+    }
+
     func isRecoveryRequired(on webView: WKWebView) -> Bool {
         recoveryMarkers.isRecoveryRequired(on: webView)
+    }
+
+    func recoveryState(on webView: WKWebView) -> PageRecoveryResidenceState? {
+        recoveryMarkers.state(on: webView)
     }
 
     func abortNavigation(
@@ -231,6 +267,12 @@ final class TabMainFrameRuntimeTransaction:
         committedDocumentRuntime.performTransition(
             reason: .navigationAbort
         ) {
+            if recoveryMarkers.failBoundNavigation(
+                on: webView,
+                navigationID: navigationID
+            ) {
+                return .authoritativeTerminated
+            }
             if let survivingCommittedURL {
                 committedDocumentRuntime.noteSurvivingDocument(
                     on: webView,
@@ -269,6 +311,7 @@ final class TabMainFrameRuntimeTransaction:
         navigationID: ObjectIdentifier?,
         navigationLifetime: AnyObject,
         targetURL: URL?,
+        blankAdmission: BlankDocumentAdmission?,
         allowsUserInitiatedSupersession: Bool,
         continuationKind: TabMainFrameContinuationKind?
     ) -> TabMainFrameTransitionOutput.LifecycleAcceptance {
@@ -294,6 +337,10 @@ final class TabMainFrameRuntimeTransaction:
         case .accepted(let role, let targetURLToAdopt):
             if let targetURLToAdopt {
                 mainFrameLoads.updateTargetWithinRevision(targetURLToAdopt)
+                if let blankAdmission,
+                   targetURLToAdopt.isSumiBlankDocumentURL {
+                    mainFrameLoads.admitBlankDocument(blankAdmission)
+                }
                 if continuationKind == .sameDocument,
                    committedDocumentRuntime.lease(for: webView) != nil {
                     committedDocumentRuntime.performTransition(reason: .sameDocumentPresentation) {
@@ -304,7 +351,6 @@ final class TabMainFrameRuntimeTransaction:
                     }
                 }
             }
-            recoveryMarkers.clear(on: webView)
             return TabMainFrameTransitionOutput.LifecycleAcceptance(
                 role: role,
                 beganNewIntent: false
@@ -313,6 +359,13 @@ final class TabMainFrameRuntimeTransaction:
             break
         }
 
+        guard targetURL.isSumiBlankDocumentURL == false
+                || blankAdmission != nil else {
+            return TabMainFrameTransitionOutput.LifecycleAcceptance(
+                role: .stale,
+                beganNewIntent: false
+            )
+        }
         guard mainFrameLoads.canStartUnboundLifecycle(
             on: webView,
             allowsUserInitiatedSupersession: allowsUserInitiatedSupersession
@@ -323,7 +376,10 @@ final class TabMainFrameRuntimeTransaction:
             )
         }
 
-        let intent = mainFrameLoads.beginLifecycleIntent(to: targetURL)
+        let intent = mainFrameLoads.beginLifecycleIntent(
+            to: targetURL,
+            blankAdmission: blankAdmission
+        )
         lifecycle.resetForNewIntent()
         lifecycle.startLifecycleOwnedIntent(
             intent,
@@ -331,7 +387,9 @@ final class TabMainFrameRuntimeTransaction:
             navigationID: navigationID,
             navigationLifetime: navigationLifetime
         )
-        recoveryMarkers.clear(on: webView)
+        if allowsUserInitiatedSupersession {
+            recoveryMarkers.authorizeReset(onCommitFrom: webView)
+        }
         return TabMainFrameTransitionOutput.LifecycleAcceptance(
             role: .authority,
             beganNewIntent: true
@@ -461,6 +519,10 @@ final class TabMainFrameRuntimeTransaction:
             }
             return transition
         }
+        recoveryMarkers.settleCommit(
+            on: webView,
+            navigationID: navigationID
+        )
         switch transition.role {
         case .stale:
             return .stale

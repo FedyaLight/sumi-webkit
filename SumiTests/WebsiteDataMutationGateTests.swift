@@ -178,6 +178,36 @@ final class WebsiteDataMutationGateTests: XCTestCase {
         XCTAssertFalse(didReplay)
     }
 
+    func testRetiredProfileCancelsEveryDeferredAdmissionIncludingSpaceWork()
+        async throws {
+        let gate = WebsiteDataMutationGate()
+        let retiredProfileID = UUID()
+        let liveProfileID = UUID()
+        let acquiredLease = await gate.acquire(
+            profileIDs: [retiredProfileID, liveProfileID]
+        )
+        let lease = try XCTUnwrap(acquiredLease)
+        var replayed: [String] = []
+        XCTAssertTrue(gate.deferOrdinaryRuntimeAdmission(
+            for: retiredProfileID,
+            key: .spaceProfileAssignment(spaceID: UUID())
+        ) { replayed.append("retired-space") })
+        XCTAssertTrue(gate.deferOrdinaryRuntimeAdmission(
+            for: retiredProfileID,
+            key: .webViewMaterialization(tabID: UUID())
+        ) { replayed.append("retired-page") })
+        XCTAssertTrue(gate.deferOrdinaryRuntimeAdmission(
+            for: liveProfileID,
+            key: .webViewMaterialization(tabID: UUID())
+        ) { replayed.append("live-page") })
+
+        gate.cancelDeferredAdmissions(forProfileID: retiredProfileID)
+        gate.release(lease)
+        await Task.yield()
+
+        XCTAssertEqual(replayed, ["live-page"])
+    }
+
     func testCancellationAfterReleaseStillStopsScheduledReplay() async throws {
         let gate = WebsiteDataMutationGate()
         let profileID = UUID()

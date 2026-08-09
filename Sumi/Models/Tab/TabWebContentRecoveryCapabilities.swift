@@ -4,11 +4,18 @@ import WebKit
 /// lifecycle responder that validates callback ownership.
 @MainActor
 protocol TabWebContentRecoveryAdmission: AnyObject {
-    func beginRecovery(on webView: WKWebView) -> TabWebContentProcessRecoveryPlan
+    func beginRecovery(
+        on webView: WKWebView,
+        snapshot: PageRecoverySessionSnapshot?
+    ) -> TabWebContentProcessRecoveryPlan
+    func activatePendingRecovery(on webView: WKWebView) -> Bool
+    func failRecoveryDelivery(on webView: WKWebView)
+    func authorizeRecoveryEpochReset(onCommitFrom webView: WKWebView)
 }
 
 /// Read-only marker visibility used by routing and registration services.
 @MainActor
 protocol TabWebContentRecoveryMarkerQuery: AnyObject {
     func isRecoveryRequired(on webView: WKWebView) -> Bool
+    func recoveryState(on webView: WKWebView) -> PageRecoveryResidenceState?
 }

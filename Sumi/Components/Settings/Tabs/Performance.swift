@@ -27,6 +27,12 @@ struct SumiMemoryModeSettingsDescriptor: Identifiable, Equatable {
         detail: "Deactivates inactive tabs after a longer period. Fewer reloads."
     )
 
+    static let off = SumiMemoryModeSettingsDescriptor(
+        mode: .off,
+        title: "Off",
+        detail: "Keeps tabs active until you unload them explicitly."
+    )
+
     static let balanced = SumiMemoryModeSettingsDescriptor(
         mode: .balanced,
         title: "Balanced",
@@ -46,6 +52,7 @@ struct SumiMemoryModeSettingsDescriptor: Identifiable, Equatable {
     )
 
     static let all: [SumiMemoryModeSettingsDescriptor] = [
+        .off,
         .moderate,
         .balanced,
         .maximum,

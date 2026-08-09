@@ -194,11 +194,22 @@ extension TabWebViewRoutingRuntime {
                     originatingWebView: webView
                 )
             },
+            pagePresentationDidChange: {
+                [weak webViewRoutingService] tabId,
+                webView in
+                webViewRoutingService?.pagePresentationDidChange(
+                    tabId,
+                    on: webView
+                )
+            },
             reloadTabAcrossWindows: { [weak webViewRoutingService] tabId, intent, policy in
                 webViewRoutingService?.reloadTabAcrossWindows(
                     tabId,
                     intent: intent,
                     policy: policy
+                ) ?? .failed(
+                    intent: intent,
+                    reason: .deliveryContextUnavailable
                 )
             },
             reloadTabInWindow: { [weak webViewRoutingService] tabId, windowId, intent, policy in
@@ -207,7 +218,10 @@ extension TabWebViewRoutingRuntime {
                     in: windowId,
                     intent: intent,
                     policy: policy
-                ) ?? .failed
+                ) ?? .failed(
+                    intent: intent,
+                    reason: .deliveryContextUnavailable
+                )
             },
             retainWebContentProcessRecovery: { [weak webViewRoutingService] tabId, webView in
                 webViewRoutingService?.retainWebContentProcessRecovery(

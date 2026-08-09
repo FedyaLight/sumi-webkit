@@ -9,7 +9,7 @@ extension Tab {
         let profile = explicitProfile ?? resolveProfile()
         return TabNormalWebViewSetupRequest(
             tabID: id,
-            targetURL: url,
+            targetURL: mainFrameLoads.currentIntent.targetURL,
             isPopupHost: isPopupHost,
             resolvedProfile: profile
         )
@@ -24,9 +24,6 @@ extension Tab {
             },
             beginSuspendedRestore: { [weak self] in
                 self?.beginSuspendedRestoreIfNeeded()
-            },
-            finishSuspendedRestore: { [weak self] in
-                self?.finishSuspendedRestoreIfNeeded()
             },
             deferMaterialization: { [weak self] replay in
                 guard let self else { return false }
@@ -167,18 +164,6 @@ extension Tab {
                 guard let self else { return }
                 navigationRuntime.normalWebViewExtensionRuntime
                     .registerTabWithExtensionRuntimeIfNeeded(self, reason)
-            },
-            restoreSuspendedInteractionState: { [weak self] webView in
-                guard let data = self?.suspensionState
-                    .takeInteractionStateForRestore()
-                else {
-                    return false
-                }
-                SumiWebKitPageStateAdapter.restoreInteractionState(
-                    data,
-                    to: webView
-                )
-                return true
             },
             scheduleRuntimeHandoff: { [weak self] webView, targetURL, profileID, reason in
                 guard let self else { return }

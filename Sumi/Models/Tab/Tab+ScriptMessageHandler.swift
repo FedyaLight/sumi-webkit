@@ -4,13 +4,16 @@ import Foundation
 extension Tab {
     func normalTabCoreUserScripts() -> [SumiPageScript] {
         let isGPCEnabled = sumiSettings?.isGPCEnabled ?? false
+        let memoryMode = sumiSettings?.memoryMode ?? .off
         if let cachedNormalTabCoreUserScripts,
-           cachedNormalTabCoreUserScriptsGPCEnabled == isGPCEnabled {
+           cachedNormalTabCoreUserScriptsGPCEnabled == isGPCEnabled,
+           cachedNormalTabCoreUserScriptsMemoryMode == memoryMode {
             return cachedNormalTabCoreUserScripts
         }
         let scripts = makeNormalTabCoreUserScripts(for: self)
         cachedNormalTabCoreUserScripts = scripts
         cachedNormalTabCoreUserScriptsGPCEnabled = isGPCEnabled
+        cachedNormalTabCoreUserScriptsMemoryMode = memoryMode
         return scripts
     }
 

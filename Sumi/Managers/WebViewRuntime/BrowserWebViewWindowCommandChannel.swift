@@ -4,6 +4,7 @@ import Foundation
 enum BrowserWebViewWindowCommand {
     case selectTab(tabID: UUID, windowID: UUID)
     case refreshCompositor(windowID: UUID)
+    case retryPageMaterialization(windowID: UUID)
 }
 
 @MainActor
@@ -20,5 +21,9 @@ final class BrowserWebViewWindowCommandChannel {
 
     func refreshCompositor(in windowID: UUID) {
         subject.send(.refreshCompositor(windowID: windowID))
+    }
+
+    func retryPageMaterialization(in windowID: UUID) {
+        subject.send(.retryPageMaterialization(windowID: windowID))
     }
 }

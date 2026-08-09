@@ -1,4 +1,5 @@
 import Foundation
+import SumiDomain
 
 /// Produces a deterministic value plan for merging a persisted session into
 /// the live tab graph. It has no access to mutable browser state or persistence.
@@ -161,7 +162,8 @@ private extension TabLastSessionMergePlanner {
 
             if tab.isPinned {
                 guard let profileId = tab.profileId,
-                      let launchURL = URL(string: tab.urlString)
+                      let launchURL = absoluteURL(tab.urlString),
+                      SumiSurface.isEmptyNewTabURL(launchURL) == false
                 else { continue }
                 essentialPins[profileId, default: []].append(
                     shortcut(from: tab, kind: .essential, launchURL: launchURL)
@@ -172,7 +174,8 @@ private extension TabLastSessionMergePlanner {
             if tab.isSpacePinned {
                 guard let spaceId = tab.spaceId,
                       finalSpaceIds.contains(spaceId),
-                      let launchURL = URL(string: tab.urlString)
+                      let launchURL = absoluteURL(tab.urlString),
+                      SumiSurface.isEmptyNewTabURL(launchURL) == false
                 else { continue }
                 spacePins[spaceId, default: []].append(
                     shortcut(from: tab, kind: .spacePinned, launchURL: launchURL)
@@ -181,10 +184,29 @@ private extension TabLastSessionMergePlanner {
             }
 
             guard let spaceId = tab.spaceId,
-                  finalSpaceIds.contains(spaceId),
-                  let url = URL(string: tab.currentURLString ?? tab.urlString)
-                    ?? URL(string: tab.urlString)
-            else { continue }
+                  finalSpaceIds.contains(spaceId) else { continue }
+            let rawDestination = tab.currentURLString ?? tab.urlString
+            let candidate = absoluteURL(rawDestination)
+                ?? absoluteURL(tab.urlString)
+            let url: URL
+            let isRestoreFailure: Bool
+            switch tab.pageKind {
+            case .empty:
+                url = SumiSurface.emptyTabURL
+                isRestoreFailure = false
+            case .restoreFailure:
+                url = SumiSurface.restoreFailureURL
+                isRestoreFailure = true
+            case .web, nil:
+                if let candidate,
+                   SumiSurface.isEmptyNewTabURL(candidate) == false {
+                    url = candidate
+                    isRestoreFailure = false
+                } else {
+                    url = SumiSurface.restoreFailureURL
+                    isRestoreFailure = true
+                }
+            }
             let restored = TabLastSessionRestoredTab(
                 id: tab.id,
                 url: url,
@@ -192,8 +214,13 @@ private extension TabLastSessionMergePlanner {
                 spaceId: spaceId,
                 index: tab.index,
                 profileId: tab.profileId ?? profileBySpace[spaceId] ?? nil,
-                canGoBack: tab.canGoBack,
-                canGoForward: tab.canGoForward
+                canGoBack: false,
+                canGoForward: false,
+                isRestoreFailure: isRestoreFailure,
+                restoreFailureRawDestination: isRestoreFailure
+                    ? rawDestination : nil,
+                restoreFailureDestination: isRestoreFailure
+                    ? candidate : nil
             )
             regularTabs[spaceId, default: []].append(.restored(restored))
             restoredTabIds.insert(tab.id)
@@ -217,6 +244,12 @@ private extension TabLastSessionMergePlanner {
             regularTabsBySpace: regularTabs,
             lazyRestoredTabIds: restoredTabIds
         )
+    }
+
+    func absoluteURL(_ value: String) -> URL? {
+        guard let url = URL(string: value),
+              url.scheme?.isEmpty == false else { return nil }
+        return url
     }
 
     func shortcut(

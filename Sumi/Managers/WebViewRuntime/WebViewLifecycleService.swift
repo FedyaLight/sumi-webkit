@@ -89,7 +89,7 @@ final class WebViewLifecycleService {
         cleanupUnprotectedDetachedWebView: { [weak self] webView, tabID, tabHandle in
             guard let self else { return }
             if let tab = self.tabForPackageCallback(tabHandle) {
-                tab.cleanupCloneWebView(webView)
+                tab.destroyRetiredWebView(webView)
             } else {
                 self.physicalCleanup.clean(webView, tabID: tabID)
             }
@@ -136,6 +136,7 @@ final class WebViewLifecycleService {
                 tabIDs: [tab.id],
                 reason: .tabDeparture
             )
+            prepareRetirementOwners(for: [tab])
         }
         let result = tabTeardown.removeAllWebViews(for: tab)
         if intent == .retirement {
@@ -148,6 +149,15 @@ final class WebViewLifecycleService {
             }
         }
         return result
+    }
+
+    func prepareRetirementOwners(for tabs: [Tab]) {
+        for tab in tabs {
+            for webView in tab.webViewSession.runtimeOwnedWebViews {
+                processRecovery.cancel(webView)
+                websiteDataCleanup.webViewDidLeaveRuntime(webView)
+            }
+        }
     }
 
     @discardableResult
@@ -195,6 +205,19 @@ final class WebViewLifecycleService {
     /// Final manager-independent cleanup when the browser runtime disappears
     /// before its windows. No deferred command or detached WebView survives.
     func cleanupAfterBrowserRuntimeDeallocation() {
+        let terminalTabs = webViewSessions.runtimeOwnedTabIDs.compactMap {
+            tabID in
+            runtimeTabs.tabForCleanup(
+                tabID,
+                resolveRuntimeTab: { [resolveTab] tabID in resolveTab(tabID) }
+            )
+        }
+        for tab in terminalTabs {
+            let webViews = tab.webViewSession.runtimeOwnedWebViews
+            prepareRetirementOwners(for: [tab])
+            tab.cancelPendingMainFrameNavigation()
+            tab.webViewsWillLeaveRuntime(webViews)
+        }
         runtimeTabs.resetForTerminalShutdown()
         let entries = webViewSessions.takeAllWebViewsForTerminalShutdown()
 

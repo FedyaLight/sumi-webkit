@@ -99,32 +99,52 @@ final class WebViewNavigationBroadcastOwner {
         _ tab: Tab,
         intent: TabMainFrameNavigationIntent,
         policy: WebRuntimeMainFrameReloadPolicy
-    ) {
+    ) -> PageReloadCommandOutcome {
         guard tab.mainFrameLoads.isCurrent(intent) else {
-            return
+            return .failed(intent: intent, reason: .staleAttempt)
         }
         let tabId = tab.id
-        crossWindowSyncOwner.reloadTab(
-            tabId,
-            webViews: webViewSessions.webViews(for: tabId),
-            isProtected: { [isWebViewProtectedFromCompositorMutation] webView in
-                isWebViewProtectedFromCompositorMutation(webView)
-            },
-            deferProtectedReload: { [weak tab, webViewSessions, deferProtectedNavigation] webView in
-                guard let tab,
-                      case .window(let owner) = webViewSessions.residence(of: webView),
-                      owner.tabID == tabId,
-                      tab.mainFrameLoads.markDeferredLoad(
-                          on: webView,
-                          intent: intent
-                      ) else {
-                    return .rejected
+        let webViews = webViewSessions.webViews(for: tabId)
+        guard webViews.isEmpty == false else {
+            return .failed(intent: intent, reason: .noResidence)
+        }
+        var dispositions: [PageReloadDisposition] = []
+        for webView in webViews {
+            if isWebViewProtectedFromCompositorMutation(webView) {
+                let admission = tab.mainFrameLoads.deferAttempt(
+                    on: webView,
+                    intent: intent
+                )
+                let owner: TabMainFramePendingAttemptOwner
+                switch admission {
+                case .waiting(let admittedOwner):
+                    owner = admittedOwner
+                case .coalesced(let admittedOwner):
+                    dispositions.append(.coalesced(admittedOwner))
+                    continue
+                case .rejected:
+                    dispositions.append(.failed(PageReloadFailure(
+                        intent: intent,
+                        webViewID: ObjectIdentifier(webView),
+                        reason: .protectedDeliveryRejected
+                    )))
+                    continue
+                }
+                guard case .window(let residence) = webViewSessions.residence(of: webView),
+                      residence.tabID == tabId else {
+                    tab.mainFrameLoads.clearDeferredLoad(on: webView, intent: intent)
+                    dispositions.append(.failed(PageReloadFailure(
+                        intent: intent,
+                        webViewID: ObjectIdentifier(webView),
+                        reason: .noResidence
+                    )))
+                    continue
                 }
                 let schedulingOutcome = deferProtectedNavigation(
                     .reloadTrackedNavigation(
                         webViewID: ObjectIdentifier(webView),
                         tabID: tabId,
-                        windowID: owner.windowID,
+                        windowID: residence.windowID,
                         intent: DeferredWebViewReloadIntent(
                             revision: intent.revision,
                             targetURL: intent.targetURL,
@@ -135,30 +155,29 @@ final class WebViewNavigationBroadcastOwner {
                 )
                 switch schedulingOutcome {
                 case .scheduled:
-                    return .deferred
+                    dispositions.append(.waiting(owner))
+                    continue
                 case .notProtected:
-                    tab.mainFrameLoads.clearDeferredLoad(
-                        on: webView,
-                        intent: intent
-                    )
-                    return .executeNow
+                    tab.mainFrameLoads.clearDeferredLoad(on: webView, intent: intent)
                 case .invalidTarget, .droppedAtCapacity:
-                    tab.mainFrameLoads.clearDeferredLoad(
-                        on: webView,
-                        intent: intent
-                    )
-                    return .rejected
+                    tab.mainFrameLoads.clearDeferredLoad(on: webView, intent: intent)
+                    dispositions.append(.failed(PageReloadFailure(
+                        intent: intent,
+                        webViewID: ObjectIdentifier(webView),
+                        reason: .protectedDeliveryRejected
+                    )))
+                    continue
                 }
-            },
-            reload: { webView in
-                _ = tab.navigationCommandOwner.submitExactReload(
+            }
+            dispositions.append(contentsOf: tab.navigationCommandOwner
+                .submitExactReload(
                     on: webView,
                     tab: tab,
                     intent: intent,
                     policy: policy
-                )
-            }
-        )
+                ).dispositions)
+        }
+        return PageReloadCommandOutcome(dispositions: dispositions)
     }
 
     @discardableResult
@@ -167,25 +186,33 @@ final class WebViewNavigationBroadcastOwner {
         in windowId: UUID,
         intent: TabMainFrameNavigationIntent,
         policy: WebRuntimeMainFrameReloadPolicy
-    ) -> TabMainFrameReloadCommandOutcome {
+    ) -> PageReloadCommandOutcome {
         guard tab.mainFrameLoads.isCurrent(intent) else {
-            return .failed
+            return .failed(intent: intent, reason: .staleAttempt)
         }
         guard let webView = webViewSessions.webView(for: tab.id, in: windowId) else {
-            return .failed
+            return .failed(intent: intent, reason: .noResidence)
         }
         if isWebViewProtectedFromCompositorMutation(webView) {
             RuntimeDiagnostics.protectedWebViewTrace(
                 "deferReloadProtected webView=\(ObjectIdentifier(webView)) tab=\(tab.id.uuidString.prefix(8)) window=\(windowId.uuidString.prefix(8))"
             )
-            guard tab.mainFrameLoads.markDeferredLoad(
+            let admission = tab.mainFrameLoads.deferAttempt(
                 on: webView,
                 intent: intent
-            ) else {
-                return tab.mainFrameLoads.hasOutstandingLoad(
-                    on: webView,
-                    targetURL: intent.targetURL
-                ) ? .scheduled : .failed
+            )
+            let owner: TabMainFramePendingAttemptOwner
+            switch admission {
+            case .waiting(let admittedOwner):
+                owner = admittedOwner
+            case .coalesced(let admittedOwner):
+                return PageReloadCommandOutcome(.coalesced(admittedOwner))
+            case .rejected:
+                return .failed(
+                    intent: intent,
+                    webView: webView,
+                    reason: .protectedDeliveryRejected
+                )
             }
             let schedulingOutcome = deferProtectedNavigation(
                 .reloadTrackedNavigation(
@@ -202,7 +229,7 @@ final class WebViewNavigationBroadcastOwner {
             )
             switch schedulingOutcome {
             case .scheduled:
-                return .scheduled
+                return PageReloadCommandOutcome(.waiting(owner))
             case .notProtected:
                 tab.mainFrameLoads.clearDeferredLoad(
                     on: webView,
@@ -213,7 +240,11 @@ final class WebViewNavigationBroadcastOwner {
                     on: webView,
                     intent: intent
                 )
-                return .failed
+                return .failed(
+                    intent: intent,
+                    webView: webView,
+                    reason: .protectedDeliveryRejected
+                )
             }
         }
         return tab.navigationCommandOwner.submitExactReload(

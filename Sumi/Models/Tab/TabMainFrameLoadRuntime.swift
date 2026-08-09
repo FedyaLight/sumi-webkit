@@ -34,10 +34,24 @@ protocol TabMainFrameLoads: AnyObject {
         intent: TabMainFrameNavigationIntent
     ) -> TabMainFramePreparedLoadTicket?
     func finishPreparedLoad(_ ticket: TabMainFramePreparedLoadTicket)
+    func cancelPreparedLoad(
+        _ ticket: TabMainFramePreparedLoadTicket
+    ) -> TabMainFramePendingAttemptSettlement?
+    func claimPreparedSubmission(
+        on webView: WKWebView,
+        ticket: TabMainFramePreparedLoadTicket
+    ) -> TabMainFrameSubmissionLease?
+    func attemptStatus(
+        on webView: WKWebView
+    ) -> TabMainFramePendingAttemptStatus
     func markDeferredLoad(
         on webView: WKWebView,
         intent: TabMainFrameNavigationIntent
     ) -> Bool
+    func deferAttempt(
+        on webView: WKWebView,
+        intent: TabMainFrameNavigationIntent
+    ) -> TabMainFramePendingAttemptAdmission
     func clearDeferredLoad(
         on webView: WKWebView,
         intent: TabMainFrameNavigationIntent
@@ -52,6 +66,7 @@ protocol TabMainFrameLoads: AnyObject {
     ) -> TabDeferredMainFrameLoadClaim
     func hasOutstandingLoad(on webView: WKWebView, targetURL: URL) -> Bool
     func loadingWebViews() -> [WKWebView]
+    func admitsCommit(to committedURL: URL) -> Bool
 }
 
 /// Exact capability for a tab's semantic navigation intent and loads that have
@@ -121,12 +136,57 @@ final class TabMainFrameLoadRuntime: TabMainFrameLoads,
         ledger.finishPreparedLoad(ticket)
     }
 
+    func cancelPreparedLoad(
+        _ ticket: TabMainFramePreparedLoadTicket
+    ) -> TabMainFramePendingAttemptSettlement? {
+        ledger.cancelPreparedLoad(ticket)
+    }
+
+    func claimPreparedSubmission(
+        on webView: WKWebView,
+        ticket: TabMainFramePreparedLoadTicket
+    ) -> TabMainFrameSubmissionLease? {
+        ledger.claimPreparedSubmission(
+            on: webView,
+            ticket: ticket,
+            hasLifecycleAuthority: lifecycle.hasLiveAuthority(
+                revision: ledger.intent.revision
+            )
+        )
+    }
+
+    func attemptStatus(
+        on webView: WKWebView
+    ) -> TabMainFramePendingAttemptStatus {
+        ledger.pendingAttemptStatus(on: webView)
+    }
+
     func markDeferredLoad(
         on webView: WKWebView,
         intent: TabMainFrameNavigationIntent
     ) -> Bool {
         let authority = lifecycle.authorityState(revision: intent.revision)
         return ledger.markDeferredLoad(
+            on: webView,
+            intent: intent,
+            documentGeneration: lifecycle.documentGeneration,
+            isLifecycleAuthority: authority?.webViewID
+                == ObjectIdentifier(webView)
+        )
+    }
+
+    func deferAttempt(
+        on webView: WKWebView,
+        intent: TabMainFrameNavigationIntent
+    ) -> TabMainFramePendingAttemptAdmission {
+        if let owner = lifecycle.activeAttemptOwner(
+            on: webView,
+            currentIntent: intent
+        ) {
+            return .coalesced(owner)
+        }
+        let authority = lifecycle.authorityState(revision: intent.revision)
+        return ledger.deferAttempt(
             on: webView,
             intent: intent,
             documentGeneration: lifecycle.documentGeneration,
@@ -199,15 +259,31 @@ final class TabMainFrameLoadRuntime: TabMainFrameLoads,
     }
 
     func beginExplicitIntent(
-        to targetURL: URL
+        to targetURL: URL,
+        blankAdmission: BlankDocumentAdmission? = nil
     ) -> TabMainFrameNavigationIntent {
-        ledger.beginExplicitIntent(to: targetURL)
+        ledger.beginExplicitIntent(
+            to: targetURL,
+            blankAdmission: blankAdmission
+        )
     }
 
     func beginLifecycleIntent(
-        to targetURL: URL
+        to targetURL: URL,
+        blankAdmission: BlankDocumentAdmission? = nil
     ) -> TabMainFrameNavigationIntent {
-        ledger.beginLifecycleIntent(to: targetURL)
+        ledger.beginLifecycleIntent(
+            to: targetURL,
+            blankAdmission: blankAdmission
+        )
+    }
+
+    func admitBlankDocument(_ admission: BlankDocumentAdmission) {
+        ledger.admitBlankDocument(admission)
+    }
+
+    func admitsCommit(to committedURL: URL) -> Bool {
+        ledger.admitsCommit(to: committedURL)
     }
 
     func beginRollbackIntent(

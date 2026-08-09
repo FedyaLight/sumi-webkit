@@ -202,26 +202,20 @@ final class TabNormalWebViewSetupService {
                 committedWebView,
                 request.targetURL
             )
-            admission.finishSuspendedRestore()
             return .available(committedWebView)
         }
 
         if didCreateNormalWebView,
            request.isPopupHost == false,
            initialLoadPolicy == .schedule {
-            if initialDocument.restoreSuspendedInteractionState(
-                committedWebView
-            ) == false {
-                initialDocument.scheduleRuntimeHandoff(
-                    committedWebView,
-                    request.targetURL,
-                    profile.id,
-                    "\(reason).beforeInitialLoad"
-                )
-            }
+            initialDocument.scheduleRuntimeHandoff(
+                committedWebView,
+                request.targetURL,
+                profile.id,
+                "\(reason).beforeInitialLoad"
+            )
         }
 
-        admission.finishSuspendedRestore()
         guard let currentWebView = residence.currentWebView() else {
             return .failed
         }
@@ -235,7 +229,6 @@ final class TabNormalWebViewSetupService {
         admission: TabNormalWebViewCreationAdmissionStage,
         residence: TabNormalWebViewResidenceStage
     ) -> TabUntrackedWebViewEnsureOutcome {
-        admission.finishSuspendedRestore()
         guard let currentWebView = residence.currentWebView() else {
             return .failed
         }

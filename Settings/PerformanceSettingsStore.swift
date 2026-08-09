@@ -18,6 +18,8 @@ final class PerformanceSettingsStore {
 
     private let energySaverSystemMonitor: any SumiEnergySaverSystemMonitoring
     @ObservationIgnored
+    private var suspensionPolicyChanged: (@MainActor () -> Void)?
+    @ObservationIgnored
     nonisolated(unsafe) private var energySaverSystemObservationToken: UUID?
 
     var tabUnloadTimeout: TimeInterval {
@@ -35,6 +37,7 @@ final class PerformanceSettingsStore {
         didSet {
             Persisted.rawRepresentable(memoryMode, key: memoryModeKey, defaults: userDefaults)
             NotificationCenter.default.post(name: .sumiMemorySaverPolicyChanged, object: nil)
+            suspensionPolicyChanged?()
         }
     }
 
@@ -53,6 +56,7 @@ final class PerformanceSettingsStore {
                 defaults: userDefaults
             )
             NotificationCenter.default.post(name: .sumiMemorySaverPolicyChanged, object: nil)
+            suspensionPolicyChanged?()
         }
     }
 
@@ -201,5 +205,12 @@ final class PerformanceSettingsStore {
     private func notifyEnergySaverPolicyChanged() {
         // object is nil so observers stay tied to the settings façade, not this store.
         NotificationCenter.default.post(name: .sumiEnergySaverPolicyChanged, object: nil)
+        suspensionPolicyChanged?()
+    }
+
+    func setSuspensionPolicyChangedHandler(
+        _ handler: (@MainActor () -> Void)?
+    ) {
+        suspensionPolicyChanged = handler
     }
 }

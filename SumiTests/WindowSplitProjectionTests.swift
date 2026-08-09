@@ -226,6 +226,7 @@ final class WindowSplitProjectionTests: XCTestCase {
                 windowTabs: shell.windowTabs,
                 membership: manager.tabCollectionMembershipOwner,
                 windowVisuals: shell.windowVisuals,
+                repairFailure: { _, _, _ in },
                 spaces: manager.spaceStateOwner,
                 dragOperations: manager.sidebarDragRouter
             )

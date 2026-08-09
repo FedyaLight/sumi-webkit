@@ -86,6 +86,9 @@ struct TabLastSessionRestoredTab {
     let profileId: UUID?
     let canGoBack: Bool
     let canGoForward: Bool
+    let isRestoreFailure: Bool
+    let restoreFailureRawDestination: String?
+    let restoreFailureDestination: URL?
 }
 
 enum TabLastSessionRegularTabPlacement {

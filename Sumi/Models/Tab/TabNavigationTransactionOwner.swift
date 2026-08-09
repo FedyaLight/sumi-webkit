@@ -1,6 +1,22 @@
 import Foundation
 import WebKit
 
+enum PageNavigationPrerequisiteResult: Equatable, Sendable {
+    case ready
+    case degraded
+    case failed
+    case cancelled
+
+    var maySubmitNavigation: Bool {
+        self == .ready || self == .degraded
+    }
+}
+
+struct PageNavigationPrerequisiteOwner: Equatable {
+    let id: UUID
+    let webViewID: ObjectIdentifier
+}
+
 @MainActor
 final class TabNavigationTransactionOwner {
     struct HistorySwipeEnvironment {
@@ -28,8 +44,8 @@ final class TabNavigationTransactionOwner {
     }
 
     private var pendingTask: Task<Void, Never>?
-    private var pendingToken: UUID?
-    private var pendingCancellation: (@MainActor () -> Void)?
+    private(set) var pendingPrerequisiteOwner: PageNavigationPrerequisiteOwner?
+    private var pendingTermination: (@MainActor (PageNavigationPrerequisiteResult) -> Void)?
     private var pendingBackForwardNavigationContext: TabBackForwardNavigationContext?
     private var pendingBackForwardSettleTask: Task<Void, Never>?
     var pendingMainFrameNavigationKind: TabMainFrameNavigationKind?
@@ -66,33 +82,45 @@ final class TabNavigationTransactionOwner {
 
     func performAfterPreparation(
         on webView: WKWebView,
-        prepare: @escaping @MainActor () async -> Void,
-        didCancel: @escaping @MainActor () -> Void = {},
+        prepare: @escaping @MainActor () async -> PageNavigationPrerequisiteResult,
+        didTerminate: @escaping @MainActor (
+            PageNavigationPrerequisiteResult
+        ) -> Void = { _ in },
         performLoad: @escaping @MainActor @Sendable (WKWebView) -> Void
-    ) {
+    ) -> PageNavigationPrerequisiteOwner {
         cancelPendingPreparedLoad()
 
-        let token = UUID()
-        pendingToken = token
-        pendingCancellation = didCancel
+        let prerequisiteOwner = PageNavigationPrerequisiteOwner(
+            id: UUID(),
+            webViewID: ObjectIdentifier(webView)
+        )
+        pendingPrerequisiteOwner = prerequisiteOwner
+        pendingTermination = didTerminate
         pendingTask = Task { @MainActor [weak self, weak webView] in
-            await prepare()
+            let result = await prepare()
             guard Task.isCancelled == false else { return }
             guard let self else {
-                didCancel()
+                didTerminate(.cancelled)
                 return
             }
-            guard self.pendingToken == token else { return }
+            guard self.pendingPrerequisiteOwner == prerequisiteOwner else {
+                return
+            }
             guard let webView else {
                 self.cancelPendingPreparedLoad()
                 return
             }
 
             self.pendingTask = nil
-            self.pendingToken = nil
-            self.pendingCancellation = nil
-            performLoad(webView)
+            self.pendingPrerequisiteOwner = nil
+            self.pendingTermination = nil
+            if result.maySubmitNavigation {
+                performLoad(webView)
+            } else {
+                didTerminate(result)
+            }
         }
+        return prerequisiteOwner
     }
 
     func clearRelatedNavigationState() {
@@ -260,13 +288,13 @@ final class TabNavigationTransactionOwner {
     }
 
     private func cancelPendingPreparedLoad() {
-        let cancellation = pendingCancellation
+        let termination = pendingTermination
         let task = pendingTask
-        pendingCancellation = nil
+        pendingTermination = nil
         pendingTask = nil
-        pendingToken = nil
+        pendingPrerequisiteOwner = nil
         task?.cancel()
-        cancellation?()
+        termination?(.cancelled)
     }
 
     private func applyWindowMutationResult(

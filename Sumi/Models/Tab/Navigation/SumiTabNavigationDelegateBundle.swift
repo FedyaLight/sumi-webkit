@@ -112,6 +112,10 @@ final class SumiTabNavigationDelegateAdapter {
         navigationResponderChain.dispatchCreateWebView(callback)
     }
 
+    func cancelPendingNavigationDecisions() {
+        navigationResponderChain.cancelPendingNavigationDecisions()
+    }
+
     func createWebView(
         from webView: WKWebView,
         with configuration: WKWebViewConfiguration,

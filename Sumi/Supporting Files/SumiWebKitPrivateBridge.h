@@ -105,4 +105,39 @@ static inline NSView * _Nullable SumiWKWebViewFullScreenPlaceholderView(WKWebVie
 - (void)_pauseNowPlayingMediaSession:(void(^)(BOOL success))completionHandler;
 @end
 
+@interface _WKSessionState : NSObject
+- (nullable instancetype)initWithData:(NSData *)data;
+@property (nonatomic, readonly, nullable) NSData *data;
+@end
+
+@interface WKWebView (SumiWKSessionStatePrivate)
+@property (nonatomic, readonly, nullable) _WKSessionState *_sessionState;
+- (nullable WKNavigation *)_restoreSessionState:(_WKSessionState *)sessionState
+                                    andNavigate:(BOOL)navigate;
+@end
+
+static inline NSData * _Nullable SumiWKSessionStateData(WKWebView *webView)
+{
+    @try {
+        return webView._sessionState.data;
+    } @catch (NSException *exception) {
+        return nil;
+    }
+}
+
+static inline WKNavigation * _Nullable SumiRestoreWKSessionState(
+    WKWebView *webView,
+    NSData *data
+)
+{
+    @try {
+        _WKSessionState *state = [[_WKSessionState alloc] initWithData:data];
+        if (!state)
+            return nil;
+        return [webView _restoreSessionState:state andNavigate:YES];
+    } @catch (NSException *exception) {
+        return nil;
+    }
+}
+
 NS_ASSUME_NONNULL_END

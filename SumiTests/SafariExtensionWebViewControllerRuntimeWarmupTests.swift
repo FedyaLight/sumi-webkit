@@ -934,7 +934,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         )
     }
 
-    func testInitialContextPreparationWarmsNativeMessagingExactlyOnce() async throws {
+    func testInitialContextPreparationDoesNotWarmNativeMessaging() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let managerFixture = makeManager(
@@ -965,19 +965,21 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
             .initialDocumentRuntimePreparationOwner
             .ensureInitialExtensionContextsLoaded(for: profile.id)
 
-        XCTAssertEqual(backgroundWakeCount, 1)
+        XCTAssertEqual(backgroundWakeCount, 0)
         XCTAssertEqual(
             backgroundRuntimeState(
                 in: inspection,
                 extensionID: installed.id,
                 profileID: profile.id
             ),
-            .loaded
+            .neverLoaded
         )
 
         await inspection.normalTabs.deferredRuntime
             .initialDocumentRuntimePreparationOwner
             .warmInitialDocumentNativeMessaging(for: profile.id)
+
+        XCTAssertEqual(backgroundWakeCount, 1)
 
         let context = try XCTUnwrap(
             inspection.contextState.profiles.contexts(for: profile.id)[installed.id]

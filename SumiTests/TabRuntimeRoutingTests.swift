@@ -74,7 +74,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
         XCTAssertTrue(tab.webContentRecoveryMarkers.isRecoveryRequired(on: webView))
     }
 
-    func testGlobalProcessRecoveryRetainsOwnerBeforeConfigurationFailure() {
+    func testGlobalProcessRecoveryRetainsOwnerBeforeDelivery() {
         let targetURL = URL(string: "https://example.com/recovery-failure")!
         let transaction = TabMainFrameRuntimeTransaction(initialURL: targetURL)
         let tab = Tab(
@@ -91,18 +91,17 @@ final class TabRuntimeRoutingTests: XCTestCase {
         let outcome = tab.navigationCommandOwner.recoverWebContentProcess(
             tab,
             targetURL: targetURL,
-            sourceWebView: webView,
-            configurationPolicyRebuilder: { _, _ in .failed }
+            sourceWebView: webView
         )
 
-        XCTAssertEqual(outcome, .failed)
+        XCTAssertEqual(outcome, .scheduled)
         XCTAssertEqual(routing.retainedProcessRecoveryCalls.count, 1)
         XCTAssertEqual(routing.retainedProcessRecoveryCalls.first?.0, tab.id)
         XCTAssertEqual(
             routing.retainedProcessRecoveryCalls.first?.1,
             ObjectIdentifier(webView)
         )
-        XCTAssertTrue(routing.processRecoveryCalls.isEmpty)
+        XCTAssertEqual(routing.processRecoveryCalls.count, 1)
         XCTAssertTrue(tab.webContentRecoveryMarkers.isRecoveryRequired(on: webView))
     }
 
@@ -232,7 +231,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
         XCTAssertTrue(tab.webContentRecoveryMarkers.isRecoveryRequired(on: crashedReplica))
     }
 
-    func testAuthorityProcessTerminationStartsGlobalRevisionAndRetainsExactRepair() {
+    func testSecondAuthorityProcessTerminationDoesNotStartAnotherAutomaticRecovery() {
         let targetURL = URL(string: "https://example.com/global-recovery")!
         let transaction = TabMainFrameRuntimeTransaction(initialURL: targetURL)
         let tab = Tab(
@@ -258,7 +257,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
             .webContentProcessDidTerminate(on: crashedWebView)
 
         let recoveryIntent = tab.mainFrameLoads.currentIntent
-        XCTAssertEqual(recoveryIntent.revision, crashedIntent.revision + 1)
+        XCTAssertEqual(recoveryIntent, crashedIntent)
         XCTAssertEqual(recoveryIntent.targetURL, targetURL)
         XCTAssertEqual(routing.processRecoveryCalls.count, 1)
         XCTAssertEqual(
@@ -267,11 +266,37 @@ final class TabRuntimeRoutingTests: XCTestCase {
         )
         XCTAssertTrue(tab.webContentRecoveryMarkers.isRecoveryRequired(on: crashedWebView))
 
+        tab.makeMainFrameLifecycleResponder().navigationDidFail(
+            WKError(.webContentProcessTerminated),
+            context: SumiNavigationContext(
+                navigationID: ObjectIdentifier(navigation),
+                navigationLifetime: navigation,
+                action: nil,
+                url: targetURL,
+                isCurrent: true,
+                isCommitted: false,
+                isMainFrame: true,
+                webView: crashedWebView
+            )
+        )
+
+        XCTAssertEqual(tab.mainFrameLoads.currentIntent, recoveryIntent)
+        XCTAssertEqual(routing.processRecoveryCalls.count, 1)
+
         tab.makeMainFrameLifecycleResponder()
             .webContentProcessDidTerminate(on: crashedWebView)
 
         XCTAssertEqual(tab.mainFrameLoads.currentIntent, recoveryIntent)
-        XCTAssertEqual(routing.processRecoveryCalls.count, 2)
+        XCTAssertEqual(
+            routing.processRecoveryCalls.count,
+            1,
+            "One logical committed-document epoch permits only one automatic recovery"
+        )
+        XCTAssertEqual(
+            tab.webContentRecoveryMarkers.recoveryState(on: crashedWebView)?.phase,
+            .failed
+        )
+        XCTAssertFalse(tab.isLoading)
     }
 
     func testRefreshCreatesExactSemanticDeliveryWithoutBrowserManager() {
@@ -285,7 +310,6 @@ final class TabRuntimeRoutingTests: XCTestCase {
             tab,
             resolvedWebView: { nil },
             reason: "TabRuntimeRoutingTests.refresh",
-            configurationPolicyRebuilder: { _, _ in .notNeeded },
             deliverTrackedReload: { intent, policy in
                 reloadCalls.append(.init(
                     tabId: tab.id,
@@ -293,11 +317,11 @@ final class TabRuntimeRoutingTests: XCTestCase {
                     targetURL: intent.targetURL,
                     policy: policy
                 ))
-                return .accepted
+                return routingTestReloadWaiting(intent)
             }
         )
 
-        XCTAssertEqual(outcome, .accepted)
+        XCTAssertTrue(outcome.ownsFutureOrSubmittedNavigation)
         XCTAssertEqual(reloadCalls.map(\.tabId), [tab.id])
         XCTAssertEqual(reloadCalls.first?.targetURL, tab.url)
         XCTAssertEqual(reloadCalls.first?.policy, .standard)
@@ -319,7 +343,6 @@ final class TabRuntimeRoutingTests: XCTestCase {
                 tab,
                 resolvedWebView: { nil },
                 reason: "TabRuntimeRoutingTests.repeatedRefresh",
-                configurationPolicyRebuilder: { _, _ in .notNeeded },
                 deliverTrackedReload: { intent, policy in
                     reloadCalls.append(.init(
                         tabId: tab.id,
@@ -327,7 +350,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
                         targetURL: intent.targetURL,
                         policy: policy
                     ))
-                    return .accepted
+                    return routingTestReloadWaiting(intent)
                 }
             )
         }
@@ -419,8 +442,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
                 registrationReasons.append(reason)
             },
             prepareWebViewForExtensionRuntime: { _, _, _ in /* No-op. */ },
-            ensureInitialExtensionContextsIfNeeded: { _ in /* No-op. */ },
-            warmInitialDocumentNativeMessagingIfNeeded: { _ in /* No-op. */ }
+            ensureInitialExtensionContextsIfNeeded: { _ in .ready }
         )
 
         tab.normalWebViewInitialDocumentStage()
@@ -445,8 +467,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
                 preparedURLs.append(currentURL)
                 preparedReasons.append(reason)
             },
-            ensureInitialExtensionContextsIfNeeded: { _ in /* No-op. */ },
-            warmInitialDocumentNativeMessagingIfNeeded: { _ in /* No-op. */ }
+            ensureInitialExtensionContextsIfNeeded: { _ in .ready }
         )
 
         tab.ownedWebViewPreparationOwner.prepareCreatedFocusableWebView(
@@ -705,9 +726,10 @@ final class TabRuntimeRoutingTests: XCTestCase {
 
         XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertEqual(
-            tab.url.absoluteString,
+            tab.mainFrameLoads.currentIntent.targetURL.absoluteString,
             "https://search.example/?q=sumi+browser"
         )
+        XCTAssertEqual(tab.url.absoluteString, "about:blank")
     }
 }
 
@@ -797,6 +819,7 @@ private final class RecordingTabWebViewRouting {
     }
 
     private(set) var syncCalls: [(UUID, ObjectIdentifier?)] = []
+    private(set) var pagePresentationChanges: [(UUID, ObjectIdentifier)] = []
     private(set) var reloadCalls: [ReloadCall] = []
     private(set) var retainedProcessRecoveryCalls: [(UUID, ObjectIdentifier)] = []
     private(set) var processRecoveryCalls: [(UUID, ObjectIdentifier)] = []
@@ -810,6 +833,11 @@ private final class RecordingTabWebViewRouting {
                     (tabId, webView.map(ObjectIdentifier.init))
                 )
             },
+            pagePresentationDidChange: { [weak self] tabId, webView in
+                self?.pagePresentationChanges.append(
+                    (tabId, ObjectIdentifier(webView))
+                )
+            },
             reloadTabAcrossWindows: { [weak self] tabId, intent, policy in
                 self?.reloadCalls.append(.init(
                     tabId: tabId,
@@ -817,6 +845,7 @@ private final class RecordingTabWebViewRouting {
                     targetURL: intent.targetURL,
                     policy: policy
                 ))
+                return routingTestReloadWaiting(intent)
             },
             reloadTabInWindow: { [weak self] tabId, _, intent, policy in
                 self?.reloadCalls.append(.init(
@@ -825,7 +854,7 @@ private final class RecordingTabWebViewRouting {
                     targetURL: intent.targetURL,
                     policy: policy
                 ))
-                return .accepted
+                return routingTestReloadWaiting(intent)
             },
             retainWebContentProcessRecovery: { [weak self] tabId, webView in
                 self?.retainedProcessRecoveryCalls.append(
@@ -947,4 +976,17 @@ private final class RecordingTabHistorySwipeRuntime {
             }
         )
     }
+}
+
+@MainActor
+private func routingTestReloadWaiting(
+    _ intent: TabMainFrameNavigationIntent
+) -> PageReloadCommandOutcome {
+    PageReloadCommandOutcome(.waiting(TabMainFramePendingAttemptOwner(
+        intent: intent,
+        documentGeneration: 0,
+        participantID: UUID(),
+        webViewID: ObjectIdentifier(RecordingTabHistorySwipeRuntime()),
+        phase: .deferred
+    )))
 }

@@ -1,10 +1,92 @@
 import WebKit
+import SumiWebRuntime
 import XCTest
 
 @testable import Sumi
 
 @MainActor
 final class SumiTabLifecycleReentrancyTests: XCTestCase {
+    func testLifecycleCallbackOrderMatrixPreservesCommitAuthorityAndSettlesOnce() {
+        let cases: [([LifecycleCallback], Bool)] = [
+            ([.commit, .finish], true),
+            ([.finish], true),
+            ([.fail], false),
+            ([.downloadHandoff], false),
+            ([.commit, .fail], true),
+            ([.finish, .fail], true),
+            ([.commit, .commit, .finish, .finish], true),
+        ]
+
+        for (callbacks, expectsTargetCommit) in cases {
+            let fixture = makeFixture()
+            for callback in callbacks {
+                switch callback {
+                case .commit:
+                    fixture.responder.navigationDidCommit(fixture.context)
+                case .finish:
+                    fixture.responder.navigationDidFinish(fixture.context)
+                case .fail:
+                    fixture.responder.navigationDidFail(
+                        WKError(.unknown),
+                        context: fixture.context
+                    )
+                case .downloadHandoff:
+                    fixture.responder.navigationDidFail(
+                        WKError(.frameLoadInterruptedByPolicyChange),
+                        context: fixture.context
+                    )
+                }
+            }
+
+            XCTAssertEqual(
+                fixture.tab.url,
+                expectsTargetCommit ? fixture.targetURL : fixture.initialURL,
+                "Unexpected durable URL for callback order \(callbacks)"
+            )
+            XCTAssertFalse(
+                fixture.tab.loadingState.isLoading,
+                "Callback order must terminate loading: \(callbacks)"
+            )
+            XCTAssertLessThanOrEqual(
+                fixture.runtime.markedEligibleTabIds.count,
+                1,
+                "Commit effects must publish once: \(callbacks)"
+            )
+            XCTAssertLessThanOrEqual(
+                fixture.runtime.siteDataPolicyTabIds.count,
+                1,
+                "Finish effects must publish once: \(callbacks)"
+            )
+        }
+    }
+
+    func testContentPluginHandledLoadSettlesCommittedDocumentAsLive() {
+        let fixture = makeFixture()
+        let pluginHandledLoad = WKError(
+            _nsError: NSError(domain: "WebKitErrorDomain", code: 204)
+        )
+
+        fixture.responder.navigationDidCommit(fixture.context)
+        fixture.responder.navigationDidFail(
+            pluginHandledLoad,
+            context: fixture.context
+        )
+
+        XCTAssertEqual(fixture.tab.loadingState, .didFinish)
+        XCTAssertNotNil(
+            fixture.tab.committedDocumentRuntime.lease(for: fixture.webView)
+        )
+        XCTAssertEqual(fixture.runtime.siteDataPolicyTabIds, [fixture.tab.id])
+        XCTAssertEqual(
+            PagePresentationResolver.resolve(
+                tab: fixture.tab,
+                windowState: BrowserWindowState(),
+                webView: fixture.webView
+            ),
+            .live(pageID: fixture.tab.id)
+        )
+    }
+
     func testDidStartStopsBeforeAuthorityPreparationWhenSharedStartBecomesStale() {
         let fixture = makeFixture()
         let successorURL = URL(string: "https://successor.example/shared-start")!
@@ -214,6 +296,46 @@ final class SumiTabLifecycleReentrancyTests: XCTestCase {
         XCTAssertEqual(fixture.runtime.markedEligibleTabIds, [fixture.tab.id])
     }
 
+    func testFirstCommitPublishesOneExactPresentationChange() {
+        let fixture = makeFixture()
+        var changes: [(UUID, ObjectIdentifier)] = []
+        var routing = TabWebViewRoutingRuntime.inactive
+        routing.pagePresentationDidChange = { tabID, webView in
+            changes.append((tabID, ObjectIdentifier(webView)))
+        }
+        fixture.tab.navigationRuntime.webViewRouting = routing
+
+        fixture.responder.navigationDidCommit(fixture.context)
+        fixture.responder.navigationDidCommit(fixture.context)
+
+        XCTAssertEqual(changes.map(\.0), [fixture.tab.id])
+        XCTAssertEqual(
+            changes.map(\.1),
+            [ObjectIdentifier(fixture.webView)]
+        )
+    }
+
+    func testTerminalFirstLoadFailurePublishesExactPresentationChange() {
+        let fixture = makeFixture()
+        var changes: [(UUID, ObjectIdentifier)] = []
+        var routing = TabWebViewRoutingRuntime.inactive
+        routing.pagePresentationDidChange = { tabID, webView in
+            changes.append((tabID, ObjectIdentifier(webView)))
+        }
+        fixture.tab.navigationRuntime.webViewRouting = routing
+
+        fixture.responder.navigationDidFail(
+            WKError(.unknown),
+            context: fixture.context
+        )
+
+        XCTAssertEqual(changes.map(\.0), [fixture.tab.id])
+        XCTAssertEqual(
+            changes.map(\.1),
+            [ObjectIdentifier(fixture.webView)]
+        )
+    }
+
     func testDuplicateFinishPublishesSharedEffectsOnce() {
         let fixture = makeFixture()
 
@@ -225,6 +347,162 @@ final class SumiTabLifecycleReentrancyTests: XCTestCase {
         XCTAssertEqual(
             fixture.runtime.documentSuspensionReconcileTabIds,
             [fixture.tab.id]
+        )
+    }
+
+    func testFinishWithoutCommittedWebKitEvidenceRollsBackInsteadOfPublishingTarget() {
+        let fixture = makeFixture(hasCommittedWebKitEvidence: false)
+
+        fixture.responder.navigationDidFinish(fixture.context)
+
+        XCTAssertEqual(fixture.tab.url, fixture.initialURL)
+        XCTAssertNotEqual(fixture.tab.loadingState, .didFinish)
+        XCTAssertNil(
+            fixture.tab.committedDocumentRuntime.lease(for: fixture.webView)
+        )
+        XCTAssertEqual(
+            fixture.tab.mainFrameLoads.currentIntent.targetURL,
+            fixture.initialURL
+        )
+        XCTAssertTrue(fixture.runtime.siteDataPolicyTabIds.isEmpty)
+    }
+
+    func testUnexpectedUnadmittedBlankCannotReplaceCommittedDestination() {
+        let initialURL = URL(string: "https://initial.example/page")!
+        let blankURL = URL(string: "about:blank")!
+        let tab = Tab(url: initialURL, loadsCachedFaviconOnInit: false)
+        let webView = SumiNavigationURLReportingWebView(frame: .zero)
+        webView.reportedURL = blankURL
+        webView.reportedCommittedURL = blankURL
+        let navigation = NSObject()
+        let context = SumiNavigationContext(
+            navigationID: ObjectIdentifier(navigation),
+            navigationLifetime: navigation,
+            action: nil,
+            url: blankURL,
+            isCurrent: true,
+            isCommitted: true,
+            isMainFrame: true,
+            webView: webView
+        )
+        let responder = tab.makeMainFrameLifecycleResponder()
+
+        responder.navigationWillStart(context)
+        XCTAssertNil(tab.mainFrameLoads.currentIntent.blankAdmission)
+        XCTAssertFalse(tab.mainFrameLoads.admitsCommit(to: blankURL))
+        responder.navigationDidCommit(context)
+
+        XCTAssertEqual(tab.url, initialURL)
+        XCTAssertEqual(tab.mainFrameLoads.currentIntent.targetURL, initialURL)
+        XCTAssertNil(tab.committedDocumentRuntime.lease(for: webView))
+        XCTAssertFalse(tab.loadingState.isLoading)
+    }
+
+    func testUnexpectedBlankDuringNativeRestoreAttemptsOneOrdinaryFallback() {
+        let destination = URL(string: "https://initial.example/page")!
+        let blankURL = URL(string: "about:blank")!
+        let tab = Tab(url: destination, loadsCachedFaviconOnInit: false)
+        let webView = SuspendedRestoreBlankReportingWebView(frame: .zero)
+        webView.reportedURL = blankURL
+        webView.reportedCommittedURL = blankURL
+        tab.replaceUntrackedWebView(webView)
+        _ = tab.installNavigationDelegate(on: webView)
+
+        let residence = WebViewResidence.untracked(tabID: tab.id)
+        let snapshot = PageSessionSnapshot(
+            residence: residence,
+            residenceGeneration: tab.webViewSession.generation,
+            profileID: nil,
+            dataStoreIdentity: PageSessionDataStoreIdentity(
+                webView.configuration.websiteDataStore
+            ),
+            committedRevision: tab.mainFrameLoads.currentIntent.revision,
+            destination: destination,
+            data: Data([1])
+        )
+        tab.markSuspended(sessionSnapshots: [snapshot])
+        tab.beginSuspendedRestoreIfNeeded()
+
+        let navigation = NSObject()
+        let navigationID = ObjectIdentifier(navigation)
+        let submission = try! XCTUnwrap(
+            tab.mainFrameLoads.claimDirectSubmission(on: webView)
+        )
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
+            on: webView,
+            navigationID: navigationID,
+            navigationLifetime: navigation,
+            matching: submission
+        ))
+        XCTAssertTrue(tab.suspensionState.bind(
+            snapshot,
+            webViewID: ObjectIdentifier(webView),
+            navigationID: navigationID
+        ))
+        let context = SumiNavigationContext(
+            navigationID: navigationID,
+            navigationLifetime: navigation,
+            action: nil,
+            url: blankURL,
+            isCurrent: true,
+            isCommitted: true,
+            isMainFrame: true,
+            webView: webView
+        )
+        let responder = tab.makeMainFrameLifecycleResponder()
+
+        XCTAssertEqual(webView.committedURL, blankURL)
+        XCTAssertTrue(webView.committedURL?.isSumiBlankDocumentURL == true)
+        XCTAssertEqual(tab.mainFrameLoads.currentIntent.targetURL, destination)
+        XCTAssertFalse(tab.mainFrameLoads.admitsCommit(to: blankURL))
+        XCTAssertTrue(tab.suspensionState.isRestoreInProgress)
+        XCTAssertEqual(tab.suspensionState.lastSuspendedURL, destination)
+        responder.navigationDidCommit(context)
+
+        XCTAssertEqual(webView.loadedRequests.map(\.url), [destination])
+        XCTAssertEqual(tab.suspensionState.phase, .failed)
+        XCTAssertTrue(tab.suspensionState.didAttemptFallback)
+        XCTAssertEqual(tab.url, destination)
+    }
+
+    func testExplicitBlankAdmissionCanCommitOnlyItsBoundNavigation() throws {
+        let initialURL = try XCTUnwrap(URL(string: "https://initial.example/page"))
+        let blankURL = try XCTUnwrap(URL(string: "about:blank"))
+        let tab = Tab(url: initialURL, loadsCachedFaviconOnInit: false)
+        let webView = SumiNavigationURLReportingWebView(frame: .zero)
+        webView.reportedURL = blankURL
+        webView.reportedCommittedURL = blankURL
+        let intent = tab.beginMainFrameNavigationIntent(to: blankURL)
+        XCTAssertNotNil(intent.blankAdmission)
+        let submission = try XCTUnwrap(
+            tab.mainFrameLoads.claimDirectSubmission(on: webView)
+        )
+        let navigation = NSObject()
+        let navigationID = ObjectIdentifier(navigation)
+        XCTAssertTrue(tab.mainFrameSubmission.bindSubmittedLoad(
+            on: webView,
+            navigationID: navigationID,
+            navigationLifetime: navigation,
+            matching: submission
+        ))
+        let context = SumiNavigationContext(
+            navigationID: navigationID,
+            navigationLifetime: navigation,
+            action: nil,
+            url: blankURL,
+            isCurrent: true,
+            isCommitted: true,
+            isMainFrame: true,
+            webView: webView
+        )
+
+        tab.makeMainFrameLifecycleResponder().navigationDidCommit(context)
+
+        XCTAssertEqual(tab.url, blankURL)
+        XCTAssertEqual(
+            try XCTUnwrap(tab.committedDocumentRuntime.lease(for: webView))
+                .committedURL,
+            blankURL
         )
     }
 
@@ -321,7 +599,9 @@ final class SumiTabLifecycleReentrancyTests: XCTestCase {
         XCTAssertEqual(syncCount, 0)
     }
 
-    private func makeFixture() -> Fixture {
+    private func makeFixture(
+        hasCommittedWebKitEvidence: Bool = true
+    ) -> Fixture {
         let initialURL = URL(string: "https://initial.example/page")!
         let targetURL = URL(string: "https://target.example/page")!
         let tab = Tab(url: initialURL, loadsCachedFaviconOnInit: false)
@@ -329,6 +609,9 @@ final class SumiTabLifecycleReentrancyTests: XCTestCase {
         tab.navigationRuntime.lifecycleNavigationRuntime = runtime.runtime
         let webView = SumiNavigationURLReportingWebView(frame: .zero)
         webView.reportedURL = targetURL
+        webView.reportedCommittedURL = hasCommittedWebKitEvidence
+            ? targetURL
+            : nil
         let navigation = NSObject()
         let context = SumiNavigationContext(
             navigationID: ObjectIdentifier(navigation),
@@ -370,5 +653,51 @@ final class SumiTabLifecycleReentrancyTests: XCTestCase {
         let context: SumiNavigationContext
         let initialURL: URL
         let targetURL: URL
+    }
+
+    private enum LifecycleCallback: CustomStringConvertible {
+        case commit
+        case finish
+        case fail
+        case downloadHandoff
+
+        var description: String {
+            switch self {
+            case .commit: "commit"
+            case .finish: "finish"
+            case .fail: "fail"
+            case .downloadHandoff: "downloadHandoff"
+            }
+        }
+    }
+}
+
+@MainActor
+private final class SuspendedRestoreBlankReportingWebView: WKWebView {
+    var reportedURL: URL?
+    var reportedCommittedURL: URL?
+    private(set) var loadedRequests: [URLRequest] = []
+
+    override var url: URL? { reportedURL }
+
+    override func responds(to selector: ObjectiveC.Selector?) -> Bool {
+        guard let selector else { return false }
+        let name = NSStringFromSelector(selector)
+        if name == "committedURL" || name == "_committedURL" {
+            return true
+        }
+        return super.responds(to: selector)
+    }
+
+    override func value(forKey key: String) -> Any? {
+        if key == "committedURL" {
+            return MainActor.assumeIsolated { reportedCommittedURL }
+        }
+        return super.value(forKey: key)
+    }
+
+    override func load(_ request: URLRequest) -> WKNavigation? {
+        loadedRequests.append(request)
+        return nil
     }
 }

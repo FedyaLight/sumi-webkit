@@ -36,6 +36,10 @@ final class WebViewTrackedCleanupExecutionOwner {
         trackingLifecycleOwner: WebViewTrackingLifecycleOwner,
         runtime: Runtime
     ) -> Bool {
+        runtime.cancelProcessRecovery(webView)
+        runtime.finishDestructiveCleanupSuppression(webView)
+        tab?.webViewsWillLeaveRuntime([webView])
+
         guard trackingLifecycleOwner.unregisterTrackedWebViewSlot(
             owner: owner,
             expectedWebView: webView,
@@ -49,11 +53,8 @@ final class WebViewTrackedCleanupExecutionOwner {
             return false
         }
 
-        runtime.cancelProcessRecovery(webView)
-        runtime.finishDestructiveCleanupSuppression(webView)
-
         if let tab {
-            tab.cleanupCloneWebView(webView)
+            tab.destroyRetiredWebView(webView)
         } else {
             runtime.fallbackCleanup(webView, owner.tabID)
         }

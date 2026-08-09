@@ -15,7 +15,10 @@ final class WebViewSessionTransitionCoordinator {
     private struct PreparedReplacement {
         let tabID: UUID
         let previous: WebViewSessionSnapshot
+        let retired: WebViewSessionSnapshot
         let replacement: Placement
+        let candidateWebViews: [WKWebView]
+        let replacementWindowIDs: Set<UUID>?
     }
 
     private enum PreparationResult {
@@ -423,7 +426,7 @@ final class WebViewSessionTransitionCoordinator {
             ) else {
                 return .rejected(.invalid(tabID: requested.tabID))
             }
-            for webView in activeWebViews(in: replacement) {
+            for webView in replacement.candidateWebViews {
                 let webViewID = ObjectIdentifier(webView)
                 guard replacementWebViewIDs.insert(webViewID).inserted,
                       residence(of: webView) == nil else {
@@ -433,7 +436,10 @@ final class WebViewSessionTransitionCoordinator {
             prepared.append(PreparedReplacement(
                 tabID: requested.tabID,
                 previous: previous,
-                replacement: replacement
+                retired: replacement.retired,
+                replacement: replacement.placement,
+                candidateWebViews: replacement.candidateWebViews,
+                replacementWindowIDs: replacement.replacementWindowIDs
             ))
         }
         return .prepared(prepared)
@@ -475,7 +481,10 @@ final class WebViewSessionTransitionCoordinator {
             prepared.append(PreparedReplacement(
                 tabID: requested.tabID,
                 previous: previous,
-                replacement: Placement()
+                retired: previous,
+                replacement: Placement(),
+                candidateWebViews: [],
+                replacementWindowIDs: nil
             ))
         }
         return .prepared(prepared)
@@ -484,7 +493,12 @@ final class WebViewSessionTransitionCoordinator {
     private func replacementPlacement(
         for requested: WebViewReplacementBatchEntry,
         previous: WebViewSessionSnapshot
-    ) -> Placement? {
+    ) -> (
+        placement: Placement,
+        retired: WebViewSessionSnapshot,
+        candidateWebViews: [WKWebView],
+        replacementWindowIDs: Set<UUID>?
+    )? {
         var replacement = Placement()
         switch requested.placement {
         case .windowSet(let webViewsByWindowID, let primaryWindowID):
@@ -495,6 +509,36 @@ final class WebViewSessionTransitionCoordinator {
             }
             replacement.primaryWindowID = primaryWindowID
             replacement.windowWebViews = webViewsByWindowID
+            return (
+                replacement,
+                previous,
+                Array(webViewsByWindowID.values),
+                nil
+            )
+        case .windowSubset(let webViewsByWindowID):
+            let windowIDs = Set(webViewsByWindowID.keys)
+            guard windowIDs.isEmpty == false,
+                  windowIDs.isSubset(of: Set(previous.windowWebViews.keys))
+            else { return nil }
+            replacement = placements.entry(from: previous)
+            for (windowID, webView) in webViewsByWindowID {
+                replacement.windowWebViews[windowID] = webView
+            }
+            let retired = WebViewSessionSnapshot(
+                generation: previous.generation,
+                parkedWebView: nil,
+                untrackedWebView: nil,
+                primaryWindowID: nil,
+                windowWebViews: previous.windowWebViews.filter {
+                    windowIDs.contains($0.key)
+                }
+            )
+            return (
+                replacement,
+                retired,
+                Array(webViewsByWindowID.values),
+                windowIDs
+            )
         case .detached(let webView, let residence):
             guard previous.windowWebViews.isEmpty,
                   previous.parkedWebView != nil
@@ -505,8 +549,8 @@ final class WebViewSessionTransitionCoordinator {
             case .untracked:
                 replacement.untrackedWebView = webView
             }
+            return (replacement, previous, [webView], nil)
         }
-        return replacement
     }
 
     private func apply(
@@ -526,7 +570,7 @@ final class WebViewSessionTransitionCoordinator {
                 tabID: replacement.tabID
             )
             transitions.retainRetirement(
-                replacement.previous,
+                replacement.retired,
                 lease: retirementLease
             )
             switch lease {
@@ -549,7 +593,8 @@ final class WebViewSessionTransitionCoordinator {
                 retirementLease: retirementLease,
                 installed: WebViewPlacementFingerprint(
                     placements.snapshot(for: replacement.tabID)
-                )
+                ),
+                replacementWindowIDs: replacement.replacementWindowIDs
             )
         }
         let batch = Batch(
@@ -587,14 +632,35 @@ final class WebViewSessionTransitionCoordinator {
                 continue
             }
             let current = placements.snapshot(for: tabID)
-            discarded[tabID] = current
+            if let windowIDs = replacement.replacementWindowIDs {
+                discarded[tabID] = WebViewSessionSnapshot(
+                    generation: current.generation,
+                    parkedWebView: nil,
+                    untrackedWebView: nil,
+                    primaryWindowID: nil,
+                    windowWebViews: current.windowWebViews.filter {
+                        windowIDs.contains($0.key)
+                    }
+                )
+            } else {
+                discarded[tabID] = current
+            }
             placements.removeAllResidences(in: current, tabID: tabID)
             guard let previous = transitions.takeRetirement(
                 replacement.retirementLease
             ) else {
                 preconditionFailure("Rollback lost previous generation")
             }
-            let restored = placements.entry(from: previous)
+            var restored: Placement
+            if let windowIDs = replacement.replacementWindowIDs {
+                restored = placements.entry(from: current)
+                for windowID in windowIDs {
+                    restored.windowWebViews[windowID] =
+                        previous.windowWebViews[windowID]
+                }
+            } else {
+                restored = placements.entry(from: previous)
+            }
             placements.storeMutated(restored, for: tabID)
             placements.installActiveResidences(in: restored, tabID: tabID)
         }

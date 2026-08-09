@@ -11,7 +11,6 @@ extension WindowWebContentContext {
                 for: browserManager
             ),
             webViewOwnershipQuery: browserManager.webViewRuntime.ownershipQuery,
-            trackedWebViewAdmission: browserManager.webViewRuntime.trackedWebViewAdmission,
             webViewCompositorRuntime: browserManager.webViewRuntime.compositorRuntime,
             webViewProtectionRuntime: browserManager.webViewRuntime.protectionRuntime
         )

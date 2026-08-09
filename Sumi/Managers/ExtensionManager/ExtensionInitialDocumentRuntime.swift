@@ -18,7 +18,8 @@ struct ExtensionInitialDocumentRuntime {
         self.requestedTabs = requestedTabs
     }
 
-    func ensureInitialContexts(profileID: UUID) async {
+    func ensureInitialContexts(profileID: UUID) async
+        -> PageNavigationPrerequisiteResult {
         await owners.initialDocumentRuntimePreparationOwner
             .ensureInitialExtensionContextsLoaded(for: profileID)
     }

@@ -19,6 +19,9 @@ struct TabRestoreTabDTO: Sendable {
     let folderId: UUID?
     let canGoBack: Bool
     let canGoForward: Bool
+    var isRestoreFailure = false
+    var restoreFailureDestination: URL? = nil
+    var restoreFailureRawDestination: String? = nil
 }
 
 struct TabRestoreShortcutDTO: Sendable {
@@ -89,6 +92,7 @@ struct TabRestoreTabRecord: Sendable {
     let currentURLString: String?
     let canGoBack: Bool
     let canGoForward: Bool
+    var pageKind: TabPersistedPageKind? = nil
 }
 
 struct TabRestoreFolderRecord: Sendable {

@@ -114,6 +114,20 @@ public struct WebViewSessionSnapshot {
     public let primaryWindowID: UUID?
     public let windowWebViews: [UUID: WKWebView]
 
+    public init(
+        generation: UInt64,
+        parkedWebView: WKWebView?,
+        untrackedWebView: WKWebView?,
+        primaryWindowID: UUID?,
+        windowWebViews: [UUID: WKWebView]
+    ) {
+        self.generation = generation
+        self.parkedWebView = parkedWebView
+        self.untrackedWebView = untrackedWebView
+        self.primaryWindowID = primaryWindowID
+        self.windowWebViews = windowWebViews
+    }
+
     public var allKnownWebViews: [WKWebView] {
         var seen: Set<ObjectIdentifier> = []
         var result: [WKWebView] = []
@@ -148,6 +162,9 @@ public enum WebViewReplacementPlacement {
         webViewsByWindowID: [UUID: WKWebView],
         primaryWindowID: UUID
     )
+    /// Replaces only the listed tracked residences and preserves every other
+    /// window residence and the current primary-window authority.
+    case windowSubset(webViewsByWindowID: [UUID: WKWebView])
     case detached(
         webView: WKWebView,
         residence: WebViewDetachedReplacementResidence

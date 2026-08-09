@@ -902,4 +902,105 @@ extension TabWebViewMaterializationAndRebuildTests {
         )
     }
 
+    func testFreshRepairCommitPreservesHealthyCrossWindowResidence() throws {
+        let repository = WebViewSessionRepository()
+        let targetURL = try XCTUnwrap(
+            URL(string: "https://example.com/fresh-repair")
+        )
+        let tab = Tab(
+            url: targetURL,
+            webViewSessions: repository,
+            loadsCachedFaviconOnInit: false
+        )
+        let healthyWindowID = UUID()
+        let failedWindowID = UUID()
+        let healthy = WKWebView()
+        let failed = WKWebView()
+        register(
+            healthy,
+            tabID: tab.id,
+            windowID: healthyWindowID,
+            in: repository
+        )
+        register(
+            failed,
+            tabID: tab.id,
+            windowID: failedWindowID,
+            in: repository
+        )
+        let configuration = WKWebViewConfiguration()
+        configuration.sumiIsNormalTabWebViewConfiguration = true
+        configuration.userContentController =
+            SumiNormalTabUserContentControllerFactory.makeController()
+        let candidate = WKWebView(frame: .zero, configuration: configuration)
+        let snapshot = repository.snapshot(for: tab.id)
+        candidate.sumiPreparedConfigurationPolicyChange =
+            tab.configurationPolicyLedger.prepare(
+                TabConfigurationPolicyState(
+                    profileID: nil,
+                    websiteDataStoreIdentity: ObjectIdentifier(
+                        candidate.configuration.websiteDataStore
+                    ),
+                    protectionAttachment: nil,
+                    safariContentBlockerAttachment: nil,
+                    autoplayState: .blockAll
+                ),
+                expectedSessionGeneration: snapshot.generation
+            )
+        let changeSet = try XCTUnwrap(
+            tab.preparedConfigurationPolicyChangeSet(for: [candidate])
+        )
+        let retired = WebViewSessionSnapshot(
+            generation: snapshot.generation,
+            parkedWebView: nil,
+            untrackedWebView: nil,
+            primaryWindowID: nil,
+            windowWebViews: [failedWindowID: failed]
+        )
+        let prepared = try XCTUnwrap(PreparedWebViewReplacement(
+            tab: tab,
+            snapshot: snapshot,
+            placement: .windowSubset(
+                webViewsByWindowID: [failedWindowID: candidate]
+            ),
+            replacements: [candidate],
+            trackedReplacements: [candidate],
+            bindingReplacements: [],
+            targetURL: targetURL,
+            semanticRevision: tab.mainFrameLoads.currentIntent.revision,
+            profileID: nil,
+            requiresExtensionRuntimePreparation: false,
+            configurationPolicyChangeSet: changeSet,
+            retiredSnapshot: retired
+        ))
+        var retiredIDs: [ObjectIdentifier] = []
+        let pipeline = replacementPipeline(
+            repository: repository,
+            tab: tab,
+            departureBatches: { webViews in
+                retiredIDs = webViews.map(ObjectIdentifier.init)
+            },
+            destroy: { _ in }
+        )
+
+        guard case .committed = pipeline.begin(
+            [prepared],
+            profileIDs: [],
+            model: .noExternalModel,
+            completion: { _ in }
+        ) else {
+            return XCTFail("Expected exact-residence repair to commit")
+        }
+
+        XCTAssertEqual(retiredIDs, [ObjectIdentifier(failed)])
+        XCTAssertIdentical(
+            repository.webView(for: tab.id, in: healthyWindowID),
+            healthy
+        )
+        XCTAssertIdentical(
+            repository.webView(for: tab.id, in: failedWindowID),
+            candidate
+        )
+    }
+
 }

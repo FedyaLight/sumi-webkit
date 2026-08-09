@@ -152,6 +152,15 @@ final class WebsiteDataMutationGate {
         }
     }
 
+    func cancelDeferredAdmissions(forProfileID profileID: UUID) {
+        deferredAdmissions = deferredAdmissions.filter { _, admission in
+            admission.profileID != profileID
+        }
+        scheduledAdmissions = scheduledAdmissions.filter { _, scheduled in
+            scheduled.admission.profileID != profileID
+        }
+    }
+
     func resetForTerminalShutdown() {
         isTerminallyShutDown = true
         leaseLedger.resetForTerminalShutdown()

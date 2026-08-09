@@ -6,6 +6,59 @@ import XCTest
 
 @MainActor
 final class WindowSessionServiceTests: XCTestCase {
+    func testInitialDataLoadMaterializesPersistedSelectedRegularTab() throws {
+        let snapshotStore = WindowSessionSnapshotStore(
+            key: "SumiTests.windowSession.selected-load.\(UUID())"
+        )
+        let browser = BrowserManager(
+            windowSessionSnapshotStore: snapshotStore
+        )
+        let profile = try XCTUnwrap(browser.currentProfile)
+        let space = Space(name: "Restored", profileId: profile.id)
+        browser.spaceStateOwner.replaceSpaces([space])
+        browser.spaceStateOwner.replaceCurrentSpace(space)
+        let tab = browser.regularTabLifecycleOwner.createNewTab(
+            url: "https://example.com/restored-selected",
+            in: space,
+            activate: false
+        )
+        var snapshot = makeSessionRecoveryWindowSession(
+            currentTabId: tab.id,
+            isShowingEmptyState: false
+        )
+        snapshot.currentSpaceId = space.id
+        snapshotStore.persist(snapshot)
+        let windowState = BrowserWindowState(
+            awaitsInitialSessionResolution: true
+        )
+        browser.windowRegistry.register(windowState)
+        let restore = browser.windowSessionBundle.restoreService
+
+        restore.setupWindowState(
+            windowState,
+            currentProfile: browser.currentProfile
+        )
+        XCTAssertEqual(windowState.currentTabId, tab.id)
+        XCTAssertTrue(tab.isUnloaded)
+
+        browser.startupRestoreLifecycle.markLoadFinished()
+        restore.handleTabManagerDataLoaded(windows: [windowState])
+
+        XCTAssertFalse(tab.isUnloaded)
+        let webView = try XCTUnwrap(
+            browser.webViewSessions.webView(
+                for: tab.id,
+                in: windowState.id
+            )
+        )
+        switch tab.mainFrameLoads.attemptStatus(on: webView) {
+        case .waiting, .submitted:
+            break
+        case .unsubmitted:
+            XCTFail("Restored selection did not transfer its first navigation")
+        }
+    }
+
     func testInitialWindowProjectsDurableChromeBeforeRegistration() throws {
         let browser = BrowserManager()
         var snapshot = makeSessionRecoveryWindowSession(

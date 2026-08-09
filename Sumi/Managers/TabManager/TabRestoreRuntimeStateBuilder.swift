@@ -116,8 +116,14 @@ struct TabRestoreRuntimeStateBuilder {
         tab.profileId = dto.profileId
         tab.isPinned = false
         tab.isSpacePinned = false
-        tab.canGoBack = dto.canGoBack
-        tab.canGoForward = dto.canGoForward
+        // Persisted history flags are hints, not native WebKit capability.
+        // A cold cross-launch tab becomes interactive only after WebKit binds
+        // and publishes its own back-forward list.
+        tab.canGoBack = false
+        tab.canGoForward = false
+        tab.isRestoreFailure = dto.isRestoreFailure
+        tab.restoreFailureDestination = dto.restoreFailureDestination
+        tab.restoreFailureRawDestination = dto.restoreFailureRawDestination
         return tab
     }
 

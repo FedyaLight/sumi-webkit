@@ -151,7 +151,7 @@ final class ExtensionTabCommandMutation {
             in: windowQuery?.preferredExtensionWindowState(containing: tab),
             policy: fromOrigin ? .fromOrigin : .standard
         )
-        guard outcome != .failed else {
+        guard outcome.ownsFutureOrSubmittedNavigation else {
             complete(
                 completion,
                 error: ExtensionBridgeAdapterCallbackError.tabReloadFailed

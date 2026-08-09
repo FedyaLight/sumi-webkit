@@ -126,6 +126,16 @@ final class TabMainFrameLifecycleMachine {
         participantTransitions.loadingWebViews(revision: revision)
     }
 
+    func activeAttemptOwner(
+        on webView: WKWebView,
+        currentIntent: TabMainFrameNavigationIntent
+    ) -> TabMainFramePendingAttemptOwner? {
+        participantTransitions.activeAttemptOwner(
+            on: webView,
+            currentIntent: currentIntent
+        )
+    }
+
     func routeLifecycle(
         from webView: WKWebView,
         navigationID: ObjectIdentifier,

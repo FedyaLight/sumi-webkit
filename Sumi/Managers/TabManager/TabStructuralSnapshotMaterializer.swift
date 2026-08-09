@@ -224,7 +224,7 @@ struct TabStructuralSnapshotMaterializer {
         pin: ShortcutPin,
         profileId: UUID
     ) -> TabPersistenceTab {
-        SnapshotTab(
+        return SnapshotTab(
             id: pin.id,
             urlString: pin.launchURL.absoluteString,
             name: pin.title,
@@ -239,7 +239,8 @@ struct TabStructuralSnapshotMaterializer {
             titleIsCustom: pin.titleIsCustom,
             currentURLString: pin.launchURL.absoluteString,
             canGoBack: false,
-            canGoForward: false
+            canGoForward: false,
+            pageKind: .web
         )
     }
 
@@ -262,7 +263,8 @@ struct TabStructuralSnapshotMaterializer {
             titleIsCustom: pin.titleIsCustom,
             currentURLString: pin.launchURL.absoluteString,
             canGoBack: false,
-            canGoForward: false
+            canGoForward: false,
+            pageKind: .web
         )
     }
 
@@ -270,9 +272,14 @@ struct TabStructuralSnapshotMaterializer {
         tab: Tab,
         spaceId: UUID
     ) -> TabPersistenceTab {
-        SnapshotTab(
+        let durableURL = tab.isRestoreFailure
+            ? tab.restoreFailureRawDestination
+                ?? tab.restoreFailureDestination?.absoluteString
+                ?? tab.url.absoluteString
+            : tab.url.absoluteString
+        return SnapshotTab(
             id: tab.id,
-            urlString: tab.url.absoluteString,
+            urlString: durableURL,
             name: tab.name,
             index: tab.index,
             spaceId: spaceId,
@@ -282,9 +289,12 @@ struct TabStructuralSnapshotMaterializer {
             executionProfileId: nil,
             folderId: tab.folderId,
             iconAsset: nil,
-            currentURLString: tab.url.absoluteString,
+            currentURLString: durableURL,
             canGoBack: tab.canGoBack,
-            canGoForward: tab.canGoForward
+            canGoForward: tab.canGoForward,
+            pageKind: tab.isRestoreFailure
+                ? .restoreFailure
+                : tab.representsSumiEmptySurface ? .empty : .web
         )
     }
 

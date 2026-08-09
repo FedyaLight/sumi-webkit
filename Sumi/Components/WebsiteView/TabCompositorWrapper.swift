@@ -13,7 +13,6 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
     private let splitDropTargets: SplitDropTargetService
     private let sidebarDragState: SidebarDragState
     let webViewOwnershipQuery: WebViewOwnershipQuery
-    let trackedWebViewAdmission: TrackedWebViewAdmissionService
     let webViewCompositorRuntime: WebViewCompositorRuntime
     let webViewProtectionRuntime: WebViewProtectionRuntime
     @Binding var hoveredLink: String?
@@ -33,7 +32,6 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
         splitDropTargets: SplitDropTargetService,
         sidebarDragState: SidebarDragState,
         webViewOwnershipQuery: WebViewOwnershipQuery,
-        trackedWebViewAdmission: TrackedWebViewAdmissionService,
         webViewCompositorRuntime: WebViewCompositorRuntime,
         webViewProtectionRuntime: WebViewProtectionRuntime,
         hoveredLink: Binding<String?>,
@@ -55,7 +53,6 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
             browserContext.currentTab(for: windowState)
         }
         self.webViewOwnershipQuery = webViewOwnershipQuery
-        self.trackedWebViewAdmission = trackedWebViewAdmission
         self.webViewCompositorRuntime = webViewCompositorRuntime
         self.webViewProtectionRuntime = webViewProtectionRuntime
         self._hoveredLink = hoveredLink
@@ -125,7 +122,6 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
             browserContext: makeBrowserContext(),
             splitQuery: splitQuery,
             webViewOwnershipQuery: webViewOwnershipQuery,
-            trackedWebViewAdmission: trackedWebViewAdmission,
             webViewCompositorRuntime: webViewCompositorRuntime,
             webViewProtectionRuntime: webViewProtectionRuntime,
             surfaceStyle: surfaceStyle,
@@ -149,14 +145,38 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
     }
 
     private func makeDisplayState() -> WebsiteDisplayState {
+        let browserContext = makeBrowserContext()
         let currentTab = currentTabForDisplayState(windowState)
         let currentId = currentTab?.id
+        let visibleIDs = Set(splitPresentation?.visibleTabIDs ?? [])
+            .union(currentId.map { [$0] } ?? [])
+        let presentations = Dictionary(uniqueKeysWithValues: visibleIDs.map {
+            pageID in
+            let tab = currentTab?.id == pageID
+                ? currentTab
+                : browserContext.tab(for: pageID)
+            return (pageID, pagePresentation(for: tab))
+        })
         return WebsiteDisplayState(
             splitPresentation: splitPresentation,
             currentId: currentId,
             compositorVersion: windowState.compositorInvalidation.compositorVersion,
-            currentTabUnloaded: currentTab?.isUnloaded ?? true,
+            currentPagePresentation: pagePresentation(for: currentTab),
+            pagePresentationsByID: presentations,
             isSplitDropCaptureActive: isSplitDropCaptureActive
+        )
+    }
+
+    private func pagePresentation(for tab: Tab?) -> PagePresentation {
+        PagePresentationResolver.resolve(
+            tab: tab,
+            windowState: windowState,
+            webView: tab.flatMap {
+                webViewOwnershipQuery.webView(
+                    for: $0.id,
+                    in: windowState.id
+                )
+            }
         )
     }
 }

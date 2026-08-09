@@ -49,8 +49,13 @@ final class TabLastSessionRegularTabMaterializer {
                             loadsCachedFaviconOnInit: false
                         )
                         restoredTab.profileId = restored.profileId
-                        restoredTab.canGoBack = restored.canGoBack
-                        restoredTab.canGoForward = restored.canGoForward
+                        restoredTab.canGoBack = false
+                        restoredTab.canGoForward = false
+                        restoredTab.isRestoreFailure = restored.isRestoreFailure
+                        restoredTab.restoreFailureRawDestination =
+                            restored.restoreFailureRawDestination
+                        restoredTab.restoreFailureDestination =
+                            restored.restoreFailureDestination
                         membership.attach(restoredTab)
                         tab = restoredTab
                     }

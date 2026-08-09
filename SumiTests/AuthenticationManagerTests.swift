@@ -6,6 +6,45 @@ import XCTest
 
 @MainActor
 final class AuthenticationManagerTests: XCTestCase {
+    func testCancellingBasicAuthRequestDismissesPromptAndCompletesWithCancel() {
+        let manager = AuthenticationManager(
+            credentialStore: BasicAuthCredentialStore(
+                service: "com.sumi.authentication.tests.\(UUID().uuidString)"
+            )
+        )
+        let tab = Tab(url: URL(string: "https://auth.example")!)
+        let requestID = UUID()
+        var capturedSession: BasicAuthSheetSession?
+        var dismissCount = 0
+        var completions: [URLSession.AuthChallengeDisposition] = []
+        manager.attach(
+            runtime: AuthenticationManagerRuntime(
+                presentBasicAuthSheet: { session, _ in
+                    capturedSession = session
+                    return true
+                },
+                presentCertificateTrustWarning: { _, _ in false },
+                dismissNativeModalPresentation: { dismissCount += 1 }
+            )
+        )
+
+        XCTAssertTrue(manager.handleAuthenticationChallenge(
+            makeAuthenticationChallenge(),
+            for: tab,
+            requestID: requestID
+        ) { disposition, _ in
+            completions.append(disposition)
+        })
+        XCTAssertNotNil(capturedSession)
+
+        XCTAssertTrue(manager.cancelAuthenticationChallenge(requestID: requestID))
+        capturedSession?.cancel()
+
+        XCTAssertEqual(completions, [.cancelAuthenticationChallenge])
+        XCTAssertEqual(dismissCount, 1)
+        XCTAssertFalse(manager.cancelAuthenticationChallenge(requestID: requestID))
+    }
+
     func testUntrustedServerTrustWaitsForUserAndUsesTrustAfterConfirmation() async throws {
         let manager = AuthenticationManager(
             credentialStore: BasicAuthCredentialStore(
@@ -267,6 +306,57 @@ final class AuthenticationManagerTests: XCTestCase {
 
         XCTAssertEqual(firstResult, .useCredential)
         XCTAssertEqual(secondResult, .useCredential)
+    }
+
+    func testCancellingBatchedCertificateRequestsSettlesEachAndDismissesLastWarning()
+        async throws {
+        let manager = AuthenticationManager(
+            credentialStore: BasicAuthCredentialStore(
+                service: "com.sumi.authentication.tests.\(UUID().uuidString)"
+            )
+        )
+        let tab = Tab(url: URL(string: "https://untrusted.example")!)
+        let warningPresented = expectation(description: "certificate warning presented")
+        let firstRequestID = UUID()
+        let secondRequestID = UUID()
+        var capturedSession: CertificateTrustWarningSession?
+        var dismissCount = 0
+        var firstResult: URLSession.AuthChallengeDisposition?
+        var secondResult: URLSession.AuthChallengeDisposition?
+        manager.attach(
+            runtime: AuthenticationManagerRuntime(
+                presentBasicAuthSheet: { _, _ in false },
+                presentCertificateTrustWarning: { session, _ in
+                    capturedSession = session
+                    warningPresented.fulfill()
+                    return true
+                },
+                dismissNativeModalPresentation: {},
+                dismissCertificateTrustWarning: { _ in dismissCount += 1 }
+            )
+        )
+
+        _ = manager.handleAuthenticationChallenge(
+            try makeUntrustedServerTrustChallenge(),
+            for: tab,
+            requestID: firstRequestID
+        ) { disposition, _ in firstResult = disposition }
+        _ = manager.handleAuthenticationChallenge(
+            try makeUntrustedServerTrustChallenge(),
+            for: tab,
+            requestID: secondRequestID
+        ) { disposition, _ in secondResult = disposition }
+
+        await fulfillment(of: [warningPresented], timeout: 1)
+        XCTAssertTrue(manager.cancelAuthenticationChallenge(requestID: firstRequestID))
+        XCTAssertEqual(firstResult, .cancelAuthenticationChallenge)
+        XCTAssertNil(secondResult)
+        XCTAssertEqual(dismissCount, 0)
+
+        XCTAssertTrue(manager.cancelAuthenticationChallenge(requestID: secondRequestID))
+        capturedSession?.cancel()
+        XCTAssertEqual(secondResult, .cancelAuthenticationChallenge)
+        XCTAssertEqual(dismissCount, 1)
     }
 
     func testCertificateTrustSessionIgnoresSecondDecision() {

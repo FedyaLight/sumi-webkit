@@ -57,10 +57,7 @@ final class WebViewRetiredGenerationDestroyer {
             )
             let preferredWebView = preferredWebView(in: surviving)
             if let tab = navigationTabsByID?[generation.tabID] {
-                tab.webViewsDidLeaveNavigationRuntime(
-                    webViews,
-                    preferredAuthorityWebView: preferredWebView
-                )
+                tab.webViewsWillLeaveRuntime(webViews)
             } else {
                 runtime.retireNavigationGeneration(
                     generation.tabID,

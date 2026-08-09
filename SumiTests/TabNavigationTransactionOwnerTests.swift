@@ -5,6 +5,31 @@ import XCTest
 
 @MainActor
 final class TabNavigationTransactionOwnerTests: XCTestCase {
+    func testFailedPrerequisiteTerminatesExactOwnerWithoutLoading() async {
+        let owner = TabNavigationTransactionOwner()
+        let webView = WKWebView(frame: .zero)
+        var terminalResults: [PageNavigationPrerequisiteResult] = []
+        var didLoad = false
+
+        let prerequisiteOwner = owner.performAfterPreparation(
+            on: webView,
+            prepare: { .failed },
+            didTerminate: { terminalResults.append($0) },
+            performLoad: { _ in didLoad = true }
+        )
+
+        XCTAssertEqual(
+            prerequisiteOwner.webViewID,
+            ObjectIdentifier(webView)
+        )
+        await drainMainActorTasks()
+        XCTAssertFalse(didLoad)
+        XCTAssertEqual(terminalResults, [.failed])
+        XCTAssertNil(owner.pendingPrerequisiteOwner)
+        owner.cancelPendingMainFrameNavigation()
+        XCTAssertEqual(terminalResults, [.failed])
+    }
+
     func testPreparedNavigationRunsOnlyAfterPreparation() async {
         let owner = TabNavigationTransactionOwner()
         let webView = WKWebView(frame: .zero)
@@ -17,6 +42,7 @@ final class TabNavigationTransactionOwnerTests: XCTestCase {
                 await withCheckedContinuation { continuation in
                     preparation = continuation
                 }
+                return .ready
             },
             performLoad: { loadedWebViews.append($0) }
         )
@@ -43,6 +69,7 @@ final class TabNavigationTransactionOwnerTests: XCTestCase {
                 await withCheckedContinuation { continuation in
                     preparation = continuation
                 }
+                return .ready
             },
             performLoad: { _ in didLoad = true }
         )
@@ -67,6 +94,7 @@ final class TabNavigationTransactionOwnerTests: XCTestCase {
                 await withCheckedContinuation { continuation in
                     preparation = continuation
                 }
+                return .ready
             },
             performLoad: { _ in loadEvents.append("prepared") }
         )
@@ -97,11 +125,12 @@ final class TabNavigationTransactionOwnerTests: XCTestCase {
                 await withCheckedContinuation { continuation in
                     oldPreparation = continuation
                 }
+                return .ready
             },
-            didCancel: {
+            didTerminate: { _ in
                 owner.performAfterPreparation(
                     on: webView,
-                    prepare: {},
+                    prepare: { .ready },
                     performLoad: { _ in replacementDidLoad = true }
                 )
             },
@@ -130,8 +159,9 @@ final class TabNavigationTransactionOwnerTests: XCTestCase {
                 await withCheckedContinuation { continuation in
                     preparation = continuation
                 }
+                return .ready
             },
-            didCancel: {
+            didTerminate: { _ in
                 cancellationCount += 1
             },
             performLoad: { _ in
@@ -156,7 +186,7 @@ final class TabNavigationTransactionOwnerTests: XCTestCase {
         XCTAssertTrue(owner.perform(on: webView) { _ in
             owner.performAfterPreparation(
                 on: webView,
-                prepare: {},
+                prepare: { .ready },
                 performLoad: { _ in replacementDidLoad = true }
             )
             return true
@@ -178,6 +208,7 @@ final class TabNavigationTransactionOwnerTests: XCTestCase {
                 await withCheckedContinuation { continuation in
                     preparation = continuation
                 }
+                return .ready
             },
             performLoad: { _ in didLoad = true }
         )

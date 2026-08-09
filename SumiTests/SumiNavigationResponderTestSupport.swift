@@ -369,9 +369,26 @@ final class SumiNavigationClosingTrackingWebView: WKWebView {
 
 final class SumiNavigationURLReportingWebView: WKWebView {
     var reportedURL: URL?
+    var reportedCommittedURL: URL?
 
     override var url: URL? {
         reportedURL
+    }
+
+    override func responds(to aSelector: ObjectiveC.Selector?) -> Bool {
+        guard let aSelector else { return false }
+        let selectorName = NSStringFromSelector(aSelector)
+        if selectorName == "committedURL" || selectorName == "_committedURL" {
+            return true
+        }
+        return super.responds(to: aSelector)
+    }
+
+    override func value(forKey key: String) -> Any? {
+        if key == "committedURL" {
+            return MainActor.assumeIsolated { reportedCommittedURL }
+        }
+        return super.value(forKey: key)
     }
 }
 
@@ -967,7 +984,9 @@ final class SumiURLAuthenticationChallengeSenderMock: NSObject, URLAuthenticatio
 final class CountingNavigationDelegateProxy: NSObject, WKNavigationDelegate {
     let distributedNavigationDelegate = DistributedNavigationDelegate()
     var onActionDecision: ((WKNavigationActionPolicy) -> Void)?
+    var onResponseDecision: ((WKNavigationResponsePolicy) -> Void)?
     private(set) var actionDecisionCount = 0
+    private(set) var responseDecisionCount = 0
 
     func webView(
         _ webView: WKWebView,
@@ -980,6 +999,31 @@ final class CountingNavigationDelegateProxy: NSObject, WKNavigationDelegate {
             self?.onActionDecision?(policy)
             decisionHandler(policy, preferences)
         }
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationResponse: WKNavigationResponse,
+        decisionHandler: @escaping @MainActor @Sendable (WKNavigationResponsePolicy) -> Void
+    ) {
+        distributedNavigationDelegate.webView(
+            webView,
+            decidePolicyFor: navigationResponse
+        ) { [weak self] policy in
+            self?.responseDecisionCount += 1
+            self?.onResponseDecision?(policy)
+            decisionHandler(policy)
+        }
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        didStartProvisionalNavigation navigation: WKNavigation?
+    ) {
+        distributedNavigationDelegate.webView(
+            webView,
+            didStartProvisionalNavigation: navigation
+        )
     }
 }
 
@@ -998,6 +1042,72 @@ final class ImmediatePolicyResponder: NavigationResponder {
     ) async -> NavigationActionPolicy? {
         policyCallCount += 1
         return policy
+    }
+}
+
+@MainActor
+final class SuspendedActionPolicyResponder: NavigationResponder {
+    private let onStart: () -> Void
+    private var continuation: CheckedContinuation<NavigationActionPolicy?, Never>?
+
+    init(onStart: @escaping () -> Void) {
+        self.onStart = onStart
+    }
+
+    func decidePolicy(
+        for _: NavigationAction,
+        preferences _: inout NavigationPreferences
+    ) async -> NavigationActionPolicy? {
+        onStart()
+        return await withCheckedContinuation { continuation = $0 }
+    }
+
+    func resume(with policy: NavigationActionPolicy?) {
+        continuation?.resume(returning: policy)
+        continuation = nil
+    }
+}
+
+@MainActor
+final class SuspendedAuthenticationResponder: NavigationResponder {
+    private let onStart: () -> Void
+    private var continuation: CheckedContinuation<AuthChallengeDisposition?, Never>?
+
+    init(onStart: @escaping () -> Void) {
+        self.onStart = onStart
+    }
+
+    func didReceive(
+        _: URLAuthenticationChallenge,
+        for _: Navigation?
+    ) async -> AuthChallengeDisposition? {
+        onStart()
+        return await withCheckedContinuation { continuation = $0 }
+    }
+
+    func resume(with disposition: AuthChallengeDisposition?) {
+        continuation?.resume(returning: disposition)
+        continuation = nil
+    }
+}
+
+@MainActor
+final class SuspendedResponsePolicyResponder: NavigationResponder {
+    private let onStart: () -> Void
+    private var continuation: CheckedContinuation<NavigationResponsePolicy?, Never>?
+
+    init(onStart: @escaping () -> Void) {
+        self.onStart = onStart
+    }
+
+    func decidePolicy(for _: NavigationResponse) async -> NavigationResponsePolicy? {
+        onStart()
+        return await withCheckedContinuation { continuation = $0 }
+    }
+
+    func resumeAllow() {
+        continuation?.resume(returning: .allow)
+        continuation = nil
     }
 }
 
@@ -1024,6 +1134,25 @@ final class FailingSchemeHandler: NSObject, WKURLSchemeHandler {
 
     func webView(_: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
         urlSchemeTask.didFailWithError(NSError(domain: "SumiNavigationResponderTests", code: 1))
+    }
+
+    func webView(_: WKWebView, stop _: WKURLSchemeTask) { /* no-op */ }
+}
+
+final class RespondingSchemeHandler: NSObject, WKURLSchemeHandler {
+    static let scheme = "suminavresponse"
+
+    func webView(_: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
+        urlSchemeTask.didReceive(
+            URLResponse(
+                url: urlSchemeTask.request.url!,
+                mimeType: "text/html",
+                expectedContentLength: 13,
+                textEncodingName: "utf-8"
+            )
+        )
+        urlSchemeTask.didReceive(Data("<p>ready</p>".utf8))
+        urlSchemeTask.didFinish()
     }
 
     func webView(_: WKWebView, stop _: WKURLSchemeTask) { /* no-op */ }

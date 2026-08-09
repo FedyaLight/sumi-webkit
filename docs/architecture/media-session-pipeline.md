@@ -1,29 +1,43 @@
-# Media Session Pipeline
+# Media session pipeline
 
-## Goal
+WebKit owns playback, fullscreen, Picture in Picture, and the underlying media
+session. Sumi adds one browser surface: a sidebar card for an already-live
+background page.
 
-Render one Sumi-native background media card from WebKit now-playing state.
+## Ownership
 
-## Owners
+- `SumiNativeNowPlayingController` elects one eligible background tab, publishes
+  card state, and routes explicit card actions.
+- `SumiNativeNowPlayingBridge` is the narrow adapter to WebKit's native metadata,
+  play, pause, mute, and Picture in Picture operations.
+- `Tab.mediaRuntime` records event-driven native state used by suspension policy.
+- `MediaControlsView` renders immutable card state and emits user intent.
 
-- `SumiNativeNowPlayingController.swift`
-Elects one background Sumi owner tab, samples native WebKit now-playing state, and routes actions.
-- `MediaControlsView.swift`
-Pure rendering layer for the sidebar card.
-- `Tab`
-Provides minimal native playback state (`hasPlayingAudio`, `hasPlayingVideo`, `hasAudioContent`, `isAudioMuted`, `lastMediaActivityAt`) used for candidate discovery and mute retention.
+Only regular, non-incognito tabs are candidates. The active foreground tab is
+not represented by the sidebar card, and card identity is stable for the owner
+tab (`sumi:<tab-id>`).
 
-## Rules
+## Command rules
 
-- Only regular, non-incognito Sumi tabs are eligible.
-- The active foreground tab never renders a sidebar card.
-- Card identity is stable per owner tab: `sumi:<tabId>`.
-- Metadata comes from native WebKit now-playing APIs only.
-- The card is Sumi-only: no external app capture, no system MediaRemote stack.
+Transport controls resolve the existing live WebView for the owner and send one
+native WebKit command. They do not select a tab, change Space, focus a page,
+materialize a WebView, sleep, or retry. Failure leaves browser selection and
+page lifecycle untouched. Clicking the card itself is the separate, explicit
+command that activates the owner page.
 
-## Anti-patterns to avoid
+## Suspension and teardown
 
-- Reintroducing `MediaRemote`, `MPNowPlayingInfoCenter`, or Sumi-owned now-playing export.
-- Reintroducing DOM metadata probes or page control bridges for sidebar media.
-- Treating the active foreground tab as a sidebar media source.
-- Duplicating owner election logic in the view layer.
+Suspension is vetoed by live native evidence: audible playback, Picture in
+Picture, capture, or fullscreen. It does not depend on DOM media listeners,
+metadata sampling, polling, or a recently-audible timer.
+
+Moving a page between window residences preserves its WebKit-owned presentation.
+Only destruction of the owner page closes native media presentations, and
+physical cleanup proceeds from WebKit's completion callback.
+
+## Do not reintroduce
+
+- `MediaRemote`, `MPNowPlayingInfoCenter`, or Sumi-owned system now-playing state.
+- JavaScript playback or Picture in Picture sensors.
+- Touch Bar reconstruction and fullscreen selection choreography.
+- View-layer owner election or fallback materialization from a media command.

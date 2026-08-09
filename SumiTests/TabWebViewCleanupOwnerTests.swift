@@ -159,6 +159,93 @@ final class TabWebViewCleanupOwnerTests: XCTestCase {
         XCTAssertEqual(receivedIntent, .suspension)
     }
 
+    func testTrackedCleanupSettlesLogicalOwnersBeforeResidenceRelease() {
+        let repository = WebViewSessionRepository()
+        let owner = TrackedWebViewOwner(tabID: UUID(), windowID: UUID())
+        let webView = WKWebView()
+        let tracking = WebViewTrackingLifecycleOwner()
+        XCTAssertEqual(
+            tracking.registerTrackedWebView(
+                webView,
+                for: owner,
+                in: repository,
+                removeFromContainers: { _ in },
+                installRuntimeObservations: { _ in },
+                uninstallRuntimeObservationsIfUntracked: { _ in },
+                pruneInvalidDeferredCommands: { _ in },
+                canDisplaceWebView: { _ in true },
+                removeRecentVisibility: { _ in },
+                cleanupDisplacedWebView: { _, _ in }
+            ),
+            .committed
+        )
+        var events: [String] = []
+        let lifecycle = RetirementLifecycleSpy(
+            onWillLeave: { departing in
+                XCTAssertEqual(departing.count, 1)
+                XCTAssertIdentical(departing.first, webView)
+                XCTAssertEqual(repository.residence(of: webView), .window(owner))
+                events.append("logical-departure")
+            },
+            onDestroy: { retired in
+                XCTAssertIdentical(retired, webView)
+                XCTAssertNil(repository.residence(of: webView))
+                events.append("physical-destruction")
+            }
+        )
+
+        XCTAssertTrue(WebViewTrackedCleanupExecutionOwner()
+            .cleanupUnprotectedTrackedWebView(
+                webView,
+                owner: owner,
+                tab: lifecycle,
+                webViewSessions: repository,
+                trackingLifecycleOwner: tracking,
+                runtime: .init(
+                    cancelProcessRecovery: { _ in
+                        events.append("cancel-recovery")
+                    },
+                    finishDestructiveCleanupSuppression: { _ in
+                        events.append("finish-cleanup-owner")
+                    },
+                    uninstallRuntimeObservationsIfUntracked: { _ in
+                        events.append("detach-observations")
+                    },
+                    pruneInvalidDeferredCommands: { _ in },
+                    fallbackCleanup: { _, _ in
+                        XCTFail("Exact lifecycle must own destruction")
+                    },
+                    forgetRecentVisibility: { _ in }
+                )
+            ))
+
+        XCTAssertEqual(
+            events,
+            [
+                "cancel-recovery",
+                "finish-cleanup-owner",
+                "logical-departure",
+                "detach-observations",
+                "physical-destruction",
+            ]
+        )
+    }
+
+    func testRetirementLedgerIsIdempotentAndWeaklyOwned() {
+        let ledger = TabWebViewRetirementLedger()
+        weak var releasedWebView: WKWebView?
+        autoreleasepool {
+            let webView = WKWebView()
+            releasedWebView = webView
+
+            XCTAssertEqual(ledger.claimLogicalDeparture([webView]).count, 1)
+            XCTAssertTrue(ledger.claimLogicalDeparture([webView]).isEmpty)
+            XCTAssertTrue(ledger.claimPhysicalDestruction(webView))
+            XCTAssertFalse(ledger.claimPhysicalDestruction(webView))
+        }
+        XCTAssertNil(releasedWebView)
+    }
+
     private func makeContext(
         tabId: UUID,
         handlePermissionLifecycleEvent: @escaping TabWebViewCleanupOwner.PermissionLifecycleEventHandler = { _ in /* No-op. */ },
@@ -188,11 +275,41 @@ final class TabWebViewCleanupOwnerTests: XCTestCase {
             currentPermissionPageId: currentPermissionPageId,
             profilePartitionId: profilePartitionId,
             invalidatePermissionPageForReplacement: { _ in /* No-op. */ },
+            claimLogicalDeparture: { $0 },
+            claimPhysicalDestruction: { _ in true },
             webViewDidLeaveRuntime: webViewDidLeaveRuntime,
             resetPlaybackActivity: { /* No-op. */ },
             setLoadingIdle: { /* No-op. */ }
         )
     }
+}
+
+@MainActor
+private final class RetirementLifecycleSpy: WebRuntimeTabTeardownLifecycle {
+    private let onWillLeave: ([WKWebView]) -> Void
+    private let onDestroy: (WKWebView) -> Void
+
+    init(
+        onWillLeave: @escaping ([WKWebView]) -> Void,
+        onDestroy: @escaping (WKWebView) -> Void
+    ) {
+        self.onWillLeave = onWillLeave
+        self.onDestroy = onDestroy
+    }
+
+    func webViewsWillLeaveRuntime(_ webViews: [WKWebView]) {
+        onWillLeave(webViews)
+    }
+
+    func destroyRetiredWebView(_ webView: WKWebView) {
+        onDestroy(webView)
+    }
+
+    func cleanupCloneWebView(_ webView: WKWebView) {
+        XCTFail("Sealed retirement must not use ambiguous cleanup")
+    }
+
+    func cancelPendingMainFrameNavigation() {}
 }
 
 private enum Event: Equatable {

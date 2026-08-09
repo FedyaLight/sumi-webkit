@@ -80,4 +80,41 @@ final class WindowWebContentHostRegistryTests: XCTestCase {
             "A SwiftUI-cached presentation host must not own a retired WKWebView"
         )
     }
+
+    func testPhysicalCleanupEvictsParkedHostOutsideCompositorTree() {
+        let graph = makeTestWebViewRuntimeGraph()
+        let windowID = UUID()
+        let registration = graph.compositorRuntime.registerContainer(
+            NSView(),
+            for: windowID
+        )
+        defer {
+            _ = graph.compositorRuntime.tearDownContainer(registration) {}
+        }
+        var retainedHost: SumiWebViewContainerView?
+        weak var releasedWebView: WKWebView?
+
+        autoreleasepool {
+            let registry = WindowWebContentHostRegistry()
+            let webView = WKWebView()
+            let tabID = UUID()
+            let host = SumiWebViewContainerView(
+                tabID: tabID,
+                webView: webView
+            )
+            retainedHost = host
+            releasedWebView = webView
+            registry.parkHost(host)
+
+            graph.compositorRuntime.removeWebViewFromContainers(webView)
+
+            XCTAssertNil(registry.parkedHost(for: tabID, webView: webView))
+        }
+
+        XCTAssertNotNil(retainedHost)
+        XCTAssertNil(
+            releasedWebView,
+            "Physical cleanup must evict a host parked outside the AppKit tree"
+        )
+    }
 }

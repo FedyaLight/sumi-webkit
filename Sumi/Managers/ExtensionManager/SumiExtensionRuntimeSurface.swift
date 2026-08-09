@@ -146,10 +146,12 @@ final class SumiExtensionRuntimeSurface {
             )
     }
 
-    func ensureInitialExtensionContexts(profileID: UUID) async {
-        guard lifetime.isEnabled else { return }
-        await lifetime.browserRuntimeIfNeededForNormalTab()?.initialDocument
+    func ensureInitialExtensionContexts(profileID: UUID) async
+        -> PageNavigationPrerequisiteResult {
+        guard lifetime.isEnabled else { return .ready }
+        return await lifetime.browserRuntimeIfNeededForNormalTab()?.initialDocument
             .ensureInitialContexts(profileID: profileID)
+            ?? .ready
     }
 
     func warmInitialDocumentNativeMessaging(profileID: UUID) async {

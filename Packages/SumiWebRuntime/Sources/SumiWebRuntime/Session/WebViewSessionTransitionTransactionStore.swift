@@ -28,6 +28,17 @@ final class WebViewSessionTransitionTransactionStore {
     struct Entry {
         let retirementLease: WebViewRetirementLease
         let installed: WebViewPlacementFingerprint
+        let replacementWindowIDs: Set<UUID>?
+
+        init(
+            retirementLease: WebViewRetirementLease,
+            installed: WebViewPlacementFingerprint,
+            replacementWindowIDs: Set<UUID>? = nil
+        ) {
+            self.retirementLease = retirementLease
+            self.installed = installed
+            self.replacementWindowIDs = replacementWindowIDs
+        }
     }
 
     struct Batch {

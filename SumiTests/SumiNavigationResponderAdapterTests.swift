@@ -44,6 +44,7 @@ extension SumiNavigationResponderTests {
             tab.committedDocumentRuntime.suspensionDecision,
             .vetoed(.pdfDocument)
         )
+        webView.reportedCommittedURL = pdfURL
         adapter.didCommit(pdfNavigation)
         XCTAssertEqual(
             tab.committedDocumentRuntime.suspensionDecision,
@@ -98,6 +99,7 @@ extension SumiNavigationResponderTests {
         )
 
         XCTAssertNil(htmlPolicy)
+        webView.reportedCommittedURL = htmlURL
         adapter.didCommit(htmlNavigation)
         XCTAssertNotEqual(
             tab.committedDocumentRuntime.suspensionDecision,
@@ -211,6 +213,7 @@ extension SumiNavigationResponderTests {
         let responder = tab.makeMainFrameLifecycleResponder()
         let webView = SumiNavigationURLReportingWebView(frame: .zero)
         webView.reportedURL = finalURL
+        webView.reportedCommittedURL = finalURL
         let navigation = NSObject()
         let context = SumiNavigationContext(
             navigationID: ObjectIdentifier(navigation),
@@ -281,35 +284,74 @@ extension SumiNavigationResponderTests {
         XCTAssertEqual(resolvedCredential.persistence, credential.persistence)
     }
 
-    func testTabLifecycleDestructiveCleanupSuppressionUsesInjectedRuntimeWithoutBrowserManager() {
-        let tab = Tab(loadsCachedFaviconOnInit: false)
+    func testTabLifecycleDestructiveCleanupCallbacksPublishNoPageState() {
+        let durableURL = URL(string: "https://example.com/durable")!
+        let tab = Tab(url: durableURL, loadsCachedFaviconOnInit: false)
         let lifecycle = RecordingTabLifecycleNavigationRuntime()
         let extensionProperties = NavigationRecordingTabExtensionPropertiesRuntime()
+        var navigationStateUpdates = 0
+        var persistenceRequests = 0
+        var historyTitleUpdates = 0
+        var historyVisits = 0
         lifecycle.isPreparingForDestructiveCleanup = true
         tab.navigationRuntime.lifecycleNavigationRuntime = lifecycle.runtime
         tab.navigationRuntime.extensionPropertiesRuntime = extensionProperties.runtime
+        tab.navigationRuntime.persistenceCallbacks = TabRuntimePersistenceCallbacks(
+            updateNavigationState: { _ in navigationStateUpdates += 1 },
+            scheduleRuntimeStatePersistence: { _ in persistenceRequests += 1 }
+        )
+        tab.navigationRuntime.historyRecordingRuntime = TabHistoryRecordingRuntime(
+            updateTitleIfNeeded: { _, _, _, _ in historyTitleUpdates += 1 },
+            addVisit: { _, _, _, _, _, _ in
+                historyVisits += 1
+                return UUID()
+            },
+            currentProfileId: { nil }
+        )
         let responder = tab.makeMainFrameLifecycleResponder()
         let webView = SumiNavigationURLReportingWebView(frame: .zero)
+        webView.reportedURL = SumiSurface.emptyTabURL
+        webView.reportedCommittedURL = SumiSurface.emptyTabURL
         let navigation = NSObject()
+        let context = SumiNavigationContext(
+            navigationID: ObjectIdentifier(navigation),
+            navigationLifetime: navigation,
+            action: nil,
+            url: SumiSurface.emptyTabURL,
+            isCurrent: true,
+            isMainFrame: true,
+            webView: webView
+        )
+        let originalIntent = tab.mainFrameLoads.currentIntent
 
-        responder.navigationDidFinish(
-            SumiNavigationContext(
-                navigationID: ObjectIdentifier(navigation),
+        responder.navigationWillStart(context)
+        responder.navigationDidStart(context)
+        responder.navigationDidCommit(context)
+        responder.navigationDidFinish(context)
+        responder.navigationDidFail(WKError(.unknown), context: context)
+        responder.mainFrameNavigationDidTerminate(
+            SumiMainFrameNavigationTermination(
+                navigationID: context.navigationID,
                 navigationLifetime: navigation,
-                action: nil,
-                url: SumiSurface.emptyTabURL,
-                isCurrent: true,
-                isMainFrame: true,
-                webView: webView
+                webView: webView,
+                reason: .actionCancelled
             )
         )
 
         XCTAssertFalse(tab.hasBrowserRuntime)
-        XCTAssertEqual(lifecycle.cleanupCheckWebViewIds, [ObjectIdentifier(webView)])
-        XCTAssertEqual(lifecycle.finishedCleanupWebViewIds, [ObjectIdentifier(webView)])
+        XCTAssertEqual(tab.url, durableURL)
+        XCTAssertEqual(tab.loadingState, .idle)
+        XCTAssertEqual(tab.mainFrameLoads.currentIntent, originalIntent)
+        XCTAssertNil(tab.committedDocumentRuntime.lease(for: webView))
+        XCTAssertNil(tab.webContentRecoveryMarkers.recoveryState(on: webView))
         XCTAssertTrue(extensionProperties.properties.isEmpty)
         XCTAssertTrue(lifecycle.zoomTabIds.isEmpty)
         XCTAssertTrue(lifecycle.siteDataPolicyTabIds.isEmpty)
+        XCTAssertEqual(navigationStateUpdates, 0)
+        XCTAssertEqual(persistenceRequests, 0)
+        XCTAssertEqual(historyTitleUpdates, 0)
+        XCTAssertEqual(historyVisits, 0)
+        XCTAssertEqual(lifecycle.finishedCleanupWebViewIds.count, 3)
     }
 
     func testTabLifecycleIgnoresNonCurrentSameDocumentNavigation() {
@@ -772,7 +814,7 @@ extension SumiNavigationResponderTests {
             await adapter.didReceive(makeAuthenticationChallenge(), for: nil)
         }
 
-        for _ in 0 ..< 10 where target.didBegin == false {
+        for _ in 0..<10 where target.didBegin == false {
             await Task.yield()
         }
 

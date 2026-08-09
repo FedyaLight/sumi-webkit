@@ -38,7 +38,6 @@ final class WindowWebContentController: NSViewController {
     private let browserContext: any WindowWebContentBrowserContext
     private let splitQuery: WindowSplitQuery
     private let webViewOwnershipQuery: WebViewOwnershipQuery
-    private let trackedWebViewAdmission: TrackedWebViewAdmissionService
     private let webViewCompositorRuntime: WebViewCompositorRuntime
     private let webViewProtectionRuntime: WebViewProtectionRuntime
     private let windowState: BrowserWindowState
@@ -74,7 +73,6 @@ final class WindowWebContentController: NSViewController {
     )
     private lazy var hostResolver = WindowWebContentHostResolver(
         ownershipQuery: webViewOwnershipQuery,
-        trackedAdmission: trackedWebViewAdmission,
         compositorRuntime: webViewCompositorRuntime,
         protectionRuntime: webViewProtectionRuntime,
         hostRegistry: hostRegistry,
@@ -87,7 +85,8 @@ final class WindowWebContentController: NSViewController {
         compositorRuntime: webViewCompositorRuntime,
         hostRegistry: hostRegistry,
         hostResolver: hostResolver,
-        hostAttachments: hostAttachments
+        hostAttachments: hostAttachments,
+        browserContext: browserContext
     )
     private lazy var presentationPlanner = WindowWebContentPresentationPlanner(
         browserContext: browserContext,
@@ -108,7 +107,6 @@ final class WindowWebContentController: NSViewController {
         browserContext: any WindowWebContentBrowserContext,
         splitQuery: WindowSplitQuery,
         webViewOwnershipQuery: WebViewOwnershipQuery,
-        trackedWebViewAdmission: TrackedWebViewAdmissionService,
         webViewCompositorRuntime: WebViewCompositorRuntime,
         webViewProtectionRuntime: WebViewProtectionRuntime,
         surfaceStyle: BrowserContentSurfaceStyle,
@@ -118,7 +116,6 @@ final class WindowWebContentController: NSViewController {
         self.browserContext = browserContext
         self.splitQuery = splitQuery
         self.webViewOwnershipQuery = webViewOwnershipQuery
-        self.trackedWebViewAdmission = trackedWebViewAdmission
         self.webViewCompositorRuntime = webViewCompositorRuntime
         self.webViewProtectionRuntime = webViewProtectionRuntime
         self.surfaceStyle = surfaceStyle
@@ -142,11 +139,6 @@ final class WindowWebContentController: NSViewController {
             }
         )
         compositorMutationGate.activate(registration)
-        DispatchQueue.main.async { [weak self] in
-            guard let self,
-                  self.compositorMutationGate.owns(registration) else { return }
-            self.browserContext.schedulePrepareVisibleWebViews(for: self.windowState)
-        }
     }
 
     func tearDownController() {
@@ -212,11 +204,6 @@ final class WindowWebContentController: NSViewController {
             refreshHoverSession(
                 containerRegistration: registration
             )
-        }
-
-        if !displayState.visibleTabIDs.isEmpty
-            && hasMissingPreparedWebViews(for: displayState.visibleTabIDs) {
-            browserContext.schedulePrepareVisibleWebViews(for: windowState)
         }
 
         guard needsDisplayStateApply else { return }
@@ -315,15 +302,15 @@ final class WindowWebContentController: NSViewController {
         }
 
         switch decision {
-        case .single(let tab):
+        case .single(let pane):
             return panePresenter.presentSinglePane(
-                tab: tab,
+                pane: pane,
                 containerRegistration: containerRegistration
             )
-        case .split(let presentation, let tabs):
+        case .split(let presentation, let panes):
             return panePresenter.presentSplitGroup(
                 presentation,
-                tabs: tabs,
+                panes: panes,
                 containerRegistration: containerRegistration
             )
         }
@@ -385,16 +372,6 @@ final class WindowWebContentController: NSViewController {
             registration: containerRegistration,
             deliver: hoveredLinkHandler
         )
-    }
-
-    private func hasMissingPreparedWebViews(for visibleTabIDs: Set<UUID>) -> Bool {
-        visibleTabIDs.contains { tabID in
-            if let tab = browserContext.tab(for: tabID),
-               !tab.requiresPrimaryWebView {
-                return false
-            }
-            return webViewOwnershipQuery.webView(for: tabID, in: windowState.id) == nil
-        }
     }
 
 }

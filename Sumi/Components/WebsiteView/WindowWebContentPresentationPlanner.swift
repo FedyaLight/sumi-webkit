@@ -17,9 +17,18 @@ private func hostedWebViewCount(in root: NSView, stoppingAfter limit: Int = .max
     return count
 }
 
+struct WindowWebContentPaneDecision {
+    let pageID: UUID?
+    let tab: Tab?
+    let presentation: PagePresentation
+}
+
 enum WindowWebContentPresentationDecision {
-    case single(tab: Tab?)
-    case split(presentation: WindowSplitPresentation, tabs: [Tab])
+    case single(WindowWebContentPaneDecision)
+    case split(
+        presentation: WindowSplitPresentation,
+        panes: [WindowWebContentPaneDecision]
+    )
 }
 
 @MainActor
@@ -61,14 +70,23 @@ final class WindowWebContentPresentationPlanner {
         currentTab: Tab?
     ) -> WindowWebContentPresentationDecision {
         guard let presentation = displayState.activeSplitPresentation else {
-            return .single(tab: currentTab)
+            return .single(WindowWebContentPaneDecision(
+                pageID: currentTab?.id,
+                tab: currentTab,
+                presentation: displayState.currentPagePresentation
+            ))
         }
 
-        let tabs = presentation.visibleTabIDs.compactMap(browserContext.tab(for:))
-        guard tabs.count == presentation.visibleTabIDs.count else {
-            return .single(tab: currentTab)
-        }
-        return .split(presentation: presentation, tabs: tabs)
+        return .split(
+            presentation: presentation,
+            panes: presentation.visibleTabIDs.map { pageID in
+                WindowWebContentPaneDecision(
+                    pageID: pageID,
+                    tab: browserContext.tab(for: pageID),
+                    presentation: displayState.presentation(for: pageID)
+                )
+            }
+        )
     }
 
     func immediatePresentationDecision(
@@ -85,19 +103,29 @@ final class WindowWebContentPresentationPlanner {
             in: windowState.id
         ),
            presentation.activeTabID == currentTab.id {
-            let tabs = presentation.visibleTabIDs.compactMap(browserContext.tab(for:))
-            guard tabs.count == presentation.visibleTabIDs.count else { return nil }
-            return .split(presentation: presentation, tabs: tabs)
+            let panes = presentation.visibleTabIDs.map { pageID in
+                WindowWebContentPaneDecision(
+                    pageID: pageID,
+                    tab: browserContext.tab(for: pageID),
+                    presentation: .live(pageID: pageID)
+                )
+            }
+            guard panes.allSatisfy({ $0.tab != nil }) else { return nil }
+            return .split(presentation: presentation, panes: panes)
         }
-        return .single(tab: currentTab)
+        return .single(WindowWebContentPaneDecision(
+            pageID: currentTab.id,
+            tab: currentTab,
+            presentation: .live(pageID: currentTab.id)
+        ))
     }
 
     func incomingTabIDsForVisualHandoff(
         _ decision: WindowWebContentPresentationDecision
     ) -> Set<UUID>? {
         switch decision {
-        case .single(let tab):
-            guard let tab,
+        case .single(let pane):
+            guard let tab = pane.tab,
                   tab.requiresPrimaryWebView,
                   hostRegistry.displayedHost(for: tab.id) == nil
             else {
@@ -118,7 +146,7 @@ final class WindowWebContentPresentationPlanner {
         }
 
         guard let activeSplitPresentation = displayState.activeSplitPresentation else {
-            let expectedCount = currentTab != nil && !displayState.currentTabUnloaded ? 1 : 0
+            let expectedCount = displayState.currentPagePresentation.hasLiveWebContentResidence ? 1 : 0
             if hostedWebViewCount(
                 in: containerView.singlePaneView,
                 stoppingAfter: expectedCount

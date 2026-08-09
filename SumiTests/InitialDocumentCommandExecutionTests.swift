@@ -6,30 +6,30 @@ import XCTest
 
 @MainActor
 extension InitialDocumentRuntimeHandoffTests {
-    func testPerformRunsUserContentWarmupRegisterBeforeLoadInOrder() async {
+    func testPerformTransfersReadyPrerequisitesDirectlyIntoLoad() async {
         var events: [String] = []
 
-        await NormalTabInitialDocumentRuntimeHandoff.perform {
+        let result = await NormalTabInitialDocumentRuntimeHandoff.perform {
             events.append("waitUserContent")
+            return .ready
         } warmInitialDocumentContexts: {
             events.append("warmInitialDocumentContexts")
+            return .ready
         } isStillValid: {
             true
         } register: {
             events.append("register")
-        } warmPostPublicationBackground: {
-            events.append("warmPostPublicationBackground")
         } load: {
             events.append("load")
         }
 
+        XCTAssertEqual(result, .ready)
         XCTAssertEqual(
             events,
             [
                 "waitUserContent",
                 "warmInitialDocumentContexts",
                 "register",
-                "warmPostPublicationBackground",
                 "load",
             ]
         )
@@ -38,16 +38,16 @@ extension InitialDocumentRuntimeHandoffTests {
     func testPerformSkipsWarmupWhenCommandIsNoLongerValidAfterUserContent() async {
         var events: [String] = []
 
-        await NormalTabInitialDocumentRuntimeHandoff.perform {
+        let result = await NormalTabInitialDocumentRuntimeHandoff.perform {
             events.append("waitUserContent")
+            return .ready
         } warmInitialDocumentContexts: {
             events.append("warmInitialDocumentContexts")
+            return .ready
         } isStillValid: {
             false
         } register: {
             events.append("register")
-        } warmPostPublicationBackground: {
-            events.append("warmPostPublicationBackground")
         } load: {
             events.append("load")
         }
@@ -58,23 +58,24 @@ extension InitialDocumentRuntimeHandoffTests {
                 "waitUserContent",
             ]
         )
+        XCTAssertEqual(result, .cancelled)
     }
 
     func testPerformStopsAfterWarmupWhenCommandIsNoLongerValidBeforeLoad() async {
         var events: [String] = []
         var isValid = true
 
-        await NormalTabInitialDocumentRuntimeHandoff.perform {
+        let result = await NormalTabInitialDocumentRuntimeHandoff.perform {
             events.append("waitUserContent")
+            return .ready
         } warmInitialDocumentContexts: {
             events.append("warmInitialDocumentContexts")
             isValid = false
+            return .ready
         } isStillValid: {
             isValid
         } register: {
             events.append("register")
-        } warmPostPublicationBackground: {
-            events.append("warmPostPublicationBackground")
         } load: {
             events.append("load")
         }
@@ -86,36 +87,46 @@ extension InitialDocumentRuntimeHandoffTests {
                 "warmInitialDocumentContexts",
             ]
         )
+        XCTAssertEqual(result, .cancelled)
     }
 
-    func testPerformStopsAfterPostPublicationWarmupWhenCommandBecomesInvalid() async {
+    func testPerformFailsTerminallyWithoutRegisteringOrLoading() async {
         var events: [String] = []
-        var isValid = true
 
-        await NormalTabInitialDocumentRuntimeHandoff.perform {
+        let result = await NormalTabInitialDocumentRuntimeHandoff.perform {
             events.append("waitUserContent")
+            return .failed
         } warmInitialDocumentContexts: {
             events.append("warmInitialDocumentContexts")
+            return .ready
         } isStillValid: {
-            isValid
+            true
         } register: {
             events.append("register")
-        } warmPostPublicationBackground: {
-            events.append("warmPostPublicationBackground")
-            isValid = false
         } load: {
             events.append("load")
         }
 
-        XCTAssertEqual(
-            events,
-            [
-                "waitUserContent",
-                "warmInitialDocumentContexts",
-                "register",
-                "warmPostPublicationBackground",
-            ]
-        )
+        XCTAssertEqual(result, .failed)
+        XCTAssertEqual(events, ["waitUserContent"])
+    }
+
+    func testPerformPreservesDegradedSuccessWhileSubmitting() async {
+        var didLoad = false
+
+        let result = await NormalTabInitialDocumentRuntimeHandoff.perform {
+            .degraded
+        } warmInitialDocumentContexts: {
+            .ready
+        } isStillValid: {
+            true
+        } register: {
+        } load: {
+            didLoad = true
+        }
+
+        XCTAssertEqual(result, .degraded)
+        XCTAssertTrue(didLoad)
     }
 
     func testTabSetupInitialLoadWaitsForInitialUserContent() async {
@@ -204,7 +215,8 @@ extension InitialDocumentRuntimeHandoffTests {
 
         webView.returnsConcreteNavigation = true
         tab.loadURL(newerURL)
-        XCTAssertEqual(tab.url, newerURL)
+        XCTAssertEqual(tab.mainFrameLoads.currentIntent.targetURL, newerURL)
+        XCTAssertEqual(tab.url, initialURL)
         XCTAssertEqual(webView.loadedRequests.compactMap(\.url), [newerURL])
 
         controller.finishInitialUserContentInstallation()
@@ -212,7 +224,8 @@ extension InitialDocumentRuntimeHandoffTests {
             await Task.yield()
         }
 
-        XCTAssertEqual(tab.url, newerURL)
+        XCTAssertEqual(tab.mainFrameLoads.currentIntent.targetURL, newerURL)
+        XCTAssertEqual(tab.url, initialURL)
         XCTAssertEqual(webView.loadedRequests.compactMap(\.url), [newerURL])
     }
 
@@ -375,8 +388,8 @@ extension InitialDocumentRuntimeHandoffTests {
             prepareWebViewForExtensionRuntime: { _, _, _ in /* No-op. */ },
             ensureInitialExtensionContextsIfNeeded: { warmedProfileId in
                 warmedProfileIds.append(warmedProfileId)
-            },
-            warmInitialDocumentNativeMessagingIfNeeded: { _ in }
+                return .ready
+            }
         )
 
         NormalTabInitialDocumentRuntimeHandoff.scheduleTabSetupInitialLoad(

@@ -14,7 +14,7 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         let registry = SumiModuleRegistry(settingsStore: store)
         let settings = SumiSettingsService(userDefaults: harness.defaults)
 
-        XCTAssertEqual(settings.memoryMode, .balanced)
+        XCTAssertEqual(settings.memoryMode, .off)
         XCTAssertEqual(settings.memorySaverCustomDeactivationDelay, 2 * 60 * 60)
         for moduleID in SumiModuleID.allCases {
             XCTAssertFalse(registry.isEnabled(moduleID), "\(moduleID.rawValue) should default to disabled")
@@ -54,7 +54,7 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         harness.defaults.set("performance", forKey: "settings.memoryMode")
         XCTAssertEqual(SumiSettingsService(userDefaults: harness.defaults).memoryMode, .moderate)
         harness.defaults.set("unknown", forKey: "settings.memoryMode")
-        XCTAssertEqual(SumiSettingsService(userDefaults: harness.defaults).memoryMode, .balanced)
+        XCTAssertEqual(SumiSettingsService(userDefaults: harness.defaults).memoryMode, .off)
 
         XCTAssertEqual(TabSuspensionPolicy(memoryMode: .moderate).proactiveDeactivationDelay, 6 * 60 * 60)
         XCTAssertEqual(TabSuspensionPolicy(memoryMode: .balanced).proactiveDeactivationDelay, 4 * 60 * 60)
@@ -66,6 +66,26 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         XCTAssertEqual(SumiMemorySaverCustomDelay.clamped(30), 60)
         XCTAssertEqual(SumiMemorySaverCustomDelay.clamped(5 * 60), 5 * 60)
         XCTAssertEqual(SumiMemorySaverCustomDelay.clamped(48 * 60 * 60), 2 * 60 * 60)
+    }
+
+    func testTurningMemoryModeOffInvalidatesCachedSuspensionScripts() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let settings = SumiSettingsService(userDefaults: harness.defaults)
+        let tab = Tab(loadsCachedFaviconOnInit: false)
+        tab.sumiSettings = settings
+
+        XCTAssertFalse(tab.normalTabCoreUserScripts().contains {
+            $0.source.contains("__sumiTabSuspension")
+        })
+        settings.memoryMode = .balanced
+        XCTAssertTrue(tab.normalTabCoreUserScripts().contains {
+            $0.source.contains("__sumiTabSuspension")
+        })
+        settings.memoryMode = .off
+        XCTAssertFalse(tab.normalTabCoreUserScripts().contains {
+            $0.source.contains("__sumiTabSuspension")
+        })
     }
 
     func testBrowserManagerStartupAndSettingsSurfacesDoNotConstructDisabledRuntimes() throws {
@@ -197,18 +217,19 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         XCTAssertTrue(controller.contentBlockingAssetSummary.addedToUserContentControllerIdentifiers.isEmpty)
         XCTAssertNil(controller.contentBlockingAssetSummary.tabAttachmentDuration)
         XCTAssertTrue(sources.contains("sumiLinkInteraction"))
-        XCTAssertTrue(sources.contains("sumiTabSuspension"))
-        XCTAssertTrue(sources.contains("__sumiTabSuspension"))
+        XCTAssertFalse(sources.contains("sumiTabSuspension"))
+        XCTAssertFalse(sources.contains("__sumiTabSuspension"))
         XCTAssertNil(webView.configuration.webExtensionController)
         XCTAssertFalse(browserManager.adBlockingModule.hasLoadedRuntime)
         XCTAssertFalse(browserManager.optionalModules.boosts.hasLoadedRuntime)
         XCTAssertFalse(browserManager.adBlockingModule.isEnabled)
         XCTAssertFalse(browserManager.adBlockingModule.isPreparedBundleRuntimeEnabled)
 
-        let suspensionScript = try XCTUnwrap(
-            tab.normalTabCoreUserScripts().first { $0.source.contains("__sumiTabSuspension") }
+        XCTAssertNil(
+            tab.normalTabCoreUserScripts().first {
+                $0.source.contains("__sumiTabSuspension")
+            }
         )
-        XCTAssertTrue(suspensionScript.forMainFrameOnly)
         XCTAssertEqual(extensionsProbe.managerCount, 0)
     }
 

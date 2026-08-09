@@ -76,8 +76,27 @@ public protocol WebRuntimeTabMaterializing: AnyObject {
 /// from assignment/rebuild materializing / ownership-mirror protocols.
 @MainActor
 public protocol WebRuntimeTabTeardownLifecycle: AnyObject {
+    /// Seals high-level page ownership and publishes logical departure for the
+    /// complete generation while canonical residence evidence still exists.
+    func webViewsWillLeaveRuntime(_ webViews: [WKWebView])
+
+    /// Performs final WebKit shutdown after logical departure and canonical
+    /// residence release have already completed.
+    func destroyRetiredWebView(_ webView: WKWebView)
+
     func cleanupCloneWebView(_ webView: WKWebView)
     func cancelPendingMainFrameNavigation()
+}
+
+public extension WebRuntimeTabTeardownLifecycle {
+    func webViewsWillLeaveRuntime(_ webViews: [WKWebView]) {
+        _ = webViews
+        cancelPendingMainFrameNavigation()
+    }
+
+    func destroyRetiredWebView(_ webView: WKWebView) {
+        cleanupCloneWebView(webView)
+    }
 }
 
 /// Site reload-policy flag refresh used after live WebView rebuild.

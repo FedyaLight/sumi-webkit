@@ -88,12 +88,7 @@ extension TabNormalWebViewExtensionRuntime {
                     .ensureInitialExtensionContextsIfNeeded(
                         profileId: profileId
                     )
-            },
-            warmInitialDocumentNativeMessagingIfNeeded: { profileId in
-                await extensionsModule()?
-                    .warmInitialDocumentNativeMessagingIfNeeded(
-                        profileId: profileId
-                    )
+                    ?? .ready
             },
             reconcileOnUserGesture: { tab, reason in
                 extensionsModule()?.reconcileExtensionRuntimeOnUserGestureIfNeeded(

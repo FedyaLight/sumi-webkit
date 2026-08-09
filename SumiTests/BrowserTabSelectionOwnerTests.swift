@@ -308,6 +308,126 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
         )
     }
 
+    func testStartupRetryTransfersTheExactAcceptedMaterializationRequest()
+        throws {
+        let harness = try makeHarness(appliedProtectionLevel: .protection)
+        let tab = harness.manager.tabFactory.makeTab(
+            url: try XCTUnwrap(URL(string: "file:///tmp/sumi-materialization.html")),
+            name: "Deferred",
+            spaceId: harness.space.id,
+            loadsCachedFaviconOnInit: false
+        )
+        tab.profileId = harness.window.currentProfileId
+        XCTAssertTrue(harness.manager.regularTabLifecycleOwner.addTab(tab))
+        XCTAssertTrue(
+            harness.manager.startupMaterializationGate
+                .shouldDeferNormalTabMaterialization
+        )
+
+        XCTAssertTrue(
+            harness.owner.applyTabSelection(
+                tab,
+                in: harness.window,
+                updateSpaceFromTab: true,
+                updateTheme: false,
+                rememberSelection: true,
+                persistSelection: false,
+                loadPolicy: .immediate
+            ).wasCommitted
+        )
+        let accepted = try XCTUnwrap(
+            harness.window.pageMaterializationRequests.currentRequest(
+                in: harness.window.id
+            )
+        )
+
+        XCTAssertTrue(
+            harness.manager.startupMaterializationGate.finishProtectionRestore()
+        )
+        let settlement = try XCTUnwrap(
+            harness.owner.materializeVisibleTabWebViewIfNeeded(
+                tab,
+                in: harness.window
+            )
+        )
+
+        XCTAssertEqual(settlement.request.id, accepted.id)
+        guard case .transferred = settlement.result else {
+            return XCTFail("Expected transfer to one exact navigation attempt")
+        }
+    }
+
+    func testSelectedLauncherCanRetryMaterializationWithoutGroupUnload()
+        throws {
+        let harness = try makeHarness(appliedProtectionLevel: .protection)
+        let destination = try XCTUnwrap(
+            URL(string: "file:///tmp/sumi-launcher-retry.html")
+        )
+        let pin = try XCTUnwrap(
+            harness.manager.shortcutPinStoreOwner.insert(
+                ShortcutPin(
+                    id: UUID(),
+                    role: .spacePinned,
+                    spaceId: harness.space.id,
+                    index: 0,
+                    launchURL: destination,
+                    title: "Deferred Launcher"
+                ),
+                at: 0
+            )
+        )
+        let liveTab = try XCTUnwrap(
+            harness.manager.shortcutTabMaterializer.materialize(
+                pin,
+                in: harness.window.id,
+                currentSpaceId: harness.space.id
+            )
+        )
+        XCTAssertTrue(
+            harness.owner.requestUserTabActivation(
+                liveTab,
+                in: harness.window,
+                loadPolicy: .immediate
+            ).wasCommitted
+        )
+        let first = try XCTUnwrap(
+            harness.window.pageMaterializationRequests.currentRequest(
+                for: liveTab.id,
+                in: harness.window.id
+            )
+        )
+        _ = harness.window.pageMaterializationRequests.settle(
+            first,
+            as: .failed(.residenceUnavailable)
+        )
+        liveTab.loadingState = .didFinish
+
+        XCTAssertTrue(
+            harness.manager.startupMaterializationGate.finishProtectionRestore()
+        )
+        XCTAssertTrue(
+            harness.owner.requestUserTabActivation(
+                liveTab,
+                in: harness.window,
+                loadPolicy: .immediate
+            ).wasCommitted
+        )
+
+        XCTAssertEqual(harness.window.currentTabId, liveTab.id)
+        XCTAssertIdentical(
+            harness.manager.liveShortcutTabs.entry(tabId: liveTab.id)?.tab,
+            liveTab
+        )
+        XCTAssertFalse(liveTab.isUnloaded)
+        let webView = try XCTUnwrap(liveTab.resolvedCurrentWebView())
+        switch liveTab.mainFrameLoads.attemptStatus(on: webView) {
+        case .waiting, .submitted:
+            break
+        case .unsubmitted:
+            XCTFail("Retry must transfer to a concrete navigation attempt")
+        }
+    }
+
     private struct Harness {
         let manager: BrowserManager
         let owner: BrowserTabSelectionOwner
@@ -317,16 +437,50 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
         let snapshotStore: WindowSessionSnapshotStore
     }
 
-    private func makeHarness() throws -> Harness {
+    private func makeHarness(
+        appliedProtectionLevel: SumiProtectionLevel? = nil
+    ) throws -> Harness {
         let snapshotStore = WindowSessionSnapshotStore(
             key: "SumiTests.tab-selection.\(UUID().uuidString)",
             environment: { [:] }
         )
         let windowRegistry = WindowRegistry()
-        let manager = BrowserManager(
-            windowRegistry: windowRegistry,
-            windowSessionSnapshotStore: snapshotStore
-        )
+        let manager: BrowserManager
+        if let appliedProtectionLevel {
+            let defaults = UserDefaults(
+                suiteName: "SumiTests.tab-selection.protection.\(UUID().uuidString)"
+            )!
+            let moduleRegistry = SumiModuleRegistry(
+                settingsStore: SumiModuleSettingsStore(userDefaults: defaults)
+            )
+            let settings = SumiProtectionSettings(userDefaults: defaults)
+            settings.setAppliedLevel(appliedProtectionLevel)
+            let blocker = SumiAdBlockingModule(
+                moduleRegistry: moduleRegistry,
+                preparedBundleResourceURL: nil,
+                preparedBundleRemoteRootURL: nil,
+                compiledRuleListCatalog: SumiCompiledContentRuleListCatalog()
+            )
+            manager = BrowserManager(
+                windowRegistry: windowRegistry,
+                moduleRegistry: moduleRegistry,
+                windowSessionSnapshotStore: snapshotStore,
+                adBlockingModule: blocker,
+                protectionCoordinator: SumiProtectionCoordinator(
+                    settings: settings,
+                    adBlockingModule: blocker,
+                    bundleUpdateStatusStore: SumiProtectionBundleUpdateStatusStore(
+                        userDefaults: defaults
+                    ),
+                    compiledRuleListCatalog: SumiCompiledContentRuleListCatalog()
+                )
+            )
+        } else {
+            manager = BrowserManager(
+                windowRegistry: windowRegistry,
+                windowSessionSnapshotStore: snapshotStore
+            )
+        }
         let profile = try XCTUnwrap(
             manager.currentProfileAuthority.currentProfile
         )

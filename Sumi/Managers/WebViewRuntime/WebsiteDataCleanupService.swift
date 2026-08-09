@@ -10,7 +10,7 @@ final class WebsiteDataCleanupService: SumiDestructiveBrowsingDataCleanupPrepari
     typealias RestoreSubmission = @MainActor (
         Tab,
         URL
-    ) -> TabMainFrameReloadCommandOutcome
+    ) -> PageReloadCommandOutcome
 
     private let admissionGate: WebsiteDataMutationGate
     private let participantRegistry: CleanupParticipantRegistry
@@ -37,9 +37,9 @@ final class WebsiteDataCleanupService: SumiDestructiveBrowsingDataCleanupPrepari
                 let outcome = admissionGate.withInternalSubmission {
                     restoreSubmission(tab, targetURL)
                 }
-                let semanticRevision = outcome == .failed
-                    ? nil
-                    : tab.mainFrameLoads.currentIntent.revision
+                let semanticRevision = outcome.containsConcreteSubmission
+                    ? tab.mainFrameLoads.currentIntent.revision
+                    : nil
                 if let semanticRevision {
                     admissionGate.authorizeRestoreSubmission(
                         tabID: tab.id,
@@ -195,7 +195,7 @@ final class WebsiteDataCleanupService: SumiDestructiveBrowsingDataCleanupPrepari
         in windowID: UUID,
         replay: @escaping @MainActor () -> Void
     ) -> Bool {
-        return deferOrdinaryAdmission(
+        deferOrdinaryAdmission(
             profileID: tab.resolveProfile()?.id ?? tab.profileId,
             key: .trackedReplacement(tabID: tab.id, windowID: windowID),
             replay: replay
@@ -249,6 +249,10 @@ final class WebsiteDataCleanupService: SumiDestructiveBrowsingDataCleanupPrepari
 
     func cancelDeferredAdmissions(for tabID: UUID) {
         admissionGate.cancelDeferredAdmissions(forTabID: tabID)
+    }
+
+    func cancelDeferredAdmissions(forProfileID profileID: UUID) {
+        admissionGate.cancelDeferredAdmissions(forProfileID: profileID)
     }
 
     func resetForTerminalShutdown() {

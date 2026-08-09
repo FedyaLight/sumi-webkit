@@ -659,7 +659,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             splitPresentation: presentation,
             currentId: current,
             compositorVersion: 1,
-            currentTabUnloaded: false,
+            currentPagePresentation: .live(pageID: current),
             isSplitDropCaptureActive: false
         )
         XCTAssertEqual(activeState.activeSplitPresentation?.groupID, group.id)
@@ -669,7 +669,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             splitPresentation: presentation,
             currentId: outside,
             compositorVersion: 1,
-            currentTabUnloaded: false,
+            currentPagePresentation: .live(pageID: outside),
             isSplitDropCaptureActive: false
         )
         XCTAssertNil(outsideState.activeSplitPresentation)
@@ -679,7 +679,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             splitPresentation: presentation,
             currentId: nil,
             compositorVersion: 1,
-            currentTabUnloaded: true,
+            currentPagePresentation: .empty,
             isSplitDropCaptureActive: false
         )
         XCTAssertNil(nilCurrentState.activeSplitPresentation)
@@ -705,7 +705,6 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             splitDropTargets: browserManager.splitWindowContext.dropTargets,
             sidebarDragState: browserContext.sidebarDragState,
             webViewOwnershipQuery: webViewRuntime.ownershipQuery,
-            trackedWebViewAdmission: webViewRuntime.trackedWebViewAdmission,
             webViewCompositorRuntime: webViewRuntime.compositorRuntime,
             webViewProtectionRuntime: webViewRuntime.protectionRuntime,
             hoveredLink: .constant(nil),
@@ -794,11 +793,11 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             splitPresentation: presentation,
             currentId: secondLiveShortcutTab.id,
             compositorVersion: 0,
-            currentTabUnloaded: false,
+            currentPagePresentation: .live(pageID: secondLiveShortcutTab.id),
             isSplitDropCaptureActive: false
         )
 
-        guard case .split(let resolvedPresentation, let tabs) = planner
+        guard case .split(let resolvedPresentation, let panes) = planner
             .presentationDecision(
                 for: displayState,
                 currentTab: secondLiveShortcutTab
@@ -807,10 +806,10 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         }
         XCTAssertEqual(resolvedPresentation, presentation)
         XCTAssertEqual(
-            tabs.map(\.id),
+            panes.compactMap(\.tab?.id),
             [firstLiveShortcutTab.id, secondLiveShortcutTab.id]
         )
-        XCTAssertTrue(Set(tabs.map(\.id)).isDisjoint(
+        XCTAssertTrue(Set(panes.compactMap(\.tab?.id)).isDisjoint(
             with: [firstPinID, secondPinID]
         ))
     }
@@ -1355,7 +1354,13 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             liveWebViews: { _ in [] },
             waitForMutationPermission: { _ in true },
             restoreTab: { _, _ in
-                .init(outcome: .failed, semanticRevision: nil)
+                .init(
+                    outcome: .failed(
+                        intent: nil,
+                        reason: .submissionFailed
+                    ),
+                    semanticRevision: nil
+                )
             }
         )
         let navigation = NSObject()

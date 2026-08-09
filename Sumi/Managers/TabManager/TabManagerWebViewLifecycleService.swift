@@ -36,6 +36,7 @@ protocol TabWebViewOwnershipParticipant: AnyObject {
 @MainActor
 protocol TabWebViewRetirementParticipant: AnyObject {
     func canRetire(_ tabs: [Tab]) -> Bool
+    func prepareRetirementOwners(_ tabs: [Tab])
     func beginCommittedRetirement(_ tabs: [Tab]) -> Bool
     func committedRetirementIsExact(_ tabs: [Tab]) -> Bool
     func destroyRetiredGenerations(
@@ -161,6 +162,10 @@ struct TabManagerWebViewLifecycleService {
 
     func canRetireTabWebViews(_ tabs: [Tab]) -> Bool {
         retirement.canRetire(tabs)
+    }
+
+    func prepareTabWebViewRetirementOwners(_ tabs: [Tab]) {
+        retirement.prepareRetirementOwners(tabs)
     }
 
     func beginCommittedTabRetirement(_ tabs: [Tab]) -> Bool {

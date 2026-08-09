@@ -14,6 +14,7 @@ final class BrowserSettingsAttachmentCoordinator {
     private let tabSuspension: TabSuspensionController
     private let startupReconciliation: BrowserStartupSessionReconciliationService
     private let automaticDataCleanup: BrowserAutomaticBrowsingDataCleanup
+    private weak var attachedSettings: SumiSettingsService?
 
     init(
         settingsState: BrowserSettingsState,
@@ -34,12 +35,18 @@ final class BrowserSettingsAttachmentCoordinator {
     }
 
     func attach(_ settings: SumiSettingsService?) {
+        attachedSettings?.setTabSuspensionPolicyChangedHandler(nil)
+        attachedSettings = settings
         settingsState.update(settings)
         downloadManager.settings = settings
         // Weak capture keeps the policy source tracking the live settings
         // object without retaining it past its owner.
         tabSuspension.configurePolicy { [weak settings] in
             TabSuspensionPolicy(settings: settings)
+        }
+        settings?.setTabSuspensionPolicyChangedHandler {
+            [weak tabSuspension] in
+            tabSuspension?.policyDidChange(reason: "settings-policy-changed")
         }
         startupReconciliation.reconcileIfReady()
         automaticDataCleanup.schedule(reason: "settings-attached")

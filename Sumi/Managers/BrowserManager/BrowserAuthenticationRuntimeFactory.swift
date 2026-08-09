@@ -16,6 +16,10 @@ enum BrowserAuthenticationRuntimeFactory {
             },
             dismissNativeModalPresentation: { [weak browserManager] in
                 browserManager?.chromeBundle.nativeDialogPresentationOwner.dismissNativeModalPresentation()
+            },
+            dismissCertificateTrustWarning: { webView in
+                webView?.sumiReaderPresentationHost?
+                    .dismissCertificateTrustWarning()
             }
         )
     }

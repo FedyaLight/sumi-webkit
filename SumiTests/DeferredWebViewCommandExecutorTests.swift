@@ -108,7 +108,8 @@ final class DeferredWebViewCommandExecutorTests: XCTestCase {
             removeFromContainers: { _ in false },
             cleanupTrackedWebView: { _, _, _ in false },
             shutdownOwnerlessWebView: { _, _ in },
-            finishRetirementIfDrained: { _ in finishCount += 1 }
+            finishRetirementIfDrained: { _ in finishCount += 1 },
+            retireTabWebViewGeneration: { _, _ in true }
         )
 
         XCTAssertEqual(
@@ -135,7 +136,8 @@ final class DeferredWebViewCommandExecutorTests: XCTestCase {
                 },
                 cleanupTrackedWebView: { _, _, _ in false },
                 shutdownOwnerlessWebView: shutdownOwnerlessWebView,
-                finishRetirementIfDrained: { _ in }
+                finishRetirementIfDrained: { _ in },
+                retireTabWebViewGeneration: { _, _ in true }
             ),
             windowMaintenance: DeferredWebViewWindowMaintenanceExecutor(
                 cleanupWindow: { _ in false },

@@ -36,14 +36,14 @@ final class BrowserShortcutPageCommandDispatcher {
             return page.reload(
                 activePage,
                 reason: "Shortcut.refresh"
-            ) != .failed
+            ).ownsFutureOrSubmittedNavigation
         case .clearCookiesAndRefresh:
             guard let activePage = context.page else { return false }
             privacy.clearCookies(for: context.page)
             return page.reload(
                 activePage,
                 reason: "Shortcut.clearCookiesAndRefresh"
-            ) != .failed
+            ).ownsFutureOrSubmittedNavigation
         case .openDevTools:
             return page.inspect(context.page)
         case .viewHistory:

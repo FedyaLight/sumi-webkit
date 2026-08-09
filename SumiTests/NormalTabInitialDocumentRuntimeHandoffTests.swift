@@ -1225,13 +1225,15 @@ final class DelayedNormalTabUserContentController:
         normalTabUserScriptsProvider = provider
     }
 
-    func waitForContentBlockingAssetsInstalled() async {
+    func waitForContentBlockingAssetsInstalled() async
+        -> PageNavigationPrerequisiteResult {
         waitCallCount += 1
-        guard hasInstalledInitialUserContent == false else { return }
+        guard hasInstalledInitialUserContent == false else { return .ready }
 
         await withCheckedContinuation { continuation in
             self.continuation = continuation
         }
+        return Task.isCancelled ? .cancelled : .ready
     }
 
     func finishInitialUserContentInstallation() {

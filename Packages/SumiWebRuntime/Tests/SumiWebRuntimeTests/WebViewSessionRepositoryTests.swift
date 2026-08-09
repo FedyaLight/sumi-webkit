@@ -1052,6 +1052,120 @@ final class WebViewSessionRepositoryTests: XCTestCase {
         }
     }
 
+    func testWindowSubsetReplacementCommitsOnlyTargetResidence() {
+        let repository = WebViewSessionRepository()
+        let tabID = UUID()
+        let primaryWindowID = UUID()
+        let failedWindowID = UUID()
+        let healthy = WKWebView()
+        let failed = WKWebView()
+        let candidate = WKWebView()
+        register(
+            healthy,
+            tabID: tabID,
+            windowID: primaryWindowID,
+            in: repository
+        )
+        register(
+            failed,
+            tabID: tabID,
+            windowID: failedWindowID,
+            in: repository
+        )
+
+        let result = repository.beginReplacementBatch(
+            [WebViewReplacementBatchEntry(
+                tabID: tabID,
+                expectedGeneration: repository.queries.generation(for: tabID),
+                placement: .windowSubset(
+                    webViewsByWindowID: [failedWindowID: candidate]
+                )
+            )],
+            validateModel: { true },
+            modelCommit: {},
+            modelRollback: {}
+        )
+        guard case .began(let lease) = result else {
+            return XCTFail("Expected subset replacement to begin")
+        }
+        XCTAssertIdentical(
+            repository.queries.webView(for: tabID, in: primaryWindowID),
+            healthy
+        )
+        XCTAssertIdentical(
+            repository.queries.webView(for: tabID, in: failedWindowID),
+            candidate
+        )
+        guard case .committed(let retired) = repository
+            .commitReplacementBatch(lease) else {
+            return XCTFail("Expected subset replacement to commit")
+        }
+        XCTAssertEqual(retired[tabID]?.windowWebViews.count, 1)
+        XCTAssertIdentical(
+            retired[tabID]?.windowWebViews[failedWindowID],
+            failed
+        )
+        XCTAssertFalse(
+            retired[tabID]?.allKnownWebViews.contains { $0 === healthy }
+                ?? true
+        )
+    }
+
+    func testWindowSubsetReplacementRollbackRestoresOnlyTargetResidence() {
+        let repository = WebViewSessionRepository()
+        let tabID = UUID()
+        let healthyWindowID = UUID()
+        let failedWindowID = UUID()
+        let healthy = WKWebView()
+        let failed = WKWebView()
+        let candidate = WKWebView()
+        register(
+            healthy,
+            tabID: tabID,
+            windowID: healthyWindowID,
+            in: repository
+        )
+        register(
+            failed,
+            tabID: tabID,
+            windowID: failedWindowID,
+            in: repository
+        )
+
+        let result = repository.beginReplacementBatch(
+            [WebViewReplacementBatchEntry(
+                tabID: tabID,
+                expectedGeneration: repository.queries.generation(for: tabID),
+                placement: .windowSubset(
+                    webViewsByWindowID: [failedWindowID: candidate]
+                )
+            )],
+            validateModel: { true },
+            modelCommit: {},
+            modelRollback: {}
+        )
+        guard case .began(let lease) = result else {
+            return XCTFail("Expected subset replacement to begin")
+        }
+        guard case .rolledBack(let discarded) = repository
+            .rollbackReplacementBatch(lease) else {
+            return XCTFail("Expected subset replacement rollback")
+        }
+        XCTAssertIdentical(
+            repository.queries.webView(for: tabID, in: healthyWindowID),
+            healthy
+        )
+        XCTAssertIdentical(
+            repository.queries.webView(for: tabID, in: failedWindowID),
+            failed
+        )
+        XCTAssertEqual(discarded[tabID]?.windowWebViews.count, 1)
+        XCTAssertIdentical(
+            discarded[tabID]?.windowWebViews[failedWindowID],
+            candidate
+        )
+    }
+
     func testDetachedReplacementRollbackRestoresParkedAndUntrackedSet() {
         let repository = WebViewSessionRepository()
         let tabID = UUID()

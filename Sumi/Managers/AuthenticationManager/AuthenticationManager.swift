@@ -15,6 +15,7 @@ struct AuthenticationManagerRuntime {
     var presentBasicAuthSheet: (BasicAuthSheetSession, Tab) -> Bool
     var presentCertificateTrustWarning: (CertificateTrustWarningSession, WKWebView?) -> Bool
     var dismissNativeModalPresentation: () -> Void
+    var dismissCertificateTrustWarning: (WKWebView?) -> Void = { _ in }
 }
 
 @MainActor
@@ -31,6 +32,7 @@ final class AuthenticationManager: NSObject {
     }
 
     private struct CertificateTrustPendingChallenge {
+        let requestID: UUID
         let trust: SecTrust
         let completion: CertificateTrustCompletion
     }
@@ -39,10 +41,15 @@ final class AuthenticationManager: NSObject {
         let key: CertificateTrustPendingKey
         var challenges: [CertificateTrustPendingChallenge] = []
         var session: CertificateTrustWarningSession?
+        weak var webView: WKWebView?
 
         init(key: CertificateTrustPendingKey) {
             self.key = key
         }
+    }
+
+    private struct BasicAuthPendingRequest {
+        let session: BasicAuthSheetSession
     }
 
     private var runtime: AuthenticationManagerRuntime?
@@ -50,6 +57,11 @@ final class AuthenticationManager: NSObject {
     private var approvedCertificateTrustKeys: Set<CertificateTrustPendingKey> = []
     private var pendingCertificateTrustRequests: [
         CertificateTrustPendingKey: CertificateTrustPendingRequest
+    ] = [:]
+    private var pendingBasicAuthRequests: [UUID: BasicAuthPendingRequest] = [:]
+    private var externallyCancelledBasicAuthRequestIDs = Set<UUID>()
+    private var evaluatingServerTrustCompletions: [
+        UUID: CertificateTrustCompletion
     ] = [:]
 
     init(credentialStore: BasicAuthCredentialStore = BasicAuthCredentialStore()) {
@@ -66,6 +78,7 @@ final class AuthenticationManager: NSObject {
         for tab: Tab,
         webView: WKWebView? = nil,
         mainFrameURL: URL? = nil,
+        requestID: UUID = UUID(),
         completionHandler: @escaping CertificateTrustCompletion
     ) -> Bool {
         switch challenge.protectionSpace.authenticationMethod {
@@ -80,8 +93,16 @@ final class AuthenticationManager: NSObject {
                 return true
             }
 
-            presentBasicCredentialPrompt(for: challenge, tab: tab) { credential in
-                if let credential {
+            presentBasicCredentialPrompt(
+                for: challenge,
+                tab: tab,
+                requestID: requestID
+            ) { credential in
+                if self.externallyCancelledBasicAuthRequestIDs.remove(
+                    requestID
+                ) != nil {
+                    completionHandler(.cancelAuthenticationChallenge, nil)
+                } else if let credential {
                     completionHandler(.useCredential, credential)
                 } else {
                     completionHandler(.performDefaultHandling, nil)
@@ -99,6 +120,7 @@ final class AuthenticationManager: NSObject {
                 tab: tab,
                 webView: webView,
                 mainFrameURL: mainFrameURL,
+                requestID: requestID,
                 completionHandler: completionHandler
             )
             return true
@@ -110,19 +132,56 @@ final class AuthenticationManager: NSObject {
         }
     }
 
+    @discardableResult
+    func cancelAuthenticationChallenge(requestID: UUID) -> Bool {
+        if let pending = pendingBasicAuthRequests[requestID] {
+            externallyCancelledBasicAuthRequestIDs.insert(requestID)
+            pending.session.cancel()
+            return true
+        }
+
+        if let completion = evaluatingServerTrustCompletions.removeValue(
+            forKey: requestID
+        ) {
+            completion(.cancelAuthenticationChallenge, nil)
+            return true
+        }
+
+        guard let pending = pendingCertificateTrustRequests.values.first(where: {
+            $0.challenges.contains(where: { $0.requestID == requestID })
+        }), let index = pending.challenges.firstIndex(where: {
+                $0.requestID == requestID
+        }) else {
+            return false
+        }
+        let challenge = pending.challenges.remove(at: index)
+        challenge.completion(.cancelAuthenticationChallenge, nil)
+        if pending.challenges.isEmpty {
+            pendingCertificateTrustRequests.removeValue(forKey: pending.key)
+            runtime?.dismissCertificateTrustWarning(pending.webView)
+            pending.session?.cancel()
+        }
+        return true
+    }
+
     private func evaluateServerTrust(
         _ trust: SecTrust,
         challenge: URLAuthenticationChallenge,
         tab: Tab,
         webView: WKWebView?,
         mainFrameURL: URL?,
+        requestID: UUID,
         completionHandler: @escaping CertificateTrustCompletion
     ) {
+        evaluatingServerTrustCompletions[requestID] = completionHandler
         let status = SecTrustEvaluateAsyncWithError(
             trust,
             .main
         ) { [weak self, weak tab, weak webView] trust, isTrusted, _ in
             MainActor.assumeIsolated {
+                guard self?.evaluatingServerTrustCompletions.removeValue(
+                    forKey: requestID
+                ) != nil else { return }
                 guard let self, let tab else {
                     completionHandler(.cancelAuthenticationChallenge, nil)
                     return
@@ -134,12 +193,17 @@ final class AuthenticationManager: NSObject {
                     tab: tab,
                     webView: webView,
                     mainFrameURL: mainFrameURL,
+                    requestID: requestID,
                     completionHandler: completionHandler
                 )
             }
         }
         if status != errSecSuccess {
-            completionHandler(.cancelAuthenticationChallenge, nil)
+            if evaluatingServerTrustCompletions.removeValue(
+                forKey: requestID
+            ) != nil {
+                completionHandler(.cancelAuthenticationChallenge, nil)
+            }
         }
     }
 
@@ -150,6 +214,7 @@ final class AuthenticationManager: NSObject {
         tab: Tab,
         webView: WKWebView?,
         mainFrameURL: URL?,
+        requestID: UUID,
         completionHandler: @escaping CertificateTrustCompletion
     ) {
         if isTrusted {
@@ -182,6 +247,7 @@ final class AuthenticationManager: NSObject {
         if let pending = pendingCertificateTrustRequests[pendingKey] {
             pending.challenges.append(
                 CertificateTrustPendingChallenge(
+                    requestID: requestID,
                     trust: trust,
                     completion: completionHandler
                 )
@@ -197,6 +263,7 @@ final class AuthenticationManager: NSObject {
         let pending = CertificateTrustPendingRequest(key: pendingKey)
         pending.challenges.append(
             CertificateTrustPendingChallenge(
+                requestID: requestID,
                 trust: trust,
                 completion: completionHandler
             )
@@ -218,6 +285,7 @@ final class AuthenticationManager: NSObject {
             }
         )
         pending.session = session
+        pending.webView = webView
         pendingCertificateTrustRequests[pendingKey] = pending
 
         if runtime.presentCertificateTrustWarning(session, webView) == false {
@@ -270,6 +338,7 @@ final class AuthenticationManager: NSObject {
     private func presentBasicCredentialPrompt(
         for challenge: URLAuthenticationChallenge,
         tab: Tab,
+        requestID: UUID,
         completion: @escaping (URLCredential?) -> Void
     ) {
         guard let runtime else {
@@ -306,6 +375,7 @@ final class AuthenticationManager: NSObject {
         func finish(with credential: URLCredential?) {
             guard didComplete == false else { return }
             didComplete = true
+            pendingBasicAuthRequests.removeValue(forKey: requestID)
             completion(credential)
         }
 
@@ -331,6 +401,10 @@ final class AuthenticationManager: NSObject {
                 runtime.dismissNativeModalPresentation()
                 finish(with: nil)
             }
+        )
+
+        pendingBasicAuthRequests[requestID] = BasicAuthPendingRequest(
+            session: session
         )
 
         if runtime.presentBasicAuthSheet(session, tab) == false {

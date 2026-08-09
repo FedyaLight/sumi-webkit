@@ -48,11 +48,12 @@ final class WebsiteDataCleanupParticipantLedgerTests: XCTestCase {
             id: ObjectIdentifier(lifetime),
             lifetime: lifetime
         )
-        ledger.beginBlankWait(
+        ledger.beginBlankSubmission(
             for: participant,
-            navigation: identity,
+            targetURL: URL(string: "about:blank")!,
             deadline: ContinuousClock.now + .seconds(2)
         )
+        XCTAssertTrue(ledger.bindBlankNavigation(identity, to: participant))
 
         XCTAssertTrue(ledger.isSuppressingNavigation(
             on: webView,
@@ -82,7 +83,8 @@ final class WebsiteDataCleanupParticipantLedgerTests: XCTestCase {
         XCTAssertTrue(result)
     }
 
-    func testRestoreTerminalEventCanArriveBeforeSemanticReceipt() async throws {
+    func testRestoreTransfersAtConcreteSubmissionWithoutTerminalCallback()
+        throws {
         let ledger = WebsiteDataCleanupParticipantLedger()
         let webView = WKWebView()
         let session = try XCTUnwrap(ledger.beginSession())
@@ -90,38 +92,17 @@ final class WebsiteDataCleanupParticipantLedgerTests: XCTestCase {
             ledger.register(webView, in: session, touchedAndBlanked: true)
         )
         let targetURL = try XCTUnwrap(URL(string: "https://example.com/path"))
-        ledger.beginRestoreAttempt(
+        ledger.beginRestoreSubmission(
             [participant],
-            targetURL: targetURL,
-            deadline: ContinuousClock.now + .seconds(2)
+            targetURL: targetURL
         )
-
-        let lifetime = NSObject()
-        let navigationID = ObjectIdentifier(lifetime)
-        ledger.navigationWillStart(
-            on: webView,
-            navigationID: navigationID,
-            navigationLifetime: lifetime,
-            targetURL: targetURL,
-            semanticRevision: 41
-        )
-        ledger.navigationDidTerminate(
-            on: webView,
-            navigationID: navigationID,
-            navigationLifetime: lifetime,
-            succeeded: true
-        )
-        ledger.bindRestoreSemanticRevision(41, to: participant)
-
-        let result = await ledger.awaitTerminalResult(for: participant)
-        XCTAssertTrue(result)
-        ledger.finishRestoreAttempt([participant], succeeded: true)
-        XCTAssertTrue(
-            ledger.pendingRestoreParticipants(among: [participant]).isEmpty
-        )
+        XCTAssertTrue(ledger.transferRestoreSubmission(
+            for: participant,
+            targetURL: targetURL
+        ))
     }
 
-    func testRestoreRejectsWrongURLAndSemanticRevision() async throws {
+    func testRestoreRejectsConcreteSubmissionForWrongDestination() throws {
         let ledger = WebsiteDataCleanupParticipantLedger()
         let webView = WKWebView()
         let session = try XCTUnwrap(ledger.beginSession())
@@ -130,39 +111,146 @@ final class WebsiteDataCleanupParticipantLedgerTests: XCTestCase {
         )
         let targetURL = try XCTUnwrap(URL(string: "https://example.com/right"))
         let wrongURL = try XCTUnwrap(URL(string: "https://example.com/wrong"))
-        ledger.beginRestoreAttempt(
+        ledger.beginRestoreSubmission(
             [participant],
+            targetURL: targetURL
+        )
+        XCTAssertFalse(ledger.transferRestoreSubmission(
+            for: participant,
+            targetURL: wrongURL
+        ))
+    }
+
+    func testSynchronousBlankLifecycleIsOwnedBeforeNativeIdentityBinds()
+        async throws {
+        let ledger = WebsiteDataCleanupParticipantLedger()
+        let webView = WKWebView()
+        let session = try XCTUnwrap(ledger.beginSession())
+        let participant = try XCTUnwrap(ledger.register(webView, in: session))
+        let targetURL = try XCTUnwrap(URL(string: "about:blank"))
+        let lifetime = NSObject()
+        let navigationID = ObjectIdentifier(lifetime)
+
+        ledger.beginBlankSubmission(
+            for: participant,
             targetURL: targetURL,
             deadline: ContinuousClock.now + .seconds(2)
         )
-
-        let wrongURLLifetime = NSObject()
         ledger.navigationWillStart(
             on: webView,
-            navigationID: ObjectIdentifier(wrongURLLifetime),
-            navigationLifetime: wrongURLLifetime,
-            targetURL: wrongURL,
-            semanticRevision: 7
-        )
-        let wrongRevisionLifetime = NSObject()
-        ledger.navigationWillStart(
-            on: webView,
-            navigationID: ObjectIdentifier(wrongRevisionLifetime),
-            navigationLifetime: wrongRevisionLifetime,
+            navigationID: navigationID,
+            navigationLifetime: lifetime,
             targetURL: targetURL,
-            semanticRevision: 8
+            semanticRevision: nil
         )
-        ledger.bindRestoreSemanticRevision(7, to: participant)
+        XCTAssertTrue(ledger.isSuppressingNavigation(
+            on: webView,
+            navigationID: navigationID,
+            navigationLifetime: lifetime
+        ))
         ledger.navigationDidTerminate(
             on: webView,
-            navigationID: ObjectIdentifier(wrongRevisionLifetime),
-            navigationLifetime: wrongRevisionLifetime,
+            navigationID: navigationID,
+            navigationLifetime: lifetime,
             succeeded: true
         )
-        ledger.rejectRestoreAttempt([participant])
-
+        XCTAssertTrue(ledger.bindBlankNavigation(
+            .init(id: navigationID, lifetime: lifetime),
+            to: participant
+        ))
         let result = await ledger.awaitTerminalResult(for: participant)
-        XCTAssertFalse(result)
+        XCTAssertTrue(result)
+    }
+
+    func testRacingSynchronousNavigationInvalidatesBlankSubmissionWithoutSuppression()
+        throws {
+        let ledger = WebsiteDataCleanupParticipantLedger()
+        let webView = WKWebView()
+        let session = try XCTUnwrap(ledger.beginSession())
+        let participant = try XCTUnwrap(ledger.register(webView, in: session))
+        let blankURL = try XCTUnwrap(URL(string: "about:blank"))
+        let foreignURL = try XCTUnwrap(URL(string: "https://example.com/race"))
+        let lifetime = NSObject()
+        let navigationID = ObjectIdentifier(lifetime)
+
+        ledger.beginBlankSubmission(
+            for: participant,
+            targetURL: blankURL,
+            deadline: ContinuousClock.now + .seconds(2)
+        )
+        ledger.navigationWillStart(
+            on: webView,
+            navigationID: navigationID,
+            navigationLifetime: lifetime,
+            targetURL: foreignURL,
+            semanticRevision: nil
+        )
+
+        XCTAssertFalse(ledger.isValid(session))
+        XCTAssertFalse(ledger.isSuppressingNavigation(
+            on: webView,
+            navigationID: navigationID,
+            navigationLifetime: lifetime
+        ))
+    }
+
+    func testRestoreSuccessorLifecycleRemainsOrdinaryAfterConcreteTransfer()
+        throws {
+        let ledger = WebsiteDataCleanupParticipantLedger()
+        let webView = WKWebView()
+        let session = try XCTUnwrap(ledger.beginSession())
+        let participant = try XCTUnwrap(
+            ledger.register(webView, in: session, touchedAndBlanked: true)
+        )
+        let targetURL = try XCTUnwrap(URL(string: "https://example.com/restored"))
+        let lifetime = NSObject()
+        let navigationID = ObjectIdentifier(lifetime)
+
+        ledger.beginRestoreSubmission([participant], targetURL: targetURL)
+        ledger.navigationWillStart(
+            on: webView,
+            navigationID: navigationID,
+            navigationLifetime: lifetime,
+            targetURL: targetURL,
+            semanticRevision: 1
+        )
+        XCTAssertFalse(ledger.isSuppressingNavigation(
+            on: webView,
+            navigationID: navigationID,
+            navigationLifetime: lifetime
+        ))
+        ledger.navigationDidTerminate(
+            on: webView,
+            navigationID: navigationID,
+            navigationLifetime: lifetime,
+            succeeded: false
+        )
+
+        XCTAssertTrue(ledger.transferRestoreSubmission(
+            for: participant,
+            targetURL: targetURL
+        ))
+        XCTAssertTrue(ledger.isValid(session))
+    }
+
+    func testRestoreSubmissionCannotResurrectTerminatedParticipant() throws {
+        let ledger = WebsiteDataCleanupParticipantLedger()
+        let webView = WKWebView()
+        let session = try XCTUnwrap(ledger.beginSession())
+        let participant = try XCTUnwrap(
+            ledger.register(webView, in: session, touchedAndBlanked: true)
+        )
+        let targetURL = try XCTUnwrap(URL(string: "https://example.com/restored"))
+
+        ledger.beginRestoreSubmission([participant], targetURL: targetURL)
+        XCTAssertTrue(ledger.webContentProcessDidTerminate(on: webView))
+        ledger.beginRestoreSubmission([participant], targetURL: targetURL)
+
+        XCTAssertFalse(ledger.transferRestoreSubmission(
+            for: participant,
+            targetURL: targetURL
+        ))
+        XCTAssertTrue(ledger.isAbandoned(participant))
     }
 
     func testTerminalShutdownDiscardsWaitAndRejectsReplacementSession()
@@ -172,14 +260,15 @@ final class WebsiteDataCleanupParticipantLedgerTests: XCTestCase {
         let session = try XCTUnwrap(ledger.beginSession())
         let participant = try XCTUnwrap(ledger.register(webView, in: session))
         let lifetime = NSObject()
-        ledger.beginBlankWait(
+        ledger.beginBlankSubmission(
             for: participant,
-            navigation: .init(
-                id: ObjectIdentifier(lifetime),
-                lifetime: lifetime
-            ),
+            targetURL: URL(string: "about:blank")!,
             deadline: ContinuousClock.now + .seconds(2)
         )
+        XCTAssertTrue(ledger.bindBlankNavigation(
+            .init(id: ObjectIdentifier(lifetime), lifetime: lifetime),
+            to: participant
+        ))
         let waiterStarted = expectation(description: "terminal wait started")
         let waiter = Task { @MainActor in
             waiterStarted.fulfill()

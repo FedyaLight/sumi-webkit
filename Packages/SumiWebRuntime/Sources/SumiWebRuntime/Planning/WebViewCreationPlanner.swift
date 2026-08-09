@@ -33,6 +33,7 @@ public struct InitialDocumentWarmupRuntime {
 private struct InitialDocumentWarmupGate {
     private var inFlightProfileIds: Set<UUID> = []
     private var attemptedProfileIds: Set<UUID> = []
+    private var waitingWindowIdsByProfile: [UUID: Set<UUID>] = [:]
 
     mutating func deferralIfNeeded(
         for tab: any WebRuntimeTabHandle,
@@ -48,6 +49,7 @@ private struct InitialDocumentWarmupGate {
         }
 
         if inFlightProfileIds.contains(profileId) {
+            waitingWindowIdsByProfile[profileId, default: []].insert(windowId)
             return .waitForInFlight
         }
 
@@ -59,14 +61,16 @@ private struct InitialDocumentWarmupGate {
 
         attemptedProfileIds.insert(profileId)
         inFlightProfileIds.insert(profileId)
+        waitingWindowIdsByProfile[profileId, default: []].insert(windowId)
         return .start(
             profileId: profileId,
             windowId: windowId
         )
     }
 
-    mutating func finish(profileId: UUID) {
+    mutating func finish(profileId: UUID) -> Set<UUID> {
         inFlightProfileIds.remove(profileId)
+        return waitingWindowIdsByProfile.removeValue(forKey: profileId) ?? []
     }
 
     private static func isWarmupURL(_ url: URL) -> Bool {
@@ -131,7 +135,7 @@ public final class WebViewCreationPlanner {
         _ deferral: InitialDocumentWarmupDeferral,
         runtime: InitialDocumentWarmupRuntime?
     ) {
-        guard case let .start(profileId, windowId) = deferral else {
+        guard case let .start(profileId, _) = deferral else {
             return
         }
         guard let runtime else {
@@ -142,8 +146,12 @@ public final class WebViewCreationPlanner {
         Task { @MainActor [weak self] in
             await runtime.ensureInitialExtensionContextsLoaded(profileId)
             guard let self else { return }
-            self.initialDocumentWarmupGate.finish(profileId: profileId)
-            runtime.refreshCompositorForWindow(windowId)
+            let waitingWindowIds = self.initialDocumentWarmupGate.finish(
+                profileId: profileId
+            )
+            for waitingWindowId in waitingWindowIds {
+                runtime.refreshCompositorForWindow(waitingWindowId)
+            }
         }
     }
 

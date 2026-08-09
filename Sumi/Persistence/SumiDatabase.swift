@@ -39,7 +39,7 @@ final class SumiDatabase: @unchecked Sendable {
             case 0:
                 try Self.createSchema(in: database)
                 try Self.createKeyboardCommandSchema(in: database)
-                try database.execute(sql: "PRAGMA user_version = 3")
+                try database.execute(sql: "PRAGMA user_version = 4")
             case 1:
                 try database.alter(table: "folders") { table in
                     table.add(column: "is_live", .boolean)
@@ -47,11 +47,16 @@ final class SumiDatabase: @unchecked Sendable {
                         .defaults(to: false)
                 }
                 try Self.createKeyboardCommandSchema(in: database)
-                try database.execute(sql: "PRAGMA user_version = 3")
+                try Self.addPageKindColumn(in: database)
+                try database.execute(sql: "PRAGMA user_version = 4")
             case 2:
                 try Self.createKeyboardCommandSchema(in: database)
-                try database.execute(sql: "PRAGMA user_version = 3")
+                try Self.addPageKindColumn(in: database)
+                try database.execute(sql: "PRAGMA user_version = 4")
             case 3:
+                try Self.addPageKindColumn(in: database)
+                try database.execute(sql: "PRAGMA user_version = 4")
+            case 4:
                 break
             default:
                 throw SumiDatabaseError.unsupportedSchemaVersion(schemaVersion)
@@ -134,6 +139,7 @@ final class SumiDatabase: @unchecked Sendable {
                 table.column("current_url", .text).notNull()
                 table.column("can_go_back", .boolean).notNull()
                 table.column("can_go_forward", .boolean).notNull()
+                table.column("page_kind", .text)
             }
 
             try database.create(
@@ -321,6 +327,12 @@ final class SumiDatabase: @unchecked Sendable {
                 table.column("host", .text).primaryKey()
                 table.column("override", .text).notNull()
             }
+    }
+
+    private static func addPageKindColumn(in database: Database) throws {
+        try database.alter(table: "tabs") { table in
+            table.add(column: "page_kind", .text)
+        }
     }
 
     private static func createKeyboardCommandSchema(in database: Database) throws {

@@ -48,6 +48,162 @@ final class TabWebViewRebuildService {
         self.runtime = runtime
     }
 
+    /// Explicit user-authorized repair of one failed physical residence. A
+    /// native snapshot preserves history/form/POST semantics; callers may
+    /// explicitly choose URL-only repair when no usable snapshot exists.
+    func repairFailedResidence(
+        tab: Tab,
+        webView: WKWebView,
+        useNativeSnapshot: Bool
+    ) -> TabWebViewRebuildResult {
+        guard let failure = tab.webContentRecoveryMarkers.recoveryState(
+            on: webView
+        ), failure.isFailure,
+              let residence = runtime.webViewSessions.residence(of: webView),
+              tab.webViewSession.residence(of: webView) == residence,
+              runtime.webViewSessions.hasOwnershipTransition(for: tab.id)
+                == false else {
+            return .failed
+        }
+        let sessionData: Data?
+        if useNativeSnapshot {
+            guard let snapshot = failure.snapshot,
+                  snapshot.residence == residence,
+                  snapshot.residenceGeneration == tab.webViewSession.generation,
+                  snapshot.profileID == (tab.resolveProfile()?.id ?? tab.profileId),
+                  snapshot.dataStoreIdentity == PageSessionDataStoreIdentity(
+                      webView.configuration.websiteDataStore
+                  ),
+                  snapshot.committedRevision
+                    == tab.committedDocumentRuntime.authorityProof.revision,
+                  WebRuntimeNavigationIdentity(snapshot.destination)
+                    == WebRuntimeNavigationIdentity(failure.destination)
+            else { return .failed }
+            sessionData = snapshot.data
+        } else {
+            sessionData = nil
+        }
+
+        guard runtime.isProtected(webView) == false,
+              let candidate = makeRepairCandidate(
+                tab: tab,
+                source: webView,
+                reason: "fresh-page-repair"
+              ) else { return .failed }
+        let current = runtime.webViewSessions.snapshot(for: tab.id)
+        let placement: WebViewReplacementPlacement
+        let tracked: [WKWebView]
+        let retired: WebViewSessionSnapshot
+        switch residence {
+        case .window(let owner):
+            placement = .windowSubset(
+                webViewsByWindowID: [owner.windowID: candidate]
+            )
+            tracked = [candidate]
+            retired = WebViewSessionSnapshot(
+                generation: current.generation,
+                parkedWebView: nil,
+                untrackedWebView: nil,
+                primaryWindowID: nil,
+                windowWebViews: [owner.windowID: webView]
+            )
+        case .parked:
+            placement = .detached(webView: candidate, residence: .parked)
+            tracked = []
+            retired = current
+        case .untracked:
+            placement = .detached(webView: candidate, residence: .untracked)
+            tracked = []
+            retired = current
+        case .retiring, .pendingCleanup:
+            tab.cleanupCloneWebView(candidate)
+            return .failed
+        }
+
+        let replacements = [candidate]
+        let policyChangeSet: PreparedConfigurationPolicyChangeSet?
+        if candidate.configuration.sumiIsNormalTabWebViewConfiguration {
+            guard let prepared = tab.preparedConfigurationPolicyChangeSet(
+                for: replacements
+            ) else {
+                tab.cleanupCloneWebView(candidate)
+                return .failed
+            }
+            policyChangeSet = prepared
+        } else {
+            policyChangeSet = nil
+        }
+        guard let prepared = PreparedWebViewReplacement(
+            tab: tab,
+            snapshot: current,
+            placement: placement,
+            replacements: replacements,
+            trackedReplacements: tracked,
+            bindingReplacements: replacements,
+            targetURL: failure.destination,
+            semanticRevision: tab.mainFrameLoads.currentIntent.revision,
+            profileID: tab.resolveProfile()?.id ?? tab.profileId,
+            requiresExtensionRuntimePreparation: false,
+            configurationPolicyChangeSet: policyChangeSet,
+            retiredSnapshot: retired,
+            nativeSessionDataByWebViewID: sessionData.map {
+                [ObjectIdentifier(candidate): $0]
+            } ?? [:]
+        ) else {
+            policyChangeSet?.cancel()
+            tab.cleanupCloneWebView(candidate)
+            return .failed
+        }
+
+        tab.webContentRecoveryAdmission.authorizeRecoveryEpochReset(
+            onCommitFrom: candidate
+        )
+        let start = runtime.pipeline.begin(
+            [prepared],
+            profileIDs: Set([prepared.profileID].compactMap { $0 }),
+            model: .transaction(TabWebViewRebuildModelTransaction(
+                tab: tab,
+                intentRevision: tab.webViewRebuildEpoch.current,
+                sourceURL: tab.url,
+                targetURL: failure.destination
+            )),
+            completion: { [weak self] outcome in
+                guard let self else { return }
+                guard outcome == .committed else {
+                    tab.loadingState = .idle
+                    tab.navigationRuntime.webViewRouting
+                        .pagePresentationDidChange(tab.id, webView)
+                    return
+                }
+                self.runtime.activation.finishCommitted(
+                    [prepared],
+                    reason: "fresh-page-repair"
+                )
+            }
+        )
+        switch start {
+        case .started(let receipt):
+            tab.beginLoadingPresentationIfNeeded()
+            runtime.activation.activate(
+                [prepared],
+                receipt: receipt,
+                reason: "fresh-page-repair"
+            )
+            return .deferred
+        case .committed:
+            runtime.activation.activateWithoutNavigation(
+                [prepared],
+                reason: "fresh-page-repair"
+            )
+            return .committed
+        case .modelCommitFailed, .rolledBack, .settlementConflict, .leaseLost:
+            return .failed
+        case .stale, .conflict, .invalid, .modelValidationFailed:
+            discard(prepared)
+            return .failed
+        }
+    }
+
     func rebuild(
         tab: Tab,
         preferredPrimaryWindowID: UUID?,
@@ -244,6 +400,22 @@ final class TabWebViewRebuildService {
             return nil
         }
         return preparedReplacement
+    }
+
+    private func makeRepairCandidate(
+        tab: Tab,
+        source: WKWebView,
+        reason: String
+    ) -> WKWebView? {
+        if source.configuration.sumiIsNormalTabWebViewConfiguration {
+            return tab.makeNormalTabWebView(reason: reason)
+        }
+        guard let configuration = tab.webExtensionContextOverride?
+            .webViewConfiguration else { return nil }
+        return tab.makeAuxiliaryOverrideTabWebView(
+            configuration: configuration,
+            reason: reason
+        )
     }
 
     private func resolvePrimaryWindowID(

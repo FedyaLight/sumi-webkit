@@ -31,7 +31,7 @@ final class BrowserExtensionWebViewAdapter:
         WKWebView,
         BrowserWindowState?,
         WebRuntimeMainFrameReloadPolicy
-    ) -> TabMainFrameReloadCommandOutcome
+    ) -> PageReloadCommandOutcome
 
     init(
         liveWebView: @escaping @MainActor (Tab) -> WKWebView?,
@@ -59,7 +59,7 @@ final class BrowserExtensionWebViewAdapter:
             WKWebView,
             BrowserWindowState?,
             WebRuntimeMainFrameReloadPolicy
-        ) -> TabMainFrameReloadCommandOutcome
+        ) -> PageReloadCommandOutcome
     ) {
         self.liveWebView = liveWebView
         self.liveWebViews = liveWebViews
@@ -128,7 +128,7 @@ final class BrowserExtensionWebViewAdapter:
         webView: WKWebView,
         in windowState: BrowserWindowState?,
         policy: WebRuntimeMainFrameReloadPolicy
-    ) -> TabMainFrameReloadCommandOutcome {
+    ) -> PageReloadCommandOutcome {
         reload(tab, webView, windowState, policy)
     }
 }

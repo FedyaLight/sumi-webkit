@@ -76,13 +76,16 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     /// Read by recovery routing as a fail-closed marker status. Recovery
     /// admission itself is callback-local in the lifecycle responder.
     let webContentRecoveryMarkers: any TabWebContentRecoveryMarkerQuery
+    let webContentRecoveryAdmission: any TabWebContentRecoveryAdmission
     let webViewRebuildEpoch = TabWebViewRebuildEpoch()
     let committedDocumentRuntime: TabCommittedDocumentRuntime
     let webViewConfigurationOwner = TabWebViewConfigurationOwner()
     var cachedNormalTabCoreUserScripts: [SumiPageScript]?
     var cachedNormalTabCoreUserScriptsGPCEnabled: Bool?
+    var cachedNormalTabCoreUserScriptsMemoryMode: SumiMemoryMode?
     let normalWebViewSetup = TabNormalWebViewSetupService()
     let webViewProvisioningOwner = TabWebViewProvisioningOwner()
+    let webViewRetirementLedger = TabWebViewRetirementLedger()
     private let closeLifecycleOwner = TabCloseLifecycleOwner()
     let navigationCommandOwner = TabNavigationCommandOwner()
     lazy var profileWebViewCreationGate = TabProfileWebViewCreationGate(
@@ -161,6 +164,13 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     @Published var canGoBack: Bool = false
     @Published var canGoForward: Bool = false
 
+    /// Typed browser-owned failure surface for a durable page whose persisted
+    /// destination cannot be admitted. This must never be represented as an
+    /// empty `about:blank` page.
+    var isRestoreFailure = false
+    var restoreFailureDestination: URL?
+    var restoreFailureRawDestination: String?
+
     // Restored navigation state from undo/session restoration (applied when web view is created)
     var restoredCanGoBack: Bool? {
         get { navigationRuntime.restoredCanGoBack }
@@ -181,8 +191,40 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     let findInPage = FindInPageTabExtension()
 
     // MARK: - Tab State
+    private(set) var websiteDataMutationPresentation: (
+        sessionID: UUID,
+        destination: URL
+    )?
+
     var isUnloaded: Bool {
         resolvedCurrentWebView() == nil
+    }
+
+    func beginWebsiteDataMutationPresentation(
+        sessionID: UUID,
+        destination: URL
+    ) {
+        if let current = websiteDataMutationPresentation,
+           current.sessionID == sessionID {
+            return
+        }
+        websiteDataMutationPresentation = (sessionID, destination)
+        publishPagePresentationChangeForOwnedWebViews()
+    }
+
+    func endWebsiteDataMutationPresentation(sessionID: UUID) {
+        guard websiteDataMutationPresentation?.sessionID == sessionID else {
+            return
+        }
+        websiteDataMutationPresentation = nil
+        publishPagePresentationChangeForOwnedWebViews()
+    }
+
+    private func publishPagePresentationChangeForOwnedWebViews() {
+        objectWillChange.send()
+        for webView in webViewSession.allKnownWebViews {
+            navigationRuntime.webViewRouting.pagePresentationDidChange(id, webView)
+        }
     }
 
     /// True when the tab row should show the web-content-unloaded favicon affordance.
@@ -233,7 +275,16 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     @discardableResult
     func beginMainFrameNavigationIntent(to targetURL: URL) -> TabMainFrameNavigationIntent {
-        let intent = mainFrameRuntimeTransaction.beginExplicitIntent(to: targetURL)
+        let blankAdmission = targetURL.isSumiBlankDocumentURL
+            ? BlankDocumentAdmission(
+                id: UUID(),
+                source: .explicitUserCommand
+            )
+            : nil
+        let intent = mainFrameRuntimeTransaction.beginExplicitIntent(
+            to: targetURL,
+            blankAdmission: blankAdmission
+        )
         for webView in webViewSession.allKnownWebViews {
             guard let host = webView.sumiReaderPresentationHost,
                   host.tabID == id,
@@ -271,14 +322,17 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         }
         departingWebViews.forEach {
             navigationRuntime.webViewRouting.cancelWebContentProcessRecovery($0)
-            unbindAudioState(from: $0)
-            removeNavigationStateObservers(from: $0)
-            removeNavigationDelegateBundle(for: $0)
+            navigationDelegateBundle(for: $0)?.cancelPendingNavigationDecisions()
         }
         let result = mainFrameRuntimeTransaction.webViewsDidLeaveRuntime(
             departingWebViews,
             preferredAuthorityWebView: preferredAuthorityWebView
         )
+        departingWebViews.forEach {
+            unbindAudioState(from: $0)
+            removeNavigationStateObservers(from: $0)
+            removeNavigationDelegateBundle(for: $0)
+        }
         if let continuation = result.continuation {
             TabMainFrameLifecycleReducer.replayIfNeeded(
                 continuation,
@@ -314,6 +368,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         navigationID: ObjectIdentifier?,
         navigationLifetime: AnyObject,
         targetURL: URL?,
+        blankAdmission: BlankDocumentAdmission? = nil,
         allowsUserInitiatedSupersession: Bool,
         continuationKind: TabMainFrameContinuationKind?
     ) -> TabMainFrameLifecycleRole {
@@ -322,6 +377,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             navigationID: navigationID,
             navigationLifetime: navigationLifetime,
             targetURL: targetURL,
+            blankAdmission: blankAdmission,
             allowsUserInitiatedSupersession: allowsUserInitiatedSupersession,
             continuationKind: continuationKind
         )
@@ -336,6 +392,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         _ targetURL: URL,
         matching continuation: TabMainFrameAuthorityContinuation
     ) -> Bool {
+        guard continuation.hasCommittedDocument else { return false }
         guard mainFrameRuntimeTransaction.acceptPromotedAuthorityTarget(
             targetURL,
             matching: continuation
@@ -364,8 +421,12 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     func rollbackMainFrameNavigationAfterFailedSubmission(
-        on webView: WKWebView?
+        on webView: WKWebView?,
+        matching intent: TabMainFrameNavigationIntent? = nil
     ) {
+        if let intent, mainFrameLoads.isCurrent(intent) == false {
+            return
+        }
         var survivingWebViews = webViewSession.allKnownWebViews
         if let webView,
            survivingWebViews.contains(where: { $0 === webView }) == false {
@@ -452,7 +513,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     var representsSumiEmptySurface: Bool {
-        surfaceState.representsSumiEmptySurface(for: url)
+        !isRestoreFailure && surfaceState.representsSumiEmptySurface(for: url)
     }
 
     var representsSumiHistorySurface: Bool {
@@ -474,7 +535,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     public var requiresPrimaryWebView: Bool {
-        surfaceState.requiresPrimaryWebView(for: url)
+        !isRestoreFailure && surfaceState.requiresPrimaryWebView(for: url)
     }
 
     /// Sidebar / split tab row: tint template SF Symbol favicons like `NavButtonStyle` (`tokens.primaryText`).
@@ -516,6 +577,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         self.mainFrameLoads = mainFrameRuntimeTransaction.mainFrameLoads
         self.mainFrameSubmission = mainFrameRuntimeTransaction
         self.webContentRecoveryMarkers = mainFrameRuntimeTransaction
+        self.webContentRecoveryAdmission = mainFrameRuntimeTransaction
         self.committedDocumentRuntime =
             mainFrameRuntimeTransaction.committedDocumentRuntime
         self.name = name
@@ -618,7 +680,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                preferredViewportSize.height > 0 {
                 webView?.setFrameSize(preferredViewportSize)
             }
-            finishSuspendedRestoreIfNeeded()
         }
     }
 
@@ -632,20 +693,23 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     func beginSuspendedRestoreIfNeeded() {
-        suspensionState.beginRestoreIfNeeded()
+        suspensionState.beginRestoreIfNeeded(
+            residenceGeneration: webViewSession.generation
+        )
     }
 
     func markSuspended(
-        interactionStateData: Data? = nil,
+        sessionSnapshots: [PageSessionSnapshot] = [],
         at date: Date = Date()
     ) {
         objectWillChange.send()
         suspensionState.markSuspended(
             url: url,
-            interactionStateData: interactionStateData
+            snapshots: sessionSnapshots
         )
         cachedNormalTabCoreUserScripts = nil
         cachedNormalTabCoreUserScriptsGPCEnabled = nil
+        cachedNormalTabCoreUserScriptsMemoryMode = nil
         retainedFaviconRuntime = nil
         if lastSelectedAt == nil {
             lastSelectedAt = date
@@ -655,10 +719,24 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         stateChangeEmitter.postLifecycleDidChange(for: self)
     }
 
-    func finishSuspendedRestoreIfNeeded() {
-        guard suspensionState.isRestoreInProgress, hasCurrentWebView else { return }
+    @discardableResult
+    func commitSuspendedRestoreIfMatching(
+        webView: WKWebView,
+        navigationID: ObjectIdentifier
+    ) -> Bool {
+        guard suspensionState.commit(
+            webViewID: ObjectIdentifier(webView),
+            navigationID: navigationID
+        ) else { return false }
         objectWillChange.send()
-        suspensionState.finishRestore()
+        stateChangeEmitter.postLifecycleDidChange(for: self)
+        return true
+    }
+
+    func cancelSuspendedRestoreIfNeeded() {
+        guard suspensionState.isRestoreInProgress else { return }
+        objectWillChange.send()
+        suspensionState.cancelRestore()
         stateChangeEmitter.postLifecycleDidChange(for: self)
     }
 

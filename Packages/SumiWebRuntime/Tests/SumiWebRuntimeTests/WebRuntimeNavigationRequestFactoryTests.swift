@@ -41,7 +41,8 @@ final class WebRuntimeNavigationRequestFactoryTests: XCTestCase {
         WebRuntimeMainFrameReloader.reloadOrLoad(
             targetURL,
             on: webView,
-            policy: .standard
+            policy: .standard,
+            fallback: .safeOrdinaryNavigation
         )
 
         XCTAssertEqual(webView.standardReloadCount, 1)
@@ -60,7 +61,8 @@ final class WebRuntimeNavigationRequestFactoryTests: XCTestCase {
         WebRuntimeMainFrameReloader.reloadOrLoad(
             targetURL,
             on: webView,
-            policy: .fromOrigin
+            policy: .fromOrigin,
+            fallback: .safeOrdinaryNavigation
         )
 
         XCTAssertEqual(webView.standardReloadCount, 0)
@@ -70,6 +72,56 @@ final class WebRuntimeNavigationRequestFactoryTests: XCTestCase {
             webView.requests.map(\.cachePolicy),
             [.reloadIgnoringLocalAndRemoteCacheData]
         )
+    }
+
+    func testNilNativeReloadDoesNotConstructOrdinaryNavigationWithoutAdmission() throws {
+        let webView = MainFrameLoaderRecordingWebView()
+        let targetURL = try XCTUnwrap(URL(string: "https://example.com/post-result"))
+
+        let result = WebRuntimeMainFrameReloader.reloadOrLoad(
+            targetURL,
+            on: webView,
+            policy: .standard,
+            fallback: .disallowed
+        )
+
+        guard case .failed = result else {
+            return XCTFail("Nil native reload must remain a typed failure")
+        }
+        XCTAssertEqual(webView.standardReloadCount, 1)
+        XCTAssertTrue(webView.requests.isEmpty)
+    }
+
+    func testConcreteNativeReloadMatrixNeverConstructsURLFallback() throws {
+        let targetURL = try XCTUnwrap(URL(string: "https://example.com/current-item"))
+        for policy in [
+            WebRuntimeMainFrameReloadPolicy.standard,
+            .fromOrigin,
+        ] {
+            let webView = MainFrameLoaderRecordingWebView(
+                returnsConcreteReload: true
+            )
+            let result = WebRuntimeMainFrameReloader.reloadOrLoad(
+                targetURL,
+                on: webView,
+                policy: policy,
+                fallback: .safeOrdinaryNavigation
+            )
+
+            guard case .reloaded = result else {
+                XCTFail("Expected a concrete native reload for \(policy)")
+                continue
+            }
+            XCTAssertTrue(webView.requests.isEmpty)
+            XCTAssertEqual(
+                webView.standardReloadCount,
+                policy == .standard ? 1 : 0
+            )
+            XCTAssertEqual(
+                webView.fromOriginReloadCount,
+                policy == .fromOrigin ? 1 : 0
+            )
+        }
     }
 
     func testHTTPNavigationPreservesStandardURLLoadingPolicy() throws {
@@ -118,20 +170,34 @@ private final class MainFrameLoaderRecordingWebView: WKWebView {
     private(set) var fileURLs: [(url: URL, readAccessURL: URL)] = []
     private(set) var standardReloadCount = 0
     private(set) var fromOriginReloadCount = 0
+    private let returnsConcreteReload: Bool
+
+    init(returnsConcreteReload: Bool = false) {
+        self.returnsConcreteReload = returnsConcreteReload
+        super.init(frame: .zero, configuration: WKWebViewConfiguration())
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
 
     override func reload() -> WKNavigation? {
         standardReloadCount += 1
-        return nil
+        return returnsConcreteReload
+            ? super.loadHTMLString("", baseURL: nil)
+            : nil
     }
 
     override func reloadFromOrigin() -> WKNavigation? {
         fromOriginReloadCount += 1
-        return nil
+        return returnsConcreteReload
+            ? super.loadHTMLString("", baseURL: nil)
+            : nil
     }
 
     override func load(_ request: URLRequest) -> WKNavigation? {
         requests.append(request)
-        return nil
+        return super.loadHTMLString("", baseURL: request.url)
     }
 
     override func loadFileURL(

@@ -3,7 +3,7 @@ import SumiWebRuntime
 import WebKit
 
 /// Orchestrates the ordered website-data mutation protocol. Participant
-/// discovery, exact-navigation barriers, and restore retries are delegated to
+/// discovery, exact-navigation barriers, and finite restoration are delegated to
 /// role-specific collaborators; this type owns only transaction admission and
 /// phase ordering.
 @MainActor
@@ -29,7 +29,7 @@ final class WebsiteDataCleanupTransaction {
     private let mutationGate: WebsiteDataMutationGate
     private let navigationBarrier: WebsiteDataCleanupNavigationBarrier
     private let participantDiscovery: WebsiteDataCleanupParticipantDiscovery
-    private let restoreLoop: WebsiteDataCleanupRestoreLoop
+    private let restorer: WebsiteDataCleanupRestorer
     private let quiesceExternalParticipants: ExternalParticipantQuiescer
     private let abortOwnershipTransitions: OwnershipTransitionAborter
     private let restoreCompensation = RestoreCompensation()
@@ -48,7 +48,6 @@ final class WebsiteDataCleanupTransaction {
         quiesceExternalParticipants: @escaping ExternalParticipantQuiescer = { _ in true },
         abortOwnershipTransitions: @escaping OwnershipTransitionAborter = { _ in },
         blankAttemptTimeout: Duration = .seconds(30),
-        restoreAttemptTimeout: Duration = .seconds(30),
         residenceBarrierTimeout: Duration = .seconds(30)
     ) {
         let navigationBarrier = WebsiteDataCleanupNavigationBarrier(
@@ -66,12 +65,10 @@ final class WebsiteDataCleanupTransaction {
             runtimeMutationGeneration: runtimeMutationGeneration,
             residenceBarrierTimeout: residenceBarrierTimeout
         )
-        restoreLoop = WebsiteDataCleanupRestoreLoop(
+        restorer = WebsiteDataCleanupRestorer(
             navigationBarrier: navigationBarrier,
             liveWebViews: liveWebViews,
-            waitForMutationPermission: waitForMutationPermission,
-            restoreTab: restoreTab,
-            restoreAttemptTimeout: restoreAttemptTimeout
+            restoreTab: restoreTab
         )
         self.quiesceExternalParticipants = quiesceExternalParticipants
         self.abortOwnershipTransitions = abortOwnershipTransitions
@@ -82,9 +79,22 @@ final class WebsiteDataCleanupTransaction {
         profileIDs: Set<UUID>,
         deletion: @escaping @MainActor () async -> Void
     ) async -> Bool {
+        await performDestructiveDataCleanupReportingOutcome(
+            profileIDs: profileIDs,
+            deletion: {
+                await deletion()
+                return true
+            }
+        )
+    }
+
+    @discardableResult
+    func performDestructiveDataCleanupReportingOutcome(
+        profileIDs: Set<UUID>,
+        deletion: @escaping @MainActor () async -> Bool
+    ) async -> Bool {
         guard profileIDs.isEmpty == false else {
-            await deletion()
-            return true
+            return await deletion()
         }
 
         guard canEnterTransaction else { return false }
@@ -128,7 +138,7 @@ final class WebsiteDataCleanupTransaction {
             return await rollbackAndFail(session)
         }
 
-        await deletion()
+        let didCompleteDeletion = await deletion()
         let restoreParticipants = navigationBarrier.ownedParticipants(in: session)
         let didRestore = await restoreCancellationShielded(
             restoreParticipants,
@@ -138,7 +148,7 @@ final class WebsiteDataCleanupTransaction {
         RuntimeDiagnostics.debug(category: "WebsiteDataCleanupTransaction") {
             "Completed destructive data cleanup transaction for \(profileIDs.count) profile(s), quiescing \(self.navigationBarrier.participantCount(in: session)) live WebView(s); restore=\(didRestore)."
         }
-        return didRestore
+        return didCompleteDeletion && didRestore
     }
 
     func isSuppressingNavigation(
@@ -224,7 +234,7 @@ final class WebsiteDataCleanupTransaction {
         guard participants.isEmpty == false else { return true }
         return await restoreCompensation.run { [weak self] in
             guard let self else { return false }
-            return await self.restoreLoop.restore(
+            return await self.restorer.restore(
                 participants,
                 in: session
             ) { [weak self] in
@@ -232,5 +242,4 @@ final class WebsiteDataCleanupTransaction {
             }
         }
     }
-
 }

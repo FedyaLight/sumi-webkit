@@ -109,7 +109,7 @@ protocol ExtensionTabReloadHosting: AnyObject {
         webView: WKWebView,
         in windowState: BrowserWindowState?,
         policy: WebRuntimeMainFrameReloadPolicy
-    ) -> TabMainFrameReloadCommandOutcome
+    ) -> PageReloadCommandOutcome
 }
 
 @available(macOS 15.5, *)

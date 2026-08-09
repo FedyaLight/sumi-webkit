@@ -1,0 +1,70 @@
+import WebKit
+import XCTest
+
+@testable import Sumi
+
+@MainActor
+final class SumiWebKitPageStateAdapterTests: XCTestCase {
+    func testWebViewWithoutCommittedHistoryCannotProduceRestoreNavigation() throws {
+        let data = try XCTUnwrap(
+            SumiWebKitPageStateAdapter.sessionStateData(from: WKWebView())
+        )
+        XCTAssertNil(
+            SumiWebKitPageStateAdapter.restoreSessionState(
+                data,
+                to: WKWebView()
+            )
+        )
+    }
+
+    func testNativeSessionStateProducesConcreteRestoreNavigation() async throws {
+        let source = WKWebView()
+        let finished = expectation(description: "source document committed")
+        let delegate = SessionStateNavigationDelegate {
+            finished.fulfill()
+        }
+        source.navigationDelegate = delegate
+        let fixture = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/AutofillPages/login-basic.html")
+        source.loadFileURL(
+            fixture,
+            allowingReadAccessTo: fixture.deletingLastPathComponent()
+        )
+        await fulfillment(of: [finished], timeout: 5)
+
+        let data = try XCTUnwrap(
+            SumiWebKitPageStateAdapter.sessionStateData(from: source)
+        )
+        XCTAssertFalse(data.isEmpty)
+
+        let restored = WKWebView()
+        let navigation = SumiWebKitPageStateAdapter.restoreSessionState(
+            data,
+            to: restored
+        )
+
+        XCTAssertNotNil(navigation)
+        withExtendedLifetime(delegate) {}
+    }
+
+    func testInvalidNativeSessionStateReturnsNoNavigation() {
+        XCTAssertNil(SumiWebKitPageStateAdapter.restoreSessionState(
+            Data([0x00, 0x01, 0x02]),
+            to: WKWebView()
+        ))
+    }
+}
+
+@MainActor
+private final class SessionStateNavigationDelegate: NSObject, WKNavigationDelegate {
+    private let didFinish: () -> Void
+
+    init(didFinish: @escaping () -> Void) {
+        self.didFinish = didFinish
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        didFinish()
+    }
+}

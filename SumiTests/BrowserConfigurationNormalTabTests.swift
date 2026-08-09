@@ -41,6 +41,93 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         try await super.tearDown()
     }
 
+    func testNormalTabUserContentCleanupTerminatesPendingAssetWait() async {
+        let assets = PassthroughSubject<SumiNormalTabUserContent, Never>()
+        let source = SumiNormalTabContentBlockingAssetSource(
+            assetsPublisher: assets.eraseToAnyPublisher(),
+            initialContent: nil,
+            privacyConfigurationManager:
+                SumiContentBlockingPrivacyConfigurationManager(
+                    isContentBlockingEnabled: true
+                ),
+            retainedContentBlockingServices: []
+        )
+        let controller = SumiNormalTabUserContentController(
+            assetSource: source
+        )
+        let waitFinished = expectation(description: "asset wait terminated")
+        var result: PageNavigationPrerequisiteResult?
+        let wait = Task { @MainActor in
+            result = await controller.waitForContentBlockingAssetsInstalled()
+            waitFinished.fulfill()
+        }
+
+        await Task.yield()
+        controller.cleanUpBeforeClosing()
+        await fulfillment(of: [waitFinished], timeout: 0.1)
+        wait.cancel()
+        await wait.value
+        XCTAssertEqual(result, .cancelled)
+    }
+
+    func testContentBlockingAssetWaitReportsFailedAndDegradedSnapshots() async {
+        let failed = makePendingAssetController()
+        let failedWait = Task { @MainActor in
+            await failed.controller.waitForContentBlockingAssetsInstalled()
+        }
+        await Task.yield()
+        failed.assets.send(SumiNormalTabUserContent(
+            contentBlockingUpdate: SumiNormalTabContentBlockingUpdate(
+                globalRuleLists: [:],
+                updateRuleCount: 1,
+                lookupSucceededIdentifiers: [],
+                lookupFailedIdentifiers: ["required"],
+                ruleListLookupDuration: nil
+            ),
+            sourceProvider: SumiNormalTabUserScripts()
+        ))
+        let failedResult = await failedWait.value
+        XCTAssertEqual(failedResult, .failed)
+
+        let degraded = makePendingAssetController()
+        let degradedWait = Task { @MainActor in
+            await degraded.controller.waitForContentBlockingAssetsInstalled()
+        }
+        await Task.yield()
+        degraded.assets.send(SumiNormalTabUserContent(
+            contentBlockingUpdate: SumiNormalTabContentBlockingUpdate(
+                globalRuleLists: [:],
+                updateRuleCount: 2,
+                lookupSucceededIdentifiers: ["usable"],
+                lookupFailedIdentifiers: ["rejected"],
+                ruleListLookupDuration: nil
+            ),
+            sourceProvider: SumiNormalTabUserScripts()
+        ))
+        let degradedResult = await degradedWait.value
+        XCTAssertEqual(degradedResult, .degraded)
+    }
+
+    private func makePendingAssetController() -> (
+        controller: SumiNormalTabUserContentController,
+        assets: PassthroughSubject<SumiNormalTabUserContent, Never>
+    ) {
+        let assets = PassthroughSubject<SumiNormalTabUserContent, Never>()
+        let source = SumiNormalTabContentBlockingAssetSource(
+            assetsPublisher: assets.eraseToAnyPublisher(),
+            initialContent: nil,
+            privacyConfigurationManager:
+                SumiContentBlockingPrivacyConfigurationManager(
+                    isContentBlockingEnabled: true
+                ),
+            retainedContentBlockingServices: []
+        )
+        return (
+            SumiNormalTabUserContentController(assetSource: source),
+            assets
+        )
+    }
+
     func testNormalTabConfigurationUsesSumiNormalTabControllerAndProfileStore() async throws {
         let browserConfiguration = BrowserConfiguration()
         let profile = Profile(name: "Default")
@@ -390,7 +477,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         )
     }
 
-    func testWebViewRuntimeReloadRebuildsForSafariContentBlockerPolicyDrift() async throws {
+    func testWebViewRuntimeReloadPreservesGenerationForSafariContentBlockerPolicyDrift() async throws {
         let harness = try await makeSafariContentBlockerBrowserHarness(
             blockedHost: "safari-content-blocked.example"
         )
@@ -427,23 +514,17 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         harness.extensionsModule.setSafariContentBlockerSiteOverride(.disabled, for: tab.url)
         tab.refresh()
 
-        let replacementWebView = try XCTUnwrap(tab.resolvedCurrentWebView())
-        XCTAssertNotIdentical(replacementWebView, originalWebView)
-        let replacementController = try XCTUnwrap(
-            replacementWebView.configuration.userContentController.sumiNormalTabUserContentController
-        )
-        await replacementController.waitForContentBlockingAssetsInstalled()
-
-        await waitForWebViewURL(replacementWebView, toEqual: tab.url)
-        XCTAssertFalse(tab.isSafariContentBlockerReloadRequired)
-        XCTAssertTrue(
+        let retainedWebView = try XCTUnwrap(tab.resolvedCurrentWebView())
+        XCTAssertIdentical(retainedWebView, originalWebView)
+        XCTAssertTrue(tab.isSafariContentBlockerReloadRequired)
+        XCTAssertFalse(
             harness.ruleListIdentifiers.isDisjoint(
-                with: Set(replacementController.contentBlockingAssetSummary.globalRuleListIdentifiers)
+                with: Set(originalController.contentBlockingAssetSummary.globalRuleListIdentifiers)
             )
         )
     }
 
-    func testPrivacyHardReloadRebuildsForSafariContentBlockerPolicyDrift() async throws {
+    func testPrivacyHardReloadPreservesGenerationForSafariContentBlockerPolicyDrift() async throws {
         let harness = try await makeSafariContentBlockerBrowserHarness(
             blockedHost: "safari-content-blocked.example"
         )
@@ -501,16 +582,12 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertEqual(reloadRequest.windowId, activeWindowId)
         XCTAssertEqual(reloadRequest.reason, "BrowserPrivacyService.hardReload")
 
-        let replacementWebView = try XCTUnwrap(tab.resolvedCurrentWebView())
-        XCTAssertNotIdentical(replacementWebView, originalWebView)
-        let replacementController = try XCTUnwrap(
-            replacementWebView.configuration.userContentController.sumiNormalTabUserContentController
-        )
-        await replacementController.waitForContentBlockingAssetsInstalled()
-        XCTAssertFalse(tab.isSafariContentBlockerReloadRequired)
-        XCTAssertTrue(
+        let retainedWebView = try XCTUnwrap(tab.resolvedCurrentWebView())
+        XCTAssertIdentical(retainedWebView, originalWebView)
+        XCTAssertTrue(tab.isSafariContentBlockerReloadRequired)
+        XCTAssertFalse(
             harness.ruleListIdentifiers.isDisjoint(
-                with: Set(replacementController.contentBlockingAssetSummary.globalRuleListIdentifiers)
+                with: Set(originalController.contentBlockingAssetSummary.globalRuleListIdentifiers)
             )
         )
     }

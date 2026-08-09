@@ -13,10 +13,12 @@ struct TabSuspensionPolicy: Equatable {
     let proactiveDeactivationDelay: TimeInterval
     let revisitProtectionLimit: Int
 
+    var isEnabled: Bool { memoryMode != .off }
+
     @MainActor
     init(settings: SumiSettingsService?) {
         self.init(
-            memoryMode: settings?.memoryMode ?? .balanced,
+            memoryMode: settings?.memoryMode ?? .off,
             customDeactivationDelay: settings?.memorySaverCustomDeactivationDelay
                 ?? SumiMemorySaverCustomDelay.defaultDelay,
             energySaverActive: settings?
@@ -32,6 +34,9 @@ struct TabSuspensionPolicy: Equatable {
         let proactiveDeactivationDelay: TimeInterval
         let revisitProtectionLimit: Int
         switch memoryMode {
+        case .off:
+            proactiveDeactivationDelay = .infinity
+            revisitProtectionLimit = 0
         case .moderate:
             proactiveDeactivationDelay = Self.moderateProactiveDeactivationDelay
             revisitProtectionLimit = Self.moderateRevisitProtectionLimit

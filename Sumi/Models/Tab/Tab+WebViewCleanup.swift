@@ -8,8 +8,35 @@ extension Tab {
 
     /// MEMORY LEAK FIX: Comprehensive WebView cleanup to prevent memory leaks
     public func cleanupCloneWebView(_ webView: WKWebView) {
-        cancelConfigurationPolicy(for: [webView])
         TabWebViewCleanupOwner.cleanupWebView(webView, context: webViewCleanupContext())
+    }
+
+    public func webViewsWillLeaveRuntime(_ webViews: [WKWebView]) {
+        let departing = webViewRetirementLedger.claimLogicalDeparture(webViews)
+        guard departing.isEmpty == false else { return }
+        cancelConfigurationPolicy(for: departing)
+        TabWebViewCleanupOwner.preparePermissionLifecycleForRetirement(
+            departing,
+            context: webViewCleanupContext()
+        )
+        let departingIDs = Set(departing.map(ObjectIdentifier.init))
+        let preferredAuthority = resolvedCurrentWebView().flatMap {
+            departingIDs.contains(ObjectIdentifier($0)) ? nil : $0
+        }
+        webViewsDidLeaveNavigationRuntime(
+            departing,
+            preferredAuthorityWebView: preferredAuthority
+        )
+    }
+
+    public func destroyRetiredWebView(_ webView: WKWebView) {
+        guard webViewRetirementLedger.claimPhysicalDestruction(webView) else {
+            return
+        }
+        TabWebViewCleanupOwner.destroyRetiredWebView(
+            webView,
+            context: webViewCleanupContext()
+        )
     }
 
     /// MEMORY LEAK FIX: Comprehensive cleanup for the main tab WebView
@@ -47,6 +74,12 @@ extension Tab {
             profilePartitionId: { self.resolveProfile()?.id.uuidString },
             invalidatePermissionPageForReplacement: { reason in
                 self.invalidatePermissionPageForReplacement(reason: reason)
+            },
+            claimLogicalDeparture: { webViews in
+                self.webViewRetirementLedger.claimLogicalDeparture(webViews)
+            },
+            claimPhysicalDestruction: { webView in
+                self.webViewRetirementLedger.claimPhysicalDestruction(webView)
             },
             webViewDidLeaveRuntime: { webView in
                 self.webViewDidLeaveNavigationRuntime(webView)

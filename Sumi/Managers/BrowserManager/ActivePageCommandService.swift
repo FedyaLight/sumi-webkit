@@ -8,8 +8,8 @@ final class ActivePageCommandService {
         Tab,
         BrowserWindowState,
         String
-    ) -> TabMainFrameReloadCommandOutcome
-    private let reloadPreviewPage: @MainActor (Tab) -> TabMainFrameReloadCommandOutcome
+    ) -> PageReloadCommandOutcome
+    private let reloadPreviewPage: @MainActor (Tab) -> PageReloadCommandOutcome
     private let clipboard: BrowserURLClipboardService
     private let inspector: WebInspectorService
 
@@ -19,8 +19,8 @@ final class ActivePageCommandService {
             Tab,
             BrowserWindowState,
             String
-        ) -> TabMainFrameReloadCommandOutcome,
-        reloadPreviewPage: @escaping @MainActor (Tab) -> TabMainFrameReloadCommandOutcome,
+        ) -> PageReloadCommandOutcome,
+        reloadPreviewPage: @escaping @MainActor (Tab) -> PageReloadCommandOutcome,
         clipboard: BrowserURLClipboardService,
         inspector: WebInspectorService
     ) {
@@ -32,8 +32,10 @@ final class ActivePageCommandService {
     }
 
     @discardableResult
-    func reloadActivePage() -> TabMainFrameReloadCommandOutcome {
-        guard let page = resolver.resolveActiveWindow() else { return .failed }
+    func reloadActivePage() -> PageReloadCommandOutcome {
+        guard let page = resolver.resolveActiveWindow() else {
+            return .failed(intent: nil, reason: .unsupportedPage)
+        }
         return reload(page, reason: "ActivePage.reload")
     }
 
@@ -41,8 +43,13 @@ final class ActivePageCommandService {
     func reload(
         _ page: ActivePageResolution,
         reason: String
-    ) -> TabMainFrameReloadCommandOutcome {
-        guard !page.tab.representsSumiNativeSurface else { return .failed }
+    ) -> PageReloadCommandOutcome {
+        guard !page.tab.representsSumiNativeSurface else {
+            return .failed(
+                intent: page.tab.mainFrameLoads.currentIntent,
+                reason: .unsupportedPage
+            )
+        }
 
         switch page.source {
         case .glancePreview:

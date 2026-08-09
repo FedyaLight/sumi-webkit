@@ -186,12 +186,30 @@ final class ExtensionNativeMessagingBackgroundWakeOwnerTests: XCTestCase {
         await fulfillment(of: [secondStarted], timeout: 1.0)
 
         releaseFirst?.resume()
-        await first.value
+        _ = await first.value
         XCTAssertEqual(owner.runtimeTasksForDrain().count, 1)
 
         releaseSecond?.resume()
-        await second.value
+        _ = await second.value
         XCTAssertTrue(owner.runtimeTasksForDrain().isEmpty)
+    }
+
+    func testContentScriptPreparationReportsFailedWhenNoContextLoads() async {
+        enum TestError: Error { case failed }
+        let installed = InstalledExtensionCollection()
+        installed.connectRecordChanges {}
+        installed.upsert(Self.contentScriptRecord())
+        let owner = ExtensionContentScriptContextPreparationOwner(
+            installedExtensions: installed,
+            runtimeIsEnabled: { true },
+            context: { _, _ in nil },
+            load: { _, _ in throw TestError.failed },
+            logFailure: { _, _, _, _ in }
+        )
+
+        let result = await owner.ensureLoaded(profileID: UUID())
+
+        XCTAssertEqual(result, .failed)
     }
 
     private static func contentScriptRecord() -> InstalledExtension {

@@ -117,13 +117,89 @@ _Avoid_: Independent UI update order, best-effort snapshot delivery
 Selecting a regular tab, launcher, or Split Group participant so its runtime page is presented in the window. A press accepts Page Activation immediately; every accepted activation of a Live Page is presented without coalescing, while superseded Cold Page preparation never changes the newer selection. A later drag or release outside does not roll activation back. Nested controls never trigger Page Activation for their parent Sidebar Visual Item.
 _Avoid_: Release selection, provisional selection
 
+**Page Materialization Request**:
+The exact window-local owner that turns one accepted Page Activation of a Cold Page into one WebView Residence and transfers its first destination once to a Page Navigation Attempt. It is identified by Durable Page Identity, window, selection revision, and residence generation; supersession or departure settles it, and late work can only clean up its unpublished candidate.
+_Avoid_: WebView creation, lazy tab load, scheduled materialization
+
+**Page Presentation**:
+The window-local projection for one selected Durable Page Identity: Empty Page, neutral non-live placeholder, live committed frame, or actionable Recovery Failure Surface. Preparation, restore, cleanup, and loading remain typed lifecycle state but do not expose browser-internal status text over web content. Presentation may attach an existing residence but never creates a WebView or starts navigation.
+_Avoid_: Selected WebView, pane contents, transparent host
+
 **Live Page**:
-A runtime page whose WebView remains materialized and can be presented without restoration or a new navigation. Page Activation of a Live Page is expected to reveal its real current frame immediately.
+A Durable Page Identity with at least one materialized WebView Residence. Activation in a window that owns a live residence reveals that residence's real current frame without restoration or a new navigation; another window may still require its own Page Materialization Request.
 _Avoid_: Warm tab, cached page
 
 **Cold Page**:
-A durable page identity without a materialized WebView. Browser-session ports are shared rather than copied into every Cold Page, and WebKit-bound caches stay unmaterialized until selection or budgeted warmup. It may retain resumable browsing state within the current app run, but across launches it resumes from its durable URL and ordinary persisted metadata.
+A durable page identity without a materialized WebView. Browser-session ports are shared rather than copied into every Cold Page, and WebKit-bound caches stay unmaterialized until selection or explicitly enabled warmup. It may retain resumable browsing state within the current app run, but across launches it resumes from its durable URL and ordinary persisted metadata.
 _Avoid_: Slow page, dead tab
+
+**Page Session Snapshot**:
+Optional opaque WebKit history and interaction state captured from one exact committed WebView Residence for an in-process resume. It is keyed by page, window, residence generation, profile/partition, and committed-destination revision; it is never durable destination authority, never shared across residences, and is consumed only after a concrete native restore navigation binds.
+_Avoid_: Saved tab state, durable session, tab-wide interaction data
+
+**Page Suspension**:
+Atomic resource retirement of every eligible WebView Residence for one Durable Page Identity while preserving its Last Committed Destination and any exact Page Session Snapshots. Allocation of a replacement WebView does not end suspension; a bound restore or ordinary destination fallback must commit or terminate visibly.
+_Avoid_: Hidden tab, paused WebView, unloaded flag
+
+**Empty Page**:
+An explicitly created Durable Page Identity with no committed web destination. It presents browser-owned empty or new-tab content until a destination is accepted; a platform initial empty document is not its durable URL.
+_Avoid_: Blank tab URL, repaired tab, initial about:blank
+
+**Last Committed Destination**:
+The latest main-frame destination accepted as the real content of a Durable Page Identity. A provisional navigation, platform initial empty document, isolated cleanup document, recovery placeholder, or unadmitted blank document does not replace it. An Empty Page has no such destination; an intentionally admitted blank document may.
+_Avoid_: Current URL, fallback URL, last request
+
+**Page Navigation Attempt**:
+One accepted effort to move a Durable Page Identity toward a destination, spanning browser-owned preparation and the native page lifecycle. It either transfers once into that lifecycle or ends through cancellation, failure, supersession, or owner departure; a later attempt never inherits its terminal events.
+_Avoid_: Scheduled load, pending reload, loading flag
+
+**Page Reload Command**:
+A user request to revalidate the exact current native history item in the same WebView Residence. It creates a new Page Navigation Attempt and either binds a concrete native reload, names the exact owner it waits or coalesces behind, or fails terminally; it never silently becomes fresh-runtime replacement or URL-only reconstruction.
+_Avoid_: Refresh flag, reload request, best-effort retry
+
+**Page Navigation Prerequisite**:
+Browser-owned work that must settle before a Page Navigation Attempt may transfer to, or continue through, the native page lifecycle. It has one exact owner and terminal disposition; an optional subsystem may participate only when it cannot leave the attempt unterminated.
+_Avoid_: Startup wait, loading dependency, async gate
+
+**Blank Document Admission**:
+The proof that an exact Page Navigation Attempt intentionally targets an `about:blank` main-frame document and may publish it as content. It preserves whether the source was an explicit browser command, a site navigation, a child or popup creation, or an isolated browser operation; the URL string alone is never proof.
+_Avoid_: Blank allowlist, about-scheme check, empty-page flag
+
+**Page Navigation Authority**:
+The one Live Page participant in the current Page Navigation Attempt allowed to publish shared destination and loading state. Other residences retain only local evidence until an exact promotion; visibility and callback arrival order never grant authority.
+_Avoid_: Current WebView, visible page, latest callback
+
+**Page Recovery**:
+Restoring a Durable Page Identity to its Last Committed Destination after its live WebKit content terminates or becomes unusable, without creating a new page identity.
+_Avoid_: Blank-page reload, tab recreation, crash redirect
+
+**Page Recovery Epoch**:
+The event-bounded allowance for one automatic recovery of a logical committed-document lineage. Repeated termination does not reset it; only a user-authorized action that produces a new admitted committed document begins another epoch.
+_Avoid_: Crash timeout, reload counter, retry window
+
+**Fresh Page Repair**:
+An explicit user-authorized replacement of unusable WebView Residence generations while preserving Durable Page Identity, Last Committed Destination, container/group membership, and every healthy residence. It is separate from native Reload and never claims to reconstruct non-idempotent request state from a URL.
+_Avoid_: Hard reload, launcher unload, tab recreation
+
+**Recovery Failure Surface**:
+The explicit user-visible state presented when automatic Page Recovery cannot restore usable content. It preserves the Last Committed Destination and offers a deliberate retry instead of presenting recovery as `about:blank` or endless loading.
+_Avoid_: Failed blank page, stuck loader, silent recovery
+
+**Page Runtime Retirement**:
+The terminal release of an exact WebView Residence generation. It settles navigation, policy, authentication, recovery, media, user-content, and lifecycle ownership before delegate removal and physical WebKit release; the Durable Page Identity may survive as Cold, suspended, or failed.
+_Avoid_: WebView cleanup, tab unload, view removal
+
+**Website Data Mutation**:
+An exclusive profile- or partition-scoped operation that isolates exact live WebView residences, mutates WebKit-owned website data, and transfers every touched residence once to a normal bound navigation or terminal page state. It performs no indefinite retry or ordinary page-load timeout.
+_Avoid_: Clear-cache navigation, browser reset, cleanup loop
+
+**Cleanup Navigation**:
+A typed, non-authoritative physical navigation owned only by a Website Data Mutation. Its blank document and lifecycle callbacks never publish page destination, history, loading, persistence, or recovery state.
+_Avoid_: Temporary page, blank reload, cleanup tab
+
+**Restore Failure Surface**:
+The explicit browser-owned state for a persisted page record whose destination or native session state cannot be reconstructed safely. It preserves the Durable Page Identity and repair reason without inventing a destination or impersonating an Empty Page.
+_Avoid_: Repaired blank tab, dropped corrupt tab, restore placeholder URL
 
 **Sidebar Pointer Session**:
 The single exclusive pointer interaction for one Sidebar Visual Item in a window, from press through Page Activation, drag, or a release-only action until completion, cancellation, replacement, or disappearance. Presentation changes, including materialization and temporary gaps between AppKit owners, preserve both the session and its drag owner so the accepted press can cross the drag threshold without a second gesture. While a session is accepted it drives drag and release from the window's event stream rather than from press-time view routing, so the item presenting the session now receives the rest of the gesture. Temporary interaction disablement may prevent new input but does not cancel an accepted session. Every item accepts its press visual with the session, whether or not Page Activation must materialize it. That visual is presented for a minimum perceptible interval counted from the first frame it could be drawn, so synchronous materialization cannot swallow it; a release inside that interval is honored when it ends, while a drag, a cancellation, or a press on another item ends it at once. Page Activation is accepted on press; release accepts only a release-only action of the same identity. Starting a session cancels the previous one, and hover is reconciled once after drag ends.

@@ -34,9 +34,14 @@ struct TabRestoreSnapshotBuilder: Sendable {
             )
             snapshotTabs.append(
                 contentsOf: (tabs.regularTabsBySpace[space.id] ?? []).map { tab in
-                    TabPersistenceTab(
+                    let durableURL = tab.isRestoreFailure
+                        ? tab.restoreFailureRawDestination
+                            ?? tab.restoreFailureDestination?.absoluteString
+                            ?? tab.url.absoluteString
+                        : tab.url.absoluteString
+                    return TabPersistenceTab(
                         id: tab.id,
-                        urlString: tab.url.absoluteString,
+                        urlString: durableURL,
                         name: tab.name,
                         index: tab.index,
                         spaceId: tab.spaceId,
@@ -46,9 +51,12 @@ struct TabRestoreSnapshotBuilder: Sendable {
                         executionProfileId: nil,
                         folderId: nil,
                         iconAsset: nil,
-                        currentURLString: tab.url.absoluteString,
+                        currentURLString: durableURL,
                         canGoBack: tab.canGoBack,
-                        canGoForward: tab.canGoForward
+                        canGoForward: tab.canGoForward,
+                        pageKind: tab.isRestoreFailure
+                            ? .restoreFailure
+                            : SumiSurface.isEmptyNewTabURL(tab.url) ? .empty : .web
                     )
                 }
             )
@@ -80,7 +88,8 @@ struct TabRestoreSnapshotBuilder: Sendable {
             titleIsCustom: shortcut.titleIsCustom,
             currentURLString: shortcut.launchURL.absoluteString,
             canGoBack: false,
-            canGoForward: false
+            canGoForward: false,
+            pageKind: .web
         )
     }
 

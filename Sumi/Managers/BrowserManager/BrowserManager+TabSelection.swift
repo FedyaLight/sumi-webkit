@@ -82,7 +82,7 @@ extension BrowserManager {
         _ tab: Tab,
         in windowState: BrowserWindowState
     ) {
-        browserTabSelection.materializeVisibleTabWebViewIfNeeded(
+        _ = browserTabSelection.materializeVisibleTabWebViewIfNeeded(
             tab,
             in: windowState
         )

@@ -6,25 +6,29 @@ import SumiWebRuntime
 @MainActor
 final class WebViewVisiblePreparationService {
     typealias RegularTabResolver = @MainActor (UUID) -> Tab?
+    typealias RecoveryActivation = @MainActor (UUID, UUID) -> Void
 
     private let visibility: WebViewVisibilityRuntime
     private let webViewSessions: WebViewSessionRepository
     private let ownershipQuery: WebViewOwnershipQuery
     private let trackedAdmission: TrackedWebViewAdmissionService
     private let regularTab: RegularTabResolver
+    private let activateRecovery: RecoveryActivation
 
     init(
         visibility: WebViewVisibilityRuntime,
         webViewSessions: WebViewSessionRepository,
         ownershipQuery: WebViewOwnershipQuery,
         trackedAdmission: TrackedWebViewAdmissionService,
-        regularTab: @escaping RegularTabResolver
+        regularTab: @escaping RegularTabResolver,
+        activateRecovery: @escaping RecoveryActivation = { _, _ in }
     ) {
         self.visibility = visibility
         self.webViewSessions = webViewSessions
         self.ownershipQuery = ownershipQuery
         self.trackedAdmission = trackedAdmission
         self.regularTab = regularTab
+        self.activateRecovery = activateRecovery
     }
 
     @discardableResult
@@ -40,7 +44,7 @@ final class WebViewVisiblePreparationService {
         for windowState: BrowserWindowState,
         runtime: VisibleWebViewPreparationRuntime
     ) -> Bool {
-        visibility.prepareVisibleWebViews(
+        let prepared = visibility.prepareVisibleWebViews(
             for: windowState,
             runtime: runtime,
             webViewSessions: webViewSessions,
@@ -59,6 +63,10 @@ final class WebViewVisiblePreparationService {
                 return trackedAdmission.webView(for: tab, in: windowState.id)
             }
         )
+        for tabID in visibility.visibleTabIDs(in: windowState.id) {
+            activateRecovery(tabID, windowState.id)
+        }
+        return prepared
     }
 
     func schedule(for windowState: BrowserWindowState) {

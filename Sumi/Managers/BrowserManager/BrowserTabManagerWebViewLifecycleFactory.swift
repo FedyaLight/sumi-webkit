@@ -110,13 +110,16 @@ private final class BrowserTabWebViewRetirementParticipant:
     TabWebViewRetirementParticipant {
     private let protection: WebViewProtectionRuntime
     private let committed: WebViewCommittedTabRetirementService
+    private let lifecycle: WebViewLifecycleService
 
     init(
         protection: WebViewProtectionRuntime,
-        committed: WebViewCommittedTabRetirementService
+        committed: WebViewCommittedTabRetirementService,
+        lifecycle: WebViewLifecycleService
     ) {
         self.protection = protection
         self.committed = committed
+        self.lifecycle = lifecycle
     }
 
     func canRetire(_ tabs: [Tab]) -> Bool {
@@ -127,6 +130,10 @@ private final class BrowserTabWebViewRetirementParticipant:
 
     func beginCommittedRetirement(_ tabs: [Tab]) -> Bool {
         committed.beginCommitted(tabs)
+    }
+
+    func prepareRetirementOwners(_ tabs: [Tab]) {
+        lifecycle.prepareRetirementOwners(for: tabs)
     }
 
     func committedRetirementIsExact(_ tabs: [Tab]) -> Bool {
@@ -180,7 +187,8 @@ enum BrowserTabManagerWebViewLifecycleFactory {
             ),
             retirement: BrowserTabWebViewRetirementParticipant(
                 protection: webViewProtection,
-                committed: committedRetirement
+                committed: committedRetirement,
+                lifecycle: webViewLifecycle
             ),
             profileTransitions: profileAssignment
         )

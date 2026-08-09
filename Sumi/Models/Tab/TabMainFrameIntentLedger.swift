@@ -20,11 +20,13 @@ final class TabMainFrameIntentLedger {
     struct SubmissionFailure {
         let removedSubmission: Bool
         let wasAuthorityCandidate: Bool
+        let settlement: TabMainFramePendingAttemptSettlement?
     }
 
     struct PendingDeparture {
         let removedLoad: Bool
         let wasAuthorityCandidate: Bool
+        let settlements: [TabMainFramePendingAttemptSettlement]
     }
 
     struct AuthorityState {
@@ -58,20 +60,54 @@ final class TabMainFrameIntentLedger {
         intent = TabMainFrameNavigationIntent(revision: 0, targetURL: initialURL)
     }
 
-    func beginExplicitIntent(to targetURL: URL) -> TabMainFrameNavigationIntent {
-        replaceIntent(revision: intent.revision &+ 1, targetURL: targetURL)
+    func beginExplicitIntent(
+        to targetURL: URL,
+        blankAdmission: BlankDocumentAdmission? = nil
+    ) -> TabMainFrameNavigationIntent {
+        replaceIntent(
+            revision: intent.revision &+ 1,
+            targetURL: targetURL,
+            blankAdmission: blankAdmission
+        )
         requiresFreshUserActionForUnboundLifecycle = true
         return intent
     }
 
-    func beginLifecycleIntent(to targetURL: URL) -> TabMainFrameNavigationIntent {
-        replaceIntent(revision: intent.revision &+ 1, targetURL: targetURL)
+    func beginLifecycleIntent(
+        to targetURL: URL,
+        blankAdmission: BlankDocumentAdmission? = nil
+    ) -> TabMainFrameNavigationIntent {
+        replaceIntent(
+            revision: intent.revision &+ 1,
+            targetURL: targetURL,
+            blankAdmission: blankAdmission
+        )
         requiresFreshUserActionForUnboundLifecycle = false
         return intent
     }
 
+    func admitBlankDocument(_ admission: BlankDocumentAdmission) {
+        guard intent.targetURL.isSumiBlankDocumentURL,
+              intent.blankAdmission == nil else { return }
+        intent = TabMainFrameNavigationIntent(
+            revision: intent.revision,
+            targetURL: intent.targetURL,
+            blankAdmission: admission
+        )
+    }
+
+    func admitsCommit(to committedURL: URL) -> Bool {
+        guard committedURL.isSumiBlankDocumentURL else { return true }
+        return intent.targetURL.isSumiBlankDocumentURL
+            && intent.blankAdmission != nil
+    }
+
     func beginRollbackIntent(to targetURL: URL) -> TabMainFrameNavigationIntent {
-        replaceIntent(revision: intent.revision &+ 1, targetURL: targetURL)
+        replaceIntent(
+            revision: intent.revision &+ 1,
+            targetURL: targetURL,
+            blankAdmission: nil
+        )
         requiresFreshUserActionForUnboundLifecycle = true
         return intent
     }
@@ -99,7 +135,8 @@ final class TabMainFrameIntentLedger {
         }
         intent = TabMainFrameNavigationIntent(
             revision: intent.revision,
-            targetURL: targetURL
+            targetURL: targetURL,
+            blankAdmission: intent.blankAdmission
         )
 
         for (webViewID, var load) in pendingLoadsByWebViewID
@@ -164,12 +201,65 @@ final class TabMainFrameIntentLedger {
     }
 
     func finishPreparedLoad(_ ticket: TabMainFramePreparedLoadTicket) {
+        _ = cancelPreparedLoad(ticket)
+    }
+
+    func cancelPreparedLoad(
+        _ ticket: TabMainFramePreparedLoadTicket
+    ) -> TabMainFramePendingAttemptSettlement? {
         guard let load = pendingLoadsByWebViewID[ticket.webViewID],
               load.revision == ticket.revision,
               load.phase == .preparing(ticketID: ticket.id) else {
-            return
+            return nil
         }
         pendingLoadsByWebViewID.removeValue(forKey: ticket.webViewID)
+        return settlement(
+            for: load,
+            webViewID: ticket.webViewID,
+            reason: .cancelled
+        )
+    }
+
+    func claimPreparedSubmission(
+        on webView: WKWebView,
+        ticket: TabMainFramePreparedLoadTicket,
+        hasLifecycleAuthority: Bool
+    ) -> TabMainFrameSubmissionLease? {
+        let webViewID = ObjectIdentifier(webView)
+        guard ticket.webViewID == webViewID,
+              var load = pendingLoadsByWebViewID[webViewID],
+              load.webViewReference.matches(webView),
+              load.revision == ticket.revision,
+              load.phase == .preparing(ticketID: ticket.id),
+              load.revision == intent.revision,
+              Self.matchesNavigationTarget(load.targetURL, intent.targetURL) else {
+            return nil
+        }
+        load.phase = .submitted
+        pendingLoadsByWebViewID[webViewID] = load
+        assignAuthorityCandidateIfNeeded(
+            webViewID,
+            hasLifecycleAuthority: hasLifecycleAuthority
+        )
+        return submissionLease(for: load, webViewID: webViewID)
+    }
+
+    func pendingAttemptStatus(
+        on webView: WKWebView
+    ) -> TabMainFramePendingAttemptStatus {
+        let webViewID = ObjectIdentifier(webView)
+        guard let load = pendingLoadsByWebViewID[webViewID],
+              load.webViewReference.matches(webView),
+              load.revision == intent.revision else {
+            return .unsubmitted(intent)
+        }
+        let owner = pendingAttemptOwner(for: load, webViewID: webViewID)
+        switch load.phase {
+        case .preparing, .deferred:
+            return .waiting(owner)
+        case .submitted:
+            return .submitted(owner)
+        }
     }
 
     func markDeferredLoad(
@@ -178,19 +268,42 @@ final class TabMainFrameIntentLedger {
         documentGeneration: UInt64,
         isLifecycleAuthority: Bool
     ) -> Bool {
-        guard intent == candidate else { return false }
+        switch deferAttempt(
+            on: webView,
+            intent: candidate,
+            documentGeneration: documentGeneration,
+            isLifecycleAuthority: isLifecycleAuthority
+        ) {
+        case .waiting, .coalesced:
+            return true
+        case .rejected:
+            return false
+        }
+    }
+
+    func deferAttempt(
+        on webView: WKWebView,
+        intent candidate: TabMainFrameNavigationIntent,
+        documentGeneration: UInt64,
+        isLifecycleAuthority: Bool
+    ) -> TabMainFramePendingAttemptAdmission {
+        guard intent == candidate else { return .rejected }
         let webViewID = ObjectIdentifier(webView)
         discardStalePendingLoad(for: webView)
         guard isLifecycleAuthority == false,
               authorityCandidateWebViewID != webViewID else {
-            return false
+            return .rejected
         }
         if let load = pendingLoadsByWebViewID[webViewID],
            load.revision == candidate.revision,
            Self.matchesNavigationTarget(load.targetURL, candidate.targetURL) {
-            return load.phase == .deferred
+            guard load.phase == .deferred else { return .rejected }
+            return .coalesced(pendingAttemptOwner(
+                for: load,
+                webViewID: webViewID
+            ))
         }
-        pendingLoadsByWebViewID[webViewID] = PendingLoad(
+        let load = PendingLoad(
             participantID: UUID(),
             webViewReference: WeakWebViewReference(webView),
             revision: candidate.revision,
@@ -198,7 +311,11 @@ final class TabMainFrameIntentLedger {
             targetURL: candidate.targetURL,
             phase: .deferred
         )
-        return true
+        pendingLoadsByWebViewID[webViewID] = load
+        return .waiting(pendingAttemptOwner(
+            for: load,
+            webViewID: webViewID
+        ))
     }
 
     func clearDeferredLoad(
@@ -331,7 +448,8 @@ final class TabMainFrameIntentLedger {
               submissionLease(lease, matches: load, webViewID: webViewID) else {
             return SubmissionFailure(
                 removedSubmission: false,
-                wasAuthorityCandidate: false
+                wasAuthorityCandidate: false,
+                settlement: nil
             )
         }
         pendingLoadsByWebViewID.removeValue(forKey: webViewID)
@@ -341,7 +459,12 @@ final class TabMainFrameIntentLedger {
         }
         return SubmissionFailure(
             removedSubmission: true,
-            wasAuthorityCandidate: wasAuthorityCandidate
+            wasAuthorityCandidate: wasAuthorityCandidate,
+            settlement: settlement(
+                for: load,
+                webViewID: webViewID,
+                reason: .failed
+            )
         )
     }
 
@@ -377,6 +500,7 @@ final class TabMainFrameIntentLedger {
     func departure(of webViews: [WKWebView]) -> PendingDeparture {
         var removedLoad = false
         var wasAuthorityCandidate = false
+        var settlements: [TabMainFramePendingAttemptSettlement] = []
         var seen: Set<ObjectIdentifier> = []
         for webView in webViews {
             let webViewID = ObjectIdentifier(webView)
@@ -385,6 +509,11 @@ final class TabMainFrameIntentLedger {
                load.webViewReference.matches(webView) {
                 pendingLoadsByWebViewID.removeValue(forKey: webViewID)
                 removedLoad = true
+                settlements.append(settlement(
+                    for: load,
+                    webViewID: webViewID,
+                    reason: .departed
+                ))
             }
             if authorityCandidateWebViewID == webViewID {
                 authorityCandidateWebViewID = nil
@@ -393,7 +522,8 @@ final class TabMainFrameIntentLedger {
         }
         return PendingDeparture(
             removedLoad: removedLoad,
-            wasAuthorityCandidate: wasAuthorityCandidate
+            wasAuthorityCandidate: wasAuthorityCandidate,
+            settlements: settlements
         )
     }
 
@@ -426,6 +556,7 @@ final class TabMainFrameIntentLedger {
             targetURL: candidate.value.targetURL,
             isPDF: false,
             isCompleted: false,
+            hasCommittedDocument: false,
             needsSharedCommitEffects: false,
             needsSharedFinishEffects: false,
             revision: candidate.value.revision,
@@ -483,10 +614,15 @@ final class TabMainFrameIntentLedger {
         }
     }
 
-    private func replaceIntent(revision: UInt64, targetURL: URL) {
+    private func replaceIntent(
+        revision: UInt64,
+        targetURL: URL,
+        blankAdmission: BlankDocumentAdmission?
+    ) {
         intent = TabMainFrameNavigationIntent(
             revision: revision,
-            targetURL: targetURL
+            targetURL: targetURL,
+            blankAdmission: blankAdmission
         )
         pendingLoadsByWebViewID.removeAll()
         authorityCandidateWebViewID = nil
@@ -538,6 +674,45 @@ final class TabMainFrameIntentLedger {
             documentGeneration: load.documentGeneration,
             participantID: load.participantID,
             webViewID: webViewID
+        )
+    }
+
+    private func pendingAttemptOwner(
+        for load: PendingLoad,
+        webViewID: ObjectIdentifier
+    ) -> TabMainFramePendingAttemptOwner {
+        let phase: TabMainFramePendingAttemptPhase
+        switch load.phase {
+        case .preparing(let ticketID):
+            phase = .preparing(ticketID: ticketID)
+        case .deferred:
+            phase = .deferred
+        case .submitted:
+            phase = .submitted
+        }
+        return TabMainFramePendingAttemptOwner(
+            intent: TabMainFrameNavigationIntent(
+                revision: load.revision,
+                targetURL: load.targetURL,
+                blankAdmission: load.revision == intent.revision
+                    ? intent.blankAdmission
+                    : nil
+            ),
+            documentGeneration: load.documentGeneration,
+            participantID: load.participantID,
+            webViewID: webViewID,
+            phase: phase
+        )
+    }
+
+    private func settlement(
+        for load: PendingLoad,
+        webViewID: ObjectIdentifier,
+        reason: TabMainFramePendingAttemptTerminalReason
+    ) -> TabMainFramePendingAttemptSettlement {
+        TabMainFramePendingAttemptSettlement(
+            owner: pendingAttemptOwner(for: load, webViewID: webViewID),
+            reason: reason
         )
     }
 

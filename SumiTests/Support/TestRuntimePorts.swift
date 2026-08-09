@@ -102,6 +102,10 @@ private final class ClosureTabWebViewRetirementParticipant:
 
     func canRetire(_ tabs: [Tab]) -> Bool { capabilities.canRetire(tabs) }
 
+    func prepareRetirementOwners(_ tabs: [Tab]) {
+        capabilities.prepareRetirementOwners(tabs)
+    }
+
     func beginCommittedRetirement(_ tabs: [Tab]) -> Bool {
         guard capabilities.beginCommitted(tabs) else { return false }
         committedTabs = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
@@ -217,13 +221,33 @@ final class TestTabWebViewProfileTransitionParticipant:
 enum TestRuntimePorts {
     struct RetirementCapabilities {
         let canRetire: ([Tab]) -> Bool
+        let prepareRetirementOwners: ([Tab]) -> Void
         let beginCommitted: ([Tab]) -> Bool
         let committedRetirementIsExact: ([Tab]) -> Bool
         let destroy: ([RetiredTabWebViewGeneration]) -> Void
         let destroyAfterTerminalDrain: ([RetiredTabWebViewGeneration]) -> Void
 
+        init(
+            canRetire: @escaping ([Tab]) -> Bool,
+            prepareRetirementOwners: @escaping ([Tab]) -> Void = { _ in },
+            beginCommitted: @escaping ([Tab]) -> Bool,
+            committedRetirementIsExact: @escaping ([Tab]) -> Bool,
+            destroy: @escaping ([RetiredTabWebViewGeneration]) -> Void,
+            destroyAfterTerminalDrain: @escaping (
+                [RetiredTabWebViewGeneration]
+            ) -> Void
+        ) {
+            self.canRetire = canRetire
+            self.prepareRetirementOwners = prepareRetirementOwners
+            self.beginCommitted = beginCommitted
+            self.committedRetirementIsExact = committedRetirementIsExact
+            self.destroy = destroy
+            self.destroyAfterTerminalDrain = destroyAfterTerminalDrain
+        }
+
         @MainActor static let rejecting = Self(
             canRetire: { _ in false },
+            prepareRetirementOwners: { _ in },
             beginCommitted: { _ in false },
             committedRetirementIsExact: { _ in false },
             destroy: { _ in
@@ -236,6 +260,7 @@ enum TestRuntimePorts {
 
         @MainActor static let accepting = Self(
             canRetire: { _ in true },
+            prepareRetirementOwners: { _ in },
             beginCommitted: { _ in true },
             committedRetirementIsExact: { _ in true },
             destroy: { _ in },

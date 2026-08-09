@@ -10,7 +10,7 @@ final class ExtensionContentScriptContextPreparationOwner {
 
     private struct ScheduledTask {
         let token: UUID
-        let task: Task<Void, Never>
+        let task: Task<PageNavigationPrerequisiteResult, Never>
     }
 
     private let installedExtensions: InstalledExtensionCollection
@@ -57,24 +57,30 @@ final class ExtensionContentScriptContextPreparationOwner {
         profileHasLoadedContexts(profileID: profileID) == false
     }
 
-    func ensureLoaded(profileID: UUID) async {
+    func ensureLoaded(profileID: UUID) async
+        -> PageNavigationPrerequisiteResult {
         guard runtimeIsEnabled(), profileNeedsLoad(profileID: profileID) else {
-            return
+            return .ready
         }
         if let scheduled = tasksByProfile[profileID] {
-            await scheduled.task.value
-            return
+            return await scheduled.task.value
         }
 
         let token = UUID()
-        let task = Self.runtimeTask { [weak self] in
-            guard let self else { return }
+        let task: Task<PageNavigationPrerequisiteResult, Never> = Self.runtimeTask {
+            [weak self] in
+            guard let self else { return .cancelled }
             defer { self.finish(profileID: profileID, token: token) }
-            for record in self.contentScriptExtensions() {
-                guard Task.isCancelled == false else { return }
+            let records = self.contentScriptExtensions()
+            var loadedCount = 0
+            var failedCount = 0
+            for record in records {
+                guard Task.isCancelled == false else { return .cancelled }
                 do {
                     try await self.load(record.id, profileID)
+                    loadedCount += 1
                 } catch {
+                    failedCount += 1
                     self.logFailure(
                         error,
                         record.id,
@@ -83,10 +89,12 @@ final class ExtensionContentScriptContextPreparationOwner {
                     )
                 }
             }
+            if failedCount == 0 { return .ready }
+            return loadedCount == 0 ? .failed : .degraded
         }
         tasksByProfile[profileID] = ScheduledTask(token: token, task: task)
         clearIfFinishedBeforeRegistration(profileID: profileID, token: token)
-        await task.value
+        return await task.value
     }
 
     func cancelAll() {
@@ -101,6 +109,9 @@ final class ExtensionContentScriptContextPreparationOwner {
     #if DEBUG
         func runtimeTasksForDrain() -> [Task<Void, Never>] {
             tasksByProfile.values.map(\.task)
+                .map { task in
+                    Task { _ = await task.value }
+                }
         }
     #endif
 
@@ -131,9 +142,9 @@ final class ExtensionContentScriptContextPreparationOwner {
         installedExtensions.enabledContentScriptRecords
     }
 
-    nonisolated static func runtimeTask(
-        _ operation: @escaping @MainActor @Sendable () async -> Void
-    ) -> Task<Void, Never> {
+    nonisolated static func runtimeTask<Result: Sendable>(
+        _ operation: @escaping @MainActor @Sendable () async -> Result
+    ) -> Task<Result, Never> {
         Task { @MainActor in
             await operation()
         }

@@ -57,10 +57,12 @@ enum TabMainFrameLifecycleReducer {
         tab: Tab,
         promotion: any TabMainFramePromotionSettlement
     ) {
-        guard tab.applyPromotedAuthorityURL(
-            continuation.targetURL,
-            matching: continuation
-        ) else { return }
+        if continuation.hasCommittedDocument {
+            guard tab.applyPromotedAuthorityURL(
+                continuation.targetURL,
+                matching: continuation
+            ) else { return }
+        }
 
         if continuation.needsSharedCommitEffects,
            promotion.claimSharedCommitEffects(
@@ -113,6 +115,10 @@ enum TabMainFrameLifecycleReducer {
     ) {
         StartupPerformanceTrace.firstNavigationCommitted()
         tab.loadingState = .didCommit
+        tab.navigationRuntime.webViewRouting.pagePresentationDidChange(
+            tab.id,
+            authority.webView
+        )
         guard remainsCurrent() else { return }
         tab.navigationRuntime.extensionPropertiesRuntime.notifyTabPropertiesChanged(
             tab,

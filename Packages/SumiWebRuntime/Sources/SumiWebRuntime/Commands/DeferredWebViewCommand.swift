@@ -22,6 +22,7 @@ public enum DeferredWebViewCommandKey: Hashable {
     case trackedMainFrameNavigation(ObjectIdentifier)
     case evictHiddenWebViews(UUID)
     case cleanupTabWebView(ObjectIdentifier)
+    case retireTabWebViewGeneration(UUID, UInt64)
     case performFallbackWebViewCleanup(ObjectIdentifier)
 }
 
@@ -196,6 +197,7 @@ public enum DeferredWebViewCommand {
     )
     case evictHiddenWebViews(windowID: UUID)
     case cleanupTabWebView(webViewID: ObjectIdentifier, tabID: UUID)
+    case retireTabWebViewGeneration(tabID: UUID, expectedGeneration: UInt64)
     case performFallbackWebViewCleanup(
         webViewID: ObjectIdentifier,
         lease: WebViewPendingCleanupLease
@@ -227,6 +229,8 @@ public enum DeferredWebViewCommand {
             return .evictHiddenWebViews(windowID)
         case .cleanupTabWebView(let webViewID, _):
             return .cleanupTabWebView(webViewID)
+        case .retireTabWebViewGeneration(let tabID, let expectedGeneration):
+            return .retireTabWebViewGeneration(tabID, expectedGeneration)
         case .performFallbackWebViewCleanup(let webViewID, _):
             return .performFallbackWebViewCleanup(webViewID)
         }
@@ -276,6 +280,8 @@ public enum DeferredWebViewCommand {
             return "evictHiddenWebViews window=\(windowID.uuidString.prefix(8))"
         case .cleanupTabWebView(let webViewID, let tabID):
             return "cleanupTabWebView tab=\(tabID.uuidString.prefix(8)) webView=\(webViewID)"
+        case .retireTabWebViewGeneration(let tabID, let expectedGeneration):
+            return "retireTabWebViewGeneration tab=\(tabID.uuidString.prefix(8)) generation=\(expectedGeneration)"
         case .performFallbackWebViewCleanup(let webViewID, let lease):
             return "performFallbackWebViewCleanup tab=\(lease.tabID.uuidString.prefix(8)) lease=\(lease.id.uuidString.prefix(8)) webView=\(webViewID)"
         }
@@ -298,6 +304,7 @@ public enum DeferredWebViewCommand {
              .cleanupWindow,
              .cleanupAllWebViews,
              .cleanupTabWebView,
+             .retireTabWebViewGeneration,
              .performFallbackWebViewCleanup:
             return true
         }
@@ -523,6 +530,7 @@ private extension DeferredWebViewCommand {
             case .removeTrackedWebView,
                  .synchronizeTrackedNavigation,
                  .reloadTrackedNavigation,
+                 .retireTabWebViewGeneration,
                  .evictHiddenWebViews:
                 return true
             case .removeWebViewFromContainers,
@@ -569,6 +577,20 @@ private extension DeferredWebViewCommand {
                  .synchronizeTrackedNavigation(let candidateWebViewID, _, _, _),
                  .reloadTrackedNavigation(let candidateWebViewID, _, _, _):
                 return candidateWebViewID == webViewID
+            default:
+                return false
+            }
+
+        case .retireTabWebViewGeneration(let tabID, _):
+            switch candidate {
+            case .removeTrackedWebView(_, let candidateTabID, _),
+                 .cleanupTabWebView(_, let candidateTabID),
+                 .synchronizeTrackedNavigation(_, let candidateTabID, _, _),
+                 .reloadTrackedNavigation(_, let candidateTabID, _, _),
+                 .rebuildLiveWebViews(let candidateTabID, _, _),
+                 .assignProfile(let candidateTabID, _, _),
+                 .retireTabWebViewGeneration(let candidateTabID, _):
+                return candidateTabID == tabID
             default:
                 return false
             }

@@ -51,7 +51,6 @@ struct TabNormalWebViewSetupRequest {
 struct TabNormalWebViewCreationAdmissionStage {
     let deferUntilProfileAvailable: () -> Bool
     let beginSuspendedRestore: () -> Void
-    let finishSuspendedRestore: () -> Void
     let deferMaterialization: (@MainActor @Sendable @escaping () -> Void) -> Bool
     let replaySetup: @MainActor @Sendable (Bool) -> Void
 }
@@ -111,6 +110,5 @@ struct TabNormalWebViewInitialDocumentStage {
     let replaceNormalTabUserScripts: (WKUserContentController, URL?) async -> Void
     let loadExtensionOwnedInitialURL: (WKWebView, URL) -> Void
     let registerExtensionRuntime: (String) -> Void
-    let restoreSuspendedInteractionState: (WKWebView) -> Bool
     let scheduleRuntimeHandoff: (WKWebView?, URL, UUID?, String) -> Void
 }

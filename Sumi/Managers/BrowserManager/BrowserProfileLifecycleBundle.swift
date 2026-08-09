@@ -190,7 +190,14 @@ extension BrowserManager {
                         profilePartitionId: profileID.uuidString
                     )
                 },
-                cleanupDependencies: cleanupDependencies
+                cleanupDependencies: cleanupDependencies,
+                invalidateDeferredAdmissions: {
+                    [cleanup = webViewRuntime.websiteDataCleanupService]
+                    profileID in
+                    cleanup.cancelDeferredAdmissions(
+                        forProfileID: profileID
+                    )
+                }
             )
         let deletionWorkflow = BrowserProfileDeletionWorkflow(
             maintenanceContext: maintenanceContext,

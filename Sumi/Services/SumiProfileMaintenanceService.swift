@@ -17,6 +17,7 @@ final class SumiProfileMaintenanceService {
         ) async -> Bool
         var sealProfileRuntime: @MainActor (UUID) async -> Bool
         var cleanupDependencies: ProfileRetirementCleanupDependencies
+        var invalidateDeferredAdmissions: @MainActor (UUID) -> Void = { _ in }
     }
 
     func retireProfile(
@@ -157,6 +158,8 @@ final class SumiProfileMaintenanceService {
             )
             return .migrationPending
         }
+
+        context.invalidateDeferredAdmissions(profile.id)
 
         return await completeRetirementCleanup(
             profile,

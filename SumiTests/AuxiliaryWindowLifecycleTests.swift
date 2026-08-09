@@ -25,8 +25,10 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
             true
         }
 
-        func ensureInitialExtensionContextsLoaded(for _: UUID) async {
+        func ensureInitialExtensionContextsLoaded(for _: UUID) async
+            -> PageNavigationPrerequisiteResult {
             invalidate()
+            return .ready
         }
     }
 

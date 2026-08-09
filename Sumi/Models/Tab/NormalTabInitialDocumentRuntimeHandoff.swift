@@ -17,21 +17,30 @@ enum NormalTabInitialDocumentRuntimeHandoff {
     }
 
     static func perform(
-        waitForInitialUserContent: @MainActor () async -> Void,
-        warmInitialDocumentContexts: @MainActor () async -> Void,
+        waitForInitialUserContent: @MainActor () async
+            -> PageNavigationPrerequisiteResult,
+        warmInitialDocumentContexts: @MainActor () async
+            -> PageNavigationPrerequisiteResult,
         isStillValid: @MainActor () -> Bool,
         register: @MainActor () -> Void,
-        warmPostPublicationBackground: @MainActor () async -> Void,
         load: @MainActor () -> Void
-    ) async {
-        await waitForInitialUserContent()
-        guard isStillValid() else { return }
-        await warmInitialDocumentContexts()
-        guard isStillValid() else { return }
+    ) async -> PageNavigationPrerequisiteResult {
+        let userContentResult = await waitForInitialUserContent()
+        guard userContentResult.maySubmitNavigation else {
+            return userContentResult
+        }
+        guard isStillValid() else { return .cancelled }
+        let contextResult = await warmInitialDocumentContexts()
+        guard contextResult.maySubmitNavigation else {
+            return contextResult
+        }
+        guard isStillValid() else { return .cancelled }
         register()
-        await warmPostPublicationBackground()
-        guard isStillValid() else { return }
+        guard isStillValid() else { return .cancelled }
         load()
+        return userContentResult == .degraded || contextResult == .degraded
+            ? .degraded
+            : .ready
     }
 
     static func scheduleTabSetupInitialLoad(
@@ -40,7 +49,8 @@ enum NormalTabInitialDocumentRuntimeHandoff {
         targetURL: URL,
         profileId: UUID?,
         registrationReason: String,
-        replacementBinding: ReplacementBinding? = nil
+        replacementBinding: ReplacementBinding? = nil,
+        nativeSessionData: Data? = nil
     ) {
         guard let webView else { return }
         scheduleInitialLoad(
@@ -51,7 +61,8 @@ enum NormalTabInitialDocumentRuntimeHandoff {
             registrationReason: registrationReason,
             expectedResidence: .untracked(tabID: tab.id),
             updatesTabPresentation: true,
-            replacementBinding: replacementBinding
+            replacementBinding: replacementBinding,
+            nativeSessionData: nativeSessionData
         )
     }
 
@@ -63,7 +74,8 @@ enum NormalTabInitialDocumentRuntimeHandoff {
         profileId: UUID?,
         registrationReason: String,
         updatesTabPresentation: Bool,
-        replacementBinding: ReplacementBinding? = nil
+        replacementBinding: ReplacementBinding? = nil,
+        nativeSessionData: Data? = nil
     ) {
         precondition(
             expectedOwner.tabID == tab.id,
@@ -77,7 +89,8 @@ enum NormalTabInitialDocumentRuntimeHandoff {
             registrationReason: registrationReason,
             expectedResidence: .window(expectedOwner),
             updatesTabPresentation: updatesTabPresentation,
-            replacementBinding: replacementBinding
+            replacementBinding: replacementBinding,
+            nativeSessionData: nativeSessionData
         )
     }
 
@@ -89,7 +102,8 @@ enum NormalTabInitialDocumentRuntimeHandoff {
         registrationReason: String,
         expectedResidence: WebViewResidence,
         updatesTabPresentation: Bool,
-        replacementBinding: ReplacementBinding?
+        replacementBinding: ReplacementBinding?,
+        nativeSessionData: Data?
     ) {
         guard let navigationIntent = tab.mainFrameLoads.currentIntent(
             matching: targetURL
@@ -125,7 +139,7 @@ enum NormalTabInitialDocumentRuntimeHandoff {
                 fail(replacementBinding, reason: .cancelled)
                 return
             }
-            await perform {
+            let prerequisiteResult = await perform {
                 await waitForInitialUserContentInstallationIfNeeded(controller)
             } warmInitialDocumentContexts: {
                 await Self.warmInitialDocumentContextsIfNeeded(
@@ -143,11 +157,6 @@ enum NormalTabInitialDocumentRuntimeHandoff {
                 tab?.registerTabWithExtensionRuntimeIfNeeded(
                     reason: registrationReason
                 )
-            } warmPostPublicationBackground: {
-                await Self.warmInitialDocumentBackgroundIfNeeded(
-                    tab: tab,
-                    profileId: profileId
-                )
             } load: {
                 guard let tab,
                       let webView,
@@ -160,9 +169,34 @@ enum NormalTabInitialDocumentRuntimeHandoff {
                     fail(replacementBinding, reason: .stale)
                     return
                 }
+                let suspensionSnapshot = tab.suspensionState.candidate(
+                    residence: expectedResidence,
+                    residenceGeneration: tab.webViewSession.generation,
+                    profileID: profileId,
+                    dataStoreIdentity: PageSessionDataStoreIdentity(
+                        webView.configuration.websiteDataStore
+                    ),
+                    intentRevision: navigationIntent.revision,
+                    destination: navigationIntent.targetURL
+                )
+                if suspensionSnapshot == nil,
+                   nativeSessionData == nil,
+                   tab.suspensionState.isRestoreInProgress {
+                    _ = tab.suspensionState.beginFallback(
+                        webViewID: ObjectIdentifier(webView)
+                    )
+                }
                 let outcome = tab.performMainFrameNavigation(
                     on: webView,
+                    preparedTicket: preparationTicket,
                     didSubmit: { navigationID, navigationLifetime in
+                        if let suspensionSnapshot {
+                            _ = tab.suspensionState.bind(
+                                suspensionSnapshot,
+                                webViewID: ObjectIdentifier(webView),
+                                navigationID: navigationID
+                            )
+                        }
                         guard let replacementBinding else { return }
                         _ = replacementBinding.markBound(
                             replacementBinding.token,
@@ -194,6 +228,18 @@ enum NormalTabInitialDocumentRuntimeHandoff {
                         tab.resetPlaybackActivity()
                         tab.applyCachedFaviconOrPlaceholder(for: currentIntent.targetURL)
                     }
+                    if let nativeSessionData {
+                        return SumiWebKitPageStateAdapter.restoreSessionState(
+                            nativeSessionData,
+                            to: resolvedWebView
+                        )
+                    }
+                    if let suspensionSnapshot {
+                        return SumiWebKitPageStateAdapter.restoreSessionState(
+                            suspensionSnapshot.data,
+                            to: resolvedWebView
+                        )
+                    }
                     return Self.load(currentIntent.targetURL, on: resolvedWebView)
                 }
                 switch outcome {
@@ -204,8 +250,35 @@ enum NormalTabInitialDocumentRuntimeHandoff {
                 case .missingNavigator:
                     fail(replacementBinding, reason: .missingNavigator)
                 case .submissionFailed:
+                    if suspensionSnapshot != nil,
+                       tab.suspensionState.beginFallback(
+                           webViewID: ObjectIdentifier(webView)
+                       ) {
+                        _ = submitRestoreFallback(
+                            tab: tab,
+                            webView: webView,
+                            expectedResidence: expectedResidence,
+                            intentRevision: navigationIntent.revision,
+                            updatesTabPresentation: updatesTabPresentation
+                        )
+                    }
                     fail(replacementBinding, reason: .submissionFailed)
                 }
+            }
+
+            if prerequisiteResult.maySubmitNavigation == false {
+                if let tab {
+                    tab.rollbackMainFrameNavigationAfterFailedSubmission(
+                        on: webView,
+                        matching: navigationIntent
+                    )
+                }
+                fail(
+                    replacementBinding,
+                    reason: prerequisiteResult == .failed
+                        ? .prerequisiteFailed
+                        : .cancelled
+                )
             }
 
             if Task.isCancelled {
@@ -261,32 +334,59 @@ enum NormalTabInitialDocumentRuntimeHandoff {
         WebRuntimeMainFrameLoader.load(targetURL, on: webView)
     }
 
+    @discardableResult
+    static func submitRestoreFallback(
+        tab: Tab,
+        webView: WKWebView,
+        expectedResidence: WebViewResidence,
+        intentRevision: UInt64,
+        updatesTabPresentation: Bool = true
+    ) -> Bool {
+        guard isStillValid(
+            tab: tab,
+            webView: webView,
+            intentRevision: intentRevision,
+            expectedResidence: expectedResidence
+        ) else { return false }
+        let outcome = tab.performMainFrameNavigation(on: webView) { resolvedWebView in
+            guard Self.isStillValid(
+                tab: tab,
+                webView: resolvedWebView,
+                intentRevision: intentRevision,
+                expectedResidence: expectedResidence
+            ) else { return nil }
+            if updatesTabPresentation {
+                tab.beginLoadingPresentationIfNeeded()
+                tab.resetPlaybackActivity()
+            }
+            return Self.load(
+                tab.mainFrameLoads.currentIntent.targetURL,
+                on: resolvedWebView
+            )
+        }
+        if case .submitted = outcome { return true }
+        _ = tab.suspensionState.failFallback()
+        return false
+    }
+
     private static func waitForInitialUserContentInstallationIfNeeded(
         _ controller: SumiNormalTabUserContentControlling?
-    ) async {
+    ) async -> PageNavigationPrerequisiteResult {
         if let controller,
            controller.hasInstalledInitialUserContent == false {
-            await controller.waitForInitialUserContentInstallation()
+            return await controller.waitForInitialUserContentInstallation()
         }
+        return .ready
     }
 
     private static func warmInitialDocumentContextsIfNeeded(
         tab: Tab?,
         profileId: UUID?
-    ) async {
+    ) async -> PageNavigationPrerequisiteResult {
         if let profileId, let tab {
-            await tab.navigationRuntime.normalWebViewExtensionRuntime
+            return await tab.navigationRuntime.normalWebViewExtensionRuntime
                 .ensureInitialExtensionContextsIfNeeded(profileId)
         }
-    }
-
-    private static func warmInitialDocumentBackgroundIfNeeded(
-        tab: Tab?,
-        profileId: UUID?
-    ) async {
-        if let profileId, let tab {
-            await tab.navigationRuntime.normalWebViewExtensionRuntime
-                .warmInitialDocumentNativeMessagingIfNeeded(profileId)
-        }
+        return .ready
     }
 }

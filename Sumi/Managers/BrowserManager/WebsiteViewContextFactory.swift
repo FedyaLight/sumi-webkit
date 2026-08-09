@@ -10,13 +10,15 @@ enum WebsiteViewContextFactory {
         windowTabs: BrowserWindowTabContext,
         membership: TabCollectionMembershipOwner,
         windowVisuals: BrowserWindowVisualCoordinator,
+        repairFailure: @escaping @MainActor (UUID, UUID, Bool) -> Void,
         spaces: TabSpaceCollectionStateOwner,
         dragOperations: SidebarDragOperationRouter
     ) -> WebsiteViewBrowserContext {
         let webContentContext = BrowserManagerWindowWebContentContext(
             windowTabs: windowTabs,
             membership: membership,
-            windowVisuals: windowVisuals
+            windowVisuals: windowVisuals,
+            repairFailure: repairFailure
         )
         return WebsiteViewBrowserContext(
             currentTab: { [windowTabs] windowState in
