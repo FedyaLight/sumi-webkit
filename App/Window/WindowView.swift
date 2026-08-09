@@ -467,11 +467,14 @@ struct WindowView: View {
             windowState.chromePresentation.performSidebarMotion(
                 surface: .docked,
                 toward: visibility,
-                animation: resolvedAnimation
-            ) {
-                dockedSidebarLayout.beginShow()
-                dockedSidebarLayout.show()
-            }
+                animation: resolvedAnimation,
+                prepareLayout: {
+                    dockedSidebarLayout.beginShow()
+                },
+                updateLayout: {
+                    dockedSidebarLayout.show()
+                }
+            )
             return
         }
 
@@ -480,8 +483,10 @@ struct WindowView: View {
                 surface: .docked,
                 toward: visibility,
                 animation: resolvedAnimation,
-                updateLayout: {
+                prepareLayout: {
                     dockedSidebarLayout.beginAnimatedHide()
+                },
+                updateLayout: {
                     dockedSidebarLayout.hide()
                 },
                 completion: {

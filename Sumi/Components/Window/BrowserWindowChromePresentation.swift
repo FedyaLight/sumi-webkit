@@ -98,18 +98,27 @@ final class BrowserWindowChromePresentation {
         reconcileRenderingWithCurrentPhase()
     }
 
-    /// Performs one Presented Sidebar Layout motion as a single transaction.
+    /// Performs one Presented Sidebar Layout motion under one generation token.
     ///
-    /// The supplied update mutates the real docked or collapsed layout. Callers never receive the
-    /// generation token and therefore cannot let an interrupted completion reveal native controls.
+    /// Preparation establishes the source frame before the animated update mutates the real docked
+    /// or collapsed layout. Callers never receive the generation token and therefore cannot let an
+    /// interrupted completion reveal native controls.
     func performSidebarMotion(
         surface: BrowserWindowSidebarLayoutSurface,
         toward visibility: BrowserWindowSidebarLayoutVisibility,
         animation: Animation?,
+        prepareLayout: (@MainActor () -> Void)? = nil,
         updateLayout: @escaping @MainActor () -> Void,
         completion: (@MainActor () -> Void)? = nil
     ) {
         let token = beginSidebarMotion(surface: surface, toward: visibility)
+
+        if let prepareLayout {
+            var transaction = Transaction()
+            transaction.animation = nil
+            transaction.disablesAnimations = true
+            withTransaction(transaction, prepareLayout)
+        }
 
         guard let animation else {
             var transaction = Transaction()
