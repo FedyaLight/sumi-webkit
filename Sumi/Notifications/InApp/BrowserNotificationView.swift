@@ -81,7 +81,7 @@ struct BrowserNotificationView: View {
                     if let subtitle = notification.subtitle {
                         Text(subtitle)
                             .font(BrowserNotificationThemeTokens.Typography.subtitle)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.primary.opacity(0.72))
                             .lineLimit(1)
                     }
                 }
