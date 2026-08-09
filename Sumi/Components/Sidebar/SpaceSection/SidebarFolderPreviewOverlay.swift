@@ -42,6 +42,10 @@ struct SidebarFolderPreviewOverlay: View {
                     sidebarPosition: presentation.sidebarPosition,
                     containerBounds: containerFrame
                 )
+                let panelThemeContext = PopoverPresenterChromeSupport.themeContext(
+                    themeContext,
+                    colorScheme: surfaceColorScheme
+                )
 
                 SidebarFolderPreviewPanel(
                     folderName: presentation.folderName,
@@ -55,16 +59,13 @@ struct SidebarFolderPreviewOverlay: View {
                     }
                 )
                 .environment(windowState.sidebarFaviconImageStore)
-                // Native surfaces resolve their lightness from the space theme,
-                // the same scope the downloads popover installs on its content.
-                .sumiNativeSurfaceColorScheme(
-                    surfaceColorScheme,
-                    themeContext: PopoverPresenterChromeSupport.themeContext(
-                        themeContext,
-                        colorScheme: surfaceColorScheme
-                    ),
+                // This panel shares the browser window, so its scheme stays
+                // local instead of publishing a window-wide preference.
+                .sumiChromeThemeScope(
+                    context: panelThemeContext,
                     settings: sumiSettings
                 )
+                .environment(\.colorScheme, surfaceColorScheme)
                 .position(
                     x: panelFrame.midX - containerFrame.minX,
                     y: panelFrame.midY - containerFrame.minY
