@@ -90,6 +90,8 @@ class BrowserManager: ObservableObject {
         RegularTabShortcutConversionService
     let shortcutPinToRegularTab: ShortcutPinToRegularTabService
     let shortcutLiveTabRetirement: ShortcutLiveTabRetirementService
+    let emptySplitConvertedPlaceholderRetirement:
+        EmptySplitConvertedPlaceholderRetirementService
     let sidebarPinCommands: SidebarPinCommands
     let sidebarFolderCommands: SidebarFolderCommands
     let sidebarRegularTabLifecycleCommands: SidebarRegularTabLifecycleCommands
@@ -163,7 +165,9 @@ class BrowserManager: ObservableObject {
     lazy var emptySplitSession = EmptySplitSession(
         structuralTransactions: structuralLookupCoordinator,
         terminalMutations: structuralCollectionMutationOwner,
-        placeholderRetirement: splitPlaceholderRetirement
+        placeholderRetirement: splitPlaceholderRetirement,
+        convertedPlaceholderRetirement:
+            emptySplitConvertedPlaceholderRetirement
     )
     lazy var splitPlaceholderReplacements = composeSplitPlaceholderReplacements()
     lazy var splitDrops = composeSplitDrops()
@@ -549,6 +553,8 @@ class BrowserManager: ObservableObject {
             graph.regularTabShortcutConversion
         self.shortcutPinToRegularTab = graph.shortcutPinToRegularTab
         self.shortcutLiveTabRetirement = graph.shortcutLiveTabRetirement
+        self.emptySplitConvertedPlaceholderRetirement =
+            graph.emptySplitConvertedPlaceholderRetirement
         self.sidebarPinCommands = graph.sidebarPinCommands
         self.sidebarFolderCommands = graph.sidebarFolderCommands
         self.sidebarRegularTabLifecycleCommands =

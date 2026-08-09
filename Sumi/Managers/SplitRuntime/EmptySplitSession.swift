@@ -50,6 +50,37 @@ extension EmptySplitPlaceholderRetirementService:
     }
 }
 
+@MainActor
+protocol EmptySplitConvertedPlaceholderRetiring: AnyObject {
+    func retire(_ placeholder: Tab, in windowID: UUID) -> Bool
+}
+
+@MainActor
+final class EmptySplitConvertedPlaceholderRetirementService:
+    EmptySplitConvertedPlaceholderRetiring {
+    private let pins: ShortcutPinCollectionStateOwner
+    private let liveShortcuts: LiveShortcutTabRegistry
+    private let retirement: ShortcutPinRetirementTransaction
+
+    init(
+        pins: ShortcutPinCollectionStateOwner,
+        liveShortcuts: LiveShortcutTabRegistry,
+        retirement: ShortcutPinRetirementTransaction
+    ) {
+        self.pins = pins
+        self.liveShortcuts = liveShortcuts
+        self.retirement = retirement
+    }
+
+    func retire(_ placeholder: Tab, in windowID: UUID) -> Bool {
+        guard let pinID = placeholder.shortcutPinId,
+              liveShortcuts.tab(for: pinID, in: windowID) === placeholder,
+              let pin = pins.shortcutPin(by: pinID)
+        else { return false }
+        return retirement.remove([pin], presentNotification: false)
+    }
+}
+
 /// Retains the exact ephemeral blank Tab created by the split shortcut. A
 /// same-UUID replacement cannot satisfy commit, cancellation, or replacement
 /// admission. Structural work stays behind typed transaction participants.
@@ -60,6 +91,8 @@ final class EmptySplitSession {
     private let terminalMutations: any EmptySplitTerminalMutationAuthority
     private let placeholderRetirement:
         any EmptySplitPlaceholderRetirementPreparing
+    private let convertedPlaceholderRetirement:
+        (any EmptySplitConvertedPlaceholderRetiring)?
     private var placeholderByWindowID: [UUID: Tab] = [:]
 
     init(
@@ -67,11 +100,14 @@ final class EmptySplitSession {
             any EmptySplitStructuralTransactionAuthority,
         terminalMutations: any EmptySplitTerminalMutationAuthority,
         placeholderRetirement:
-            any EmptySplitPlaceholderRetirementPreparing
+            any EmptySplitPlaceholderRetirementPreparing,
+        convertedPlaceholderRetirement:
+            (any EmptySplitConvertedPlaceholderRetiring)? = nil
     ) {
         self.structuralTransactions = structuralTransactions
         self.terminalMutations = terminalMutations
         self.placeholderRetirement = placeholderRetirement
+        self.convertedPlaceholderRetirement = convertedPlaceholderRetirement
     }
 
     func register(_ placeholder: Tab, in windowID: UUID) {
@@ -84,9 +120,28 @@ final class EmptySplitSession {
 
     @discardableResult
     func cancel(in windowState: BrowserWindowState) -> Bool {
-        structuralTransactions.withTransaction {
-            guard let placeholder = placeholderByWindowID[windowState.id],
-                  let retirement = placeholderRetirement.prepareRetirement(
+        guard let placeholder = placeholderByWindowID[windowState.id] else {
+            return false
+        }
+        if placeholder.shortcutPinId != nil {
+            guard let convertedPlaceholderRetirement,
+                  accepts(placeholder, in: windowState.id)
+            else { return false }
+            placeholderByWindowID.removeValue(forKey: windowState.id)
+            guard convertedPlaceholderRetirement.retire(
+                placeholder,
+                in: windowState.id
+            ) else {
+                _ = restoreAfterRejectedCommit(
+                    placeholder,
+                    in: windowState.id
+                )
+                return false
+            }
+            return true
+        }
+        return structuralTransactions.withTransaction {
+            guard let retirement = placeholderRetirement.prepareRetirement(
                       placeholder
                   )
             else { return false }

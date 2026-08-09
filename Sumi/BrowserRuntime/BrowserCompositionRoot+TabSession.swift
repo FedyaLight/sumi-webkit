@@ -716,6 +716,12 @@ extension BrowserCompositionRoot {
                 structuralMutations: structuralCollectionMutationOwner
             )
         )
+        let emptySplitConvertedPlaceholderRetirement =
+            EmptySplitConvertedPlaceholderRetirementService(
+                pins: state.shortcutPins,
+                liveShortcuts: liveShortcutTabs,
+                retirement: shortcutPinRetirement
+            )
         let shortcutPinLivePages = ShortcutPinLivePageMutationService(
             structuralLookup: structuralLookupCoordinator,
             pins: state.shortcutPins,
@@ -1053,6 +1059,8 @@ extension BrowserCompositionRoot {
             regularTabShortcutConversion: regularTabShortcutConversion,
             shortcutPinToRegularTab: shortcutPinToRegularTab,
             shortcutLiveTabRetirement: shortcutLiveTabRetirement,
+            emptySplitConvertedPlaceholderRetirement:
+                emptySplitConvertedPlaceholderRetirement,
             sidebarPinCommands: sidebarPinCommands,
             sidebarFolderCommands: sidebarFolderCommands,
             sidebarRegularTabLifecycleCommands:

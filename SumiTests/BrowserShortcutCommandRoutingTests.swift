@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SumiDomain
 import XCTest
 
@@ -295,6 +296,137 @@ final class BrowserShortcutCommandRoutingTests: XCTestCase {
         XCTAssertTrue(
             harness.windowState.presentationState.isCommandPaletteVisible
         )
+    }
+
+    func testDismissingNewSplitPickerRemovesTemporarySplit() async throws {
+        let harness = try makeHarness()
+        let tab = createTab("https://split-cancel.example", in: harness)
+        harness.windowState.currentTabId = tab.id
+        harness.windowState.presentationState.isCommandPaletteVisible = true
+
+        guard case .browser(let context) = harness.browserManager
+            .shortcutTargetResolver.resolve(keyWindow: harness.appKitWindow)
+        else { return XCTFail("Expected browser shortcut context") }
+        let outcome = try XCTUnwrap(
+            harness.browserManager.shortcutActionRouter
+                .executeFromCommandPalette(.addSplitRight, in: context)
+        )
+        guard case .paletteReplaced = outcome else {
+            return XCTFail("Adding a split must open the split picker")
+        }
+        let placeholder = try XCTUnwrap(
+            harness.browserManager.emptySplitSession.placeholder(
+                in: harness.windowState.id
+            )
+        )
+        var splitUpdateCount = 0
+        let splitUpdates = harness.browserManager.splitUpdateChannel.stream
+            .updates(for: harness.windowState.id)
+            .sink { splitUpdateCount += 1 }
+        let compositorVersion = harness.windowState.compositorInvalidation
+            .compositorVersion
+
+        harness.browserManager.urlBarBundle.commandPalettePresentation.dismiss(
+            in: harness.windowState,
+            preserveDraft: false
+        )
+        await Task.yield()
+
+        XCTAssertFalse(
+            harness.windowState.presentationState.isCommandPaletteVisible
+        )
+        XCTAssertNil(
+            harness.browserManager.regularTabCollectionOwner.tab(
+                for: placeholder.id
+            )
+        )
+        XCTAssertEqual(
+            harness.browserManager.regularTabCollectionOwner
+                .tabs(in: harness.space.id).map(\.id),
+            [tab.id]
+        )
+        XCTAssertNil(
+            harness.browserManager.splitGroupStore.group(
+                containing: .regularTab(tab.id)
+            )
+        )
+        XCTAssertNil(harness.windowState.splitSelection)
+        XCTAssertEqual(harness.windowState.currentTabId, tab.id)
+        XCTAssertEqual(splitUpdateCount, 1)
+        XCTAssertGreaterThan(
+            harness.windowState.compositorInvalidation.compositorVersion,
+            compositorVersion
+        )
+        _ = splitUpdates
+    }
+
+    func testDismissingNewSplitPickerFromLauncherRestoresLauncher() async throws {
+        let harness = try makeHarness()
+        let pin = try XCTUnwrap(
+            harness.browserManager.shortcutPinStoreOwner.insert(
+                ShortcutPin(
+                    id: UUID(),
+                    role: .spacePinned,
+                    spaceId: harness.space.id,
+                    index: 0,
+                    launchURL: URL(string: "https://split-launcher.example")!,
+                    title: "Launcher"
+                ),
+                at: 0
+            )
+        )
+        let tab = try XCTUnwrap(
+            harness.browserManager.shortcutTabMaterializer.materialize(
+                pin,
+                in: harness.windowState.id,
+                currentSpaceId: harness.space.id
+            )
+        )
+        harness.windowState.currentTabId = tab.id
+        harness.windowState.currentShortcutPinId = pin.id
+        harness.windowState.currentShortcutPinRole = .spacePinned
+        harness.windowState.presentationState.isCommandPaletteVisible = true
+
+        guard case .browser(let context) = harness.browserManager
+            .shortcutTargetResolver.resolve(keyWindow: harness.appKitWindow)
+        else { return XCTFail("Expected browser shortcut context") }
+        let outcome = try XCTUnwrap(
+            harness.browserManager.shortcutActionRouter
+                .executeFromCommandPalette(.addSplitRight, in: context)
+        )
+        guard case .paletteReplaced = outcome else {
+            return XCTFail("Adding a split must open the split picker")
+        }
+        XCTAssertNotNil(
+            harness.browserManager.splitGroupStore.group(
+                containing: .shortcutPin(pin.id)
+            )
+        )
+
+        harness.browserManager.urlBarBundle.commandPalettePresentation.dismiss(
+            in: harness.windowState,
+            preserveDraft: false
+        )
+        await Task.yield()
+
+        XCTAssertNil(
+            harness.browserManager.splitGroupStore.group(
+                containing: .shortcutPin(pin.id)
+            )
+        )
+        XCTAssertEqual(
+            harness.browserManager.shortcutPinCollectionStateOwner
+                .spacePinnedPins(for: harness.space.id).map(\.id),
+            [pin.id]
+        )
+        XCTAssertNil(
+            harness.browserManager.emptySplitSession.placeholder(
+                in: harness.windowState.id
+            )
+        )
+        XCTAssertNil(harness.windowState.splitSelection)
+        XCTAssertEqual(harness.windowState.currentTabId, tab.id)
+        XCTAssertEqual(harness.windowState.currentShortcutPinId, pin.id)
     }
 
     func testArcDirectionalSplitCommandsInsertOnTheRequestedSide() throws {
@@ -782,8 +914,10 @@ final class BrowserShortcutCommandRoutingTests: XCTestCase {
         let registry = WindowRegistry()
         let browserManager = BrowserManager(
             windowRegistry: registry,
-            startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()
-            )
+            startupPersistence: BrowserManagerStartupPersistence(
+                database: try makeInMemoryStartupContainer()
+            ),
+            notificationService: FakeSumiNotificationService()
         )
         let profile = Profile(name: "Primary")
         let space = Space(name: "Work", profileId: profile.id)

@@ -77,6 +77,8 @@ struct BrowserKernelGraph {
         RegularTabShortcutConversionService
     let shortcutPinToRegularTab: ShortcutPinToRegularTabService
     let shortcutLiveTabRetirement: ShortcutLiveTabRetirementService
+    let emptySplitConvertedPlaceholderRetirement:
+        EmptySplitConvertedPlaceholderRetirementService
     let sidebarPinCommands: SidebarPinCommands
     let sidebarFolderCommands: SidebarFolderCommands
     let sidebarRegularTabLifecycleCommands: SidebarRegularTabLifecycleCommands
