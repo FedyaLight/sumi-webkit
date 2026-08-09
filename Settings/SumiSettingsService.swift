@@ -137,6 +137,11 @@ class SumiSettingsService {
         set { chrome.tabListNewTabButtonPosition = newValue }
     }
 
+    var showUnloadedTabAppearance: Bool {
+        get { chrome.showUnloadedTabAppearance }
+        set { chrome.showUnloadedTabAppearance = newValue }
+    }
+
     var showLinkStatusBar: Bool {
         get { chrome.showLinkStatusBar }
         set { chrome.showLinkStatusBar = newValue }
@@ -347,6 +352,7 @@ class SumiSettingsService {
             "settings.glanceEnabled": true,
             "settings.showNewTabButtonInTabList": true,
             "settings.tabListNewTabButtonPosition": TabListNewTabButtonPosition.bottom.rawValue,
+            "settings.showUnloadedTabAppearance": true,
             "settings.showLinkStatusBar": true,
             "settings.showBrowserToasts": true,
             "settings.framelessChrome": false,
@@ -386,6 +392,7 @@ class SumiSettingsService {
             glanceEnabledKey: "settings.glanceEnabled",
             showNewTabButtonInTabListKey: "settings.showNewTabButtonInTabList",
             tabListNewTabButtonPositionKey: "settings.tabListNewTabButtonPosition",
+            showUnloadedTabAppearanceKey: "settings.showUnloadedTabAppearance",
             showLinkStatusBarKey: "settings.showLinkStatusBar",
             showBrowserToastsKey: "settings.showBrowserToasts",
             framelessChromeKey: "settings.framelessChrome",

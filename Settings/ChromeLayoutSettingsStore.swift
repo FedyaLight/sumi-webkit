@@ -16,6 +16,7 @@ final class ChromeLayoutSettingsStore {
     private let glanceEnabledKey: String
     private let showNewTabButtonInTabListKey: String
     private let tabListNewTabButtonPositionKey: String
+    private let showUnloadedTabAppearanceKey: String
     private let showLinkStatusBarKey: String
     private let showBrowserToastsKey: String
     private let framelessChromeKey: String
@@ -74,6 +75,16 @@ final class ChromeLayoutSettingsStore {
         }
     }
 
+    var showUnloadedTabAppearance: Bool {
+        didSet {
+            Persisted.bool(
+                showUnloadedTabAppearance,
+                key: showUnloadedTabAppearanceKey,
+                defaults: userDefaults
+            )
+        }
+    }
+
     var showLinkStatusBar: Bool {
         didSet {
             Persisted.bool(showLinkStatusBar, key: showLinkStatusBarKey, defaults: userDefaults)
@@ -124,6 +135,7 @@ final class ChromeLayoutSettingsStore {
         glanceEnabledKey: String,
         showNewTabButtonInTabListKey: String,
         tabListNewTabButtonPositionKey: String,
+        showUnloadedTabAppearanceKey: String,
         showLinkStatusBarKey: String,
         showBrowserToastsKey: String,
         framelessChromeKey: String,
@@ -139,6 +151,7 @@ final class ChromeLayoutSettingsStore {
         self.glanceEnabledKey = glanceEnabledKey
         self.showNewTabButtonInTabListKey = showNewTabButtonInTabListKey
         self.tabListNewTabButtonPositionKey = tabListNewTabButtonPositionKey
+        self.showUnloadedTabAppearanceKey = showUnloadedTabAppearanceKey
         self.showLinkStatusBarKey = showLinkStatusBarKey
         self.showBrowserToastsKey = showBrowserToastsKey
         self.framelessChromeKey = framelessChromeKey
@@ -170,6 +183,9 @@ final class ChromeLayoutSettingsStore {
             rawValue: userDefaults.string(forKey: tabListNewTabButtonPositionKey)
                 ?? TabListNewTabButtonPosition.bottom.rawValue
         ) ?? .bottom
+        self.showUnloadedTabAppearance = userDefaults.bool(
+            forKey: showUnloadedTabAppearanceKey
+        )
         self.showLinkStatusBar = userDefaults.bool(forKey: showLinkStatusBarKey)
         self.showInAppNotifications = userDefaults.bool(forKey: showBrowserToastsKey)
         self.framelessChrome = userDefaults.bool(forKey: framelessChromeKey)

@@ -77,4 +77,19 @@ final class ThemeSettingsDefaultsTests: XCTestCase {
         XCTAssertFalse(recreatedSettings.sidebarMiniPlayerEnabled)
         XCTAssertFalse(harness.defaults.bool(forKey: "settings.sidebarMiniPlayerEnabled"))
     }
+
+    func testUnloadedTabAppearanceDefaultsEnabledAndPersists() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let settings = SumiSettingsService(userDefaults: harness.defaults)
+
+        XCTAssertTrue(settings.showUnloadedTabAppearance)
+
+        settings.showUnloadedTabAppearance = false
+        let recreatedSettings = SumiSettingsService(userDefaults: harness.defaults)
+
+        XCTAssertFalse(recreatedSettings.showUnloadedTabAppearance)
+        XCTAssertFalse(harness.defaults.bool(forKey: "settings.showUnloadedTabAppearance"))
+    }
 }

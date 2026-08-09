@@ -166,6 +166,8 @@ struct SplitGroupRowIconView: View {
     let foregroundColor: Color
     var desaturates = false
 
+    @Environment(\.sumiSettings) private var sumiSettings
+
     var body: some View {
         ZStack {
             switch icon {
@@ -195,8 +197,12 @@ struct SplitGroupRowIconView: View {
             width: SplitGroupSidebarVisualLayout.iconWidth,
             height: SplitGroupSidebarVisualLayout.iconWidth
         )
-        .saturation(desaturates ? 0 : 1)
-        .opacity(desaturates ? 0.8 : 1)
+        .saturation(showsUnloadedAppearance ? 0 : 1)
+        .opacity(showsUnloadedAppearance ? 0.5 : 1)
+    }
+
+    private var showsUnloadedAppearance: Bool {
+        sumiSettings.showUnloadedTabAppearance && desaturates
     }
 }
 

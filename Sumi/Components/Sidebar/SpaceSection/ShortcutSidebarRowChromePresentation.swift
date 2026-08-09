@@ -21,8 +21,13 @@ extension ShortcutSidebarRowChrome {
             }
         }
         .frame(width: SidebarRowLayout.faviconSize, height: SidebarRowLayout.faviconSize)
-        .saturation(runtimeAffordance.shouldDesaturateIcon ? 0.0 : 1.0)
-        .opacity(runtimeAffordance.shouldDesaturateIcon ? 0.8 : 1.0)
+        .saturation(showsUnloadedAppearance ? 0.0 : 1.0)
+        .opacity(showsUnloadedAppearance ? 0.5 : 1.0)
+    }
+
+    private var showsUnloadedAppearance: Bool {
+        sumiSettings.showUnloadedTabAppearance
+            && runtimeAffordance.shouldDesaturateIcon
     }
 
     var iconPresentation: SidebarShortcutIconPresentation {

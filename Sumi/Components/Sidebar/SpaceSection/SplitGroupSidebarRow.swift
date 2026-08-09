@@ -176,8 +176,8 @@ struct SplitGroupSidebarRow: View {
                 width: SidebarRowLayout.faviconSize,
                 height: SidebarRowLayout.faviconSize
             )
-            .saturation(isSavedGroupUnloaded ? 0 : 1)
-            .opacity(isSavedGroupUnloaded ? 0.8 : 1)
+            .saturation(showsSavedGroupUnloadedAppearance ? 0 : 1)
+            .opacity(showsSavedGroupUnloadedAppearance ? 0.5 : 1)
 
             Text(groupDisplayTitle)
                 .font(.system(size: 13, weight: .medium))
@@ -242,6 +242,10 @@ struct SplitGroupSidebarRow: View {
         case .essentialSidebar, .shortcutSidebar:
             return items.contains { $0.tab != nil } == false
         }
+    }
+
+    private var showsSavedGroupUnloadedAppearance: Bool {
+        sumiSettings.showUnloadedTabAppearance && isSavedGroupUnloaded
     }
 
     func activate(_ item: SplitGroupSidebarItem) {

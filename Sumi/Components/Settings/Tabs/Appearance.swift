@@ -106,6 +106,18 @@ struct SettingsAppearanceTab: View {
                     .settingsMenuPicker(width: 150)
                     .disabled(!settings.showNewTabButtonInTabList)
                 }
+
+                SettingsDivider()
+
+                SettingsRow(
+                    title: "Unloaded tabs",
+                    subtitle: "Dim and desaturate unloaded tabs in the sidebar.",
+                    systemImage: "circle.lefthalf.filled"
+                ) {
+                    Toggle("", isOn: $settings.showUnloadedTabAppearance)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
             }
         }
         .onAppear {

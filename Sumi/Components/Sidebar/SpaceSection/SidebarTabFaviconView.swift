@@ -67,7 +67,7 @@ struct SidebarUnloadedRegularTabFaviconIndicator<Icon: View>: View {
     var body: some View {
         icon()
             .saturation(0.0)
-            .opacity(0.8)
+            .opacity(0.5)
             .frame(width: size, height: size)
             .overlay(alignment: .leading) {
                 Circle()

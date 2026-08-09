@@ -551,6 +551,8 @@ struct EssentialSplitCompactVisual: View {
     var activeBackground: Color = Color.accentColor.opacity(0.12)
     var desaturatesIcons = false
 
+    @Environment(\.sumiSettings) private var sumiSettings
+
     var body: some View {
         GeometryReader { geometry in
             let splitGeometry = SplitTileGeometry.resolve(
@@ -567,8 +569,8 @@ struct EssentialSplitCompactVisual: View {
                         .position(x: rect.midX, y: rect.midY)
 
                     compactIcon(at: index)
-                        .saturation(desaturatesIcons ? 0 : 1)
-                        .opacity(desaturatesIcons ? 0.8 : 1)
+                        .saturation(showsUnloadedAppearance ? 0 : 1)
+                        .opacity(showsUnloadedAppearance ? 0.5 : 1)
                         .position(x: rect.midX, y: rect.midY)
                 }
 
@@ -593,6 +595,10 @@ struct EssentialSplitCompactVisual: View {
         .clipShape(
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         )
+    }
+
+    private var showsUnloadedAppearance: Bool {
+        sumiSettings.showUnloadedTabAppearance && desaturatesIcons
     }
 
     @ViewBuilder

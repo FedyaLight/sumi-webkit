@@ -86,10 +86,10 @@ struct PinnedTileVisual: View {
                         height: PinnedTileMetrics.faviconHeight
                     )
                     .saturation(
-                        presentationState.shouldDesaturateIcon ? 0.0 : 1.0
+                        showsUnloadedAppearance ? 0.0 : 1.0
                     )
                     .opacity(
-                        (presentationState.shouldDesaturateIcon ? 0.8 : 1.0)
+                        (showsUnloadedAppearance ? 0.5 : 1.0)
                             * faviconOpacity
                     )
                     Spacer()
@@ -122,6 +122,11 @@ struct PinnedTileVisual: View {
         .contentShape(
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         )
+    }
+
+    private var showsUnloadedAppearance: Bool {
+        sumiSettings.showUnloadedTabAppearance
+            && presentationState.shouldDesaturateIcon
     }
 
     private var backgroundColor: Color {

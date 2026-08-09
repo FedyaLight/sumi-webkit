@@ -159,7 +159,7 @@ struct SpaceTab: View {
                 if tab.isRenaming {
                     TextField("", text: $tab.editingName)
                         .font(SidebarThemeTokens.Typography.rowTitle)
-                        .foregroundStyle(tab.showsWebViewUnloadedIndicator ? tokens.secondaryText : textTab)
+                        .foregroundStyle(showsUnloadedAppearance ? tokens.secondaryText : textTab)
                         .textFieldStyle(.plain)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .onSubmit {
@@ -243,7 +243,7 @@ struct SpaceTab: View {
 
     @ViewBuilder
     private var favicon: some View {
-        if tab.showsWebViewUnloadedIndicator {
+        if showsUnloadedAppearance {
             SidebarUnloadedRegularTabFaviconIndicator(
                 size: SidebarRowLayout.faviconSize
             ) {
@@ -252,6 +252,11 @@ struct SpaceTab: View {
         } else {
             SidebarTabFaviconView(tab: tab, size: SidebarRowLayout.faviconSize)
         }
+    }
+
+    private var showsUnloadedAppearance: Bool {
+        settings.showUnloadedTabAppearance
+            && tab.showsWebViewUnloadedIndicator
     }
 
     @Environment(\.chromeThemeTokens) private var scopedChromeTokens

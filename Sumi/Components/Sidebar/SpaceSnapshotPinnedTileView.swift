@@ -40,8 +40,8 @@ struct SpaceSnapshotPinnedTileView: View {
                 foregroundColor: tokens.primaryText
             )
             .accessibilityHidden(true)
-            .saturation(item.presentationState.shouldDesaturateIcon ? 0.0 : 1.0)
-            .opacity(item.presentationState.shouldDesaturateIcon ? 0.8 : 1.0)
+            .saturation(showsUnloadedAppearance ? 0.0 : 1.0)
+            .opacity(showsUnloadedAppearance ? 0.5 : 1.0)
             .frame(width: tileSize.width, height: tileSize.height, alignment: .center)
 
             if item.showsSplitOutline {
@@ -87,6 +87,11 @@ struct SpaceSnapshotPinnedTileView: View {
             await item.icon.load(using: faviconImageStore)
         }
         .accessibilityIdentifier("essential-shortcut-snapshot-\(item.id.uuidString)")
+    }
+
+    private var showsUnloadedAppearance: Bool {
+        sumiSettings.showUnloadedTabAppearance
+            && item.presentationState.shouldDesaturateIcon
     }
 
     private var iconContent: PinnedTileFaviconSymbol.Content {
