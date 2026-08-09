@@ -28,7 +28,6 @@ final class WindowWebContentSplitHostLayoutView: NSView, WindowWebContentVisualH
     private let surfaceShadowView = BrowserContentViewportShadowView(frame: .zero)
     private let surfaceClipView: BrowserContentViewportClipView
     private let splitRootView = SplitRootView()
-    private let parkedHostView = NSView()
     private let visualHandoffOverlayView = VisualHandoffOverlayView()
     private var splitDropCaptureView: SplitDropCaptureView?
     private var paneLayout: PaneLayout = .single
@@ -74,8 +73,6 @@ final class WindowWebContentSplitHostLayoutView: NSView, WindowWebContentVisualH
         addSubview(surfaceClipView)
         surfaceClipView.addSubview(singlePaneView)
         surfaceClipView.addSubview(splitRootView)
-        parkedHostView.isHidden = true
-        surfaceClipView.addSubview(parkedHostView)
         visualHandoffOverlayView.isHidden = true
         surfaceClipView.addSubview(visualHandoffOverlayView)
         applyPanePresentation()
@@ -98,7 +95,6 @@ final class WindowWebContentSplitHostLayoutView: NSView, WindowWebContentVisualH
             singlePaneView.frame = .zero
             splitRootView.frame = contentBounds
         }
-        parkedHostView.frame = contentBounds
         visualHandoffOverlayView.frame = contentBounds
         if let splitDropCaptureView,
            splitDropCaptureView.superview === surfaceClipView {
@@ -187,15 +183,10 @@ final class WindowWebContentSplitHostLayoutView: NSView, WindowWebContentVisualH
 
     func removeVisualHandoffCover(_ host: SumiWebViewContainerView) {
         if host.superview === visualHandoffOverlayView {
-            parkHost(host)
+            host.detachFromDisplay()
         }
         visualHandoffOverlayView.isHidden = visualHandoffOverlayView.subviews.isEmpty
         updateSurfaceShadowVisibility()
-    }
-
-    func parkHost(_ host: SumiWebViewContainerView) {
-        guard host.superview !== parkedHostView else { return }
-        parkedHostView.addSubview(host)
     }
 
     override var acceptsFirstResponder: Bool { false }
@@ -440,6 +431,7 @@ final class PaneContainerView: NSView {
             addSubview(controls, positioned: .above, relativeTo: nil)
         }
         controls.setVisible(isPointerInside, animated: false)
+        updateTrackingAreas()
         needsLayout = true
     }
 
@@ -447,6 +439,7 @@ final class PaneContainerView: NSView {
         splitControlsView?.removeFromSuperview()
         splitControlsView = nil
         isPointerInside = false
+        updateTrackingAreas()
     }
 
     func removeHostedSubviews(
@@ -471,7 +464,9 @@ final class PaneContainerView: NSView {
         super.updateTrackingAreas()
         if let paneTrackingArea {
             removeTrackingArea(paneTrackingArea)
+            self.paneTrackingArea = nil
         }
+        guard splitControlsView != nil else { return }
         let area = NSTrackingArea(
             rect: bounds,
             options: [.activeInActiveApp, .mouseEnteredAndExited, .inVisibleRect],

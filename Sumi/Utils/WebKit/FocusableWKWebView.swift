@@ -22,14 +22,13 @@ final class FocusableWKWebView: WKWebView {
     private lazy var webPageMenuPresenter = SumiWebPageMenuPresenter()
     private var transientChromeInteractionShieldOwner: WebKitTransientChromeInteractionShieldOwner?
     private var glanceCursorStabilizationOwner: WebKitGlanceCursorStabilizationOwner?
+    weak var pageScrollbarOverlay: WebContentOverlayScrollChrome?
 
     weak var owningTab: Tab?
     let gestures = WebViewGestureState()
     let hoveredLink = WebViewHoveredLinkState()
     let contextMenu = WebViewContextMenuState()
     let popupUserActivation = SumiPopupUserActivationTracker()
-    /// AppKit overlay scroll chrome owned by `SumiWebViewContainerView`.
-    weak var overlayScrollChrome: WebContentOverlayScrollChrome?
     private var findInPageCompletionHandler: ((FindResult) -> Void)?
     private var primaryMouseDownReceipt: WebViewGestureReceipt?
     var isTransientChromeMouseTrackingSuppressionExempt = false {
@@ -40,7 +39,6 @@ final class FocusableWKWebView: WKWebView {
             } else {
                 WebContentMouseTrackingShield.applyCurrentShieldState(to: self)
             }
-            webKitMouseTrackingLoadSheddingOwner?.refresh()
         }
     }
     var keepsWebKitMouseTrackingDuringLoad = false {
@@ -100,9 +98,6 @@ final class FocusableWKWebView: WKWebView {
             },
             keepsMouseTrackingDuringLoad: { [weak self] in
                 self?.keepsWebKitMouseTrackingDuringLoad == true
-            },
-            isTransientChromeMouseTrackingSuppressed: { [weak self] in
-                self?.isTransientChromeMouseTrackingSuppressed == true
             }
         )
         webKitMouseTrackingLoadSheddingOwner = owner
@@ -128,8 +123,10 @@ final class FocusableWKWebView: WKWebView {
             evaluateJavaScript: { [weak self] script in
                 self?.evaluateJavaScript(script, completionHandler: nil)
             },
-            refreshMouseTracking: { [weak self] in
-                self?.webKitMouseTrackingLoadSheddingOwner?.refresh()
+            refreshPointerPresentation: { [weak self] in
+                guard let self else { return }
+                self.updateTrackingAreas()
+                self.window?.invalidateCursorRects(for: self)
             },
             clearHoveredLink: { [weak self] in
                 self?.hoveredLink.update(nil)
@@ -305,14 +302,6 @@ final class FocusableWKWebView: WKWebView {
     override func keyDown(with event: NSEvent) {
         recordUserGesture(event, kind: .keyDown)
         super.keyDown(with: event)
-        if Self.isPageScrollKey(event) {
-            overlayScrollChrome?.handleScrollWheel()
-        }
-    }
-
-    override func scrollWheel(with event: NSEvent) {
-        super.scrollWheel(with: event)
-        overlayScrollChrome?.handleScrollWheel()
     }
 
     @discardableResult
@@ -357,15 +346,6 @@ final class FocusableWKWebView: WKWebView {
         popupUserActivation.spendCurrentActivation()
     }
 
-    private static func isPageScrollKey(_ event: NSEvent) -> Bool {
-        switch event.keyCode {
-        case 125, 126, 115, 119, 116, 121, 49: // down/up/home/end/pageUp/pageDown/space
-            return true
-        default:
-            return false
-        }
-    }
-
     override func rightMouseDown(with event: NSEvent) {
         owningTab?.linkPresentationCommands.activateSource(of: self)
         if RuntimeDiagnostics.isDeveloperInspectionEnabled {
@@ -382,6 +362,10 @@ final class FocusableWKWebView: WKWebView {
     override func didCloseMenu(_ menu: NSMenu, with event: NSEvent?) {
         super.didCloseMenu(menu, with: event)
         webPageMenuPresenter.menuDidClose(menu)
+    }
+
+    override var isInFullScreenMode: Bool {
+        sumiIsInFullscreenElementPresentation
     }
 
     override func mouseUp(with event: NSEvent) {

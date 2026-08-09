@@ -33,13 +33,6 @@ final class WindowWebContentHostAttachmentService {
         hostRegistry.setHost(host, for: slot)
     }
 
-    func parkedHost(
-        for tabID: UUID,
-        webView: WKWebView
-    ) -> SumiWebViewContainerView? {
-        hostRegistry.parkedHost(for: tabID, webView: webView)
-    }
-
     func moveDisplayedHost(
         _ host: SumiWebViewContainerView,
         to slot: WindowWebContentPaneSlot
@@ -194,7 +187,7 @@ final class WindowWebContentHostAttachmentService {
         } else {
             hostRegistry.removeParkedProtectedHost(for: host.webView)
             hostRegistry.parkHost(host)
-            containerView.parkHost(host)
+            host.detachFromDisplay()
         }
     }
 

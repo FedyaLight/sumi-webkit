@@ -42,6 +42,7 @@ _Avoid_: Tab-owned WebView, global page view
 
 **Media Fullscreen Session**:
 A native system presentation initiated by media in one page. It remains bound to that page, but does not own the browser's current tab or Space selection: changing that selection does not end the presentation, and ending the presentation does not roll the selection back. The browser requests its end only when the initiating page itself is explicitly destroyed.
+The window host may read WebKit's current fullscreen placeholder as the displayed AppKit view, but never creates, replaces, or commands that placeholder.
 _Avoid_: Fullscreen-protected tab, browser fullscreen overlay
 
 **Sidebar Mini Player**:

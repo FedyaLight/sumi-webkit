@@ -11,7 +11,7 @@ final class WebKitTransientChromeInteractionShieldOwnerTests: XCTestCase {
         let owner = makeOwner(
             currentClientPoint: { CGPoint(x: 12, y: 34) },
             evaluateJavaScript: { scripts.append($0) },
-            refreshMouseTracking: { refreshCount += 1 },
+            refreshPointerPresentation: { refreshCount += 1 },
             clearHoveredLink: { clearHoveredLinkCount += 1 }
         )
 
@@ -34,7 +34,7 @@ final class WebKitTransientChromeInteractionShieldOwnerTests: XCTestCase {
         let owner = makeOwner(
             isSuppressionExempt: { true },
             evaluateJavaScript: { scripts.append($0) },
-            refreshMouseTracking: { refreshCount += 1 },
+            refreshPointerPresentation: { refreshCount += 1 },
             clearHoveredLink: { clearHoveredLinkCount += 1 }
         )
 
@@ -54,7 +54,7 @@ final class WebKitTransientChromeInteractionShieldOwnerTests: XCTestCase {
         var clearHoveredLinkCount = 0
         let owner = makeOwner(
             evaluateJavaScript: { scripts.append($0) },
-            refreshMouseTracking: { refreshCount += 1 },
+            refreshPointerPresentation: { refreshCount += 1 },
             clearHoveredLink: { clearHoveredLinkCount += 1 }
         )
 
@@ -76,14 +76,14 @@ final class WebKitTransientChromeInteractionShieldOwnerTests: XCTestCase {
         isSuppressionExempt: @escaping @MainActor () -> Bool = { false },
         currentClientPoint: @escaping @MainActor () -> CGPoint? = { nil },
         evaluateJavaScript: @escaping @MainActor (String) -> Void = { _ in },
-        refreshMouseTracking: @escaping @MainActor () -> Void = {},
+        refreshPointerPresentation: @escaping @MainActor () -> Void = {},
         clearHoveredLink: @escaping @MainActor () -> Void = {}
     ) -> WebKitTransientChromeInteractionShieldOwner {
         WebKitTransientChromeInteractionShieldOwner(
             isSuppressionExempt: isSuppressionExempt,
             currentClientPoint: currentClientPoint,
             evaluateJavaScript: evaluateJavaScript,
-            refreshMouseTracking: refreshMouseTracking,
+            refreshPointerPresentation: refreshPointerPresentation,
             clearHoveredLink: clearHoveredLink
         )
     }

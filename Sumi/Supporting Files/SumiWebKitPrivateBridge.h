@@ -1,4 +1,5 @@
 #import <Foundation/Foundation.h>
+#import <AppKit/AppKit.h>
 #import <WebKit/WebKit.h>
 
 NS_ASSUME_NONNULL_BEGIN
@@ -79,6 +80,19 @@ static inline BOOL SumiSetVideoFullscreenRequiresElementFullscreen(WKPreferences
     if (![preferences respondsToSelector:setter])
         return NO;
     return SumiSetWKPreferenceBool(preferences, @"videoFullscreenRequiresElementFullscreen", enabled);
+}
+
+static inline NSView * _Nullable SumiWKWebViewFullScreenPlaceholderView(WKWebView *webView)
+{
+    SEL getter = NSSelectorFromString(@"_fullScreenPlaceholderView");
+    if (![webView respondsToSelector:getter])
+        return nil;
+
+    @try {
+        return [webView valueForKey:NSStringFromSelector(getter)];
+    } @catch (NSException *exception) {
+        return nil;
+    }
 }
 
 @interface WKWebView (SumiWKNowPlayingPrivate)

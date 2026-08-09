@@ -12,7 +12,7 @@ final class SumiNormalTabUserScripts {
     }
 
     let faviconScripts = SumiFaviconUserScripts()
-    private let transientChromeInteractionShieldUserScript = SumiTransientChromeInteractionShieldUserScript()
+    private let safariCompatibilityUserScript = SumiSafariCompatibilityUserScript()
     private var contentBlockingUserScripts: [SumiPageScript]
     private var staticManagedUserScripts: [SumiPageScript]
     private var navigationUserScripts: [SumiPageScript]
@@ -60,7 +60,7 @@ final class SumiNormalTabUserScripts {
             return cachedStaticUserScripts
         }
 
-        let scripts = [transientChromeInteractionShieldUserScript]
+        let scripts = [safariCompatibilityUserScript]
             + contentBlockingUserScripts
             + faviconScripts.userScripts
             + staticManagedUserScripts

@@ -1,5 +1,4 @@
 import Foundation
-import WebKit
 
 struct SumiTransientChromeInteractionShieldRect: Equatable {
     var x: CGFloat
@@ -10,15 +9,9 @@ struct SumiTransientChromeInteractionShieldRect: Equatable {
 }
 
 @MainActor
-final class SumiTransientChromeInteractionShieldUserScript: NSObject, SumiPageScript {
+enum SumiTransientChromeInteractionShieldUserScript {
     static let apiName = "__sumiTransientChromeInteractionShield"
     static let sourceMarker = "__sumiTransientChromeInteractionShieldInstalled"
-
-    let source: String = SumiTransientChromeInteractionShieldUserScript.makeSource()
-    let injectionTime: WKUserScriptInjectionTime = .atDocumentStart
-    let forMainFrameOnly = true
-    let requiresRunInPageContentWorld = true
-    let messageNames: [String] = []
 
     static func makeSetActiveSource(
         _ isActive: Bool,
@@ -312,8 +305,4 @@ final class SumiTransientChromeInteractionShieldUserScript: NSObject, SumiPageSc
         """
     }
 
-    func userContentController(
-        _ userContentController: WKUserContentController,
-        didReceive message: WKScriptMessage
-    ) {}
 }

@@ -27,12 +27,15 @@ is_allowed() {
     Sumi/Favicons/V2/SumiFaviconUserScript.swift:*MutationObserver*) return 0 ;;
     Sumi/Favicons/V2/SumiFaviconUserScript.swift:*setTimeout*) return 0 ;;
     Sumi/Favicons/V2/SumiFaviconUserScript.swift:*JSON.stringify*) return 0 ;;
+    # Root scroll metrics are coalesced to one changed payload per animation frame.
+    Sumi/UserScripts/SumiPageScrollbarOverlayUserScript.swift:*postMessage*) return 0 ;;
     Sumi/Models/Tab/Navigation/SumiNavigationHelpers.swift:*evaluateJavaScript*) return 0 ;;
     # Exact, demand-driven WebKit bridges. None poll or run while idle.
     Sumi/Utils/WebKit/FocusableWKWebView.swift:*evaluateJavaScript*) return 0 ;;
     Sumi/Utils/WebKit/SumiElementZapperSession.swift:*evaluateJavaScript*) return 0 ;;
     Sumi/Utils/WebKit/SumiReaderModeService.swift:*evaluateJavaScript*) return 0 ;;
     Sumi/Utils/WebKit/WebKitTransientChromeInteractionShieldOwner.swift:*evaluateJavaScript*) return 0 ;;
+    # Thumb dragging is an explicit interaction; ordinary page scrolling never evaluates JS.
     Sumi/Utils/WebKit/WebContentOverlayScrollChrome.swift:*evaluateJavaScript*) return 0 ;;
     Sumi/Boosts/SumiBoostsModule.swift:*evaluateJavaScript*) return 0 ;;
     # Closing a dedicated normal-tab controller may remove all of its scripts.

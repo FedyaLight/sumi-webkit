@@ -72,7 +72,7 @@ final class WindowWebContentHostResolver {
             return displayedHost
         }
 
-        if let parkedHost = hostAttachments.parkedHost(
+        if let parkedHost = hostRegistry.parkedHost(
             for: tab.id,
             webView: webView
         ) {

@@ -1,10 +1,8 @@
 import AppKit
-import ObjectiveC.runtime
 import WebKit
 
 @MainActor
 final class WebKitMouseTrackingLoadSheddingOwner {
-    private static let isEnabled = true
     private static let webKitMouseTrackingObserverClassName = "WKMouseTrackingObserver"
 
     private weak var webView: WKWebView?
@@ -12,7 +10,6 @@ final class WebKitMouseTrackingLoadSheddingOwner {
     private let removeTrackingArea: (NSTrackingArea) -> Void
     private let containsTrackingArea: (NSTrackingArea) -> Bool
     private let keepsMouseTrackingDuringLoad: () -> Bool
-    private let isTransientChromeMouseTrackingSuppressed: () -> Bool
     private var observer: NSKeyValueObservation?
     private var trackingArea: NSTrackingArea?
     private var isLoading = false
@@ -22,15 +19,13 @@ final class WebKitMouseTrackingLoadSheddingOwner {
         addTrackingArea: @escaping (NSTrackingArea) -> Void,
         removeTrackingArea: @escaping (NSTrackingArea) -> Void,
         containsTrackingArea: @escaping (NSTrackingArea) -> Bool,
-        keepsMouseTrackingDuringLoad: @escaping () -> Bool,
-        isTransientChromeMouseTrackingSuppressed: @escaping () -> Bool
+        keepsMouseTrackingDuringLoad: @escaping () -> Bool
     ) {
         self.webView = webView
         self.addTrackingArea = addTrackingArea
         self.removeTrackingArea = removeTrackingArea
         self.containsTrackingArea = containsTrackingArea
         self.keepsMouseTrackingDuringLoad = keepsMouseTrackingDuringLoad
-        self.isTransientChromeMouseTrackingSuppressed = isTransientChromeMouseTrackingSuppressed
     }
 
     deinit {
@@ -38,21 +33,16 @@ final class WebKitMouseTrackingLoadSheddingOwner {
     }
 
     static func canHandle(_ trackingArea: NSTrackingArea) -> Bool {
-        guard isEnabled,
-              trackingArea.options.contains(.mouseMoved),
-              let owner = trackingArea.owner
-        else { return false }
+        canHandle(ownerClassName: trackingArea.owner?.className)
+    }
 
-        let ownerClassName = NSStringFromClass(object_getClass(owner) ?? Swift.type(of: owner))
-        return ownerClassName == webKitMouseTrackingObserverClassName
-            || ownerClassName.hasSuffix(".\(webKitMouseTrackingObserverClassName)")
-            || ownerClassName.contains(webKitMouseTrackingObserverClassName)
+    static func canHandle(ownerClassName: String?) -> Bool {
+        ownerClassName == webKitMouseTrackingObserverClassName
     }
 
     func installTrackingArea(_ trackingArea: NSTrackingArea) {
         installObserverIfNeeded(for: trackingArea)
         updateTrackingArea(trackingArea)
-        scheduleRefresh(for: trackingArea)
     }
 
     func refresh() {
@@ -68,9 +58,8 @@ final class WebKitMouseTrackingLoadSheddingOwner {
         observer?.invalidate()
         self.trackingArea = trackingArea
         let trackingAreaID = ObjectIdentifier(trackingArea)
-        // WKWebView delivers KVO for its own properties on the main thread, so
-        // the tracking area can be updated synchronously without allocating a
-        // fresh Task on every loading transition.
+        // WebKit installs this tracking area from inside WKWebView.init. Do not
+        // read WKWebView properties until WebKit reports a loading transition.
         observer = webView?.observe(\.isLoading, options: [.new]) { [weak self, trackingAreaID] _, change in
             guard let isLoading = change.newValue else { return }
             MainActor.assumeIsolated {
@@ -81,17 +70,6 @@ final class WebKitMouseTrackingLoadSheddingOwner {
                 self.isLoading = isLoading
                 self.updateTrackingArea(trackingArea)
             }
-        }
-    }
-
-    private func scheduleRefresh(for trackingArea: NSTrackingArea) {
-        let trackingAreaID = ObjectIdentifier(trackingArea)
-        Task { @MainActor [weak self, trackingAreaID] in
-            guard let self,
-                  let trackingArea = self.trackingArea,
-                  ObjectIdentifier(trackingArea) == trackingAreaID
-            else { return }
-            self.updateTrackingArea(trackingArea)
         }
     }
 
@@ -106,7 +84,6 @@ final class WebKitMouseTrackingLoadSheddingOwner {
     }
 
     private var shouldSuspendTracking: Bool {
-        (isLoading && !keepsMouseTrackingDuringLoad())
-            || isTransientChromeMouseTrackingSuppressed()
+        isLoading && !keepsMouseTrackingDuringLoad()
     }
 }

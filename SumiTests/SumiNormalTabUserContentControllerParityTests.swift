@@ -55,6 +55,54 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
         XCTAssertFalse(controller.userScripts.contains { $0.source.contains("_duckduckgoloader_") })
     }
 
+    func testFactoryInstallsSafariCompatibilityInPageWorldAtDocumentStart() throws {
+        let provider = SumiNormalTabUserScripts()
+        let pageScript = try XCTUnwrap(provider.userScripts.first {
+            $0.source.contains(SumiSafariCompatibilityUserScript.sourceMarker)
+        })
+        let controller = SumiNormalTabUserContentControllerFactory.makeController(
+            scriptsProvider: provider
+        )
+
+        let script = try XCTUnwrap(controller.userScripts.first {
+            $0.source.contains(SumiSafariCompatibilityUserScript.sourceMarker)
+        })
+
+        XCTAssertEqual(
+            controller.userScripts.filter {
+                $0.source.contains(SumiSafariCompatibilityUserScript.sourceMarker)
+            }.count,
+            1
+        )
+        XCTAssertEqual(script.injectionTime, .atDocumentStart)
+        XCTAssertFalse(script.isForMainFrameOnly)
+        XCTAssertTrue(pageScript.requiresRunInPageContentWorld)
+        XCTAssertTrue(script.source.contains("window.outerHeight = window.innerHeight"))
+        XCTAssertTrue(script.source.contains("window.outerWidth = window.innerWidth"))
+    }
+
+    func testTransientChromeShieldIsInstalledOnlyOnDemand() {
+        let provider = SumiNormalTabUserScripts()
+        XCTAssertFalse(provider.staticUserScripts.contains {
+            $0.source.contains(SumiTransientChromeInteractionShieldUserScript.sourceMarker)
+        })
+
+        let activation = SumiTransientChromeInteractionShieldUserScript.makeSetActiveSource(
+            true,
+            clientPoint: CGPoint(x: 10, y: 20),
+            rects: [
+                SumiTransientChromeInteractionShieldRect(
+                    x: 0,
+                    y: 0,
+                    width: 100,
+                    height: 40
+                ),
+            ]
+        )
+        XCTAssertTrue(activation.contains(SumiTransientChromeInteractionShieldUserScript.sourceMarker))
+        XCTAssertTrue(activation.contains("setActive(true"))
+    }
+
     func testReplacingManagedScriptsUpdatesVisibleInstalledSetAndKeepsProviderBoundary() async throws {
         let provider = SumiNormalTabUserScripts(
             contentBlockingUserScripts: [

@@ -5,7 +5,7 @@ final class WebKitTransientChromeInteractionShieldOwner {
     private let isSuppressionExempt: @MainActor () -> Bool
     private let currentClientPoint: @MainActor () -> CGPoint?
     private let evaluateJavaScript: @MainActor (String) -> Void
-    private let refreshMouseTracking: @MainActor () -> Void
+    private let refreshPointerPresentation: @MainActor () -> Void
     private let clearHoveredLink: @MainActor () -> Void
     private var isInteractionShieldApplied = false
     private var interactionShieldRects: [SumiTransientChromeInteractionShieldRect] = []
@@ -16,13 +16,13 @@ final class WebKitTransientChromeInteractionShieldOwner {
         isSuppressionExempt: @escaping @MainActor () -> Bool,
         currentClientPoint: @escaping @MainActor () -> CGPoint?,
         evaluateJavaScript: @escaping @MainActor (String) -> Void,
-        refreshMouseTracking: @escaping @MainActor () -> Void,
+        refreshPointerPresentation: @escaping @MainActor () -> Void,
         clearHoveredLink: @escaping @MainActor () -> Void
     ) {
         self.isSuppressionExempt = isSuppressionExempt
         self.currentClientPoint = currentClientPoint
         self.evaluateJavaScript = evaluateJavaScript
-        self.refreshMouseTracking = refreshMouseTracking
+        self.refreshPointerPresentation = refreshPointerPresentation
         self.clearHoveredLink = clearHoveredLink
     }
 
@@ -39,7 +39,7 @@ final class WebKitTransientChromeInteractionShieldOwner {
         guard isMouseTrackingSuppressed != shouldSuppress else { return }
 
         isMouseTrackingSuppressed = shouldSuppress
-        refreshMouseTracking()
+        refreshPointerPresentation()
 
         if shouldSuppress {
             clearHoveredLink()

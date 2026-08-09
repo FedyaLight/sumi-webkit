@@ -1,41 +1,37 @@
-//
-//  WebContentOverlayScrollChrome.swift
-//  Sumi
-//
-
 import AppKit
-import WebKit
 import SumiWebRuntime
+import WebKit
 
-/// AppKit overlay scroll indicator for WKWebView page scroll.
-/// Hides WebKit's native scroller via a tiny CSS user script; geometry is
-/// read from the page with `evaluateJavaScript` (macOS WKWebView has no scrollView).
+struct WebContentOverlayScrollMetrics: Equatable {
+    let viewportHeight: CGFloat
+    let contentHeight: CGFloat
+    let contentOffset: CGFloat
+}
+
+/// AppKit chrome drawn above WKWebView. Page script messages supply geometry;
+/// scrolling and ordinary input remain owned by WebKit.
 @MainActor
 final class WebContentOverlayScrollChrome {
     private weak var hostView: NSView?
     private weak var webView: WKWebView?
     private let indicatorView = WebContentOverlayScrollIndicatorView(frame: .zero)
     private let visibility = WebContentOverlayScrollIndicatorVisibilityController()
-    private var lastState: WebContentOverlayScrollIndicatorState?
-    private var geometryRequestGeneration = 0
-    private var isGeometryRequestInFlight = false
     private var isInstalled = false
 
-    /// Exposed so the host can preserve this subview across content reattachment.
     var indicatorHostingView: NSView { indicatorView }
 
     func install(in hostView: NSView, webView: WKWebView) {
         self.hostView = hostView
         self.webView = webView
 
+        indicatorView.identifier = NSUserInterfaceItemIdentifier("SumiPageScrollbarOverlay")
         indicatorView.indicatorColor = OverlayScrollIndicatorStyle.thumbColor
         indicatorView.isHidden = true
-        indicatorView.autoresizingMask = []
-        indicatorView.onInteractionBegan = { [weak self] in
-            self?.visibility.hold(in: hostView.window)
+        indicatorView.onInteractionBegan = { [weak self, weak hostView] in
+            self?.visibility.hold(in: hostView?.window)
         }
-        indicatorView.onInteractionEnded = { [weak self] in
-            self?.visibility.reveal(in: hostView.window)
+        indicatorView.onInteractionEnded = { [weak self, weak hostView] in
+            self?.visibility.reveal(in: hostView?.window)
         }
         indicatorView.onScrollOffsetChanged = { [weak self] offset in
             self?.applyScrollOffset(offset)
@@ -51,7 +47,6 @@ final class WebContentOverlayScrollChrome {
 
     func uninstall() {
         isInstalled = false
-        lastState = nil
         visibility.attach(nil)
         indicatorView.clearInteractionState()
         indicatorView.removeFromSuperview()
@@ -59,20 +54,31 @@ final class WebContentOverlayScrollChrome {
         webView = nil
     }
 
-    /// Keep the indicator above the web content after host reattachment.
     func ensureIndicatorAboveContent() {
         guard isInstalled,
               let hostView,
               indicatorView.superview === hostView
-        else {
+        else { return }
+
+        guard webView?.sumiIsInFullscreenElementPresentation != true else {
+            hideImmediately()
             return
         }
-        hostView.addSubview(indicatorView, positioned: .above, relativeTo: nil)
+        let contentView = webView?.sumiDisplayedContentView
+        if contentView?.superview === hostView {
+            hostView.addSubview(indicatorView, positioned: .above, relativeTo: contentView)
+        } else {
+            hostView.addSubview(indicatorView, positioned: .above, relativeTo: nil)
+        }
         layoutIndicator()
     }
 
     func layoutIndicator() {
         guard let hostView else { return }
+        guard webView?.sumiIsInFullscreenElementPresentation != true else {
+            hideImmediately()
+            return
+        }
         let bounds = hostView.bounds
         indicatorView.frame = CGRect(
             x: bounds.maxX
@@ -84,12 +90,11 @@ final class WebContentOverlayScrollChrome {
         )
     }
 
-    func handleScrollWheel() {
-        refreshGeometry(revealIfChanged: true)
-    }
-
-    func refreshGeometry(revealIfChanged: Bool) {
+    func update(_ metrics: WebContentOverlayScrollMetrics, reveal: Bool) {
         guard isInstalled,
+              let hostView,
+              hostView.window != nil,
+              !hostView.isHiddenOrHasHiddenAncestor,
               let webView,
               webView.window != nil,
               !webView.sumiIsInFullscreenElementPresentation
@@ -98,52 +103,11 @@ final class WebContentOverlayScrollChrome {
             return
         }
 
-        geometryRequestGeneration += 1
-        let generation = geometryRequestGeneration
-        guard !isGeometryRequestInFlight else { return }
-        isGeometryRequestInFlight = true
-
-        webView.evaluateJavaScript(Self.geometryScript) { [weak self] result, _ in
-            DispatchQueue.main.async {
-                guard let self else { return }
-                self.isGeometryRequestInFlight = false
-                guard generation == self.geometryRequestGeneration else {
-                    self.refreshGeometry(revealIfChanged: revealIfChanged)
-                    return
-                }
-                self.applyGeometryResult(result, revealIfChanged: revealIfChanged)
-            }
-        }
-    }
-
-    func hideImmediately() {
-        lastState = nil
-        visibility.hideImmediately()
-    }
-
-    private func applyGeometryResult(_ result: Any?, revealIfChanged: Bool) {
-        guard let dictionary = result as? [String: Any],
-              let viewportHeight = cgFloat(dictionary["clientHeight"]),
-              let contentHeight = cgFloat(dictionary["scrollHeight"]),
-              let contentOffset = cgFloat(dictionary["scrollY"])
-        else {
-            hideImmediately()
-            return
-        }
-
-        let maximumContentOffset = max(contentHeight - viewportHeight, 0)
-        let clampedOffset = min(max(contentOffset, 0), maximumContentOffset)
-        let state = WebContentOverlayScrollIndicatorState(
-            viewportHeight: viewportHeight,
-            contentHeight: contentHeight,
-            contentOffset: clampedOffset
-        )
-        let shouldReveal = revealIfChanged && lastState != state
-        lastState = state
-
-        guard let metrics = SidebarPassiveScrollIndicatorLayout.metrics(
-            viewportHeight: viewportHeight,
-            contentHeight: contentHeight,
+        let maximumOffset = max(metrics.contentHeight - metrics.viewportHeight, 0)
+        let clampedOffset = min(max(metrics.contentOffset, 0), maximumOffset)
+        guard let thumbMetrics = SidebarPassiveScrollIndicatorLayout.metrics(
+            viewportHeight: metrics.viewportHeight,
+            contentHeight: metrics.contentHeight,
             contentOffset: clampedOffset
         ) else {
             hideImmediately()
@@ -151,60 +115,26 @@ final class WebContentOverlayScrollChrome {
         }
 
         layoutIndicator()
-        indicatorView.updateThumb(metrics: metrics)
-        indicatorView.scrollableContentHeight = contentHeight
-        indicatorView.viewportHeight = viewportHeight
-
-        if shouldReveal {
+        indicatorView.updateThumb(metrics: thumbMetrics)
+        indicatorView.scrollableContentHeight = metrics.contentHeight
+        indicatorView.viewportHeight = metrics.viewportHeight
+        if reveal {
             visibility.reveal(in: indicatorView.window)
         }
     }
 
+    func hideImmediately() {
+        visibility.hideImmediately()
+    }
+
     private func applyScrollOffset(_ contentOffset: CGFloat) {
         guard let webView else { return }
-        let y = max(contentOffset, 0)
-        webView.evaluateJavaScript("window.scrollTo(0, \(y));", completionHandler: nil)
-        refreshGeometry(revealIfChanged: false)
+        let offset = Double(max(contentOffset, 0))
+        webView.evaluateJavaScript(
+            "window.scrollTo(0, \(offset));",
+            completionHandler: nil
+        )
     }
-
-    private func cgFloat(_ value: Any?) -> CGFloat? {
-        if let number = value as? NSNumber {
-            return CGFloat(truncating: number)
-        }
-        if let double = value as? Double {
-            return CGFloat(double)
-        }
-        if let int = value as? Int {
-            return CGFloat(int)
-        }
-        return nil
-    }
-
-    private static let geometryScript = """
-    (function() {
-        var root = document.documentElement;
-        var body = document.body;
-        var scrollY = window.scrollY || root.scrollTop || (body && body.scrollTop) || 0;
-        var scrollHeight = Math.max(
-            root ? root.scrollHeight : 0,
-            body ? body.scrollHeight : 0
-        );
-        var clientHeight = root
-            ? root.clientHeight
-            : (window.innerHeight || 0);
-        return {
-            scrollY: scrollY,
-            scrollHeight: scrollHeight,
-            clientHeight: clientHeight
-        };
-    })();
-    """
-}
-
-private struct WebContentOverlayScrollIndicatorState: Equatable {
-    let viewportHeight: CGFloat
-    let contentHeight: CGFloat
-    let contentOffset: CGFloat
 }
 
 private final class WebContentOverlayScrollIndicatorView: NSView {
@@ -258,26 +188,24 @@ private final class WebContentOverlayScrollIndicatorView: NSView {
     private func updateThumbLayout(animated: Bool) {
         guard let metrics = currentMetrics else { return }
 
-        let targetWidth = currentThumbWidth
-        let targetOpacity = OverlayScrollIndicatorStyle.thumbOpacity
-        let targetFrame = SidebarPassiveScrollIndicatorLayout.thumbFrame(
+        let width = currentThumbWidth
+        let frame = SidebarPassiveScrollIndicatorLayout.thumbFrame(
             in: bounds,
             metrics: metrics,
-            width: targetWidth
+            width: width
         )
-
         if animated {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = OverlayScrollIndicatorStyle.thumbLayoutAnimationDuration
                 context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                thumbView.animator().frame = targetFrame
-                thumbView.animator().alphaValue = targetOpacity
-                thumbView.layer?.cornerRadius = targetWidth / 2
+                thumbView.animator().frame = frame
+                thumbView.animator().alphaValue = OverlayScrollIndicatorStyle.thumbOpacity
+                thumbView.layer?.cornerRadius = width / 2
             }
         } else {
-            thumbView.frame = targetFrame
-            thumbView.alphaValue = targetOpacity
-            thumbView.layer?.cornerRadius = targetWidth / 2
+            thumbView.frame = frame
+            thumbView.alphaValue = OverlayScrollIndicatorStyle.thumbOpacity
+            thumbView.layer?.cornerRadius = width / 2
         }
     }
 
@@ -286,13 +214,13 @@ private final class WebContentOverlayScrollIndicatorView: NSView {
         if let trackingArea {
             removeTrackingArea(trackingArea)
         }
-        let trackingArea = NSTrackingArea(
+        let area = NSTrackingArea(
             rect: bounds,
             options: [.activeInKeyWindow, .inVisibleRect, .mouseEnteredAndExited, .mouseMoved],
             owner: self
         )
-        self.trackingArea = trackingArea
-        addTrackingArea(trackingArea)
+        trackingArea = area
+        addTrackingArea(area)
     }
 
     override func mouseEntered(with event: NSEvent) {
@@ -323,8 +251,7 @@ private final class WebContentOverlayScrollIndicatorView: NSView {
 
     override func mouseDragged(with event: NSEvent) {
         guard isThumbDragging else { return }
-        let point = convert(event.locationInWindow, from: nil)
-        dragThumb(to: point)
+        dragThumb(to: convert(event.locationInWindow, from: nil))
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -338,8 +265,7 @@ private final class WebContentOverlayScrollIndicatorView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard !isHidden, alphaValue > 0.01 else { return nil }
         let localPoint = convert(point, from: superview)
-        guard thumbInteractionFrame.contains(localPoint) else { return nil }
-        return self
+        return thumbInteractionFrame.contains(localPoint) ? self : nil
     }
 
     private var currentThumbWidth: CGFloat {
@@ -349,8 +275,11 @@ private final class WebContentOverlayScrollIndicatorView: NSView {
     }
 
     private var thumbInteractionFrame: NSRect {
-        guard let metrics = currentMetrics else { return .zero }
-        return SidebarPassiveScrollIndicatorLayout.thumbInteractionFrame(in: bounds, metrics: metrics)
+        guard let currentMetrics else { return .zero }
+        return SidebarPassiveScrollIndicatorLayout.thumbInteractionFrame(
+            in: bounds,
+            metrics: currentMetrics
+        )
     }
 
     private func updateHoverState(with event: NSEvent, animated: Bool) {
@@ -380,17 +309,16 @@ private final class WebContentOverlayScrollIndicatorView: NSView {
               let dragGrabOffsetY,
               viewportHeight > 0,
               scrollableContentHeight > viewportHeight
-        else {
-            return
-        }
+        else { return }
 
-        let contentOffset = SidebarPassiveScrollIndicatorLayout.contentOffset(
-            forThumbOffsetY: point.y - dragGrabOffsetY,
-            viewportHeight: viewportHeight,
-            thumbHeight: metrics.thumbHeight,
-            contentHeight: scrollableContentHeight
+        onScrollOffsetChanged?(
+            SidebarPassiveScrollIndicatorLayout.contentOffset(
+                forThumbOffsetY: point.y - dragGrabOffsetY,
+                viewportHeight: viewportHeight,
+                thumbHeight: metrics.thumbHeight,
+                contentHeight: scrollableContentHeight
+            )
         )
-        onScrollOffsetChanged?(contentOffset)
     }
 }
 
@@ -399,6 +327,7 @@ private final class WebContentOverlayScrollIndicatorVisibilityController {
     private weak var indicatorView: WebContentOverlayScrollIndicatorView?
     private var state = SidebarPassiveScrollIndicatorVisibilityState()
     private var hideWorkItem: DispatchWorkItem?
+    private var hideDeadline: DispatchTime?
 
     func attach(_ view: WebContentOverlayScrollIndicatorView?) {
         guard indicatorView !== view else { return }
@@ -408,15 +337,9 @@ private final class WebContentOverlayScrollIndicatorVisibilityController {
 
     func reveal(in window: NSWindow?) {
         _ = window
-        guard let generation = present() else { return }
-        let workItem = DispatchWorkItem { [weak self] in
-            self?.fadeOut(generation: generation)
-        }
-        hideWorkItem = workItem
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + OverlayScrollIndicatorStyle.visibleDuration,
-            execute: workItem
-        )
+        guard present(cancelScheduledHide: false) != nil else { return }
+        hideDeadline = .now() + OverlayScrollIndicatorStyle.visibleDuration
+        scheduleHideIfNeeded()
     }
 
     func hold(in window: NSWindow?) {
@@ -440,22 +363,49 @@ private final class WebContentOverlayScrollIndicatorVisibilityController {
     }
 
     private func present() -> Int? {
+        present(cancelScheduledHide: true)
+    }
+
+    private func present(cancelScheduledHide: Bool) -> Int? {
         guard let view = indicatorView else { return nil }
-        cancelScheduledHide()
+        if cancelScheduledHide {
+            self.cancelScheduledHide()
+        }
         let generation = state.beginPresentation()
-        view.layer?.removeAllAnimations()
-        view.isHidden = false
-        view.alphaValue = 1
+        if view.isHidden || view.alphaValue < 1 {
+            view.layer?.removeAllAnimations()
+            view.isHidden = false
+            view.alphaValue = 1
+        }
         return generation
+    }
+
+    private func scheduleHideIfNeeded() {
+        guard hideWorkItem == nil,
+              let hideDeadline else { return }
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.finishScheduledHide()
+        }
+        hideWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: hideDeadline, execute: workItem)
+    }
+
+    private func finishScheduledHide() {
+        hideWorkItem = nil
+        guard let hideDeadline else { return }
+        guard DispatchTime.now() >= hideDeadline else {
+            scheduleHideIfNeeded()
+            return
+        }
+        self.hideDeadline = nil
+        fadeOut(generation: state.generation)
     }
 
     private func fadeOut(generation: Int) {
         guard state.canFinishFade(generation: generation),
               let view = indicatorView,
               !view.isHidden
-        else {
-            return
-        }
+        else { return }
         hideWorkItem = nil
 
         NSAnimationContext.runAnimationGroup { context in
@@ -466,9 +416,7 @@ private final class WebContentOverlayScrollIndicatorVisibilityController {
                 guard let self,
                       self.state.finishFade(generation: generation),
                       let view = self.indicatorView
-                else {
-                    return
-                }
+                else { return }
                 view.isHidden = true
                 view.alphaValue = 1
                 view.clearInteractionState()
@@ -479,5 +427,6 @@ private final class WebContentOverlayScrollIndicatorVisibilityController {
     private func cancelScheduledHide() {
         hideWorkItem?.cancel()
         hideWorkItem = nil
+        hideDeadline = nil
     }
 }

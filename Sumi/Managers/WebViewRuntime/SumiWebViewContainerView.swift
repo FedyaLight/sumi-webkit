@@ -32,13 +32,20 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
         return retainedWebView
     }
 
-    private let overlayScrollChrome = WebContentOverlayScrollChrome()
     private var readerPresentationSession: ReaderPresentationSession?
     private var certificateTrustWarningView: CertificateTrustWarningView?
+    private var pageScrollbarOverlay: WebContentOverlayScrollChrome?
     private var presentationObservers: [UUID: (WKWebView) -> Void] = [:]
     private var runtimeEvictionHandler: ((SumiWebViewContainerView) -> Void)?
 
     override var constraints: [NSLayoutConstraint] { [] }
+
+    override var isHidden: Bool {
+        didSet {
+            guard isHidden, !oldValue else { return }
+            pageScrollbarOverlay?.hideImmediately()
+        }
+    }
 
     override func keyDown(with event: NSEvent) {
         let commandModifiers = event.modifierFlags.intersection([
@@ -73,11 +80,8 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
         webView.translatesAutoresizingMaskIntoConstraints = true
         webView.autoresizingMask = [.width, .height]
 
-        addDisplayedContent(webView)
-        overlayScrollChrome.install(in: self, webView: webView)
-        if let focusable = webView as? FocusableWKWebView {
-            focusable.overlayScrollChrome = overlayScrollChrome
-        }
+        addDisplayedContent(webView.sumiDisplayedContentView)
+        installPageScrollbarOverlayIfNeeded(for: webView)
         if let transferredReaderPresentation {
             installReaderPresentation(transferredReaderPresentation)
         }
@@ -85,14 +89,20 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
     }
 
     func attachDisplayedContentIfNeeded() {
-        if webView.superview === self {
-            frameDisplayedContent(webView)
-        } else if webView.superview == nil {
-            addDisplayedContent(webView)
+        let displayedView = webView.sumiDisplayedContentView
+        if displayedView.superview === self {
+            frameDisplayedContent(displayedView)
+        } else if displayedView.superview == nil {
+            addDisplayedContent(displayedView)
         }
-        overlayScrollChrome.ensureIndicatorAboveContent()
+        pageScrollbarOverlay?.ensureIndicatorAboveContent()
         ensureReaderPresentationAboveContent()
         ensureCertificateTrustWarningAboveContent()
+    }
+
+    func detachFromDisplay() {
+        removeFromSuperview()
+        isHidden = true
     }
 
     @discardableResult
@@ -159,7 +169,6 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
             webView.pageZoom = readerPresentationSession.webView.pageZoom
             webView.isHidden = false
         }
-        overlayScrollChrome.refreshGeometry(revealIfChanged: false)
         notifyActivePresentationChanged()
         if readerHadFocus,
            let presentationWindow,
@@ -216,15 +225,11 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
         runtimeEvictionHandler = nil
         dismissCertificateTrustWarning()
         dismissReader()
+        uninstallPageScrollbarOverlay()
         removeFromSuperview()
         if let retainedWebView, retainedWebView.superview === self {
             retainedWebView.removeFromSuperview()
         }
-        if let focusable = retainedWebView as? FocusableWKWebView,
-           focusable.overlayScrollChrome === overlayScrollChrome {
-            focusable.overlayScrollChrome = nil
-        }
-        overlayScrollChrome.uninstall()
         retainedWebView = nil
     }
 
@@ -238,12 +243,12 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
         let presentationWindow = webView.window
         (webView as? FocusableWKWebView)?.resetPageInteractionState()
         readerPresentationSession = session
+        pageScrollbarOverlay?.hideImmediately()
         session.attach(to: self)
         session.webView.frame = bounds
         session.webView.autoresizingMask = [.width, .height]
         webView.isHidden = true
         addSubview(session.webView)
-        overlayScrollChrome.hideImmediately()
         notifyActivePresentationChanged()
         if canonicalHadFocus,
            let presentationWindow,
@@ -292,31 +297,27 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
     override func layout() {
         super.layout()
         guard let webView = retainedWebView else { return }
-        if webView.superview === self {
-            webView.frame = bounds
+        let displayedView = webView.sumiDisplayedContentView
+        if displayedView.superview === self {
+            displayedView.frame = bounds
         }
         readerPresentationSession?.webView.frame = bounds
-        overlayScrollChrome.layoutIndicator()
+        pageScrollbarOverlay?.layoutIndicator()
     }
 
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        if window == nil {
-            overlayScrollChrome.hideImmediately()
-        } else {
-            overlayScrollChrome.refreshGeometry(revealIfChanged: false)
-        }
+    override func didAddSubview(_ subview: NSView) {
+        super.didAddSubview(subview)
+        guard let webView = retainedWebView,
+              subview === webView.sumiDisplayedContentView else { return }
+        frameDisplayedContent(subview)
+        pageScrollbarOverlay?.ensureIndicatorAboveContent()
     }
 
     deinit {
         MainActor.assumeIsolated {
+            uninstallPageScrollbarOverlay()
             dismissCertificateTrustWarning()
             dismissReader()
-            if let focusable = retainedWebView as? FocusableWKWebView,
-               focusable.overlayScrollChrome === overlayScrollChrome {
-                focusable.overlayScrollChrome = nil
-            }
-            overlayScrollChrome.uninstall()
         }
     }
 
@@ -338,18 +339,44 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
               certificateTrustWarningView.superview === self else { return }
         addSubview(certificateTrustWarningView, positioned: .above, relativeTo: nil)
     }
+
+    private func installPageScrollbarOverlayIfNeeded(for webView: WKWebView) {
+        guard let webView = webView as? FocusableWKWebView else { return }
+        let overlay = WebContentOverlayScrollChrome()
+        pageScrollbarOverlay = overlay
+        webView.pageScrollbarOverlay = overlay
+        overlay.install(in: self, webView: webView)
+    }
+
+    private func uninstallPageScrollbarOverlay() {
+        if let webView = retainedWebView as? FocusableWKWebView,
+           webView.pageScrollbarOverlay === pageScrollbarOverlay {
+            webView.pageScrollbarOverlay = nil
+        }
+        pageScrollbarOverlay?.uninstall()
+        pageScrollbarOverlay = nil
+    }
 }
 
 @MainActor
 extension WKWebView {
+    /// WebKit moves the live web view into its fullscreen window and leaves a
+    /// private placeholder in the browser window. Containers must manage the
+    /// placeholder while that transition is active, not move the web view back.
+    var sumiDisplayedContentView: NSView {
+        SumiWKWebViewFullScreenPlaceholderView(self) ?? self
+    }
+
     var sumiReaderPresentationHost: SumiWebViewContainerView? {
-        var candidate = superview
-        while let view = candidate {
-            if let host = view as? SumiWebViewContainerView,
-               host.webView === self {
-                return host
+        for root in [superview, sumiDisplayedContentView.superview] {
+            var candidate = root
+            while let view = candidate {
+                if let host = view as? SumiWebViewContainerView,
+                   host.webView === self {
+                    return host
+                }
+                candidate = view.superview
             }
-            candidate = view.superview
         }
         return nil
     }

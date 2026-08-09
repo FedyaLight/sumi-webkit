@@ -1,6 +1,7 @@
 import AppKit
 @testable import Sumi
 import Combine
+import ObjectiveC.runtime
 import SumiDomain
 import SumiWebRuntime
 import WebKit
@@ -8,6 +9,71 @@ import XCTest
 
 @MainActor
 final class SumiDDGWebKitRegressionTests: XCTestCase {
+    private final class FullscreenPlaceholderWebView: WKWebView {
+        let placeholderView = NSView()
+
+        @objc(_fullScreenPlaceholderView)
+        func fullScreenPlaceholderView() -> NSView {
+            placeholderView
+        }
+    }
+
+    func testFocusableWebViewKeepsDDGFullscreenStateBridge() throws {
+        let selector = NSSelectorFromString("isInFullScreenMode")
+        let webViewMethod = try XCTUnwrap(
+            class_getInstanceMethod(WKWebView.self, selector)
+        )
+        let focusableWebViewMethod = try XCTUnwrap(
+            class_getInstanceMethod(FocusableWKWebView.self, selector)
+        )
+
+        XCTAssertNotEqual(
+            method_getImplementation(webViewMethod),
+            method_getImplementation(focusableWebViewMethod)
+        )
+    }
+
+    func testMouseLoadSheddingAcceptsOnlyExactWebKitObserverClass() {
+        XCTAssertTrue(
+            WebKitMouseTrackingLoadSheddingOwner.canHandle(
+                ownerClassName: "WKMouseTrackingObserver"
+            )
+        )
+        XCTAssertFalse(
+            WebKitMouseTrackingLoadSheddingOwner.canHandle(
+                ownerClassName: "Sumi.WKMouseTrackingObserver"
+            )
+        )
+        XCTAssertFalse(
+            WebKitMouseTrackingLoadSheddingOwner.canHandle(
+                ownerClassName: "WKMouseTrackingObserverProxy"
+            )
+        )
+    }
+
+    func testMouseLoadSheddingDoesNotReadLoadingStateDuringWebViewInitialization() {
+        for _ in 0..<20 {
+            autoreleasepool {
+                _ = FocusableWKWebView(
+                    frame: .zero,
+                    configuration: WKWebViewConfiguration()
+                )
+            }
+        }
+    }
+
+    func testWebViewContainerHostsAndLaysOutWebKitFullscreenPlaceholder() {
+        let webView = FullscreenPlaceholderWebView()
+        let host = SumiWebViewContainerView(tabID: UUID(), webView: webView)
+        host.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
+        host.layoutSubtreeIfNeeded()
+
+        XCTAssertTrue(webView.placeholderView.superview === host)
+        XCTAssertNil(webView.superview)
+        XCTAssertEqual(webView.placeholderView.frame, host.bounds)
+        XCTAssertTrue(webView.sumiReaderPresentationHost === host)
+    }
+
     func testWebContentAttachmentDoesNotDisableWebKitBackgroundDrawing() throws {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -22,23 +88,8 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertFalse(source.contains("sumiSetDrawsBackground(false)"))
     }
 
-    func testReleasedVisualHandoffKeepsLiveWebViewParkedInWindow() {
-        let browserManager = BrowserManager()
-        let browserContext = CompositorBrowserContextStub()
-        let windowState = BrowserWindowState()
-        let container = WindowWebContentSplitHostLayoutView(
-            splitLayout: browserManager.splitWindowContext.layout,
-            splitDrops: browserManager.splitWindowContext.drops,
-            splitDropTargets: browserManager.splitWindowContext.dropTargets,
-            splitPreviews: browserManager.splitWindowContext.previews,
-            sidebarDragState: browserContext.sidebarDragState,
-            windowState: windowState,
-            resolveDragTab: { _ in nil },
-            surfaceStyle: BrowserContentSurfaceStyle(
-                geometry: BrowserChromeGeometry(),
-                backgroundColor: .white
-            )
-        )
+    func testReleasedVisualHandoffDetachesDormantHostFromWindow() {
+        let container = NSView()
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
             styleMask: [.borderless],
@@ -57,13 +108,63 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             configuration: WKWebViewConfiguration()
         )
         let host = SumiWebViewContainerView(tabID: UUID(), webView: webView)
-        container.placeVisualHandoffCover(host, frameInContainer: container.bounds)
-        container.removeVisualHandoffCover(host)
+        container.addSubview(host)
+        host.detachFromDisplay()
 
-        XCTAssertNotNil(host.superview)
-        XCTAssertTrue(host.window === window)
+        XCTAssertNil(host.superview)
+        XCTAssertNil(host.window)
         XCTAssertTrue(webView.superview === host)
-        XCTAssertTrue(host.isHiddenOrHasHiddenAncestor)
+        XCTAssertNil(webView.window)
+        XCTAssertTrue(host.isHidden)
+    }
+
+    func testDetachedDormantHostCanReturnWithoutReparentingWebKitContent() {
+        let container = NSView()
+        let webView = WKWebView()
+        let host = SumiWebViewContainerView(tabID: UUID(), webView: webView)
+
+        container.addSubview(host)
+        let originalContentParent = webView.superview
+        host.detachFromDisplay()
+        container.addSubview(host)
+        host.attachDisplayedContentIfNeeded()
+
+        XCTAssertTrue(webView.superview === originalContentParent)
+        XCTAssertTrue(webView.superview === host)
+        XCTAssertTrue(host.superview === container)
+    }
+
+    func testHiddenHostStopsOverlayVisibilityWork() throws {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        let container = NSView(frame: window.contentView?.bounds ?? .zero)
+        window.contentView = container
+        let webView = FocusableWKWebView(
+            frame: container.bounds,
+            configuration: WKWebViewConfiguration()
+        )
+        let host = SumiWebViewContainerView(tabID: UUID(), webView: webView)
+        host.frame = container.bounds
+        container.addSubview(host)
+        let overlay = try XCTUnwrap(webView.pageScrollbarOverlay)
+
+        overlay.update(
+            WebContentOverlayScrollMetrics(
+                viewportHeight: 600,
+                contentHeight: 1_800,
+                contentOffset: 300
+            ),
+            reveal: true
+        )
+        XCTAssertFalse(overlay.indicatorHostingView.isHidden)
+
+        host.isHidden = true
+
+        XCTAssertTrue(overlay.indicatorHostingView.isHidden)
     }
 
     func testPromotedGlanceHandoffDoesNotCoverIncomingPageWithSourceHost() {

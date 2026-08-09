@@ -11,7 +11,7 @@ func makeNormalTabCoreUserScripts(for tab: Tab) -> [SumiPageScript] {
         ),
         SumiTabSuspensionUserScript(tabID: tab.id),
         SumiWebNotificationUserScript(tab: tab),
-        SumiNativeScrollbarHideUserScript(),
+        SumiPageScrollbarOverlayUserScript(),
     ]
     if tab.sumiSettings?.isGPCEnabled ?? false {
         scripts.append(SumiGPCUserScript())
