@@ -1,4 +1,3 @@
-import Combine
 import SumiDomain
 import XCTest
 
@@ -79,24 +78,6 @@ final class DomainRuntimeOwnerTests: XCTestCase {
                 hasActiveProjection: true
             )
         )
-    }
-
-    func testTabLoadingProgressPublishesWithoutInvalidatingTab() {
-        let tab = Tab()
-        var tabPublicationCount = 0
-        var progressValues: [Double] = []
-        let tabCancellable = tab.objectWillChange.sink {
-            tabPublicationCount += 1
-        }
-        let progressCancellable = tab.loadingProgress.$estimatedProgress
-            .dropFirst()
-            .sink { progressValues.append($0) }
-
-        tab.estimatedProgress = 0.42
-
-        XCTAssertEqual(tabPublicationCount, 0)
-        XCTAssertEqual(progressValues, [0.42])
-        withExtendedLifetime((tabCancellable, progressCancellable)) {}
     }
 
     func testScheduledOwnersDoNotExtendTheirWindowLifetime() async {

@@ -19,7 +19,6 @@ class GlanceSession: ObservableObject, Identifiable {
     @Published var currentURL: URL
     @Published var title: String
     @Published var isLoading: Bool = true
-    @Published var estimatedProgress: Double = 0
     @Published var contentFrameInWindowSpace: CGRect?
     private var observations: [NSKeyValueObservation] = []
 
@@ -56,11 +55,6 @@ class GlanceSession: ObservableObject, Identifiable {
         self.isLoading = isLoading
     }
 
-    func updateProgress(_ progress: Double) {
-        guard estimatedProgress != progress else { return }
-        estimatedProgress = progress
-    }
-
     func updateContentFrameInWindowSpace(_ frame: CGRect?) {
         guard contentFrameInWindowSpace != frame else { return }
         contentFrameInWindowSpace = frame
@@ -87,13 +81,6 @@ class GlanceSession: ObservableObject, Identifiable {
             }
         )
         observations.append(
-            webView.observe(\.estimatedProgress, options: [.new]) { [weak self, weak webView] _, _ in
-                Self.applyObservedStateOnMainThread {
-                    self?.updateProgress(webView?.estimatedProgress ?? 0)
-                }
-            }
-        )
-        observations.append(
             webView.observe(\.isLoading, options: [.new]) { [weak self, weak webView] _, _ in
                 Self.applyObservedStateOnMainThread {
                     self?.updateLoading(isLoading: webView?.isLoading ?? false)
@@ -104,7 +91,6 @@ class GlanceSession: ObservableObject, Identifiable {
 
     private func applyCurrentState(from webView: WKWebView) {
         updateNavigationState(url: webView.url, title: webView.title)
-        updateProgress(webView.estimatedProgress)
         updateLoading(isLoading: webView.isLoading)
     }
 

@@ -12,6 +12,8 @@ private enum WindowTransientChromeZIndex {
     static let findInPage: Double = 3_500
     static let glance: Double = 8_000
     static let glanceFindInPage: Double = 8_500
+    /// Loading belongs to window chrome and must not inherit Glance's page transform.
+    static let pageLoadingIndicator: Double = 8_600
     /// Collapsed sidebar must sit above Glance so tab/space switching never dismisses or blocks it.
     static let collapsedSidebar: Double = 8_750
     /// Folder hover preview hangs off a sidebar row, so it must clear the collapsed sidebar overlay.
@@ -184,6 +186,9 @@ struct WindowView: View {
                         .zIndex(WindowTransientChromeZIndex.glanceFindInPage)
                     }
                 }
+
+                pageLoadingIndicator()
+                    .zIndex(WindowTransientChromeZIndex.pageLoadingIndicator)
 
                 chromeThemeScope {
                     DownloadFlyAnimationOverlay(
@@ -524,19 +529,6 @@ struct WindowView: View {
             )
                 .zIndex(2000)
 
-            if let currentTab = themeChromeContext.currentTab(for: windowState) {
-                HStack {
-                    Spacer()
-                    SumiWindowProgressBar(tab: currentTab) { tab in
-                        themeChromeContext.workspaceTheme(for: tab.spaceId) ?? windowState.workspaceTheme
-                    }
-                    .frame(width: 200, height: 12)
-                    .offset(y: -BrowserChromeGeometry.elementSeparation / 2 - 6)
-                    Spacer()
-                }
-                .zIndex(2010)
-            }
-
             // Find-in-page stays in the browser window's responder chain so window controls keep active appearance.
             FindInPageChromeHost(
                 findManager: findContext.manager,
@@ -554,6 +546,54 @@ struct WindowView: View {
         .padding(.top, chromeGeometry.contentEdgeInsets.top)
         .padding(.bottom, chromeGeometry.contentEdgeInsets.bottom)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private func pageLoadingIndicator() -> some View {
+        let sidebarVisible = windowState.isSidebarVisible
+        let horizontalInsets = chromeGeometry.contentEdgeInsets
+        let shellEdge = sumiSettings.sidebarPosition.shellEdge
+        let rendersDockedSidebar = dockedSidebarLayout.rendersDockedSidebar(isVisible: sidebarVisible)
+        let layoutProgress = dockedSidebarLayout.layoutProgress(isVisible: sidebarVisible)
+        let leftLayoutProgress = rendersDockedSidebar && shellEdge.isLeft ? layoutProgress : 0
+        let rightLayoutProgress = rendersDockedSidebar && shellEdge.isRight ? layoutProgress : 0
+
+        HStack(spacing: 0) {
+            if leftLayoutProgress > 0 {
+                Color.clear
+                    .frame(width: windowState.sidebarWidth * leftLayoutProgress)
+            }
+
+            Spacer(minLength: 0)
+
+            if let currentTab = themeChromeContext.currentTab(for: windowState) {
+                SumiWindowProgressBar(
+                    tab: currentTab,
+                    glanceSession: presentedGlanceSession
+                ) { tab in
+                    themeChromeContext.workspaceTheme(for: tab.spaceId) ?? windowState.workspaceTheme
+                }
+                .frame(width: 200, height: 12)
+            }
+
+            Spacer(minLength: 0)
+
+            if rightLayoutProgress > 0 {
+                Color.clear
+                    .frame(width: windowState.sidebarWidth * rightLayoutProgress)
+            }
+        }
+        .padding(.leading, horizontalInsets.leading * (1 - leftLayoutProgress))
+        .padding(.trailing, horizontalInsets.trailing * (1 - rightLayoutProgress))
+        .frame(maxWidth: .infinity)
+        .frame(height: 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .offset(
+            y: chromeGeometry.contentEdgeInsets.top
+                - BrowserChromeGeometry.elementSeparation / 2
+                - 6
+        )
+        .allowsHitTesting(false)
     }
 
     private var transientChromeModalSuppressed: Bool {

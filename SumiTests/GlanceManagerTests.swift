@@ -783,7 +783,6 @@ final class GlanceManagerTests: XCTestCase {
         session.observe(webView)
 
         XCTAssertFalse(session.isLoading)
-        XCTAssertEqual(session.estimatedProgress, webView.estimatedProgress)
     }
 
     func testGlanceSessionSnapshotRestoresPreviewForWindow() throws {

@@ -10,6 +10,7 @@ import SwiftUI
 
 struct SumiWindowProgressBar: View {
     let tab: Tab
+    let glanceSession: GlanceSession?
     let resolveWorkspaceTheme: (Tab) -> WorkspaceTheme
 
     @Environment(BrowserWindowState.self) private var windowState
@@ -17,19 +18,35 @@ struct SumiWindowProgressBar: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    @State private var isLoading = false
+    @State private var tabIsLoading = false
+    @State private var glanceIsLoading = false
+
+    init(
+        tab: Tab,
+        glanceSession: GlanceSession? = nil,
+        resolveWorkspaceTheme: @escaping (Tab) -> WorkspaceTheme
+    ) {
+        self.tab = tab
+        self.glanceSession = glanceSession
+        self.resolveWorkspaceTheme = resolveWorkspaceTheme
+    }
 
     var body: some View {
         SumiProgressBarRepresentable(
-            tab: tab,
             isLoading: isLoading,
             accentColor: resolvedAccentColor,
             isDark: isSpaceThemeDark,
             reduceMotion: reduceMotion
         )
-        .id(tab.id)
+        .id(loadingSourceID)
         .allowsHitTesting(false)
         .onAppear(perform: syncLoadingState)
+        .onChange(of: tab.id) { _, _ in
+            syncLoadingState()
+        }
+        .onChange(of: glanceSession?.id) { _, _ in
+            syncLoadingState()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .sumiTabLoadingStateDidChange)) { notification in
             guard let notificationTab = notification.object as? Tab,
                   notificationTab.id == tab.id
@@ -37,6 +54,27 @@ struct SumiWindowProgressBar: View {
 
             syncLoadingState()
         }
+        .onReceive(glanceLoadingPublisher) { isLoading in
+            guard glanceIsLoading != isLoading else { return }
+            glanceIsLoading = isLoading
+        }
+    }
+
+    private var isLoading: Bool {
+        glanceSession == nil ? tabIsLoading : glanceIsLoading
+    }
+
+    private var loadingSourceID: UUID {
+        glanceSession?.id ?? tab.id
+    }
+
+    private var glanceLoadingPublisher: AnyPublisher<Bool, Never> {
+        guard let glanceSession else {
+            return Just(false).eraseToAnyPublisher()
+        }
+        return glanceSession.$isLoading
+            .removeDuplicates()
+            .eraseToAnyPublisher()
     }
 
     private var activeWorkspaceTheme: WorkspaceTheme {
@@ -74,97 +112,57 @@ struct SumiWindowProgressBar: View {
     }
 
     private func syncLoadingState() {
-        isLoading = tab.loadingState.isLoading
+        tabIsLoading = tab.loadingState.isLoading
+        glanceIsLoading = glanceSession?.isLoading ?? false
     }
 }
 
 private struct SumiProgressBarRepresentable: NSViewRepresentable {
-    let tab: Tab
     let isLoading: Bool
     let accentColor: Color
     let isDark: Bool
     let reduceMotion: Bool
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
-    }
-
     func makeNSView(context: Context) -> SumiProgressBarView {
-        let view = SumiProgressBarView()
-        context.coordinator.bind(tab, to: view, isLoading: tab.loadingState.isLoading)
-        return view
+        SumiProgressBarView()
     }
 
     func updateNSView(_ nsView: SumiProgressBarView, context: Context) {
-        context.coordinator.bind(tab, to: nsView, isLoading: isLoading)
         nsView.update(
             isLoading: isLoading,
-            progress: tab.estimatedProgress,
             accentColor: NSColor(accentColor),
             isDark: isDark,
             reduceMotion: reduceMotion
         )
     }
 
-    static func dismantleNSView(_ nsView: SumiProgressBarView, coordinator: Coordinator) {
-        coordinator.unbind()
-    }
-
-    @MainActor
-    final class Coordinator {
-        private weak var view: SumiProgressBarView?
-        private var tabId: UUID?
-        private var progressCancellable: AnyCancellable?
-
-        func bind(_ tab: Tab, to view: SumiProgressBarView, isLoading: Bool) {
-            let targetChanged = tabId != tab.id || self.view !== view
-
-            if !targetChanged, isLoading == (progressCancellable != nil) {
-                return
-            }
-
-            tabId = tab.id
-            self.view = view
-            progressCancellable = nil
-            view.setProgress(tab.estimatedProgress)
-
-            guard isLoading else {
-                return
-            }
-
-            progressCancellable = tab.loadingProgress.$estimatedProgress
-                .removeDuplicates { abs($0 - $1) < 0.01 }
-                .throttle(for: .milliseconds(80), scheduler: RunLoop.main, latest: true)
-                .sink { [weak view] progress in
-                    MainActor.assumeIsolated {
-                        view?.setProgress(progress)
-                    }
-                }
-        }
-
-        func unbind() {
-            progressCancellable = nil
-            tabId = nil
-            view = nil
-        }
+    static func dismantleNSView(_ nsView: SumiProgressBarView, coordinator: Void) {
+        nsView.prepareForRemoval()
     }
 }
 
 private final class SumiProgressBarView: NSView {
     private enum Metrics {
-        static let width: CGFloat = 160
+        static let compactWidth: CGFloat = 80
+        static let expandedWidth: CGFloat = 160
         static let height: CGFloat = 4
         static let radius: CGFloat = 2
+        static let sweepWidth: CGFloat = expandedWidth * 0.75
+        static let longLoadDelay: TimeInterval = 3
+        static let appearanceDuration: CFTimeInterval = 0.18
+        static let settleDuration: CFTimeInterval = 0.3
+        static let sweepDuration: CFTimeInterval = 1
     }
 
     private let railLayer = CALayer()
-    private let fillLayer = CALayer()
+    private let sweepLayer = CALayer()
 
     private var isLoading = false
-    private var progress = 0.0
+    private var isLongLoad = false
     private var currentAccentColor = NSColor.controlAccentColor
     private var isDarkTheme = false
     private var reduceMotion = false
+    private var longLoadTimer: Timer?
 
     override var isFlipped: Bool {
         true
@@ -196,13 +194,8 @@ private final class SumiProgressBarView: NSView {
         "Page loading"
     }
 
-    override func accessibilityValue() -> Any? {
-        Int(normalizedProgress * 100)
-    }
-
     func update(
         isLoading: Bool,
-        progress: Double,
         accentColor: NSColor,
         isDark: Bool,
         reduceMotion: Bool
@@ -210,9 +203,9 @@ private final class SumiProgressBarView: NSView {
         let loadingChanged = self.isLoading != isLoading
         let colorChanged = currentAccentColor != accentColor
             || isDarkTheme != isDark
+        let motionPreferenceChanged = self.reduceMotion != reduceMotion
 
         self.isLoading = isLoading
-        self.progress = progress
         currentAccentColor = accentColor
         isDarkTheme = isDark
         self.reduceMotion = reduceMotion
@@ -221,30 +214,23 @@ private final class SumiProgressBarView: NSView {
             updateColors()
         }
 
-        updateFill(animated: isLoading && !loadingChanged)
-        updateVisibility(animated: loadingChanged)
+        if loadingChanged {
+            isLoading ? startLoading() : stopLoading()
+        } else if isLoading, motionPreferenceChanged {
+            startLoading()
+        }
     }
 
-    func setProgress(_ progress: Double) {
-        self.progress = progress
-        guard isLoading else { return }
-
-        updateFill(animated: true)
-    }
-
-    private var normalizedProgress: Double {
-        guard progress.isFinite else { return 0.05 }
-
-        let clampedProgress = min(max(progress, 0.0), 1.0)
-        return isLoading ? min(max(clampedProgress, 0.05), 0.95) : clampedProgress
+    func prepareForRemoval() {
+        isLoading = false
+        longLoadTimer?.invalidate()
+        longLoadTimer = nil
+        railLayer.removeAllAnimations()
+        sweepLayer.removeAllAnimations()
     }
 
     private var shouldAnimate: Bool {
-        guard let window else { return false }
-
-        return !reduceMotion
-            && !isHiddenOrHasHiddenAncestor
-            && window.occlusionState.contains(.visible)
+        !reduceMotion
     }
 
     private var fillColor: NSColor {
@@ -268,54 +254,191 @@ private final class SumiProgressBarView: NSView {
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
 
-        railLayer.bounds = CGRect(x: 0, y: 0, width: Metrics.width, height: Metrics.height)
+        railLayer.bounds = CGRect(x: 0, y: 0, width: Metrics.compactWidth, height: Metrics.height)
         railLayer.cornerRadius = Metrics.radius
         railLayer.masksToBounds = true
         railLayer.opacity = 0
 
-        fillLayer.anchorPoint = CGPoint(x: 0, y: 0.5)
-        fillLayer.position = CGPoint(x: 0, y: Metrics.height / 2)
-        fillLayer.bounds = CGRect(x: 0, y: 0, width: 0, height: Metrics.height)
-        fillLayer.cornerRadius = Metrics.radius
-        fillLayer.masksToBounds = true
+        sweepLayer.bounds = CGRect(x: 0, y: 0, width: Metrics.sweepWidth, height: Metrics.height)
+        sweepLayer.cornerRadius = Metrics.radius
+        sweepLayer.opacity = 0
 
-        railLayer.addSublayer(fillLayer)
+        railLayer.addSublayer(sweepLayer)
         layer?.addSublayer(railLayer)
         updateColors()
     }
 
     private func updateColors() {
         performWithoutAnimation {
+            railLayer.backgroundColor = (isLongLoad ? railColor : fillColor).cgColor
+            sweepLayer.backgroundColor = fillColor.cgColor
+        }
+    }
+
+    private func startLoading() {
+        longLoadTimer?.invalidate()
+        isLongLoad = false
+        applyCompactPresentation()
+
+        guard !reduceMotion else { return }
+
+        let timer = Timer(
+            timeInterval: Metrics.longLoadDelay,
+            target: self,
+            selector: #selector(enterLongLoad),
+            userInfo: nil,
+            repeats: false
+        )
+        RunLoop.main.add(timer, forMode: .common)
+        longLoadTimer = timer
+    }
+
+    private func stopLoading() {
+        longLoadTimer?.invalidate()
+        longLoadTimer = nil
+
+        let presentationOpacity = railLayer.presentation()?.opacity ?? railLayer.opacity
+        let presentationTransform = railLayer.presentation()?.transform ?? railLayer.transform
+
+        isLongLoad = false
+        railLayer.removeAllAnimations()
+        sweepLayer.removeAllAnimations()
+        performWithoutAnimation {
+            railLayer.opacity = 0
+            railLayer.transform = CATransform3DMakeScale(0.8, 0.8, 1)
+            sweepLayer.opacity = 0
+        }
+
+        guard shouldAnimate else { return }
+
+        let opacity = CABasicAnimation(keyPath: "opacity")
+        opacity.fromValue = presentationOpacity
+        opacity.toValue = 0
+
+        let transform = CABasicAnimation(keyPath: "transform")
+        transform.fromValue = NSValue(caTransform3D: presentationTransform)
+        transform.toValue = NSValue(caTransform3D: railLayer.transform)
+
+        let exit = CAAnimationGroup()
+        exit.animations = [opacity, transform]
+        exit.duration = Metrics.settleDuration
+        exit.timingFunction = CAMediaTimingFunction(controlPoints: 0.23, 1, 0.32, 1)
+        railLayer.add(exit, forKey: "exit")
+    }
+
+    private func applyCompactPresentation() {
+        railLayer.removeAllAnimations()
+        sweepLayer.removeAllAnimations()
+        performWithoutAnimation {
+            railLayer.bounds.size.width = Metrics.compactWidth
+            railLayer.backgroundColor = fillColor.cgColor
+            railLayer.opacity = 1
+            railLayer.transform = CATransform3DIdentity
+            sweepLayer.opacity = 0
+        }
+
+        guard shouldAnimate else { return }
+
+        let appearanceOpacity = CABasicAnimation(keyPath: "opacity")
+        appearanceOpacity.fromValue = 0
+        appearanceOpacity.toValue = 1
+
+        let appearanceTransform = CABasicAnimation(keyPath: "transform")
+        appearanceTransform.fromValue = NSValue(
+            caTransform3D: CATransform3DMakeScale(0.95, 0.95, 1)
+        )
+        appearanceTransform.toValue = NSValue(caTransform3D: CATransform3DIdentity)
+
+        let appearance = CAAnimationGroup()
+        appearance.animations = [appearanceOpacity, appearanceTransform]
+        appearance.duration = Metrics.appearanceDuration
+        appearance.timingFunction = CAMediaTimingFunction(controlPoints: 0.23, 1, 0.32, 1)
+        railLayer.add(appearance, forKey: "appearance")
+
+        let pulseOpacity = CABasicAnimation(keyPath: "opacity")
+        pulseOpacity.fromValue = 1
+        pulseOpacity.toValue = 0.6
+
+        let pulseTransform = CABasicAnimation(keyPath: "transform")
+        pulseTransform.fromValue = NSValue(caTransform3D: CATransform3DIdentity)
+        pulseTransform.toValue = NSValue(
+            caTransform3D: CATransform3DMakeScale(0.9, 0.9, 1)
+        )
+
+        let pulse = CAAnimationGroup()
+        pulse.animations = [pulseOpacity, pulseTransform]
+        pulse.duration = 1
+        pulse.beginTime = railLayer.convertTime(CACurrentMediaTime(), from: nil)
+            + Metrics.appearanceDuration
+        pulse.autoreverses = true
+        pulse.repeatCount = .infinity
+        pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        railLayer.add(pulse, forKey: "pulse")
+    }
+
+    @objc private func enterLongLoad() {
+        longLoadTimer = nil
+        guard isLoading, !reduceMotion else { return }
+
+        let presentationBounds = railLayer.presentation()?.bounds ?? railLayer.bounds
+        let presentationOpacity = railLayer.presentation()?.opacity ?? railLayer.opacity
+        let presentationTransform = railLayer.presentation()?.transform ?? railLayer.transform
+        let presentationBackground = railLayer.presentation()?.backgroundColor ?? railLayer.backgroundColor
+
+        isLongLoad = true
+        railLayer.removeAllAnimations()
+        performWithoutAnimation {
+            railLayer.bounds.size.width = Metrics.expandedWidth
             railLayer.backgroundColor = railColor.cgColor
-            fillLayer.backgroundColor = fillColor.cgColor
+            railLayer.opacity = 1
+            railLayer.transform = CATransform3DIdentity
+            sweepLayer.opacity = 0
         }
+
+        guard shouldAnimate else { return }
+
+        let bounds = CABasicAnimation(keyPath: "bounds")
+        bounds.fromValue = NSValue(rect: presentationBounds)
+        bounds.toValue = NSValue(rect: railLayer.bounds)
+
+        let opacity = CABasicAnimation(keyPath: "opacity")
+        opacity.fromValue = presentationOpacity
+        opacity.toValue = 1
+
+        let transform = CABasicAnimation(keyPath: "transform")
+        transform.fromValue = NSValue(caTransform3D: presentationTransform)
+        transform.toValue = NSValue(caTransform3D: CATransform3DIdentity)
+
+        let background = CABasicAnimation(keyPath: "backgroundColor")
+        background.fromValue = presentationBackground
+        background.toValue = railColor.cgColor
+
+        let settle = CAAnimationGroup()
+        settle.animations = [bounds, opacity, transform, background]
+        settle.duration = Metrics.settleDuration
+        settle.timingFunction = CAMediaTimingFunction(controlPoints: 0.23, 1, 0.32, 1)
+        railLayer.add(settle, forKey: "settle")
+
+        startSweep(after: Metrics.settleDuration)
     }
 
-    private func updateFill(animated: Bool) {
-        let width = Metrics.width * normalizedProgress
+    private func startSweep(after delay: CFTimeInterval = 0) {
+        let startX = -Metrics.sweepWidth / 2
+        let endX = Metrics.expandedWidth + Metrics.sweepWidth / 2
 
-        performLayerUpdate(animated: animated, duration: 0.12) {
-            fillLayer.bounds.size.width = width
+        performWithoutAnimation {
+            sweepLayer.position = CGPoint(x: endX, y: Metrics.height / 2)
+            sweepLayer.opacity = 1
         }
-    }
 
-    private func updateVisibility(animated: Bool) {
-        performLayerUpdate(animated: animated, duration: 0.16) {
-            railLayer.opacity = isLoading ? 1 : 0
-        }
-    }
-
-    private func performLayerUpdate(animated: Bool, duration: CFTimeInterval, _ action: () -> Void) {
-        let shouldAnimate = animated && self.shouldAnimate
-
-        CATransaction.begin()
-        CATransaction.setDisableActions(!shouldAnimate)
-        if shouldAnimate {
-            CATransaction.setAnimationDuration(duration)
-            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
-        }
-        action()
-        CATransaction.commit()
+        let position = CABasicAnimation(keyPath: "position.x")
+        position.fromValue = startX
+        position.toValue = endX
+        position.duration = Metrics.sweepDuration
+        position.beginTime = CACurrentMediaTime() + delay
+        position.repeatCount = .infinity
+        position.timingFunction = CAMediaTimingFunction(name: .linear)
+        sweepLayer.add(position, forKey: "sweep")
     }
 
     private func performWithoutAnimation(_ action: () -> Void) {

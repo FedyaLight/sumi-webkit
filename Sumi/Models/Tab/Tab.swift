@@ -148,9 +148,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             let oldIsLoading = navigationRuntime.loadingState.isLoading
             objectWillChange.send()
             navigationRuntime.loadingState = newValue
-            if !newValue.isLoading {
-                self.estimatedProgress = 1.0
-            }
             guard oldIsLoading != newValue.isLoading else { return }
             stateChangeEmitter.postLoadingStateDidChange(for: self)
         }
@@ -158,21 +155,11 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     func beginLoadingPresentationIfNeeded() {
         guard !loadingState.isLoading else { return }
-        estimatedProgress = 0.05
         loadingState = .didStartProvisionalNavigation
     }
 
     @Published var canGoBack: Bool = false
     @Published var canGoForward: Bool = false
-
-    /// Owns page-load progress. Kept off `Tab`'s own `@Published` graph so its
-    /// high-frequency ticks don't invalidate sidebar rows that observe the whole
-    /// `Tab`; only the chrome loading bar subscribes to it. See ``TabLoadingProgress``.
-    let loadingProgress = TabLoadingProgress()
-    var estimatedProgress: Double {
-        get { loadingProgress.estimatedProgress }
-        set { loadingProgress.estimatedProgress = newValue }
-    }
 
     // Restored navigation state from undo/session restoration (applied when web view is created)
     var restoredCanGoBack: Bool? {
