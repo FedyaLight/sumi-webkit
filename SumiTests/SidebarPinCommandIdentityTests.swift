@@ -153,7 +153,7 @@ final class SidebarPinCommandIdentityTests: XCTestCase {
     }
 
     func testUserMetadataWinsAcrossInstancesUntilExplicitReset() throws {
-        for role in [ShortcutPinRole.spacePinned, .essential] {
+        for role in [ShortcutPinRole.spacePinned, .favorite] {
             let browser = try makeBrowser()
             defer { browser.tabRuntimeLifecycle.shutdown() }
             let profileID = UUID()
@@ -162,13 +162,13 @@ final class SidebarPinCommandIdentityTests: XCTestCase {
             let pin = ShortcutPin(
                 id: UUID(),
                 role: role,
-                profileId: role == .essential ? profileID : nil,
+                profileId: role == .favorite ? profileID : nil,
                 spaceId: role == .spacePinned ? space.id : nil,
                 index: 0,
                 launchURL: URL(string: "https://launcher.example")!,
                 title: "Launcher"
             )
-            if role == .essential {
+            if role == .favorite {
                 browser.structuralCollectionMutationOwner.setPinnedTabs(
                     [pin],
                     for: profileID

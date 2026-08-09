@@ -101,7 +101,7 @@ final class ShortcutURLInsertionServiceTests: XCTestCase {
         let inserted = service.insert(
             URL(string: "https://late-rejection.example")!,
             placement: ShortcutURLPlacement(
-                role: .essential,
+                role: .favorite,
                 profileID: mismatchedProfileID,
                 executionProfileID: nil,
                 spaceID: nil,
@@ -115,7 +115,7 @@ final class ShortcutURLInsertionServiceTests: XCTestCase {
         XCTAssertFalse(inserted)
         XCTAssertTrue(
             tabManager.shortcutPinCollectionStateOwner
-                .essentialPins(for: mismatchedProfileID).isEmpty
+                .favoritePins(for: mismatchedProfileID).isEmpty
         )
         XCTAssertTrue(tabManager.liveShortcutTabs.snapshot[window.id]?.isEmpty ?? true)
         XCTAssertNil(window.currentTabId)

@@ -8,21 +8,21 @@ final class ShortcutPinCollectionStateOwnerTests: XCTestCase {
     func testQueriesSortAndFindPinsAcrossCollections() {
         let profileId = UUID()
         let spaceId = UUID()
-        let laterEssential = Self.makePin(role: .essential, profileId: profileId, index: 2)
-        let earlierEssential = Self.makePin(role: .essential, profileId: profileId, index: 1)
+        let laterFavorite = Self.makePin(role: .favorite, profileId: profileId, index: 2)
+        let earlierFavorite = Self.makePin(role: .favorite, profileId: profileId, index: 1)
         let spacePin = Self.makePin(role: .spacePinned, spaceId: spaceId, index: 0)
         let owner = ShortcutPinCollectionStateOwner()
 
         owner.replaceAll(
-            pinnedByProfile: [profileId: [laterEssential, earlierEssential]],
+            pinnedByProfile: [profileId: [laterFavorite, earlierFavorite]],
             spacePinnedShortcuts: [spaceId: [spacePin]],
             pendingPinnedWithoutProfile: []
         )
 
-        XCTAssertEqual(owner.essentialPins(for: profileId).map(\.id), [earlierEssential.id, laterEssential.id])
-        XCTAssertEqual(owner.essentialPins(for: nil), [])
+        XCTAssertEqual(owner.favoritePins(for: profileId).map(\.id), [earlierFavorite.id, laterFavorite.id])
+        XCTAssertEqual(owner.favoritePins(for: nil), [])
         XCTAssertEqual(owner.spacePinnedPins(for: spaceId).map(\.id), [spacePin.id])
-        XCTAssertEqual(owner.shortcutPin(by: earlierEssential.id)?.id, earlierEssential.id)
+        XCTAssertEqual(owner.shortcutPin(by: earlierFavorite.id)?.id, earlierFavorite.id)
         XCTAssertEqual(owner.shortcutPin(by: spacePin.id)?.id, spacePin.id)
         XCTAssertNil(owner.shortcutPin(by: UUID()))
         XCTAssertTrue(owner.hasSpacePinnedShortcuts(in: spaceId))
@@ -32,11 +32,11 @@ final class ShortcutPinCollectionStateOwnerTests: XCTestCase {
     func testRemoveAllClearsCollectionsAndPendingPins() {
         let profileId = UUID()
         let spaceId = UUID()
-        let pendingPin = Self.makePin(role: .essential, index: 0)
+        let pendingPin = Self.makePin(role: .favorite, index: 0)
         let owner = ShortcutPinCollectionStateOwner()
 
         owner.replaceAll(
-            pinnedByProfile: [profileId: [Self.makePin(role: .essential, profileId: profileId, index: 0)]],
+            pinnedByProfile: [profileId: [Self.makePin(role: .favorite, profileId: profileId, index: 0)]],
             spacePinnedShortcuts: [spaceId: [Self.makePin(role: .spacePinned, spaceId: spaceId, index: 0)]],
             pendingPinnedWithoutProfile: [pendingPin]
         )

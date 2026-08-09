@@ -214,7 +214,7 @@ final class FolderSearchCandidateBuilderTests: XCTestCase {
             pinProjection: SidebarPinFolderProjection(
                 runtimeIsAlive: { true },
                 windows: windows,
-                essentials: browser.essentialsShortcutPlacementOwner,
+                favorite: browser.favoriteShortcutPlacementOwner,
                 resolution: browser.shortcutPinRuntimeResolutionOwner
             ),
             actions: FolderSearchActivationActions(

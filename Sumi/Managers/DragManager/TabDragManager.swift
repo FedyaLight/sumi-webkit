@@ -11,7 +11,7 @@ import SumiDomain
 enum TabDragManager {
     enum DragContainer: Equatable {
         case none
-        case essentials
+        case favorite
         case spacePinned(UUID) // space ID
         case spaceRegular(UUID) // space ID
         case folder(UUID) // folder ID
@@ -26,7 +26,7 @@ extension TabDragManager.DragContainer: Codable {
 
     private enum Kind: String, Codable {
         case none
-        case essentials
+        case favorite
         case spacePinned
         case spaceRegular
         case folder
@@ -37,8 +37,8 @@ extension TabDragManager.DragContainer: Codable {
         switch self {
         case .none:
             try container.encode(Kind.none, forKey: .kind)
-        case .essentials:
-            try container.encode(Kind.essentials, forKey: .kind)
+        case .favorite:
+            try container.encode(Kind.favorite, forKey: .kind)
         case .spacePinned(let id):
             try container.encode(Kind.spacePinned, forKey: .kind)
             try container.encode(id, forKey: .id)
@@ -57,8 +57,8 @@ extension TabDragManager.DragContainer: Codable {
         switch kind {
         case .none:
             self = .none
-        case .essentials:
-            self = .essentials
+        case .favorite:
+            self = .favorite
         case .spacePinned:
             self = .spacePinned(try container.decode(UUID.self, forKey: .id))
         case .spaceRegular:

@@ -142,7 +142,7 @@ struct SumiZenImportParser {
         }
 
         let folderIds = Set(zenFolders.compactMap { $0["id"] as? String })
-        var essentials: [SumiPortableLauncher] = []
+        var favorite: [SumiPortableLauncher] = []
         var pinned: [SumiPortableLauncher] = []
         var pinnedSiblingIndexes: [String: Int] = [:]
         var regularTabs: [SumiPortableRegularTab] = []
@@ -174,21 +174,21 @@ struct SumiZenImportParser {
             let profileId = workspaceProfileId[workspaceId] ?? profilesByContainer[0]?.id
             let syncId = (tab["zenSyncId"] as? String) ?? UUID().uuidString
             let isPinned = tab["pinned"] as? Bool ?? false
-            let isEssential = tab["zenEssential"] as? Bool ?? false
-            if isPinned && isEssential {
-                // Essentials are keyed by profile, so they follow their own
+            let isFavorite = tab["zenEssential"] as? Bool ?? false
+            if isPinned && isFavorite {
+                // Favorite launchers are keyed by profile, so they follow their own
                 // container rather than the container their workspace mostly
                 // uses.
-                let essentialProfileId = (tab["userContextId"] as? Int)
+                let favoriteProfileId = (tab["userContextId"] as? Int)
                     .flatMap { profilesByContainer[$0]?.id } ?? profileId
-                essentials.append(
+                favorite.append(
                     SumiPortableLauncher(
                         id: syncId,
                         title: title,
                         urlString: url,
                         index: idx,
-                        profileId: essentialProfileId,
-                        executionProfileId: essentialProfileId,
+                        profileId: favoriteProfileId,
+                        executionProfileId: favoriteProfileId,
                         spaceId: nil,
                         folderId: nil,
                         iconAsset: nil,
@@ -263,7 +263,7 @@ struct SumiZenImportParser {
             profiles: Array(profilesByContainer.values).sorted { $0.index < $1.index },
             spaces: spaces,
             folders: folderRecords,
-            essentials: essentials,
+            favorite: favorite,
             pinnedLaunchers: pinned,
             regularTabs: regularTabs,
             bookmarks: bookmarks

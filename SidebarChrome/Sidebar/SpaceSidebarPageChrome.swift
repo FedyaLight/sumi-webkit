@@ -8,15 +8,15 @@ import SwiftUI
 
 struct SidebarPageInventorySnapshot: Equatable {
     let space: SidebarSpaceInventorySnapshot
-    let essentialPins: [ShortcutPin]
+    let favoritePins: [ShortcutPin]
 
     static func == (
         lhs: SidebarPageInventorySnapshot,
         rhs: SidebarPageInventorySnapshot
     ) -> Bool {
         lhs.space == rhs.space
-            && lhs.essentialPins.count == rhs.essentialPins.count
-            && zip(lhs.essentialPins, rhs.essentialPins).allSatisfy {
+            && lhs.favoritePins.count == rhs.favoritePins.count
+            && zip(lhs.favoritePins, rhs.favoritePins).allSatisfy {
                 $0 === $1
             }
     }
@@ -201,8 +201,8 @@ extension SpacesSideBarView {
                                 spaceID: space.id,
                                 regularTabs: []
                             ),
-                    essentialPins: pageProfileId.map {
-                        spaceCatalog.essentialPins(profileID: $0)
+                    favoritePins: pageProfileId.map {
+                        spaceCatalog.favoritePins(profileID: $0)
                     } ?? []
                 )
             }
@@ -245,7 +245,7 @@ extension SpacesSideBarView {
         allowsInteractiveWork: Bool
     ) -> some View {
         let pinIDs = Set(pageInventory.space.pinsByID.keys)
-            .union(pageInventory.essentialPins.map(\.id))
+            .union(pageInventory.favoritePins.map(\.id))
         let current: @MainActor () -> SidebarLauncherRuntimeSnapshot = {
             selection.launcherRuntimeSnapshot(
                 pinIDs: pinIDs,
@@ -313,19 +313,19 @@ extension SpacesSideBarView {
                     && SpaceSidebarChromeBindings.shouldShowSidebarExtensionGrid(
                         slotCount: extensionGrid.slotIDs.count
                     )
-                let hasVisibleEssentials = includesPinnedGrid
+                let hasVisibleFavorite = includesPinnedGrid
                     && !windowState.isIncognito
-                    && !SidebarEssentialVisualProjection.make(
-                        pins: pageInventory.essentialPins,
+                    && !SidebarFavoriteVisualProjection.make(
+                        pins: pageInventory.favoritePins,
                         splitGroups: Array(pageInventory.space.splitGroupsByID.values),
                         profileID: pageProfileId
                     ).isEmpty
-                let showsEssentialsSurface = hasVisibleEssentials
+                let showsFavoriteSurface = hasVisibleFavorite
                     || pageProfileId.map {
-                        sumiSettings.showsEssentialsPlaceholder(profileId: $0)
+                        sumiSettings.showsFavoritePlaceholder(profileId: $0)
                     } == true
-                let essentialsTopPadding = SidebarChromeMetrics.essentialsTopPadding(
-                    showsEssentialsSurface: showsEssentialsSurface,
+                let favoriteTopPadding = SidebarChromeMetrics.favoriteTopPadding(
+                    showsFavoriteSurface: showsFavoriteSurface,
                     showsExtensionGrid: showsExtensionGrid
                 )
 
@@ -344,16 +344,16 @@ extension SpacesSideBarView {
                             spaceId: space.id,
                             profileId: pageProfileId,
                             inventory: pageInventory.space,
-                            items: pageInventory.essentialPins,
+                            items: pageInventory.favoritePins,
                             launcherRuntime: launcherRuntime,
                             isTransitioningProfile: isTransitioningProfile,
                             pageRenderMode: pageRenderMode
                         )
-                        .padding(.top, essentialsTopPadding)
+                        .padding(.top, favoriteTopPadding)
                         .padding(
                             .bottom,
-                            showsEssentialsSurface
-                                ? SidebarChromeMetrics.essentialsToSpaceTitleSpacing
+                            showsFavoriteSurface
+                                ? SidebarChromeMetrics.favoriteToSpaceTitleSpacing
                                 : 0
                         )
                     }
@@ -412,7 +412,7 @@ extension SpacesSideBarView {
         pageRenderMode: SidebarPageRenderMode
     ) -> some View {
         let allowsInteractiveWork = pageRenderMode == .interactive && allowsSidebarInteractiveWork
-        let shouldAnimate = SpaceSidebarChromeBindings.shouldAnimateEssentialsLayout(
+        let shouldAnimate = SpaceSidebarChromeBindings.shouldAnimateFavoriteLayout(
             isActiveWindow: windowRegistry.activeWindow?.id == windowState.id,
             isTransitioningProfile: isTransitioningProfile,
             pageRenderMode: pageRenderMode,
@@ -433,7 +433,7 @@ extension SpacesSideBarView {
             spaceId: spaceId,
             profileId: profileId,
             isTransitioningProfile: isTransitioningProfile,
-            dragPresentation: dragState.essentialsPresentation,
+            dragPresentation: dragState.favoritePresentation,
             animateLayout: shouldAnimate,
             reportsGeometry: allowsInteractiveWork,
             isAppKitInteractionEnabled: allowsInteractiveWork
@@ -457,8 +457,8 @@ extension SpacesSideBarView {
                         spaceID: space.id,
                         regularTabs: []
                     ),
-            essentialPins: profileID.map {
-                spaceCatalog.essentialPins(profileID: $0)
+            favoritePins: profileID.map {
+                spaceCatalog.favoritePins(profileID: $0)
             } ?? []
         )
     }

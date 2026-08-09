@@ -1,24 +1,24 @@
 //
-//  SidebarEssentialsDropHitPolicy.swift
+//  SidebarFavoriteDropHitPolicy.swift
 //  Sumi
 //
 
 import CoreGraphics
 
-/// Resolves the rect a drag must be inside to target the Essentials zone.
+/// Resolves the rect a drag must be inside to target the Favorite zone.
 ///
 /// Kept a pure function called once per geometry rebuild instead of a computed
-/// property on `SidebarEssentialsLayoutMetrics`: the drop resolver hit-tests the
+/// property on `SidebarFavoriteLayoutMetrics`: the drop resolver hit-tests the
 /// zone on every `draggingUpdated`, and geometry only changes when the reported
 /// layout signature does, so the union work belongs on the write side.
-enum SidebarEssentialsDropHitPolicy {
+enum SidebarFavoriteDropHitPolicy {
     /// An empty zone showing no placeholder collapses to a strip too thin to aim
     /// at, so its hit region widens to at least one tile. With the placeholder on
     /// screen `dropFrame` is already that large and the union is a no-op.
     static func resolvedDropHitFrame(
         frame: CGRect,
         dropFrame: CGRect,
-        dropSlotFrames: [SidebarEssentialsDropSlotMetrics],
+        dropSlotFrames: [SidebarFavoriteDropSlotMetrics],
         visibleItemCount: Int,
         itemSize: CGSize,
         canAcceptDrop: Bool

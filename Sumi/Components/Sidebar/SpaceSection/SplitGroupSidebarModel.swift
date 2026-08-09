@@ -259,7 +259,7 @@ enum SplitGroupSidebarModel {
         switch group.container {
         case .regularTabs:
             return nil
-        case .essentialSidebar, .shortcutSidebar:
+        case .favoriteSidebar, .shortcutSidebar:
             return items.contains { $0.tab != nil }
                 ? .unload
                 : .close
@@ -296,8 +296,8 @@ enum SplitGroupSidebarModel {
         fallbackSpaceId: UUID
     ) -> DropZoneID {
         switch pin.role {
-        case .essential:
-            return .essentials
+        case .favorite:
+            return .favorite
         case .spacePinned:
             if let folderId = pin.folderId {
                 return .folder(folderId)

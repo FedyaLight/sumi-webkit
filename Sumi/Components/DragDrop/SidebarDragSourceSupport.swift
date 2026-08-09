@@ -213,7 +213,7 @@ enum SidebarDragPreviewSessionFactory {
         sourceSize: CGSize,
         pointerAnchor: CGPoint
     ) -> CGPoint {
-        guard case .essentials = configuration.sourceZone else {
+        guard case .favorite = configuration.sourceZone else {
             return pointerAnchor
         }
         return CGPoint(
@@ -242,7 +242,7 @@ enum SidebarDragPreviewSessionFactory {
         insert(previewKind)
         if previewKind != .folderRow {
             insert(.row)
-            insert(.essentialsTile)
+            insert(.favoriteTile)
         }
 
         return assets

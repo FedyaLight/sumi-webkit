@@ -7,7 +7,7 @@ final class SidebarRegularTabDragService {
         case reorder(spaceID: UUID)
         case moveToPinned(spaceID: UUID)
         case moveToFolder(folderID: UUID)
-        case moveToEssentials
+        case moveToFavorite
         case moveToRegular(spaceID: UUID)
         case unsupported
     }
@@ -34,8 +34,8 @@ final class SidebarRegularTabDragService {
         let regularOperation = classify(operation)
         let didMutate: Bool
         switch regularOperation {
-        case .reorder where operation.toContainer == .essentials:
-            didMutate = shortcuts.reorderEssential(tab, to: operation.toIndex)
+        case .reorder where operation.toContainer == .favorite:
+            didMutate = shortcuts.reorderFavorite(tab, to: operation.toIndex)
 
         case .reorder(let spaceID) where operation.toContainer == .spacePinned(spaceID):
             didMutate = shortcuts.reorderSpacePinned(tab, in: spaceID, to: operation.toIndex)
@@ -59,15 +59,15 @@ final class SidebarRegularTabDragService {
             where operation.fromContainer == .spacePinned(operation.scope.spaceId):
             didMutate = regularTabs.place(tab, in: targetSpaceID, at: operation.toIndex)
 
-        case .moveToEssentials
+        case .moveToFavorite
             where operation.fromContainer == .spaceRegular(operation.scope.spaceId)
                 || operation.fromContainer == .spacePinned(operation.scope.spaceId):
-            guard let profileID = shortcuts.resolvedEssentialsProfileID(for: operation) else {
+            guard let profileID = shortcuts.resolvedFavoriteProfileID(for: operation) else {
                 return false
             }
             didMutate = shortcuts.convert(
                 tab,
-                to: .essential,
+                to: .favorite,
                 profileID: profileID,
                 spaceID: nil,
                 folderID: nil,
@@ -75,10 +75,10 @@ final class SidebarRegularTabDragService {
                 preferredWindowID: operation.scope.windowId
             ) != nil
 
-        case .moveToRegular(let spaceID) where operation.fromContainer == .essentials:
+        case .moveToRegular(let spaceID) where operation.fromContainer == .favorite:
             didMutate = regularTabs.place(tab, in: spaceID, at: operation.toIndex)
 
-        case .moveToPinned(let spaceID) where operation.fromContainer == .essentials:
+        case .moveToPinned(let spaceID) where operation.fromContainer == .favorite:
             didMutate = shortcuts.convert(
                 tab,
                 to: .spacePinned,
@@ -105,13 +105,13 @@ final class SidebarRegularTabDragService {
                 preferredWindowID: operation.scope.windowId
             ) != nil
 
-        case .moveToEssentials where isFolderContainer(operation.fromContainer):
-            guard let profileID = shortcuts.resolvedEssentialsProfileID(for: operation) else {
+        case .moveToFavorite where isFolderContainer(operation.fromContainer):
+            guard let profileID = shortcuts.resolvedFavoriteProfileID(for: operation) else {
                 return false
             }
             didMutate = shortcuts.convert(
                 tab,
-                to: .essential,
+                to: .favorite,
                 profileID: profileID,
                 spaceID: nil,
                 folderID: nil,
@@ -156,7 +156,7 @@ final class SidebarRegularTabDragService {
              .reorder,
              .moveToPinned,
              .moveToFolder,
-             .moveToEssentials,
+             .moveToFavorite,
              .moveToRegular:
             RuntimeDiagnostics.emit("⚠️ Invalid drag operation: \(operation)")
             return false
@@ -170,7 +170,7 @@ final class SidebarRegularTabDragService {
 
     private func classify(_ operation: DragOperation) -> Operation {
         switch (operation.fromContainer, operation.toContainer) {
-        case (.essentials, .essentials):
+        case (.favorite, .favorite):
             return .reorder(spaceID: operation.scope.spaceId)
 
         case (.spacePinned(let fromSpaceID), .spacePinned(let toSpaceID))
@@ -182,7 +182,7 @@ final class SidebarRegularTabDragService {
             return .reorder(spaceID: toSpaceID)
 
         case (.spaceRegular, .spacePinned(let targetSpaceID)),
-             (.essentials, .spacePinned(let targetSpaceID)),
+             (.favorite, .spacePinned(let targetSpaceID)),
              (.folder, .spacePinned(let targetSpaceID)):
             return .moveToPinned(spaceID: targetSpaceID)
 
@@ -191,17 +191,17 @@ final class SidebarRegularTabDragService {
              (.folder, .folder(let folderID)):
             return .moveToFolder(folderID: folderID)
 
-        case (.spaceRegular, .essentials),
-             (.spacePinned, .essentials),
-             (.folder, .essentials):
-            return .moveToEssentials
+        case (.spaceRegular, .favorite),
+             (.spacePinned, .favorite),
+             (.folder, .favorite):
+            return .moveToFavorite
 
         case (.spacePinned, .spaceRegular(let targetSpaceID)),
-             (.essentials, .spaceRegular(let targetSpaceID)),
+             (.favorite, .spaceRegular(let targetSpaceID)),
              (.folder, .spaceRegular(let targetSpaceID)):
             return .moveToRegular(spaceID: targetSpaceID)
 
-        case (.essentials, .folder),
+        case (.favorite, .folder),
              (.spacePinned, .spacePinned),
              (.spaceRegular, .spaceRegular),
              (.none, _),

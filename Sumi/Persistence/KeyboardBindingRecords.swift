@@ -26,7 +26,13 @@ struct BrowserActionBindingRecord: Codable, Equatable, FetchableRecord, Persista
         modifiers = keyCombination?.modifiers.rawValue
     }
 
-    var action: ShortcutAction? { ShortcutAction(rawValue: actionID) }
+    var action: ShortcutAction? {
+        switch actionID {
+        case "add_to_essentials": return .addToFavorite
+        case "remove_from_essentials": return .removeFromFavorite
+        default: return ShortcutAction(rawValue: actionID)
+        }
+    }
 
     var keyCombination: KeyCombination? {
         guard let key, let modifiers else { return nil }

@@ -33,8 +33,8 @@ public enum ShortcutAction: String, CaseIterable, Hashable, Codable, Sendable {
     case newFolder = "new_folder"
     case pinTab = "pin_tab"
     case unpinTab = "unpin_tab"
-    case addToEssentials = "add_to_essentials"
-    case removeFromEssentials = "remove_from_essentials"
+    case addToFavorite = "add_to_favorite"
+    case removeFromFavorite = "remove_from_favorite"
     case newBoost = "new_boost"
 
     case nextSpace = "next_space"
@@ -80,6 +80,24 @@ public enum ShortcutAction: String, CaseIterable, Hashable, Codable, Sendable {
     case switchToLightMode = "switch_to_light_mode"
     case switchToDarkMode = "switch_to_dark_mode"
 
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let value = try container.decode(String.self)
+        let normalizedValue: String
+        switch value {
+        case "add_to_essentials": normalizedValue = "add_to_favorite"
+        case "remove_from_essentials": normalizedValue = "remove_from_favorite"
+        default: normalizedValue = value
+        }
+        guard let action = Self(rawValue: normalizedValue) else {
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Unsupported shortcut action: \(value)"
+            )
+        }
+        self = action
+    }
+
     public var displayName: String {
         switch self {
         case .goBack: return "Go Back"
@@ -113,8 +131,8 @@ public enum ShortcutAction: String, CaseIterable, Hashable, Codable, Sendable {
         case .newFolder: return "New Folder"
         case .pinTab: return "Pin Tab"
         case .unpinTab: return "Unpin Tab"
-        case .addToEssentials: return "Add to Essentials"
-        case .removeFromEssentials: return "Remove from Essentials"
+        case .addToFavorite: return "Add to Favorite"
+        case .removeFromFavorite: return "Remove from Favorite"
         case .newBoost: return "New Boost"
         case .nextSpace: return "Next Space"
         case .previousSpace: return "Previous Space"
@@ -202,8 +220,8 @@ public enum ShortcutAction: String, CaseIterable, Hashable, Codable, Sendable {
         .previousTab,
         .captureScreenshot,
         .toggleTabsOnRight,
-        .addToEssentials,
-        .removeFromEssentials,
+        .addToFavorite,
+        .removeFromFavorite,
         .findInPage,
         .manageExtensions,
         .switchToAutomaticAppearance,
@@ -235,7 +253,7 @@ public enum ShortcutAction: String, CaseIterable, Hashable, Codable, Sendable {
         switch self {
         case .goBack, .goForward, .refresh, .clearCookiesAndRefresh, .focusAddressBar, .findInPage, .hardReload, .toggleReaderMode, .newBoost:
             return .navigation
-        case .newTab, .closeTab, .undoCloseTab, .nextTab, .previousTab, .goToTab1, .goToTab2, .goToTab3, .goToTab4, .goToTab5, .goToTab6, .goToTab7, .goToTab8, .goToLastTab, .duplicateTab, .splitGrid, .splitVertical, .splitHorizontal, .unsplit, .newEmptySplit, .addSplitTop, .addSplitLeft, .addSplitRight, .addSplitBottom, .pinTab, .unpinTab, .addToEssentials, .removeFromEssentials:
+        case .newTab, .closeTab, .undoCloseTab, .nextTab, .previousTab, .goToTab1, .goToTab2, .goToTab3, .goToTab4, .goToTab5, .goToTab6, .goToTab7, .goToTab8, .goToLastTab, .duplicateTab, .splitGrid, .splitVertical, .splitHorizontal, .unsplit, .newEmptySplit, .addSplitTop, .addSplitLeft, .addSplitRight, .addSplitBottom, .pinTab, .unpinTab, .addToFavorite, .removeFromFavorite:
             return .tabs
         case .newFolder, .nextSpace, .previousSpace, .customizeSpaceGradient,
              .goToSpace1, .goToSpace2, .goToSpace3, .goToSpace4, .goToSpace5,
@@ -280,8 +298,8 @@ public enum ShortcutAction: String, CaseIterable, Hashable, Codable, Sendable {
         case .newFolder: return "folder.badge.plus"
         case .pinTab: return "pin"
         case .unpinTab: return "pin.slash"
-        case .addToEssentials: return "star"
-        case .removeFromEssentials: return "star.slash"
+        case .addToFavorite: return "star"
+        case .removeFromFavorite: return "star.slash"
         case .newBoost: return "wand.and.stars"
         case .nextSpace: return "arrow.right.circle"
         case .previousSpace: return "arrow.left.circle"
@@ -341,8 +359,8 @@ public enum ShortcutAction: String, CaseIterable, Hashable, Codable, Sendable {
         case .newFolder: return ["folder", "sidebar"]
         case .pinTab: return ["pin", "favorite", "sidebar"]
         case .unpinTab: return ["unpin", "regular tab", "sidebar"]
-        case .addToEssentials: return ["favorite", "pin", "sidebar"]
-        case .removeFromEssentials: return ["unfavorite", "unpin", "sidebar"]
+        case .addToFavorite: return ["favorite", "pin", "sidebar"]
+        case .removeFromFavorite: return ["unfavorite", "unpin", "sidebar"]
         case .newBoost: return ["boost", "customize website", "site style"]
         case .closeBrowser: return ["quit", "exit"]
         case .toggleFullScreen: return ["fullscreen"]

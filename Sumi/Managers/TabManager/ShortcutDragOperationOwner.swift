@@ -6,18 +6,18 @@ final class ShortcutDragOperationOwner {
     private let placement: ShortcutPinPlacementCommandService
     private let pinToRegular: ShortcutPinToRegularTabService
     private let folders: TabFolderCollectionStateOwner
-    private let essentialsPlacement: EssentialsShortcutPlacementOwner
+    private let favoritePlacement: FavoriteShortcutPlacementOwner
 
     init(
         placement: ShortcutPinPlacementCommandService,
         pinToRegular: ShortcutPinToRegularTabService,
         folders: TabFolderCollectionStateOwner,
-        essentialsPlacement: EssentialsShortcutPlacementOwner
+        favoritePlacement: FavoriteShortcutPlacementOwner
     ) {
         self.placement = placement
         self.pinToRegular = pinToRegular
         self.folders = folders
-        self.essentialsPlacement = essentialsPlacement
+        self.favoritePlacement = favoritePlacement
     }
 
     @discardableResult
@@ -30,17 +30,17 @@ final class ShortcutDragOperationOwner {
 
     private func move(_ pin: ShortcutPin, operation: DragOperation) -> Bool {
         switch (operation.fromContainer, operation.toContainer) {
-        case (.essentials, .spacePinned(let targetSpaceId)):
+        case (.favorite, .spacePinned(let targetSpaceId)):
             return moveToTopLevelPinned(
                 pin,
                 in: targetSpaceId,
                 at: operation.toIndex
             )
 
-        case (.essentials, .folder(let targetFolderId)):
+        case (.favorite, .folder(let targetFolderId)):
             return moveToFolder(pin, targetFolderId, at: operation.toIndex)
 
-        case (.essentials, .spaceRegular(let targetSpaceId)):
+        case (.favorite, .spaceRegular(let targetSpaceId)):
             return pinToRegular.convert(
                 pin,
                 into: targetSpaceId,
@@ -48,14 +48,14 @@ final class ShortcutDragOperationOwner {
                 preferredWindowId: operation.scope.windowId
             )
 
-        case (.spacePinned, .essentials),
-             (.folder, .essentials):
-            guard let currentProfileId = essentialsPlacement.resolvedProfileId(
+        case (.spacePinned, .favorite),
+             (.folder, .favorite):
+            guard let currentProfileId = favoritePlacement.resolvedProfileId(
                 for: operation
             ) else { return false }
             return placement.move(
                 pin,
-                to: .essential,
+                to: .favorite,
                 profileId: currentProfileId,
                 spaceId: nil,
                 folderId: nil,
@@ -97,7 +97,7 @@ final class ShortcutDragOperationOwner {
                 preferredWindowId: operation.scope.windowId
             )
 
-        case (.essentials, .essentials),
+        case (.favorite, .favorite),
              (.spaceRegular, _),
              (.none, _),
              (_, .none):
@@ -111,8 +111,8 @@ final class ShortcutDragOperationOwner {
         to visualBoundary: Int
     ) -> Bool {
         switch container {
-        case .essentials:
-            return placement.reorderEssential(pin, to: visualBoundary)
+        case .favorite:
+            return placement.reorderFavorite(pin, to: visualBoundary)
         case .spacePinned(let spaceID):
             return placement.reorderSpacePinned(
                 pin,

@@ -3,13 +3,13 @@ import AppKit
 @MainActor
 enum SidebarSavedItemDeletionConfirmationPresenter {
     enum SavedTabKind {
-        case essential
+        case favorite
         case pinnedTab
 
         var displayName: String {
             switch self {
-            case .essential:
-                return "Essential"
+            case .favorite:
+                return "Favorite"
             case .pinnedTab:
                 return "Pinned Tab"
             }

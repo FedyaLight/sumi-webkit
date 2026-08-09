@@ -44,7 +44,7 @@ extension BrowserManager {
         let pinProjection = SidebarPinFolderProjection(
             runtimeIsAlive: runtimeIsAlive,
             windows: windowIdentity,
-            essentials: essentialsShortcutPlacementOwner,
+            favorite: favoriteShortcutPlacementOwner,
             resolution: shortcutPinRuntimeResolutionOwner
         )
         let pinCommands = sidebarPinCommands
@@ -89,7 +89,7 @@ extension BrowserManager {
             destinations: SidebarURLDropDestinationCatalog(
                 spaces: spaceStateOwner,
                 folders: folderCollectionStateOwner,
-                essentials: essentialsShortcutPlacementOwner
+                favorite: favoriteShortcutPlacementOwner
             ),
             shortcutInsertion: shortcutInsertion,
             orderProjection: SidebarDropOrderProjection(

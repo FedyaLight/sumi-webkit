@@ -40,7 +40,7 @@ final class ShortcutTabBindingTargetMutationService {
             currentSpaceId: currentSpaceID
         )
         tab.profileId = resolution.desiredLiveTabProfileId(for: pin)
-        tab.folderId = pin.role == .essential ? nil : pin.folderId
+        tab.folderId = pin.role == .favorite ? nil : pin.folderId
     }
 
     func prepareExisting(
@@ -66,7 +66,7 @@ final class ShortcutTabBindingTargetMutationService {
             desiredProfileID: resolution.desiredLiveTabProfileId(for: pin),
             resolvedProfileID: resolvedProfileID,
             runtimeFallback: runtimeFallback,
-            folderID: pin.role == .essential ? nil : pin.folderId
+            folderID: pin.role == .favorite ? nil : pin.folderId
         )
         guard let profile = profiles.prepareShortcutAssignment(
             tab: tab,

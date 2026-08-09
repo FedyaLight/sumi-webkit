@@ -46,10 +46,10 @@ final class SplitGroupShortcutMemberRelocation {
         switch container {
         case .regularTabs:
             return nil
-        case .essentialSidebar(let profileID, let index):
+        case .favoriteSidebar(let profileID, let index):
             guard let profileID else { return nil }
             return ShortcutSplitLauncherDestination(
-                role: .essential,
+                role: .favorite,
                 profileId: profileID,
                 spaceId: nil,
                 folderId: nil,

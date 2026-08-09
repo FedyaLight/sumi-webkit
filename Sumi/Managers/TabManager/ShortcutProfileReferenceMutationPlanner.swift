@@ -125,8 +125,8 @@ struct ShortcutProfileReferenceMutationPlanner {
         switch group.container {
         case .regularTabs:
             container = group.container
-        case .essentialSidebar(let ownerProfileID, let index):
-            container = .essentialSidebar(
+        case .favoriteSidebar(let ownerProfileID, let index):
+            container = .favoriteSidebar(
                 profileId: ownerProfileID == profileID
                     ? fallbackProfileID : ownerProfileID,
                 index: index

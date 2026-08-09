@@ -968,7 +968,7 @@ final class SpaceProfileRetirementTransactionTests: XCTestCase {
             tabID in
             ShortcutPin(
                 id: UUID(),
-                role: .essential,
+                role: .favorite,
                 profileId: sourceProfile.id,
                 index: index,
                 launchURL: URL(string: "https://retired-\(index).example")!,

@@ -72,19 +72,19 @@ final class RegularTabShortcutSidebarCandidatePreparer {
         let destination: TabShortcutPinDestination
         let container: SplitGroupContainer
         switch standaloneTargetPin.role {
-        case .essential:
+        case .favorite:
             guard let profileID = standaloneTargetPin.profileId else {
                 return nil
             }
             destination = TabShortcutPinDestination(
-                role: .essential,
+                role: .favorite,
                 profileId: profileID,
                 spaceId: nil,
                 folderId: nil,
                 index: standaloneTargetPin.index,
                 opensFolder: false
             )
-            container = .essentialSidebar(
+            container = .favoriteSidebar(
                 profileId: profileID,
                 index: standaloneTargetPin.index
             )

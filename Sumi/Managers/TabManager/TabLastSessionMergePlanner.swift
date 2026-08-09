@@ -58,7 +58,7 @@ struct TabLastSessionMergePlanner {
             orderedSpaceIds: orderedSpaceIds,
             restoredSpacesById: snapshotSpacesById,
             foldersBySpace: folders,
-            essentialPinsByProfile: shortcutsAndTabs.essentialPinsByProfile,
+            favoritePinsByProfile: shortcutsAndTabs.favoritePinsByProfile,
             spacePinnedShortcuts: shortcutsAndTabs.spacePinnedShortcuts,
             regularTabsBySpace: shortcutsAndTabs.regularTabsBySpace,
             spaceSelection: selectedSpace,
@@ -70,7 +70,7 @@ struct TabLastSessionMergePlanner {
 
 private extension TabLastSessionMergePlanner {
     struct MergedTabs {
-        let essentialPinsByProfile: [UUID: [TabLastSessionShortcutDescriptor]]
+        let favoritePinsByProfile: [UUID: [TabLastSessionShortcutDescriptor]]
         let spacePinnedShortcuts: [UUID: [TabLastSessionShortcutDescriptor]]
         let regularTabsBySpace: [UUID: [TabLastSessionRegularTabPlacement]]
         let lazyRestoredTabIds: Set<UUID>
@@ -143,7 +143,7 @@ private extension TabLastSessionMergePlanner {
         profileBySpace: [UUID: UUID?],
         reservedIds: Set<UUID>
     ) -> MergedTabs {
-        var essentialPins = live.essentialPinsByProfile
+        var favoritePins = live.favoritePinsByProfile
         var spacePins = live.spacePinnedShortcuts
         var regularTabs: [UUID: [TabLastSessionRegularTabPlacement]] = [:]
         for (spaceId, tabs) in live.regularTabsBySpace {
@@ -165,8 +165,8 @@ private extension TabLastSessionMergePlanner {
                       let launchURL = absoluteURL(tab.urlString),
                       SumiSurface.isEmptyNewTabURL(launchURL) == false
                 else { continue }
-                essentialPins[profileId, default: []].append(
-                    shortcut(from: tab, kind: .essential, launchURL: launchURL)
+                favoritePins[profileId, default: []].append(
+                    shortcut(from: tab, kind: .favorite, launchURL: launchURL)
                 )
                 continue
             }
@@ -226,7 +226,7 @@ private extension TabLastSessionMergePlanner {
             restoredTabIds.insert(tab.id)
         }
 
-        essentialPins = essentialPins.mapValues { descriptors in
+        favoritePins = favoritePins.mapValues { descriptors in
             descriptors.sorted(by: shortcutOrder).enumerated().map { offset, descriptor in
                 descriptor.placed(at: offset)
             }
@@ -239,7 +239,7 @@ private extension TabLastSessionMergePlanner {
         }
 
         return MergedTabs(
-            essentialPinsByProfile: essentialPins,
+            favoritePinsByProfile: favoritePins,
             spacePinnedShortcuts: spacePins,
             regularTabsBySpace: regularTabs,
             lazyRestoredTabIds: restoredTabIds

@@ -70,7 +70,7 @@ final class ShortcutPhysicalSourceRoutingTests: XCTestCase {
 
     func testResolverRejectsMismatchedExecutionDataStore() throws {
         let harness = try makeHarness(
-            role: .essential,
+            role: .favorite,
             sourceDataStore: .nonPersistent()
         )
         defer { closePublishedShells(in: harness.registry) }
@@ -110,9 +110,9 @@ final class ShortcutPhysicalSourceRoutingTests: XCTestCase {
         XCTAssertIdentical(exact.window, harness.sourceWindow)
     }
 
-    func testEssentialAndSpacePinnedRoutesPreserveExecutionPartition()
+    func testFavoriteAndSpacePinnedRoutesPreserveExecutionPartition()
         throws {
-        for role in [ShortcutPinRole.essential, .spacePinned] {
+        for role in [ShortcutPinRole.favorite, .spacePinned] {
             let harness = try makeHarness(role: role)
             defer { closePublishedShells(in: harness.registry) }
             let receipt = try XCTUnwrap(
@@ -196,7 +196,7 @@ final class ShortcutPhysicalSourceRoutingTests: XCTestCase {
 
     func testExtensionWebKitChildWindowRejectsCrossProfileSourceBeforeMutation()
         throws {
-        let harness = try makeHarness(role: .essential)
+        let harness = try makeHarness(role: .favorite)
         defer { closePublishedShells(in: harness.registry) }
         let existingWindowIDs = Set(harness.registry.windows.keys)
         let existingTabIDs = Set(
@@ -273,7 +273,7 @@ final class ShortcutPhysicalSourceRoutingTests: XCTestCase {
         let pin = ShortcutPin(
             id: UUID(),
             role: role,
-            profileId: role == .essential ? presentationProfile.id : nil,
+            profileId: role == .favorite ? presentationProfile.id : nil,
             executionProfileId: executionProfile.id,
             spaceId: role == .spacePinned ? space.id : nil,
             index: 0,

@@ -100,25 +100,25 @@ final class ShellSelectionServiceTests: XCTestCase {
         XCTAssertEqual(resolved?.id, second.id)
     }
 
-    func testSelectionTargetForSpaceActivationPreservesCurrentEssentialShortcutAcrossSpaceChange() {
+    func testSelectionTargetForSpaceActivationPreservesCurrentFavoriteShortcutAcrossSpaceChange() {
         let service = ShellSelectionService(splitQuery: BrowserManager().splitQuery)
         let profileID = UUID()
         let currentSpace = Space(name: "Current", profileId: profileID)
         let targetSpace = Space(name: "Target", profileId: profileID)
-        let essentialPin = ShortcutPin(
+        let favoritePin = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: profileID,
             index: 0,
-            launchURL: URL(string: "https://essential.example")!,
-            title: "Essential"
+            launchURL: URL(string: "https://favorite.example")!,
+            title: "Favorite"
         )
-        let essentialLiveTab = Tab(
-            url: essentialPin.launchURL,
-            name: essentialPin.title,
+        let favoriteLiveTab = Tab(
+            url: favoritePin.launchURL,
+            name: favoritePin.title,
             index: 0
         )
-        essentialLiveTab.bindToShortcutPin(essentialPin)
+        favoriteLiveTab.bindToShortcutPin(favoritePin)
         let targetPin = ShortcutPin(
             id: UUID(),
             role: .spacePinned,
@@ -142,11 +142,11 @@ final class ShellSelectionServiceTests: XCTestCase {
         )
         let store = FakeShellSelectionTabStore(
             spaces: [currentSpace, targetSpace],
-            allTabs: [essentialLiveTab, targetShortcut, recentRegular],
+            allTabs: [favoriteLiveTab, targetShortcut, recentRegular],
             tabsBySpace: [targetSpace.id: [recentRegular]],
-            shortcutPins: [essentialPin.id: essentialPin, targetPin.id: targetPin],
+            shortcutPins: [favoritePin.id: favoritePin, targetPin.id: targetPin],
             liveShortcutTabsByPin: [
-                essentialPin.id: essentialLiveTab,
+                favoritePin.id: favoriteLiveTab,
                 targetPin.id: targetShortcut,
             ]
         )
@@ -154,7 +154,7 @@ final class ShellSelectionServiceTests: XCTestCase {
         let windowState = BrowserWindowState()
         windowState.currentSpaceId = currentSpace.id
         windowState.currentProfileId = profileID
-        windowState.currentTabId = essentialLiveTab.id
+        windowState.currentTabId = favoriteLiveTab.id
         windowState.selectedShortcutPinForSpace[targetSpace.id] = targetPin.id
         windowState.selectionHistory.recentRegularTabIdsBySpace[targetSpace.id] = [recentRegular.id]
 
@@ -164,34 +164,34 @@ final class ShellSelectionServiceTests: XCTestCase {
             tabStore: store
         )
 
-        XCTAssertEqual(resolved?.id, essentialLiveTab.id)
+        XCTAssertEqual(resolved?.id, favoriteLiveTab.id)
         windowState.currentSpaceId = targetSpace.id
         XCTAssertIdentical(
             service.currentTab(for: windowState, tabStore: store),
-            essentialLiveTab
+            favoriteLiveTab
         )
     }
 
-    func testSelectionTargetBackgroundsOtherProfileEssentialAndRestoresItOnReturn() {
+    func testSelectionTargetBackgroundsOtherProfileFavoriteAndRestoresItOnReturn() {
         let service = ShellSelectionService(splitQuery: BrowserManager().splitQuery)
         let currentProfileID = UUID()
         let targetProfileID = UUID()
         let currentSpace = Space(name: "Current", profileId: currentProfileID)
         let targetSpace = Space(name: "Target", profileId: targetProfileID)
-        let essentialPin = ShortcutPin(
+        let favoritePin = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: currentProfileID,
             index: 0,
-            launchURL: URL(string: "https://essential.example")!,
-            title: "Essential"
+            launchURL: URL(string: "https://favorite.example")!,
+            title: "Favorite"
         )
-        let essentialLiveTab = Tab(
-            url: essentialPin.launchURL,
-            name: essentialPin.title,
+        let favoriteLiveTab = Tab(
+            url: favoritePin.launchURL,
+            name: favoritePin.title,
             index: 0
         )
-        essentialLiveTab.bindToShortcutPin(essentialPin)
+        favoriteLiveTab.bindToShortcutPin(favoritePin)
         let targetTab = Tab(
             url: URL(string: "https://target.example")!,
             name: "Target",
@@ -200,17 +200,17 @@ final class ShellSelectionServiceTests: XCTestCase {
         )
         let store = FakeShellSelectionTabStore(
             spaces: [currentSpace, targetSpace],
-            allTabs: [essentialLiveTab, targetTab],
+            allTabs: [favoriteLiveTab, targetTab],
             tabsBySpace: [targetSpace.id: [targetTab]],
-            shortcutPins: [essentialPin.id: essentialPin],
-            liveShortcutTabsByPin: [essentialPin.id: essentialLiveTab]
+            shortcutPins: [favoritePin.id: favoritePin],
+            liveShortcutTabsByPin: [favoritePin.id: favoriteLiveTab]
         )
         let windowState = BrowserWindowState()
         windowState.currentSpaceId = currentSpace.id
         windowState.currentProfileId = currentProfileID
-        windowState.currentTabId = essentialLiveTab.id
+        windowState.currentTabId = favoriteLiveTab.id
         windowState.selectionHistory.recentSelectionItemsBySpace[currentSpace.id] = [
-            .shortcutPin(essentialPin.id)
+            .shortcutPin(favoritePin.id)
         ]
 
         let resolved = service.selectionTargetForSpaceActivation(
@@ -224,8 +224,8 @@ final class ShellSelectionServiceTests: XCTestCase {
         windowState.currentProfileId = targetProfileID
         XCTAssertNil(service.currentTab(for: windowState, tabStore: store))
         XCTAssertIdentical(
-            store.shortcutLiveTab(for: essentialPin.id, in: windowState.id),
-            essentialLiveTab
+            store.shortcutLiveTab(for: favoritePin.id, in: windowState.id),
+            favoriteLiveTab
         )
 
         windowState.currentTabId = targetTab.id
@@ -235,7 +235,7 @@ final class ShellSelectionServiceTests: XCTestCase {
             tabStore: store
         )
 
-        XCTAssertIdentical(restored, essentialLiveTab)
+        XCTAssertIdentical(restored, favoriteLiveTab)
     }
 
     func testSelectionTargetForSpaceActivationUsesPreferredSpaceOrderingAfterCurrentSelectionGuards() {
@@ -470,7 +470,7 @@ final class ShellSelectionServiceTests: XCTestCase {
         )
         let pin = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             index: 0,
             launchURL: URL(string: "https://shortcut.example")!,
             title: "Shortcut"
@@ -515,7 +515,7 @@ final class ShellSelectionServiceTests: XCTestCase {
         let service = ShellSelectionService(splitQuery: BrowserManager().splitQuery)
         let pin = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             index: 0,
             launchURL: URL(string: "https://shortcut.example")!,
             title: "Shortcut"

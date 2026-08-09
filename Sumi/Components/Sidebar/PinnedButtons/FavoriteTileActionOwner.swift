@@ -1,11 +1,11 @@
 //
-//  EssentialTileActionOwner.swift
+//  FavoriteTileActionOwner.swift
 //  Sumi
 //
 
 import SwiftUI
 
-struct EssentialTileContextMenuActions {
+struct FavoriteTileContextMenuActions {
     let makeEntries: () -> [SidebarContextMenuEntry]
 
     func entries() -> [SidebarContextMenuEntry] {
@@ -14,10 +14,10 @@ struct EssentialTileContextMenuActions {
 }
 
 /// Owns the context-menu entry construction and mutation actions for an
-/// essentials (pinned-grid) tile, mirroring `TabFolderContextMenuActionOwner`'s
+/// favorite (pinned-grid) tile, mirroring `TabFolderContextMenuActionOwner`'s
 /// shape for the folder-scoped equivalent.
 @MainActor
-struct EssentialTileActionOwner {
+struct FavoriteTileActionOwner {
     let browserContext: SidebarBrowserContext
     let inventory: SidebarSpaceInventorySnapshot
     let selection: SidebarWindowSelectionQuery
@@ -32,8 +32,8 @@ struct EssentialTileActionOwner {
     /// activation/profile-transition/reduce-motion state owned by `PinnedGrid`).
     let mutateContentLayout: (@escaping () -> Void) -> Void
 
-    func contextMenuActions(for pin: ShortcutPin) -> EssentialTileContextMenuActions {
-        EssentialTileContextMenuActions(makeEntries: {
+    func contextMenuActions(for pin: ShortcutPin) -> FavoriteTileContextMenuActions {
+        FavoriteTileContextMenuActions(makeEntries: {
             let savedURLDriftActions: SidebarSavedURLDriftActions? =
                 selection.hasSavedURLDrift(pin, in: windowState)
                     ? .init(
@@ -45,9 +45,9 @@ struct EssentialTileActionOwner {
                 ? { unload(pin) }
                 : nil
             let moveToSpaceAction: (UUID) -> Void = { targetSpaceId in
-                moveEssential(pin, toSpace: targetSpaceId)
+                moveFavorite(pin, toSpace: targetSpaceId)
             }
-            let spaceChoices = essentialSpaceChoices
+            let spaceChoices = favoriteSpaceChoices
             let openInSplitView = makeSidebarShortcutOpenInSplitAction(
                 pin: pin,
                 browserContext: browserContext,
@@ -57,7 +57,7 @@ struct EssentialTileActionOwner {
             )
 
             return makeSidebarTabContextMenuEntries(
-                role: .essential,
+                role: .favorite,
                 actions: .init(
                     duplicate: { duplicateAsRegularTab(pin) },
                     openInSplitView: openInSplitView,
@@ -73,8 +73,8 @@ struct EssentialTileActionOwner {
                     },
                     edit: { presentShortcutLinkEditor(for: pin) },
                     folderTarget: .init(
-                        choices: essentialFolderChoices,
-                        onSelect: { folderId in moveEssential(pin, toFolder: folderId) }
+                        choices: favoriteFolderChoices,
+                        onSelect: { folderId in moveFavorite(pin, toFolder: folderId) }
                     ),
                     moveToSpace: .init(
                         choices: spaceChoices,
@@ -88,7 +88,7 @@ struct EssentialTileActionOwner {
                     ),
                     savedURLDrift: savedURLDriftActions,
                     unload: unloadAction,
-                    deleteSavedTab: { confirmDeleteEssential(pin) }
+                    deleteSavedTab: { confirmDeleteFavorite(pin) }
                 )
             )
         })
@@ -119,20 +119,20 @@ struct EssentialTileActionOwner {
         )
     }
 
-    func removeFromEssentials(_ pin: ShortcutPin) {
+    func removeFromFavorite(_ pin: ShortcutPin) {
         mutateContentLayout {
             _ = pinCommands.remove(pin)
         }
     }
 
-    func confirmDeleteEssential(_ pin: ShortcutPin) {
+    func confirmDeleteFavorite(_ pin: ShortcutPin) {
         SidebarSavedItemDeletionConfirmationPresenter.confirmDeleteSavedTab(
-            kind: .essential,
+            kind: .favorite,
             title: pin.preferredDisplayTitle,
             url: pin.launchURL,
             window: browserContext.windows.shellWindow(for: windowState),
             themeContext: themeContext,
-            onDelete: { removeFromEssentials(pin) }
+            onDelete: { removeFromFavorite(pin) }
         )
     }
 
@@ -145,13 +145,13 @@ struct EssentialTileActionOwner {
         )
     }
 
-    private func moveEssential(_ pin: ShortcutPin, toFolder folderId: UUID) {
+    private func moveFavorite(_ pin: ShortcutPin, toFolder folderId: UUID) {
         mutateContentLayout {
             _ = pinCommands.move(pin, toFolder: folderId)
         }
     }
 
-    private func moveEssential(_ pin: ShortcutPin, toSpace targetSpaceId: UUID) {
+    private func moveFavorite(_ pin: ShortcutPin, toSpace targetSpaceId: UUID) {
         mutateContentLayout {
             _ = pinCommands.move(pin, toSpace: targetSpaceId)
         }
@@ -162,7 +162,7 @@ struct EssentialTileActionOwner {
         return spaceLifecycle.space(id: contextMenuSpaceId)
     }
 
-    private var essentialFolderChoices: [SidebarContextMenuChoice] {
+    private var favoriteFolderChoices: [SidebarContextMenuChoice] {
         guard let contextMenuSpace else { return [] }
         return makeSidebarContextMenuFolderChoices(
             folders: contextMenuSpace.id == inventory.spaceID
@@ -171,7 +171,7 @@ struct EssentialTileActionOwner {
         )
     }
 
-    private var essentialSpaceChoices: [SidebarContextMenuChoice] {
+    private var favoriteSpaceChoices: [SidebarContextMenuChoice] {
         makeSidebarContextMenuSpaceChoices(
             spaces: spaceLifecycle.availableSpaces(isIncognito: false, ephemeralSpaces: [])
         )

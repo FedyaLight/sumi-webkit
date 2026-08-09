@@ -1,6 +1,6 @@
 import Foundation
 
-actor SumiEssentialBackdropDiskStorage {
+actor SumiFavoriteBackdropDiskStorage {
     private let rootDirectory: URL
     private let fileManager: FileManager
 
@@ -9,7 +9,7 @@ actor SumiEssentialBackdropDiskStorage {
         fileManager = .default
     }
 
-    func read(_ key: SumiEssentialBackdropKey.StoredKey) throws -> Data? {
+    func read(_ key: SumiFavoriteBackdropKey.StoredKey) throws -> Data? {
         do {
             return try Data(contentsOf: fileURL(for: key))
         } catch where Self.isMissingFileError(error) {
@@ -19,7 +19,7 @@ actor SumiEssentialBackdropDiskStorage {
 
     func write(
         _ data: Data,
-        for key: SumiEssentialBackdropKey.StoredKey
+        for key: SumiFavoriteBackdropKey.StoredKey
     ) throws {
         let directory = partitionDirectory(key.partitionComponent)
         try fileManager.createDirectory(
@@ -29,7 +29,7 @@ actor SumiEssentialBackdropDiskStorage {
         try data.write(to: fileURL(for: key), options: [.atomic])
     }
 
-    func remove(_ key: SumiEssentialBackdropKey.StoredKey) throws {
+    func remove(_ key: SumiFavoriteBackdropKey.StoredKey) throws {
         do {
             try fileManager.removeItem(at: fileURL(for: key))
         } catch where Self.isMissingFileError(error) {
@@ -38,7 +38,7 @@ actor SumiEssentialBackdropDiskStorage {
     }
 
     func remove(
-        _ key: SumiEssentialBackdropKey.StoredKey,
+        _ key: SumiFavoriteBackdropKey.StoredKey,
         ifMatching expectedData: Data
     ) throws {
         let url = fileURL(for: key)
@@ -50,7 +50,7 @@ actor SumiEssentialBackdropDiskStorage {
         }
     }
 
-    func existingKeys() throws -> Set<SumiEssentialBackdropKey.StoredKey> {
+    func existingKeys() throws -> Set<SumiFavoriteBackdropKey.StoredKey> {
         let partitions: [URL]
         do {
             partitions = try fileManager.contentsOfDirectory(
@@ -62,7 +62,7 @@ actor SumiEssentialBackdropDiskStorage {
             return []
         }
 
-        var keys = Set<SumiEssentialBackdropKey.StoredKey>()
+        var keys = Set<SumiFavoriteBackdropKey.StoredKey>()
         for partitionURL in partitions {
             guard (try? partitionURL.resourceValues(
                 forKeys: [.isDirectoryKey]
@@ -73,7 +73,7 @@ actor SumiEssentialBackdropDiskStorage {
                 options: [.skipsHiddenFiles]
             )
             for fileURL in files where fileURL.pathExtension == "png" {
-                keys.insert(SumiEssentialBackdropKey.StoredKey(
+                keys.insert(SumiFavoriteBackdropKey.StoredKey(
                     partitionComponent: partitionURL.lastPathComponent,
                     fileName: fileURL.lastPathComponent
                 ))
@@ -87,7 +87,7 @@ actor SumiEssentialBackdropDiskStorage {
     }
 
     private func fileURL(
-        for key: SumiEssentialBackdropKey.StoredKey
+        for key: SumiFavoriteBackdropKey.StoredKey
     ) -> URL {
         partitionDirectory(key.partitionComponent)
             .appendingPathComponent(key.fileName, isDirectory: false)

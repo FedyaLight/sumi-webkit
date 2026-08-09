@@ -221,7 +221,7 @@ final class ProfileReferenceInventoryTests: XCTestCase {
     ) -> ShortcutPin {
         ShortcutPin(
             id: UUID(),
-            role: profileID == nil ? .spacePinned : .essential,
+            role: profileID == nil ? .spacePinned : .favorite,
             profileId: profileID,
             executionProfileId: executionProfileID,
             spaceId: nil,

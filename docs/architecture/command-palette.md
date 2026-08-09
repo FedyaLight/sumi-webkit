@@ -117,13 +117,13 @@ A split group is represented by one row rather than one row per member:
 
 - its title lists member titles in group order;
 - its accessory is `Switch to Split View`;
-- its icon uses `SplitTileGeometry`, shared with the Essentials split tile;
+- its icon uses `SplitTileGeometry`, shared with the Favorite split tile;
 - grouped tabs and launchers are suppressed from the standalone result list.
 
 Launcher results use `Switch to Tab`. Closing an active launcher is presented
 as `Unload`; the runtime is retired while the durable pin remains.
 
-Pinning, unpinning, Essentials changes, and split conversion call the same
+Pinning, unpinning, Favorite changes, and split conversion call the same
 structural transactions used by the sidebar. The palette must not reproduce
 those mutations.
 
@@ -217,7 +217,7 @@ The main test surfaces are:
 - browser shortcut router tests for shared availability and execution;
 - `SumiCommandPaletteFocusUITests` for focus, scrolling, Site Search, launcher
   unload, split commands, and split result presentation;
-- `EssentialSplitCompactLayoutTests` for the split geometry shared with the
+- `FavoriteSplitCompactLayoutTests` for the split geometry shared with the
   palette.
 
 Visual release checks should cover light and dark themes, Reduced Motion,

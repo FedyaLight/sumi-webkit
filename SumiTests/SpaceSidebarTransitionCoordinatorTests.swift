@@ -113,7 +113,7 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
 
         // The transition layers must mount at progress 0 so SwiftUI has a
         // starting offset to animate from; otherwise the newly-inserted pages
-        // (and their essentials) appear already at the committed position and
+        // (and their favorite) appear already at the committed position and
         // swap without sliding.
         XCTAssertEqual(coordinator.transitionState.phase, .clickAnimating)
         XCTAssertTrue(coordinator.transitionState.hasDestination)
@@ -827,9 +827,9 @@ private func applyIncompleteInteractiveGeometry(
         generation: generation
     )
     dragState.geometry.report(
-        .essentials(SidebarEssentialsLayoutUpdate(
+        .favorite(SidebarFavoriteLayoutUpdate(
             spaceId: spaceId,
-            input: SidebarEssentialsLayoutMetricsInput(
+            input: SidebarFavoriteLayoutMetricsInput(
                 profileId: profileId,
                 frame: CGRect(x: 0, y: 0, width: 300, height: 140),
                 dropFrame: CGRect(x: 0, y: 0, width: 300, height: 180),
@@ -992,7 +992,7 @@ private struct TransitionSidebarFixture {
         pinProjection = SidebarPinFolderProjection(
             runtimeIsAlive: { true },
             windows: windows,
-            essentials: browser.essentialsShortcutPlacementOwner,
+            favorite: browser.favoriteShortcutPlacementOwner,
             resolution: browser.shortcutPinRuntimeResolutionOwner
         )
         lifecycle = browser.sidebarSpaceLifecycle

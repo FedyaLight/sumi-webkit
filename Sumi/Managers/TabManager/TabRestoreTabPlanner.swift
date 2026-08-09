@@ -60,7 +60,7 @@ struct TabRestoreTabPlanner: Sendable {
                 continue
             }
             if record.isPinned {
-                appendEssential(
+                appendFavorite(
                     record,
                     defaultProfileId: defaultProfileId,
                     blockedProfileIDs: blockedProfileIDs,
@@ -100,7 +100,7 @@ struct TabRestoreTabPlanner: Sendable {
         return result
     }
 
-    private func appendEssential(
+    private func appendFavorite(
         _ record: TabRestoreTabRecord,
         defaultProfileId: UUID?,
         blockedProfileIDs: Set<UUID>,
@@ -126,7 +126,7 @@ struct TabRestoreTabPlanner: Sendable {
         }
         let shortcut = TabRestoreShortcutDTO(
             id: record.id,
-            role: .essential,
+            role: .favorite,
             profileId: profileId,
             executionProfileId: allowed(
                 record.executionProfileId,

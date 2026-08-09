@@ -5,7 +5,7 @@ import SumiDomain
 struct SidebarPinnedDropContext {
     let page: SidebarPageGeometryMetrics
     let sectionFrame: CGRect
-    let essentialsBoundaryY: CGFloat
+    let favoriteBoundaryY: CGFloat
     let topLevelItems: [SidebarTopLevelPinnedItemMetrics]
     let listMetrics: SidebarPinnedListHitMetrics?
     let hasFolderTargets: Bool
@@ -20,7 +20,7 @@ enum SidebarPinnedDropPolicy {
         context: SidebarPinnedDropContext
     ) -> SidebarDropResolution? {
         guard hitFrame(context).contains(location),
-              location.y >= context.essentialsBoundaryY else { return nil }
+              location.y >= context.favoriteBoundaryY else { return nil }
 
         if let metrics = context.listMetrics {
             return resolution(

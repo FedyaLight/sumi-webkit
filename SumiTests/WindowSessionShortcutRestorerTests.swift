@@ -29,7 +29,7 @@ final class WindowSessionShortcutRestorerTests: XCTestCase {
         let windowState = BrowserWindowState()
         windowState.currentSpaceId = space.id
         windowState.currentShortcutPinId = pin.id
-        windowState.currentShortcutPinRole = .essential
+        windowState.currentShortcutPinRole = .favorite
 
         let didMaterialize = WindowSessionShortcutRestorer(
             pins: browser.shortcutPinCollectionStateOwner,
@@ -58,7 +58,7 @@ final class WindowSessionShortcutRestorerTests: XCTestCase {
         )
         let windowState = BrowserWindowState()
         windowState.currentSpaceId = space.id
-        windowState.currentShortcutPinRole = .essential
+        windowState.currentShortcutPinRole = .favorite
 
         let didMaterialize = WindowSessionShortcutRestorer(
             pins: browser.shortcutPinCollectionStateOwner,

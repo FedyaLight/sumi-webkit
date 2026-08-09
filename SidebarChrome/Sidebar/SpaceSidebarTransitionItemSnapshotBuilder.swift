@@ -346,7 +346,7 @@ enum SpaceSidebarTransitionItemSnapshotProjector {
     static func splitGroupSnapshot(
         for group: SplitGroup,
         context: FolderSnapshotContext,
-        backdropReader: (any BrowserEssentialBackdropReading)? = nil
+        backdropReader: (any BrowserFavoriteBackdropReading)? = nil
     ) -> SpaceSplitGroupSnapshot {
         let selectionSnapshot = SidebarWindowSelectionSnapshot(
             windowState: context.windowState
@@ -417,7 +417,7 @@ enum SpaceSidebarTransitionItemSnapshotProjector {
                         )
                     )
                 },
-                essentialBackdrop: item.pin.flatMap { pin in
+                favoriteBackdrop: item.pin.flatMap { pin in
                     backdropReader?.cachedBackdrop(
                         for: pin.launchURL,
                         partition: context.pinProjection.faviconPartition(
@@ -461,7 +461,7 @@ enum SpaceSidebarTransitionItemSnapshotProjector {
         inventory: SidebarSpaceInventorySnapshot?,
         selection: SidebarWindowSelectionQuery,
         pinProjection: SidebarPinFolderProjection,
-        backdropReader: (any BrowserEssentialBackdropReading)? = nil,
+        backdropReader: (any BrowserFavoriteBackdropReading)? = nil,
         windowState: BrowserWindowState
     ) -> SpaceShortcutSnapshot {
         let presentationState = selection.presentationState(for: pin, in: windowState)
@@ -478,7 +478,7 @@ enum SpaceSidebarTransitionItemSnapshotProjector {
         let isInVisibleSplit = liveTab.map {
             selection.selectedSplitGroup(in: windowState)?.contains(.regularTab($0.id)) == true
         } == true
-        let essentialRuntimeState = selection.essentialRuntimeState(for: pin, in: windowState)
+        let favoriteRuntimeState = selection.favoriteRuntimeState(for: pin, in: windowState)
         let isSplitPlaceholder = inventory?.splitGroup(
             containing: .shortcutPin(pin.id)
         ).map { !$0.container.isShortcutSidebar } == true
@@ -501,7 +501,7 @@ enum SpaceSidebarTransitionItemSnapshotProjector {
                 launchURL: pin.launchURL,
                 partition: faviconPartition
             ),
-            essentialBackdrop: backdropReader?.cachedBackdrop(
+            favoriteBackdrop: backdropReader?.cachedBackdrop(
                 for: pin.launchURL,
                 partition: faviconPartition
             ).map(Image.init(nsImage:)),
@@ -509,7 +509,7 @@ enum SpaceSidebarTransitionItemSnapshotProjector {
             showsAudioButton: liveTab?.audioState.showsTabAudioButton ?? false,
             isMuted: liveTab?.audioState.isMuted ?? false,
             showsSplitOutline: isSplitPlaceholder
-                || essentialRuntimeState?.showsSplitProxyOutline == true
+                || favoriteRuntimeState?.showsSplitProxyOutline == true
                 || isInVisibleSplit,
             showsChangedURLSlash: runtimeAffordance.showsChangedURLSlash
         )

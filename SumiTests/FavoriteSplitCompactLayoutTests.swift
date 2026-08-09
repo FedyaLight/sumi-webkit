@@ -5,7 +5,7 @@ import XCTest
 @testable import Sumi
 
 @MainActor
-final class EssentialSplitCompactLayoutTests: XCTestCase {
+final class FavoriteSplitCompactLayoutTests: XCTestCase {
     func testThreeMembersUseTwoLeftCellsAndOneFullHeightRightCell() {
         let rects = SplitTileGeometry.resolve(
             in: CGSize(width: 100, height: 80),
@@ -54,9 +54,9 @@ final class EssentialSplitCompactLayoutTests: XCTestCase {
     func testActiveChromeContinuouslyFillsDividersThroughOuterRing() throws {
         let size = CGSize(width: 100, height: 80)
         let transparentIcon = NSImage(size: NSSize(width: 16, height: 16))
-        let view = EssentialSplitCompactVisual(
+        let view = FavoriteSplitCompactVisual(
             members: (0..<4).map { _ in
-                EssentialSplitTileMemberPresentation(
+                FavoriteSplitTileMemberPresentation(
                     icon: Image(nsImage: transparentIcon),
                     glyphText: nil,
                     systemImageName: nil,

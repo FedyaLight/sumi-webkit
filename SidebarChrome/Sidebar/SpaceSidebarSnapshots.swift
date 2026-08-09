@@ -182,7 +182,7 @@ struct SpaceShortcutSnapshot: Identifiable {
     let title: String
     let icon: SpaceSidebarSnapshotIcon
     let accentSource: SpaceShortcutSnapshotAccentSource
-    let essentialBackdrop: Image?
+    let favoriteBackdrop: Image?
     let presentationState: ShortcutPresentationState
     let showsAudioButton: Bool
     let isMuted: Bool
@@ -210,7 +210,7 @@ struct SpaceSplitGroupMemberSnapshot: Identifiable {
     let icon: SpaceSidebarSnapshotIcon
     let desaturatesIcon: Bool
     let accentSource: SpaceShortcutSnapshotAccentSource?
-    let essentialBackdrop: Image?
+    let favoriteBackdrop: Image?
     let isSelected: Bool
 }
 
@@ -255,7 +255,7 @@ extension Array where Element == SpacePinnedItemSnapshot {
     }
 }
 
-enum EssentialsSnapshotItem: Identifiable {
+enum FavoriteSnapshotItem: Identifiable {
     case shortcut(SpaceShortcutSnapshot)
     case splitGroup(SpaceSplitGroupSnapshot)
 
@@ -267,8 +267,8 @@ enum EssentialsSnapshotItem: Identifiable {
     }
 }
 
-struct EssentialsSnapshot {
-    let items: [EssentialsSnapshotItem]
+struct FavoriteSnapshot {
+    let items: [FavoriteSnapshotItem]
     /// Mirrors the live grid's empty-state hint so it does not blink out of
     /// existence for the duration of a space transition. Resolved once here
     /// rather than read per frame by the snapshot view.
@@ -291,7 +291,7 @@ struct SpaceSidebarPageSnapshot {
     let title: String
     let iconValue: String
     let extensionActions: ExtensionActionGridSnapshot?
-    let essentials: EssentialsSnapshot?
+    let favorite: FavoriteSnapshot?
     let supportsPinnedContent: Bool
     let hasPinnedContent: Bool
     let isPinnedContentCollapsed: Bool
@@ -307,7 +307,7 @@ struct SpaceSidebarPageSnapshot {
         title: String,
         iconValue: String,
         extensionActions: ExtensionActionGridSnapshot?,
-        essentials: EssentialsSnapshot?,
+        favorite: FavoriteSnapshot?,
         supportsPinnedContent: Bool = true,
         hasPinnedContent: Bool,
         isPinnedContentCollapsed: Bool,
@@ -322,7 +322,7 @@ struct SpaceSidebarPageSnapshot {
         self.title = title
         self.iconValue = iconValue
         self.extensionActions = extensionActions
-        self.essentials = essentials
+        self.favorite = favorite
         self.supportsPinnedContent = supportsPinnedContent
         self.hasPinnedContent = hasPinnedContent
         self.isPinnedContentCollapsed = isPinnedContentCollapsed
@@ -346,7 +346,7 @@ struct SpaceSidebarPageSnapshot {
 struct SpaceSidebarTransitionSnapshot {
     let source: SpaceSidebarPageSnapshot
     let destination: SpaceSidebarPageSnapshot
-    let stationaryEssentials: EssentialsSnapshot?
+    let stationaryFavorite: FavoriteSnapshot?
 
     func page(for spaceId: UUID) -> SpaceSidebarPageSnapshot? {
         if source.spaceId == spaceId {

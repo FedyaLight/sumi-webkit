@@ -268,7 +268,7 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
         let itemID = UUID()
         var listFrames: [SidebarListDragPresentationFrame] = []
         var sessionFrames: [SidebarDragSessionPresentationFrame] = []
-        var essentialsFrames: [SidebarEssentialsDragPresentationFrame] = []
+        var favoriteFrames: [SidebarFavoriteDragPresentationFrame] = []
         var floatingFrames: [SidebarFloatingDragPresentationFrame] = []
         var broadPublicationCount = 0
         var cancellables = Set<AnyCancellable>()
@@ -280,9 +280,9 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
             .dropFirst()
             .sink { sessionFrames.append($0) }
             .store(in: &cancellables)
-        state.essentialsPresentation.$frame
+        state.favoritePresentation.$frame
             .dropFirst()
-            .sink { essentialsFrames.append($0) }
+            .sink { favoriteFrames.append($0) }
             .store(in: &cancellables)
         state.floatingPresentation.$frame
             .dropFirst()
@@ -301,12 +301,12 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
 
         XCTAssertEqual(listFrames.count, 1)
         XCTAssertEqual(sessionFrames.count, 1)
-        XCTAssertEqual(essentialsFrames.count, 1)
+        XCTAssertEqual(favoriteFrames.count, 1)
         XCTAssertEqual(floatingFrames.count, 1)
         XCTAssertEqual(listFrames.first?.isDragging, true)
         XCTAssertEqual(listFrames.first?.activeDragItemID, itemID)
         XCTAssertEqual(sessionFrames.first?.isInternalDragSession, true)
-        XCTAssertEqual(essentialsFrames.first?.projectionDragItemID, itemID)
+        XCTAssertEqual(favoriteFrames.first?.projectionDragItemID, itemID)
         XCTAssertEqual(floatingFrames.first?.previewKind, .row)
         XCTAssertEqual(broadPublicationCount, 0)
     }
@@ -317,7 +317,7 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
         state.beginExternalDragSession(itemId: UUID())
         var listPublicationCount = 0
         var sessionPublicationCount = 0
-        var essentialsPublicationCount = 0
+        var favoritePublicationCount = 0
         var floatingPublicationCount = 0
         var broadPublicationCount = 0
         var cancellables = Set<AnyCancellable>()
@@ -327,8 +327,8 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
         state.sessionPresentation.objectWillChange
             .sink { sessionPublicationCount += 1 }
             .store(in: &cancellables)
-        state.essentialsPresentation.objectWillChange
-            .sink { essentialsPublicationCount += 1 }
+        state.favoritePresentation.objectWillChange
+            .sink { favoritePublicationCount += 1 }
             .store(in: &cancellables)
         state.floatingPresentation.objectWillChange
             .sink { floatingPublicationCount += 1 }
@@ -347,7 +347,7 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
 
         XCTAssertEqual(listPublicationCount, 0)
         XCTAssertEqual(sessionPublicationCount, 0)
-        XCTAssertEqual(essentialsPublicationCount, 1)
+        XCTAssertEqual(favoritePublicationCount, 1)
         XCTAssertEqual(floatingPublicationCount, 1)
         XCTAssertEqual(broadPublicationCount, 0)
     }
@@ -356,7 +356,7 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
         let state = SidebarDragState()
         var listPublicationCount = 0
         var sessionPublicationCount = 0
-        var essentialsPublicationCount = 0
+        var favoritePublicationCount = 0
         var floatingPublicationCount = 0
         var cancellables = Set<AnyCancellable>()
         state.listPresentation.objectWillChange
@@ -365,8 +365,8 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
         state.sessionPresentation.objectWillChange
             .sink { sessionPublicationCount += 1 }
             .store(in: &cancellables)
-        state.essentialsPresentation.objectWillChange
-            .sink { essentialsPublicationCount += 1 }
+        state.favoritePresentation.objectWillChange
+            .sink { favoritePublicationCount += 1 }
             .store(in: &cancellables)
         state.floatingPresentation.objectWillChange
             .sink { floatingPublicationCount += 1 }
@@ -376,7 +376,7 @@ final class SidebarConsumerBoundariesTests: XCTestCase {
 
         XCTAssertEqual(listPublicationCount, 0)
         XCTAssertEqual(sessionPublicationCount, 1)
-        XCTAssertEqual(essentialsPublicationCount, 0)
+        XCTAssertEqual(favoritePublicationCount, 0)
         XCTAssertEqual(floatingPublicationCount, 0)
     }
 

@@ -48,7 +48,7 @@ final class ShortcutPinMetadataCommitTransaction {
         with target: ShortcutPin
     ) -> Bool {
         switch source.role {
-        case .essential:
+        case .favorite:
             guard let profileID = source.profileId else { return false }
             var profilePins = pins.pinnedByProfileSnapshot()[profileID] ?? []
             guard let index = profilePins.firstIndex(where: {

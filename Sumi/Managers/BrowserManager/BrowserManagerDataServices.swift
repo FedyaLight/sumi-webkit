@@ -35,7 +35,7 @@ protocol BrowserFaviconImageReading: AnyObject, Sendable {
 }
 
 @MainActor
-protocol BrowserEssentialBackdropReading: AnyObject, Sendable {
+protocol BrowserFavoriteBackdropReading: AnyObject, Sendable {
     func cachedBackdrop(
         for documentURL: URL,
         partition: SumiFaviconPartition
@@ -46,10 +46,10 @@ protocol BrowserEssentialBackdropReading: AnyObject, Sendable {
     ) async -> NSImage?
 }
 
-private final class UnavailableEssentialBackdropReader:
-    BrowserEssentialBackdropReading,
+private final class UnavailableFavoriteBackdropReader:
+    BrowserFavoriteBackdropReading,
     @unchecked Sendable {
-    nonisolated static let shared = UnavailableEssentialBackdropReader()
+    nonisolated static let shared = UnavailableFavoriteBackdropReader()
 
     func cachedBackdrop(
         for _: URL,
@@ -110,21 +110,21 @@ struct BrowserFaviconCapabilities: Sendable {
     let liveDiscovery: any BrowserFaviconLiveDiscoveryIngesting
     let localIconIngestion: any BrowserFaviconLocalIconIngesting
     let prefetch: any BrowserFaviconPrefetchScheduling
-    let essentialBackdrops: any BrowserEssentialBackdropReading
+    let favoriteBackdrops: any BrowserFavoriteBackdropReading
 
     init(
         images: any BrowserFaviconImageReading,
         liveDiscovery: any BrowserFaviconLiveDiscoveryIngesting,
         localIconIngestion: any BrowserFaviconLocalIconIngesting,
         prefetch: any BrowserFaviconPrefetchScheduling,
-        essentialBackdrops: (any BrowserEssentialBackdropReading)? = nil
+        favoriteBackdrops: (any BrowserFavoriteBackdropReading)? = nil
     ) {
         self.images = images
         self.liveDiscovery = liveDiscovery
         self.localIconIngestion = localIconIngestion
         self.prefetch = prefetch
-        self.essentialBackdrops = essentialBackdrops
-            ?? UnavailableEssentialBackdropReader.shared
+        self.favoriteBackdrops = favoriteBackdrops
+            ?? UnavailableFavoriteBackdropReader.shared
     }
 }
 

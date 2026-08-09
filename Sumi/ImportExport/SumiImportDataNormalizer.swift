@@ -36,7 +36,7 @@ enum SumiImportDataNormalizer {
             copy.spaceId = targetSpaceId
             return copy
         }
-        data.essentials = data.essentials.compactMap { launcher in
+        data.favorite = data.favorite.compactMap { launcher in
             guard let profileId = launcher.profileId.flatMap({ validProfileIds.contains($0) ? $0 : nil })
                 ?? fallbackProfileId else { return nil }
             var copy = launcher
@@ -170,10 +170,10 @@ enum SumiImportDataNormalizer {
         data.profiles = deduped(data.profiles, key: \.id)
         data.spaces = deduped(data.spaces, key: \.id)
         data.folders = deduped(data.folders, key: \.id)
-        data.essentials = deduped(data.essentials, key: \.id)
+        data.favorite = deduped(data.favorite, key: \.id)
         data.pinnedLaunchers = deduped(data.pinnedLaunchers, key: \.id)
         data.regularTabs = deduped(data.regularTabs, key: \.id)
-        data.essentials = deduped(data.essentials) {
+        data.favorite = deduped(data.favorite) {
             "\($0.profileId ?? "")|\(normalizedURLKey($0.urlString))"
         }
         data.pinnedLaunchers = deduped(data.pinnedLaunchers) {
@@ -191,8 +191,8 @@ enum SumiImportDataNormalizer {
             folders: data.folders,
             pinnedLaunchers: data.pinnedLaunchers
         )
-        data.essentials = normalizeByBucket(
-            data.essentials,
+        data.favorite = normalizeByBucket(
+            data.favorite,
             bucket: { $0.profileId ?? "" },
             sourceIndex: \.index,
             stableId: \.id

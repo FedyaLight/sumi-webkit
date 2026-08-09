@@ -45,7 +45,7 @@ enum SumiFaviconLookupKey {
 final class SumiFaviconSystem {
     let runtime: SumiFaviconRuntime
     let capabilities: BrowserFaviconCapabilities
-    private let essentialBackdrops: SumiEssentialBackdropStore
+    private let favoriteBackdrops: SumiFavoriteBackdropStore
     private var bookmarkHosts: Set<String> = []
 
     init(
@@ -58,26 +58,26 @@ final class SumiFaviconSystem {
             rootDirectory: rootDirectory,
             fetcher: fetcher
         )
-        let essentialBackdrops = SumiEssentialBackdropStore(
+        let favoriteBackdrops = SumiFavoriteBackdropStore(
             rootDirectory: rootDirectory.appendingPathComponent(
-                "essential-backdrops-v1",
+                "favorite-backdrops-v1",
                 isDirectory: true
             ),
             imageReader: runtime.images
         )
         self.runtime = runtime
-        self.essentialBackdrops = essentialBackdrops
+        self.favoriteBackdrops = favoriteBackdrops
         capabilities = BrowserFaviconCapabilities(
             images: runtime.images,
             liveDiscovery: runtime.liveDiscovery,
             localIconIngestion: runtime.payloadIngestion,
             prefetch: runtime.coldFetches,
-            essentialBackdrops: essentialBackdrops
+            favoriteBackdrops: favoriteBackdrops
         )
     }
 
     func syncShortcutPins(_ pins: [ShortcutPin]) {
-        essentialBackdrops.syncEssentials(pins)
+        favoriteBackdrops.syncFavorite(pins)
         let normalizer = SumiSiteNormalizer()
         let hosts = Set(pins.compactMap { normalizer.host(for: $0.launchURL) })
         bookmarkHosts.formUnion(hosts)

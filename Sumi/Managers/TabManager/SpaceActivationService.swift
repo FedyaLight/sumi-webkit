@@ -106,16 +106,16 @@ final class SpaceActivationService {
         regularTabs: [Tab],
         spacePinnedTabs: [Tab]
     ) -> Tab? {
-        var cachedEssentialTabs: [Tab] = []
-        var didResolveEssentialTabs = false
-        func essentialTabs() -> [Tab] {
-            if !didResolveEssentialTabs {
-                cachedEssentialTabs = shortcutPresentation.activeEssentialTabs(
+        var cachedFavoriteTabs: [Tab] = []
+        var didResolveFavoriteTabs = false
+        func favoriteTabs() -> [Tab] {
+            if !didResolveFavoriteTabs {
+                cachedFavoriteTabs = shortcutPresentation.activeFavoriteTabs(
                     for: profileAdmission.currentProfileID
                 )
-                didResolveEssentialTabs = true
+                didResolveFavoriteTabs = true
             }
-            return cachedEssentialTabs
+            return cachedFavoriteTabs
         }
 
         var target = validPreferredTab(preferredTab, for: space)
@@ -123,7 +123,7 @@ final class SpaceActivationService {
             target = target
                 ?? regularTabs.first { $0.id == activeTabId }
                 ?? spacePinnedTabs.first { $0.id == activeTabId }
-                ?? essentialTabs().first { $0.id == activeTabId }
+                ?? favoriteTabs().first { $0.id == activeTabId }
         }
         if target == nil {
             if state.selection.currentTab?.spaceId == space.id {
@@ -131,7 +131,7 @@ final class SpaceActivationService {
             } else {
                 target = regularTabs.first
                     ?? spacePinnedTabs.first
-                    ?? essentialTabs().first
+                    ?? favoriteTabs().first
             }
         }
         return target

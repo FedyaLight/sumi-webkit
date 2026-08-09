@@ -53,15 +53,15 @@ final class RecentlyClosedItemReopenServiceTests: XCTestCase {
 
     func testFailedLauncherRestoreKeepsHistoryItem() throws {
         let harness = makeHarness()
-        let orphanEssentialPin = ShortcutPin(
+        let orphanFavoritePin = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: UUID(),
             index: 0,
-            launchURL: try XCTUnwrap(URL(string: "https://essential.example")),
-            title: "Essential"
+            launchURL: try XCTUnwrap(URL(string: "https://favorite.example")),
+            title: "Favorite"
         )
-        harness.recentlyClosedManager.captureDeletedShortcutLauncher(orphanEssentialPin)
+        harness.recentlyClosedManager.captureDeletedShortcutLauncher(orphanFavoritePin)
         let item = try XCTUnwrap(harness.recentlyClosedManager.mostRecentItem)
 
         harness.service.reopen(item)
@@ -69,7 +69,7 @@ final class RecentlyClosedItemReopenServiceTests: XCTestCase {
         XCTAssertEqual(harness.recentlyClosedManager.mostRecentItem?.id, item.id)
         XCTAssertNil(
             harness.browserManager.shortcutPinCollectionStateOwner
-                .shortcutPin(by: orphanEssentialPin.id)
+                .shortcutPin(by: orphanFavoritePin.id)
         )
         XCTAssertFalse(harness.startupRestore.didConsumeRestoreOffer)
     }

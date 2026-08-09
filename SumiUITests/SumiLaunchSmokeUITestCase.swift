@@ -49,7 +49,7 @@ class SumiLaunchSmokeUITestCase: XCTestCase {
         let secondaryRegularTabID: String
         let folderID: String?
         let folderLauncherID: String?
-        let essentialID: String?
+        let favoriteID: String?
     }
 
     enum FixtureError: LocalizedError {

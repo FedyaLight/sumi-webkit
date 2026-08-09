@@ -64,10 +64,10 @@ final class BrowserShortcutTabCommandDispatcher {
             return pins.pinCurrentTab(in: context)
         case .unpinTab:
             return pins.unpinCurrentTab(in: context)
-        case .addToEssentials:
-            return pins.addCurrentToEssentials(in: context)
-        case .removeFromEssentials:
-            return pins.removeCurrentFromEssentials(in: context)
+        case .addToFavorite:
+            return pins.addCurrentToFavorite(in: context)
+        case .removeFromFavorite:
+            return pins.removeCurrentFromFavorite(in: context)
         default:
             return false
         }
@@ -103,10 +103,10 @@ final class BrowserShortcutTabCommandDispatcher {
             pins.canPinCurrentTab(in: context)
         case .unpinTab:
             pins.canUnpinCurrentTab(in: context)
-        case .addToEssentials:
-            pins.canAddCurrentToEssentials(in: context)
-        case .removeFromEssentials:
-            pins.canRemoveCurrentFromEssentials(in: context)
+        case .addToFavorite:
+            pins.canAddCurrentToFavorite(in: context)
+        case .removeFromFavorite:
+            pins.canRemoveCurrentFromFavorite(in: context)
         case .closeTab, .nextTab, .previousTab, .goToTab1, .goToTab2,
              .goToTab3, .goToTab4, .goToTab5, .goToTab6, .goToTab7,
              .goToTab8, .goToLastTab, .duplicateTab:

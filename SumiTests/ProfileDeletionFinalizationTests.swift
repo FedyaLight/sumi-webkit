@@ -183,21 +183,21 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
             in: tabManager.database
         )
 
-        let deletedPin = makeEssentialPin(
+        let deletedPin = makeFavoritePin(
             profileID: deletedProfile.id,
             title: "Deleted"
         )
-        let firstFallbackPin = makeEssentialPin(
+        let firstFallbackPin = makeFavoritePin(
             profileID: fallbackProfile.id,
             title: "First fallback"
         )
-        let secondFallbackPin = makeEssentialPin(
+        let secondFallbackPin = makeFavoritePin(
             profileID: fallbackProfile.id,
             title: "Second fallback"
         )
         let pendingPin = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: deletedProfile.id,
             executionProfileId: deletedProfile.id,
             index: 0,
@@ -268,7 +268,7 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
                 .pinnedByProfileSnapshot()[deletedProfile.id]
         )
         let fallbackPins = tabManager.shortcutPinCollectionStateOwner
-            .essentialPins(for: fallbackProfile.id)
+            .favoritePins(for: fallbackProfile.id)
         XCTAssertEqual(
             fallbackPins.map(\.id),
             [firstFallbackPin.id, secondFallbackPin.id, pendingPin.id]
@@ -322,11 +322,11 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
             in: tabManager.database
         )
         let pins = [
-            makeEssentialPin(
+            makeFavoritePin(
                 profileID: fallbackProfile.id,
                 title: "First"
             ),
-            makeEssentialPin(
+            makeFavoritePin(
                 profileID: fallbackProfile.id,
                 title: "Second"
             ),
@@ -414,7 +414,7 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
         let tabManager = fixture.browser
         let deletedPin = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: deletedProfileID,
             index: 0,
             launchURL: URL(string: "https://deleted.example")!,
@@ -422,7 +422,7 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
         )
         let profileReference = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: ownerProfileID,
             executionProfileId: deletedProfileID,
             index: 0,
@@ -491,7 +491,7 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
         let tabManager = fixture.browser
         let original = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: deletedProfile.id,
             index: 0,
             launchURL: URL(string: "https://original.example")!,
@@ -499,7 +499,7 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
         )
         let reentrant = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: deletedProfile.id,
             index: 0,
             launchURL: URL(string: "https://reentrant.example")!,
@@ -652,16 +652,16 @@ final class ProfileDeletionFinalizationTests: XCTestCase {
         }
     }
 
-    private func makeEssentialPin(
+    private func makeFavoritePin(
         profileID: UUID,
         title: String
     ) -> ShortcutPin {
         ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: profileID,
             index: 0,
-            launchURL: URL(string: "https://essential.example")!,
+            launchURL: URL(string: "https://favorite.example")!,
             title: title
         )
     }

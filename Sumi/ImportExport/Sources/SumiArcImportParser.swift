@@ -117,7 +117,7 @@ struct SumiArcImportParser {
             }
         }
 
-        let essentials = parseEssentials(
+        let favorite = parseFavorite(
             local: local,
             itemLookup: itemLookup,
             spaceProfileName: spaceProfileName,
@@ -131,7 +131,7 @@ struct SumiArcImportParser {
             profiles: Array(profileRecordsByName.values).sorted { $0.index < $1.index },
             spaces: portableSpaces,
             folders: folders,
-            essentials: essentials,
+            favorite: favorite,
             pinnedLaunchers: pinned.map { launcher in
                 var copy = launcher
                 if let folderId = copy.folderId,
@@ -303,7 +303,7 @@ struct SumiArcImportParser {
         }
     }
 
-    private func parseEssentials(
+    private func parseFavorite(
         local: [String: Any],
         itemLookup: [String: [String: Any]],
         spaceProfileName: [String: String],
@@ -315,9 +315,9 @@ struct SumiArcImportParser {
             uniquingKeysWith: { first, _ in first }
         )
         // `topAppsContainerIDs` is the ordered authority. Walking `itemLookup`
-        // instead would emit essentials in dictionary order, so the same Arc
+        // instead would emit favorite in dictionary order, so the same Arc
         // install would import a different pin order on every run.
-        for (profileName, containerId) in essentialContainers(local: local, itemLookup: itemLookup) {
+        for (profileName, containerId) in favoriteContainers(local: local, itemLookup: itemLookup) {
             guard let item = itemLookup[containerId] else { continue }
             let targetSpaceId = profileToSpace[profileName]
             let profileId = profileRecordsByName[profileName]?.id ?? "arc-profile-\(profileName)"
@@ -350,7 +350,7 @@ struct SumiArcImportParser {
     /// Resolves `[marker, containerId, marker, containerId, …]` into ordered
     /// `(profileName, containerId)` pairs. Falls back to scanning items for
     /// `topApps` containers when the marker array is absent.
-    private func essentialContainers(
+    private func favoriteContainers(
         local: [String: Any],
         itemLookup: [String: [String: Any]]
     ) -> [(profileName: String, containerId: String)] {

@@ -84,8 +84,8 @@ enum TabPersistenceSnapshotProfileMigration {
         switch group.container {
         case .regularTabs:
             migratedContainer = group.container
-        case .essentialSidebar(let profileID, let index):
-            migratedContainer = .essentialSidebar(
+        case .favoriteSidebar(let profileID, let index):
+            migratedContainer = .favoriteSidebar(
                 profileId: replacement(
                     for: profileID,
                     from: deletedProfileID,

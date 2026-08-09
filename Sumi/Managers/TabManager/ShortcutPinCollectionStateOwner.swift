@@ -42,7 +42,7 @@ final class ShortcutPinCollectionStateOwner {
         pendingPinnedWithoutProfile.removeAll()
     }
 
-    func essentialPins(for profileId: UUID?) -> [ShortcutPin] {
+    func favoritePins(for profileId: UUID?) -> [ShortcutPin] {
         guard let profileId else { return [] }
         return sortedPins(pinnedByProfile[profileId] ?? [])
     }

@@ -45,7 +45,7 @@ enum SumiImportExportSnapshot {
                 }
         }
 
-        let essentials = state.shortcutPins.pinnedByProfileSnapshot()
+        let favorite = state.shortcutPins.pinnedByProfileSnapshot()
             .sorted { $0.key.uuidString < $1.key.uuidString }
             .flatMap { profileId, pins -> [SumiPortableLauncher] in
                 pins.sorted { $0.index < $1.index }.map { pin in
@@ -106,7 +106,7 @@ enum SumiImportExportSnapshot {
             profiles: profiles,
             spaces: spaces,
             folders: folders,
-            essentials: essentials,
+            favorite: favorite,
             pinnedLaunchers: pinnedLaunchers,
             regularTabs: regularTabs,
             bookmarks: bookmarks

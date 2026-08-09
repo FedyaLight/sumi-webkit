@@ -120,7 +120,7 @@ final class DisplayedTabShortcutBindingPreparer {
             desiredProfileID: resolution.desiredLiveTabProfileId(for: pin),
             resolvedProfileID: profileTarget.profileID,
             runtimeFallback: profileTarget.runtimeFallback,
-            folderID: pin.role == .essential ? nil : pin.folderId
+            folderID: pin.role == .favorite ? nil : pin.folderId
         )
     }
 }

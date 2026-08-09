@@ -19,7 +19,7 @@ final class ClosedShortcutLauncherDestinationResolver {
         self.profiles = profiles
     }
 
-    func essentialProfileID(
+    func favoriteProfileID(
         for pinState: RecentlyClosedShortcutPinState,
         fallbackWindow: BrowserWindowState?
     ) -> UUID? {

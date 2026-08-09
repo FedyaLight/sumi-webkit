@@ -60,13 +60,13 @@ struct SpaceRegularTabActionOwner {
         let pinToSpaceAction: (() -> Void)? = tab.isPinned || tab.isSpacePinned
             ? nil
             : { shortcutCommands.pinTabToSpace(tab, spaceID: space.id) }
-        let addToEssentialsAction: (() -> Void)? = targets.canAddToEssentials(
+        let addToFavoriteAction: (() -> Void)? = targets.canAddToFavorite(
             tab,
             in: space,
             windowState: windowState
         )
             ? {
-                shortcutCommands.addTabToEssentials(
+                shortcutCommands.addTabToFavorite(
                     tab,
                     in: space,
                     windowState: windowState
@@ -133,7 +133,7 @@ struct SpaceRegularTabActionOwner {
                 moveUp: moveUpAction,
                 moveDown: moveDownAction,
                 pinToSpace: pinToSpaceAction,
-                addToEssentials: addToEssentialsAction,
+                addToFavorite: addToFavoriteAction,
                 closeTabsBelow: closeTabsBelowAction,
                 close: close
             )

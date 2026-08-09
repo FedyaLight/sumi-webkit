@@ -63,7 +63,7 @@ final class RegularTabClosureSelectionRepair {
         return SelectionAfterClosurePolicy.Snapshot(
             removedWasGlobalPinned: tab.spaceId == nil,
             hasCurrentSpace: currentSpace != nil,
-            essentialTabs: shortcutPresentation.activeEssentialTabs(
+            favoriteTabs: shortcutPresentation.activeFavoriteTabs(
                 for: profileID
             ),
             spacePinnedTabs: spacePinnedTabs,

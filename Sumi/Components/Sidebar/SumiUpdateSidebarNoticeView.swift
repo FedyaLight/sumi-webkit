@@ -215,15 +215,15 @@ private struct SumiUpdateSidebarInstalledNoticeHeader: View {
         .overlay(alignment: .trailing) {
             Button(action: onDismiss) {
                 Image(systemName: "xmark")
-                    .font(SidebarThemeTokens.Typography.essentialsPlaceholderDismiss)
+                    .font(SidebarThemeTokens.Typography.favoritePlaceholderDismiss)
                     .foregroundStyle(
                         SumiUpdateSidebarNoticeThemeTokens.Colors.completedCloseForeground(
                             tokens: chromeTokens
                         )
                     )
                     .frame(
-                        width: EssentialsPlaceholderMetrics.dismissHitSize,
-                        height: EssentialsPlaceholderMetrics.dismissHitSize
+                        width: FavoritePlaceholderMetrics.dismissHitSize,
+                        height: FavoritePlaceholderMetrics.dismissHitSize
                     )
                     .background {
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
@@ -238,7 +238,7 @@ private struct SumiUpdateSidebarInstalledNoticeHeader: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .padding(EssentialsPlaceholderMetrics.dismissInset)
+            .padding(FavoritePlaceholderMetrics.dismissInset)
             .sidebarHover { hovering in
                 isCloseHovered = hovering
             }

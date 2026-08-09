@@ -593,7 +593,7 @@ final class SafariExtensionAccountForkPipelineTests: XCTestCase {
         await fulfillment(of: [didOpen], timeout: 10)
         let exactTabID = try XCTUnwrap(openedTabID)
         let allTabs = harness.browserManager.tabCollectionMembershipOwner.allTabs()
-            + harness.browserManager.shortcutPresentationOwner.activeEssentialTabs(
+            + harness.browserManager.shortcutPresentationOwner.activeFavoriteTabs(
                 for: harness.browserManager.runtimePortConnection.current?.currentProfileId
             )
         let tab = try XCTUnwrap(

@@ -12,7 +12,7 @@ enum SidebarDragGeometryFact {
         frame: CGRect?,
         renderMode: SidebarPageGeometryRenderMode
     )
-    case essentials(SidebarEssentialsLayoutUpdate)
+    case favorite(SidebarFavoriteLayoutUpdate)
 }
 
 @MainActor
@@ -133,8 +133,8 @@ final class SidebarDragGeometryModule: ObservableObject {
                 renderMode: renderMode,
                 generation: generation
             )
-        case .essentials(let update):
-            repository.scheduleEssentialsLayoutMetrics(update, generation: generation)
+        case .favorite(let update):
+            repository.scheduleFavoriteLayoutMetrics(update, generation: generation)
         }
     }
 

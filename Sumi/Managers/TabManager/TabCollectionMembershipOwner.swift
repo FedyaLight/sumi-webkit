@@ -102,7 +102,7 @@ final class TabCollectionMembershipOwner {
         }
         let spaceIds = Set(matchingSpaces.map(\.id))
         let pinned = state.transientTabs.transientShortcutTabs.filter { tab in
-            guard tab.shortcutPinRole == .essential,
+            guard tab.shortcutPinRole == .favorite,
                   let pinID = tab.shortcutPinId,
                   let pin = state.shortcutPins.shortcutPin(by: pinID) else {
                 return false

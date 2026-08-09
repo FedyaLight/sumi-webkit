@@ -21,7 +21,7 @@ final class SidebarShortcutPromotionOwnerTests: XCTestCase {
 
         XCTAssertEqual(
             harness.browserManager.shortcutPinCollectionStateOwner
-                .essentialPins(for: harness.profile.id)
+                .favoritePins(for: harness.profile.id)
                 .first?.title,
             "Live Title"
         )
@@ -44,7 +44,7 @@ final class SidebarShortcutPromotionOwnerTests: XCTestCase {
 
         XCTAssertEqual(
             harness.browserManager.shortcutPinCollectionStateOwner
-                .essentialPins(for: harness.profile.id)
+                .favoritePins(for: harness.profile.id)
                 .first?.title,
             "Saved Title"
         )
@@ -68,33 +68,33 @@ final class SidebarShortcutPromotionOwnerTests: XCTestCase {
         )
 
         XCTAssertEqual(harness.browserManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: harness.space.id).map(\.id), [sourcePin.id])
-        let essential = try XCTUnwrap(
-            harness.browserManager.shortcutPinCollectionStateOwner.essentialPins(for: harness.profile.id).first
+        let favorite = try XCTUnwrap(
+            harness.browserManager.shortcutPinCollectionStateOwner.favoritePins(for: harness.profile.id).first
         )
-        XCTAssertNotEqual(essential.id, sourcePin.id)
-        XCTAssertEqual(essential.role, .essential)
-        XCTAssertEqual(essential.profileId, harness.profile.id)
-        XCTAssertNil(essential.spaceId)
-        XCTAssertNil(essential.folderId)
-        XCTAssertEqual(essential.executionProfileId, executionProfileId)
-        XCTAssertEqual(essential.iconAsset, "star")
-        XCTAssertEqual(essential.launchURL, sourcePin.launchURL)
-        XCTAssertEqual(essential.title, "Saved Title")
+        XCTAssertNotEqual(favorite.id, sourcePin.id)
+        XCTAssertEqual(favorite.role, .favorite)
+        XCTAssertEqual(favorite.profileId, harness.profile.id)
+        XCTAssertNil(favorite.spaceId)
+        XCTAssertNil(favorite.folderId)
+        XCTAssertEqual(favorite.executionProfileId, executionProfileId)
+        XCTAssertEqual(favorite.iconAsset, "star")
+        XCTAssertEqual(favorite.launchURL, sourcePin.launchURL)
+        XCTAssertEqual(favorite.title, "Saved Title")
     }
 
-    func testPinShortcutGloballySkipsDuplicateEssentialURL() throws {
+    func testPinShortcutGloballySkipsDuplicateFavoriteURL() throws {
         let harness = makePromotionHarness()
         let sourcePin = try makeShortcutPin(title: "Saved Title", spaceId: harness.space.id)
-        let existingEssential = ShortcutPin(
+        let existingFavorite = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: harness.profile.id,
             index: 0,
             launchURL: sourcePin.launchURL,
             title: "Existing"
         )
         harness.browserManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([sourcePin], for: harness.space.id)
-        harness.browserManager.structuralCollectionMutationOwner.setPinnedTabs([existingEssential], for: harness.profile.id)
+        harness.browserManager.structuralCollectionMutationOwner.setPinnedTabs([existingFavorite], for: harness.profile.id)
 
         pinShortcutGlobally(
             sourcePin,
@@ -103,8 +103,8 @@ final class SidebarShortcutPromotionOwnerTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            harness.browserManager.shortcutPinCollectionStateOwner.essentialPins(for: harness.profile.id).map(\.id),
-            [existingEssential.id]
+            harness.browserManager.shortcutPinCollectionStateOwner.favoritePins(for: harness.profile.id).map(\.id),
+            [existingFavorite.id]
         )
         XCTAssertEqual(harness.browserManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: harness.space.id).map(\.id), [sourcePin.id])
     }
@@ -133,10 +133,10 @@ final class SidebarShortcutPromotionOwnerTests: XCTestCase {
         liveTab: Tab?
     ) {
         _ = harness.browserManager.sidebarPinCommands
-            .copyToEssentials(
+            .copyToFavorite(
                 pin,
                 title: pin.resolvedDisplayTitle(liveTab: liveTab),
-                context: EssentialsShortcutPlacementOwner.TargetContext(
+                context: FavoriteShortcutPlacementOwner.TargetContext(
                     windowState: harness.windowState,
                     spaceId: harness.space.id
                 )

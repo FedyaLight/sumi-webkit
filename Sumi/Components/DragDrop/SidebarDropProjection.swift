@@ -1,6 +1,6 @@
 import Foundation
 
-/// Source-removal math for the essentials grid, the one surface whose drag
+/// Source-removal math for the favorite grid, the one surface whose drag
 /// projection removes the source tile. Storage-order conversion is owned by
 /// `SidebarDropOrderProjecting`.
 enum SidebarDropProjection {

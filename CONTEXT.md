@@ -50,7 +50,7 @@ Browser-owned controls for media playing in background pages, presented in the s
 _Avoid_: Media Touch Bar, fullscreen controls
 
 **Split Group**:
-A durable sidebar item containing two to four ordered page identities and one layout. The group keeps its identity when moved between Regular, Pinned, Folder, and Essentials.
+A durable sidebar item containing two to four ordered page identities and one layout. The group keeps its identity when moved between Regular, Pinned, Folder, and Favorite.
 _Avoid_: Split placeholder row, ghost row
 
 **Regular Member**:
@@ -58,7 +58,7 @@ A split participant owned by a Space's regular tab collection.
 _Avoid_: Unsaved launcher
 
 **Launcher Member**:
-A split participant owned by Pinned, a Pinned folder, or Essentials. A launcher may be loaded or unloaded without changing its durable identity; a saved launcher with no prior runtime session remains unloaded and is never background-loaded.
+A split participant owned by Pinned, a Pinned folder, or Favorite. A launcher may be loaded or unloaded without changing its durable identity; a saved launcher with no prior runtime session remains unloaded and is never background-loaded.
 _Avoid_: Placeholder tab
 
 **Shortcut**:
@@ -77,12 +77,12 @@ _Avoid_: Split dismissal, global unload
 An atomic replacement of every member identity when a whole split group moves between Regular and launcher-backed containers. The group itself is not duplicated or dissolved.
 _Avoid_: Split copy, group recreation
 
-**Essential Split Tile**:
-One Essentials grid item representing an entire split group. Its participants do not consume additional Essentials grid slots.
+**Favorite Split Tile**:
+One Favorite grid item representing an entire split group. Its participants do not consume additional Favorite grid slots.
 _Avoid_: Split member tiles
 
-**Essential Selection Material**:
-The site-derived visual treatment applied to a selected Essential or Essential Split Tile. It belongs only to the Essentials presentation and is never applied to Regular or Pinned launchers.
+**Favorite Selection Material**:
+The site-derived visual treatment applied to a selected Favorite or Favorite Split Tile. It belongs only to the Favorite presentation and is never applied to Regular or Pinned launchers.
 _Avoid_: Pinned backdrop, global launcher gradient
 
 **Sidebar Visual Item**:
@@ -222,7 +222,7 @@ The window-local statement that Presented Sidebar Layout is moving toward a visi
 _Avoid_: Nominal-duration settlement, pointer-intent generation, independently reconstructed chrome state
 
 **Drag Presentation**:
-The target-adaptive appearance of one Sidebar Visual Item while it is being moved. It preserves item identity while matching the row, folder, or Essentials surface of the current Presented Drop Intent.
+The target-adaptive appearance of one Sidebar Visual Item while it is being moved. It preserves item identity while matching the row, folder, or Favorite surface of the current Presented Drop Intent.
 _Avoid_: Drag snapshot copy, generic ghost
 
 **Split Group Row Presentation**:

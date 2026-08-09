@@ -843,7 +843,7 @@ final class GlanceManagerTests: XCTestCase {
         let targetSpace = installTestSpace(in: browserManager.spaceStateOwner, name: "Target", profileID: profileID)
         let pin = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: profileID,
             index: 0,
             launchURL: URL(string: "https://source.example")!,

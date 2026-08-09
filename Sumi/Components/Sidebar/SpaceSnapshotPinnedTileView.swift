@@ -10,10 +10,10 @@ struct SpaceSnapshotPinnedTileView: View {
 
     var body: some View {
         let selectedBackdrop = item.presentationState.isSelected
-            ? item.essentialBackdrop : nil
+            ? item.favoriteBackdrop : nil
         ZStack {
             if let selectedBackdrop {
-                EssentialBackdropSelectionChrome(
+                FavoriteBackdropSelectionChrome(
                     image: selectedBackdrop,
                     cornerRadius: cornerRadius,
                     plateColor: backgroundColor,
@@ -86,7 +86,7 @@ struct SpaceSnapshotPinnedTileView: View {
         .task(id: item.icon.loadKey(using: faviconImageStore)) {
             await item.icon.load(using: faviconImageStore)
         }
-        .accessibilityIdentifier("essential-shortcut-snapshot-\(item.id.uuidString)")
+        .accessibilityIdentifier("favorite-shortcut-snapshot-\(item.id.uuidString)")
     }
 
     private var showsUnloadedAppearance: Bool {

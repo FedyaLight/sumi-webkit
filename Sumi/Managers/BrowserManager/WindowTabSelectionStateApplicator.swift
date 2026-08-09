@@ -49,7 +49,7 @@ enum WindowTabSelectionPolicy {
         if updateSpaceFromTab,
            let tabSpaceId,
            currentSpaceId != tabSpaceId,
-           !(isShortcutLiveInstance && shortcutPinRole == .essential) {
+           !(isShortcutLiveInstance && shortcutPinRole == .favorite) {
             resolvedSpaceId = tabSpaceId
         }
 
@@ -59,7 +59,7 @@ enum WindowTabSelectionPolicy {
         let shortcutMemoryUpdate: WindowTabSelectionTargetState.ShortcutMemoryUpdate
         if rememberSelection, let resolvedSpaceId {
             if isShortcutLiveInstance,
-               shortcutPinRole != .essential,
+               shortcutPinRole != .favorite,
                let shortcutPinId {
                 shortcutMemoryUpdate = .set(spaceId: resolvedSpaceId, pinId: shortcutPinId)
             } else if !isShortcutLiveInstance {

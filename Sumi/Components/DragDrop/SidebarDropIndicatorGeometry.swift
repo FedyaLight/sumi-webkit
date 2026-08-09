@@ -3,7 +3,7 @@ import Foundation
 
 /// Pure math for the drop-indicator line: maps a resolved drop slot onto a
 /// line rect in geometry space (scroll-normalized SwiftUI `.global`).
-/// Returns `nil` whenever the line must stay hidden — essentials keep their
+/// Returns `nil` whenever the line must stay hidden — favorite keep their
 /// grid slot preview and folder "contain" hovers show the folder highlight.
 /// An empty pinned section has no rows to anchor to, so its line lands on the
 /// pinned↔regular separator, which is the row the drop would insert above.
@@ -28,7 +28,7 @@ enum SidebarDropIndicatorGeometry {
         }
 
         switch slot {
-        case .empty, .essentials:
+        case .empty, .favorite:
             return nil
         case .spaceRegular(let spaceId, let slotIndex):
             return regularLineRect(

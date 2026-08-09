@@ -6,14 +6,14 @@ final class ShortcutPinSpacePinningTransaction {
     private let structuralLookup: TabStructuralLookupCoordinator
     private let spaces: TabSpaceCollectionStateOwner
     private let pins: ShortcutPinCollectionStateOwner
-    private let rebinder: EssentialShortcutSpaceRebinder
+    private let rebinder: FavoriteShortcutSpaceRebinder
     private let conversion: RegularTabShortcutConversionService
 
     init(
         structuralLookup: TabStructuralLookupCoordinator,
         spaces: TabSpaceCollectionStateOwner,
         pins: ShortcutPinCollectionStateOwner,
-        rebinder: EssentialShortcutSpaceRebinder,
+        rebinder: FavoriteShortcutSpaceRebinder,
         conversion: RegularTabShortcutConversionService
     ) {
         self.structuralLookup = structuralLookup

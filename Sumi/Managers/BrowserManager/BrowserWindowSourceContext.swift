@@ -74,7 +74,7 @@ final class BrowserWindowSourceContextResolver {
                       for: pinID,
                       in: window.id
                   ) === tab,
-                  role == .essential
+                  role == .favorite
                     ? tab.spaceId == nil
                     : tab.spaceId == windowSpaceID {
             residence = .windowShortcut

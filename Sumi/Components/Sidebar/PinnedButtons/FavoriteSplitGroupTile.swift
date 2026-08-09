@@ -1,14 +1,14 @@
 import SumiDomain
 import SwiftUI
 
-struct EssentialSplitGroupTile: View {
+struct FavoriteSplitGroupTile: View {
     let group: SplitGroup
     let pinsByID: [UUID: ShortcutPin]
     let launcherRuntime: SidebarLauncherRuntimeSnapshot
     let selection: SidebarWindowSelectionQuery
     let selectionSnapshot: SidebarWindowSelectionSnapshot
     let faviconImageReader: any BrowserFaviconImageReading
-    let essentialBackdropReader: any BrowserEssentialBackdropReading
+    let favoriteBackdropReader: any BrowserFavoriteBackdropReading
     let splitLayout: SplitLayoutService
     let emptySplitCreation: EmptySplitCreationWorkflow
     let groupEditor: SidebarSplitGroupEditorPresentationService
@@ -24,7 +24,7 @@ struct EssentialSplitGroupTile: View {
     @State private var loadedAccentColors: [UUID: Color] = [:]
     @State private var accentRefreshID = UUID()
     @Environment(SidebarFaviconImageStore.self) private var faviconImageStore
-    @State private var backdropLoader = SidebarEssentialBackdropLoader()
+    @State private var backdropLoader = SidebarFavoriteBackdropLoader()
 
     var body: some View {
         ZStack {
@@ -44,7 +44,7 @@ struct EssentialSplitGroupTile: View {
         )
         .help(groupDisplayTitle)
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("essential-split-group-\(group.id.uuidString)")
+        .accessibilityIdentifier("favorite-split-group-\(group.id.uuidString)")
         .task(id: accentLoadKey) {
             await loadAccentColorsIfNeeded()
         }
@@ -71,7 +71,7 @@ struct EssentialSplitGroupTile: View {
             accentRefreshID = UUID()
         }
         .onReceive(
-            NotificationCenter.default.publisher(for: .essentialBackdropUpdated)
+            NotificationCenter.default.publisher(for: .favoriteBackdropUpdated)
         ) { notification in
             for pin in memberPins where pin.iconAsset == nil {
                 backdropLoader.invalidateIfNeeded(
@@ -84,7 +84,7 @@ struct EssentialSplitGroupTile: View {
     }
 
     private var memberCompositionTile: some View {
-        EssentialSplitCompactVisual(
+        FavoriteSplitCompactVisual(
             members: splitTileMembers,
             isGroupActive: isGroupActive,
             cornerRadius: sumiSettings.resolvedCornerRadius(
@@ -143,7 +143,7 @@ struct EssentialSplitGroupTile: View {
                                 entries: contextMenuEntries
                             )
                             .accessibilityIdentifier(
-                                "essential-split-member-\(member.persistentID.uuidString)"
+                                "favorite-split-member-\(member.persistentID.uuidString)"
                             )
                             .help(member.title)
                     }
@@ -154,7 +154,7 @@ struct EssentialSplitGroupTile: View {
 
     private func groupIconTile(
         _ iconAsset: String,
-        activationMember: EssentialSplitMemberVisual
+        activationMember: FavoriteSplitMemberVisual
     ) -> some View {
         PinnedTileVisual(
             tabIcon: Image(systemName:
@@ -190,16 +190,16 @@ struct EssentialSplitGroupTile: View {
     }
 
     private var groupIconPressSourceID: String {
-        "essential-split-group-icon-\(group.id.uuidString)"
+        "favorite-split-group-icon-\(group.id.uuidString)"
     }
 
     private func memberPressSourceID(
-        _ member: EssentialSplitMemberVisual
+        _ member: FavoriteSplitMemberVisual
     ) -> String {
-        "essential-split-member-\(member.persistentID.uuidString)"
+        "favorite-split-member-\(member.persistentID.uuidString)"
     }
 
-    private var preferredActivationMember: EssentialSplitMemberVisual? {
+    private var preferredActivationMember: FavoriteSplitMemberVisual? {
         if let activeIndex = activeMemberIndex,
            memberVisuals.indices.contains(activeIndex) {
             return memberVisuals[activeIndex]
@@ -244,7 +244,7 @@ struct EssentialSplitGroupTile: View {
         return memberVisuals.firstIndex { $0.id == memberID }
     }
 
-    private var memberVisuals: [EssentialSplitMemberVisual] {
+    private var memberVisuals: [FavoriteSplitMemberVisual] {
         group.members.compactMap { member in
             guard case .shortcutPin(let pinID) = member.memberID,
                   let pin = pinsByID[pinID],
@@ -261,7 +261,7 @@ struct EssentialSplitGroupTile: View {
                     partition: faviconPartition(for: pin)
                 )
             )
-            return EssentialSplitMemberVisual(
+            return FavoriteSplitMemberVisual(
                 id: member.memberID,
                 persistentID: pinID,
                 title: pin.resolvedDisplayTitle(liveTab: liveTab),
@@ -348,7 +348,7 @@ struct EssentialSplitGroupTile: View {
             await backdropLoader.load(
                 launchURL: pin.launchURL,
                 partition: faviconPartition(for: pin),
-                reader: essentialBackdropReader,
+                reader: favoriteBackdropReader,
                 isCurrentLaunchURL: { pin.launchURL == $0 }
             )
             guard !Task.isCancelled else { return }
@@ -367,7 +367,7 @@ struct EssentialSplitGroupTile: View {
         ) {
             return loaded
         }
-        return essentialBackdropReader.cachedBackdrop(
+        return favoriteBackdropReader.cachedBackdrop(
             for: pin.launchURL,
             partition: partition
         ).map(Image.init(nsImage:))
@@ -424,8 +424,8 @@ struct EssentialSplitGroupTile: View {
                 title: title,
                 urlString: url.absoluteString
             ),
-            sourceZone: .essentials,
-            previewKind: .essentialsTile,
+            sourceZone: .favorite,
+            previewKind: .favoriteTile,
             previewIcon: group.iconAsset == nil ? previewIcon : nil,
             previewGlyphText: group.iconAsset.flatMap {
                 SumiPersistentGlyph.presentsAsEmoji($0) ? $0 : nil
@@ -448,9 +448,9 @@ struct EssentialSplitGroupTile: View {
         SidebarSplitDragPresentation(members: splitTileMembers)
     }
 
-    private var splitTileMembers: [EssentialSplitTileMemberPresentation] {
+    private var splitTileMembers: [FavoriteSplitTileMemberPresentation] {
         memberVisuals.map { member in
-            EssentialSplitTileMemberPresentation(
+            FavoriteSplitTileMemberPresentation(
                 icon: member.icon,
                 glyphText: member.glyphText,
                 systemImageName: member.systemImageName,
@@ -530,7 +530,7 @@ struct EssentialSplitGroupTile: View {
     }
 }
 
-private struct EssentialSplitMemberVisual: Identifiable {
+private struct FavoriteSplitMemberVisual: Identifiable {
     let id: SplitMemberID
     let persistentID: UUID
     let title: String
@@ -543,8 +543,8 @@ private struct EssentialSplitMemberVisual: Identifiable {
     let backdrop: Image?
 }
 
-struct EssentialSplitCompactVisual: View {
-    let members: [EssentialSplitTileMemberPresentation]
+struct FavoriteSplitCompactVisual: View {
+    let members: [FavoriteSplitTileMemberPresentation]
     var isGroupActive: Bool
     var cornerRadius: CGFloat = PinnedTileMetrics.cornerRadius
     var idleBackground: Color = Color(nsColor: .controlBackgroundColor)
@@ -582,7 +582,7 @@ struct EssentialSplitCompactVisual: View {
                         }
                     }
                     .mask {
-                        EssentialSplitChromeMask(
+                        FavoriteSplitChromeMask(
                             memberCount: rects.count,
                             cornerRadius: cornerRadius,
                             thickness: PinnedTileMetrics.strokeWidth
@@ -650,7 +650,7 @@ struct EssentialSplitCompactVisual: View {
     }
 }
 
-private struct EssentialSplitChromeMask: View {
+private struct FavoriteSplitChromeMask: View {
     let memberCount: Int
     let cornerRadius: CGFloat
     let thickness: CGFloat

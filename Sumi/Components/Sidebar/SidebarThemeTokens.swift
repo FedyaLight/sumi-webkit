@@ -32,9 +32,9 @@ enum SidebarThemeTokens {
         /// new-tab button is weighted up, not down, relative to tab rows).
         static let newTabRow = folderTitle
         static let pinnedTileAction = Font.system(size: 11, weight: .bold)
-        static let essentialsPlaceholderTitle = Font.system(size: 14, weight: .semibold)
-        static let essentialsPlaceholderSubtitle = Font.system(size: 12, weight: .medium)
-        static let essentialsPlaceholderDismiss = Font.system(size: 10, weight: .semibold)
+        static let favoritePlaceholderTitle = Font.system(size: 14, weight: .semibold)
+        static let favoritePlaceholderSubtitle = Font.system(size: 12, weight: .medium)
+        static let favoritePlaceholderDismiss = Font.system(size: 10, weight: .semibold)
 
         static func chromeTemplateIcon(size: CGFloat) -> Font {
             .system(size: size * 0.78, weight: .medium)

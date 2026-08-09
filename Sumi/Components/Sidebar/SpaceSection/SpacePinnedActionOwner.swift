@@ -43,7 +43,7 @@ struct SpacePinnedActionOwner {
                 currentSpaceID: space.id
             )
         )
-        let addToEssentialsAction: (() -> Void)? = pinProjection.canAddToEssentials(
+        let addToFavoriteAction: (() -> Void)? = pinProjection.canAddToFavorite(
             url: pin.launchURL,
             in: windowState,
             spaceID: space.id
@@ -107,7 +107,7 @@ struct SpacePinnedActionOwner {
                         _ = pinExecution.assignExecutionProfile(pin, profileID: profileId)
                     }
                 ),
-                addToEssentials: addToEssentialsAction,
+                addToFavorite: addToFavoriteAction,
                 savedURLDrift: savedURLDriftActions,
                 unload: unloadAction,
                 deleteSavedTab: { confirmDeleteShortcutPin(pin) }
@@ -225,10 +225,10 @@ struct SpacePinnedActionOwner {
     }
 
     func pinShortcutGlobally(_ pin: ShortcutPin) {
-        _ = browserContext.shortcutCopy.copyToEssentials(
+        _ = browserContext.shortcutCopy.copyToFavorite(
             pin,
             title: pin.resolvedDisplayTitle(liveTab: activeShortcutTab(for: pin)),
-            context: EssentialsShortcutPlacementOwner.TargetContext(
+            context: FavoriteShortcutPlacementOwner.TargetContext(
                 windowState: windowState,
                 spaceId: space.id
             )

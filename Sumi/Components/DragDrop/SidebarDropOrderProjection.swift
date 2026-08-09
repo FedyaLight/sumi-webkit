@@ -28,8 +28,8 @@ extension SidebarDropOrderProjecting {
         switch visualSlot {
         case .empty:
             return .empty
-        case .essentials:
-            return .essentials(slot: index)
+        case .favorite:
+            return .favorite(slot: index)
         case .spacePinned(let spaceID, _):
             return .spacePinned(spaceId: spaceID, slot: index)
         case .spaceRegular(let spaceID, _):
@@ -89,15 +89,15 @@ final class SidebarDropOrderProjection: SidebarDropOrderProjecting {
             return run.rawInsertionIndex(atVisualBoundary: visualIndex)
         }
 
-        guard intent.fromContainer == .essentials,
-              intent.toContainer == .essentials else {
+        guard intent.fromContainer == .favorite,
+              intent.toContainer == .favorite else {
             return storageIndex(
                 forVisualIndex: intent.presentedVisualIndex,
                 in: intent.toContainer
             )
         }
 
-        let sourceItems = splitOrdering.essentialItems(
+        let sourceItems = splitOrdering.favoriteItems(
             for: intent.scope.profileId
         )
         let sourceIndex = sourceItems.firstIndex {

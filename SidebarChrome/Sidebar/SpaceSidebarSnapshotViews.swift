@@ -21,12 +21,12 @@ struct SpaceTransitionSnapshotPageView: View {
     var body: some View {
         let showsExtensionGrid = includesTopSidebarContent
             && snapshot.extensionActions?.slots.isEmpty == false
-        let showsEssentialsSurface = includesTopSidebarContent
-            && snapshot.essentials.map {
+        let showsFavoriteSurface = includesTopSidebarContent
+            && snapshot.favorite.map {
                 !$0.items.isEmpty || $0.showsPlaceholder
             } == true
-        let essentialsTopPadding = SidebarChromeMetrics.essentialsTopPadding(
-            showsEssentialsSurface: showsEssentialsSurface,
+        let favoriteTopPadding = SidebarChromeMetrics.favoriteTopPadding(
+            showsFavoriteSurface: showsFavoriteSurface,
             showsExtensionGrid: showsExtensionGrid
         )
 
@@ -42,19 +42,19 @@ struct SpaceTransitionSnapshotPageView: View {
                 .padding(.bottom, 8)
             }
 
-            if includesTopSidebarContent, let essentials = snapshot.essentials {
-                EssentialsSnapshotGrid(
-                    snapshot: essentials,
+            if includesTopSidebarContent, let favorite = snapshot.favorite {
+                FavoriteSnapshotGrid(
+                    snapshot: favorite,
                     width: innerWidth,
                     tokens: tokens
                 )
                 .padding(.horizontal, 8)
-                .padding(.top, essentialsTopPadding)
+                .padding(.top, favoriteTopPadding)
                 .padding(
                     .bottom,
-                    essentials.items.isEmpty && !essentials.showsPlaceholder
+                    favorite.items.isEmpty && !favorite.showsPlaceholder
                         ? 0
-                        : SidebarChromeMetrics.essentialsToSpaceTitleSpacing
+                        : SidebarChromeMetrics.favoriteToSpaceTitleSpacing
                 )
             }
 
@@ -243,14 +243,14 @@ private struct SpaceSnapshotTitleView: View {
 }
 
 @MainActor
-struct EssentialsSnapshotGrid: View {
-    let snapshot: EssentialsSnapshot
+struct FavoriteSnapshotGrid: View {
+    let snapshot: FavoriteSnapshot
     let width: CGFloat
     let tokens: ChromeThemeTokens
 
     @Environment(\.sumiSettings) private var sumiSettings
 
-    private var rows: [EssentialsSnapshotRow] {
+    private var rows: [FavoriteSnapshotRow] {
         let columns = capacityColumnCount
         guard !snapshot.items.isEmpty else { return [] }
 
@@ -258,12 +258,12 @@ struct EssentialsSnapshotGrid: View {
             let rowItems = Array(snapshot.items[index..<min(index + columns, snapshot.items.count)])
             let visualColumnCount = max(1, min(rowItems.count, columns))
             let tileSize = visualTileSize(visualColumnCount: visualColumnCount)
-            return EssentialsSnapshotRow(items: rowItems, tileSize: tileSize)
+            return FavoriteSnapshotRow(items: rowItems, tileSize: tileSize)
         }
     }
 
     private var capacityColumnCount: Int {
-        SidebarEssentialsProjectionPolicy.resolvedCapacityColumnCount(for: width)
+        SidebarFavoriteProjectionPolicy.resolvedCapacityColumnCount(for: width)
     }
 
     var body: some View {
@@ -280,7 +280,7 @@ struct EssentialsSnapshotGrid: View {
     @ViewBuilder
     private var emptyState: some View {
         if snapshot.showsPlaceholder {
-            EssentialsPlaceholderView(
+            FavoritePlaceholderView(
                 tokens: tokens,
                 cornerRadius: sumiSettings.resolvedCornerRadius(PinnedTileMetrics.cornerRadius),
                 onDismiss: nil,
@@ -288,7 +288,7 @@ struct EssentialsSnapshotGrid: View {
             )
         } else {
             Color.clear
-                .frame(height: PinnedTileMetrics.collapsedEssentialsRevealHeight)
+                .frame(height: PinnedTileMetrics.collapsedFavoriteRevealHeight)
         }
     }
 
@@ -305,7 +305,7 @@ struct EssentialsSnapshotGrid: View {
                                 tokens: tokens
                             )
                         case .splitGroup(let splitGroup):
-                            EssentialsSnapshotSplitTileView(
+                            FavoriteSnapshotSplitTileView(
                                 splitGroup: splitGroup,
                                 tileSize: row.tileSize,
                                 tokens: tokens
@@ -318,19 +318,19 @@ struct EssentialsSnapshotGrid: View {
     }
 
     private func visualTileSize(visualColumnCount: Int) -> CGSize {
-        SidebarEssentialsProjectionPolicy.visualTileSize(
+        SidebarFavoriteProjectionPolicy.visualTileSize(
             width: width,
             visualColumnCount: visualColumnCount
         )
     }
 
-    private struct EssentialsSnapshotRow {
-        let items: [EssentialsSnapshotItem]
+    private struct FavoriteSnapshotRow {
+        let items: [FavoriteSnapshotItem]
         let tileSize: CGSize
     }
 }
 
-private struct EssentialsSnapshotSplitTileView: View {
+private struct FavoriteSnapshotSplitTileView: View {
     let splitGroup: SpaceSplitGroupSnapshot
     let tileSize: CGSize
     let tokens: ChromeThemeTokens
@@ -339,15 +339,15 @@ private struct EssentialsSnapshotSplitTileView: View {
     @Environment(SidebarFaviconImageStore.self) private var faviconImageStore
 
     var body: some View {
-        EssentialSplitCompactVisual(
+        FavoriteSplitCompactVisual(
             members: splitGroup.members.map { member in
-                EssentialSplitTileMemberPresentation(
+                FavoriteSplitTileMemberPresentation(
                     icon: fallbackImage(for: member.icon),
                     glyphText: member.icon.accentGlyphText,
                     systemImageName: member.icon.accentSystemImageName,
                     accentColor: accentColor(for: member),
                     title: member.title,
-                    backdrop: member.essentialBackdrop
+                    backdrop: member.favoriteBackdrop
                 )
             },
             isGroupActive: splitGroup.isSelected,
@@ -366,7 +366,7 @@ private struct EssentialsSnapshotSplitTileView: View {
             }
         }
         .accessibilityIdentifier(
-            "essential-split-group-snapshot-\(splitGroup.id.uuidString)"
+            "favorite-split-group-snapshot-\(splitGroup.id.uuidString)"
         )
     }
 

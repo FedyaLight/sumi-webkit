@@ -90,14 +90,14 @@ final class SumiArcImportParserTests: XCTestCase {
         XCTAssertEqual(result.data.spaces.first?.color?.hex, "#00D843")
     }
 
-    /// Essentials used to be gathered by walking an unordered dictionary, so the
+    /// Favorite used to be gathered by walking an unordered dictionary, so the
     /// same install imported a different pin order on every run.
-    func testEssentialsFollowTopAppsContainerOrder() throws {
+    func testFavoriteFollowTopAppsContainerOrder() throws {
         var items: [Any] = []
         for (index, title) in ["First", "Second", "Third"].enumerated() {
-            items.append("essential-\(index)")
+            items.append("favorite-\(index)")
             items.append([
-                "id": "essential-\(index)",
+                "id": "favorite-\(index)",
                 "title": title,
                 "data": ["tab": ["savedURL": "https://example.com/\(index)"]],
             ])
@@ -105,7 +105,7 @@ final class SumiArcImportParserTests: XCTestCase {
         items.append("top-apps-container")
         items.append([
             "id": "top-apps-container",
-            "childrenIds": ["essential-0", "essential-1", "essential-2"],
+            "childrenIds": ["favorite-0", "favorite-1", "favorite-2"],
             "data": ["itemContainer": ["containerType": ["topApps": ["_0": ["default": true]]]]],
         ])
 
@@ -117,8 +117,8 @@ final class SumiArcImportParserTests: XCTestCase {
 
         let result = try SumiArcImportParser().parseWithDiagnostics(sidebarURL: try writeSidebar(root))
 
-        XCTAssertEqual(result.data.essentials.map(\.title), ["First", "Second", "Third"])
-        XCTAssertEqual(result.data.essentials.map(\.index), [0, 1, 2])
+        XCTAssertEqual(result.data.favorite.map(\.title), ["First", "Second", "Third"])
+        XCTAssertEqual(result.data.favorite.map(\.index), [0, 1, 2])
     }
 
     // MARK: - Fixture construction

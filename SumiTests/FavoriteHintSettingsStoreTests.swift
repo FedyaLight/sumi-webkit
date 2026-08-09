@@ -1,5 +1,5 @@
 //
-//  EssentialsHintSettingsStoreTests.swift
+//  FavoriteHintSettingsStoreTests.swift
 //  SumiTests
 //
 
@@ -8,19 +8,19 @@ import XCTest
 @testable import Sumi
 
 @MainActor
-final class EssentialsHintSettingsStoreTests: XCTestCase {
-    private let key = "settings.essentials.placeholderDismissedProfileIds"
+final class FavoriteHintSettingsStoreTests: XCTestCase {
+    private let key = "settings.favorite.placeholderDismissedProfileIds"
 
     private func makeDefaults() -> UserDefaults {
-        let suiteName = "EssentialsHintSettingsStoreTests-\(UUID().uuidString)"
+        let suiteName = "FavoriteHintSettingsStoreTests-\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suiteName) else {
             preconditionFailure("Unable to create isolated defaults")
         }
         return defaults
     }
 
-    private func makeStore(defaults: UserDefaults) -> EssentialsHintSettingsStore {
-        EssentialsHintSettingsStore(
+    private func makeStore(defaults: UserDefaults) -> FavoriteHintSettingsStore {
+        FavoriteHintSettingsStore(
             userDefaults: defaults,
             dismissedProfileIdsKey: key
         )
@@ -87,10 +87,10 @@ final class EssentialsHintSettingsStoreTests: XCTestCase {
         let settings = SumiSettingsService(userDefaults: defaults)
         let profileId = UUID()
 
-        XCTAssertTrue(settings.showsEssentialsPlaceholder(profileId: profileId))
+        XCTAssertTrue(settings.showsFavoritePlaceholder(profileId: profileId))
 
-        settings.dismissEssentialsPlaceholder(profileId: profileId)
+        settings.dismissFavoritePlaceholder(profileId: profileId)
 
-        XCTAssertFalse(settings.showsEssentialsPlaceholder(profileId: profileId))
+        XCTAssertFalse(settings.showsFavoritePlaceholder(profileId: profileId))
     }
 }

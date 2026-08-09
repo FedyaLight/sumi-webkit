@@ -233,6 +233,6 @@ final class ShortcutPresentationActivationPlanner {
                 currentSpaceId: presentationSpaceID
             )
             && tab.profileId == resolution.desiredLiveTabProfileId(for: pin)
-            && tab.folderId == (pin.role == .essential ? nil : pin.folderId)
+            && tab.folderId == (pin.role == .favorite ? nil : pin.folderId)
     }
 }

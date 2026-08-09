@@ -77,8 +77,8 @@ final class BrowserShutdownCleanupService {
 
     private func uniqueTabsForCleanup() -> [Tab] {
         Self.uniqueTabsForCleanup(
-            essential: shortcutPresentation
-                .activeShortcutTabs(role: .essential),
+            favorite: shortcutPresentation
+                .activeShortcutTabs(role: .favorite),
             all: membership.allTabs(),
             ephemeral: windowRegistry()?.allWindows
                 .flatMap(\.ephemeralTabs) ?? []
@@ -86,7 +86,7 @@ final class BrowserShutdownCleanupService {
     }
 
     static func uniqueTabsForCleanup(
-        essential: [Tab],
+        favorite: [Tab],
         all: [Tab],
         ephemeral: [Tab]
     ) -> [Tab] {
@@ -98,7 +98,7 @@ final class BrowserShutdownCleanupService {
             result.append(tab)
         }
 
-        essential.forEach(append)
+        favorite.forEach(append)
         all.forEach(append)
         ephemeral.forEach(append)
         return result

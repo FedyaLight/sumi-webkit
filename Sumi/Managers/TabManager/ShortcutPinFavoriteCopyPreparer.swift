@@ -2,19 +2,19 @@ import Foundation
 import SumiDomain
 
 @MainActor
-final class ShortcutPinEssentialCopyPreparer {
+final class ShortcutPinFavoriteCopyPreparer {
     struct PreparedCopy {
         let pin: ShortcutPin
-        let insertion: EssentialsShortcutPlacementOwner.InsertionPlan
-        let context: EssentialsShortcutPlacementOwner.TargetContext?
+        let insertion: FavoriteShortcutPlacementOwner.InsertionPlan
+        let context: FavoriteShortcutPlacementOwner.TargetContext?
     }
 
-    private let placement: EssentialsShortcutPlacementOwner
+    private let placement: FavoriteShortcutPlacementOwner
     private let pins: ShortcutPinCollectionStateOwner
     private let resolution: ShortcutPinRuntimeResolutionOwner
 
     init(
-        placement: EssentialsShortcutPlacementOwner,
+        placement: FavoriteShortcutPlacementOwner,
         pins: ShortcutPinCollectionStateOwner,
         resolution: ShortcutPinRuntimeResolutionOwner
     ) {
@@ -26,12 +26,12 @@ final class ShortcutPinEssentialCopyPreparer {
     func prepare(
         _ pin: ShortcutPin,
         title: String,
-        context: EssentialsShortcutPlacementOwner.TargetContext?
+        context: FavoriteShortcutPlacementOwner.TargetContext?
     ) -> PreparedCopy? {
         guard pins.shortcutPin(by: pin.id) === pin else { return nil }
         guard let insertion = placement.resolveInsertion(
             using: .init(target: context)
-        ), pins.essentialPins(for: insertion.profileId)
+        ), pins.favoritePins(for: insertion.profileId)
             .contains(where: { $0.launchURL == pin.launchURL }) == false
         else { return nil }
         let currentSpaceID = context?.spaceId
@@ -43,7 +43,7 @@ final class ShortcutPinEssentialCopyPreparer {
         return PreparedCopy(
             pin: ShortcutPin(
                 id: UUID(),
-                role: .essential,
+                role: .favorite,
                 profileId: insertion.profileId,
                 executionProfileId: executionProfileID == insertion.profileId
                     ? nil : executionProfileID,

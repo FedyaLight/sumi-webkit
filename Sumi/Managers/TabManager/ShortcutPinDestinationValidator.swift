@@ -22,7 +22,7 @@ final class ShortcutPinDestinationValidator {
         folderId: UUID?
     ) -> Bool {
         switch role {
-        case .essential:
+        case .favorite:
             return spaceId == nil && folderId == nil
         case .spacePinned:
             guard let spaceId, spaces.contains(spaceId: spaceId) else {

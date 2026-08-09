@@ -19,9 +19,9 @@ final class SumiSidebarSelectionUITests: SumiLaunchSmokeUITestCase {
         }
     }
 
-    func testVisibleSidebarTracksEssentialSelectionWithoutRemount() throws {
+    func testVisibleSidebarTracksFavoriteSelectionWithoutRemount() throws {
         try assertVisibleSidebarLauncherSelection { fixture in
-            fixture.essentialID.map { "essential-shortcut-\($0)" }
+            fixture.favoriteID.map { "favorite-shortcut-\($0)" }
         }
     }
 

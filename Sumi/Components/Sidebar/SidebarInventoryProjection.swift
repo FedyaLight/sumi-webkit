@@ -286,9 +286,9 @@ final class SidebarSpaceCatalogProjection {
         return spaces.space(with: id)
     }
 
-    func essentialPins(profileID: UUID?) -> [ShortcutPin] {
+    func favoritePins(profileID: UUID?) -> [ShortcutPin] {
         guard runtime.current != nil else { return [] }
-        return pins.essentialPins(for: profileID)
+        return pins.favoritePins(for: profileID)
     }
 }
 

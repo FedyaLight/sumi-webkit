@@ -320,7 +320,7 @@ extension BrowserManagerRuntimeWiringTests {
         )
         let profilePin = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: profile.id,
             index: 0,
             launchURL: URL(string: "https://profile-pin.example")!,

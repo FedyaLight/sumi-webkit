@@ -30,8 +30,8 @@ extension BrowserManager {
             glanceManager: glanceManager,
             extensionSurfaceStore: extensions.surfaceStore,
             faviconImageReader: dataServices.faviconCapabilities.images,
-            essentialBackdropReader:
-                dataServices.faviconCapabilities.essentialBackdrops,
+            favoriteBackdropReader:
+                dataServices.faviconCapabilities.favoriteBackdrops,
             spaceEditorPresentation: composeSidebarSpaceEditorPresentation(),
             folderEditorPresentation: composeSidebarFolderEditorPresentation(),
             shortcutEditorPresentation: composeSidebarShortcutEditorPresentation(),

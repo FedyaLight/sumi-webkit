@@ -5,13 +5,13 @@ import XCTest
 
 @MainActor
 final class CommandPaletteNavigationTargetCatalogTests: XCTestCase {
-    func testSnapshotIncludesUnloadedEssentialAndPinnedLaunchers() {
+    func testSnapshotIncludesUnloadedFavoriteAndPinnedLaunchers() {
         let profileID = UUID()
         let space = Space(name: "Personal", profileId: profileID)
-        let essential = makePin(
+        let favorite = makePin(
             title: "Drive",
             url: "https://drive.example",
-            role: .essential,
+            role: .favorite,
             profileID: profileID
         )
         let pinned = makePin(
@@ -26,7 +26,7 @@ final class CommandPaletteNavigationTargetCatalogTests: XCTestCase {
         window.currentSpaceId = space.id
         let catalog = makeCatalog(
             spaces: [space],
-            essentialPins: [essential],
+            favoritePins: [favorite],
             spacePinnedPins: [space.id: [pinned]]
         )
 
@@ -34,7 +34,7 @@ final class CommandPaletteNavigationTargetCatalogTests: XCTestCase {
 
         XCTAssertEqual(
             snapshot.targets.map(\.identity),
-            [.shortcut(essential.id), .shortcut(pinned.id)]
+            [.shortcut(favorite.id), .shortcut(pinned.id)]
         )
         XCTAssertTrue(snapshot.eligibleRegularTabs.isEmpty)
     }
@@ -266,7 +266,7 @@ final class CommandPaletteNavigationTargetCatalogTests: XCTestCase {
     private func makeCatalog(
         spaces: [Space],
         regularTabs: [Tab] = [],
-        essentialPins: [ShortcutPin] = [],
+        favoritePins: [ShortcutPin] = [],
         spacePinnedPins: [UUID: [ShortcutPin]] = [:],
         splitGroups: [SplitGroup] = [],
         liveShortcutTabs: [UUID: [UUID: Tab]] = [:]
@@ -274,7 +274,7 @@ final class CommandPaletteNavigationTargetCatalogTests: XCTestCase {
         CommandPaletteNavigationTargetCatalog(
             spaces: { spaces },
             regularTabs: { regularTabs },
-            essentialPins: { _ in essentialPins },
+            favoritePins: { _ in favoritePins },
             spacePinnedPins: { spacePinnedPins[$0] ?? [] },
             splitGroups: { splitGroups },
             liveShortcutTab: { pinID, windowID in
@@ -294,7 +294,7 @@ final class CommandPaletteNavigationTargetCatalogTests: XCTestCase {
         ShortcutPin(
             id: UUID(),
             role: role,
-            profileId: role == .essential ? profileID : nil,
+            profileId: role == .favorite ? profileID : nil,
             executionProfileId: profileID,
             spaceId: spaceID,
             index: 0,

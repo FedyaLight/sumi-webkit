@@ -198,7 +198,7 @@ final class SpaceTabSectionBoundaryTests: XCTestCase {
             title: "Space",
             iconValue: "globe",
             extensionActions: nil,
-            essentials: nil,
+            favorite: nil,
             supportsPinnedContent: supportsPinnedContent,
             hasPinnedContent: hasPinnedContent,
             isPinnedContentCollapsed: false,

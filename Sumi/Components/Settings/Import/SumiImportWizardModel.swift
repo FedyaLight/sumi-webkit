@@ -60,7 +60,7 @@ final class SumiImportWizardModel {
     var requiresProfiles: Bool {
         requiresProfilesForBrowsingData
             || selectedCategories.contains(.spaces)
-            || selectedCategories.contains(.essentials)
+            || selectedCategories.contains(.favorite)
     }
 
     func detect() {

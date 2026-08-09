@@ -7,18 +7,18 @@ final class SidebarRegularTabTargetQuery {
     private let splitGroups: SplitGroupStore
     private let pins: ShortcutPinCollectionStateOwner
     private let folders: TabFolderCollectionStateOwner
-    private let essentials: EssentialsShortcutPlacementOwner
+    private let favorite: FavoriteShortcutPlacementOwner
 
     init(
         splitGroups: SplitGroupStore,
         pins: ShortcutPinCollectionStateOwner,
         folders: TabFolderCollectionStateOwner,
-        essentials: EssentialsShortcutPlacementOwner
+        favorite: FavoriteShortcutPlacementOwner
     ) {
         self.splitGroups = splitGroups
         self.pins = pins
         self.folders = folders
-        self.essentials = essentials
+        self.favorite = favorite
     }
 
     func splitGroup(containing memberID: SplitMemberID) -> SplitGroup? {
@@ -34,7 +34,7 @@ final class SidebarRegularTabTargetQuery {
             .filter { !$0.isLiveFolder }
     }
 
-    func canAddToEssentials(
+    func canAddToFavorite(
         _ tab: Tab,
         in space: Space,
         windowState: BrowserWindowState
@@ -42,9 +42,9 @@ final class SidebarRegularTabTargetQuery {
         guard tab.isPinned == false, tab.isSpacePinned == false else {
             return false
         }
-        return essentials.canAddURL(
+        return favorite.canAddURL(
             tab.url,
-            using: EssentialsShortcutPlacementOwner.TargetContext(
+            using: FavoriteShortcutPlacementOwner.TargetContext(
                 windowState: windowState,
                 spaceId: space.id
             )

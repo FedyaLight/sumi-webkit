@@ -32,7 +32,7 @@ struct PinnedTabView: View {
     var accentSourceURL: URL?
     var accentSourcePartition: SumiFaviconPartition?
     var faviconImageReader: (any BrowserFaviconImageReading)?
-    var essentialBackdropReader: (any BrowserEssentialBackdropReading)?
+    var favoriteBackdropReader: (any BrowserFavoriteBackdropReading)?
 
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) var sumiSettings
@@ -40,7 +40,7 @@ struct PinnedTabView: View {
     @Environment(\.chromeThemeTokens) private var scopedChromeTokens
     @State private var isTileHovered = false
     @State private var isActionHovered = false
-    @State private var backdropLoader = SidebarEssentialBackdropLoader()
+    @State private var backdropLoader = SidebarFavoriteBackdropLoader()
 
     var body: some View {
         let cornerRadius = sumiSettings.resolvedCornerRadius(PinnedTileMetrics.cornerRadius)
@@ -147,7 +147,7 @@ struct PinnedTabView: View {
             await loadSelectionBackdropIfNeeded()
         }
         .onReceive(
-            NotificationCenter.default.publisher(for: .essentialBackdropUpdated)
+            NotificationCenter.default.publisher(for: .favoriteBackdropUpdated)
         ) { notification in
             guard let accentSourceURL, let accentSourcePartition else { return }
             backdropLoader.invalidateIfNeeded(
@@ -233,7 +233,7 @@ struct PinnedTabView: View {
 
     private func accessibilityActionID(suffix: String) -> String? {
         guard let accessibilityID else { return nil }
-        if let id = accessibilityID.replacingPrefix("essential-shortcut-", with: "essential-shortcut-\(suffix)-") {
+        if let id = accessibilityID.replacingPrefix("favorite-shortcut-", with: "favorite-shortcut-\(suffix)-") {
             return id
         }
         if let id = accessibilityID.replacingPrefix("space-pinned-shortcut-", with: "space-pinned-shortcut-\(suffix)-") {
@@ -248,12 +248,12 @@ struct PinnedTabView: View {
               chromeTemplateSystemImageName == nil,
               let accentSourceURL,
               let accentSourcePartition,
-              let essentialBackdropReader
+              let favoriteBackdropReader
         else { return nil }
         return backdropLoader.image(
             for: accentSourceURL,
             partition: accentSourcePartition
-        ) ?? essentialBackdropReader.cachedBackdrop(
+        ) ?? favoriteBackdropReader.cachedBackdrop(
             for: accentSourceURL,
             partition: accentSourcePartition
         ).map(Image.init(nsImage:))
@@ -269,7 +269,7 @@ struct PinnedTabView: View {
             isEnabled: presentationState.isSelected
                 && glyphText == nil
                 && chromeTemplateSystemImageName == nil
-                && essentialBackdropReader != nil
+                && favoriteBackdropReader != nil
         )
     }
 
@@ -279,18 +279,18 @@ struct PinnedTabView: View {
               chromeTemplateSystemImageName == nil,
               let accentSourceURL,
               let accentSourcePartition,
-              let essentialBackdropReader
+              let favoriteBackdropReader
         else { return }
         await backdropLoader.load(
             launchURL: accentSourceURL,
             partition: accentSourcePartition,
-            reader: essentialBackdropReader,
+            reader: favoriteBackdropReader,
             isCurrentLaunchURL: { accentSourceURL == $0 }
         )
     }
 }
 
-struct EssentialBackdropSelectionChrome: View {
+struct FavoriteBackdropSelectionChrome: View {
     let image: Image
     let cornerRadius: CGFloat
     let plateColor: Color
@@ -322,7 +322,7 @@ struct EssentialBackdropSelectionChrome: View {
     }
 }
 
-/// Accent stroke drawn inside a selected pinned/essential tile. Shared by the
+/// Accent stroke drawn inside a selected pinned/favorite tile. Shared by the
 /// live `PinnedTileVisual` and the transition-snapshot tile so both keep an
 /// identical selection ring. Fills the available frame (no `GeometryReader`
 /// needed — a `Shape` already sizes to its container).

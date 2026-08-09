@@ -1,14 +1,14 @@
 import Foundation
 
 extension Notification.Name {
-    static let essentialBackdropUpdated = Notification.Name(
-        "SumiEssentialBackdropUpdated"
+    static let favoriteBackdropUpdated = Notification.Name(
+        "SumiFavoriteBackdropUpdated"
     )
-    static let essentialBackdropReferenceKey = "SumiEssentialBackdropReferenceKey"
-    static let essentialBackdropPartitionKey = "SumiEssentialBackdropPartition"
+    static let favoriteBackdropReferenceKey = "SumiFavoriteBackdropReferenceKey"
+    static let favoriteBackdropPartitionKey = "SumiFavoriteBackdropPartition"
 }
 
-enum SumiEssentialBackdropNotificationMatcher {
+enum SumiFavoriteBackdropNotificationMatcher {
     static func update(
         _ notification: Notification,
         matches documentURL: URL,
@@ -18,9 +18,9 @@ enum SumiEssentialBackdropNotificationMatcher {
             for: documentURL
         ) else { return false }
         let userInfo = notification.userInfo
-        return userInfo?[Notification.Name.essentialBackdropReferenceKey]
+        return userInfo?[Notification.Name.favoriteBackdropReferenceKey]
             as? String == referenceKey
-            && userInfo?[Notification.Name.essentialBackdropPartitionKey]
+            && userInfo?[Notification.Name.favoriteBackdropPartitionKey]
             as? String == partition.storageComponent
     }
 }

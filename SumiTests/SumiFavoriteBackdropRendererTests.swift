@@ -5,15 +5,15 @@ import XCTest
 @testable import Sumi
 
 @MainActor
-final class SumiEssentialBackdropRendererTests: XCTestCase {
+final class SumiFavoriteBackdropRendererTests: XCTestCase {
     func testBakeIsDeterministicOpaqueSixteenPixelPNG() throws {
         let favicon = makeSplitColorImage()
 
         let first = try XCTUnwrap(
-            SumiEssentialBackdropRenderer.bake(favicon: favicon)
+            SumiFavoriteBackdropRenderer.bake(favicon: favicon)
         )
         let second = try XCTUnwrap(
-            SumiEssentialBackdropRenderer.bake(favicon: favicon)
+            SumiFavoriteBackdropRenderer.bake(favicon: favicon)
         )
 
         XCTAssertEqual(first, second)
@@ -27,7 +27,7 @@ final class SumiEssentialBackdropRendererTests: XCTestCase {
 
     func testTransparentFaviconDoesNotProduceArtifact() {
         XCTAssertNil(
-            SumiEssentialBackdropRenderer.bake(
+            SumiFavoriteBackdropRenderer.bake(
                 favicon: makeImage { context, rect in
                     context.clear(rect)
                 }
@@ -37,7 +37,7 @@ final class SumiEssentialBackdropRendererTests: XCTestCase {
 
     func testBakedColorRegionsPreserveFaviconOrientation() throws {
         let data = try XCTUnwrap(
-            SumiEssentialBackdropRenderer.bake(
+            SumiFavoriteBackdropRenderer.bake(
                 favicon: makeSplitColorImage()
             )
         )
@@ -55,7 +55,7 @@ final class SumiEssentialBackdropRendererTests: XCTestCase {
             context.fill(rect.insetBy(dx: 2, dy: 2))
         }
         let data = try XCTUnwrap(
-            SumiEssentialBackdropRenderer.bake(favicon: favicon)
+            SumiFavoriteBackdropRenderer.bake(favicon: favicon)
         )
         let bytes = pixelBytes(try decodedCGImage(data))
         let cornerOffset = 0

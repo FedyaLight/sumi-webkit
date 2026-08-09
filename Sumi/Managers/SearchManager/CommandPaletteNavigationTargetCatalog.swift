@@ -101,7 +101,7 @@ final class CommandPaletteNavigationTargetCatalog {
 
     private let spaces: @MainActor () -> [Space]
     private let regularTabs: @MainActor () -> [Tab]
-    private let essentialPins: @MainActor (UUID?) -> [ShortcutPin]
+    private let favoritePins: @MainActor (UUID?) -> [ShortcutPin]
     private let spacePinnedPins: @MainActor (UUID) -> [ShortcutPin]
     private let splitGroups: @MainActor () -> [SplitGroup]
     private let liveShortcutTab: @MainActor (UUID, UUID) -> Tab?
@@ -110,7 +110,7 @@ final class CommandPaletteNavigationTargetCatalog {
     init(
         spaces: @escaping @MainActor () -> [Space],
         regularTabs: @escaping @MainActor () -> [Tab],
-        essentialPins: @escaping @MainActor (UUID?) -> [ShortcutPin],
+        favoritePins: @escaping @MainActor (UUID?) -> [ShortcutPin],
         spacePinnedPins: @escaping @MainActor (UUID) -> [ShortcutPin],
         splitGroups: @escaping @MainActor () -> [SplitGroup],
         liveShortcutTab: @escaping @MainActor (UUID, UUID) -> Tab?,
@@ -120,7 +120,7 @@ final class CommandPaletteNavigationTargetCatalog {
     ) {
         self.spaces = spaces
         self.regularTabs = regularTabs
-        self.essentialPins = essentialPins
+        self.favoritePins = favoritePins
         self.spacePinnedPins = spacePinnedPins
         self.splitGroups = splitGroups
         self.liveShortcutTab = liveShortcutTab
@@ -153,7 +153,7 @@ final class CommandPaletteNavigationTargetCatalog {
                 }
                 .map { ($0.id, $0) }
         )
-        let pins = essentialPins(profileID)
+        let pins = favoritePins(profileID)
             + profileSpaces.flatMap { spacePinnedPins($0.id) }
         let pinsByID = Dictionary(
             uniqueKeysWithValues: pins.map { ($0.id, $0) }
@@ -323,7 +323,7 @@ final class CommandPaletteNavigationTargetCatalog {
         switch group.container {
         case .regularTabs(let spaceID):
             return spaceID.map(spaceIDs.contains) ?? true
-        case .essentialSidebar(let groupProfileID, _):
+        case .favoriteSidebar(let groupProfileID, _):
             return groupProfileID == nil || groupProfileID == profileID
         case .shortcutSidebar(let spaceID, let groupProfileID, _, _):
             return spaceIDs.contains(spaceID)

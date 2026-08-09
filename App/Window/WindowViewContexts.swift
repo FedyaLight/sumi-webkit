@@ -134,8 +134,8 @@ final class WindowSidebarContext {
         currentProfileIDQuery()
     }
 
-    func essentialPins(profileID: UUID?) -> [ShortcutPin] {
-        spaceCatalog.essentialPins(profileID: profileID)
+    func favoritePins(profileID: UUID?) -> [ShortcutPin] {
+        spaceCatalog.favoritePins(profileID: profileID)
     }
 
     func attachHoverSidebar(

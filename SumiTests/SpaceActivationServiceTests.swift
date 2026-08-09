@@ -78,7 +78,7 @@ final class SpaceActivationServiceTests: XCTestCase {
         )
     }
 
-    func testSelectionFallbackOrderIsRegularThenSpacePinThenEssential() throws {
+    func testSelectionFallbackOrderIsRegularThenSpacePinThenFavorite() throws {
         let profileID = UUID()
         let tabManager = BrowserManager(runtimePorts: TestRuntimePorts.make(
             currentProfileId: { profileID }
@@ -88,17 +88,17 @@ final class SpaceActivationServiceTests: XCTestCase {
         let regular = makeTab(in: targetSpace)
         let pin = makePin(in: targetSpace, index: 0)
         let livePin = makeLiveTab(for: pin)
-        let essential = makeTab(in: targetSpace)
-        essential.isPinned = true
-        let essentialPin = ShortcutPin(
+        let favorite = makeTab(in: targetSpace)
+        favorite.isPinned = true
+        let favoritePin = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: profileID,
             index: 0,
-            launchURL: essential.url,
-            title: "Essential"
+            launchURL: favorite.url,
+            title: "Favorite"
         )
-        essential.bindToShortcutPin(essentialPin)
+        favorite.bindToShortcutPin(favoritePin)
         let windowId = UUID()
         tabManager.spaceStateOwner.replaceSpaces([sourceSpace, targetSpace])
         tabManager.spaceStateOwner.replaceCurrentSpace(sourceSpace)
@@ -107,7 +107,7 @@ final class SpaceActivationServiceTests: XCTestCase {
         ])
         tabManager.shortcutPinCollectionStateOwner
             .replaceAll(
-                pinnedByProfile: [profileID: [essentialPin]],
+                pinnedByProfile: [profileID: [favoritePin]],
                 spacePinnedShortcuts: [targetSpace.id: [pin]],
                 pendingPinnedWithoutProfile: []
             )
@@ -121,13 +121,13 @@ final class SpaceActivationServiceTests: XCTestCase {
                 profileID: targetSpace.profileId
             )
         ))
-        let essentialWindowID = UUID()
+        let favoriteWindowID = UUID()
         XCTAssertTrue(tabManager.liveShortcutTabs.register(
-            essential,
-            for: essentialPin.id,
-            in: essentialWindowID,
+            favorite,
+            for: favoritePin.id,
+            in: favoriteWindowID,
             presentationPage: LiveShortcutPresentationPageReceipt(
-                windowID: essentialWindowID,
+                windowID: favoriteWindowID,
                 spaceID: targetSpace.id,
                 profileID: profileID
             )
@@ -148,10 +148,10 @@ final class SpaceActivationServiceTests: XCTestCase {
             livePin
         )
         service.setActiveSpace(targetSpace, contextWindowId: windowId)
-        XCTAssertIdentical(tabManager.tabStateStore.selection.currentTab, essential)
+        XCTAssertIdentical(tabManager.tabStateStore.selection.currentTab, favorite)
     }
 
-    func testRegularSelectionWinsOverLiveEssentialTab() throws {
+    func testRegularSelectionWinsOverLiveFavoriteTab() throws {
         let profileID = UUID()
         let tabManager = BrowserManager(runtimePorts: TestRuntimePorts.make(
             currentProfileId: { profileID }
@@ -159,30 +159,30 @@ final class SpaceActivationServiceTests: XCTestCase {
         let sourceSpace = Space(name: "Source", profileId: UUID())
         let targetSpace = Space(name: "Target", profileId: profileID)
         let regular = makeTab(in: targetSpace)
-        let essentialPin = ShortcutPin(
+        let favoritePin = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: profileID,
             index: 0,
-            launchURL: URL(string: "https://essential.example")!,
-            title: "Essential"
+            launchURL: URL(string: "https://favorite.example")!,
+            title: "Favorite"
         )
-        let essential = makeLiveTab(for: essentialPin)
+        let favorite = makeLiveTab(for: favoritePin)
         tabManager.spaceStateOwner.replaceSpaces([sourceSpace, targetSpace])
         tabManager.spaceStateOwner.replaceCurrentSpace(sourceSpace)
         tabManager.tabStateStore.regularTabs.replaceTabsBySpace([
             targetSpace.id: [regular],
         ])
         tabManager.shortcutPinCollectionStateOwner.replacePinnedByProfile([
-            profileID: [essentialPin],
+            profileID: [favoritePin],
         ])
-        let essentialWindowID = UUID()
+        let favoriteWindowID = UUID()
         XCTAssertTrue(tabManager.liveShortcutTabs.register(
-            essential,
-            for: essentialPin.id,
-            in: essentialWindowID,
+            favorite,
+            for: favoritePin.id,
+            in: favoriteWindowID,
             presentationPage: LiveShortcutPresentationPageReceipt(
-                windowID: essentialWindowID,
+                windowID: favoriteWindowID,
                 spaceID: targetSpace.id,
                 profileID: profileID
             )

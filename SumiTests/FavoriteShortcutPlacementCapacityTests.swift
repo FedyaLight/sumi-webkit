@@ -4,37 +4,37 @@ import XCTest
 @testable import Sumi
 
 @MainActor
-final class EssentialsShortcutPlacementCapacityTests: XCTestCase {
+final class FavoriteShortcutPlacementCapacityTests: XCTestCase {
     func testSplitMembersConsumeOneVisualSlotButStandaloneItemsStillRespectGridCapacity()
         throws {
         let browser = BrowserManager()
         browser.tabRuntimeLifecycle.shutdown()
         let profile = Profile(name: "Profile")
         browser.profileManager.profiles = [profile]
-        let pins = try (0..<EssentialsShortcutPlacementOwner.CapacityPolicy.maxItems)
+        let pins = try (0..<FavoriteShortcutPlacementOwner.CapacityPolicy.maxItems)
             .map { index in
                 try XCTUnwrap(browser.shortcutPinStoreOwner.insert(
                     ShortcutPin(
                         id: UUID(),
-                        role: .essential,
+                        role: .favorite,
                         profileId: profile.id,
                         index: index,
                         launchURL: URL(
-                            string: "https://essential-\(index).example"
+                            string: "https://favorite-\(index).example"
                         )!,
-                        title: "Essential \(index)"
+                        title: "Favorite \(index)"
                     ),
                     at: index,
                     openTargetFolder: false
                 ))
             }
-        let placement = EssentialsShortcutPlacementOwner(
+        let placement = FavoriteShortcutPlacementOwner(
             spaces: browser.spaceStateOwner,
             runtimeConnection: browser.runtimePortConnection,
             pins: browser.shortcutPinCollectionStateOwner,
             splitGroups: browser.splitGroupStore
         )
-        let context = EssentialsShortcutPlacementOwner.TargetContext(
+        let context = FavoriteShortcutPlacementOwner.TargetContext(
             profileId: profile.id
         )
         let newURL = URL(string: "https://new.example")!
@@ -44,7 +44,7 @@ final class EssentialsShortcutPlacementCapacityTests: XCTestCase {
         let group = try XCTUnwrap(SplitGroup.make(
             members: pins.prefix(2).map { .shortcutPin($0.id) },
             layoutKind: .vertical,
-            container: .essentialSidebar(profileId: profile.id, index: 0)
+            container: .favoriteSidebar(profileId: profile.id, index: 0)
         ))
         XCTAssertTrue(browser.splitGroupMutations.insert(group, persist: false))
 

@@ -15,10 +15,10 @@ sources=(
   Sumi/Managers/TabManager/ShortcutLiveFolderPlacementReconciler.swift
   Sumi/Managers/TabManager/ShortcutPinPlacementCommandService.swift
   Sumi/Managers/TabManager/RegularTabShortcutConversionCommand.swift
-  Sumi/Managers/TabManager/RegularTabEssentialPinningService.swift
-  Sumi/Managers/TabManager/ShortcutPinEssentialCopyPreparer.swift
-  Sumi/Managers/TabManager/ShortcutPinEssentialCopyTransaction.swift
-  Sumi/Managers/TabManager/EssentialShortcutSpaceRebinder.swift
+  Sumi/Managers/TabManager/RegularTabFavoritePinningService.swift
+  Sumi/Managers/TabManager/ShortcutPinFavoriteCopyPreparer.swift
+  Sumi/Managers/TabManager/ShortcutPinFavoriteCopyTransaction.swift
+  Sumi/Managers/TabManager/FavoriteShortcutSpaceRebinder.swift
   Sumi/Managers/TabManager/ShortcutPinSpacePinningTransaction.swift
   Sumi/Managers/TabManager/ShortcutPinRetirementCommitter.swift
   Sumi/Managers/TabManager/ShortcutPinRetirementTransaction.swift
@@ -54,10 +54,10 @@ physical_role_files=(
   Sumi/Managers/TabManager/ShortcutLiveFolderPlacementReconciler.swift
   Sumi/Managers/TabManager/ShortcutPinPlacementCommandService.swift
   Sumi/Managers/TabManager/RegularTabShortcutConversionCommand.swift
-  Sumi/Managers/TabManager/RegularTabEssentialPinningService.swift
-  Sumi/Managers/TabManager/ShortcutPinEssentialCopyPreparer.swift
-  Sumi/Managers/TabManager/ShortcutPinEssentialCopyTransaction.swift
-  Sumi/Managers/TabManager/EssentialShortcutSpaceRebinder.swift
+  Sumi/Managers/TabManager/RegularTabFavoritePinningService.swift
+  Sumi/Managers/TabManager/ShortcutPinFavoriteCopyPreparer.swift
+  Sumi/Managers/TabManager/ShortcutPinFavoriteCopyTransaction.swift
+  Sumi/Managers/TabManager/FavoriteShortcutSpaceRebinder.swift
   Sumi/Managers/TabManager/ShortcutPinSpacePinningTransaction.swift
   Sumi/Managers/TabManager/ShortcutPinRetirementCommitter.swift
   Sumi/Managers/TabManager/ShortcutPinRetirementTransaction.swift
@@ -141,10 +141,10 @@ declare -a type_limits=(
   'ShortcutLiveFolderPlacementReconciler|2'
   'ShortcutPinPlacementCommandService|2'
   'RegularTabShortcutConversionCommand|3'
-  'RegularTabEssentialPinningService|4'
-  'ShortcutPinEssentialCopyPreparer|3'
-  'ShortcutPinEssentialCopyTransaction|4'
-  'EssentialShortcutSpaceRebinder|4'
+  'RegularTabFavoritePinningService|4'
+  'ShortcutPinFavoriteCopyPreparer|3'
+  'ShortcutPinFavoriteCopyTransaction|4'
+  'FavoriteShortcutSpaceRebinder|4'
   'ShortcutPinSpacePinningTransaction|5'
   'ShortcutPinRetirementCommitter|4'
   'ShortcutPinRetirementTransaction|3'

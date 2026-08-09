@@ -66,10 +66,10 @@ final class WindowTabSelectionStateApplicatorTests: XCTestCase {
         XCTAssertEqual(windowState.selectionHistory.recentSelectionItemsBySpace[spaceId], [.shortcutPin(pin.id)])
     }
 
-    func testEssentialShortcutSelectionDoesNotMoveWindowSpaceOrRememberShortcutForSpace() {
+    func testFavoriteShortcutSelectionDoesNotMoveWindowSpaceOrRememberShortcutForSpace() {
         let currentSpaceId = UUID()
         let tabSpaceId = UUID()
-        let pin = makeShortcutPin(role: .essential, spaceId: nil)
+        let pin = makeShortcutPin(role: .favorite, spaceId: nil)
         let tab = makeShortcutTab(pin: pin, spaceId: tabSpaceId)
         let windowState = BrowserWindowState()
         windowState.currentSpaceId = currentSpaceId
@@ -86,7 +86,7 @@ final class WindowTabSelectionStateApplicatorTests: XCTestCase {
         XCTAssertEqual(windowState.currentTabId, tab.id)
         XCTAssertEqual(windowState.currentSpaceId, currentSpaceId)
         XCTAssertEqual(windowState.currentShortcutPinId, pin.id)
-        XCTAssertEqual(windowState.currentShortcutPinRole, .essential)
+        XCTAssertEqual(windowState.currentShortcutPinRole, .favorite)
         XCTAssertNil(windowState.selectedShortcutPinForSpace[currentSpaceId])
         XCTAssertNil(windowState.selectedShortcutPinForSpace[tabSpaceId])
         XCTAssertEqual(windowState.selectionHistory.recentSelectionItemsBySpace[currentSpaceId], [.shortcutPin(pin.id)])

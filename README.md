@@ -49,7 +49,7 @@ Sumi implements the browser application layer. WebKit still owns HTML/CSS render
 
 ### Browsing and organization
 
-- Tabs, multiple windows, profiles, spaces, pinned items, Essentials, nested folders, and drag-and-drop organization.
+- Tabs, multiple windows, profiles, spaces, pinned items, Favorite, nested folders, and drag-and-drop organization.
 - Durable split groups with two to four pages and Glance previews that can become tabs or split members.
 - Live Folders backed by RSS and GitHub feeds; the module is optional and off by default.
 - Incognito windows backed by a non-persistent private partition.
@@ -94,7 +94,7 @@ Settings → Data & Recovery includes:
 - Import from Arc, Brave, Chrome/Chromium, Edge, Firefox, Opera/Opera GX, Safari, Vivaldi, Yandex, and Zen.
 - Source-aware migration of profiles/workspaces, tabs, bookmarks, history, folders, favicons, and cookies where the source format and encryption permit it.
 - Browser2zen-compatible `.zenbackup` export for Zen.
-- Logical `.sumibackup` backup and Merge/Replace restore for Sumi-owned profiles, spaces, themes, bookmarks, Essentials, pinned launchers, folders, and regular tabs.
+- Logical `.sumibackup` backup and Merge/Replace restore for Sumi-owned profiles, spaces, themes, bookmarks, Favorite, pinned launchers, folders, and regular tabs.
 - An automatic pre-restore backup before Replace mode, with bounded retention.
 
 Backup v1 intentionally excludes passwords, cookies, WebKit website data, history, permission decisions, extension packages/state, downloads, caches, and preferences. It is a portable browser-model backup, not a byte-for-byte copy of the local installation.

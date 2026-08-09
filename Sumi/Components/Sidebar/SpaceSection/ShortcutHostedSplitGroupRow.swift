@@ -213,8 +213,8 @@ struct ShortcutHostedSplitGroupRow: View {
         switch group.container {
         case .regularTabs(let groupSpaceID):
             return .spaceRegular(groupSpaceID ?? spaceId)
-        case .essentialSidebar:
-            return .essentials
+        case .favoriteSidebar:
+            return .favorite
         case .shortcutSidebar(let groupSpaceID, _, let folderID, _):
             return folderID.map(DropZoneID.folder)
                 ?? .spacePinned(groupSpaceID)

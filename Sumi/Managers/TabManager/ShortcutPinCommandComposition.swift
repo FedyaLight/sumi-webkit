@@ -11,7 +11,7 @@ enum ShortcutPinCommandComposition {
         spacePinnedStructure: SpacePinnedStructureOwner,
         spacePinnedVisualOrder: SpacePinnedVisualOrderTransaction,
         bindings: ShortcutTabBindingSynchronizer,
-        essentialsVisualOrder: EssentialsVisualOrderTransaction
+        favoriteVisualOrder: FavoriteVisualOrderTransaction
     ) -> ShortcutPinPlacementCommandService {
         let liveFolders = ShortcutLiveFolderPlacementReconciler(
             pins: pins,
@@ -37,7 +37,7 @@ enum ShortcutPinCommandComposition {
                 structuralLookup: structuralLookup,
                 liveFolders: liveFolders,
                 spacePinnedVisualOrder: spacePinnedVisualOrder,
-                essentialsVisualOrder: essentialsVisualOrder
+                favoriteVisualOrder: favoriteVisualOrder
             )
         )
     }

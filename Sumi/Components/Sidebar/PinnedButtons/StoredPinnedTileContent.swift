@@ -9,13 +9,13 @@ struct StoredPinnedTileContent: View {
     @ObservedObject var pin: ShortcutPin
     let faviconPartition: SumiFaviconPartition
     let faviconImageReader: any BrowserFaviconImageReading
-    let essentialBackdropReader: any BrowserEssentialBackdropReading
+    let favoriteBackdropReader: any BrowserFavoriteBackdropReading
     let presentationState: ShortcutPresentationState
-    let essentialRuntimeState: SumiEssentialRuntimeState?
+    let favoriteRuntimeState: SumiFavoriteRuntimeState?
     let accessibilityID: String
     let onActivate: () -> Void
     let onUnload: () -> Void
-    let contextMenuActions: EssentialTileContextMenuActions
+    let contextMenuActions: FavoriteTileContextMenuActions
     let dragIsEnabled: Bool
     let isAppKitInteractionEnabled: Bool
     @Environment(SidebarFaviconImageStore.self) private var faviconImageStore
@@ -39,7 +39,7 @@ struct StoredPinnedTileContent: View {
                 pin: pin,
                 resolvedTitle: resolvedTitle,
                 previewIcon: resolvedFavicon,
-                previewBackdrop: cachedEssentialBackdrop,
+                previewBackdrop: cachedFavoriteBackdrop,
                 chromeTemplateSystemImageName: resolvedChromeTemplateSystemImageName,
                 previewPresentationState: presentationState,
                 exclusionZones: dragExclusionZones,
@@ -48,7 +48,7 @@ struct StoredPinnedTileContent: View {
             accessibilityID: accessibilityID,
             isAppKitInteractionEnabled: isAppKitInteractionEnabled,
             showsUnloadIndicator: false,
-            showsSplitGroupOutline: essentialRuntimeState?.showsSplitProxyOutline == true,
+            showsSplitGroupOutline: favoriteRuntimeState?.showsSplitProxyOutline == true,
             supportsMiddleClickUnload: true,
             contextMenuEntries: { contextMenuActions.entries() },
             action: onActivate,
@@ -56,7 +56,7 @@ struct StoredPinnedTileContent: View {
             accentSourceURL: pin.launchURL,
             accentSourcePartition: faviconPartition,
             faviconImageReader: faviconImageReader,
-            essentialBackdropReader: essentialBackdropReader
+            favoriteBackdropReader: favoriteBackdropReader
         )
         .help(resolvedTitle)
         .task(id: storedFaviconLoadKey) {
@@ -73,8 +73,8 @@ struct StoredPinnedTileContent: View {
         )
     }
 
-    private var cachedEssentialBackdrop: Image? {
-        essentialBackdropReader.cachedBackdrop(
+    private var cachedFavoriteBackdrop: Image? {
+        favoriteBackdropReader.cachedBackdrop(
             for: pin.launchURL,
             partition: faviconPartition
         ).map(Image.init(nsImage:))

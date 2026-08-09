@@ -302,7 +302,7 @@ struct SumiImportCategoryStepView: View {
 
     private func summary(_ preview: SumiImportPreview) -> String {
         let s = preview.summary
-        return "\(s.profiles) profiles · \(s.spaces) spaces · \(s.essentials) essentials · "
+        return "\(s.profiles) profiles · \(s.spaces) spaces · \(s.favorite) Favorite launchers · "
             + "\(s.pinnedLaunchers) pinned · \(s.regularTabs) tabs · \(s.folders) folders · \(s.bookmarks) bookmarks"
     }
 

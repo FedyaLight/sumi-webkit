@@ -6,10 +6,10 @@ struct SumiImportIdentityResolver {
         case profile
         case space
         case folder
-        case essential
+        case favorite
         case pinnedLauncher
         case regularTab
-        case demotedEssential
+        case demotedFavorite
     }
 
     let sourceKind: SumiImportSourceKind

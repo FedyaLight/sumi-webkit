@@ -11,7 +11,7 @@ final class SidebarDragState: ObservableObject {
     let geometry = SidebarDragGeometryModule()
     let listPresentation = SidebarListDragPresentation()
     let sessionPresentation = SidebarDragSessionPresentation()
-    let essentialsPresentation = SidebarEssentialsDragPresentation()
+    let favoritePresentation = SidebarFavoriteDragPresentation()
     let floatingPresentation = SidebarFloatingDragPresentation()
 
     // The AppKit drag pipeline mutates this command owner. SwiftUI observes only
@@ -103,7 +103,7 @@ final class SidebarDragState: ObservableObject {
     private(set) var isInternalDragGeometryArmed: Bool = false
     private(set) var armedDragScope: SidebarDragScope?
 
-    private var essentialsPreviewStateBySpace: [UUID: SidebarEssentialsPreviewState] = [:]
+    private var favoritePreviewStateBySpace: [UUID: SidebarFavoritePreviewState] = [:]
 
     init(
         delayedActions: MainActorDelayedActionScheduler = .live,
@@ -179,9 +179,9 @@ final class SidebarDragState: ObservableObject {
         )
     }
 
-    private func clearEssentialsPreviewState() {
-        guard !essentialsPreviewStateBySpace.isEmpty else { return }
-        essentialsPreviewStateBySpace = [:]
+    private func clearFavoritePreviewState() {
+        guard !favoritePreviewStateBySpace.isEmpty else { return }
+        favoritePreviewStateBySpace = [:]
         markPresentationChanged()
     }
 
@@ -231,7 +231,7 @@ final class SidebarDragState: ObservableObject {
             armedDragScope = nil
             markPresentationChanged()
             syncGeometryCollectionContext()
-            clearEssentialsPreviewState()
+            clearFavoritePreviewState()
             requestGeometryRefresh()
         }
     }
@@ -270,7 +270,7 @@ final class SidebarDragState: ObservableObject {
             profileId: profileId
         )
         clearHoverState()
-        clearEssentialsPreviewState()
+        clearFavoritePreviewState()
         requestGeometryRefresh()
         geometry.promotePendingGeometryIfReady()
     }
@@ -305,7 +305,7 @@ final class SidebarDragState: ObservableObject {
             armedDragScope = nil
             markPresentationChanged()
             syncGeometryCollectionContext()
-            clearEssentialsPreviewState()
+            clearFavoritePreviewState()
             requestGeometryRefresh()
             geometry.flushDeferredGeometryForDragStart()
         }
@@ -322,7 +322,7 @@ final class SidebarDragState: ObservableObject {
             armedDragScope = nil
             markPresentationChanged()
             syncGeometryCollectionContext()
-            clearEssentialsPreviewState()
+            clearFavoritePreviewState()
             requestGeometryRefresh()
             geometry.flushDeferredGeometryForDragStart()
         }
@@ -367,7 +367,7 @@ final class SidebarDragState: ObservableObject {
         var intent = presentedDropIntent
         intent.clearPresentation()
         setPresentedDropIntent(intent)
-        clearEssentialsPreviewState()
+        clearFavoritePreviewState()
     }
 
     func presentDropResolution(_ resolution: SidebarDropResolution) {
@@ -377,41 +377,41 @@ final class SidebarDragState: ObservableObject {
         setPresentedDropIntent(intent)
     }
 
-    func updateEssentialsPreviewState(
+    func updateFavoritePreviewState(
         at location: CGPoint,
         resolution: DropZoneSlot
     ) {
         let baseLocation = baseGeometryLocation(from: location)
         guard isDragging,
               let hoveredPage = hoveredInteractivePage(at: location, matching: activeDragScope),
-              let metrics = essentialsLayoutMetricsBySpace[hoveredPage.spaceId],
+              let metrics = favoriteLayoutMetricsBySpace[hoveredPage.spaceId],
               activeDragScope?.matches(profileId: metrics.profileId) != false,
               metrics.containsDropLocation(baseLocation),
               metrics.canAcceptDrop,
               metrics.maxDropRowCount > metrics.visibleRowCount else {
-            clearEssentialsPreviewState()
+            clearFavoritePreviewState()
             return
         }
 
-        guard case .essentials(let slot) = resolution else {
-            clearEssentialsPreviewState()
+        guard case .favorite(let slot) = resolution else {
+            clearFavoritePreviewState()
             return
         }
 
         let slotAllowsEmptyGridPreview = metrics.visibleItemCount == 0 && slot == 0
         guard slot >= metrics.firstSyntheticRowSlot || slotAllowsEmptyGridPreview else {
-            clearEssentialsPreviewState()
+            clearFavoritePreviewState()
             return
         }
 
         let nextPreviewState = [
-            hoveredPage.spaceId: SidebarEssentialsPreviewState(
+            hoveredPage.spaceId: SidebarFavoritePreviewState(
                 expandedDropRowCount: metrics.maxDropRowCount,
                 gapSlot: slot
             ),
         ]
-        guard essentialsPreviewStateBySpace != nextPreviewState else { return }
-        essentialsPreviewStateBySpace = nextPreviewState
+        guard favoritePreviewStateBySpace != nextPreviewState else { return }
+        favoritePreviewStateBySpace = nextPreviewState
         markPresentationChanged()
     }
 
@@ -520,14 +520,14 @@ final class SidebarDragState: ObservableObject {
                 isInternalDragGeometryArmed: isInternalDragGeometryArmed
             )
         )
-        essentialsPresentation.publish(
-            SidebarEssentialsDragPresentationFrame(
+        favoritePresentation.publish(
+            SidebarFavoriteDragPresentationFrame(
                 isDragging: isDragging,
                 isCompletingDrop: isCompletingDrop,
                 projectionDragItemID: projectionDragItemId,
                 projectionDragScope: projectionDragScope,
                 projectionHoveredSlot: projectionHoveredSlot,
-                previewStateBySpace: essentialsPreviewStateBySpace
+                previewStateBySpace: favoritePreviewStateBySpace
             )
         )
         floatingPresentation.publish(

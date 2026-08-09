@@ -34,7 +34,7 @@ struct SidebarShellMenuActions {
 
 enum SidebarTabContextMenuRole {
     case regularTab
-    case essential
+    case favorite
     case pinnedTab
     case folderPinnedTab
 
@@ -42,8 +42,8 @@ enum SidebarTabContextMenuRole {
         switch self {
         case .regularTab:
             return "Tab"
-        case .essential:
-            return "Essential"
+        case .favorite:
+            return "Favorite"
         case .pinnedTab, .folderPinnedTab:
             return "Pinned Tab"
         }
@@ -82,7 +82,7 @@ struct SidebarTabContextMenuActions {
     var moveUp: (() -> Void)?
     var moveDown: (() -> Void)?
     var pinToSpace: (() -> Void)?
-    var addToEssentials: (() -> Void)?
+    var addToFavorite: (() -> Void)?
     var savedURLDrift: SidebarSavedURLDriftActions?
     var changeIcon: (() -> Void)?
     var editURL: (() -> Void)?
@@ -378,8 +378,8 @@ private func makeRegularSidebarTabEntries(
     if let onPinToSpace = actions.pinToSpace {
         saveSection.append(.action(.init(title: "Pin to This Space", systemImage: "pin", classification: .structuralMutation, onAction: onPinToSpace)))
     }
-    if let onAddToEssentials = actions.addToEssentials {
-        saveSection.append(.action(.init(title: "Add to Essentials", systemImage: "star.fill", classification: .structuralMutation, onAction: onAddToEssentials)))
+    if let onAddToFavorite = actions.addToFavorite {
+        saveSection.append(.action(.init(title: "Add to Favorite", systemImage: "star.fill", classification: .structuralMutation, onAction: onAddToFavorite)))
     }
 
     var closeSection: [SidebarContextMenuEntry] = []
@@ -458,8 +458,8 @@ private func makeSavedSidebarTabEntries(
     }
 
     var organizationSection: [SidebarContextMenuEntry] = []
-    if let onAddToEssentials = actions.addToEssentials {
-        organizationSection.append(.action(.init(title: "Add to Essentials", systemImage: "star.fill", classification: .structuralMutation, onAction: onAddToEssentials)))
+    if let onAddToFavorite = actions.addToFavorite {
+        organizationSection.append(.action(.init(title: "Add to Favorite", systemImage: "star.fill", classification: .structuralMutation, onAction: onAddToFavorite)))
     }
     if let folderSubmenu = sidebarDestinationSubmenu(
         title: role == .folderPinnedTab ? "Move to Folder" : "Add to Folder",

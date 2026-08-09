@@ -4,14 +4,14 @@ import SumiDomain
 /// Canonical ordering for launcher containers outside the regular-tab scene.
 @MainActor
 enum SidebarVisualOrdering {
-    static func essentialItems(
+    static func favoriteItems(
         pins: [ShortcutPin],
         groups: [SplitGroup],
         profileID: UUID?
     ) -> [SplitGroupVisualListItem] {
         let pinIDs = Set(pins.map(\.id))
         let visibleGroups = groups.filter { group in
-            guard case .essentialSidebar(let ownerProfileID, _) = group.container,
+            guard case .favoriteSidebar(let ownerProfileID, _) = group.container,
                   ownerProfileID == nil || ownerProfileID == profileID else {
                 return false
             }
@@ -34,7 +34,7 @@ enum SidebarVisualOrdering {
                 return pins.first(where: { $0.id == pinID })?.index
             }.min() ?? 0
             let index: Int
-            if case .essentialSidebar(_, let containerIndex) = group.container {
+            if case .favoriteSidebar(_, let containerIndex) = group.container {
                 index = containerIndex ?? memberIndex
             } else {
                 index = memberIndex

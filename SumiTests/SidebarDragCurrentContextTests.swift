@@ -41,37 +41,37 @@ final class SidebarDragCurrentContextTests: SidebarDragContextTestCase {
         XCTAssertNil(otherState.geometry.geometrySnapshot.sectionFramesBySpace[key])
     }
 
-    func testEssentialsNativeDragPreviewUsesActualSourceTileSize() {
+    func testFavoriteNativeDragPreviewUsesActualSourceTileSize() {
         let sourceSize = CGSize(width: 132, height: 56)
         let descriptor = SumiNativeDragPreviewDescriptor(
             item: SumiDragItem(
                 tabId: UUID(),
-                title: "Essential",
+                title: "Favorite",
                 urlString: "https://example.com"
             ),
             previewIcon: nil,
-            sourceZone: .essentials,
+            sourceZone: .favorite,
             sourceSize: sourceSize,
             sourceOffsetFromBottomLeading: CGPoint(x: 24, y: 20)
         )
 
         XCTAssertEqual(
-            SumiNativeDragImageFactory().size(for: .essentialsTile, descriptor: descriptor),
+            SumiNativeDragImageFactory().size(for: .favoriteTile, descriptor: descriptor),
             sourceSize
         )
     }
 
-    func testEssentialsDragPreviewCentersTileOnCursorRegardlessOfGrabPoint() {
+    func testFavoriteDragPreviewCentersTileOnCursorRegardlessOfGrabPoint() {
         let sourceSize = CGSize(width: 132, height: 56)
         let session = SidebarDragPreviewSessionFactory.make(
             configuration: SidebarDragSourceConfiguration(
                 item: SumiDragItem(
                     tabId: UUID(),
-                    title: "Essential",
+                    title: "Favorite",
                     urlString: "https://example.com"
                 ),
-                sourceZone: .essentials,
-                previewKind: .essentialsTile
+                sourceZone: .favorite,
+                previewKind: .favoriteTile
             ),
             sourceSize: sourceSize,
             sourceOffsetFromBottomLeading: CGPoint(x: 12, y: 8)
@@ -88,7 +88,7 @@ final class SidebarDragCurrentContextTests: SidebarDragContextTestCase {
         )
     }
 
-    func testLauncherDragPreviewSessionRendersRowAndEssentialsAssets() {
+    func testLauncherDragPreviewSessionRendersRowAndFavoriteAssets() {
         let session = SidebarDragPreviewSessionFactory.make(
             configuration: SidebarDragSourceConfiguration(
                 item: SumiDragItem(
@@ -96,15 +96,15 @@ final class SidebarDragCurrentContextTests: SidebarDragContextTestCase {
                     title: "Pinned",
                     urlString: "https://example.com"
                 ),
-                sourceZone: .essentials,
-                previewKind: .essentialsTile
+                sourceZone: .favorite,
+                previewKind: .favoriteTile
             ),
             sourceSize: CGSize(width: 132, height: 56),
             sourceOffsetFromBottomLeading: CGPoint(x: 18, y: 18)
         )
 
         let renderedKinds = session.map { Set($0.previewAssets.keys) } ?? Set<SidebarDragPreviewKind>()
-        XCTAssertEqual(renderedKinds, [.essentialsTile, .row])
+        XCTAssertEqual(renderedKinds, [.favoriteTile, .row])
     }
 
     func testFolderDragPreviewSessionKeepsFolderOnlyAsset() {
@@ -211,32 +211,32 @@ final class SidebarDragCurrentContextTests: SidebarDragContextTestCase {
         XCTAssertNil(tabManager.sidebarDragRouter.resolveDragTab(for: item))
     }
 
-    func testLauncherPreviewPolicyTransformsRowIntoEssentialsTileOnEssentialsHover() {
+    func testLauncherPreviewPolicyTransformsRowIntoFavoriteTileOnFavoriteHover() {
         let assets: [SidebarDragPreviewKind: SidebarDragPreviewAsset] = [
             .row: emptyPreviewAsset(size: CGSize(width: 220, height: 36)),
-            .essentialsTile: emptyPreviewAsset(size: CGSize(width: 132, height: 56)),
+            .favoriteTile: emptyPreviewAsset(size: CGSize(width: 132, height: 56)),
         ]
 
         XCTAssertEqual(
             SidebarDragPresentationProjection.resolvedPreviewKind(
                 baseKind: .row,
-                hoveredSlot: .essentials(slot: 0),
+                hoveredSlot: .favorite(slot: 0),
                 previewAssets: assets
             ),
-            .essentialsTile
+            .favoriteTile
         )
     }
 
-    func testLauncherPreviewPolicyTransformsEssentialsTileIntoRowOnPinnedHover() {
+    func testLauncherPreviewPolicyTransformsFavoriteTileIntoRowOnPinnedHover() {
         let spaceId = UUID()
         let assets: [SidebarDragPreviewKind: SidebarDragPreviewAsset] = [
             .row: emptyPreviewAsset(size: CGSize(width: 220, height: 36)),
-            .essentialsTile: emptyPreviewAsset(size: CGSize(width: 132, height: 56)),
+            .favoriteTile: emptyPreviewAsset(size: CGSize(width: 132, height: 56)),
         ]
 
         XCTAssertEqual(
             SidebarDragPresentationProjection.resolvedPreviewKind(
-                baseKind: .essentialsTile,
+                baseKind: .favoriteTile,
                 hoveredSlot: .spacePinned(spaceId: spaceId, slot: 0),
                 previewAssets: assets
             ),
@@ -244,15 +244,15 @@ final class SidebarDragCurrentContextTests: SidebarDragContextTestCase {
         )
     }
 
-    func testEssentialSplitGroupPreviewCentersUnderPointerForTileAndRow()
+    func testFavoriteSplitGroupPreviewCentersUnderPointerForTileAndRow()
         throws {
         let sourceSize = CGSize(width: 90, height: 64)
         let rowSize = CGSize(width: 240, height: SidebarRowLayout.rowHeight)
         let session = try XCTUnwrap(SidebarDragPreviewSessionFactory.make(
             configuration: SidebarDragSourceConfiguration(
                 item: .splitGroup(UUID(), title: "Split View"),
-                sourceZone: .essentials,
-                previewKind: .essentialsTile
+                sourceZone: .favorite,
+                previewKind: .favoriteTile
             ),
             sourceSize: sourceSize,
             sourceOffsetFromBottomLeading: CGPoint(x: 12, y: 11)
@@ -297,7 +297,7 @@ final class SidebarDragCurrentContextTests: SidebarDragContextTestCase {
         )
         XCTAssertTrue(
             state.shouldHideCommittedCrossContainerPlaceholder(
-                into: .essentials,
+                into: .favorite,
                 targetAlreadyContainsDraggedItem: false
             )
         )
@@ -877,11 +877,11 @@ final class SidebarDragCurrentContextTests: SidebarDragContextTestCase {
         )
     }
 
-    func testRegularTabDropIntoEssentialsCreatesProfileLauncher() throws {
+    func testRegularTabDropIntoFavoriteCreatesProfileLauncher() throws {
         let tabManager = BrowserManager()
         let profileId = UUID()
         let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
-        let tab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/essential", in: space)
+        let tab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/favorite", in: space)
         let scope = try makeScope(
             spaceId: space.id,
             profileId: profileId,
@@ -894,15 +894,15 @@ final class SidebarDragCurrentContextTests: SidebarDragContextTestCase {
                 payload: .tab(tab),
                 scope: scope,
                 fromContainer: .spaceRegular(space.id),
-                toContainer: .essentials,
+                toContainer: .favorite,
                 toIndex: 0
             )
         )
 
         XCTAssertTrue(didMove)
         XCTAssertTrue(tabManager.regularTabCollectionOwner.tabs(in: space.id).isEmpty)
-        let pin = try XCTUnwrap(tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId).first)
-        XCTAssertEqual(pin.role, .essential)
+        let pin = try XCTUnwrap(tabManager.shortcutPinCollectionStateOwner.favoritePins(for: profileId).first)
+        XCTAssertEqual(pin.role, .favorite)
         XCTAssertEqual(pin.profileId, profileId)
         XCTAssertNil(pin.spaceId)
         XCTAssertNil(pin.folderId)
@@ -1023,12 +1023,12 @@ final class SidebarDragCurrentContextTests: SidebarDragContextTestCase {
         XCTAssertEqual(harness.windowState.currentShortcutPinRole, .spacePinned)
     }
 
-    func testDisplayedRegularTabDropIntoEssentialsPreservesTabAsLiveShortcut() throws {
+    func testDisplayedRegularTabDropIntoFavoritePreservesTabAsLiveShortcut() throws {
         let harness = try makeLiveWindowHarness()
         let tabManager = harness.tabManager
         let profileId = UUID()
         let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
-        let tab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/live-essential", in: space)
+        let tab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/live-favorite", in: space)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentProfileId = profileId
         harness.windowState.currentTabId = tab.id
@@ -1045,29 +1045,29 @@ final class SidebarDragCurrentContextTests: SidebarDragContextTestCase {
                 payload: .tab(tab),
                 scope: scope,
                 fromContainer: .spaceRegular(space.id),
-                toContainer: .essentials,
+                toContainer: .favorite,
                 toIndex: 0
             )
         )
 
         XCTAssertTrue(didMove)
         XCTAssertTrue(tabManager.regularTabCollectionOwner.tabs(in: space.id).isEmpty)
-        let pin = try XCTUnwrap(tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId).first)
+        let pin = try XCTUnwrap(tabManager.shortcutPinCollectionStateOwner.favoritePins(for: profileId).first)
         let liveTab = try XCTUnwrap(tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
         XCTAssertIdentical(liveTab, tab)
         XCTAssertEqual(liveTab.shortcutPinId, pin.id)
-        XCTAssertEqual(liveTab.shortcutPinRole, .essential)
+        XCTAssertEqual(liveTab.shortcutPinRole, .favorite)
         XCTAssertTrue(liveTab.isShortcutLiveInstance)
         XCTAssertNil(liveTab.spaceId)
         XCTAssertNil(liveTab.folderId)
         XCTAssertEqual(harness.windowState.currentTabId, tab.id)
         XCTAssertEqual(harness.windowState.currentShortcutPinId, pin.id)
-        XCTAssertEqual(harness.windowState.currentShortcutPinRole, .essential)
+        XCTAssertEqual(harness.windowState.currentShortcutPinRole, .favorite)
     }
 
     func testNonDisplayedRegularTabDropIntoShortcutSectionsCreatesLauncherWithoutLiveTab() throws {
         try assertNonDisplayedRegularTabConversionCreatesLauncherOnly(target: .spacePinned)
         try assertNonDisplayedRegularTabConversionCreatesLauncherOnly(target: .folder)
-        try assertNonDisplayedRegularTabConversionCreatesLauncherOnly(target: .essentials)
+        try assertNonDisplayedRegularTabConversionCreatesLauncherOnly(target: .favorite)
     }
 }

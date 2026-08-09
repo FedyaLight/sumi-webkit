@@ -2,15 +2,15 @@ import Foundation
 import SumiDomain
 
 @MainActor
-final class ShortcutPinEssentialCopyTransaction {
+final class ShortcutPinFavoriteCopyTransaction {
     private let structuralLookup: TabStructuralLookupCoordinator
-    private let preparer: ShortcutPinEssentialCopyPreparer
+    private let preparer: ShortcutPinFavoriteCopyPreparer
     private let store: ShortcutPinStoreOwner
     private let structuralMutations: TabStructuralCollectionMutationOwner
 
     init(
         structuralLookup: TabStructuralLookupCoordinator,
-        preparer: ShortcutPinEssentialCopyPreparer,
+        preparer: ShortcutPinFavoriteCopyPreparer,
         store: ShortcutPinStoreOwner,
         structuralMutations: TabStructuralCollectionMutationOwner
     ) {
@@ -23,7 +23,7 @@ final class ShortcutPinEssentialCopyTransaction {
     func copy(
         _ pin: ShortcutPin,
         title: String,
-        context: EssentialsShortcutPlacementOwner.TargetContext?
+        context: FavoriteShortcutPlacementOwner.TargetContext?
     ) -> ShortcutPin? {
         structuralLookup.withTransaction {
             guard let prepared = preparer.prepare(

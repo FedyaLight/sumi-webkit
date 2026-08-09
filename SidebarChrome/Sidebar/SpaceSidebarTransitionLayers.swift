@@ -21,14 +21,14 @@ extension SpacesSideBarView {
                let destinationSpace = space(for: transitionState.destinationSpaceId, in: spaces),
                let snapshot = transitionSnapshot,
                snapshot.matches(transitionState) {
-                // The snapshot builder already decided whether essentials are
+                // The snapshot builder already decided whether Favorite launchers are
                 // shared across the transition (same profile, non-incognito);
-                // it exposes that as `stationaryEssentials`. Branch on it here
+                // it exposes that as `stationaryFavorite`. Branch on it here
                 // instead of recomputing the profile comparison so the render
                 // path can't diverge from the captured snapshot.
                 Group {
-                    if snapshot.stationaryEssentials != nil {
-                        sharedEssentialsTransitionContainer(
+                    if snapshot.stationaryFavorite != nil {
+                        sharedFavoriteTransitionContainer(
                             sourceSpace: sourceSpace,
                             destinationSpace: destinationSpace,
                             snapshot: snapshot,
@@ -90,7 +90,7 @@ extension SpacesSideBarView {
     }
 
     @ViewBuilder
-    func sharedEssentialsTransitionContainer(
+    func sharedFavoriteTransitionContainer(
         sourceSpace: Space,
         destinationSpace: Space,
         snapshot: SpaceSidebarTransitionSnapshot,
@@ -98,11 +98,11 @@ extension SpacesSideBarView {
         travelProgress: Double
     ) -> some View {
         let showsExtensionGrid = snapshot.source.extensionActions?.slots.isEmpty == false
-        let showsEssentialsSurface = snapshot.stationaryEssentials.map {
+        let showsFavoriteSurface = snapshot.stationaryFavorite.map {
             !$0.items.isEmpty || $0.showsPlaceholder
         } == true
-        let essentialsTopPadding = SidebarChromeMetrics.essentialsTopPadding(
-            showsEssentialsSurface: showsEssentialsSurface,
+        let favoriteTopPadding = SidebarChromeMetrics.favoriteTopPadding(
+            showsFavoriteSurface: showsFavoriteSurface,
             showsExtensionGrid: showsExtensionGrid
         )
 
@@ -118,19 +118,19 @@ extension SpacesSideBarView {
                 .allowsHitTesting(false)
             }
 
-            if let essentials = snapshot.stationaryEssentials {
-                EssentialsSnapshotGrid(
-                    snapshot: essentials,
+            if let favorite = snapshot.stationaryFavorite {
+                FavoriteSnapshotGrid(
+                    snapshot: favorite,
                     width: BrowserWindowState.sidebarContentWidth(for: width),
                     tokens: themeContext.tokens(settings: sumiSettings)
                 )
                 .padding(.horizontal, 8)
-                .padding(.top, essentialsTopPadding)
+                .padding(.top, favoriteTopPadding)
                 .padding(
                     .bottom,
-                    essentials.items.isEmpty && !essentials.showsPlaceholder
+                    favorite.items.isEmpty && !favorite.showsPlaceholder
                         ? 0
-                        : SidebarChromeMetrics.essentialsToSpaceTitleSpacing
+                        : SidebarChromeMetrics.favoriteToSpaceTitleSpacing
                 )
                 .allowsHitTesting(false)
             }

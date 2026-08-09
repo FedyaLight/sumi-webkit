@@ -81,39 +81,39 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
         XCTAssertNil(harness.browserManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
     }
 
-    func testUndoCloseTabRestoresDeletedEssentialLauncher() throws {
+    func testUndoCloseTabRestoresDeletedFavoriteLauncher() throws {
         let harness = makeHarness()
         let pin = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: harness.profile.id,
             index: 0,
-            launchURL: try XCTUnwrap(URL(string: "https://essential.example")),
-            title: "Essential"
+            launchURL: try XCTUnwrap(URL(string: "https://favorite.example")),
+            title: "Favorite"
         )
         let inserted = try XCTUnwrap(harness.browserManager.shortcutPinStoreOwner.insert(pin, at: 0))
 
         XCTAssertTrue(harness.browserManager.sidebarPinCommands.remove(inserted))
-        XCTAssertTrue(harness.browserManager.shortcutPinCollectionStateOwner.essentialPins(for: harness.profile.id).isEmpty)
+        XCTAssertTrue(harness.browserManager.shortcutPinCollectionStateOwner.favoritePins(for: harness.profile.id).isEmpty)
 
         harness.browserManager.windowSessionBundle.sessionRecovery.reopenMostRecentClosedItem()
 
         let restoredPin = try XCTUnwrap(harness.browserManager.shortcutPinCollectionStateOwner.shortcutPin(by: inserted.id))
-        XCTAssertEqual(restoredPin.role, .essential)
+        XCTAssertEqual(restoredPin.role, .favorite)
         XCTAssertEqual(restoredPin.profileId, harness.profile.id)
         XCTAssertEqual(restoredPin.launchURL, inserted.launchURL)
     }
 
-    func testClosingLastRegularTabReturnsToPreviouslySelectedEssentialLiveInstance() throws {
+    func testClosingLastRegularTabReturnsToPreviouslySelectedFavoriteLiveInstance() throws {
         let harness = makeHarness()
-        let pin = try insertEssentialLauncher(in: harness)
-        let essentialLiveTab = harness.browserManager.shortcutTabMaterializer.materialize(
+        let pin = try insertFavoriteLauncher(in: harness)
+        let favoriteLiveTab = harness.browserManager.shortcutTabMaterializer.materialize(
             pin,
             in: harness.windowState.id,
             currentSpaceId: harness.space.id
         )!
 
-        harness.browserManager.selectTab(essentialLiveTab, in: harness.windowState)
+        harness.browserManager.selectTab(favoriteLiveTab, in: harness.windowState)
 
         let regularTab = harness.browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://regular.example",
@@ -132,12 +132,12 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
 
         harness.browserManager.tabCloseOrchestration.closeTab(regularTab, in: harness.windowState)
 
-        XCTAssertEqual(harness.windowState.currentTabId, essentialLiveTab.id)
+        XCTAssertEqual(harness.windowState.currentTabId, favoriteLiveTab.id)
         XCTAssertEqual(harness.windowState.currentShortcutPinId, pin.id)
         XCTAssertFalse(harness.windowState.isShowingEmptyState)
     }
 
-    func testClosingRegularTabPrefersPreviousEssentialOverOlderRegularHistory() throws {
+    func testClosingRegularTabPrefersPreviousFavoriteOverOlderRegularHistory() throws {
         let harness = makeHarness()
         let olderRegularTab = harness.browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://older-regular.example",
@@ -145,13 +145,13 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
         )
         harness.browserManager.selectTab(olderRegularTab, in: harness.windowState)
 
-        let pin = try insertEssentialLauncher(in: harness)
-        let essentialLiveTab = harness.browserManager.shortcutTabMaterializer.materialize(
+        let pin = try insertFavoriteLauncher(in: harness)
+        let favoriteLiveTab = harness.browserManager.shortcutTabMaterializer.materialize(
             pin,
             in: harness.windowState.id,
             currentSpaceId: harness.space.id
         )!
-        harness.browserManager.selectTab(essentialLiveTab, in: harness.windowState)
+        harness.browserManager.selectTab(favoriteLiveTab, in: harness.windowState)
 
         let currentRegularTab = harness.browserManager.regularTabLifecycleOwner.createNewTab(
             url: "https://current-regular.example",
@@ -161,7 +161,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
 
         harness.browserManager.tabCloseOrchestration.closeTab(currentRegularTab, in: harness.windowState)
 
-        XCTAssertEqual(harness.windowState.currentTabId, essentialLiveTab.id)
+        XCTAssertEqual(harness.windowState.currentTabId, favoriteLiveTab.id)
         XCTAssertEqual(harness.windowState.currentShortcutPinId, pin.id)
         XCTAssertNotNil(harness.browserManager.tabCollectionMembershipOwner.tab(for: olderRegularTab.id))
     }
@@ -231,15 +231,15 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
         XCTAssertNil(harness.browserManager.tabCollectionMembershipOwner.tab(for: closingTab.id))
     }
 
-    func testUnloadingSpacePinnedLiveTabReturnsToPreviouslySelectedEssentialLiveInstance() throws {
+    func testUnloadingSpacePinnedLiveTabReturnsToPreviouslySelectedFavoriteLiveInstance() throws {
         let harness = makeHarness()
-        let essentialPin = try insertEssentialLauncher(in: harness)
-        let essentialLiveTab = harness.browserManager.shortcutTabMaterializer.materialize(
-            essentialPin,
+        let favoritePin = try insertFavoriteLauncher(in: harness)
+        let favoriteLiveTab = harness.browserManager.shortcutTabMaterializer.materialize(
+            favoritePin,
             in: harness.windowState.id,
             currentSpaceId: harness.space.id
         )!
-        harness.browserManager.selectTab(essentialLiveTab, in: harness.windowState)
+        harness.browserManager.selectTab(favoriteLiveTab, in: harness.windowState)
 
         let spacePinnedPin = try insertSpacePinnedLauncher(in: harness)
         let spacePinnedLiveTab = harness.browserManager.shortcutTabMaterializer.materialize(
@@ -251,8 +251,8 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
 
         harness.browserManager.tabCloseOrchestration.closeTab(spacePinnedLiveTab, in: harness.windowState)
 
-        XCTAssertEqual(harness.windowState.currentTabId, essentialLiveTab.id)
-        XCTAssertEqual(harness.windowState.currentShortcutPinId, essentialPin.id)
+        XCTAssertEqual(harness.windowState.currentTabId, favoriteLiveTab.id)
+        XCTAssertEqual(harness.windowState.currentShortcutPinId, favoritePin.id)
         XCTAssertFalse(harness.windowState.isShowingEmptyState)
     }
 
@@ -354,14 +354,14 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
         return try XCTUnwrap(harness.browserManager.shortcutPinStoreOwner.insert(pin, at: 0))
     }
 
-    private func insertEssentialLauncher(in harness: Harness) throws -> ShortcutPin {
+    private func insertFavoriteLauncher(in harness: Harness) throws -> ShortcutPin {
         let pin = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: harness.profile.id,
             index: 0,
-            launchURL: try XCTUnwrap(URL(string: "https://essential.example/launch")),
-            title: "Essential"
+            launchURL: try XCTUnwrap(URL(string: "https://favorite.example/launch")),
+            title: "Favorite"
         )
         return try XCTUnwrap(harness.browserManager.shortcutPinStoreOwner.insert(pin, at: 0))
     }

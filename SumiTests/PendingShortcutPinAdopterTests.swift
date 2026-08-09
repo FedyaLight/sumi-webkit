@@ -56,7 +56,7 @@ final class PendingShortcutPinAdopterTests: XCTestCase {
         )
         XCTAssertTrue(
             tabManager.shortcutPinCollectionStateOwner
-                .essentialPins(for: retiringProfile.id).isEmpty
+                .favoritePins(for: retiringProfile.id).isEmpty
         )
         XCTAssertFalse(
             adopter.hasDeferredAdoption
@@ -210,12 +210,12 @@ final class PendingShortcutPinAdopterTests: XCTestCase {
         assertAdopted(pin, into: profileID, in: tabManager)
         XCTAssertEqual(
             tabManager.shortcutPinCollectionStateOwner
-                .essentialPins(for: foreignProfileID).map(\.id),
+                .favoritePins(for: foreignProfileID).map(\.id),
             [foreignPin.id]
         )
         XCTAssertTrue(
             tabManager.shortcutPinCollectionStateOwner
-                .essentialPins(for: stagedProfileID).isEmpty
+                .favoritePins(for: stagedProfileID).isEmpty
         )
         XCTAssertEqual(
             tabManager.structuralPersistence.schedulingRevision,
@@ -268,7 +268,7 @@ final class PendingShortcutPinAdopterTests: XCTestCase {
             observedPendingCount = tabManager.shortcutPinCollectionStateOwner
                 .pendingPinnedWithoutProfileSnapshot().count
             observedDestinationIDs = tabManager.shortcutPinCollectionStateOwner
-                .essentialPins(for: profileID).map(\.id)
+                .favoritePins(for: profileID).map(\.id)
         }
         let revision = tabManager.structuralPersistence.schedulingRevision
 
@@ -298,7 +298,7 @@ final class PendingShortcutPinAdopterTests: XCTestCase {
         let profileID = UUID()
         let existing = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: profileID,
             index: 0,
             launchURL: URL(string: "https://existing.example")!,
@@ -328,7 +328,7 @@ final class PendingShortcutPinAdopterTests: XCTestCase {
         )
         let restoredExisting = try XCTUnwrap(
             tabManager.shortcutPinCollectionStateOwner
-                .essentialPins(for: profileID).first
+                .favoritePins(for: profileID).first
         )
         XCTAssertIdentical(restoredPending, pending)
         XCTAssertIdentical(restoredExisting, existing)
@@ -353,7 +353,7 @@ final class PendingShortcutPinAdopterTests: XCTestCase {
         )
         XCTAssertEqual(
             tabManager.shortcutPinCollectionStateOwner
-                .essentialPins(for: profileID).map(\.id),
+                .favoritePins(for: profileID).map(\.id),
             [pin.id]
         )
     }
@@ -361,7 +361,7 @@ final class PendingShortcutPinAdopterTests: XCTestCase {
     private func makePendingPin() -> ShortcutPin {
         ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: nil,
             index: 0,
             launchURL: URL(string: "https://pending.example")!,
@@ -372,7 +372,7 @@ final class PendingShortcutPinAdopterTests: XCTestCase {
     private func makePin(profileID: UUID) -> ShortcutPin {
         ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: profileID,
             index: 0,
             launchURL: URL(string: "https://profile.example")!,

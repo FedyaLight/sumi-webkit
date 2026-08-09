@@ -118,7 +118,7 @@ final class SidebarDragPasteboardPayloadTests: XCTestCase {
         let id = UUID()
         let containers: [TabDragManager.DragContainer] = [
             .none,
-            .essentials,
+            .favorite,
             .spacePinned(id),
             .spaceRegular(id),
             .folder(id),

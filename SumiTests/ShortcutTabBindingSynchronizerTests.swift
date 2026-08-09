@@ -582,7 +582,7 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
         let source = makePin(spaceId: space.id)
         let target = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: profileID,
             index: 0,
             launchURL: source.launchURL,
@@ -621,7 +621,7 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
             liveTab
         )
         XCTAssertEqual(window.currentShortcutPinId, target.id)
-        XCTAssertEqual(window.currentShortcutPinRole, .essential)
+        XCTAssertEqual(window.currentShortcutPinRole, .favorite)
         XCTAssertNil(liveTab.spaceId)
         XCTAssertNil(liveTab.folderId)
         XCTAssertEqual(
@@ -809,11 +809,11 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
         let sourceWindow = window.unpublishedShortcutMutationState
         let sourceFirstRevision = firstTab.profileAssignment.changeRevision
         let sourceSecondRevision = secondTab.profileAssignment.changeRevision
-        let essentials = (0..<(EssentialsShortcutPlacementOwner.CapacityPolicy.maxStoredMembers - 1))
+        let favorite = (0..<(FavoriteShortcutPlacementOwner.CapacityPolicy.maxStoredMembers - 1))
             .map { index in
                 ShortcutPin(
                     id: UUID(),
-                    role: .essential,
+                    role: .favorite,
                     profileId: profileID,
                     index: index,
                     launchURL: URL(string: "https://full-\(index).example")!,
@@ -821,7 +821,7 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
                 )
             }
         tabManager.structuralCollectionMutationOwner.setPinnedTabs(
-            essentials,
+            favorite,
             for: profileID
         )
         let batches = ShortcutSplitLauncherMoveBatchStaging(
@@ -840,11 +840,11 @@ final class ShortcutTabBindingSynchronizerTests: XCTestCase {
             folderOpenState: tabManager.folderOpenState
         )
         let destination = ShortcutSplitLauncherDestination(
-            role: .essential,
+            role: .favorite,
             profileId: profileID,
             spaceId: nil,
             folderId: nil,
-            index: essentials.count,
+            index: favorite.count,
             opensFolder: false
         )
         var structuralEvents = 0

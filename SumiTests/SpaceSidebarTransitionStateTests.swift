@@ -82,7 +82,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
                 iconValue: SumiPersistentGlyph.spaceDefaultIconValue
             ),
             destination: makePageSnapshot(spaceId: destinationId, title: "Destination", iconValue: "star"),
-            stationaryEssentials: nil
+            stationaryFavorite: nil
         )
         var activeState = SpaceSidebarTransitionState()
         var unresolvedState = SpaceSidebarTransitionState()
@@ -130,23 +130,23 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         )
     }
 
-    func testChromePreviewPolicyAnimatesEssentialsOnlyForInteractiveCommittedPage() {
+    func testChromePreviewPolicyAnimatesFavoriteOnlyForInteractiveCommittedPage() {
         XCTAssertTrue(
-            SpaceSidebarChromePreviewPolicy.shouldAnimateEssentialsLayout(
+            SpaceSidebarChromePreviewPolicy.shouldAnimateFavoriteLayout(
                 isActiveWindow: true,
                 isTransitioningProfile: false,
                 pageRenderMode: .interactive
             )
         )
         XCTAssertFalse(
-            SpaceSidebarChromePreviewPolicy.shouldAnimateEssentialsLayout(
+            SpaceSidebarChromePreviewPolicy.shouldAnimateFavoriteLayout(
                 isActiveWindow: true,
                 isTransitioningProfile: false,
                 pageRenderMode: .transitionSnapshot
             )
         )
         XCTAssertFalse(
-            SpaceSidebarChromePreviewPolicy.shouldAnimateEssentialsLayout(
+            SpaceSidebarChromePreviewPolicy.shouldAnimateFavoriteLayout(
                 isActiveWindow: true,
                 isTransitioningProfile: true,
                 pageRenderMode: .interactive
@@ -154,20 +154,20 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         )
     }
 
-    func testEssentialsPlacementUsesSharedPinnedGridForSameProfileTransition() {
+    func testFavoritePlacementUsesSharedPinnedGridForSameProfileTransition() {
         let profileId = UUID()
 
         XCTAssertTrue(
-            SpaceSidebarEssentialsPlacementPolicy.usesSharedPinnedGrid(
+            SpaceSidebarFavoritePlacementPolicy.usesSharedPinnedGrid(
                 sourceProfileId: profileId,
                 destinationProfileId: profileId
             )
         )
     }
 
-    func testEssentialsPlacementKeepsEmbeddedPinnedGridForCrossProfileTransition() {
+    func testFavoritePlacementKeepsEmbeddedPinnedGridForCrossProfileTransition() {
         XCTAssertFalse(
-            SpaceSidebarEssentialsPlacementPolicy.usesSharedPinnedGrid(
+            SpaceSidebarFavoritePlacementPolicy.usesSharedPinnedGrid(
                 sourceProfileId: UUID(),
                 destinationProfileId: UUID()
             )
@@ -229,17 +229,17 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         )
     }
 
-    func testSnapshotBuilderKeepsSingleStationaryEssentialsForSameProfileTransition() {
+    func testSnapshotBuilderKeepsSingleStationaryFavoriteForSameProfileTransition() {
         let browserManager = BrowserManager()
         let windowState = BrowserWindowState()
         let settings = makeIsolatedSettings()
         let profileId = UUID()
         let source = Space(name: "Source", profileId: profileId)
         let destination = Space(name: "Destination", profileId: profileId)
-        let essential = makeEssentialPin(profileId: profileId, title: "Pinned")
+        let favorite = makeFavoritePin(profileId: profileId, title: "Pinned")
 
         browserManager.spaceStateOwner.replaceSpaces([source, destination])
-        browserManager.structuralCollectionMutationOwner.setPinnedTabs([essential], for: profileId)
+        browserManager.structuralCollectionMutationOwner.setPinnedTabs([favorite], for: profileId)
         windowState.currentProfileId = profileId
         windowState.currentSpaceId = source.id
 
@@ -251,29 +251,29 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             settings: settings
         )
 
-        XCTAssertNotNil(snapshot.stationaryEssentials)
-        XCTAssertEqual(snapshot.stationaryEssentials?.items.map(\.id), [essential.id])
+        XCTAssertNotNil(snapshot.stationaryFavorite)
+        XCTAssertEqual(snapshot.stationaryFavorite?.items.map(\.id), [favorite.id])
     }
 
-    func testSnapshotBuilderPreservesActiveStationaryEssentialsAccentSource() {
+    func testSnapshotBuilderPreservesActiveStationaryFavoriteAccentSource() {
         let browserManager = BrowserManager()
         let windowState = BrowserWindowState()
         let settings = makeIsolatedSettings()
         let profileId = UUID()
         let source = Space(name: "Source", profileId: profileId)
         let destination = Space(name: "Destination", profileId: profileId)
-        let essential = makeEssentialPin(profileId: profileId, title: "Pinned")
+        let favorite = makeFavoritePin(profileId: profileId, title: "Pinned")
 
         browserManager.spaceStateOwner.replaceSpaces([source, destination])
-        browserManager.structuralCollectionMutationOwner.setPinnedTabs([essential], for: profileId)
+        browserManager.structuralCollectionMutationOwner.setPinnedTabs([favorite], for: profileId)
         windowState.currentProfileId = profileId
         windowState.currentSpaceId = source.id
         _ = browserManager.shortcutTabMaterializer.materialize(
-            essential,
+            favorite,
             in: windowState.id,
             currentSpaceId: source.id
         )!
-        windowState.currentShortcutPinId = essential.id
+        windowState.currentShortcutPinId = favorite.id
 
         let snapshot = makeTransitionSnapshot(
             sourceSpace: source,
@@ -283,22 +283,22 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             settings: settings
         )
         let expectedPartition = browserManager.shortcutPinRuntimeResolutionOwner.resolvedFaviconPartition(
-            for: essential,
+            for: favorite,
             currentSpaceId: windowState.currentSpaceId
         )
 
-        guard let item = snapshot.stationaryEssentials?.items.first else {
-            return XCTFail("Expected stationary essentials snapshot item")
+        guard let item = snapshot.stationaryFavorite?.items.first else {
+            return XCTFail("Expected stationary favorite snapshot item")
         }
         guard case .shortcut(let shortcut) = item else {
-            return XCTFail("Expected stationary essential shortcut")
+            return XCTFail("Expected stationary favorite shortcut")
         }
         XCTAssertEqual(shortcut.presentationState, .visuallySelected)
-        XCTAssertEqual(shortcut.accentSource.launchURL, essential.launchURL)
+        XCTAssertEqual(shortcut.accentSource.launchURL, favorite.launchURL)
         XCTAssertEqual(shortcut.accentSource.partition, expectedPartition)
     }
 
-    func testSnapshotBuilderIncludesEssentialSplitTileMembers() throws {
+    func testSnapshotBuilderIncludesFavoriteSplitTileMembers() throws {
         let browser = BrowserManager()
         let windowState = BrowserWindowState()
         let settings = makeIsolatedSettings()
@@ -308,19 +308,19 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         let pins = [
             ShortcutPin(
                 id: UUID(),
-                role: .essential,
+                role: .favorite,
                 profileId: profileID,
                 index: 0,
-                launchURL: URL(string: "https://first-essential-split.example")!,
+                launchURL: URL(string: "https://first-favorite-split.example")!,
                 title: "First",
                 iconAsset: "star.fill"
             ),
             ShortcutPin(
                 id: UUID(),
-                role: .essential,
+                role: .favorite,
                 profileId: profileID,
                 index: 1,
-                launchURL: URL(string: "https://second-essential-split.example")!,
+                launchURL: URL(string: "https://second-favorite-split.example")!,
                 title: "Second",
                 iconAsset: "bolt.fill"
             ),
@@ -329,7 +329,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             SplitGroup.make(
                 members: pins.map { .shortcutPin($0.id) },
                 layoutKind: .horizontal,
-                container: .essentialSidebar(
+                container: .favoriteSidebar(
                     profileId: profileID,
                     index: 0
                 )
@@ -353,11 +353,11 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             settings: settings
         )
 
-        let item = try XCTUnwrap(snapshot.stationaryEssentials?.items.first)
+        let item = try XCTUnwrap(snapshot.stationaryFavorite?.items.first)
         guard case .splitGroup(let split) = item else {
-            return XCTFail("Expected one Essential Split Tile")
+            return XCTFail("Expected one Favorite Split Tile")
         }
-        XCTAssertEqual(snapshot.stationaryEssentials?.items.count, 1)
+        XCTAssertEqual(snapshot.stationaryFavorite?.items.count, 1)
         XCTAssertEqual(split.members.map(\.id), group.memberIDs)
         XCTAssertEqual(
             split.members.compactMap { member -> String? in
@@ -476,7 +476,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         XCTAssertEqual(snapshot.destination.scrollViewport.clampedOffset(), 0, accuracy: 0.001)
     }
 
-    func testSnapshotBuilderEmbedsEssentialsForCrossProfileTransition() {
+    func testSnapshotBuilderEmbedsFavoriteForCrossProfileTransition() {
         let browserManager = BrowserManager()
         let windowState = BrowserWindowState()
         let settings = makeIsolatedSettings()
@@ -484,12 +484,12 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         let destinationProfileId = UUID()
         let source = Space(name: "Source", profileId: sourceProfileId)
         let destination = Space(name: "Destination", profileId: destinationProfileId)
-        let sourceEssential = makeEssentialPin(profileId: sourceProfileId, title: "Source Pin")
-        let destinationEssential = makeEssentialPin(profileId: destinationProfileId, title: "Destination Pin")
+        let sourceFavorite = makeFavoritePin(profileId: sourceProfileId, title: "Source Pin")
+        let destinationFavorite = makeFavoritePin(profileId: destinationProfileId, title: "Destination Pin")
 
         browserManager.spaceStateOwner.replaceSpaces([source, destination])
-        browserManager.structuralCollectionMutationOwner.setPinnedTabs([sourceEssential], for: sourceProfileId)
-        browserManager.structuralCollectionMutationOwner.setPinnedTabs([destinationEssential], for: destinationProfileId)
+        browserManager.structuralCollectionMutationOwner.setPinnedTabs([sourceFavorite], for: sourceProfileId)
+        browserManager.structuralCollectionMutationOwner.setPinnedTabs([destinationFavorite], for: destinationProfileId)
         windowState.currentProfileId = sourceProfileId
         windowState.currentSpaceId = source.id
 
@@ -501,9 +501,9 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             settings: settings
         )
 
-        XCTAssertNil(snapshot.stationaryEssentials)
-        XCTAssertEqual(snapshot.source.essentials?.items.map(\.id), [sourceEssential.id])
-        XCTAssertEqual(snapshot.destination.essentials?.items.map(\.id), [destinationEssential.id])
+        XCTAssertNil(snapshot.stationaryFavorite)
+        XCTAssertEqual(snapshot.source.favorite?.items.map(\.id), [sourceFavorite.id])
+        XCTAssertEqual(snapshot.destination.favorite?.items.map(\.id), [destinationFavorite.id])
     }
 
     func testSnapshotBuilderMarksSelectedRegularTabWithoutObservedTabRows() {
@@ -935,8 +935,8 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         )
     }
 
-    func testSelectedEssentialSplitSnapshotDoesNotDrawOutsideTileBounds() throws {
-        let rendered = try renderedSelectedEssentialSplitSnapshot()
+    func testSelectedFavoriteSplitSnapshotDoesNotDrawOutsideTileBounds() throws {
+        let rendered = try renderedSelectedFavoriteSplitSnapshot()
         let image = rendered.image
         let tileFrame = rendered.tileFrame
         let scaleX = CGFloat(image.pixelsWide) / image.size.width
@@ -962,7 +962,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         XCTAssertEqual(
             exteriorPixelCount,
             0,
-            "The transition snapshot must not add a shadow around an Essential split tile"
+            "The transition snapshot must not add a shadow around a Favorite split tile"
         )
     }
 
@@ -1279,7 +1279,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
                 icon: .image(Image(nsImage: redIcon)),
                 desaturatesIcon: false,
                 accentSource: nil,
-                essentialBackdrop: nil,
+                favoriteBackdrop: nil,
                 isSelected: false
             )
         }
@@ -1359,7 +1359,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
                 launchURL: URL(string: "https://example.com/pinned")!,
                 partition: .regular(nil)
             ),
-            essentialBackdrop: nil,
+            favoriteBackdrop: nil,
             presentationState: .launcherOnly,
             showsAudioButton: false,
             isMuted: false,
@@ -1400,7 +1400,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         return image
     }
 
-    private func renderedSelectedEssentialSplitSnapshot() throws -> (
+    private func renderedSelectedFavoriteSplitSnapshot() throws -> (
         image: NSBitmapImageRep,
         tileFrame: CGRect
     ) {
@@ -1418,7 +1418,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
                 icon: .system(systemImageName),
                 desaturatesIcon: false,
                 accentSource: nil,
-                essentialBackdrop: nil,
+                favoriteBackdrop: nil,
                 isSelected: index == 0
             )
         }
@@ -1432,8 +1432,8 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         )
         let settings = makeIsolatedSettings()
         let tokens = ResolvedThemeContext.default.tokens(settings: settings)
-        let root = EssentialsSnapshotGrid(
-            snapshot: EssentialsSnapshot(items: [.splitGroup(splitGroup)], showsPlaceholder: false),
+        let root = FavoriteSnapshotGrid(
+            snapshot: FavoriteSnapshot(items: [.splitGroup(splitGroup)], showsPlaceholder: false),
             width: tileWidth,
             tokens: tokens
         )
@@ -1569,7 +1569,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             title: title,
             iconValue: iconValue,
             extensionActions: nil,
-            essentials: nil,
+            favorite: nil,
             hasPinnedContent: false,
             isPinnedContentCollapsed: false,
             pinnedItems: [],
@@ -1590,10 +1590,10 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         }
     }
 
-    private func makeEssentialPin(profileId: UUID, title: String) -> ShortcutPin {
+    private func makeFavoritePin(profileId: UUID, title: String) -> ShortcutPin {
         ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: profileId,
             index: 0,
             launchURL: URL(string: "https://example.com/\(UUID().uuidString)")!,
@@ -1658,7 +1658,7 @@ private struct TransitionStateSidebarFixture {
         pinProjection = SidebarPinFolderProjection(
             runtimeIsAlive: { true },
             windows: windows,
-            essentials: browser.essentialsShortcutPlacementOwner,
+            favorite: browser.favoriteShortcutPlacementOwner,
             resolution: browser.shortcutPinRuntimeResolutionOwner
         )
         lifecycle = browser.sidebarSpaceLifecycle

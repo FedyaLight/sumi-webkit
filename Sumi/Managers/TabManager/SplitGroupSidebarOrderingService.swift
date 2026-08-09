@@ -38,10 +38,10 @@ final class SplitGroupSidebarOrderingService {
         resolver(for: spaceID).topLevelItems()
     }
 
-    func essentialItems(for profileID: UUID?) -> [SplitGroupVisualListItem] {
+    func favoriteItems(for profileID: UUID?) -> [SplitGroupVisualListItem] {
         guard profileID != nil else { return [] }
-        return SidebarVisualOrdering.essentialItems(
-            pins: profileID.map { pins.essentialPins(for: $0) } ?? [],
+        return SidebarVisualOrdering.favoriteItems(
+            pins: profileID.map { pins.favoritePins(for: $0) } ?? [],
             groups: store.groups,
             profileID: profileID
         )

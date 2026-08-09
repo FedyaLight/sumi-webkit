@@ -663,12 +663,12 @@ final class BrowserShortcutCommandRoutingTests: XCTestCase {
         XCTAssertNil(harness.windowState.currentShortcutPinRole)
     }
 
-    func testAddRegularTabToEssentialsCreatesProfileLauncher() throws {
+    func testAddRegularTabToFavoriteCreatesProfileLauncher() throws {
         let harness = try makeHarness()
-        let tab = createTab("https://essential-command.example", in: harness)
+        let tab = createTab("https://favorite-command.example", in: harness)
         harness.windowState.currentTabId = tab.id
 
-        execute(.addToEssentials, in: harness)
+        execute(.addToFavorite, in: harness)
 
         XCTAssertTrue(
             harness.browserManager.regularTabCollectionOwner
@@ -676,14 +676,14 @@ final class BrowserShortcutCommandRoutingTests: XCTestCase {
         )
         let pin = try XCTUnwrap(
             harness.browserManager.shortcutPinCollectionStateOwner
-                .essentialPins(for: harness.profile.id).first
+                .favoritePins(for: harness.profile.id).first
         )
         XCTAssertEqual(pin.launchURL, tab.url)
         XCTAssertEqual(harness.windowState.currentShortcutPinId, pin.id)
-        XCTAssertEqual(harness.windowState.currentShortcutPinRole, .essential)
+        XCTAssertEqual(harness.windowState.currentShortcutPinRole, .favorite)
     }
 
-    func testAddSpaceLauncherToEssentialsCopiesWithoutMovingSource() throws {
+    func testAddSpaceLauncherToFavoriteCopiesWithoutMovingSource() throws {
         let harness = try makeHarness()
         let source = try XCTUnwrap(
             harness.browserManager.shortcutPinStoreOwner.insert(
@@ -692,7 +692,7 @@ final class BrowserShortcutCommandRoutingTests: XCTestCase {
                     role: .spacePinned,
                     spaceId: harness.space.id,
                     index: 0,
-                    launchURL: URL(string: "https://copy-essential.example")!,
+                    launchURL: URL(string: "https://copy-favorite.example")!,
                     title: "Space Launcher"
                 ),
                 at: 0
@@ -709,33 +709,33 @@ final class BrowserShortcutCommandRoutingTests: XCTestCase {
         harness.windowState.currentShortcutPinId = source.id
         harness.windowState.currentShortcutPinRole = .spacePinned
 
-        execute(.addToEssentials, in: harness)
+        execute(.addToFavorite, in: harness)
 
         XCTAssertEqual(
             harness.browserManager.shortcutPinCollectionStateOwner
                 .spacePinnedPins(for: harness.space.id).map(\.id),
             [source.id]
         )
-        let essential = try XCTUnwrap(
+        let favorite = try XCTUnwrap(
             harness.browserManager.shortcutPinCollectionStateOwner
-                .essentialPins(for: harness.profile.id).first
+                .favoritePins(for: harness.profile.id).first
         )
-        XCTAssertNotEqual(essential.id, source.id)
-        XCTAssertEqual(essential.launchURL, source.launchURL)
+        XCTAssertNotEqual(favorite.id, source.id)
+        XCTAssertEqual(favorite.launchURL, source.launchURL)
         XCTAssertEqual(harness.windowState.currentShortcutPinId, source.id)
     }
 
-    func testRemoveCurrentEssentialMovesLauncherToCurrentSpace() throws {
+    func testRemoveCurrentFavoriteMovesLauncherToCurrentSpace() throws {
         let harness = try makeHarness()
         let source = try XCTUnwrap(
             harness.browserManager.shortcutPinStoreOwner.insert(
                 ShortcutPin(
                     id: UUID(),
-                    role: .essential,
+                    role: .favorite,
                     profileId: harness.profile.id,
                     index: 0,
-                    launchURL: URL(string: "https://remove-essential.example")!,
-                    title: "Essential"
+                    launchURL: URL(string: "https://remove-favorite.example")!,
+                    title: "Favorite"
                 ),
                 at: 0
             )
@@ -749,13 +749,13 @@ final class BrowserShortcutCommandRoutingTests: XCTestCase {
         )
         harness.windowState.currentTabId = liveTab.id
         harness.windowState.currentShortcutPinId = source.id
-        harness.windowState.currentShortcutPinRole = .essential
+        harness.windowState.currentShortcutPinRole = .favorite
 
-        execute(.removeFromEssentials, in: harness)
+        execute(.removeFromFavorite, in: harness)
 
         XCTAssertTrue(
             harness.browserManager.shortcutPinCollectionStateOwner
-                .essentialPins(for: harness.profile.id).isEmpty
+                .favoritePins(for: harness.profile.id).isEmpty
         )
         let moved = try XCTUnwrap(
             harness.browserManager.shortcutPinCollectionStateOwner
@@ -795,7 +795,7 @@ final class BrowserShortcutCommandRoutingTests: XCTestCase {
         XCTAssertEqual(harness.settings.sidebarPosition, .left)
     }
 
-    func testPinAndEssentialsCommandsMoveTheWholeActiveSplitAtomically() throws {
+    func testPinAndFavoriteCommandsMoveTheWholeActiveSplitAtomically() throws {
         let harness = try makeHarness()
         let tabs = [
             createTab("https://split-pin-one.example", in: harness),
@@ -847,18 +847,18 @@ final class BrowserShortcutCommandRoutingTests: XCTestCase {
         )
 
         execute(.pinTab, in: harness)
-        execute(.addToEssentials, in: harness)
+        execute(.addToFavorite, in: harness)
 
-        let essential = try XCTUnwrap(
+        let favorite = try XCTUnwrap(
             harness.browserManager.splitGroupStore.group(id: group.id)
         )
-        guard case .essentialSidebar(let profileID, _) =
-                essential.container else {
-            return XCTFail("Split should move into Essentials")
+        guard case .favoriteSidebar(let profileID, _) =
+                favorite.container else {
+            return XCTFail("Split should move into Favorite")
         }
         XCTAssertEqual(profileID, harness.profile.id)
 
-        execute(.removeFromEssentials, in: harness)
+        execute(.removeFromFavorite, in: harness)
 
         let restored = try XCTUnwrap(
             harness.browserManager.splitGroupStore.group(id: group.id)

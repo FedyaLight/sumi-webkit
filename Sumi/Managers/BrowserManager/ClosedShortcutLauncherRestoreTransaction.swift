@@ -39,14 +39,14 @@ final class ClosedShortcutLauncherRestoreTransaction {
         fallbackWindow: BrowserWindowState?
     ) -> ShortcutPin? {
         switch pinState.role {
-        case .essential:
-            guard let profileID = destinations.essentialProfileID(
+        case .favorite:
+            guard let profileID = destinations.favoriteProfileID(
                 for: pinState,
                 fallbackWindow: fallbackWindow
             ) else { return nil }
             return ShortcutPin(
                 id: pinState.id,
-                role: .essential,
+                role: .favorite,
                 profileId: profileID,
                 executionProfileId: pinState.executionProfileId,
                 spaceId: nil,

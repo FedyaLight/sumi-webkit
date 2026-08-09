@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 enum SumiNativeDragPreviewStyle {
-    case essentialsTile
+    case favoriteTile
     case sourceSnapshot
     case row
     case folderRow
@@ -13,8 +13,8 @@ extension SidebarDragPreviewKind {
         switch self {
         case .row:
             .row
-        case .essentialsTile:
-            .essentialsTile
+        case .favoriteTile:
+            .favoriteTile
         case .folderRow:
             .folderRow
         }
@@ -74,8 +74,8 @@ final class SumiNativeDragImageFactory {
 
     func size(for style: SumiNativeDragPreviewStyle, descriptor: SumiNativeDragPreviewDescriptor) -> CGSize {
         switch style {
-        case .essentialsTile:
-            if descriptor.sourceZone == .essentials,
+        case .favoriteTile:
+            if descriptor.sourceZone == .favorite,
                descriptor.sourceSize.width > 0,
                descriptor.sourceSize.height > 0 {
                 return descriptor.sourceSize
@@ -85,7 +85,7 @@ final class SumiNativeDragImageFactory {
                 height: PinnedTileMetrics.height
             )
         case .sourceSnapshot:
-            if descriptor.sourceZone == .essentials {
+            if descriptor.sourceZone == .favorite {
                 return CGSize(
                     width: PinnedTileMetrics.minWidth,
                     height: PinnedTileMetrics.height
@@ -102,8 +102,8 @@ final class SumiNativeDragImageFactory {
     func offset(for style: SumiNativeDragPreviewStyle, descriptor: SumiNativeDragPreviewDescriptor) -> CGPoint {
         let size = self.size(for: style, descriptor: descriptor)
         switch style {
-        case .essentialsTile:
-            if descriptor.sourceZone == .essentials {
+        case .favoriteTile:
+            if descriptor.sourceZone == .favorite {
                 return clampedOffset(descriptor.sourceOffsetFromBottomLeading, in: size)
             }
             return CGPoint(x: size.width / 2, y: size.height / 2)
@@ -184,10 +184,10 @@ private struct SumiNativeDragPreviewRenderable: View {
 
     var body: some View {
         switch style {
-        case .essentialsTile:
-            essentialsTile
+        case .favoriteTile:
+            favoriteTile
         case .sourceSnapshot:
-            descriptor.sourceZone == .essentials ? AnyView(essentialsTile) : AnyView(rowPreview)
+            descriptor.sourceZone == .favorite ? AnyView(favoriteTile) : AnyView(rowPreview)
         case .row:
             rowPreview
         case .folderRow:
@@ -195,7 +195,7 @@ private struct SumiNativeDragPreviewRenderable: View {
         }
     }
 
-    private var essentialsTile: some View {
+    private var favoriteTile: some View {
         ZStack {
             RoundedRectangle(cornerRadius: PinnedTileMetrics.cornerRadius, style: .continuous)
                 .fill(Color(nsColor: .controlBackgroundColor).opacity(0.95))

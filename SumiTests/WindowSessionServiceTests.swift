@@ -556,7 +556,7 @@ final class WindowSessionServiceTests: XCTestCase {
         XCTAssertEqual(ordinaryWindow.currentSpaceId, globalSpace.id)
     }
 
-    func testActiveEssentialShortcutSurvivesPreloadSetupAndMaterializesAfterTabLoad() throws {
+    func testActiveFavoriteShortcutSurvivesPreloadSetupAndMaterializesAfterTabLoad() throws {
         let tabManager = BrowserManager()
         let profileId = UUID()
         let space = Space(
@@ -566,13 +566,13 @@ final class WindowSessionServiceTests: XCTestCase {
         )
         let pin = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: profileId,
             spaceId: nil,
             index: 0,
             folderId: nil,
-            launchURL: URL(string: "https://essential.example")!,
-            title: "Essential",
+            launchURL: URL(string: "https://favorite.example")!,
+            title: "Favorite",
             iconAsset: nil
         )
         let staleLiveTabId = UUID()
@@ -580,7 +580,7 @@ final class WindowSessionServiceTests: XCTestCase {
             currentSpaceId: space.id,
             currentTabId: staleLiveTabId,
             activeShortcutPinId: pin.id,
-            activeShortcutPinRole: .essential
+            activeShortcutPinRole: .favorite
         )
         defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
 
@@ -597,7 +597,7 @@ final class WindowSessionServiceTests: XCTestCase {
 
         XCTAssertEqual(windowState.currentTabId, staleLiveTabId)
         XCTAssertEqual(windowState.currentShortcutPinId, pin.id)
-        XCTAssertEqual(windowState.currentShortcutPinRole, .essential)
+        XCTAssertEqual(windowState.currentShortcutPinRole, .favorite)
         XCTAssertTrue(windowState.restorationState.isAwaitingInitialResolution)
 
         tabManager.spaceStateOwner.replaceSpaces([space])
@@ -610,7 +610,7 @@ final class WindowSessionServiceTests: XCTestCase {
         let liveTab = try XCTUnwrap(tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: windowState.id))
         XCTAssertEqual(windowState.currentTabId, liveTab.id)
         XCTAssertEqual(windowState.currentShortcutPinId, pin.id)
-        XCTAssertEqual(windowState.currentShortcutPinRole, .essential)
+        XCTAssertEqual(windowState.currentShortcutPinRole, .favorite)
         XCTAssertFalse(windowState.isShowingEmptyState)
         XCTAssertFalse(windowState.restorationState.isAwaitingInitialResolution)
     }

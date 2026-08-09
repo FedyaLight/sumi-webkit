@@ -17,7 +17,7 @@ final class SumiDomainSmokeTests: XCTestCase {
     }
 
     func testShortcutPinRoleAndKeyCombination() {
-        XCTAssertEqual(ShortcutPinRole.essential.rawValue, "essential")
+        XCTAssertEqual(ShortcutPinRole.favorite.rawValue, "favorite")
         let combo = KeyCombination(key: "T", modifiers: [.command])
         XCTAssertEqual(combo.key, "t")
         XCTAssertEqual(combo.lookupKey, "cmd+t")
@@ -55,9 +55,9 @@ final class SumiDomainSmokeTests: XCTestCase {
     func testTabPlacementStateShortcutBinding() {
         var state = TabPlacementState()
         let pinId = UUID()
-        state.bindToShortcutPin(id: pinId, role: .essential)
+        state.bindToShortcutPin(id: pinId, role: .favorite)
         XCTAssertEqual(state.shortcutPinId, pinId)
-        XCTAssertEqual(state.shortcutPinRole, .essential)
+        XCTAssertEqual(state.shortcutPinRole, .favorite)
         XCTAssertTrue(state.isShortcutLiveInstance)
         state.clearShortcutBinding()
         XCTAssertNil(state.shortcutPinId)

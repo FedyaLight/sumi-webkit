@@ -78,9 +78,9 @@ final class SidebarURLDropService {
                 in: windowState
             )
 
-        case .essentials(let index):
+        case .favorite(let index):
             guard url.scheme?.lowercased() != "sumi",
-                  let insertion = destinations.essentialsInsertion(
+                  let insertion = destinations.favoriteInsertion(
                     in: windowState,
                     at: index
                   )
@@ -88,7 +88,7 @@ final class SidebarURLDropService {
             return shortcutInsertion.insert(
                 url,
                 placement: ShortcutURLPlacement(
-                    role: .essential,
+                    role: .favorite,
                     profileID: insertion.profileId,
                     executionProfileID: insertion.profileId,
                     spaceID: nil,

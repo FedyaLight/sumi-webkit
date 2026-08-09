@@ -79,7 +79,7 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
                 "Move Down",
                 "---",
                 "Pin to This Space",
-                "Add to Essentials",
+                "Add to Favorite",
                 "---",
                 "Close Tabs Below",
                 "Close Tab [destructive]",
@@ -189,7 +189,7 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
                 profiles: [.init(id: Self.profileA, title: "Only Profile", isSelected: true)],
                 moveUp: nil,
                 moveDown: nil,
-                addToEssentials: nil,
+                addToFavorite: nil,
                 closeTabsBelow: nil
             )
         )
@@ -200,10 +200,10 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
         XCTAssertFalse(regularSnapshot.contains("> Use Profile"))
         XCTAssertFalse(regularSnapshot.contains("Move Up"))
         XCTAssertFalse(regularSnapshot.contains("Move Down"))
-        XCTAssertFalse(regularSnapshot.contains("Add to Essentials"))
+        XCTAssertFalse(regularSnapshot.contains("Add to Favorite"))
 
         let saved = makeSidebarTabContextMenuEntries(
-            role: .essential,
+            role: .favorite,
             actions: Self.savedTabActions(
                 folders: [.init(id: Self.folderA, title: "Project")],
                 spaces: [.init(id: Self.spaceA, title: "Only Space", isSelected: true)],
@@ -225,9 +225,9 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
         XCTAssertFalse(Self.snapshot(folderPinnedOnlyCurrentFolder).contains("> Move to Folder"))
     }
 
-    func testEssentialContextMenuSnapshots() {
+    func testFavoriteContextMenuSnapshots() {
         let stored = makeSidebarTabContextMenuEntries(
-            role: .essential,
+            role: .favorite,
             actions: Self.savedTabActions()
         )
         XCTAssertEqual(
@@ -240,21 +240,21 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
                 "---",
                 "Edit",
                 "---",
-                "Delete Essential [destructive]",
+                "Delete Favorite [destructive]",
             ]
         )
-        XCTAssertFalse(Self.snapshot(stored).contains("Add to Essentials"))
-        XCTAssertFalse(Self.snapshot(stored).contains("Unload Essential"))
+        XCTAssertFalse(Self.snapshot(stored).contains("Add to Favorite"))
+        XCTAssertFalse(Self.snapshot(stored).contains("Unload Favorite"))
         XCTAssertFalse(Self.snapshot(stored).contains("> Open in Split"))
 
         let live = makeSidebarTabContextMenuEntries(
-            role: .essential,
+            role: .favorite,
             actions: Self.savedTabActions(unload: Self.noop)
         )
-        XCTAssertTrue(Self.snapshot(live).contains("Unload Essential"))
+        XCTAssertTrue(Self.snapshot(live).contains("Unload Favorite"))
 
         let drifted = makeSidebarTabContextMenuEntries(
-            role: .essential,
+            role: .favorite,
             actions: Self.savedTabActions(
                 onBackToSavedURL: Self.noop,
                 onUseCurrentPageAsSavedURL: Self.noop,
@@ -262,10 +262,10 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
             )
         )
         XCTAssertEqual(
-            Self.snapshot(drifted).filter { $0.contains("Essential URL") },
+            Self.snapshot(drifted).filter { $0.contains("Favorite URL") },
             [
-                "Back to Essential URL",
-                "Use Current Page as Essential URL",
+                "Back to Favorite URL",
+                "Use Current Page as Favorite URL",
             ]
         )
     }
@@ -286,7 +286,7 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
                 folders: folders,
                 spaces: spaces,
                 profiles: profiles,
-                addToEssentials: Self.noop
+                addToFavorite: Self.noop
             )
         )
         XCTAssertEqual(
@@ -299,7 +299,7 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
                 "---",
                 "Edit",
                 "---",
-                "Add to Essentials",
+                "Add to Favorite",
                 "> Add to Folder",
                 "  Project",
                 "> Move to Space",
@@ -317,7 +317,7 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
             actions: Self.savedTabActions(unload: Self.noop)
         )
         XCTAssertTrue(Self.snapshot(live).contains("Unload Pinned Tab"))
-        XCTAssertFalse(Self.snapshot(live).contains("Add to Essentials"))
+        XCTAssertFalse(Self.snapshot(live).contains("Add to Favorite"))
 
         let driftedFolderPinned = makeSidebarTabContextMenuEntries(
             role: .folderPinnedTab,
@@ -598,7 +598,7 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
         moveUp: (() -> Void)? = { /* no-op */ },
         moveDown: (() -> Void)? = { /* no-op */ },
         pinToSpace: (() -> Void)? = { /* no-op */ },
-        addToEssentials: (() -> Void)? = { /* no-op */ },
+        addToFavorite: (() -> Void)? = { /* no-op */ },
         closeTabsBelow: (() -> Void)? = { /* no-op */ }
     ) -> SidebarTabContextMenuActions {
         SidebarTabContextMenuActions(
@@ -612,7 +612,7 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
             moveUp: moveUp,
             moveDown: moveDown,
             pinToSpace: pinToSpace,
-            addToEssentials: addToEssentials,
+            addToFavorite: addToFavorite,
             closeTabsBelow: closeTabsBelow,
             close: noop
         )
@@ -622,7 +622,7 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
         folders: [SidebarContextMenuChoice] = [],
         spaces: [SidebarContextMenuChoice] = [],
         profiles: [SidebarContextMenuChoice] = [],
-        addToEssentials: (() -> Void)? = nil,
+        addToFavorite: (() -> Void)? = nil,
         onBackToSavedURL: (() -> Void)? = nil,
         onUseCurrentPageAsSavedURL: (() -> Void)? = nil,
         unload: (() -> Void)? = nil,
@@ -646,7 +646,7 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
             folderTarget: choiceAction(folders),
             moveToSpace: spaceDestinationAction(spaces),
             profileTarget: choiceAction(profiles),
-            addToEssentials: addToEssentials,
+            addToFavorite: addToFavorite,
             savedURLDrift: driftActions,
             changeIcon: noop,
             editURL: noop,

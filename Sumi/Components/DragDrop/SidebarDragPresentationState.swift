@@ -42,13 +42,13 @@ final class SidebarDragSessionPresentation: ObservableObject {
     }
 }
 
-struct SidebarEssentialsDragPresentationFrame: Equatable {
+struct SidebarFavoriteDragPresentationFrame: Equatable {
     var isDragging = false
     var isCompletingDrop = false
     var projectionDragItemID: UUID?
     var projectionDragScope: SidebarDragScope?
     var projectionHoveredSlot: DropZoneSlot = .empty
-    var previewStateBySpace: [UUID: SidebarEssentialsPreviewState] = [:]
+    var previewStateBySpace: [UUID: SidebarFavoritePreviewState] = [:]
 
     var isDropProjectionActive: Bool {
         isDragging || isCompletingDrop
@@ -58,7 +58,7 @@ struct SidebarEssentialsDragPresentationFrame: Equatable {
         isDragging && !isCompletingDrop
     }
 
-    func previewState(for spaceID: UUID) -> SidebarEssentialsPreviewState? {
+    func previewState(for spaceID: UUID) -> SidebarFavoritePreviewState? {
         previewStateBySpace[spaceID]
     }
 
@@ -76,10 +76,10 @@ struct SidebarEssentialsDragPresentationFrame: Equatable {
 }
 
 @MainActor
-final class SidebarEssentialsDragPresentation: ObservableObject {
-    @Published private(set) var frame = SidebarEssentialsDragPresentationFrame()
+final class SidebarFavoriteDragPresentation: ObservableObject {
+    @Published private(set) var frame = SidebarFavoriteDragPresentationFrame()
 
-    func publish(_ frame: SidebarEssentialsDragPresentationFrame) {
+    func publish(_ frame: SidebarFavoriteDragPresentationFrame) {
         guard self.frame != frame else { return }
         self.frame = frame
     }

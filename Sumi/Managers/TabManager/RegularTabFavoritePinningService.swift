@@ -2,15 +2,15 @@ import Foundation
 import SumiDomain
 
 @MainActor
-final class RegularTabEssentialPinningService {
+final class RegularTabFavoritePinningService {
     private let structuralLookup: TabStructuralLookupCoordinator
-    private let placement: EssentialsShortcutPlacementOwner
+    private let placement: FavoriteShortcutPlacementOwner
     private let pins: ShortcutPinCollectionStateOwner
     private let conversion: RegularTabShortcutConversionService
 
     init(
         structuralLookup: TabStructuralLookupCoordinator,
-        placement: EssentialsShortcutPlacementOwner,
+        placement: FavoriteShortcutPlacementOwner,
         pins: ShortcutPinCollectionStateOwner,
         conversion: RegularTabShortcutConversionService
     ) {
@@ -22,18 +22,18 @@ final class RegularTabEssentialPinningService {
 
     func pin(
         _ tab: Tab,
-        context: EssentialsShortcutPlacementOwner.TargetContext?
+        context: FavoriteShortcutPlacementOwner.TargetContext?
     ) {
         structuralLookup.withTransaction {
             guard let insertion = placement.resolveInsertion(
                 using: .init(target: context)
-            ), pins.essentialPins(for: insertion.profileId)
+            ), pins.favoritePins(for: insertion.profileId)
                 .contains(where: { $0.launchURL == tab.url }) == false
             else { return }
             guard conversion.accept(
                 tab,
                 destination: TabShortcutPinDestination(
-                    role: .essential,
+                    role: .favorite,
                     profileId: insertion.profileId,
                     spaceId: nil,
                     folderId: nil,

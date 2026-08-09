@@ -11,7 +11,7 @@ struct WindowSessionShortcutRestorer {
         for session in windowState.restorationState
             .consumeShortcutLiveSessions() {
             guard let pin = pins.shortcutPin(by: session.shortcutPinId),
-                  pin.role == .essential
+                  pin.role == .favorite
                     || pin.spaceId == session.presentationSpaceId
             else { continue }
             _ = activation.commitActivation(
@@ -49,7 +49,7 @@ struct WindowSessionShortcutRestorer {
     ) -> Bool {
         if let shortcutPinId = windowState.currentShortcutPinId,
            let pin = pins.shortcutPin(by: shortcutPinId),
-           pin.role == .essential || pin.spaceId == windowState.currentSpaceId {
+           pin.role == .favorite || pin.spaceId == windowState.currentSpaceId {
             return materialize(pin, in: windowState)
         }
 

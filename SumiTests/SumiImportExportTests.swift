@@ -69,7 +69,7 @@ final class SumiImportExportTests: XCTestCase {
 
         XCTAssertEqual(data.profiles.map(\.name), ["Arc Import"])
         XCTAssertEqual(data.spaces.map(\.name), ["Work"])
-        XCTAssertEqual(data.essentials.map(\.title), ["Mail"])
+        XCTAssertEqual(data.favorite.map(\.title), ["Mail"])
         XCTAssertEqual(data.pinnedLaunchers.map(\.title), ["Docs"])
         XCTAssertEqual(data.pinnedLaunchers.first?.folderId, "folder-child")
         XCTAssertEqual(data.regularTabs.map(\.title), ["Open"])
@@ -424,7 +424,7 @@ final class SumiImportExportTests: XCTestCase {
                 sourceSpaceId: spaceId
             )
         }
-        let essentialId = UUID().uuidString
+        let favoriteId = UUID().uuidString
         let pinnedId = UUID().uuidString
         let tabId = UUID().uuidString
         let normalized = SumiImportDataNormalizer.normalize(SumiPortableData(
@@ -438,17 +438,17 @@ final class SumiImportExportTests: XCTestCase {
                 themeDataBase64: nil,
                 color: nil
             )],
-            essentials: [
+            favorite: [
                 launcher(
-                    id: essentialId,
-                    title: "Existing Essential",
-                    url: "https://existing-essential.example",
+                    id: favoriteId,
+                    title: "Existing Favorite",
+                    url: "https://existing-favorite.example",
                     profileId: profileId
                 ),
                 launcher(
-                    id: essentialId,
-                    title: "Duplicate Essential",
-                    url: "https://duplicate-essential.example",
+                    id: favoriteId,
+                    title: "Duplicate Favorite",
+                    url: "https://duplicate-favorite.example",
                     profileId: profileId
                 ),
             ],
@@ -488,7 +488,7 @@ final class SumiImportExportTests: XCTestCase {
             ]
         ))
 
-        XCTAssertEqual(normalized.essentials.map(\.title), ["Existing Essential"])
+        XCTAssertEqual(normalized.favorite.map(\.title), ["Existing Favorite"])
         XCTAssertEqual(normalized.pinnedLaunchers.map(\.title), ["Existing Pin"])
         XCTAssertEqual(normalized.regularTabs.map(\.title), ["Existing Tab"])
     }
@@ -573,6 +573,12 @@ final class SumiImportExportTests: XCTestCase {
         )
         let payload = try SumiTransferExportService()
             .exportBrowser2ZenDocument(from: portableData)
+        let encodedObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: payload) as? [String: Any]
+        )
+        let encodedSpace = try XCTUnwrap((encodedObject["spaces"] as? [[String: Any]])?.first)
+        let encodedPin = try XCTUnwrap((encodedSpace["pinned_tabs"] as? [[String: Any]])?.first)
+        XCTAssertEqual(encodedPin["is_essential"] as? Bool, false)
         let document = try JSONDecoder().decode(SumiBrowser2ZenDocument.self, from: payload)
         let exportedSpace = try XCTUnwrap(document.spaces.first)
         let exportedChild = try XCTUnwrap(exportedSpace.folders.first(where: { $0.folderId == child.id.uuidString }))
@@ -601,7 +607,7 @@ final class SumiImportExportTests: XCTestCase {
                 ),
             ],
             folders: [],
-            essentials: [],
+            favorite: [],
             pinnedLaunchers: [],
             regularTabs: [],
             bookmarks: []
@@ -617,6 +623,37 @@ final class SumiImportExportTests: XCTestCase {
         let imported = try SumiTransferExportService().importBrowser2ZenDocument(from: payload)
 
         XCTAssertEqual(imported, exact)
+    }
+
+    func testSumiPortableDataReadsLegacyEssentialsKeyIntoFavorite() throws {
+        let launcher = SumiPortableLauncher(
+            id: "favorite-a",
+            title: "Favorite",
+            urlString: "https://favorite.example",
+            index: 0,
+            profileId: nil,
+            executionProfileId: nil,
+            spaceId: nil,
+            folderId: nil,
+            iconAsset: nil,
+            sourceSpaceId: nil
+        )
+        let currentPayload = try JSONEncoder().encode(SumiPortableData(favorite: [launcher]))
+        var legacyObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: currentPayload) as? [String: Any]
+        )
+        legacyObject["essentials"] = legacyObject.removeValue(forKey: "favorite")
+        let legacyPayload = try JSONSerialization.data(withJSONObject: legacyObject)
+
+        let decoded = try JSONDecoder().decode(SumiPortableData.self, from: legacyPayload)
+        XCTAssertEqual(decoded.favorite.map(\.title), ["Favorite"])
+
+        let reencoded = try JSONEncoder().encode(decoded)
+        let reencodedObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: reencoded) as? [String: Any]
+        )
+        XCTAssertNotNil(reencodedObject["favorite"])
+        XCTAssertNil(reencodedObject["essentials"])
     }
 
     func testSumiBackupArchiveCarriesVersionedLogicalData() throws {
@@ -675,7 +712,7 @@ final class SumiImportExportTests: XCTestCase {
                     sourcePath: ["Daily"]
                 ),
             ],
-            essentials: [],
+            favorite: [],
             pinnedLaunchers: [
                 SumiPortableLauncher(
                     id: "pin-a",
@@ -827,7 +864,7 @@ final class SumiImportExportTests: XCTestCase {
     func testBackupV1ScopeMatchesPortableModelAndNamesEveryExclusion() {
         XCTAssertEqual(
             SumiBackupV1Scope.portableCategories,
-            [.profiles, .spaces, .themes, .bookmarks, .essentials,
+            [.profiles, .spaces, .themes, .bookmarks, .favorite,
              .pinnedLaunchers, .folders, .regularTabs]
         )
         XCTAssertEqual(
@@ -939,7 +976,7 @@ final class SumiImportExportTests: XCTestCase {
                             tabId: "tab-a",
                             parentId: nil,
                             index: 0,
-                            isEssential: false
+                            isFavorite: false
                         ),
                     ],
                     openTabs: [],

@@ -585,7 +585,7 @@ final class BrowserWindowChromeTests: XCTestCase {
         XCTAssertNil(controls.hitTest(NSPoint(x: 8, y: 8)))
     }
 
-    func testSplitPaneExpandSeparatesPinnedAndEssentialPresentedMembers() throws {
+    func testSplitPaneExpandSeparatesPinnedAndFavoritePresentedMembers() throws {
         let browser = BrowserManager(
             startupPersistence: BrowserManagerStartupPersistence(
                 database: try makeInMemoryStartupDatabase()
@@ -595,7 +595,7 @@ final class BrowserWindowChromeTests: XCTestCase {
         let profileID = UUID()
         let windowState = BrowserWindowState()
         let presentedTab = Tab(loadsCachedFaviconOnInit: false)
-        let cases: [(container: SplitGroupContainer, isEssential: Bool)] = [
+        let cases: [(container: SplitGroupContainer, isFavorite: Bool)] = [
             (
                 .shortcutSidebar(
                     spaceId: spaceID,
@@ -605,22 +605,22 @@ final class BrowserWindowChromeTests: XCTestCase {
                 ),
                 false
             ),
-            (.essentialSidebar(profileId: profileID, index: 0), true),
+            (.favoriteSidebar(profileId: profileID, index: 0), true),
         ]
 
-        for (container, isEssential) in cases {
+        for (container, isFavorite) in cases {
             let pins = (0..<2).map { index in
                 ShortcutPin(
                     id: UUID(),
-                    role: isEssential ? .essential : .spacePinned,
-                    profileId: isEssential ? profileID : nil,
-                    spaceId: isEssential ? nil : spaceID,
+                    role: isFavorite ? .favorite : .spacePinned,
+                    profileId: isFavorite ? profileID : nil,
+                    spaceId: isFavorite ? nil : spaceID,
                     index: index,
                     launchURL: URL(string: "https://split-\(index).example")!,
                     title: "Split \(index)"
                 )
             }
-            if isEssential {
+            if isFavorite {
                 browser.structuralCollectionMutationOwner.setPinnedTabs(
                     pins,
                     for: profileID

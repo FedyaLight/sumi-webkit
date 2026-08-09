@@ -2,7 +2,7 @@ import Foundation
 import SumiDomain
 
 @MainActor
-final class EssentialsShortcutPlacementOwner {
+final class FavoriteShortcutPlacementOwner {
     enum CapacityPolicy {
         static let maxColumns = 3
         static let maxRows = 4
@@ -103,7 +103,7 @@ final class EssentialsShortcutPlacementOwner {
         using context: TargetContext? = nil
     ) -> Bool {
         guard let profileId = resolvedProfileId(using: context) else { return false }
-        let profilePins = pins.essentialPins(for: profileId)
+        let profilePins = pins.favoritePins(for: profileId)
         guard urls.isEmpty == false,
               Set(urls).count == urls.count,
               profilePins.count + urls.count <= CapacityPolicy.maxStoredMembers,
@@ -123,7 +123,7 @@ final class EssentialsShortcutPlacementOwner {
         let resolution = resolveTarget(using: context.target)
         guard let profileId = resolution.profileId else { return nil }
 
-        var profilePins = pins.essentialPins(for: profileId)
+        var profilePins = pins.favoritePins(for: profileId)
         if let movingPinId = context.movingPinId,
            let existingIndex = profilePins.firstIndex(where: {
                $0.id == movingPinId
@@ -153,7 +153,7 @@ final class EssentialsShortcutPlacementOwner {
     ) -> Int {
         let pinIDs = Set(profilePins.map(\.id))
         let groups = splitGroups.groups.filter { group in
-            guard case .essentialSidebar(let ownerID, _) = group.container,
+            guard case .favoriteSidebar(let ownerID, _) = group.container,
                   ownerID == nil || ownerID == profileID else { return false }
             return group.memberIDs.allSatisfy { memberID in
                 guard case .shortcutPin(let pinID) = memberID else {
@@ -189,7 +189,7 @@ final class EssentialsShortcutPlacementOwner {
         }
 
         RuntimeDiagnostics.emit(
-            "⚠️ [Essentials] Fallback profile mismatch visible=\(visibleProfileId.uuidString) resolved=\(resolvedProfileId.uuidString)"
+            "⚠️ [Favorite] Fallback profile mismatch visible=\(visibleProfileId.uuidString) resolved=\(resolvedProfileId.uuidString)"
         )
     }
 }

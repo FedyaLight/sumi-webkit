@@ -28,13 +28,13 @@ enum SpaceSidebarChromeBindings {
         ExtensionActionPlacement.resolve(totalActions: slotCount) == .sidebarGrid
     }
 
-    static func shouldAnimateEssentialsLayout(
+    static func shouldAnimateFavoriteLayout(
         isActiveWindow: Bool,
         isTransitioningProfile: Bool,
         pageRenderMode: SidebarPageRenderMode,
         allowsInteractiveWork: Bool
     ) -> Bool {
-        SpaceSidebarChromePreviewPolicy.shouldAnimateEssentialsLayout(
+        SpaceSidebarChromePreviewPolicy.shouldAnimateFavoriteLayout(
             isActiveWindow: isActiveWindow,
             isTransitioningProfile: isTransitioningProfile,
             pageRenderMode: pageRenderMode

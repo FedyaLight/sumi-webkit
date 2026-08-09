@@ -6,22 +6,22 @@ import SumiDomain
 final class SidebarPinFolderProjection {
     private let runtimeIsAlive: @MainActor () -> Bool
     private let windows: SidebarWindowIdentityQuery
-    private let essentials: EssentialsShortcutPlacementOwner
+    private let favorite: FavoriteShortcutPlacementOwner
     private let resolution: ShortcutPinRuntimeResolutionOwner
 
     init(
         runtimeIsAlive: @escaping @MainActor () -> Bool,
         windows: SidebarWindowIdentityQuery,
-        essentials: EssentialsShortcutPlacementOwner,
+        favorite: FavoriteShortcutPlacementOwner,
         resolution: ShortcutPinRuntimeResolutionOwner
     ) {
         self.runtimeIsAlive = runtimeIsAlive
         self.windows = windows
-        self.essentials = essentials
+        self.favorite = favorite
         self.resolution = resolution
     }
 
-    func canAddToEssentials(
+    func canAddToFavorite(
         url: URL,
         in windowState: BrowserWindowState,
         spaceID: UUID?
@@ -29,7 +29,7 @@ final class SidebarPinFolderProjection {
         guard runtimeIsAlive(), windows.contains(windowState) else {
             return false
         }
-        return essentials.canAddURL(
+        return favorite.canAddURL(
             url,
             using: .init(windowState: windowState, spaceId: spaceID)
         )

@@ -4,7 +4,7 @@ import XCTest
 @testable import Sumi
 
 @MainActor
-final class SidebarEssentialVisualProjectionTests: XCTestCase {
+final class SidebarFavoriteVisualProjectionTests: XCTestCase {
     func testProjectionCollapsesOrderedMembersIntoOneVisualItem() throws {
         let profileID = UUID()
         let first = pin(index: 0, profileID: profileID)
@@ -13,10 +13,10 @@ final class SidebarEssentialVisualProjectionTests: XCTestCase {
         let group = try XCTUnwrap(SplitGroup.make(
             members: [first, second].map { .shortcutPin($0.id) },
             layoutKind: .horizontal,
-            container: .essentialSidebar(profileId: profileID, index: 0)
+            container: .favoriteSidebar(profileId: profileID, index: 0)
         ))
 
-        let projection = SidebarEssentialVisualProjection.make(
+        let projection = SidebarFavoriteVisualProjection.make(
             pins: [first, second, third],
             splitGroups: [group],
             profileID: profileID
@@ -35,10 +35,10 @@ final class SidebarEssentialVisualProjectionTests: XCTestCase {
         let group = try XCTUnwrap(SplitGroup.make(
             members: pins.map { .shortcutPin($0.id) },
             layoutKind: .horizontal,
-            container: .essentialSidebar(profileId: UUID(), index: 0)
+            container: .favoriteSidebar(profileId: UUID(), index: 0)
         ))
 
-        let projection = SidebarEssentialVisualProjection.make(
+        let projection = SidebarFavoriteVisualProjection.make(
             pins: pins,
             splitGroups: [group],
             profileID: profileID
@@ -50,11 +50,11 @@ final class SidebarEssentialVisualProjectionTests: XCTestCase {
     private func pin(index: Int, profileID: UUID) -> ShortcutPin {
         ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: profileID,
             index: index,
             launchURL: URL(string: "https://\(index).example")!,
-            title: "Essential \(index)"
+            title: "Favorite \(index)"
         )
     }
 }

@@ -10,11 +10,11 @@ final class TabEntity {
     var id: UUID
     var urlString: String
     var name: String
-    var isPinned: Bool // Global pinned (essentials)
+    var isPinned: Bool // Global pinned (favorite)
     var isSpacePinned: Bool = false // Space-level pinned
     var index: Int
     var spaceId: UUID?
-    // Profile association for global pinned tabs (essentials).
+    // Profile association for global pinned tabs (favorite).
     var profileId: UUID?
     // Optional profile used to run a saved launcher without moving its owning container.
     var executionProfileId: UUID?

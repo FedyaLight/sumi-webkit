@@ -16,7 +16,7 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         let staleSelection = Tab(id: canonical.id)
         let pendingPin = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: nil,
             index: 0,
             launchURL: URL(string: "https://example.com")!,
@@ -63,7 +63,7 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         )
         XCTAssertEqual(
             fixture.manager.stateStore.shortcutPins
-                .essentialPins(for: profileID).map(\.id),
+                .favoritePins(for: profileID).map(\.id),
             [pendingPin.id]
         )
         fixture.manager.structuralPersistence.cancelPendingPersistence()
@@ -177,7 +177,7 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
             spacePinnedShortcuts: [:],
             pendingPinnedWithoutProfile: [ShortcutPin(
                 id: UUID(),
-                role: .essential,
+                role: .favorite,
                 profileId: nil,
                 index: 0,
                 launchURL: URL(string: "https://example.com")!,
@@ -216,7 +216,7 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         )
         XCTAssertEqual(
             fixture.manager.stateStore.shortcutPins
-                .essentialPins(for: profileID).count,
+                .favoritePins(for: profileID).count,
             1
         )
     }
@@ -238,7 +238,7 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         tab.spaceId = space.id
         let pendingPin = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: nil,
             index: 0,
             launchURL: URL(string: "https://example.com")!,
@@ -298,11 +298,11 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         XCTAssertNotNil(fixture.manager.runtimePortConnection.current)
         XCTAssertTrue(
             fixture.manager.stateStore.shortcutPins
-                .essentialPins(for: firstProfileID).isEmpty
+                .favoritePins(for: firstProfileID).isEmpty
         )
         XCTAssertTrue(
             fixture.manager.stateStore.shortcutPins
-                .essentialPins(for: secondProfileID).map(\.id) == [pendingPin.id]
+                .favoritePins(for: secondProfileID).map(\.id) == [pendingPin.id]
         )
         XCTAssertTrue(
             fixture.manager.stateStore.shortcutPins
@@ -322,7 +322,7 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         replacement.spaceId = space.id
         let pendingPin = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: nil,
             index: 0,
             launchURL: URL(string: "https://example.com")!,
@@ -369,7 +369,7 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         XCTAssertIdentical(terminalMembership.first, replacement)
         XCTAssertEqual(
             fixture.manager.stateStore.shortcutPins
-                .essentialPins(for: profileID).map(\.id),
+                .favoritePins(for: profileID).map(\.id),
             [pendingPin.id]
         )
         fixture.manager.structuralPersistence.cancelPendingPersistence()
@@ -384,7 +384,7 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         tab.spaceId = space.id
         let original = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: nil,
             index: 0,
             launchURL: URL(string: "https://original.example")!,
@@ -392,7 +392,7 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         )
         let replacement = ShortcutPin(
             id: original.id,
-            role: .essential,
+            role: .favorite,
             profileId: nil,
             index: 0,
             launchURL: URL(string: "https://replacement.example")!,
@@ -427,7 +427,7 @@ final class TabRuntimePortsAttachmentOwnerTests: XCTestCase {
         )
         let adopted = try XCTUnwrap(
             fixture.manager.stateStore.shortcutPins
-                .essentialPins(for: profileID).first
+                .favoritePins(for: profileID).first
         )
         XCTAssertEqual(adopted.id, replacement.id)
         XCTAssertEqual(adopted.title, replacement.title)

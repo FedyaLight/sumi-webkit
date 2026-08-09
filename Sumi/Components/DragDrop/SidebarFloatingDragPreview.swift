@@ -14,9 +14,9 @@ enum SidebarDragPresentationProjection {
             return .folderRow
         }
 
-        if case .essentials = hoveredSlot,
-           previewAssets[.essentialsTile] != nil {
-            return .essentialsTile
+        if case .favorite = hoveredSlot,
+           previewAssets[.favoriteTile] != nil {
+            return .favoriteTile
         }
 
         if case .spacePinned = hoveredSlot,
@@ -46,8 +46,8 @@ enum SidebarDragPresentationProjection {
         }
 
         switch hoveredSlot {
-        case .essentials:
-            return .essentialsTile
+        case .favorite:
+            return .favoriteTile
         case .spacePinned, .spaceRegular, .folder:
             return .row
         case .empty:
@@ -59,14 +59,14 @@ enum SidebarDragPresentationProjection {
 
 struct SidebarFloatingDragPreviewContext {
     let currentProfileID: () -> UUID?
-    let essentialItems: (UUID, UUID) -> [SidebarEssentialVisualItem]
+    let favoriteItems: (UUID, UUID) -> [SidebarFavoriteVisualItem]
 }
 
 struct SidebarFloatingDragPreview: View {
     private let dragState: SidebarDragState
     @ObservedObject private var presentation: SidebarFloatingDragPresentation
-    @ObservedObject private var essentialsPresentation:
-        SidebarEssentialsDragPresentation
+    @ObservedObject private var favoritePresentation:
+        SidebarFavoriteDragPresentation
     @ObservedObject private var locationTracker: SidebarDragLocationTracker
     private let browserContext: SidebarFloatingDragPreviewContext
     @Environment(BrowserWindowState.self) private var windowState
@@ -79,8 +79,8 @@ struct SidebarFloatingDragPreview: View {
         self._presentation = ObservedObject(
             wrappedValue: sidebarDragState.floatingPresentation
         )
-        self._essentialsPresentation = ObservedObject(
-            wrappedValue: sidebarDragState.essentialsPresentation
+        self._favoritePresentation = ObservedObject(
+            wrappedValue: sidebarDragState.favoritePresentation
         )
         self._locationTracker = ObservedObject(wrappedValue: sidebarDragState.locationTracker)
         self.browserContext = browserContext
@@ -144,11 +144,11 @@ struct SidebarFloatingDragPreview: View {
         size: CGSize
     ) -> some View {
         ZStack {
-            essentialsPreview(model: model)
+            favoritePreview(model: model)
             .frame(width: size.width, height: size.height)
             .shadow(color: .black.opacity(0.18), radius: 8, y: 2)
-            .opacity(kind == .essentialsTile ? 1 : 0)
-            .scaleEffect(kind == .essentialsTile ? 1 : 0.97)
+            .opacity(kind == .favoriteTile ? 1 : 0)
+            .scaleEffect(kind == .favoriteTile ? 1 : 0.97)
 
             rowPreview(model: model)
             .frame(width: size.width, height: size.height)
@@ -169,9 +169,9 @@ struct SidebarFloatingDragPreview: View {
     }
 
     @ViewBuilder
-    private func essentialsPreview(model: SidebarDragPreviewModel) -> some View {
+    private func favoritePreview(model: SidebarDragPreviewModel) -> some View {
         if let split = model.splitPresentation {
-            EssentialSplitCompactVisual(
+            FavoriteSplitCompactVisual(
                 members: split.members,
                 isGroupActive: model.shortcutPresentationState?.isSelected == true,
                 desaturatesIcons:
@@ -210,8 +210,8 @@ struct SidebarFloatingDragPreview: View {
         model: SidebarDragPreviewModel
     ) -> CGSize {
         switch kind {
-        case .essentialsTile:
-            return resolvedEssentialsTileSize(model: model)
+        case .favoriteTile:
+            return resolvedFavoriteTileSize(model: model)
         case .row, .folderRow:
             return CGSize(
                 width: resolvedRowWidth(model: model),
@@ -220,13 +220,13 @@ struct SidebarFloatingDragPreview: View {
         }
     }
 
-    private func resolvedEssentialsTileSize(model: SidebarDragPreviewModel) -> CGSize {
-        guard case .essentials(let slot) = presentation.frame.hoveredSlot,
+    private func resolvedFavoriteTileSize(model: SidebarDragPreviewModel) -> CGSize {
+        guard case .favorite(let slot) = presentation.frame.hoveredSlot,
               let location = locationTracker.location,
               let hoveredPage = dragState.hoveredInteractivePage(at: location),
-              let metrics = dragState.essentialsLayoutMetricsBySpace[hoveredPage.spaceId]
+              let metrics = dragState.favoriteLayoutMetricsBySpace[hoveredPage.spaceId]
         else {
-            if model.sourceZone == .essentials, model.sourceSize.width > 0, model.sourceSize.height > 0 {
+            if model.sourceZone == .favorite, model.sourceSize.width > 0, model.sourceSize.height > 0 {
                 return model.sourceSize
             }
             return CGSize(width: PinnedTileMetrics.minWidth, height: PinnedTileMetrics.height)
@@ -243,12 +243,12 @@ struct SidebarFloatingDragPreview: View {
         }
 
         let items = profileId.map {
-            browserContext.essentialItems($0, hoveredPage.spaceId)
+            browserContext.favoriteItems($0, hoveredPage.spaceId)
         } ?? []
-        let projection = SidebarEssentialsProjectionPolicy.make(
+        let projection = SidebarFavoriteProjectionPolicy.make(
             items: items,
             width: metrics.frame.width,
-            dragPresentation: essentialsPresentation.frame
+            dragPresentation: favoritePresentation.frame
         )
 
         if let row = projection.rows.first(where: { row in
@@ -287,7 +287,7 @@ struct SidebarFloatingDragPreview: View {
             return target.headerFrame?.width
                 ?? target.bodyFrame?.width
                 ?? target.afterFrame?.width
-        case .essentials, .empty:
+        case .favorite, .empty:
             return nil
         }
     }
@@ -316,7 +316,7 @@ struct SidebarFloatingDragPreview: View {
 }
 
 private struct SidebarSplitRowPreviewVisual: View {
-    let members: [EssentialSplitTileMemberPresentation]
+    let members: [FavoriteSplitTileMemberPresentation]
     let desaturatesIcons: Bool
 
     @Environment(\.sumiSettings) private var sumiSettings
@@ -369,7 +369,7 @@ private struct SidebarSplitRowPreviewVisual: View {
             return [
                 SidebarSplitRowPreviewSlot(
                     id: 0,
-                    member: EssentialSplitTileMemberPresentation(
+                    member: FavoriteSplitTileMemberPresentation(
                         icon: Image(systemName: "globe"),
                         glyphText: nil,
                         systemImageName: "globe",
@@ -387,10 +387,10 @@ private struct SidebarSplitRowPreviewVisual: View {
 
 private struct SidebarSplitRowPreviewSlot: Identifiable {
     let id: Int
-    let member: EssentialSplitTileMemberPresentation
+    let member: FavoriteSplitTileMemberPresentation
 }
 
-private extension EssentialSplitTileMemberPresentation {
+private extension FavoriteSplitTileMemberPresentation {
     var splitGroupRowIcon: SplitGroupRowIcon {
         if let glyphText {
             return .emoji(glyphText)

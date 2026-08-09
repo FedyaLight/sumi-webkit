@@ -22,7 +22,7 @@ final class TabLastSessionMergeTests: XCTestCase {
             ],
             currentSpaceId: liveSpaceId,
             foldersBySpace: [:],
-            essentialPinsByProfile: [:],
+            favoritePinsByProfile: [:],
             spacePinnedShortcuts: [:],
             regularTabsBySpace: [
                 liveSpaceId: [.init(id: liveTabId, index: 7)],
@@ -81,7 +81,7 @@ final class TabLastSessionMergeTests: XCTestCase {
             spaces: [.init(id: spaceId, profileId: profileId)],
             currentSpaceId: nil,
             foldersBySpace: [:],
-            essentialPinsByProfile: [:],
+            favoritePinsByProfile: [:],
             spacePinnedShortcuts: [:],
             regularTabsBySpace: [:]
         )

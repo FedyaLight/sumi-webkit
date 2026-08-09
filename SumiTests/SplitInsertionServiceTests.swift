@@ -645,11 +645,11 @@ private extension SplitInsertionServiceTests {
         )
         let pin = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: profileID,
             index: 0,
-            launchURL: URL(string: "https://essential.example")!,
-            title: "Essential"
+            launchURL: URL(string: "https://favorite.example")!,
+            title: "Favorite"
         )
         fixture.manager.shortcutPinCollectionStateOwner
             .replacePinnedByProfile([profileID: [pin]])

@@ -3,7 +3,7 @@ import SwiftUI
 
 enum SidebarDragPreviewKind: Hashable {
     case row
-    case essentialsTile
+    case favoriteTile
     case folderRow
 }
 
@@ -13,9 +13,9 @@ struct SidebarDragPreviewAsset {
     let anchorOffset: CGPoint
 }
 
-/// One ordered visual member shared by live Essentials, transition snapshots,
+/// One ordered visual member shared by live Favorite, transition snapshots,
 /// and drag presentations.
-struct EssentialSplitTileMemberPresentation {
+struct FavoriteSplitTileMemberPresentation {
     let icon: Image
     let glyphText: String?
     let systemImageName: String?
@@ -26,9 +26,9 @@ struct EssentialSplitTileMemberPresentation {
 
 /// Drag presentation retains the same coherent members as the live tile.
 struct SidebarSplitDragPresentation {
-    typealias Member = EssentialSplitTileMemberPresentation
+    typealias Member = FavoriteSplitTileMemberPresentation
 
-    let members: [EssentialSplitTileMemberPresentation]
+    let members: [FavoriteSplitTileMemberPresentation]
 }
 
 struct SidebarDragPreviewModel {

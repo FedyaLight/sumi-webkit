@@ -72,8 +72,8 @@ struct SidebarInteractiveOwnerRecoveryResult: Equatable {
 
 func sidebarDropZoneDebugDescription(_ dropZoneID: DropZoneID) -> String {
     switch dropZoneID {
-    case .essentials:
-        return "essentials"
+    case .favorite:
+        return "favorite"
     case .spacePinned(let id):
         return "spacePinned(\(id.uuidString))"
     case .spaceRegular(let id):

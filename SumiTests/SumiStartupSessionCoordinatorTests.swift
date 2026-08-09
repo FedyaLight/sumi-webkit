@@ -58,13 +58,13 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         defer { harness.defaults.reset() }
         let profile = Profile(name: "Primary")
         let space = Space(name: "Primary", profileId: profile.id)
-        let essential = ShortcutPin(
+        let favorite = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: profile.id,
             index: 0,
-            launchURL: URL(string: "https://essential.example")!,
-            title: "Essential"
+            launchURL: URL(string: "https://favorite.example")!,
+            title: "Favorite"
         )
         let spacePin = makeSpacePin(spaceId: space.id)
 
@@ -77,7 +77,7 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
             for: space.id
         )
         harness.browserManager.structuralCollectionMutationOwner.setPinnedTabs(
-            [essential],
+            [favorite],
             for: profile.id
         )
         harness.browserManager.structuralCollectionMutationOwner
@@ -99,21 +99,21 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
             materializer: harness.browserManager.shortcutTabMaterializer,
             profiles: harness.browserManager.shortcutExecutionProfileAssignments
         )
-        let essentialTab = try XCTUnwrap(
+        let favoriteTab = try XCTUnwrap(
             execution.materialize(
-                essential,
+                favorite,
                 in: harness.windowState,
                 currentSpaceID: harness.windowState.currentSpaceId
             )
         )
         XCTAssertTrue(
             harness.browserManager.browserTabSelection.selectTab(
-                essentialTab,
+                favoriteTab,
                 in: harness.windowState,
                 loadPolicy: .deferred
             ).wasCommitted
         )
-        XCTAssertEqual(harness.windowState.currentTabId, essentialTab.id)
+        XCTAssertEqual(harness.windowState.currentTabId, favoriteTab.id)
 
         let spacePinnedTab = try XCTUnwrap(
             execution.materialize(

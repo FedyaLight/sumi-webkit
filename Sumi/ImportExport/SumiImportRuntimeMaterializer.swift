@@ -36,7 +36,7 @@ final class SumiImportRuntimeMaterializer: SumiImportRuntimeMaterializing {
         let spacesChanged = data.spaces != baseline.spaces
         let foldersChanged = data.folders != baseline.folders
         let tabsChanged = data.regularTabs != baseline.regularTabs
-        let essentialsChanged = data.essentials != baseline.essentials
+        let favoriteChanged = data.favorite != baseline.favorite
         let spacePinsChanged = data.pinnedLaunchers != baseline.pinnedLaunchers
         let profileIdentitiesChanged = data.profiles.map(\.id) != baseline.profiles.map(\.id)
         let structuralIdentitiesChanged = data.spaces.map(\.id) != baseline.spaces.map(\.id)
@@ -77,8 +77,8 @@ final class SumiImportRuntimeMaterializer: SumiImportRuntimeMaterializing {
                 checkpoint: checkpoint
             )
             : checkpoint.tabsBySpace
-        let pinnedByProfile = try essentialsChanged
-            ? makeEssentials(data.essentials, profiles: profiles, checkpoint: checkpoint)
+        let pinnedByProfile = try favoriteChanged
+            ? makeFavorite(data.favorite, profiles: profiles, checkpoint: checkpoint)
             : checkpoint.pinnedByProfile
         let spacePinnedShortcuts = try spacePinsChanged
             ? makeSpacePins(
@@ -264,7 +264,7 @@ final class SumiImportRuntimeMaterializer: SumiImportRuntimeMaterializing {
         })
     }
 
-    private func makeEssentials(
+    private func makeFavorite(
         _ records: [SumiPortableLauncher],
         profiles: [Profile],
         checkpoint: SumiImportRuntimeState
@@ -286,7 +286,7 @@ final class SumiImportRuntimeMaterializer: SumiImportRuntimeMaterializing {
                     if let existing = existingById[id],
                        pinMatches(
                            existing,
-                           role: .essential,
+                           role: .favorite,
                            profileId: profile.id,
                            executionProfileId: executionProfileId,
                            spaceId: nil,
@@ -301,7 +301,7 @@ final class SumiImportRuntimeMaterializer: SumiImportRuntimeMaterializing {
                     }
                     return ShortcutPin(
                         id: id,
-                        role: .essential,
+                        role: .favorite,
                         profileId: profile.id,
                         executionProfileId: executionProfileId,
                         index: record.index,

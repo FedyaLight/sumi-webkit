@@ -22,7 +22,7 @@ struct SumiImportRequest: Sendable {
         bulkKinds: Set<SumiImportBulkKind> = []
     ) {
         var effectiveCategories = categories
-        if categories.contains(.spaces) || categories.contains(.essentials) {
+        if categories.contains(.spaces) || categories.contains(.favorite) {
             effectiveCategories.insert(.profiles)
         }
         self.sourceKind = sourceKind
@@ -93,7 +93,7 @@ struct SumiImportPlan: Equatable, Sendable {
         targetRuntimeData.profiles != baseline.profiles
             || targetRuntimeData.spaces != baseline.spaces
             || targetRuntimeData.folders != baseline.folders
-            || targetRuntimeData.essentials != baseline.essentials
+            || targetRuntimeData.favorite != baseline.favorite
             || targetRuntimeData.pinnedLaunchers != baseline.pinnedLaunchers
             || targetRuntimeData.regularTabs != baseline.regularTabs
     }

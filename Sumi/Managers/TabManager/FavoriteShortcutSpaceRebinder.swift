@@ -2,7 +2,7 @@ import Foundation
 import SumiDomain
 
 @MainActor
-final class EssentialShortcutSpaceRebinder {
+final class FavoriteShortcutSpaceRebinder {
     enum Outcome {
         case notApplicable
         case rejected
@@ -35,7 +35,7 @@ final class EssentialShortcutSpaceRebinder {
         guard tab.isShortcutLiveInstance, let source else {
             return .notApplicable
         }
-        guard source.role == .essential else { return .notApplicable }
+        guard source.role == .favorite else { return .notApplicable }
         let detached = resolution.makeShortcutPin(
             from: tab,
             role: .spacePinned,

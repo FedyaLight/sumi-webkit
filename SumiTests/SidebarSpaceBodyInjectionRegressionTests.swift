@@ -512,25 +512,25 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
             windowID: unrelatedWindowID,
             spaceID: presentationSpace.id
         ).sink { _ in unrelatedChanges += 1 }
-        let sourceEssential = ShortcutPin(
+        let sourceFavorite = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: presentationProfileID,
             executionProfileId: executionProfileID,
             spaceId: nil,
             index: 0,
-            launchURL: URL(string: "https://essential-source.example")!,
-            title: "Essential Source"
+            launchURL: URL(string: "https://favorite-source.example")!,
+            title: "Favorite Source"
         )
-        let targetEssential = ShortcutPin(
+        let targetFavorite = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: presentationProfileID,
             executionProfileId: executionProfileID,
             spaceId: nil,
             index: 0,
-            launchURL: URL(string: "https://essential-target.example")!,
-            title: "Essential Target"
+            launchURL: URL(string: "https://favorite-target.example")!,
+            title: "Favorite Target"
         )
         let accountFork = ShortcutPin(
             id: UUID(),
@@ -542,34 +542,34 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
             title: "Account Fork"
         )
 
-        let essentialTab = tabManager.shortcutTabMaterializer.materialize(
-            sourceEssential,
+        let favoriteTab = tabManager.shortcutTabMaterializer.materialize(
+            sourceFavorite,
             in: window.id,
             currentSpaceId: presentationSpace.id
         )!
-        XCTAssertNil(essentialTab.spaceId)
-        XCTAssertEqual(essentialTab.profileId, executionProfileID)
+        XCTAssertNil(favoriteTab.spaceId)
+        XCTAssertEqual(favoriteTab.profileId, executionProfileID)
         XCTAssertEqual(firstSameProfileChanges, 0)
         XCTAssertEqual(presentationChanges, 1)
         XCTAssertTrue(shortcutBindings(for: tabManager).rebind(
-            essentialTab,
-            from: sourceEssential,
-            to: targetEssential
+            favoriteTab,
+            from: sourceFavorite,
+            to: targetFavorite
         ))
         XCTAssertEqual(firstSameProfileChanges, 0)
         XCTAssertEqual(presentationChanges, 2)
 
         XCTAssertIdentical(
             tabManager.shortcutTabMaterializer.materialize(
-                targetEssential,
+                targetFavorite,
                 in: window.id,
                 currentSpaceId: firstSameProfileSpace.id
             ),
-            essentialTab
+            favoriteTab
         )
         XCTAssertEqual(firstSameProfileChanges, 1)
         XCTAssertEqual(presentationChanges, 3)
-        tabManager.tabClosureService.removeTab(essentialTab.id)
+        tabManager.tabClosureService.removeTab(favoriteTab.id)
         XCTAssertEqual(firstSameProfileChanges, 2)
         XCTAssertEqual(presentationChanges, 3)
 
@@ -587,7 +587,7 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
 
         let unpresentedPin = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: presentationProfileID,
             index: 0,
             launchURL: URL(string: "https://no-presentation.example")!,

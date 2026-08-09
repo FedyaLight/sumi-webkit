@@ -79,7 +79,7 @@ struct TabRestoreSnapshotBuilder: Sendable {
             name: shortcut.title,
             index: shortcut.index,
             spaceId: shortcut.spaceId,
-            isPinned: shortcut.role == .essential,
+            isPinned: shortcut.role == .favorite,
             isSpacePinned: shortcut.role == .spacePinned,
             profileId: shortcut.profileId,
             executionProfileId: shortcut.executionProfileId,

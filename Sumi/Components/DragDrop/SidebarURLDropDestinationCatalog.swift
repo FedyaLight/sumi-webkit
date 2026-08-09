@@ -4,26 +4,26 @@ import Foundation
 protocol SidebarURLDropDestinationResolving: AnyObject {
     func space(_ spaceID: UUID) -> Space?
     func folder(_ folderID: UUID) -> (folder: TabFolder, space: Space)?
-    func essentialsInsertion(
+    func favoriteInsertion(
         in windowState: BrowserWindowState,
         at index: Int
-    ) -> EssentialsShortcutPlacementOwner.InsertionPlan?
+    ) -> FavoriteShortcutPlacementOwner.InsertionPlan?
 }
 
 @MainActor
 final class SidebarURLDropDestinationCatalog: SidebarURLDropDestinationResolving {
     private let spaces: TabSpaceCollectionStateOwner
     private let folders: TabFolderCollectionStateOwner
-    private let essentials: EssentialsShortcutPlacementOwner
+    private let favorite: FavoriteShortcutPlacementOwner
 
     init(
         spaces: TabSpaceCollectionStateOwner,
         folders: TabFolderCollectionStateOwner,
-        essentials: EssentialsShortcutPlacementOwner
+        favorite: FavoriteShortcutPlacementOwner
     ) {
         self.spaces = spaces
         self.folders = folders
-        self.essentials = essentials
+        self.favorite = favorite
     }
 
     func space(_ spaceID: UUID) -> Space? {
@@ -38,13 +38,13 @@ final class SidebarURLDropDestinationCatalog: SidebarURLDropDestinationResolving
         return (folder, space)
     }
 
-    func essentialsInsertion(
+    func favoriteInsertion(
         in windowState: BrowserWindowState,
         at index: Int
-    ) -> EssentialsShortcutPlacementOwner.InsertionPlan? {
-        essentials.resolveInsertion(
-            using: EssentialsShortcutPlacementOwner.InsertionContext(
-                target: EssentialsShortcutPlacementOwner.TargetContext(
+    ) -> FavoriteShortcutPlacementOwner.InsertionPlan? {
+        favorite.resolveInsertion(
+            using: FavoriteShortcutPlacementOwner.InsertionContext(
+                target: FavoriteShortcutPlacementOwner.TargetContext(
                     windowState: windowState
                 ),
                 targetIndex: index

@@ -63,7 +63,7 @@ final class SidebarURLDropServiceTests: XCTestCase {
         XCTAssertTrue(harness.service.open(
             URL(string: "https://private.example")!,
             in: window,
-            atPresentedSlot: .essentials(slot: 7)
+            atPresentedSlot: .favorite(slot: 7)
         ))
 
         XCTAssertEqual(harness.tabOpening.requests.count, 1)
@@ -181,7 +181,7 @@ private final class DropNativeSurfaces: NativeBrowserSurfaceOpening {
 private final class DropDestinations: SidebarURLDropDestinationResolving {
     let spaces: [UUID: Space]
     let folders: [UUID: (folder: TabFolder, space: Space)]
-    var essentials: EssentialsShortcutPlacementOwner.InsertionPlan?
+    var favorite: FavoriteShortcutPlacementOwner.InsertionPlan?
 
     init(
         spaces: [UUID: Space],
@@ -195,11 +195,11 @@ private final class DropDestinations: SidebarURLDropDestinationResolving {
     func folder(_ folderID: UUID) -> (folder: TabFolder, space: Space)? {
         folders[folderID]
     }
-    func essentialsInsertion(
+    func favoriteInsertion(
         in windowState: BrowserWindowState,
         at index: Int
-    ) -> EssentialsShortcutPlacementOwner.InsertionPlan? {
-        essentials
+    ) -> FavoriteShortcutPlacementOwner.InsertionPlan? {
+        favorite
     }
 }
 

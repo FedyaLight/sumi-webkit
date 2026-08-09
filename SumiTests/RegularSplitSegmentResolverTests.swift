@@ -428,8 +428,8 @@ final class RegularSplitSegmentResolverTests: XCTestCase {
         let folderID = UUID()
 
         XCTAssertEqual(
-            resolver.sourceZone(for: makePin(role: .essential)),
-            .essentials
+            resolver.sourceZone(for: makePin(role: .favorite)),
+            .favorite
         )
         XCTAssertEqual(
             resolver.sourceZone(

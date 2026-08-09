@@ -26,7 +26,7 @@ final class SpaceProfileRuntimeStateService {
     ) {
         let materializedShortcutSpaceIds: Set<UUID> = Set(
             liveShortcutTabs.transientShortcutTabs.compactMap { tab in
-                guard tab.shortcutPinRole != .essential else { return nil }
+                guard tab.shortcutPinRole != .favorite else { return nil }
                 return tab.spaceId
             }
         )

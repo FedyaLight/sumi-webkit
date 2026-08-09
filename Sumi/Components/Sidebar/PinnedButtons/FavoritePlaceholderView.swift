@@ -1,18 +1,18 @@
 //
-//  EssentialsPlaceholderView.swift
+//  FavoritePlaceholderView.swift
 //  Sumi
 //
 
 import SwiftUI
 
-/// Fixed metrics for the empty-Essentials placeholder.
+/// Fixed metrics for the empty-Favorite placeholder.
 ///
 /// The height is a constant rather than intrinsic on purpose: the drop-frame the
-/// sidebar reports for the Essentials zone is sized from the layout model, not
-/// from a measured frame (`sidebarEssentialsLayoutGeometry`). An intrinsic height
+/// sidebar reports for the Favorite zone is sized from the layout model, not
+/// from a measured frame (`sidebarFavoriteLayoutGeometry`). An intrinsic height
 /// would need a geometry read-back and would let the hit region drift away from
 /// what the user sees, so the copy is laid out inside a known box instead.
-enum EssentialsPlaceholderMetrics {
+enum FavoritePlaceholderMetrics {
     static let height: CGFloat = 100
     static let horizontalPadding: CGFloat = 14
     static let badgeSize: CGFloat = 22
@@ -26,16 +26,16 @@ enum EssentialsPlaceholderMetrics {
     static let revealAnimationDuration: TimeInterval = 0.18
 }
 
-/// Empty-state affordance for the Essentials zone: without it the zone collapses
+/// Empty-state affordance for the Favorite zone: without it the zone collapses
 /// to an invisible strip and nothing tells the user that dragging a tab here is
-/// how Essentials get added.
+/// how Favorite launchers get added.
 ///
 /// Every colour comes from `ChromeThemeTokens`, which is already resolved against
 /// the space theme's lightness and already cross-fades on space switches — so the
 /// placeholder follows the theme with no colour math of its own at render time.
 /// Deliberately flat: one stroked shape, no material, blur, shadow, or
 /// compositing group, since this sits directly on the sidebar's gradient.
-struct EssentialsPlaceholderView: View {
+struct FavoritePlaceholderView: View {
     let tokens: ChromeThemeTokens
     let cornerRadius: CGFloat
     /// `nil` renders the decorative variant used by the drag-hover reveal and by
@@ -48,11 +48,11 @@ struct EssentialsPlaceholderView: View {
             .strokeBorder(
                 tokens.separator,
                 style: StrokeStyle(
-                    lineWidth: EssentialsPlaceholderMetrics.strokeWidth,
-                    dash: EssentialsPlaceholderMetrics.dashPattern
+                    lineWidth: FavoritePlaceholderMetrics.strokeWidth,
+                    dash: FavoritePlaceholderMetrics.dashPattern
                 )
             )
-            .frame(height: EssentialsPlaceholderMetrics.height)
+            .frame(height: FavoritePlaceholderMetrics.height)
             .overlay { copy }
             .overlay(alignment: .topTrailing) { dismissButton }
             .accessibilityElement(children: .contain)
@@ -63,21 +63,21 @@ struct EssentialsPlaceholderView: View {
             badge
 
             Text("Drag to add Favorites")
-                .font(SidebarThemeTokens.Typography.essentialsPlaceholderTitle)
+                .font(SidebarThemeTokens.Typography.favoritePlaceholderTitle)
                 .foregroundStyle(tokens.primaryText)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
-                .padding(.top, EssentialsPlaceholderMetrics.badgeSpacing)
+                .padding(.top, FavoritePlaceholderMetrics.badgeSpacing)
 
             Text("Favorites keep your most used sites and apps close")
-                .font(SidebarThemeTokens.Typography.essentialsPlaceholderSubtitle)
+                .font(SidebarThemeTokens.Typography.favoritePlaceholderSubtitle)
                 .foregroundStyle(tokens.secondaryText)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
                 .minimumScaleFactor(0.8)
-                .padding(.top, EssentialsPlaceholderMetrics.titleSpacing)
+                .padding(.top, FavoritePlaceholderMetrics.titleSpacing)
         }
-        .padding(.horizontal, EssentialsPlaceholderMetrics.horizontalPadding)
+        .padding(.horizontal, FavoritePlaceholderMetrics.horizontalPadding)
         .allowsHitTesting(false)
     }
 
@@ -85,12 +85,12 @@ struct EssentialsPlaceholderView: View {
         Circle()
             .fill(tokens.buttonPrimaryBackground)
             .frame(
-                width: EssentialsPlaceholderMetrics.badgeSize,
-                height: EssentialsPlaceholderMetrics.badgeSize
+                width: FavoritePlaceholderMetrics.badgeSize,
+                height: FavoritePlaceholderMetrics.badgeSize
             )
             .overlay {
                 Image(systemName: "star.fill")
-                    .font(.system(size: EssentialsPlaceholderMetrics.badgeGlyphSize, weight: .semibold))
+                    .font(.system(size: FavoritePlaceholderMetrics.badgeGlyphSize, weight: .semibold))
                     .foregroundStyle(tokens.buttonPrimaryText)
             }
     }
@@ -100,18 +100,18 @@ struct EssentialsPlaceholderView: View {
         if let onDismiss {
             Button(action: onDismiss) {
                 Image(systemName: "xmark")
-                    .font(SidebarThemeTokens.Typography.essentialsPlaceholderDismiss)
+                    .font(SidebarThemeTokens.Typography.favoritePlaceholderDismiss)
                     .foregroundStyle(tokens.secondaryText)
                     .frame(
-                        width: EssentialsPlaceholderMetrics.dismissHitSize,
-                        height: EssentialsPlaceholderMetrics.dismissHitSize
+                        width: FavoritePlaceholderMetrics.dismissHitSize,
+                        height: FavoritePlaceholderMetrics.dismissHitSize
                     )
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .padding(EssentialsPlaceholderMetrics.dismissInset)
+            .padding(FavoritePlaceholderMetrics.dismissInset)
             .accessibilityLabel("Hide the Favorites hint")
-            .accessibilityIdentifier("essentials-placeholder-dismiss")
+            .accessibilityIdentifier("favorite-placeholder-dismiss")
             .sidebarAppKitPrimaryAction(
                 isInteractionEnabled: isInteractionEnabled,
                 action: onDismiss

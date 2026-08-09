@@ -79,8 +79,8 @@ struct RegularSplitSegmentResolver {
 
     func sourceZone(for pin: ShortcutPin) -> DropZoneID {
         switch pin.role {
-        case .essential:
-            return .essentials
+        case .favorite:
+            return .favorite
         case .spacePinned:
             if let folderId = pin.folderId {
                 return .folder(folderId)

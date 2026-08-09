@@ -47,7 +47,7 @@ struct PinnedGrid: View {
     let reportsGeometry: Bool
     let isAppKitInteractionEnabled: Bool
     @ObservedObject private var dragPresentation:
-        SidebarEssentialsDragPresentation
+        SidebarFavoriteDragPresentation
 
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(WindowRegistry.self) private var windowRegistry
@@ -75,7 +75,7 @@ struct PinnedGrid: View {
         spaceId: UUID? = nil,
         profileId: UUID? = nil,
         isTransitioningProfile: Bool,
-        dragPresentation: SidebarEssentialsDragPresentation,
+        dragPresentation: SidebarFavoriteDragPresentation,
         animateLayout: Bool = true,
         reportsGeometry: Bool = true,
         isAppKitInteractionEnabled: Bool = true
@@ -109,9 +109,9 @@ struct PinnedGrid: View {
         let selectionSnapshot = sidebarSelection
         let dragFrame = dragPresentation.frame
 
-        // Use profile-filtered essentials
+        // Use profile-filtered favorite
         let effectiveProfileId = resolvedProfileId
-        let visualItems = SidebarEssentialVisualProjection.make(
+        let visualItems = SidebarFavoriteVisualProjection.make(
             pins: items,
             splitGroups: Array(inventory.splitGroupsByID.values),
             profileID: effectiveProfileId
@@ -123,7 +123,7 @@ struct PinnedGrid: View {
             dragGeometry: dragGeometry,
             geometrySpaceId: geometrySpaceId,
             effectiveProfileId: effectiveProfileId,
-            showsHint: sumiSettings.showsEssentialsPlaceholder(
+            showsHint: sumiSettings.showsFavoritePlaceholder(
                 profileId: effectiveProfileId
             ),
             animateLayout: animateLayout,
@@ -196,7 +196,7 @@ struct PinnedGrid: View {
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .frame(minHeight: visualItems.isEmpty ? revealHeight : 0, alignment: .top)
-        .sidebarEssentialsLayoutGeometry(
+        .sidebarFavoriteLayoutGeometry(
             spaceId: geometrySpaceId,
             profileId: effectiveProfileId,
             itemCount: projectedLayout.projectedItemCount,
@@ -235,7 +235,7 @@ struct PinnedGrid: View {
         VStack(spacing: 0) {
             switch presentation {
             case .placeholder:
-                EssentialsPlaceholderView(
+                FavoritePlaceholderView(
                     tokens: tokens,
                     cornerRadius: sumiSettings.resolvedCornerRadius(
                         PinnedTileMetrics.cornerRadius
@@ -245,14 +245,14 @@ struct PinnedGrid: View {
                 )
             case .collapsed:
                 Color.clear
-                    .frame(height: PinnedTileMetrics.collapsedEssentialsRevealHeight)
+                    .frame(height: PinnedTileMetrics.collapsedFavoriteRevealHeight)
             }
         }
         .frame(maxWidth: .infinity, alignment: .top)
         .frame(height: revealHeight, alignment: .top)
         .animation(
             animatesReveal
-                ? .easeInOut(duration: EssentialsPlaceholderMetrics.revealAnimationDuration)
+                ? .easeInOut(duration: FavoritePlaceholderMetrics.revealAnimationDuration)
                 : nil,
             value: presentation
         )
@@ -264,14 +264,14 @@ struct PinnedGrid: View {
         tileSize: CGSize,
         selectionSnapshot: SidebarWindowSelectionSnapshot
     ) -> some View {
-        EssentialSplitGroupTile(
+        FavoriteSplitGroupTile(
             group: group,
             pinsByID: Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) }),
             launcherRuntime: launcherRuntime,
             selection: selection,
             selectionSnapshot: selectionSnapshot,
             faviconImageReader: browserContext.faviconImageReader,
-            essentialBackdropReader: browserContext.essentialBackdropReader,
+            favoriteBackdropReader: browserContext.favoriteBackdropReader,
             splitLayout: browserContext.splitLayout,
             emptySplitCreation: browserContext.emptySplitCreation,
             groupEditor: browserContext.splitGroupEditor,
@@ -317,7 +317,7 @@ struct PinnedGrid: View {
             selectionSnapshot: selectionSnapshot
         )
         let liveTab = launcherRuntime.liveTab(for: pin.id)
-        let contextMenuActions = essentialTileActionOwner.contextMenuActions(for: pin)
+        let contextMenuActions = favoriteTileActionOwner.contextMenuActions(for: pin)
 
         PinnedTile(
             pin: pin,
@@ -326,16 +326,16 @@ struct PinnedGrid: View {
                 currentSpaceID: windowState.currentSpaceId
             ),
             faviconImageReader: browserContext.faviconImageReader,
-            essentialBackdropReader: browserContext.essentialBackdropReader,
+            favoriteBackdropReader: browserContext.favoriteBackdropReader,
             presentationState: presentationState,
             liveTab: liveTab,
-            essentialRuntimeState: essentialRuntimeState(
+            favoriteRuntimeState: favoriteRuntimeState(
                 pin,
                 selectionSnapshot: selectionSnapshot
             ),
-            accessibilityID: "essential-shortcut-\(pin.id.uuidString)",
+            accessibilityID: "favorite-shortcut-\(pin.id.uuidString)",
             onActivate: { activate(pin) },
-            onUnload: { essentialTileActionOwner.unload(pin) },
+            onUnload: { favoriteTileActionOwner.unload(pin) },
             contextMenuActions: contextMenuActions,
             dragIsEnabled: !isTransitioningProfile && isAppKitInteractionEnabled,
             isAppKitInteractionEnabled: isAppKitInteractionEnabled
@@ -378,11 +378,11 @@ struct PinnedGrid: View {
         )
     }
 
-    private func essentialRuntimeState(
+    private func favoriteRuntimeState(
         _ pin: ShortcutPin,
         selectionSnapshot: SidebarWindowSelectionSnapshot
-    ) -> SumiEssentialRuntimeState? {
-        selection.essentialRuntimeState(
+    ) -> SumiFavoriteRuntimeState? {
+        selection.favoriteRuntimeState(
             for: pin,
             liveTab: launcherRuntime.liveTab(for: pin.id),
             in: windowState,
@@ -390,7 +390,7 @@ struct PinnedGrid: View {
         )
     }
 
-    /// Essentials are profile-scoped, so every profile-keyed read in this view
+    /// Favorite launchers are profile-scoped, so every profile-keyed read in this view
     /// resolves through the same explicit → window → authority fallback.
     private var resolvedProfileId: UUID? {
         profileId
@@ -402,7 +402,7 @@ struct PinnedGrid: View {
         guard let resolvedProfileId else { return }
 
         mutateContentLayout {
-            sumiSettings.dismissEssentialsPlaceholder(profileId: resolvedProfileId)
+            sumiSettings.dismissFavoritePlaceholder(profileId: resolvedProfileId)
         }
     }
 
@@ -419,8 +419,8 @@ struct PinnedGrid: View {
         )
     }
 
-    private var essentialTileActionOwner: EssentialTileActionOwner {
-        EssentialTileActionOwner(
+    private var favoriteTileActionOwner: FavoriteTileActionOwner {
+        FavoriteTileActionOwner(
             browserContext: browserContext,
             inventory: inventory,
             selection: selection,

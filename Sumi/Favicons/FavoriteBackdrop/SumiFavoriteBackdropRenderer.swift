@@ -3,7 +3,7 @@ import ImageIO
 import UniformTypeIdentifiers
 
 @MainActor
-enum SumiEssentialBackdropRenderer {
+enum SumiFavoriteBackdropRenderer {
     static let pixelDimension = 16
     private static let blurRadius = 3
     private static let blurPassCount = 3

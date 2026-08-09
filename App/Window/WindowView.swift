@@ -209,9 +209,9 @@ struct WindowView: View {
                             currentProfileID: {
                                 sidebarContext.currentProfileID()
                             },
-                            essentialItems: { profileId, spaceId in
-                                SidebarEssentialVisualProjection.make(
-                                    pins: sidebarContext.essentialPins(
+                            favoriteItems: { profileId, spaceId in
+                                SidebarFavoriteVisualProjection.make(
+                                    pins: sidebarContext.favoritePins(
                                         profileID: profileId
                                     ),
                                     splitGroups: sidebarContext.inventory

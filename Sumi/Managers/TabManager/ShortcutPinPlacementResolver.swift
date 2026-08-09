@@ -30,13 +30,13 @@ final class ShortcutPinPlacementResolver {
 
         let destinationCount: Int
         switch pin.role {
-        case .essential:
+        case .favorite:
             guard let profileID = pin.profileId else { return nil }
-            destinationCount = pins.essentialPins(for: profileID)
+            destinationCount = pins.favoritePins(for: profileID)
                 .filter { $0.id != pin.id }
                 .count
             guard destinationCount
-                    < EssentialsShortcutPlacementOwner.CapacityPolicy
+                    < FavoriteShortcutPlacementOwner.CapacityPolicy
                         .maxStoredMembers
             else { return nil }
         case .spacePinned:
@@ -93,9 +93,9 @@ final class ShortcutPinPlacementResolver {
             return nil
         }
         switch pin.role {
-        case .essential:
+        case .favorite:
             guard let profileID = pin.profileId,
-                  pins.essentialPins(for: profileID).contains(where: {
+                  pins.favoritePins(for: profileID).contains(where: {
                       $0 === pin
                   }) else { return nil }
         case .spacePinned:
@@ -120,11 +120,11 @@ final class ShortcutPinPlacementResolver {
             folderId: folderId
         ) else { return false }
         switch role {
-        case .essential:
+        case .favorite:
             guard let profileId else { return false }
-            return pins.essentialPins(for: profileId)
+            return pins.favoritePins(for: profileId)
                 .filter { $0.id != pin.id }
-                .count < EssentialsShortcutPlacementOwner.CapacityPolicy
+                .count < FavoriteShortcutPlacementOwner.CapacityPolicy
                     .maxStoredMembers
         case .spacePinned:
             return spaceId != nil
@@ -148,9 +148,9 @@ final class ShortcutPinPlacementResolver {
 
         let currentIndex: Int?
         switch role {
-        case .essential:
+        case .favorite:
             guard let profileId else { return proposedIndex }
-            currentIndex = pins.essentialPins(for: profileId)
+            currentIndex = pins.favoritePins(for: profileId)
                 .firstIndex(where: { $0 === pin })
         case .spacePinned:
             guard let spaceId else { return proposedIndex }

@@ -135,7 +135,7 @@ final class BrowserTabCloseFallbackPlanner {
                     in: windowState.id
                 ),
                    excludingTabIds.contains(liveTab.id) == false,
-                   liveTab.shortcutPinRole == .essential
+                   liveTab.shortcutPinRole == .favorite
                     || liveTab.spaceId == targetSpaceId {
                     return liveTab
                 }

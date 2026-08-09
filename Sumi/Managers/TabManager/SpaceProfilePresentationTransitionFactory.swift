@@ -53,7 +53,7 @@ final class SpaceProfilePresentationTransitionFactory {
                         profileID: targetProfileID
                     )
                 ))
-            case .essential:
+            case .favorite:
                 guard let profileID = pin.profileId,
                       profileID == expectedProfileID,
                       entry.tab.spaceId == nil,

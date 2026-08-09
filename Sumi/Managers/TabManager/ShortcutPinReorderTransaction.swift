@@ -6,25 +6,25 @@ final class ShortcutPinReorderTransaction {
     private let structuralLookup: TabStructuralLookupCoordinator
     private let liveFolders: ShortcutLiveFolderPlacementReconciler
     private let spacePinnedVisualOrder: SpacePinnedVisualOrderTransaction
-    private let essentialsVisualOrder: EssentialsVisualOrderTransaction
+    private let favoriteVisualOrder: FavoriteVisualOrderTransaction
 
     init(
         structuralLookup: TabStructuralLookupCoordinator,
         liveFolders: ShortcutLiveFolderPlacementReconciler,
         spacePinnedVisualOrder: SpacePinnedVisualOrderTransaction,
-        essentialsVisualOrder: EssentialsVisualOrderTransaction
+        favoriteVisualOrder: FavoriteVisualOrderTransaction
     ) {
         self.structuralLookup = structuralLookup
         self.liveFolders = liveFolders
         self.spacePinnedVisualOrder = spacePinnedVisualOrder
-        self.essentialsVisualOrder = essentialsVisualOrder
+        self.favoriteVisualOrder = favoriteVisualOrder
     }
 
-    func reorderEssential(_ pin: ShortcutPin, to index: Int) -> Bool {
+    func reorderFavorite(_ pin: ShortcutPin, to index: Int) -> Bool {
         structuralLookup.withTransaction {
             guard self.liveFolders.isCurrent(pin) else { return false }
             guard let profileID = pin.profileId else { return false }
-            return essentialsVisualOrder.reorder(
+            return favoriteVisualOrder.reorder(
                 .shortcut(pin.id),
                 for: profileID,
                 to: index

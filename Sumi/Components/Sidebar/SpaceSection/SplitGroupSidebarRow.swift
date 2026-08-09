@@ -239,7 +239,7 @@ struct SplitGroupSidebarRow: View {
         switch group.container {
         case .regularTabs:
             return false
-        case .essentialSidebar, .shortcutSidebar:
+        case .favoriteSidebar, .shortcutSidebar:
             return items.contains { $0.tab != nil } == false
         }
     }

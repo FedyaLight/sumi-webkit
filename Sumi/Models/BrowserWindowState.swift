@@ -254,7 +254,7 @@ class BrowserWindowState {
         }
     }
 
-    /// Most recently selected non-essential live shortcut for each space in this window.
+    /// Most recently selected non-favorite live shortcut for each space in this window.
     var selectedShortcutPinForSpace: [UUID: UUID] {
         get {
             access(keyPath: \.selectedShortcutPinForSpace)

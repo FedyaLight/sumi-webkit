@@ -148,7 +148,7 @@ final class SumiLaunchSmokeUIFixtureTests: SumiLaunchSmokeUITestCase {
                 SumiSmokeFixtureIDs.secondaryRegularTab,
                 SumiSmokeFixtureIDs.folder,
                 SumiSmokeFixtureIDs.folderLauncher,
-                SumiSmokeFixtureIDs.essential,
+                SumiSmokeFixtureIDs.favorite,
             ].sorted()
         )
         XCTAssertEqual(

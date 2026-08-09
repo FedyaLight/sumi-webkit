@@ -158,7 +158,7 @@ struct ProfileReferenceInventory {
             switch group.container {
             case .regularTabs:
                 break
-            case .essentialSidebar(let profileID, _),
+            case .favoriteSidebar(let profileID, _),
                  .shortcutSidebar(_, let profileID, _, _):
                 profileIDs.insertIfPresent(profileID)
             }

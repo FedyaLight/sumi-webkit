@@ -415,7 +415,7 @@ final class SidebarDropIndicatorGeometryTests: XCTestCase {
 
     // MARK: - Hidden states
 
-    func testLineHiddenForEmptyAndEssentialsSlots() {
+    func testLineHiddenForEmptyAndFavoriteSlots() {
         XCTAssertNil(
             SidebarDropIndicatorGeometry.lineRect(
                 slot: .empty,
@@ -425,7 +425,7 @@ final class SidebarDropIndicatorGeometryTests: XCTestCase {
         )
         XCTAssertNil(
             SidebarDropIndicatorGeometry.lineRect(
-                slot: .essentials(slot: 2),
+                slot: .favorite(slot: 2),
                 folderIntent: .none,
                 geometry: .empty
             )

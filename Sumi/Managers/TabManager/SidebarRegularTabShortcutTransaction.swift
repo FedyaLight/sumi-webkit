@@ -5,20 +5,20 @@ import SumiDomain
 final class SidebarRegularTabShortcutTransaction {
     private let placement: ShortcutPinPlacementCommandService
     private let conversion: RegularTabShortcutConversionCommand
-    private let essentialsPlacement: EssentialsShortcutPlacementOwner
+    private let favoritePlacement: FavoriteShortcutPlacementOwner
     private let folders: TabFolderCollectionStateOwner
     private let pins: ShortcutPinCollectionStateOwner
 
     init(
         placement: ShortcutPinPlacementCommandService,
         conversion: RegularTabShortcutConversionCommand,
-        essentialsPlacement: EssentialsShortcutPlacementOwner,
+        favoritePlacement: FavoriteShortcutPlacementOwner,
         folders: TabFolderCollectionStateOwner,
         pins: ShortcutPinCollectionStateOwner
     ) {
         self.placement = placement
         self.conversion = conversion
-        self.essentialsPlacement = essentialsPlacement
+        self.favoritePlacement = favoritePlacement
         self.folders = folders
         self.pins = pins
     }
@@ -47,10 +47,10 @@ final class SidebarRegularTabShortcutTransaction {
         )
     }
 
-    func resolvedEssentialsProfileID(
+    func resolvedFavoriteProfileID(
         for operation: DragOperation
     ) -> UUID? {
-        essentialsPlacement.resolvedProfileId(for: operation)
+        favoritePlacement.resolvedProfileId(for: operation)
     }
 
     func folderSpaceID(for folderID: UUID) -> UUID? {
@@ -77,12 +77,12 @@ final class SidebarRegularTabShortcutTransaction {
         ) != nil
     }
 
-    func reorderEssential(_ tab: Tab, to index: Int) -> Bool {
+    func reorderFavorite(_ tab: Tab, to index: Int) -> Bool {
         guard let shortcutID = tab.shortcutPinId,
               let pin = pins.shortcutPin(by: shortcutID),
               pin.profileId != nil else {
             return false
         }
-        return placement.reorderEssential(pin, to: index)
+        return placement.reorderFavorite(pin, to: index)
     }
 }

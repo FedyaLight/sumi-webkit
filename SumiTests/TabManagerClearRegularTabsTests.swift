@@ -103,7 +103,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
         staleTab.profileId = deletedProfileId
         let deletedPin = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: deletedProfileId,
             index: 0,
             launchURL: URL(string: "https://old.example")!,
@@ -442,7 +442,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
         XCTAssertEqual(liveTab.profileId, pinnedProfileId)
     }
 
-    func testAssigningEssentialProfileKeepsEssentialOwnerProfile() throws {
+    func testAssigningFavoriteProfileKeepsFavoriteOwnerProfile() throws {
         let ownerProfileId = UUID()
         let executionProfileId = UUID()
         let profiles = [
@@ -466,7 +466,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
         let pin = try XCTUnwrap(
             convert(
                 tab,
-                to: .essential,
+                to: .favorite,
                 profileId: ownerProfileId,
                 spaceId: nil,
                 in: tabManager
@@ -484,7 +484,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
         XCTAssertEqual(updatedPin.executionProfileId, executionProfileId)
         XCTAssertEqual(
             tabManager.shortcutPinCollectionStateOwner
-                .essentialPins(for: ownerProfileId).first?.id,
+                .favoritePins(for: ownerProfileId).first?.id,
             pin.id
         )
     }
@@ -520,7 +520,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
 
         let pin = try XCTUnwrap(
             tabManager.shortcutPinCollectionStateOwner
-                .essentialPins(for: profileId).first
+                .favoritePins(for: profileId).first
         )
         let liveTab = try XCTUnwrap(tabManager.shortcutPresentationOwner.activeShortcutTab(for: windowState.id))
         XCTAssertEqual(liveTab.id, tab.id)
@@ -576,7 +576,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
 
         let pin = try XCTUnwrap(
             tabManager.shortcutPinCollectionStateOwner
-                .essentialPins(for: profileId).first
+                .favoritePins(for: profileId).first
         )
         let primaryLiveTab = try XCTUnwrap(tabManager.shortcutPresentationOwner.activeShortcutTab(for: primaryWindow.id))
         XCTAssertEqual(primaryLiveTab.id, tab.id)
@@ -612,7 +612,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
         XCTAssertEqual(tabManager.tabStateStore.selection.currentTab?.id, liveTab.id)
     }
 
-    func testProfileCleanupDoesNotKeepRemovedEssentialLiveTab() async throws {
+    func testProfileCleanupDoesNotKeepRemovedFavoriteLiveTab() async throws {
         let deletedProfileId = UUID()
         let fallbackProfileId = UUID()
         let profiles = [
@@ -641,7 +641,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
         windowState.currentProfileId = deletedProfileId
         let pin = try XCTUnwrap(tabManager.shortcutPinStoreOwner.insert(ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: deletedProfileId,
             index: 0,
             launchURL: URL(string: "https://example.com")!,
@@ -682,18 +682,18 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
         let tab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/app", in: space, activate: false)
         tab.profileId = profileId
 
-        let essentialPin = try XCTUnwrap(
+        let favoritePin = try XCTUnwrap(
             convert(
                 tab,
-                to: .essential,
+                to: .favorite,
                 profileId: profileId,
                 spaceId: nil,
                 in: tabManager
             )
         )
-        XCTAssertNil(essentialPin.executionProfileId)
-        XCTAssertEqual(tabManager.shortcutPinRuntimeResolutionOwner.resolvedExecutionProfileId(for: essentialPin), profileId)
-        XCTAssertEqual(tabManager.shortcutPinRuntimeResolutionOwner.resolvedFaviconPartition(for: essentialPin), .regular(profileId))
+        XCTAssertNil(favoritePin.executionProfileId)
+        XCTAssertEqual(tabManager.shortcutPinRuntimeResolutionOwner.resolvedExecutionProfileId(for: favoritePin), profileId)
+        XCTAssertEqual(tabManager.shortcutPinRuntimeResolutionOwner.resolvedFaviconPartition(for: favoritePin), .regular(profileId))
 
         let spacePinnedTab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/space", in: space, activate: false)
         spacePinnedTab.profileId = profileId

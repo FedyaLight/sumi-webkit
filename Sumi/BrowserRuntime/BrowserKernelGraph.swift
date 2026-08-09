@@ -46,7 +46,7 @@ struct BrowserKernelGraph {
     let shortcutExecutionProfileAssignments:
         ShortcutExecutionProfileAssignmentService
     let sidebarDragRouter: SidebarDragOperationRouter
-    let essentialsShortcutPlacementOwner: EssentialsShortcutPlacementOwner
+    let favoriteShortcutPlacementOwner: FavoriteShortcutPlacementOwner
     let shortcutPinStoreOwner: ShortcutPinStoreOwner
     let shortcutPinRuntimeResolutionOwner:
         ShortcutPinRuntimeResolutionOwner

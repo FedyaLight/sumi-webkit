@@ -156,7 +156,7 @@ class SidebarDragContextTestCase: XCTestCase {
         )
     }
 
-    func makeEssentialPin(
+    func makeFavoritePin(
         _ tabManager: BrowserManager,
         in space: Space,
         profileId: UUID,
@@ -168,7 +168,7 @@ class SidebarDragContextTestCase: XCTestCase {
             tabManager.regularTabShortcutConversion.convert(
                 tab,
                 destination: TabShortcutPinDestination(
-                    role: .essential,
+                    role: .favorite,
                     profileId: profileId,
                     spaceId: nil,
                     folderId: nil,
@@ -419,8 +419,8 @@ class SidebarDragContextTestCase: XCTestCase {
             return try makeSpacePinnedPin(tabManager, in: space, url: url, index: 0)
         case .folder:
             return try makeFolderPin(tabManager, in: space, folderId: folderId, url: url, index: 0)
-        case .essentials:
-            return try makeEssentialPin(tabManager, in: space, profileId: profileId, url: url, index: 0)
+        case .favorite:
+            return try makeFavoritePin(tabManager, in: space, profileId: profileId, url: url, index: 0)
         }
     }
 
@@ -442,8 +442,8 @@ class SidebarDragContextTestCase: XCTestCase {
             return .spacePinned(space.id)
         case .folder:
             return .folder(folder.id)
-        case .essentials:
-            return .essentials
+        case .favorite:
+            return .favorite
         }
     }
 
@@ -459,8 +459,8 @@ class SidebarDragContextTestCase: XCTestCase {
             return tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id).first { $0.folderId == nil }
         case .folder:
             return tabManager.shortcutPinCollectionStateOwner.folderPinnedPins(for: folder.id, in: space.id).first
-        case .essentials:
-            return tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId).first
+        case .favorite:
+            return tabManager.shortcutPinCollectionStateOwner.favoritePins(for: profileId).first
         }
     }
 }
@@ -468,7 +468,7 @@ class SidebarDragContextTestCase: XCTestCase {
 enum ShortcutSectionTarget: Equatable {
     case spacePinned
     case folder
-    case essentials
+    case favorite
 
     var pathComponent: String {
         switch self {
@@ -476,8 +476,8 @@ enum ShortcutSectionTarget: Equatable {
             return "space-pinned"
         case .folder:
             return "folder"
-        case .essentials:
-            return "essentials"
+        case .favorite:
+            return "favorite"
         }
     }
 
@@ -487,8 +487,8 @@ enum ShortcutSectionTarget: Equatable {
             return .spacePinned(spaceId)
         case .folder:
             return .folder(folderId)
-        case .essentials:
-            return .essentials
+        case .favorite:
+            return .favorite
         }
     }
 }

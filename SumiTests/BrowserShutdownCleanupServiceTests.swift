@@ -6,17 +6,17 @@ import XCTest
 @MainActor
 final class BrowserShutdownCleanupServiceTests: XCTestCase {
     func testTabCleanupOrderIsStableAndDeduplicatedAcrossAllResidences() {
-        let essential = Tab(name: "Essential", loadsCachedFaviconOnInit: false)
+        let favorite = Tab(name: "Favorite", loadsCachedFaviconOnInit: false)
         let regular = Tab(name: "Regular", loadsCachedFaviconOnInit: false)
         let ephemeral = Tab(name: "Ephemeral", loadsCachedFaviconOnInit: false)
 
         let result = BrowserShutdownCleanupService.uniqueTabsForCleanup(
-            essential: [essential, regular],
+            favorite: [favorite, regular],
             all: [regular],
-            ephemeral: [ephemeral, essential]
+            ephemeral: [ephemeral, favorite]
         )
 
-        XCTAssertEqual(result.map(\.id), [essential.id, regular.id, ephemeral.id])
+        XCTAssertEqual(result.map(\.id), [favorite.id, regular.id, ephemeral.id])
     }
 
     func testCleanupReleasesTabWebViewsWithoutLoadingOptionalExtensionRuntime() {

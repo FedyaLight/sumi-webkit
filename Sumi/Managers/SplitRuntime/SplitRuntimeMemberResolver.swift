@@ -140,11 +140,11 @@ final class SplitRuntimeMemberResolver {
             )
         }
 
-        if incomingPin.role == .essential,
-           targetPin.role == .essential,
+        if incomingPin.role == .favorite,
+           targetPin.role == .favorite,
            let profileID = incomingPin.profileId,
            targetPin.profileId == profileID {
-            return .essentialSidebar(
+            return .favoriteSidebar(
                 profileId: profileID,
                 index: min(incomingPin.index, targetPin.index)
             )
@@ -169,8 +169,8 @@ final class SplitRuntimeMemberResolver {
         // is moved into that target container by SplitDropService's atomic
         // topology + launcher-placement transaction.
         switch targetPin.role {
-        case .essential:
-            return .essentialSidebar(
+        case .favorite:
+            return .favoriteSidebar(
                 profileId: targetPin.profileId ?? windowState.currentProfileId,
                 index: targetPin.index
             )
@@ -217,8 +217,8 @@ final class SplitRuntimeMemberResolver {
         switch container {
         case .regularTabs:
             return false
-        case .essentialSidebar(let profileID, _):
-            return pin.role == .essential
+        case .favoriteSidebar(let profileID, _):
+            return pin.role == .favorite
                 && (profileID == nil || pin.profileId == profileID)
         case .shortcutSidebar(let spaceID, _, let folderID, _):
             return pin.role == .spacePinned

@@ -5,12 +5,12 @@ import XCTest
 @testable import Sumi
 
 @MainActor
-final class SumiEssentialBackdropStoreTests: XCTestCase {
-    func testOnlyEssentialsRetainAndBakeArtifacts() async throws {
+final class SumiFavoriteBackdropStoreTests: XCTestCase {
+    func testOnlyFavoriteRetainAndBakeArtifacts() async throws {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         let reader = CountingBackdropFaviconReader(image: testImage())
-        let store = SumiEssentialBackdropStore(
+        let store = SumiFavoriteBackdropStore(
             rootDirectory: root,
             imageReader: reader
         )
@@ -20,9 +20,9 @@ final class SumiEssentialBackdropStoreTests: XCTestCase {
             profileID: profileID,
             role: .spacePinned
         )
-        let builtInEssential = ShortcutPin(
+        let builtInFavorite = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: profileID,
             index: 1,
             launchURL: URL(string: "https://built-in.example")!,
@@ -30,7 +30,7 @@ final class SumiEssentialBackdropStoreTests: XCTestCase {
             iconAsset: "🌍"
         )
 
-        store.syncEssentials([regular, builtInEssential])
+        store.syncFavorite([regular, builtInFavorite])
 
         let result = await store.loadBackdrop(
             for: regular.launchURL,
@@ -38,7 +38,7 @@ final class SumiEssentialBackdropStoreTests: XCTestCase {
         )
         XCTAssertNil(result)
         let builtInResult = await store.loadBackdrop(
-            for: builtInEssential.launchURL,
+            for: builtInFavorite.launchURL,
             partition: .regular(profileID)
         )
         XCTAssertNil(builtInResult)
@@ -49,7 +49,7 @@ final class SumiEssentialBackdropStoreTests: XCTestCase {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         let reader = CountingBackdropFaviconReader(image: testImage())
-        let store = SumiEssentialBackdropStore(
+        let store = SumiFavoriteBackdropStore(
             rootDirectory: root,
             imageReader: reader
         )
@@ -68,7 +68,7 @@ final class SumiEssentialBackdropStoreTests: XCTestCase {
             profileID: secondProfile
         )
 
-        store.syncEssentials([first, duplicate, separateProfile])
+        store.syncFavorite([first, duplicate, separateProfile])
         _ = await store.loadBackdrop(
             for: first.launchURL,
             partition: .regular(firstProfile)
@@ -89,23 +89,23 @@ final class SumiEssentialBackdropStoreTests: XCTestCase {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         let controller = ControlledBackdropFaviconReader()
-        let store = SumiEssentialBackdropStore(
+        let store = SumiFavoriteBackdropStore(
             rootDirectory: root,
             imageReader: controller
         )
         let profileID = UUID()
-        let essential = pin(
+        let favorite = pin(
             url: "https://cancel.example/page",
             profileID: profileID
         )
 
-        store.syncEssentials([essential])
+        store.syncFavorite([favorite])
         await controller.waitUntilRequested()
-        store.syncEssentials([])
+        store.syncFavorite([])
         await controller.resume(with: testImage())
 
         for _ in 0..<20 {
-            if try await SumiEssentialBackdropDiskStorage(
+            if try await SumiFavoriteBackdropDiskStorage(
                 rootDirectory: root
             ).existingKeys().isEmpty {
                 break
@@ -114,10 +114,10 @@ final class SumiEssentialBackdropStoreTests: XCTestCase {
         }
 
         XCTAssertNil(store.cachedBackdrop(
-            for: essential.launchURL,
+            for: favorite.launchURL,
             partition: .regular(profileID)
         ))
-        let keys = try await SumiEssentialBackdropDiskStorage(
+        let keys = try await SumiFavoriteBackdropDiskStorage(
             rootDirectory: root
         ).existingKeys()
         XCTAssertTrue(keys.isEmpty)
@@ -131,7 +131,7 @@ final class SumiEssentialBackdropStoreTests: XCTestCase {
     private func pin(
         url: String,
         profileID: UUID,
-        role: ShortcutPinRole = .essential
+        role: ShortcutPinRole = .favorite
     ) -> ShortcutPin {
         ShortcutPin(
             id: UUID(),

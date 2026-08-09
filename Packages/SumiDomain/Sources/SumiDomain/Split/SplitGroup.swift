@@ -51,7 +51,7 @@ public struct SplitGroup: Identifiable, Equatable, Hashable, Sendable {
             }) else {
                 return nil
             }
-        case .shortcutSidebar, .essentialSidebar:
+        case .shortcutSidebar, .favoriteSidebar:
             guard memberIDs.allSatisfy({ memberID in
                 if case .shortcutPin = memberID { return true }
                 return false

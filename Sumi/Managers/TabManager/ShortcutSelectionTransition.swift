@@ -78,7 +78,7 @@ enum ShortcutSelectionTransition {
         state.selectedShortcutPinForSpace = state
             .selectedShortcutPinForSpace
             .filter { pinIds.contains($0.value) == false }
-        if target.role == .essential {
+        if target.role == .favorite {
             replaceHistory(
                 pinIds: pinIds,
                 with: target.pinId,
@@ -111,7 +111,7 @@ enum ShortcutSelectionTransition {
             )
         }
         if isSelected,
-           target.role == .essential,
+           target.role == .favorite,
            let currentSpaceId = state.currentSpaceId {
             state.selectionHistory.recordSelection(
                 .shortcutPin(target.pinId),

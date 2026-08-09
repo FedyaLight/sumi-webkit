@@ -19,7 +19,7 @@ enum SidebarPageRenderMode: Equatable {
         }
     }
 
-    var animatesEssentialsLayout: Bool {
+    var animatesFavoriteLayout: Bool {
         self == .interactive
     }
 }
@@ -63,18 +63,18 @@ enum SpaceSidebarRenderPolicy {
 
 @MainActor
 enum SpaceSidebarChromePreviewPolicy {
-    static func shouldAnimateEssentialsLayout(
+    static func shouldAnimateFavoriteLayout(
         isActiveWindow: Bool,
         isTransitioningProfile: Bool,
         pageRenderMode: SidebarPageRenderMode
     ) -> Bool {
         isActiveWindow
             && !isTransitioningProfile
-            && pageRenderMode.animatesEssentialsLayout
+            && pageRenderMode.animatesFavoriteLayout
     }
 }
 
-enum SpaceSidebarEssentialsPlacementPolicy {
+enum SpaceSidebarFavoritePlacementPolicy {
     static func usesSharedPinnedGrid(
         sourceProfileId: UUID?,
         destinationProfileId: UUID?

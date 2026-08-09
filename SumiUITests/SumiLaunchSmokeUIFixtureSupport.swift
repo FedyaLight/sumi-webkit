@@ -13,7 +13,7 @@ enum SumiSmokeFixtureIDs {
     static let secondaryRegularTab = "0000000000000000000000000000a004"
     static let folder = "0000000000000000000000000000a005"
     static let folderLauncher = "0000000000000000000000000000a006"
-    static let essential = "0000000000000000000000000000a007"
+    static let favorite = "0000000000000000000000000000a007"
     static let primaryThemeColor = "00000000-0000-0000-0000-00000000A008"
     static let secondaryThemeColor = "00000000-0000-0000-0000-00000000A009"
 }
@@ -99,15 +99,15 @@ extension SumiLaunchSmokeUITestCase {
             description: "Folder \(folderID) does not have a launcher child"
         )
 
-        let essentialID = try requiredScalar(
+        let favoriteID = try requiredScalar(
             sql: """
             SELECT lower(hex(id)) AS value
             FROM tabs
-            WHERE lower(hex(id)) = '\(SumiSmokeFixtureIDs.essential)'
+            WHERE lower(hex(id)) = '\(SumiSmokeFixtureIDs.favorite)'
             LIMIT 1;
             """,
             storeURL: storeURL,
-            description: "Profile \(profileID) does not have an essential shortcut"
+            description: "Profile \(profileID) does not have a Favorite shortcut"
         )
 
         return PersonalSidebarFixture(
@@ -118,7 +118,7 @@ extension SumiLaunchSmokeUITestCase {
             secondaryRegularTabID: try accessibilityUUIDString(fromHex: secondaryRegularTabID),
             folderID: try accessibilityUUIDString(fromHex: folderID),
             folderLauncherID: try accessibilityUUIDString(fromHex: folderLauncherID),
-            essentialID: try accessibilityUUIDString(fromHex: essentialID)
+            favoriteID: try accessibilityUUIDString(fromHex: favoriteID)
         )
     }
 
@@ -533,9 +533,9 @@ extension SumiLaunchSmokeUITestCase {
         )
         try insertSmokeTab(
             storeURL: storeURL,
-            id: SumiSmokeFixtureIDs.essential,
-            name: "Smoke Essential",
-            urlString: "https://example.com/sumi-smoke-essential",
+            id: SumiSmokeFixtureIDs.favorite,
+            name: "Smoke Favorite",
+            urlString: "https://example.com/sumi-smoke-favorite",
             isPinned: true,
             isSpacePinned: false,
             spaceID: nil,

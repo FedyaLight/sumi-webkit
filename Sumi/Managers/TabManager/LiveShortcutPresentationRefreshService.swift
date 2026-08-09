@@ -22,7 +22,7 @@ final class LiveShortcutPresentationRefreshService {
         presentationSpaceID: UUID? = nil
     ) -> LiveShortcutPresentationRefreshAdmission? {
         switch pin.role {
-        case .essential where pin.profileId == nil:
+        case .favorite where pin.profileId == nil:
             return nil
         case .spacePinned where pin.spaceId == nil:
             return nil
@@ -33,7 +33,7 @@ final class LiveShortcutPresentationRefreshService {
         for entry in registry.entries(for: pin.id) {
             let targetSpaceID: UUID
             switch pin.role {
-            case .essential:
+            case .favorite:
                 targetSpaceID = presentationSpaceID
                     ?? entry.presentationPage.page.spaceID
             case .spacePinned:

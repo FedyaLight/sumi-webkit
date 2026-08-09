@@ -170,7 +170,7 @@ struct SumiDataRecoverySettingsPane: View {
                 importPreview = preview
                 selectedCategories = preview.suggestedCategories
                 if selectedCategories.contains(.spaces)
-                    || selectedCategories.contains(.essentials) {
+                    || selectedCategories.contains(.favorite) {
                     selectedCategories.insert(.profiles)
                 }
                 applyMode = preview.sourceKind.allowsReplaceMode
@@ -397,12 +397,12 @@ private struct SumiImportPreviewSheet: View {
 
     private var summaryText: String {
         let summary = preview.summary
-        return "\(summary.profiles) profiles, \(summary.spaces) spaces, \(summary.essentials) essentials, \(summary.pinnedLaunchers) pinned, \(summary.regularTabs) regular tabs, \(summary.folders) folders, \(summary.bookmarks) bookmarks"
+        return "\(summary.profiles) profiles, \(summary.spaces) spaces, \(summary.favorite) Favorite launchers, \(summary.pinnedLaunchers) pinned, \(summary.regularTabs) regular tabs, \(summary.folders) folders, \(summary.bookmarks) bookmarks"
     }
 
     private var requiresProfiles: Bool {
         selectedCategories.contains(.spaces)
-            || selectedCategories.contains(.essentials)
+            || selectedCategories.contains(.favorite)
     }
 
     private func categoryBinding(_ category: SumiImportCategory) -> Binding<Bool> {

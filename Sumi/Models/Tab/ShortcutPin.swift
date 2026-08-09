@@ -2,7 +2,7 @@ import Foundation
 import SumiDomain
 import SwiftUI
 
-enum SumiEssentialRuntimeState {
+enum SumiFavoriteRuntimeState {
     case launcherOnly
     case liveAttached
     case splitProxyBackgrounded

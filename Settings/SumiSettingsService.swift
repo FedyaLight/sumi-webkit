@@ -39,7 +39,7 @@ class SumiSettingsService {
     let performance: PerformanceSettingsStore
     let startupPrivacy: StartupPrivacySettingsStore
     let downloads: DownloadSettingsStore
-    let essentialsHint: EssentialsHintSettingsStore
+    let favoriteHint: FavoriteHintSettingsStore
 
     /// Owns transient navigation for the standalone Settings window.
     let navigation = SettingsNavigationOwner()
@@ -178,14 +178,14 @@ class SumiSettingsService {
         set { chrome.didFinishOnboarding = newValue }
     }
 
-    // MARK: - Essentials hint façade
+    // MARK: - Favorite hint façade
 
-    func showsEssentialsPlaceholder(profileId: UUID?) -> Bool {
-        essentialsHint.showsPlaceholder(profileId: profileId)
+    func showsFavoritePlaceholder(profileId: UUID?) -> Bool {
+        favoriteHint.showsPlaceholder(profileId: profileId)
     }
 
-    func dismissEssentialsPlaceholder(profileId: UUID) {
-        essentialsHint.dismissPlaceholder(profileId: profileId)
+    func dismissFavoritePlaceholder(profileId: UUID) {
+        favoriteHint.dismissPlaceholder(profileId: profileId)
     }
 
     // MARK: - Performance façade
@@ -426,9 +426,10 @@ class SumiSettingsService {
             downloadsFallbackActionKey: "settings.downloads.fallbackAction",
             downloadApplicationsStore: downloadApplicationsStore
         )
-        self.essentialsHint = EssentialsHintSettingsStore(
+        self.favoriteHint = FavoriteHintSettingsStore(
             userDefaults: userDefaults,
-            dismissedProfileIdsKey: "settings.essentials.placeholderDismissedProfileIds"
+            dismissedProfileIdsKey: "settings.favorite.placeholderDismissedProfileIds",
+            legacyDismissedProfileIdsKey: "settings.essentials.placeholderDismissedProfileIds"
         )
 
         chrome.enforceSumiChromeDefaults()

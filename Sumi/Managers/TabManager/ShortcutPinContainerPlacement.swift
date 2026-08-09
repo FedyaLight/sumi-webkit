@@ -2,7 +2,7 @@ import Foundation
 import SumiDomain
 
 /// Places and removes a shortcut pin inside its owning container — the
-/// profile's essentials list, a space's top-level pinned items, or a
+/// profile's favorite list, a space's top-level pinned items, or a
 /// space-pinned folder group. Callers above this role decide *whether* a
 /// placement may happen; this role knows only *where* pins physically live.
 @MainActor
@@ -28,9 +28,9 @@ final class ShortcutPinContainerPlacement {
 
     func remove(_ pin: ShortcutPin) {
         switch pin.role {
-        case .essential:
+        case .favorite:
             guard let profileID = pin.profileId else { return }
-            let remaining = pins.essentialPins(for: profileID).filter {
+            let remaining = pins.favoritePins(for: profileID).filter {
                 $0.id != pin.id
             }
             structuralMutations.setPinnedTabs(
@@ -60,16 +60,16 @@ final class ShortcutPinContainerPlacement {
         }
     }
 
-    /// Inserts the pin at `targetIndex`, refusing an essentials insert that
+    /// Inserts the pin at `targetIndex`, refusing a Favorite insert that
     /// would exceed the stored-member capacity. Returns the live record.
     func insert(_ pin: ShortcutPin, at targetIndex: Int) -> ShortcutPin? {
         switch pin.role {
-        case .essential:
+        case .favorite:
             guard let profileID = pin.profileId else { return nil }
-            var destination = pins.essentialPins(for: profileID)
+            var destination = pins.favoritePins(for: profileID)
             destination.removeAll { $0.id == pin.id }
             guard destination.count
-                    < EssentialsShortcutPlacementOwner.CapacityPolicy
+                    < FavoriteShortcutPlacementOwner.CapacityPolicy
                         .maxStoredMembers
             else { return nil }
             let safeIndex = max(0, min(targetIndex, destination.count))
@@ -107,9 +107,9 @@ final class ShortcutPinContainerPlacement {
     /// `insert`, this bypasses capacity admission: the pin already held a slot.
     func restore(_ pin: ShortcutPin) {
         switch pin.role {
-        case .essential:
+        case .favorite:
             guard let profileID = pin.profileId else { return }
-            var destination = pins.essentialPins(for: profileID)
+            var destination = pins.favoritePins(for: profileID)
             destination.removeAll { $0.id == pin.id }
             destination.insert(
                 pin,

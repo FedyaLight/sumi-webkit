@@ -2,7 +2,7 @@ import Foundation
 import SumiDomain
 
 struct SumiImportPlanBuilder {
-    static let maxEssentialsPerProfile = 12
+    static let maxFavoritePerProfile = 12
 
     private let isProfileIdentityAllowed: (UUID) -> Bool
 
@@ -49,7 +49,7 @@ struct SumiImportPlanBuilder {
         mergeSpaces(request, identity: identity, into: &output)
         ensureSpace(in: &output, identity: identity)
         mergeFolders(request, identity: identity, into: &output)
-        mergeEssentials(request, identity: identity, into: &output, warnings: &warnings)
+        mergeFavorite(request, identity: identity, into: &output, warnings: &warnings)
         mergePinnedLaunchers(request, identity: identity, into: &output, warnings: &warnings)
         mergeRegularTabs(request, identity: identity, into: &output, warnings: &warnings)
 
@@ -195,7 +195,7 @@ struct SumiImportPlanBuilder {
         [
             .space: Set(baseline.spaces.map(\.id)),
             .folder: Set(baseline.folders.map(\.id)),
-            .essential: Set(baseline.essentials.map(\.id)),
+            .favorite: Set(baseline.favorite.map(\.id)),
             .pinnedLauncher: Set(baseline.pinnedLaunchers.map(\.id)),
             .regularTab: Set(baseline.regularTabs.map(\.id)),
         ]
@@ -248,7 +248,7 @@ struct SumiImportPlanBuilder {
             }
         }
         if categories.contains(.folders) { data.folders.removeAll() }
-        if categories.contains(.essentials) { data.essentials.removeAll() }
+        if categories.contains(.favorite) { data.favorite.removeAll() }
         if categories.contains(.pinnedLaunchers) { data.pinnedLaunchers.removeAll() }
         if categories.contains(.regularTabs) { data.regularTabs.removeAll() }
     }
@@ -369,36 +369,36 @@ struct SumiImportPlanBuilder {
         }
     }
 
-    private func mergeEssentials(
+    private func mergeFavorite(
         _ request: SumiImportRequest,
         identity: SumiImportIdentityResolver,
         into data: inout SumiPortableData,
         warnings: inout [String]
     ) {
-        guard request.categories.contains(.essentials) else { return }
+        guard request.categories.contains(.favorite) else { return }
         var invalidCount = 0
-        for launcher in request.data.essentials.sorted(by: stableIndexOrder) {
+        for launcher in request.data.favorite.sorted(by: stableIndexOrder) {
             guard URL(string: launcher.urlString) != nil else {
                 invalidCount += 1
                 continue
             }
             var imported = remappedLauncher(
                 launcher,
-                kind: .essential,
+                kind: .favorite,
                 identity: identity,
                 data: data
             )
             imported.spaceId = nil
             imported.folderId = nil
             imported.profileId = launcher.profileId.map(identity.profileId(_:)) ?? data.profiles.first?.id
-            data.essentials.append(imported)
+            data.favorite.append(imported)
         }
-        appendInvalidURLWarning(count: invalidCount, category: "essentials", to: &warnings)
+        appendInvalidURLWarning(count: invalidCount, category: "Favorite launchers", to: &warnings)
 
         var demoted: [SumiPortableLauncher] = []
-        enforceEssentialLimit(in: &data, identity: identity, demoted: &demoted)
+        enforceFavoriteLimit(in: &data, identity: identity, demoted: &demoted)
         if !demoted.isEmpty {
-            warnings.append("\(demoted.count) essentials exceeded Sumi's 12-item profile limit and were imported as space-pinned launchers.")
+            warnings.append("\(demoted.count) Favorite launchers exceeded Sumi's 12-item profile limit and were imported as space-pinned launchers.")
         }
     }
 
@@ -478,26 +478,26 @@ struct SumiImportPlanBuilder {
         )
     }
 
-    private func enforceEssentialLimit(
+    private func enforceFavoriteLimit(
         in data: inout SumiPortableData,
         identity: SumiImportIdentityResolver,
         demoted: inout [SumiPortableLauncher]
     ) {
-        let grouped = Dictionary(grouping: data.essentials, by: { $0.profileId ?? "" })
+        let grouped = Dictionary(grouping: data.favorite, by: { $0.profileId ?? "" })
         var kept: [SumiPortableLauncher] = []
         for key in grouped.keys.sorted() {
             let launchers = (grouped[key] ?? []).sorted(by: stableIndexOrder)
-            kept.append(contentsOf: launchers.prefix(Self.maxEssentialsPerProfile))
-            demoted.append(contentsOf: launchers.dropFirst(Self.maxEssentialsPerProfile).map { launcher in
+            kept.append(contentsOf: launchers.prefix(Self.maxFavoritePerProfile))
+            demoted.append(contentsOf: launchers.dropFirst(Self.maxFavoritePerProfile).map { launcher in
                 var copy = launcher
-                copy.id = identity.importedId(.demotedEssential, source: launcher.id)
+                copy.id = identity.importedId(.demotedFavorite, source: launcher.id)
                 copy.profileId = nil
                 copy.spaceId = launcher.sourceSpaceId ?? data.spaces.first?.id
                 copy.folderId = nil
                 return copy
             })
         }
-        data.essentials = kept
+        data.favorite = kept
         data.pinnedLaunchers.append(contentsOf: demoted)
     }
 

@@ -14,7 +14,7 @@ struct SidebarBrowserContext {
     let glanceManager: GlanceManager
     let extensionSurfaceStore: BrowserExtensionSurfaceStore
     let faviconImageReader: any BrowserFaviconImageReading
-    let essentialBackdropReader: any BrowserEssentialBackdropReading
+    let favoriteBackdropReader: any BrowserFavoriteBackdropReading
     let spaceEditorPresentation: SidebarSpaceEditorPresentationService
     let folderEditorPresentation: SidebarFolderEditorPresentationService
     let shortcutEditorPresentation: SidebarShortcutEditorPresentationService

@@ -62,7 +62,7 @@ struct SumiBrowser2ZenTab: Codable, Sendable {
     var tabId: String?
     var parentId: String?
     var index: Int?
-    var isEssential: Bool
+    var isFavorite: Bool
 
     enum CodingKeys: String, CodingKey {
         case url
@@ -73,7 +73,7 @@ struct SumiBrowser2ZenTab: Codable, Sendable {
         case tabId = "tab_id"
         case parentId = "parent_id"
         case index
-        case isEssential = "is_essential"
+        case isFavorite = "is_essential"
     }
 
     init(
@@ -85,7 +85,7 @@ struct SumiBrowser2ZenTab: Codable, Sendable {
         tabId: String?,
         parentId: String?,
         index: Int?,
-        isEssential: Bool
+        isFavorite: Bool
     ) {
         self.url = url
         self.title = title
@@ -95,7 +95,7 @@ struct SumiBrowser2ZenTab: Codable, Sendable {
         self.tabId = tabId
         self.parentId = parentId
         self.index = index
-        self.isEssential = isEssential
+        self.isFavorite = isFavorite
     }
 
     init(from decoder: Decoder) throws {
@@ -108,7 +108,7 @@ struct SumiBrowser2ZenTab: Codable, Sendable {
         tabId = try container.decodeIfPresent(String.self, forKey: .tabId)
         parentId = try container.decodeIfPresent(String.self, forKey: .parentId)
         index = try container.decodeIfPresent(Int.self, forKey: .index)
-        isEssential = try container.decodeIfPresent(Bool.self, forKey: .isEssential) ?? false
+        isFavorite = try container.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
     }
 }
 
@@ -251,15 +251,15 @@ final class SumiTransferExportService {
                     tabId: pin.id,
                     parentId: pin.folderId,
                     index: idx,
-                    isEssential: false
+                    isFavorite: false
                 )
             })
 
-            let essentialPins = data.essentials.filter { pin in
+            let favoritePins = data.favorite.filter { pin in
                 guard let profileId = pin.profileId else { return false }
                 return firstSpaceIdByProfile[profileId] == space.id
             }
-            pinnedTabs.append(contentsOf: essentialPins.enumerated().map { offset, pin in
+            pinnedTabs.append(contentsOf: favoritePins.enumerated().map { offset, pin in
                 SumiBrowser2ZenTab(
                     url: pin.urlString,
                     title: pin.title,
@@ -269,7 +269,7 @@ final class SumiTransferExportService {
                     tabId: pin.id,
                     parentId: nil,
                     index: spacePinned.count + offset,
-                    isEssential: true
+                    isFavorite: true
                 )
             })
 
@@ -344,7 +344,7 @@ enum SumiBrowser2ZenNormalizer {
 
         var spaces: [SumiPortableSpace] = []
         var folders: [SumiPortableFolder] = []
-        var essentials: [SumiPortableLauncher] = []
+        var favorite: [SumiPortableLauncher] = []
         var pinnedLaunchers: [SumiPortableLauncher] = []
         var regularTabs: [SumiPortableRegularTab] = []
 
@@ -377,15 +377,15 @@ enum SumiBrowser2ZenNormalizer {
                     title: tab.title.nilIfEmpty ?? tab.url,
                     urlString: tab.url,
                     index: tab.index ?? idx,
-                    profileId: tab.isEssential ? profile.id : nil,
+                    profileId: tab.isFavorite ? profile.id : nil,
                     executionProfileId: profile.id,
-                    spaceId: tab.isEssential ? nil : spaceId,
-                    folderId: tab.isEssential ? nil : folderId,
+                    spaceId: tab.isFavorite ? nil : spaceId,
+                    folderId: tab.isFavorite ? nil : folderId,
                     iconAsset: nil,
                     sourceSpaceId: spaceId
                 )
-                if tab.isEssential {
-                    essentials.append(launcher)
+                if tab.isFavorite {
+                    favorite.append(launcher)
                 } else {
                     pinnedLaunchers.append(launcher)
                 }
@@ -411,7 +411,7 @@ enum SumiBrowser2ZenNormalizer {
             profiles: [profile],
             spaces: spaces,
             folders: folders,
-            essentials: essentials,
+            favorite: favorite,
             pinnedLaunchers: pinnedLaunchers,
             regularTabs: regularTabs,
             bookmarks: []

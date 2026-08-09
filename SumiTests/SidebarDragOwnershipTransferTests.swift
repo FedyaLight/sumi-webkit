@@ -324,15 +324,15 @@ final class SidebarDragOwnershipTransferTests: SidebarDragContextTestCase {
         XCTAssertTrue(tabManager.regularTabCollectionOwner.tabs(in: space.id).isEmpty)
     }
 
-    func testSpacePinnedDropIntoEssentialsPreservesLauncherAndMovesOwnership() throws {
+    func testSpacePinnedDropIntoFavoritePreservesLauncherAndMovesOwnership() throws {
         let tabManager = BrowserManager()
         let profileId = UUID()
         let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
-        let existingEssential = try makeEssentialPin(
+        let existingFavorite = try makeFavoritePin(
             tabManager,
             in: space,
             profileId: profileId,
-            url: "https://example.com/existing-essential",
+            url: "https://example.com/existing-favorite",
             index: 0
         )
         let pin = try makeSpacePinnedPin(
@@ -353,17 +353,17 @@ final class SidebarDragOwnershipTransferTests: SidebarDragContextTestCase {
                 payload: .pin(pin),
                 scope: scope,
                 fromContainer: .spacePinned(space.id),
-                toContainer: .essentials,
+                toContainer: .favorite,
                 toIndex: 0
             )
         )
 
         XCTAssertTrue(didMove)
         XCTAssertTrue(tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id).isEmpty)
-        let essentials = tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId)
-        XCTAssertEqual(essentials.map(\.id), [pin.id, existingEssential.id])
-        let moved = try XCTUnwrap(essentials.first)
-        XCTAssertEqual(moved.role, .essential)
+        let favorite = tabManager.shortcutPinCollectionStateOwner.favoritePins(for: profileId)
+        XCTAssertEqual(favorite.map(\.id), [pin.id, existingFavorite.id])
+        let moved = try XCTUnwrap(favorite.first)
+        XCTAssertEqual(moved.role, .favorite)
         XCTAssertEqual(moved.profileId, profileId)
         XCTAssertNil(moved.spaceId)
         XCTAssertNil(moved.folderId)
@@ -417,16 +417,16 @@ final class SidebarDragOwnershipTransferTests: SidebarDragContextTestCase {
         XCTAssertTrue(tabManager.regularTabCollectionOwner.tabs(in: space.id).isEmpty)
     }
 
-    func testFolderChildDropIntoEssentialsPreservesLauncherAndMovesOwnership() throws {
+    func testFolderChildDropIntoFavoritePreservesLauncherAndMovesOwnership() throws {
         let tabManager = BrowserManager()
         let profileId = UUID()
         let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
         let folder = try makeFolder(tabManager, in: space.id, name: "Docs")
-        let existingEssential = try makeEssentialPin(
+        let existingFavorite = try makeFavoritePin(
             tabManager,
             in: space,
             profileId: profileId,
-            url: "https://example.com/existing-essential",
+            url: "https://example.com/existing-favorite",
             index: 0
         )
         let pin = try makeFolderPin(
@@ -448,17 +448,17 @@ final class SidebarDragOwnershipTransferTests: SidebarDragContextTestCase {
                 payload: .pin(pin),
                 scope: scope,
                 fromContainer: .folder(folder.id),
-                toContainer: .essentials,
+                toContainer: .favorite,
                 toIndex: 1
             )
         )
 
         XCTAssertTrue(didMove)
         XCTAssertTrue(tabManager.shortcutPinCollectionStateOwner.folderPinnedPins(for: folder.id, in: space.id).isEmpty)
-        let essentials = tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId)
-        XCTAssertEqual(essentials.map(\.id), [existingEssential.id, pin.id])
-        let moved = try XCTUnwrap(essentials.first { $0.id == pin.id })
-        XCTAssertEqual(moved.role, .essential)
+        let favorite = tabManager.shortcutPinCollectionStateOwner.favoritePins(for: profileId)
+        XCTAssertEqual(favorite.map(\.id), [existingFavorite.id, pin.id])
+        let moved = try XCTUnwrap(favorite.first { $0.id == pin.id })
+        XCTAssertEqual(moved.role, .favorite)
         XCTAssertEqual(moved.profileId, profileId)
         XCTAssertNil(moved.spaceId)
         XCTAssertNil(moved.folderId)
@@ -466,7 +466,7 @@ final class SidebarDragOwnershipTransferTests: SidebarDragContextTestCase {
         XCTAssertTrue(tabManager.regularTabCollectionOwner.tabs(in: space.id).isEmpty)
     }
 
-    func testEssentialDropIntoSpacePinnedPreservesLauncherAndMovesOwnership() throws {
+    func testFavoriteDropIntoSpacePinnedPreservesLauncherAndMovesOwnership() throws {
         let tabManager = BrowserManager()
         let profileId = UUID()
         let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
@@ -477,17 +477,17 @@ final class SidebarDragOwnershipTransferTests: SidebarDragContextTestCase {
             url: "https://example.com/top-level",
             index: 1
         )
-        let pin = try makeEssentialPin(
+        let pin = try makeFavoritePin(
             tabManager,
             in: space,
             profileId: profileId,
-            url: "https://example.com/essential",
+            url: "https://example.com/favorite",
             index: 0
         )
         let scope = try makeScope(
             spaceId: space.id,
             profileId: profileId,
-            sourceZone: .essentials,
+            sourceZone: .favorite,
             item: dragItem(pin)
         )
 
@@ -495,14 +495,14 @@ final class SidebarDragOwnershipTransferTests: SidebarDragContextTestCase {
             DragOperation(
                 payload: .pin(pin),
                 scope: scope,
-                fromContainer: .essentials,
+                fromContainer: .favorite,
                 toContainer: .spacePinned(space.id),
                 toIndex: 1
             )
         )
 
         XCTAssertTrue(didMove)
-        XCTAssertTrue(tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId).isEmpty)
+        XCTAssertTrue(tabManager.shortcutPinCollectionStateOwner.favoritePins(for: profileId).isEmpty)
         XCTAssertEqual(topLevelPinnedItemIDs(tabManager, in: space.id), [folder.id, pin.id, existingTopLevelPin.id])
         let moved = try XCTUnwrap(tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id).first { $0.id == pin.id })
         XCTAssertEqual(moved.role, .spacePinned)
@@ -513,7 +513,7 @@ final class SidebarDragOwnershipTransferTests: SidebarDragContextTestCase {
         XCTAssertTrue(tabManager.regularTabCollectionOwner.tabs(in: space.id).isEmpty)
     }
 
-    func testEssentialDropIntoFolderPreservesLauncherAndMovesOwnership() throws {
+    func testFavoriteDropIntoFolderPreservesLauncherAndMovesOwnership() throws {
         let tabManager = BrowserManager()
         let profileId = UUID()
         let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
@@ -525,17 +525,17 @@ final class SidebarDragOwnershipTransferTests: SidebarDragContextTestCase {
             url: "https://example.com/existing-folder",
             index: 0
         )
-        let pin = try makeEssentialPin(
+        let pin = try makeFavoritePin(
             tabManager,
             in: space,
             profileId: profileId,
-            url: "https://example.com/essential",
+            url: "https://example.com/favorite",
             index: 0
         )
         let scope = try makeScope(
             spaceId: space.id,
             profileId: profileId,
-            sourceZone: .essentials,
+            sourceZone: .favorite,
             item: dragItem(pin)
         )
 
@@ -543,14 +543,14 @@ final class SidebarDragOwnershipTransferTests: SidebarDragContextTestCase {
             DragOperation(
                 payload: .pin(pin),
                 scope: scope,
-                fromContainer: .essentials,
+                fromContainer: .favorite,
                 toContainer: .folder(folder.id),
                 toIndex: 1
             )
         )
 
         XCTAssertTrue(didMove)
-        XCTAssertTrue(tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId).isEmpty)
+        XCTAssertTrue(tabManager.shortcutPinCollectionStateOwner.favoritePins(for: profileId).isEmpty)
         let folderPins = tabManager.shortcutPinCollectionStateOwner.folderPinnedPins(for: folder.id, in: space.id)
         XCTAssertEqual(folderPins.map(\.id), [existingFolderPin.id, pin.id])
         let moved = try XCTUnwrap(folderPins.first { $0.id == pin.id })
@@ -796,7 +796,7 @@ final class SidebarDragOwnershipTransferTests: SidebarDragContextTestCase {
         )
     }
 
-    func testSeparatingEssentialSplitExpandsLaunchersAtTilePosition() throws {
+    func testSeparatingFavoriteSplitExpandsLaunchersAtTilePosition() throws {
         let harness = try makeLiveWindowHarness()
         let browser = harness.browserManager
         let profileID = UUID()
@@ -807,7 +807,7 @@ final class SidebarDragOwnershipTransferTests: SidebarDragContextTestCase {
         )
         let pins = try ["a", "b", "c", "d"].enumerated().map {
             index, name in
-            try makeEssentialPin(
+            try makeFavoritePin(
                 browser,
                 in: space,
                 profileId: profileID,
@@ -821,7 +821,7 @@ final class SidebarDragOwnershipTransferTests: SidebarDragContextTestCase {
                 .shortcutPin(pins[3].id),
             ],
             layoutKind: .vertical,
-            container: .essentialSidebar(
+            container: .favoriteSidebar(
                 profileId: profileID,
                 index: 1
             )
@@ -836,7 +836,7 @@ final class SidebarDragOwnershipTransferTests: SidebarDragContextTestCase {
 
         XCTAssertNil(browser.splitGroupStore.group(id: group.id))
         XCTAssertEqual(
-            browser.splitGroupSidebarOrdering.essentialItems(for: profileID),
+            browser.splitGroupSidebarOrdering.favoriteItems(for: profileID),
             [
                 .shortcut(pins[0].id),
                 .shortcut(pins[1].id),
@@ -884,21 +884,21 @@ final class SidebarDragOwnershipTransferTests: SidebarDragContextTestCase {
         XCTAssertFalse(converted.isShortcutLiveInstance)
     }
 
-    func testEssentialDropIntoRegularCreatesRegularTabAndRemovesEssentialOwnership() throws {
+    func testFavoriteDropIntoRegularCreatesRegularTabAndRemovesFavoriteOwnership() throws {
         let tabManager = BrowserManager()
         let profileId = UUID()
         let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
-        let pin = try makeEssentialPin(
+        let pin = try makeFavoritePin(
             tabManager,
             in: space,
             profileId: profileId,
-            url: "https://example.com/essential",
+            url: "https://example.com/favorite",
             index: 0
         )
         let scope = try makeScope(
             spaceId: space.id,
             profileId: profileId,
-            sourceZone: .essentials,
+            sourceZone: .favorite,
             item: dragItem(pin)
         )
 
@@ -906,14 +906,14 @@ final class SidebarDragOwnershipTransferTests: SidebarDragContextTestCase {
             DragOperation(
                 payload: .pin(pin),
                 scope: scope,
-                fromContainer: .essentials,
+                fromContainer: .favorite,
                 toContainer: .spaceRegular(space.id),
                 toIndex: 0
             )
         )
 
         XCTAssertTrue(didMove)
-        XCTAssertTrue(tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId).isEmpty)
+        XCTAssertTrue(tabManager.shortcutPinCollectionStateOwner.favoritePins(for: profileId).isEmpty)
         let converted = try XCTUnwrap(tabManager.regularTabCollectionOwner.tabs(in: space.id).first)
         XCTAssertEqual(converted.url, pin.launchURL)
         XCTAssertNil(converted.shortcutPinId)
@@ -928,20 +928,20 @@ final class SidebarDragOwnershipTransferTests: SidebarDragContextTestCase {
         try assertLiveLauncherDropIntoRegularReusesLiveTab(source: .folder)
     }
 
-    func testEssentialWithLiveShortcutDropIntoRegularReusesLiveTabAndClearsBinding() throws {
-        try assertLiveLauncherDropIntoRegularReusesLiveTab(source: .essentials)
+    func testFavoriteWithLiveShortcutDropIntoRegularReusesLiveTabAndClearsBinding() throws {
+        try assertLiveLauncherDropIntoRegularReusesLiveTab(source: .favorite)
     }
 
     func testLauncherWithoutLiveShortcutDropIntoRegularCreatesNewRegularTab() throws {
         try assertLauncherWithoutLiveShortcutDropIntoRegularCreatesNewTab(source: .spacePinned)
         try assertLauncherWithoutLiveShortcutDropIntoRegularCreatesNewTab(source: .folder)
-        try assertLauncherWithoutLiveShortcutDropIntoRegularCreatesNewTab(source: .essentials)
+        try assertLauncherWithoutLiveShortcutDropIntoRegularCreatesNewTab(source: .favorite)
     }
 
     func testMovingLiveLauncherBetweenShortcutSectionsPreservesLiveBinding() throws {
         try assertLiveLauncherMovePreservesBinding(source: .spacePinned, destination: .folder)
-        try assertLiveLauncherMovePreservesBinding(source: .folder, destination: .essentials)
-        try assertLiveLauncherMovePreservesBinding(source: .essentials, destination: .spacePinned)
+        try assertLiveLauncherMovePreservesBinding(source: .folder, destination: .favorite)
+        try assertLiveLauncherMovePreservesBinding(source: .favorite, destination: .spacePinned)
     }
 
     func testWrongProfileScopeIsRejectedEvenWhenSpaceMatches() throws {

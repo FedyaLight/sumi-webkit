@@ -24,7 +24,7 @@ extension BrowserManager {
             emptySplitCreation: splitEmptyCreation,
             spaces: spaceStateOwner,
             pins: shortcutPinCollectionStateOwner,
-            essentials: essentialsShortcutPlacementOwner,
+            favorite: favoriteShortcutPlacementOwner,
             regularTabShortcuts: sidebarRegularTabShortcutCommands,
             regularTabs: regularTabCollectionOwner,
             pinCommands: sidebarPinCommands,

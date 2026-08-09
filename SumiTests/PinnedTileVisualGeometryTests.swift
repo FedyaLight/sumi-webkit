@@ -64,7 +64,7 @@ final class PinnedTileVisualGeometryTests: XCTestCase {
         )
     }
 
-    /// Essentials tiles are the one sidebar surface whose width is a fraction of
+    /// Favorite tiles are the one sidebar surface whose width is a fraction of
     /// a point, so the live grid and the space-transition snapshot must agree on
     /// where the favicon rasterizes. They diverged once because the live tile
     /// always carries the press effect's geometry transform, which opts its
@@ -94,7 +94,7 @@ final class PinnedTileVisualGeometryTests: XCTestCase {
                     chromeTemplateSystemImageName: nil,
                     presentationState: .liveBackgrounded
                 )
-                .sidebarZenPressEffect(sourceID: "essentials-parity")
+                .sidebarZenPressEffect(sourceID: "favorite-parity")
                 .frame(width: tileWidth, height: PinnedTileMetrics.height)
             }
         }
@@ -128,7 +128,7 @@ final class PinnedTileVisualGeometryTests: XCTestCase {
         XCTAssertEqual(
             liveColumns.count,
             columnCount,
-            "Expected one favicon run per essentials tile"
+            "Expected one favicon run per favorite tile"
         )
         XCTAssertEqual(
             snapshotColumns,
@@ -215,7 +215,7 @@ final class PinnedTileVisualGeometryTests: XCTestCase {
     }
 
     /// Pixel columns covered by the tile favicons along the vertical center of
-    /// a rendered essentials row, as `[first...last]` runs.
+    /// a rendered favorite row, as `[first...last]` runs.
     private func iconColumns<Content: View>(
         in row: Content,
         width: CGFloat,
@@ -286,7 +286,7 @@ final class PinnedTileVisualGeometryTests: XCTestCase {
                 launchURL: URL(string: "https://example.com")!,
                 partition: .regular(nil)
             ),
-            essentialBackdrop: nil,
+            favoriteBackdrop: nil,
             presentationState: presentationState,
             showsAudioButton: false,
             isMuted: false,

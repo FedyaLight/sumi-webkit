@@ -1,6 +1,6 @@
 # Split sidebar behavior
 
-This document records the product decisions agreed on 2026-07-19 and updated on 2026-07-29 for split groups in Regular, Pinned, Folder, and Essentials.
+This document records the product decisions agreed on 2026-07-19 and updated on 2026-07-29 for split groups in Regular, Pinned, Folder, and Favorite.
 
 ## Core model
 
@@ -16,10 +16,10 @@ This document records the product decisions agreed on 2026-07-19 and updated on 
 | Source | Active split target | Result |
 | --- | --- | --- |
 | Regular | Pinned or Folder | Move and convert to a Pinned launcher |
-| Regular | Essentials | Move and convert to an Essential launcher |
-| Pinned or Folder | Essentials | Move and convert to an Essential launcher |
-| Essentials | Pinned or Folder | Move and convert to a Pinned launcher |
-| Pinned or Essentials | Regular | Move and convert to a regular tab; remove the saved launcher |
+| Regular | Favorite | Move and convert to a Favorite launcher |
+| Pinned or Folder | Favorite | Move and convert to a Favorite launcher |
+| Favorite | Pinned or Folder | Move and convert to a Pinned launcher |
+| Pinned or Favorite | Regular | Move and convert to a regular tab; remove the saved launcher |
 
 An unloaded launcher dropped into an active split is materialized immediately and becomes the active participant. Failure leaves topology and storage unchanged. Ordinary sidebar movement of an unloaded launcher does not load it.
 
@@ -29,8 +29,8 @@ in the source container.
 
 ## Whole-group movement
 
-- Regular ↔ Pinned/Folder/Essentials changes the member identities in place and keeps the group.
-- Pinned/Folder ↔ Essentials moves all launchers atomically and keeps the group.
+- Regular ↔ Pinned/Folder/Favorite changes the member identities in place and keeps the group.
+- Pinned/Folder ↔ Favorite moves all launchers atomically and keeps the group.
 - Saved → Regular converts every launcher to a regular `Tab` model without dissolving the group or retaining a saved copy. Loaded groups reuse their WebViews and keep the active participant; unloaded groups create all regular members without eagerly loading WebViews.
 - A whole group occupies one sidebar item and is always dragged as a whole. A participant must first be separated before it can be dragged independently.
 - Regular and Pinned rows expose selection only at group level. The focused member does not receive different typography or per-segment selection chrome.
@@ -48,29 +48,29 @@ in the source container.
 - The central vertical band of a Regular, Pinned, or Folder tab row is a split-pairing target. The top and bottom bands remain ordinary insertion boundaries, so pairing and reorder never compete for the same pointer position.
 - A standalone target creates a two-member group in pointer-projected order. Hovering its left half reserves an empty leading pill and commits `[dragged, target]`; hovering its right half reserves an empty trailing pill and commits `[target, dragged]`. The projected row and existing target remain transparent and receive neither active nor hover material. The target's favicon stays on the ordinary-row leading coordinate, and its centered label uses the same `SplitGroupSegmentLabel`, width, spacing, and title-visibility policy used after commit. Only the empty placeholder receives the emphasized pill fill, and it contains neither a favicon nor a title.
 - A two- or three-member target group accepts the incoming tab at the end of the group. The complete list lane behind that row receives the same rectangular containment highlight as a folder, without row rounding; individual member pills are not DnD targets. A four-member group is not a pairing target.
-- Regular, Pinned, Folder, and Essential standalone tabs may be sources. The target container owns the result and the existing `SplitDropService` performs all identity conversion, materialization, topology, and selection work.
+- Regular, Pinned, Folder, and Favorite standalone tabs may be sources. The target container owns the result and the existing `SplitDropService` performs all identity conversion, materialization, topology, and selection work.
 - Whole-group and folder payloads never enter pairing. They continue to use ordinary row movement; split groups are not merged.
 - Ordinary pointer hover never paints an individual member pill. It may reveal that member's action, while row-level hover continues to use the shared row surface.
 - Hidden member and group actions reserve no title width. Regular and Pinned therefore use the same title projection until their trailing action is actually visible. A title is removed entirely unless the available width can show at least its first grapheme plus the ellipsis glyph.
 - Reorder keeps the existing line-and-ring indicator.
-- Essentials tiles remain reorder-only sidebar targets. Split creation or extension involving an Essential target happens through the active WebView.
+- Favorite tiles remain reorder-only sidebar targets. Split creation or extension involving a Favorite target happens through the active WebView.
 
-## Essentials
+## Favorite
 
-- A split group occupies one Essentials grid slot regardless of member count.
-- Grid capacity is measured in visual items, not launcher records. Internal member records may exceed the twelve-slot grid count so an existing Essential group can still grow to four members.
-- A full Essentials grid accepts no new item or group. Adding a third or fourth member through the active WebView is still allowed because it consumes no new grid slot.
-- Sidebar drops on Essential tiles never create or extend a split. Drops between tiles only perform ordinary Essentials placement.
+- A split group occupies one Favorite grid slot regardless of member count.
+- Grid capacity is measured in visual items, not launcher records. Internal member records may exceed the twelve-slot grid count so an existing Favorite group can still grow to four members.
+- A full Favorite grid accepts no new item or group. Adding a third or fourth member through the active WebView is still allowed because it consumes no new grid slot.
+- Sidebar drops on Favorite tiles never create or extend a split. Drops between tiles only perform ordinary Favorite placement.
 - Compact templates preserve member order: two equal cells; three cells with members one and two stacked on the left and member three spanning the right; four cells in a 2×2 row-major grid.
 - The compact template is independent of the browser's actual split layout. The WebView layout still follows the target pane and edge used for the drop.
 
-## Essential selection chrome
+## Favorite selection chrome
 
 - A split composition is one outer rounded tile. Member cells never draw their own rounded containers; they are sections clipped by the shared outer shape.
-- Inactive split tiles have no outer stroke. Sections are separated by transparent internal gaps whose width equals the normal Essential selection-ring thickness.
+- Inactive split tiles have no outer stroke. Sections are separated by transparent internal gaps whose width equals the normal Favorite selection-ring thickness.
 - An active split uses each member's existing `PinnedTileAccentResolver` color. One outer ring and the straight internal dividers interpolate spatially between those colors.
-- An active split fills the entire shared tile with the ordinary active Essential background. No member receives a separate focused fill.
-- A custom group icon replaces the member composition and uses the ordinary single-color Essential ring.
+- An active split fills the entire shared tile with the ordinary active Favorite background. No member receives a separate focused fill.
+- A custom group icon replaces the member composition and uses the ordinary single-color Favorite ring.
 
 ## Group lifecycle
 
@@ -84,7 +84,7 @@ in the source container.
 
 - Separating one participant places it immediately after the remaining group.
 - Separating a two-member group or using `Separate All Tabs` expands members at the group's position in member order.
-- If Essentials cannot hold every separated member, the earliest members fill available Essential slots and overflow members move to the beginning of the current Space's Pinned section, preserving order.
+- If Favorite cannot hold every separated member, the earliest members fill available Favorite slots and overflow members move to the beginning of the current Space's Pinned section, preserving order.
 
 ## Metadata and commands
 
@@ -100,7 +100,7 @@ in the source container.
 
 ## Drag preview
 
-- Preview is target-adaptive: Essential targets use the real Essential split tile; Regular, Pinned, and Folder targets use the real split row.
+- Preview is target-adaptive: Favorite targets use the real Favorite split tile; Regular, Pinned, and Folder targets use the real split row.
 - Sidebar and preview share rendering modules rather than approximating one another.
 - Member order, group icon/name, loaded state, group-level selection fill, and accent gradient match the corresponding sidebar item.
 - The drag preview remains attached to the pointer during tab-on-tab pairing. The empty reserved pill is destination presentation, not a replacement preview.

@@ -13,7 +13,7 @@ Changes should preserve these project constraints:
   timers, hidden web views, or long-running work.
 - Optional modules should not add runtime cost when disabled.
 - Browser organization features should remain understandable across tabs,
-  spaces, profiles, pinned items, essentials, Glance, and split view.
+  spaces, profiles, pinned items, favorite, Glance, and split view.
 - Incomplete features should be documented as incomplete.
 
 ## Documentation

@@ -59,7 +59,7 @@ class BrowserManager: ObservableObject {
     let shortcutExecutionProfileAssignments:
         ShortcutExecutionProfileAssignmentService
     let sidebarDragRouter: SidebarDragOperationRouter
-    let essentialsShortcutPlacementOwner: EssentialsShortcutPlacementOwner
+    let favoriteShortcutPlacementOwner: FavoriteShortcutPlacementOwner
     let shortcutPinStoreOwner: ShortcutPinStoreOwner
     let shortcutPinRuntimeResolutionOwner:
         ShortcutPinRuntimeResolutionOwner
@@ -519,8 +519,8 @@ class BrowserManager: ObservableObject {
         self.shortcutExecutionProfileAssignments =
             graph.shortcutExecutionProfileAssignments
         self.sidebarDragRouter = graph.sidebarDragRouter
-        self.essentialsShortcutPlacementOwner =
-            graph.essentialsShortcutPlacementOwner
+        self.favoriteShortcutPlacementOwner =
+            graph.favoriteShortcutPlacementOwner
         self.shortcutPinStoreOwner = graph.shortcutPinStoreOwner
         self.shortcutPinRuntimeResolutionOwner =
             graph.shortcutPinRuntimeResolutionOwner

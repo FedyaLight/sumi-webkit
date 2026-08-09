@@ -4,7 +4,7 @@
 
 ## 0.0.1 Scope
 
-- Native macOS browsing with tabs, windows, profiles, spaces, pinned items, Essentials, nested folders, Glance, and durable split groups.
+- Native macOS browsing with tabs, windows, profiles, spaces, pinned items, Favorite, nested folders, Glance, and durable split groups.
 - Session and closed-tab restoration, downloads, Reader presentation, command palette, bookmarks, history, themes, keyboard shortcuts, and media controls.
 - Memory and Energy Saver behavior with inactive-page unloading.
 - Profile-specific website-data partitions and ephemeral private browsing.

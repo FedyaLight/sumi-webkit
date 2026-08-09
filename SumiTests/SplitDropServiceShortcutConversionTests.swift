@@ -67,19 +67,19 @@ final class SplitDropServiceShortcutConversionTests: XCTestCase {
         XCTAssertFalse(materialized === dragProxy)
     }
 
-    func testPinnedLauncherMovesIntoEssentialSplitAsThirdMember() throws {
+    func testPinnedLauncherMovesIntoFavoriteSplitAsThirdMember() throws {
         let fixture = try makeFixture(sourceMemberCount: 2)
         defer { fixture.manager.tabRuntimeLifecycle.shutdown() }
         fixture.probe.reconcilesPresentations = false
         let profileID = try XCTUnwrap(fixture.space.profileId)
-        let essentialPins = (0..<2).map { index in
+        let favoritePins = (0..<2).map { index in
             ShortcutPin(
                 id: UUID(),
-                role: .essential,
+                role: .favorite,
                 profileId: profileID,
                 index: index,
-                launchURL: URL(string: "https://essential-\(index).example")!,
-                title: "Essential \(index)"
+                launchURL: URL(string: "https://favorite-\(index).example")!,
+                title: "Favorite \(index)"
             )
         }
         let sourcePin = ShortcutPin(
@@ -91,19 +91,19 @@ final class SplitDropServiceShortcutConversionTests: XCTestCase {
             title: "Pinned Source"
         )
         fixture.manager.structuralCollectionMutationOwner.setPinnedTabs(
-            essentialPins,
+            favoritePins,
             for: profileID
         )
         fixture.manager.structuralCollectionMutationOwner
             .setSpacePinnedShortcuts([sourcePin], for: fixture.space.id)
-        let essentialGroup = try XCTUnwrap(SplitGroup.make(
-            members: essentialPins.map { .shortcutPin($0.id) },
+        let favoriteGroup = try XCTUnwrap(SplitGroup.make(
+            members: favoritePins.map { .shortcutPin($0.id) },
             layoutKind: .vertical,
-            container: .essentialSidebar(profileId: profileID, index: 0)
+            container: .favoriteSidebar(profileId: profileID, index: 0)
         ))
         XCTAssertTrue(fixture.manager.splitGroupMutations.replaceAll(
             expected: [fixture.sourceGroup, fixture.targetGroup],
-            with: [essentialGroup],
+            with: [favoriteGroup],
             persist: false
         ))
 
@@ -113,7 +113,7 @@ final class SplitDropServiceShortcutConversionTests: XCTestCase {
             .shortcutPin(sourcePin.id),
             sourceTab: dragProxy,
             on: SplitDropTarget(
-                targetMemberID: .shortcutPin(essentialPins[0].id),
+                targetMemberID: .shortcutPin(favoritePins[0].id),
                 side: .right,
                 targetRect: .zero
             ),
@@ -121,7 +121,7 @@ final class SplitDropServiceShortcutConversionTests: XCTestCase {
         ))
 
         let committed = try XCTUnwrap(
-            fixture.manager.splitGroupStore.group(id: essentialGroup.id)
+            fixture.manager.splitGroupStore.group(id: favoriteGroup.id)
         )
         XCTAssertEqual(committed.memberIDs.count, 3)
         XCTAssertTrue(committed.contains(.shortcutPin(sourcePin.id)))
@@ -132,13 +132,13 @@ final class SplitDropServiceShortcutConversionTests: XCTestCase {
         )
         XCTAssertEqual(
             fixture.manager.shortcutPinCollectionStateOwner
-                .essentialPins(for: profileID)
+                .favoritePins(for: profileID)
                 .first(where: { $0.id == sourcePin.id })?.role,
-            .essential
+            .favorite
         )
     }
 
-    func testPinnedLauncherSplitsWithStandaloneEssentialByMovingIntoEssentials()
+    func testPinnedLauncherSplitsWithStandaloneFavoriteByMovingIntoFavorite()
         throws {
         let fixture = try makeFixture(sourceMemberCount: 2)
         defer { fixture.manager.tabRuntimeLifecycle.shutdown() }
@@ -154,11 +154,11 @@ final class SplitDropServiceShortcutConversionTests: XCTestCase {
         )
         let target = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: profileID,
             index: 0,
-            launchURL: URL(string: "https://essential-target.example")!,
-            title: "Essential Target"
+            launchURL: URL(string: "https://favorite-target.example")!,
+            title: "Favorite Target"
         )
         fixture.manager.structuralCollectionMutationOwner
             .setSpacePinnedShortcuts([source], for: fixture.space.id)
@@ -191,8 +191,8 @@ final class SplitDropServiceShortcutConversionTests: XCTestCase {
             group.memberIDs,
             [.shortcutPin(target.id), .shortcutPin(source.id)]
         )
-        guard case .essentialSidebar(let ownerProfileID, _) = group.container else {
-            return XCTFail("Expected the target Essential to own the group")
+        guard case .favoriteSidebar(let ownerProfileID, _) = group.container else {
+            return XCTFail("Expected the target Favorite to own the group")
         }
         XCTAssertEqual(ownerProfileID, profileID)
         XCTAssertNil(
@@ -202,9 +202,9 @@ final class SplitDropServiceShortcutConversionTests: XCTestCase {
         )
         XCTAssertEqual(
             fixture.manager.shortcutPinCollectionStateOwner
-                .essentialPins(for: profileID)
+                .favoritePins(for: profileID)
                 .first(where: { $0.id == source.id })?.role,
-            .essential
+            .favorite
         )
         XCTAssertEqual(
             fixture.manager.regularTabCollectionOwner
@@ -213,7 +213,7 @@ final class SplitDropServiceShortcutConversionTests: XCTestCase {
         )
     }
 
-    func testEssentialLauncherSplitsWithStandalonePinnedByMovingIntoPinned()
+    func testFavoriteLauncherSplitsWithStandalonePinnedByMovingIntoPinned()
         throws {
         let fixture = try makeFixture(sourceMemberCount: 2)
         defer { fixture.manager.tabRuntimeLifecycle.shutdown() }
@@ -221,11 +221,11 @@ final class SplitDropServiceShortcutConversionTests: XCTestCase {
         let profileID = try XCTUnwrap(fixture.space.profileId)
         let source = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: profileID,
             index: 0,
-            launchURL: URL(string: "https://essential-source.example")!,
-            title: "Essential Source"
+            launchURL: URL(string: "https://favorite-source.example")!,
+            title: "Favorite Source"
         )
         let target = ShortcutPin(
             id: UUID(),
@@ -274,7 +274,7 @@ final class SplitDropServiceShortcutConversionTests: XCTestCase {
         XCTAssertNil(folderID)
         XCTAssertNil(
             fixture.manager.shortcutPinCollectionStateOwner
-                .essentialPins(for: profileID)
+                .favoritePins(for: profileID)
                 .first(where: { $0.id == source.id })
         )
         XCTAssertEqual(

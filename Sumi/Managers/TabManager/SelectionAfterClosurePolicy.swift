@@ -15,7 +15,7 @@ enum SelectionAfterClosurePolicy {
         let removedWasGlobalPinned: Bool
         /// Whether a current space still exists after the removal transaction.
         let hasCurrentSpace: Bool
-        let essentialTabs: [Tab]
+        let favoriteTabs: [Tab]
         let spacePinnedTabs: [Tab]
         let regularTabs: [Tab]
         /// Index of the removed tab in the pre-removal space ordering, when the
@@ -38,8 +38,8 @@ enum SelectionAfterClosurePolicy {
     private static func nextAfterRemovingGlobalPinnedTab(
         from snapshot: Snapshot
     ) -> Tab? {
-        if !snapshot.essentialTabs.isEmpty {
-            return snapshot.essentialTabs.last
+        if !snapshot.favoriteTabs.isEmpty {
+            return snapshot.favoriteTabs.last
         }
         guard snapshot.hasCurrentSpace else {
             return nil
@@ -61,10 +61,10 @@ enum SelectionAfterClosurePolicy {
                     ? allSpaceTabs[newIndex]
                     : allSpaceTabs.first
             }
-            return snapshot.essentialTabs.last
+            return snapshot.favoriteTabs.last
         }
         return snapshot.regularTabs.last
             ?? snapshot.spacePinnedTabs.last
-            ?? snapshot.essentialTabs.last
+            ?? snapshot.favoriteTabs.last
     }
 }

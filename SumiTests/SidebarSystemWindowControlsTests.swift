@@ -131,17 +131,17 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         XCTAssertEqual(SidebarChromeMetrics.controlStripHeight, 40)
         XCTAssertEqual(SidebarChromeMetrics.controlToURLBarSpacing, 4)
         XCTAssertEqual(SidebarChromeMetrics.urlBarToSpaceTitleSpacing, 4)
-        XCTAssertEqual(SidebarChromeMetrics.essentialsToSpaceTitleSpacing, 8)
+        XCTAssertEqual(SidebarChromeMetrics.favoriteToSpaceTitleSpacing, 8)
         XCTAssertEqual(
-            SidebarChromeMetrics.essentialsTopPadding(
-                showsEssentialsSurface: true,
+            SidebarChromeMetrics.favoriteTopPadding(
+                showsFavoriteSurface: true,
                 showsExtensionGrid: false
             ),
             4
         )
         XCTAssertEqual(
-            SidebarChromeMetrics.essentialsTopPadding(
-                showsEssentialsSurface: true,
+            SidebarChromeMetrics.favoriteTopPadding(
+                showsFavoriteSurface: true,
                 showsExtensionGrid: true
             ),
             0

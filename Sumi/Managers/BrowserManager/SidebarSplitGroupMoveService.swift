@@ -6,7 +6,7 @@ final class SidebarSplitGroupMoveService {
     enum Destination {
         case regular(spaceID: UUID)
         case pinned(spaceID: UUID)
-        case essentials(profileID: UUID)
+        case favorite(profileID: UUID)
         case folder(id: UUID, name: String, spaceID: UUID)
     }
 
@@ -44,10 +44,10 @@ final class SidebarSplitGroupMoveService {
             result.append(.pinned(spaceID: spaceID))
         }
         if let profileID = windowState.currentProfileId,
-           !isEssential(group, profileID: profileID),
-           ordering.essentialItems(for: profileID).count
-                < EssentialsShortcutPlacementOwner.CapacityPolicy.maxItems {
-            result.append(.essentials(profileID: profileID))
+           !isFavorite(group, profileID: profileID),
+           ordering.favoriteItems(for: profileID).count
+                < FavoriteShortcutPlacementOwner.CapacityPolicy.maxItems {
+            result.append(.favorite(profileID: profileID))
         }
         result.append(contentsOf: folders.folders(for: spaceID).compactMap {
             folder in
@@ -91,10 +91,10 @@ final class SidebarSplitGroupMoveService {
                 container: .spacePinned(spaceID),
                 index: ordering.topLevelItems(for: spaceID).count
             )
-        case .essentials(let profileID):
+        case .favorite(let profileID):
             target = .init(
-                container: .essentials,
-                index: ordering.essentialItems(for: profileID).count
+                container: .favorite,
+                index: ordering.favoriteItems(for: profileID).count
             )
         case .folder(let folderID, _, let spaceID):
             target = .init(
@@ -123,8 +123,8 @@ final class SidebarSplitGroupMoveService {
         switch group.container {
         case .regularTabs(let spaceID?):
             return (.spaceRegular(spaceID), .spaceRegular(spaceID))
-        case .essentialSidebar:
-            return (.essentials, .essentials)
+        case .favoriteSidebar:
+            return (.favorite, .favorite)
         case .shortcutSidebar(let spaceID, _, let folderID, _):
             if let folderID {
                 return (.folder(folderID), .folder(folderID))
@@ -135,8 +135,8 @@ final class SidebarSplitGroupMoveService {
         }
     }
 
-    private func isEssential(_ group: SplitGroup, profileID: UUID) -> Bool {
-        guard case .essentialSidebar(let ownerID, _) = group.container else {
+    private func isFavorite(_ group: SplitGroup, profileID: UUID) -> Bool {
+        guard case .favoriteSidebar(let ownerID, _) = group.container else {
             return false
         }
         return ownerID == nil || ownerID == profileID

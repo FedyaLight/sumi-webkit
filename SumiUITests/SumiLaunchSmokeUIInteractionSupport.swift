@@ -1224,7 +1224,7 @@ extension SumiLaunchSmokeUITestCase {
         if elementID.hasPrefix("folder-header-") {
             let currentValue = accessibilityValue(of: target)
             expectedValue = currentValue == "expanded" ? "collapsed" : "expanded"
-        } else if elementID.hasPrefix("essential-shortcut-")
+        } else if elementID.hasPrefix("favorite-shortcut-")
                     || elementID.hasPrefix("space-pinned-shortcut-")
                     || elementID.hasPrefix("folder-shortcut-")
                     || elementID.hasPrefix("space-regular-tab-") {
@@ -2095,7 +2095,7 @@ extension SumiLaunchSmokeUITestCase {
             "space-pinned-shortcut-action-",
             "space-pinned-shortcut-reset-",
             "folder-shortcut-",
-            "essential-shortcut-",
+            "favorite-shortcut-",
             "tab-row-",
         ]
         let summary = prefixes.flatMap { prefix -> [String] in

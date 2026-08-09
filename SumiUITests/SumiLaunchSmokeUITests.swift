@@ -225,10 +225,10 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
         XCTAssertTrue(window.waitForExistence(timeout: 5))
         revealHoverSidebar(in: window)
 
-        let dismissButton = app.buttons["essentials-placeholder-dismiss"]
+        let dismissButton = app.buttons["favorite-placeholder-dismiss"]
         XCTAssertTrue(
             dismissButton.waitForExistence(timeout: 5),
-            "Collapsed empty Essentials should expose its dismiss button"
+            "Collapsed empty Favorite should expose its dismiss button"
         )
 
         dismissButton.click()

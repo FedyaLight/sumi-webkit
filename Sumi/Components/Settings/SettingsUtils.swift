@@ -69,7 +69,7 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
                 group: .browser,
                 keywords: [
                     "startup", "launch", "restore", "previous session",
-                    "pinned", "essential", "launcher", "homepage", "start page",
+                    "pinned", "favorite", "launcher", "homepage", "start page",
                 ]
             )
         case .downloads:
@@ -106,7 +106,7 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
                 group: .browsing,
                 keywords: [
                     "memory", "saver", "inactive", "deactivate", "tabs",
-                    "reload", "custom delay", "essentials", "energy", "battery",
+                    "reload", "custom delay", "favorite", "energy", "battery",
                     "low power", "thermal", "animations", "transparency", "gradient",
                 ]
             )

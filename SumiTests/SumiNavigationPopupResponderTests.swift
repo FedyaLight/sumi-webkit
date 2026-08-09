@@ -44,7 +44,7 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         tab.shortcutPinRole = .spacePinned
         XCTAssertTrue(tab.shouldOpenDynamicallyInGlance(url: externalURL, modifierFlags: []))
 
-        tab.shortcutPinRole = .essential
+        tab.shortcutPinRole = .favorite
         XCTAssertTrue(tab.shouldOpenDynamicallyInGlance(url: externalURL, modifierFlags: []))
         XCTAssertTrue(
             tab.shouldOpenDynamicallyInGlance(
@@ -339,9 +339,9 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         )
     }
 
-    func testPopupResponderEssentialExternalCleanClickRoutesToGlance() async throws {
+    func testPopupResponderFavoriteExternalCleanClickRoutesToGlance() async throws {
         let harness = try await makePopupFocusHarness()
-        harness.sourceTab.shortcutPinRole = .essential
+        harness.sourceTab.shortcutPinRole = .favorite
         let responder = popupResponder(for: harness.sourceTab)
         let adapter = SumiNavigationResponderAdapter(target: responder)
         let targetURL = URL(string: "https://destination.example/page")!

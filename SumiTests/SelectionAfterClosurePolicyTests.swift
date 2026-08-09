@@ -11,7 +11,7 @@ final class SelectionAfterClosurePolicyTests: XCTestCase {
         let snapshot = SelectionAfterClosurePolicy.Snapshot(
             removedWasGlobalPinned: false,
             hasCurrentSpace: true,
-            essentialTabs: [],
+            favoriteTabs: [],
             spacePinnedTabs: [pinned],
             regularTabs: [first, second],
             removedIndexInCurrentSpace: 2
@@ -22,12 +22,12 @@ final class SelectionAfterClosurePolicyTests: XCTestCase {
         XCTAssertEqual(next?.id, second.id)
     }
 
-    func testRemovedIndexFallsBackToEssentialTabsWhenSpaceBecomesEmpty() {
-        let essential = makeTab(url: "https://essential.example", spaceId: nil)
+    func testRemovedIndexFallsBackToFavoriteTabsWhenSpaceBecomesEmpty() {
+        let favorite = makeTab(url: "https://favorite.example", spaceId: nil)
         let snapshot = SelectionAfterClosurePolicy.Snapshot(
             removedWasGlobalPinned: false,
             hasCurrentSpace: true,
-            essentialTabs: [essential],
+            favoriteTabs: [favorite],
             spacePinnedTabs: [],
             regularTabs: [],
             removedIndexInCurrentSpace: 0
@@ -35,16 +35,16 @@ final class SelectionAfterClosurePolicyTests: XCTestCase {
 
         let next = selectedTab(from: snapshot)
 
-        XCTAssertEqual(next?.id, essential.id)
+        XCTAssertEqual(next?.id, favorite.id)
     }
 
-    func testEmptySpaceWithoutIndexFallsBackThroughRegularPinnedEssential() {
-        let essential = makeTab(url: "https://essential.example", spaceId: nil)
+    func testEmptySpaceWithoutIndexFallsBackThroughRegularPinnedFavorite() {
+        let favorite = makeTab(url: "https://favorite.example", spaceId: nil)
         let pinned = makeTab(url: "https://pinned.example", spaceId: UUID())
         let snapshot = SelectionAfterClosurePolicy.Snapshot(
             removedWasGlobalPinned: false,
             hasCurrentSpace: true,
-            essentialTabs: [essential],
+            favoriteTabs: [favorite],
             spacePinnedTabs: [pinned],
             regularTabs: [],
             removedIndexInCurrentSpace: nil
@@ -55,35 +55,35 @@ final class SelectionAfterClosurePolicyTests: XCTestCase {
         XCTAssertEqual(next?.id, pinned.id)
     }
 
-    func testClosingGlobalPinnedUsesOneCoherentEssentialThenSpaceFallback() {
-        let essentialA = makeTab(url: "https://a.example", spaceId: nil)
-        let essentialB = makeTab(url: "https://b.example", spaceId: nil)
+    func testClosingGlobalPinnedUsesOneCoherentFavoriteThenSpaceFallback() {
+        let favoriteA = makeTab(url: "https://a.example", spaceId: nil)
+        let favoriteB = makeTab(url: "https://b.example", spaceId: nil)
         let spacePinned = makeTab(url: "https://space.example", spaceId: UUID())
         let regular = makeTab(url: "https://regular.example", spaceId: spacePinned.spaceId)
 
-        let withEssentials = SelectionAfterClosurePolicy.Snapshot(
+        let withFavorite = SelectionAfterClosurePolicy.Snapshot(
             removedWasGlobalPinned: true,
             hasCurrentSpace: true,
-            essentialTabs: [essentialA, essentialB],
+            favoriteTabs: [favoriteA, favoriteB],
             spacePinnedTabs: [spacePinned],
             regularTabs: [regular],
             removedIndexInCurrentSpace: nil
         )
         XCTAssertEqual(
-            selectedTab(from: withEssentials)?.id,
-            essentialB.id
+            selectedTab(from: withFavorite)?.id,
+            favoriteB.id
         )
 
-        let withoutEssentials = SelectionAfterClosurePolicy.Snapshot(
+        let withoutFavorite = SelectionAfterClosurePolicy.Snapshot(
             removedWasGlobalPinned: true,
             hasCurrentSpace: true,
-            essentialTabs: [],
+            favoriteTabs: [],
             spacePinnedTabs: [spacePinned],
             regularTabs: [regular],
             removedIndexInCurrentSpace: nil
         )
         XCTAssertEqual(
-            selectedTab(from: withoutEssentials)?.id,
+            selectedTab(from: withoutFavorite)?.id,
             spacePinned.id
         )
     }
@@ -92,7 +92,7 @@ final class SelectionAfterClosurePolicyTests: XCTestCase {
         let snapshot = SelectionAfterClosurePolicy.Snapshot(
             removedWasGlobalPinned: false,
             hasCurrentSpace: false,
-            essentialTabs: [makeTab(url: "https://essential.example", spaceId: nil)],
+            favoriteTabs: [makeTab(url: "https://favorite.example", spaceId: nil)],
             spacePinnedTabs: [],
             regularTabs: [],
             removedIndexInCurrentSpace: 0

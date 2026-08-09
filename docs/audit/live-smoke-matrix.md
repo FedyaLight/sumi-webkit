@@ -22,8 +22,8 @@ For every scenario record:
 
 ## Launcher Model
 
-- Essentials: launcher-only -> open live -> backgrounded live -> selected live -> unload -> remove.
-- Space-pinned: same state cycle as essentials.
+- Favorite: launcher-only -> open live -> backgrounded live -> selected live -> unload -> remove.
+- Space-pinned: same state cycle as favorite.
 - Folder launcher: move regular tab into folder, open it, close current page, reopen with one click.
 - Verify hover affordance:
   - live launcher shows unload action
@@ -34,7 +34,7 @@ For every scenario record:
 - Regular -> folder.
 - Folder launcher -> top-level pinned.
 - Pinned -> regular tail below `New Tab`.
-- Essentials -> regular tabs.
+- Favorite -> regular tabs.
 - Same-container reorder for top-level pinned.
 - Cross-container move during hover and while animations are still running.
 

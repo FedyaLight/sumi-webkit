@@ -81,7 +81,7 @@ private struct SidebarDragGeometryReporter<Trigger: Equatable>: ViewModifier {
     }
 }
 
-private struct SidebarEssentialsLayoutGeometrySignature: Equatable {
+private struct SidebarFavoriteLayoutGeometrySignature: Equatable {
     let itemCount: Int
     let columnCount: Int
     let firstSyntheticRowSlot: Int?
@@ -90,7 +90,7 @@ private struct SidebarEssentialsLayoutGeometrySignature: Equatable {
     let visibleRowCount: Int
     let maxDropRowCount: Int
     let dropFrame: CGRect
-    let dropSlotFrames: [SidebarEssentialsDropSlotMetrics]
+    let dropSlotFrames: [SidebarFavoriteDropSlotMetrics]
     let itemSize: CGSize
     let gridSpacing: CGFloat
     let canAcceptDrop: Bool
@@ -136,7 +136,7 @@ extension View {
         )
     }
 
-    func sidebarEssentialsLayoutGeometry(
+    func sidebarFavoriteLayoutGeometry(
         spaceId: UUID,
         profileId: UUID?,
         itemCount: Int,
@@ -147,14 +147,14 @@ extension View {
         visibleRowCount: Int,
         maxDropRowCount: Int,
         dropFrame: CGRect,
-        dropSlotFrames: [SidebarEssentialsDropSlotMetrics] = [],
+        dropSlotFrames: [SidebarFavoriteDropSlotMetrics] = [],
         itemSize: CGSize,
         gridSpacing: CGFloat,
         canAcceptDrop: Bool,
         generation: Int,
         isEnabled: Bool = true
     ) -> some View {
-        let signature = SidebarEssentialsLayoutGeometrySignature(
+        let signature = SidebarFavoriteLayoutGeometrySignature(
             itemCount: itemCount,
             columnCount: columnCount,
             firstSyntheticRowSlot: firstSyntheticRowSlot,
@@ -184,7 +184,7 @@ extension View {
                             height: dropFrame.height
                         )
                         let resolvedDropSlotFrames = dropSlotFrames.map { slotFrame in
-                            SidebarEssentialsDropSlotMetrics(
+                            SidebarFavoriteDropSlotMetrics(
                                 slot: slotFrame.slot,
                                 frame: CGRect(
                                     x: frame.minX + slotFrame.frame.minX,
@@ -194,9 +194,9 @@ extension View {
                                 )
                             )
                         }
-                        let update = SidebarEssentialsLayoutUpdate(
+                        let update = SidebarFavoriteLayoutUpdate(
                             spaceId: spaceId,
-                            input: SidebarEssentialsLayoutMetricsInput(
+                            input: SidebarFavoriteLayoutMetricsInput(
                                 profileId: profileId,
                                 frame: frame,
                                 dropFrame: resolvedDropFrame,
@@ -214,19 +214,19 @@ extension View {
                             )
                         )
                         geometry.report(
-                            .essentials(update),
+                            .favorite(update),
                             generation: generation
                         )
                     } else {
                         geometry.report(
-                            .essentials(SidebarEssentialsLayoutUpdate(spaceId: spaceId)),
+                            .favorite(SidebarFavoriteLayoutUpdate(spaceId: spaceId)),
                             generation: generation
                         )
                     }
                 },
                 remove: { geometry in
                     geometry.report(
-                        .essentials(SidebarEssentialsLayoutUpdate(spaceId: spaceId)),
+                        .favorite(SidebarFavoriteLayoutUpdate(spaceId: spaceId)),
                         generation: generation
                     )
                 }

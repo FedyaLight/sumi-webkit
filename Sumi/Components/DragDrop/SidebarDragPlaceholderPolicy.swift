@@ -26,7 +26,7 @@ enum SidebarDragPlaceholderPolicy {
 private extension TabDragManager.DragContainer {
     var hostsShortcutIdentity: Bool {
         switch self {
-        case .essentials, .spacePinned, .folder:
+        case .favorite, .spacePinned, .folder:
             return true
         case .spaceRegular, .none:
             return false

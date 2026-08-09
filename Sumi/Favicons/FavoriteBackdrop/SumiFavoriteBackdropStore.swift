@@ -3,16 +3,16 @@ import Combine
 import OSLog
 
 @MainActor
-final class SumiEssentialBackdropStore: BrowserEssentialBackdropReading {
-    private static let log = Logger.sumi(category: "EssentialBackdropStore")
+final class SumiFavoriteBackdropStore: BrowserFavoriteBackdropReading {
+    private static let log = Logger.sumi(category: "FavoriteBackdropStore")
 
-    private let diskStorage: SumiEssentialBackdropDiskStorage
+    private let diskStorage: SumiFavoriteBackdropDiskStorage
     private let imageReader: any BrowserFaviconImageReading
     private let imageCache = NSCache<NSString, NSImage>()
-    private var currentEntries: [SumiEssentialBackdropKey: URL] = [:]
-    private var generations: [SumiEssentialBackdropKey: UInt64] = [:]
+    private var currentEntries: [SumiFavoriteBackdropKey: URL] = [:]
+    private var generations: [SumiFavoriteBackdropKey: UInt64] = [:]
     private var bakeTasks: [
-        SumiEssentialBackdropKey: Task<NSImage?, Never>
+        SumiFavoriteBackdropKey: Task<NSImage?, Never>
     ] = [:]
     private var reconcileTask: Task<Void, Never>?
     private var faviconUpdates: AnyCancellable?
@@ -21,7 +21,7 @@ final class SumiEssentialBackdropStore: BrowserEssentialBackdropReading {
         rootDirectory: URL,
         imageReader: any BrowserFaviconImageReading
     ) {
-        diskStorage = SumiEssentialBackdropDiskStorage(
+        diskStorage = SumiFavoriteBackdropDiskStorage(
             rootDirectory: rootDirectory
         )
         self.imageReader = imageReader
@@ -29,8 +29,8 @@ final class SumiEssentialBackdropStore: BrowserEssentialBackdropReading {
         imageCache.totalCostLimit = 2 * 1_024 * 1_024
     }
 
-    func syncEssentials(_ pins: [ShortcutPin]) {
-        let entries = SumiEssentialBackdropReconcilePlan.entries(for: pins)
+    func syncFavorite(_ pins: [ShortcutPin]) {
+        let entries = SumiFavoriteBackdropReconcilePlan.entries(for: pins)
         updateFaviconSubscription(isNeeded: !entries.isEmpty)
         let removedKeys = Set(currentEntries.keys).subtracting(entries.keys)
         for key in removedKeys {
@@ -55,7 +55,7 @@ final class SumiEssentialBackdropStore: BrowserEssentialBackdropReading {
         for documentURL: URL,
         partition: SumiFaviconPartition
     ) -> NSImage? {
-        guard let key = SumiEssentialBackdropKey(
+        guard let key = SumiFavoriteBackdropKey(
             documentURL: documentURL,
             partition: partition
         ), currentEntries[key] != nil else { return nil }
@@ -66,7 +66,7 @@ final class SumiEssentialBackdropStore: BrowserEssentialBackdropReading {
         for documentURL: URL,
         partition: SumiFaviconPartition
     ) async -> NSImage? {
-        guard let key = SumiEssentialBackdropKey(
+        guard let key = SumiFavoriteBackdropKey(
             documentURL: documentURL,
             partition: partition
         ), let currentURL = currentEntries[key] else { return nil }
@@ -82,7 +82,7 @@ final class SumiEssentialBackdropStore: BrowserEssentialBackdropReading {
             }
         } catch {
             Self.log.error(
-                "Failed to read essential backdrop: \(String(describing: error), privacy: .public)"
+                "Failed to read favorite backdrop: \(String(describing: error), privacy: .public)"
             )
         }
         return await bake(
@@ -93,12 +93,12 @@ final class SumiEssentialBackdropStore: BrowserEssentialBackdropReading {
     }
 
     private func reconcile(
-        entries: [SumiEssentialBackdropKey: URL]
+        entries: [SumiFavoriteBackdropKey: URL]
     ) async {
         do {
             let existing = try await diskStorage.existingKeys()
             guard !Task.isCancelled else { return }
-            let plan = SumiEssentialBackdropReconcilePlan.compute(
+            let plan = SumiFavoriteBackdropReconcilePlan.compute(
                 current: Set(entries.keys),
                 existing: existing
             )
@@ -118,7 +118,7 @@ final class SumiEssentialBackdropStore: BrowserEssentialBackdropReading {
             }
         } catch {
             Self.log.error(
-                "Failed to reconcile essential backdrops: \(String(describing: error), privacy: .public)"
+                "Failed to reconcile favorite backdrops: \(String(describing: error), privacy: .public)"
             )
         }
     }
@@ -158,7 +158,7 @@ final class SumiEssentialBackdropStore: BrowserEssentialBackdropReading {
     }
 
     private func bake(
-        key: SumiEssentialBackdropKey,
+        key: SumiFavoriteBackdropKey,
         documentURL: URL,
         replacesExisting: Bool
     ) async -> NSImage? {
@@ -184,7 +184,7 @@ final class SumiEssentialBackdropStore: BrowserEssentialBackdropReading {
     }
 
     private func performBake(
-        key: SumiEssentialBackdropKey,
+        key: SumiFavoriteBackdropKey,
         documentURL: URL,
         generation: UInt64
     ) async -> NSImage? {
@@ -205,7 +205,7 @@ final class SumiEssentialBackdropStore: BrowserEssentialBackdropReading {
         }
         guard isCurrent(key, generation: generation),
               let favicon,
-              let data = SumiEssentialBackdropRenderer.bake(favicon: favicon),
+              let data = SumiFavoriteBackdropRenderer.bake(favicon: favicon),
               let image = decodedImage(data)
         else { return nil }
 
@@ -213,7 +213,7 @@ final class SumiEssentialBackdropStore: BrowserEssentialBackdropReading {
             try await diskStorage.write(data, for: key.storedKey)
         } catch {
             Self.log.error(
-                "Failed to write essential backdrop: \(String(describing: error), privacy: .public)"
+                "Failed to write favorite backdrop: \(String(describing: error), privacy: .public)"
             )
             return nil
         }
@@ -224,12 +224,12 @@ final class SumiEssentialBackdropStore: BrowserEssentialBackdropReading {
 
         cache(image, for: key)
         NotificationCenter.default.post(
-            name: .essentialBackdropUpdated,
+            name: .favoriteBackdropUpdated,
             object: self,
             userInfo: [
-                Notification.Name.essentialBackdropReferenceKey:
+                Notification.Name.favoriteBackdropReferenceKey:
                     key.referenceKey,
-                Notification.Name.essentialBackdropPartitionKey:
+                Notification.Name.favoriteBackdropPartitionKey:
                     key.partition.storageComponent,
             ]
         )
@@ -237,7 +237,7 @@ final class SumiEssentialBackdropStore: BrowserEssentialBackdropReading {
     }
 
     private func isCurrent(
-        _ key: SumiEssentialBackdropKey,
+        _ key: SumiFavoriteBackdropKey,
         generation: UInt64
     ) -> Bool {
         !Task.isCancelled
@@ -245,13 +245,13 @@ final class SumiEssentialBackdropStore: BrowserEssentialBackdropReading {
             && generations[key] == generation
     }
 
-    private func cancelWork(for key: SumiEssentialBackdropKey) {
+    private func cancelWork(for key: SumiFavoriteBackdropKey) {
         generations[key] = generations[key, default: 0] &+ 1
         bakeTasks.removeValue(forKey: key)?.cancel()
     }
 
     private func removeArtifact(
-        for key: SumiEssentialBackdropKey,
+        for key: SumiFavoriteBackdropKey,
         generation: UInt64?
     ) async {
         guard currentEntries[key] == nil,
@@ -261,7 +261,7 @@ final class SumiEssentialBackdropStore: BrowserEssentialBackdropReading {
             try await diskStorage.remove(key.storedKey)
         } catch {
             Self.log.error(
-                "Failed to remove essential backdrop: \(String(describing: error), privacy: .public)"
+                "Failed to remove favorite backdrop: \(String(describing: error), privacy: .public)"
             )
         }
     }
@@ -269,21 +269,21 @@ final class SumiEssentialBackdropStore: BrowserEssentialBackdropReading {
     private func decodedImage(_ data: Data) -> NSImage? {
         guard let image = NSImage(data: data) else { return nil }
         image.size = NSSize(
-            width: SumiEssentialBackdropRenderer.pixelDimension,
-            height: SumiEssentialBackdropRenderer.pixelDimension
+            width: SumiFavoriteBackdropRenderer.pixelDimension,
+            height: SumiFavoriteBackdropRenderer.pixelDimension
         )
         return image
     }
 
     private func cache(
         _ image: NSImage,
-        for key: SumiEssentialBackdropKey
+        for key: SumiFavoriteBackdropKey
     ) {
         imageCache.setObject(
             image,
             forKey: key.cacheIdentifier,
-            cost: SumiEssentialBackdropRenderer.pixelDimension
-                * SumiEssentialBackdropRenderer.pixelDimension * 4
+            cost: SumiFavoriteBackdropRenderer.pixelDimension
+                * SumiFavoriteBackdropRenderer.pixelDimension * 4
         )
     }
 }

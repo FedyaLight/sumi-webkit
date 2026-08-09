@@ -113,7 +113,7 @@ final class SidebarSplitGroupEditorPresentationService {
         switch destination {
         case .regular: return "Regular Tabs"
         case .pinned: return "Pinned Tabs"
-        case .essentials: return "Essentials"
+        case .favorite: return "Favorite"
         case .folder(_, let name, _): return name
         }
     }
@@ -124,7 +124,7 @@ final class SidebarSplitGroupEditorPresentationService {
         switch destination {
         case .regular: return "rectangle.stack"
         case .pinned: return "pin"
-        case .essentials: return "square.grid.2x2"
+        case .favorite: return "square.grid.2x2"
         case .folder: return "folder"
         }
     }

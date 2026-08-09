@@ -59,7 +59,7 @@ final class SidebarRegularTabsControllerTests: XCTestCase {
         XCTAssertEqual(targets.shortcutPin(by: pin.id)?.id, pin.id)
         XCTAssertEqual(targets.userFolders(for: space.id).map(\.id), [folder.id])
         XCTAssertTrue(
-            targets.canAddToEssentials(
+            targets.canAddToFavorite(
                 tab,
                 in: space,
                 windowState: windowState

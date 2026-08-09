@@ -38,7 +38,7 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
         let profileId = UUID()
         let pin = ShortcutPin(
             id: sourceId,
-            role: .essential,
+            role: .favorite,
             profileId: profileId,
             index: 0,
             launchURL: URL(string: "https://source.example")!,
@@ -51,7 +51,7 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
                 windowId: nil,
                 spaceId: spaceId,
                 profileId: profileId,
-                sourceContainer: .essentials,
+                sourceContainer: .favorite,
                 sourceItemId: sourceId,
                 sourceItemKind: .tab
             )
@@ -64,7 +64,7 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
             SidebarDropCoordinator.performDrop(
                 pasteboard: pasteboard,
                 resolution: SidebarDropResolution(
-                    slot: .essentials(slot: 2),
+                    slot: .favorite(slot: 2),
                     folderIntent: .none,
                     activeHoveredFolderId: nil
                 ),
@@ -76,8 +76,8 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
 
         let intent = try! XCTUnwrap(operations.performed.first)
         XCTAssertEqual(intent.presentedVisualIndex, 2)
-        XCTAssertEqual(intent.fromContainer, .essentials)
-        XCTAssertEqual(intent.toContainer, .essentials)
+        XCTAssertEqual(intent.fromContainer, .favorite)
+        XCTAssertEqual(intent.toContainer, .favorite)
     }
 
     func testCrossContainerDropSkipsSameContainerAdjustment() {
@@ -86,7 +86,7 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
         let profileId = UUID()
         let pin = ShortcutPin(
             id: sourceId,
-            role: .essential,
+            role: .favorite,
             profileId: profileId,
             index: 0,
             launchURL: URL(string: "https://source.example")!,
@@ -99,7 +99,7 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
                 windowId: nil,
                 spaceId: spaceId,
                 profileId: profileId,
-                sourceContainer: .essentials,
+                sourceContainer: .favorite,
                 sourceItemId: sourceId,
                 sourceItemKind: .tab
             )
@@ -124,7 +124,7 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
 
         let intent = try! XCTUnwrap(operations.performed.first)
         XCTAssertEqual(intent.presentedVisualIndex, 2)
-        XCTAssertEqual(intent.fromContainer, .essentials)
+        XCTAssertEqual(intent.fromContainer, .favorite)
         XCTAssertEqual(intent.toContainer, .spacePinned(spaceId))
     }
 
@@ -236,7 +236,7 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
             payload: .pin(
                 ShortcutPin(
                     id: sourceId,
-                    role: .essential,
+                    role: .favorite,
                     profileId: UUID(),
                     index: 0,
                     launchURL: URL(string: "https://source.example")!,
@@ -250,7 +250,7 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
                 windowId: nil,
                 spaceId: UUID(),
                 profileId: UUID(),
-                sourceContainer: .essentials,
+                sourceContainer: .favorite,
                 sourceItemId: sourceId,
                 sourceItemKind: .tab
             )
@@ -263,7 +263,7 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
             SidebarDropCoordinator.performDrop(
                 pasteboard: pasteboard,
                 resolution: SidebarDropResolution(
-                    slot: .essentials(slot: 1),
+                    slot: .favorite(slot: 1),
                     folderIntent: .none,
                     activeHoveredFolderId: nil
                 ),
@@ -367,14 +367,14 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
                 profileID: profile.id
             )
         )
-        let first = try makeEssentialPin(
+        let first = try makeFavoritePin(
             browserManager,
             in: space,
             profileId: profile.id,
             url: "https://first.example",
             index: 0
         )
-        let moved = try makeEssentialPin(
+        let moved = try makeFavoritePin(
             browserManager,
             in: space,
             profileId: profile.id,
@@ -387,7 +387,7 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
                 windowId: nil,
                 spaceId: space.id,
                 profileId: profile.id,
-                sourceContainer: .essentials,
+                sourceContainer: .favorite,
                 sourceItemId: moved.id,
                 sourceItemKind: .tab
             )
@@ -406,7 +406,7 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
             context.dragTransactions.commit(
                 pasteboard: pasteboard,
                 resolution: SidebarDropResolution(
-                    slot: .essentials(slot: 0),
+                    slot: .favorite(slot: 0),
                     folderIntent: .none,
                     activeHoveredFolderId: nil
                 ),
@@ -415,7 +415,7 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
         )
         XCTAssertEqual(
             browserManager.shortcutPinCollectionStateOwner
-                .essentialPins(for: profile.id).map(\.id),
+                .favoritePins(for: profile.id).map(\.id),
             [moved.id, first.id]
         )
     }
@@ -498,8 +498,8 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
         XCTAssertEqual(group.container, .regularTabs(spaceId: space.id))
     }
 
-    func testEssentialsCommitMatchesPresentedVisualGapWhenSplitTileIsPresent() throws {
-        let profile = Profile(name: "Essential Split Reorder")
+    func testFavoriteCommitMatchesPresentedVisualGapWhenSplitTileIsPresent() throws {
+        let profile = Profile(name: "Favorite Split Reorder")
         let browser = makeSafariExtensionTestBrowserManager(profile: profile)
         let space = try XCTUnwrap(
             browser.sidebarSpaceLifecycle.createSpace(
@@ -509,22 +509,22 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
             )
         )
         let pins = try (0..<4).map { index in
-            try makeEssentialPin(
+            try makeFavoritePin(
                 browser,
                 in: space,
                 profileId: profile.id,
-                url: "https://essential-\(index).example",
+                url: "https://favorite-\(index).example",
                 index: index
             )
         }
         let group = try XCTUnwrap(SplitGroup.make(
             members: pins.prefix(2).map { .shortcutPin($0.id) },
             layoutKind: .horizontal,
-            container: .essentialSidebar(profileId: profile.id, index: 0)
+            container: .favoriteSidebar(profileId: profile.id, index: 0)
         ))
         XCTAssertTrue(browser.splitGroupMutations.insert(group, persist: false))
         XCTAssertEqual(
-            browser.splitGroupSidebarOrdering.essentialItems(for: profile.id),
+            browser.splitGroupSidebarOrdering.favoriteItems(for: profile.id),
             [.splitGroup(group.id), .shortcut(pins[2].id), .shortcut(pins[3].id)]
         )
 
@@ -538,7 +538,7 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
                 windowId: nil,
                 spaceId: space.id,
                 profileId: profile.id,
-                sourceContainer: .essentials,
+                sourceContainer: .favorite,
                 sourceItemId: pins[2].id,
                 sourceItemKind: .tab
             )
@@ -552,20 +552,20 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
         XCTAssertTrue(context.dragTransactions.commit(
             pasteboard: pasteboard,
             resolution: SidebarDropResolution(
-                slot: .essentials(slot: 2),
+                slot: .favorite(slot: 2),
                 folderIntent: .none,
                 activeHoveredFolderId: nil
             ),
             windowState: windowState
         ))
         XCTAssertEqual(
-            browser.splitGroupSidebarOrdering.essentialItems(for: profile.id),
+            browser.splitGroupSidebarOrdering.favoriteItems(for: profile.id),
             [.splitGroup(group.id), .shortcut(pins[3].id), .shortcut(pins[2].id)]
         )
     }
 
-    func testEssentialsCommitKeepsPinAndSplitMovesAlignedWithPresentedGap() throws {
-        let profile = Profile(name: "Essential Mixed Reorder")
+    func testFavoriteCommitKeepsPinAndSplitMovesAlignedWithPresentedGap() throws {
+        let profile = Profile(name: "Favorite Mixed Reorder")
         let browser = makeSafariExtensionTestBrowserManager(profile: profile)
         let space = try XCTUnwrap(
             browser.sidebarSpaceLifecycle.createSpace(
@@ -575,18 +575,18 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
             )
         )
         let pins = try (0..<4).map { index in
-            try makeEssentialPin(
+            try makeFavoritePin(
                 browser,
                 in: space,
                 profileId: profile.id,
-                url: "https://mixed-essential-\(index).example",
+                url: "https://mixed-favorite-\(index).example",
                 index: index
             )
         }
         let group = try XCTUnwrap(SplitGroup.make(
             members: pins[1...2].map { .shortcutPin($0.id) },
             layoutKind: .vertical,
-            container: .essentialSidebar(profileId: profile.id, index: 1)
+            container: .favoriteSidebar(profileId: profile.id, index: 1)
         ))
         XCTAssertTrue(browser.splitGroupMutations.insert(group, persist: false))
 
@@ -605,7 +605,7 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
                 windowId: nil,
                 spaceId: space.id,
                 profileId: profile.id,
-                sourceContainer: .essentials,
+                sourceContainer: .favorite,
                 sourceItemId: pins[3].id,
                 sourceItemKind: .tab
             )
@@ -614,19 +614,19 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
         XCTAssertTrue(context.dragTransactions.commit(
             pasteboard: trailingPinPasteboard,
             resolution: SidebarDropResolution(
-                slot: .essentials(slot: 0),
+                slot: .favorite(slot: 0),
                 folderIntent: .none,
                 activeHoveredFolderId: nil
             ),
             windowState: windowState
         ))
         XCTAssertEqual(
-            browser.splitGroupSidebarOrdering.essentialItems(for: profile.id),
+            browser.splitGroupSidebarOrdering.favoriteItems(for: profile.id),
             [.shortcut(pins[3].id), .shortcut(pins[0].id), .splitGroup(group.id)]
         )
         XCTAssertEqual(
             browser.splitGroupStore.group(id: group.id)?.container,
-            .essentialSidebar(profileId: profile.id, index: 2)
+            .favoriteSidebar(profileId: profile.id, index: 2)
         )
 
         let splitPasteboard = makePasteboard(
@@ -635,7 +635,7 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
                 windowId: nil,
                 spaceId: space.id,
                 profileId: profile.id,
-                sourceContainer: .essentials,
+                sourceContainer: .favorite,
                 sourceItemId: group.id,
                 sourceItemKind: .splitGroup
             )
@@ -643,24 +643,24 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
         XCTAssertTrue(context.dragTransactions.commit(
             pasteboard: splitPasteboard,
             resolution: SidebarDropResolution(
-                slot: .essentials(slot: 0),
+                slot: .favorite(slot: 0),
                 folderIntent: .none,
                 activeHoveredFolderId: nil
             ),
             windowState: windowState
         ))
         XCTAssertEqual(
-            browser.splitGroupSidebarOrdering.essentialItems(for: profile.id),
+            browser.splitGroupSidebarOrdering.favoriteItems(for: profile.id),
             [.splitGroup(group.id), .shortcut(pins[3].id), .shortcut(pins[0].id)]
         )
         XCTAssertEqual(
             browser.splitGroupStore.group(id: group.id)?.container,
-            .essentialSidebar(profileId: profile.id, index: 0)
+            .favoriteSidebar(profileId: profile.id, index: 0)
         )
     }
 
-    func testLiveCoordinatorMovesEssentialSplitGroupIntoPinnedGap() throws {
-        let profile = Profile(name: "Essential Split Drop")
+    func testLiveCoordinatorMovesFavoriteSplitGroupIntoPinnedGap() throws {
+        let profile = Profile(name: "Favorite Split Drop")
         let browser = makeSafariExtensionTestBrowserManager(profile: profile)
         let space = try XCTUnwrap(
             browser.sidebarSpaceLifecycle.createSpace(
@@ -670,7 +670,7 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
             )
         )
         let pins = try (0..<2).map { index in
-            try makeEssentialPin(
+            try makeFavoritePin(
                 browser,
                 in: space,
                 profileId: profile.id,
@@ -681,7 +681,7 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
         let group = try XCTUnwrap(SplitGroup.make(
             members: pins.map { .shortcutPin($0.id) },
             layoutKind: .vertical,
-            container: .essentialSidebar(profileId: profile.id, index: 0)
+            container: .favoriteSidebar(profileId: profile.id, index: 0)
         ))
         XCTAssertTrue(browser.splitGroupMutations.insert(group, persist: false))
 
@@ -696,7 +696,7 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
                 windowId: nil,
                 spaceId: space.id,
                 profileId: profile.id,
-                sourceContainer: .essentials,
+                sourceContainer: .favorite,
                 sourceItemId: group.id,
                 sourceItemKind: .splitGroup
             )
@@ -949,7 +949,7 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
         URLDropHarness().service
     }
 
-    func makeEssentialPin(
+    func makeFavoritePin(
         _ browser: BrowserManager,
         in space: Space,
         profileId: UUID,
@@ -965,7 +965,7 @@ final class SidebarDropCoordinatorBoundaryTests: XCTestCase {
             browser.regularTabShortcutConversion.convert(
                 tab,
                 destination: TabShortcutPinDestination(
-                    role: .essential,
+                    role: .favorite,
                     profileId: profileId,
                     spaceId: nil,
                     folderId: nil,
@@ -1065,10 +1065,10 @@ final class URLDropDestinations: SidebarURLDropDestinationResolving {
 
     func space(_ spaceID: UUID) -> Space? { spaces[spaceID] }
     func folder(_ folderID: UUID) -> (folder: TabFolder, space: Space)? { nil }
-    func essentialsInsertion(
+    func favoriteInsertion(
         in windowState: BrowserWindowState,
         at index: Int
-    ) -> EssentialsShortcutPlacementOwner.InsertionPlan? { nil }
+    ) -> FavoriteShortcutPlacementOwner.InsertionPlan? { nil }
 }
 
 @MainActor

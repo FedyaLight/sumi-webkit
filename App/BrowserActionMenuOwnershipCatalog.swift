@@ -18,7 +18,7 @@ enum BrowserActionMenuOwnershipCatalog {
         .goToTab1, .goToTab2, .goToTab3, .goToTab4, .goToTab5,
         .goToTab6, .goToTab7, .goToTab8, .goToLastTab,
         .duplicateTab, .pinTab, .unpinTab,
-        .addToEssentials, .removeFromEssentials,
+        .addToFavorite, .removeFromFavorite,
     ]
 
     static let splitView: [ShortcutAction] = [

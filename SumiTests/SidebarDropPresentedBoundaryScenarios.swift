@@ -498,26 +498,26 @@ extension SidebarDropCoordinatorBoundaryTests {
             ]
         )
 
-        let essential = try makeEssentialPin(
+        let favorite = try makeFavoritePin(
             browser,
             in: space,
             profileId: profile.id,
-            url: "https://cross-essential.example",
+            url: "https://cross-favorite.example",
             index: 0
         )
-        let essentialPasteboard = makePasteboard(
-            item: SumiDragItem.shortcutPin(essential.id, title: "Essential"),
+        let favoritePasteboard = makePasteboard(
+            item: SumiDragItem.shortcutPin(favorite.id, title: "Favorite"),
             scope: SidebarDragScope(
                 windowId: nil,
                 spaceId: space.id,
                 profileId: profile.id,
-                sourceContainer: .essentials,
-                sourceItemId: essential.id,
+                sourceContainer: .favorite,
+                sourceItemId: favorite.id,
                 sourceItemKind: .tab
             )
         )
         XCTAssertTrue(context.dragTransactions.commit(
-            pasteboard: essentialPasteboard,
+            pasteboard: favoritePasteboard,
             resolution: SidebarDropResolution(
                 slot: .spacePinned(spaceId: space.id, slot: 2),
                 folderIntent: .none,
@@ -530,7 +530,7 @@ extension SidebarDropCoordinatorBoundaryTests {
             [
                 .shortcut(pins[0].id),
                 .shortcut(convertedPin.id),
-                .shortcut(essential.id),
+                .shortcut(favorite.id),
                 .splitGroup(group.id),
                 .shortcut(pins[3].id),
             ]
@@ -541,8 +541,8 @@ extension SidebarDropCoordinatorBoundaryTests {
         XCTAssertEqual(
             SidebarDropProjection.operationIndex(
                 visualIndex: 2,
-                sourceContainer: .essentials,
-                targetContainer: .essentials,
+                sourceContainer: .favorite,
+                targetContainer: .favorite,
                 sourceIndex: 0,
                 sourceItemCount: 4
             ),
@@ -551,7 +551,7 @@ extension SidebarDropCoordinatorBoundaryTests {
         XCTAssertEqual(
             SidebarDropProjection.operationIndex(
                 visualIndex: 2,
-                sourceContainer: .essentials,
+                sourceContainer: .favorite,
                 targetContainer: .spacePinned(UUID()),
                 sourceIndex: 0,
                 sourceItemCount: 4
@@ -561,8 +561,8 @@ extension SidebarDropCoordinatorBoundaryTests {
         XCTAssertEqual(
             SidebarDropProjection.operationIndex(
                 visualIndex: 99,
-                sourceContainer: .essentials,
-                targetContainer: .essentials,
+                sourceContainer: .favorite,
+                targetContainer: .favorite,
                 sourceIndex: 1,
                 sourceItemCount: 3
             ),

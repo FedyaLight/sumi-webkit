@@ -322,30 +322,30 @@ final class ShortcutLiveRetirementBatchPublicationTests: XCTestCase {
         XCTAssertEqual(Set(presentation.visibleTabIDs), [first.id, second.id])
     }
 
-    func testHostedSplitUnloadHandsOffToPreviousEssential() throws {
+    func testHostedSplitUnloadHandsOffToPreviousFavorite() throws {
         let fixture = try PublicationFixture(
             pinCount: 2,
             hostedSplit: true
         )
         let profileID = try XCTUnwrap(fixture.window.currentProfileId)
-        let essentialPin = try XCTUnwrap(
+        let favoritePin = try XCTUnwrap(
             fixture.browser.shortcutPinStoreOwner.insert(
                 ShortcutPin(
                     id: UUID(),
-                    role: .essential,
+                    role: .favorite,
                     profileId: profileID,
                     index: 0,
                     launchURL: try XCTUnwrap(
-                        URL(string: "https://essential.example")
+                        URL(string: "https://favorite.example")
                     ),
-                    title: "Essential"
+                    title: "Favorite"
                 ),
                 at: 0
             )
         )
-        let essentialTab = try XCTUnwrap(
+        let favoriteTab = try XCTUnwrap(
             fixture.browser.shortcutTabMaterializer.materialize(
-                essentialPin,
+                favoritePin,
                 in: fixture.window.id,
                 currentSpaceId: fixture.window.currentSpaceId
             )
@@ -353,7 +353,7 @@ final class ShortcutLiveRetirementBatchPublicationTests: XCTestCase {
         let spaceID = try XCTUnwrap(fixture.window.currentSpaceId)
         fixture.window.selectionHistory.recentSelectionItemsBySpace[spaceID] = [
             .shortcutPin(fixture.pins[0].id),
-            .shortcutPin(essentialPin.id),
+            .shortcutPin(favoritePin.id),
         ]
 
         XCTAssertEqual(
@@ -365,10 +365,10 @@ final class ShortcutLiveRetirementBatchPublicationTests: XCTestCase {
             2
         )
 
-        XCTAssertEqual(fixture.window.currentTabId, essentialTab.id)
+        XCTAssertEqual(fixture.window.currentTabId, favoriteTab.id)
         XCTAssertEqual(
             fixture.window.currentShortcutPinId,
-            essentialPin.id
+            favoritePin.id
         )
         XCTAssertNil(fixture.window.splitSelection)
         XCTAssertFalse(fixture.window.isShowingEmptyState)

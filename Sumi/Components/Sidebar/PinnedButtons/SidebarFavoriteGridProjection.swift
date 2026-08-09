@@ -1,12 +1,12 @@
 //
-//  SidebarEssentialsGridProjection.swift
+//  SidebarFavoriteGridProjection.swift
 //  Sumi
 //
 
 import SwiftUI
 import SumiDomain
 
-enum SidebarEssentialsDisplayCell {
+enum SidebarFavoriteDisplayCell {
     case pin(ShortcutPin)
     case splitGroup(SplitGroup)
     case gap(Int)
@@ -26,8 +26,8 @@ enum SidebarEssentialsDisplayCell {
     }
 }
 
-struct SidebarEssentialsDisplayRow {
-    let cells: [SidebarEssentialsDisplayCell]
+struct SidebarFavoriteDisplayRow {
+    let cells: [SidebarFavoriteDisplayCell]
     let tileSize: CGSize
     let startSlot: Int
 
@@ -41,11 +41,11 @@ struct SidebarEssentialsDisplayRow {
 }
 
 @MainActor
-struct SidebarEssentialsGridProjection {
+struct SidebarFavoriteGridProjection {
     let width: CGFloat
 
     func projectedContentHeight(
-        for layout: SidebarEssentialsProjectedLayout
+        for layout: SidebarFavoriteProjectedLayout
     ) -> CGFloat {
         let rows = max(layout.visibleRowCount, 1)
         return CGFloat(rows) * layout.tileSize.height
@@ -70,39 +70,39 @@ struct SidebarEssentialsGridProjection {
     }
 
     func resolvedPreviewState(
-        _ previewState: SidebarEssentialsPreviewState,
+        _ previewState: SidebarFavoritePreviewState,
         visibleRowCount: Int,
         maxDropRowCount: Int
-    ) -> SidebarEssentialsPreviewState? {
+    ) -> SidebarFavoritePreviewState? {
         guard maxDropRowCount > visibleRowCount,
               previewState.expandedDropRowCount > visibleRowCount else {
             return nil
         }
-        return SidebarEssentialsPreviewState(
+        return SidebarFavoritePreviewState(
             expandedDropRowCount: min(previewState.expandedDropRowCount, maxDropRowCount),
             gapSlot: previewState.gapSlot
         )
     }
 
     func resolvedDisplayRows(
-        for layout: SidebarEssentialsProjectedLayout,
-        previewState: SidebarEssentialsPreviewState?,
+        for layout: SidebarFavoriteProjectedLayout,
+        previewState: SidebarFavoritePreviewState?,
         maxDropRowCount: Int
-    ) -> [SidebarEssentialsDisplayRow] {
+    ) -> [SidebarFavoriteDisplayRow] {
         var rows = layout.rows.map { row in
             let cells = row.items.enumerated().map { offset, item in
                 if let item {
                     switch item {
                     case .pin(let pin):
-                        return SidebarEssentialsDisplayCell.pin(pin)
+                        return SidebarFavoriteDisplayCell.pin(pin)
                     case .splitGroup(let group):
-                        return SidebarEssentialsDisplayCell.splitGroup(group)
+                        return SidebarFavoriteDisplayCell.splitGroup(group)
                     }
                 }
                 return .gap(row.startSlot + offset)
             }
 
-            return SidebarEssentialsDisplayRow(
+            return SidebarFavoriteDisplayRow(
                 cells: cells,
                 tileSize: row.tileSize,
                 startSlot: row.startSlot
@@ -122,7 +122,7 @@ struct SidebarEssentialsGridProjection {
             let rowIndex = rows.count
             let rowStart = rowIndex * columns
             let rowEnd = rowStart + columns
-            var cells = [SidebarEssentialsDisplayCell.spacer(rowStart)]
+            var cells = [SidebarFavoriteDisplayCell.spacer(rowStart)]
             var visualColumnCount = 1
 
             if let gapSlot = previewState.gapSlot,
@@ -130,16 +130,16 @@ struct SidebarEssentialsGridProjection {
                gapSlot < rowEnd {
                 let localSlot = gapSlot - rowStart
                 visualColumnCount = max(1, min(localSlot + 1, columns))
-                cells = (0..<visualColumnCount).map { SidebarEssentialsDisplayCell.spacer(rowStart + $0) }
+                cells = (0..<visualColumnCount).map { SidebarFavoriteDisplayCell.spacer(rowStart + $0) }
                 cells[localSlot] = .gap(gapSlot)
             }
 
-            let tileSize = SidebarEssentialsProjectionPolicy.visualTileSize(
+            let tileSize = SidebarFavoriteProjectionPolicy.visualTileSize(
                 width: width,
                 visualColumnCount: visualColumnCount
             )
             rows.append(
-                SidebarEssentialsDisplayRow(
+                SidebarFavoriteDisplayRow(
                     cells: cells,
                     tileSize: tileSize,
                     startSlot: rowStart
@@ -151,26 +151,26 @@ struct SidebarEssentialsGridProjection {
     }
 
     func resolvedDropSlotFrames(
-        for layout: SidebarEssentialsProjectedLayout,
+        for layout: SidebarFavoriteProjectedLayout,
         revealTileSize: CGSize,
         maxDropRowCount: Int
-    ) -> [SidebarEssentialsDropSlotMetrics] {
+    ) -> [SidebarFavoriteDropSlotMetrics] {
         guard layout.visibleItemCount > 0 else {
             return [
-                SidebarEssentialsDropSlotMetrics(
+                SidebarFavoriteDropSlotMetrics(
                     slot: 0,
                     frame: CGRect(origin: .zero, size: revealTileSize)
                 ),
             ]
         }
 
-        let maxSlot = min(layout.visibleItemCount, SidebarEssentialsProjectionPolicy.maxItems)
+        let maxSlot = min(layout.visibleItemCount, SidebarFavoriteProjectionPolicy.maxItems)
         return (0...maxSlot).compactMap { slot in
             var items = layout.visibleItems
             let safeSlot = max(0, min(slot, items.count))
             items.insert(nil, at: safeSlot)
 
-            let rows = SidebarEssentialsProjectionPolicy.projectedRows(
+            let rows = SidebarFavoriteProjectionPolicy.projectedRows(
                 from: items,
                 capacityColumnCount: layout.capacityColumnCount,
                 width: width
@@ -192,7 +192,7 @@ struct SidebarEssentialsGridProjection {
                 return nil
             }
 
-            return SidebarEssentialsDropSlotMetrics(
+            return SidebarFavoriteDropSlotMetrics(
                 slot: safeSlot,
                 frame: CGRect(
                     x: CGFloat(columnIndex) * (row.tileSize.width + PinnedTileMetrics.gridSpacing),

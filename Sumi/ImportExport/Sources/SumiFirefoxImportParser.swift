@@ -175,7 +175,7 @@ struct SumiFirefoxImportParser {
                 profiles: portableProfiles,
                 spaces: spaces,
                 folders: [],
-                essentials: [],
+                favorite: [],
                 pinnedLaunchers: pinned,
                 regularTabs: regularTabs,
                 bookmarks: bookmarks(warnings: &warnings)

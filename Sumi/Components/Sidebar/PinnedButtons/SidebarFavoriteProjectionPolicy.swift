@@ -1,12 +1,12 @@
 //
-//  SidebarEssentialsProjectionPolicy.swift
+//  SidebarFavoriteProjectionPolicy.swift
 //  Sumi
 //
 
 import SwiftUI
 import SumiDomain
 
-enum SidebarEssentialVisualItem {
+enum SidebarFavoriteVisualItem {
     case pin(ShortcutPin)
     case splitGroup(SplitGroup)
 
@@ -19,27 +19,27 @@ enum SidebarEssentialVisualItem {
 }
 
 @MainActor
-enum SidebarEssentialVisualProjection {
+enum SidebarFavoriteVisualProjection {
     static func make(
         pins: [ShortcutPin],
         splitGroups: [SplitGroup],
         profileID: UUID?
-    ) -> [SidebarEssentialVisualItem] {
+    ) -> [SidebarFavoriteVisualItem] {
         let pinsByID = Dictionary(uniqueKeysWithValues: pins.map { ($0.id, $0) })
         let groupsByID = Dictionary(
             uniqueKeysWithValues: splitGroups.map { ($0.id, $0) }
         )
-        return SidebarVisualOrdering.essentialItems(
+        return SidebarVisualOrdering.favoriteItems(
             pins: pins,
             groups: splitGroups,
             profileID: profileID
         ).compactMap { item in
             switch item {
             case .shortcut(let pinID):
-                return pinsByID[pinID].map(SidebarEssentialVisualItem.pin)
+                return pinsByID[pinID].map(SidebarFavoriteVisualItem.pin)
             case .splitGroup(let groupID):
                 return groupsByID[groupID].map(
-                    SidebarEssentialVisualItem.splitGroup
+                    SidebarFavoriteVisualItem.splitGroup
                 )
             case .folder:
                 return nil
@@ -48,20 +48,20 @@ enum SidebarEssentialVisualProjection {
     }
 }
 
-struct SidebarEssentialsProjectedRow {
-    let items: [SidebarEssentialVisualItem?]
+struct SidebarFavoriteProjectedRow {
+    let items: [SidebarFavoriteVisualItem?]
     let startSlot: Int
     let visualColumnCount: Int
     let tileSize: CGSize
 }
 
-struct SidebarEssentialsProjectedLayout {
-    let layoutItems: [SidebarEssentialVisualItem?]
-    let visibleItems: [SidebarEssentialVisualItem?]
+struct SidebarFavoriteProjectedLayout {
+    let layoutItems: [SidebarFavoriteVisualItem?]
+    let visibleItems: [SidebarFavoriteVisualItem?]
     let capacityColumnCount: Int
     let tileSize: CGSize
-    let rows: [SidebarEssentialsProjectedRow]
-    let visibleRows: [SidebarEssentialsProjectedRow]
+    let rows: [SidebarFavoriteProjectedRow]
+    let visibleRows: [SidebarFavoriteProjectedRow]
     let canAcceptDrop: Bool
 
     var columnCount: Int {
@@ -86,16 +86,16 @@ struct SidebarEssentialsProjectedLayout {
 }
 
 @MainActor
-enum SidebarEssentialsProjectionPolicy {
-    static let maxColumns = EssentialsShortcutPlacementOwner.CapacityPolicy.maxColumns
-    static let maxRows = EssentialsShortcutPlacementOwner.CapacityPolicy.maxRows
+enum SidebarFavoriteProjectionPolicy {
+    static let maxColumns = FavoriteShortcutPlacementOwner.CapacityPolicy.maxColumns
+    static let maxRows = FavoriteShortcutPlacementOwner.CapacityPolicy.maxRows
     static let maxItems = maxColumns * maxRows
 
     static func make(
-        items: [SidebarEssentialVisualItem],
+        items: [SidebarFavoriteVisualItem],
         width: CGFloat,
-        dragPresentation: SidebarEssentialsDragPresentationFrame
-    ) -> SidebarEssentialsProjectedLayout {
+        dragPresentation: SidebarFavoriteDragPresentationFrame
+    ) -> SidebarFavoriteProjectedLayout {
         let baseVisibleItems = resolvedVisibleItems(
             from: items,
             dragPresentation: dragPresentation
@@ -105,7 +105,7 @@ enum SidebarEssentialsProjectionPolicy {
             from: baseVisibleItems,
             dragPresentation: dragPresentation,
             canAcceptDrop: canAcceptDrop,
-            essentialsStoreIsEmpty: items.isEmpty
+            favoriteStoreIsEmpty: items.isEmpty
         )
         let capacityColumnCount = resolvedCapacityColumnCount(for: width)
         let tileWidth = resolvedTileWidth(
@@ -114,7 +114,7 @@ enum SidebarEssentialsProjectionPolicy {
         )
         let tileSize = CGSize(width: tileWidth, height: PinnedTileMetrics.height)
 
-        return SidebarEssentialsProjectedLayout(
+        return SidebarFavoriteProjectedLayout(
             layoutItems: layoutItems,
             visibleItems: baseVisibleItems,
             capacityColumnCount: capacityColumnCount,
@@ -138,16 +138,16 @@ enum SidebarEssentialsProjectionPolicy {
         visibleItemCount: Int,
         layoutItemCount: Int,
         canAcceptDrop: Bool,
-        dragPresentation: SidebarEssentialsDragPresentationFrame
+        dragPresentation: SidebarFavoriteDragPresentationFrame
     ) -> Int {
         let safeVisibleItemCount = max(visibleItemCount, 0)
         guard canAcceptDrop else { return min(safeVisibleItemCount, maxItems) }
 
-        let isDraggingExistingEssential = dragPresentation.projectionDragItemID
+        let isDraggingExistingFavorite = dragPresentation.projectionDragItemID
             .map { itemIDs.contains($0) } ?? false
-        let isHoveringEssentials = {
+        let isHoveringFavorite = {
             guard dragPresentation.isDropProjectionActive,
-                  case .essentials = dragPresentation.projectionHoveredSlot else {
+                  case .favorite = dragPresentation.projectionHoveredSlot else {
                 return false
             }
             return true
@@ -158,12 +158,12 @@ enum SidebarEssentialsProjectionPolicy {
             && itemIDs.isEmpty
             && safeVisibleItemCount == 0
 
-        if isHoveringEssentials || emptyStorePlaceholderActive {
+        if isHoveringFavorite || emptyStorePlaceholderActive {
             let floorCount = emptyStorePlaceholderActive ? 1 : 0
             return min(max(max(layoutItemCount, safeVisibleItemCount), floorCount), maxItems)
         }
 
-        if isDraggingExistingEssential {
+        if isDraggingExistingFavorite {
             return min(safeVisibleItemCount, maxItems)
         }
 
@@ -176,7 +176,7 @@ enum SidebarEssentialsProjectionPolicy {
         layoutItemCount: Int,
         columnCount: Int,
         canAcceptDrop: Bool,
-        dragPresentation: SidebarEssentialsDragPresentationFrame
+        dragPresentation: SidebarFavoriteDragPresentationFrame
     ) -> Int {
         let projectedCount = projectedCountAfterDrop(
             itemIDs: itemIDs,
@@ -193,23 +193,23 @@ enum SidebarEssentialsProjectionPolicy {
     }
 
     private static func resolvedVisibleItems(
-        from items: [SidebarEssentialVisualItem],
-        dragPresentation: SidebarEssentialsDragPresentationFrame
-    ) -> [SidebarEssentialVisualItem?] {
+        from items: [SidebarFavoriteVisualItem],
+        dragPresentation: SidebarFavoriteDragPresentationFrame
+    ) -> [SidebarFavoriteVisualItem?] {
         guard let projectionDragItemID = dragPresentation.projectionDragItemID else {
             return items.map { Optional($0) }
         }
 
-        let isDraggingExistingEssential: Bool = {
+        let isDraggingExistingFavorite: Bool = {
             guard dragPresentation.isDropProjectionActive,
-                  dragPresentation.projectionDragScope?.sourceContainer == .essentials else {
+                  dragPresentation.projectionDragScope?.sourceContainer == .favorite else {
                 return false
             }
             return items.contains { $0.id == projectionDragItemID }
         }()
 
-        return items.compactMap { item -> SidebarEssentialVisualItem? in
-            if item.id == projectionDragItemID, isDraggingExistingEssential {
+        return items.compactMap { item -> SidebarFavoriteVisualItem? in
+            if item.id == projectionDragItemID, isDraggingExistingFavorite {
                 return nil
             }
             return item
@@ -217,11 +217,11 @@ enum SidebarEssentialsProjectionPolicy {
     }
 
     private static func resolvedLayoutItems(
-        from items: [SidebarEssentialVisualItem?],
-        dragPresentation: SidebarEssentialsDragPresentationFrame,
+        from items: [SidebarFavoriteVisualItem?],
+        dragPresentation: SidebarFavoriteDragPresentationFrame,
         canAcceptDrop: Bool,
-        essentialsStoreIsEmpty: Bool
-    ) -> [SidebarEssentialVisualItem?] {
+        favoriteStoreIsEmpty: Bool
+    ) -> [SidebarFavoriteVisualItem?] {
         var layoutItems = items
 
         guard dragPresentation.isDropProjectionActive, canAcceptDrop else {
@@ -230,20 +230,20 @@ enum SidebarEssentialsProjectionPolicy {
 
         if let projectionDragItemID = dragPresentation.projectionDragItemID,
            dragPresentation.shouldHideCommittedCrossContainerPlaceholder(
-                into: .essentials,
+                into: .favorite,
                 targetAlreadyContainsDraggedItem: items.contains { $0?.id == projectionDragItemID }
            ) {
             return layoutItems
         }
 
-        if essentialsStoreIsEmpty {
+        if favoriteStoreIsEmpty {
             if layoutItems.isEmpty {
                 return [nil]
             }
             return layoutItems
         }
 
-        guard case .essentials(let slot) = dragPresentation.projectionHoveredSlot else {
+        guard case .favorite(let slot) = dragPresentation.projectionHoveredSlot else {
             return layoutItems
         }
 
@@ -290,10 +290,10 @@ enum SidebarEssentialsProjectionPolicy {
     }
 
     static func projectedRows(
-        from items: [SidebarEssentialVisualItem?],
+        from items: [SidebarFavoriteVisualItem?],
         capacityColumnCount: Int,
         width: CGFloat
-    ) -> [SidebarEssentialsProjectedRow] {
+    ) -> [SidebarFavoriteProjectedRow] {
         guard !items.isEmpty else { return [] }
         let safeCapacityColumnCount = max(capacityColumnCount, 1)
 
@@ -305,7 +305,7 @@ enum SidebarEssentialsProjectionPolicy {
                 visualColumnCount: visualColumnCount
             )
 
-            return SidebarEssentialsProjectedRow(
+            return SidebarFavoriteProjectedRow(
                 items: rowItems,
                 startSlot: index,
                 visualColumnCount: visualColumnCount,

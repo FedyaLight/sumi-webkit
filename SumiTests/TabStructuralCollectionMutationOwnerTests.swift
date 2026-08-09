@@ -61,8 +61,8 @@ final class TabStructuralCollectionMutationOwnerTests: XCTestCase {
     func testSetPinnedTabsSyncsAllShortcutCollectionsAndPublishes() throws {
         let profileId = UUID()
         let spaceId = UUID()
-        let previousPin = Self.makePin(role: .essential, profileId: profileId, index: 0)
-        let currentPin = Self.makePin(role: .essential, profileId: profileId, index: 1)
+        let previousPin = Self.makePin(role: .favorite, profileId: profileId, index: 0)
+        let currentPin = Self.makePin(role: .favorite, profileId: profileId, index: 1)
         let spacePin = Self.makePin(role: .spacePinned, spaceId: spaceId, index: 0)
         let harness = try Harness()
         harness.pinnedByProfile[profileId] = [previousPin]
@@ -80,7 +80,7 @@ final class TabStructuralCollectionMutationOwnerTests: XCTestCase {
     func testRemovePinnedTabsDeletesProfileEntryAndPublishes() throws {
         let profileId = UUID()
         let pin = Self.makePin(
-            role: .essential,
+            role: .favorite,
             profileId: profileId,
             index: 0
         )
@@ -127,7 +127,7 @@ final class TabStructuralCollectionMutationOwnerTests: XCTestCase {
     func testSetSpacePinnedShortcutsSyncsAllShortcutCollectionsAndPublishes() throws {
         let profileId = UUID()
         let spaceId = UUID()
-        let profilePin = Self.makePin(role: .essential, profileId: profileId, index: 0)
+        let profilePin = Self.makePin(role: .favorite, profileId: profileId, index: 0)
         let previousSpacePin = Self.makePin(role: .spacePinned, spaceId: spaceId, index: 0)
         let currentSpacePin = Self.makePin(role: .spacePinned, spaceId: spaceId, index: 1)
         let harness = try Harness()
@@ -148,7 +148,7 @@ final class TabStructuralCollectionMutationOwnerTests: XCTestCase {
         let profileID = UUID()
         let originalTab = Self.makeTab(index: 0)
         let originalPin = Self.makePin(
-            role: .essential,
+            role: .favorite,
             profileId: profileID,
             index: 0
         )
@@ -251,12 +251,12 @@ final class TabStructuralCollectionMutationOwnerTests: XCTestCase {
             index: 1
         )
         let sourcePin = Self.makePin(
-            role: .essential,
+            role: .favorite,
             profileId: profileID,
             index: 0
         )
         let targetPin = Self.makePin(
-            role: .essential,
+            role: .favorite,
             profileId: profileID,
             index: 1
         )
@@ -419,12 +419,12 @@ final class TabStructuralCollectionMutationOwnerTests: XCTestCase {
         let stagedProfileID = UUID()
         let foreignProfileID = UUID()
         let stagedPin = Self.makePin(
-            role: .essential,
+            role: .favorite,
             profileId: stagedProfileID,
             index: 0
         )
         let foreignPin = Self.makePin(
-            role: .essential,
+            role: .favorite,
             profileId: foreignProfileID,
             index: 0
         )
@@ -467,7 +467,7 @@ final class TabStructuralCollectionMutationOwnerTests: XCTestCase {
         )
         let sourceOpenState = sourceFolder.isOpen
         let foreignPin = Self.makePin(
-            role: .essential,
+            role: .favorite,
             profileId: foreignProfileID,
             index: 0
         )
@@ -504,7 +504,7 @@ final class TabStructuralCollectionMutationOwnerTests: XCTestCase {
             index: 0
         )
         let foreignPin = Self.makePin(
-            role: .essential,
+            role: .favorite,
             profileId: foreignProfileID,
             index: 0
         )
@@ -721,9 +721,9 @@ final class TabStructuralInstallOwnerTests: XCTestCase {
         let tab = Self.makeTab(index: 0, spaceId: space.id)
         let siblingTabId = UUID()
         let folder = TabFolder(name: "Folder", spaceId: space.id, index: 0)
-        let essentialPin = Self.makePin(role: .essential, profileId: UUID(), index: 0)
+        let favoritePin = Self.makePin(role: .favorite, profileId: UUID(), index: 0)
         let spacePin = Self.makePin(role: .spacePinned, spaceId: space.id, index: 0)
-        let pendingPin = Self.makePin(role: .essential, index: 1)
+        let pendingPin = Self.makePin(role: .favorite, index: 1)
         let group = try XCTUnwrap(
             SplitGroup.make(
                 members: [.regularTab(tab.id), .regularTab(siblingTabId)],
@@ -736,7 +736,7 @@ final class TabStructuralInstallOwnerTests: XCTestCase {
             spaces: [space],
             tabsBySpace: [space.id: [tab]],
             foldersBySpace: [space.id: [folder]],
-            pinnedByProfile: [essentialPin.profileId!: [essentialPin]],
+            pinnedByProfile: [favoritePin.profileId!: [favoritePin]],
             spacePinnedShortcuts: [space.id: [spacePin]],
             pendingPinnedWithoutProfile: [pendingPin],
             splitGroups: [group],
@@ -749,12 +749,12 @@ final class TabStructuralInstallOwnerTests: XCTestCase {
         XCTAssertEqual(harness.tabsBySpace[space.id]?.map(\.id), [tab.id])
         XCTAssertEqual(harness.foldersBySpace[space.id]?.map(\.id), [folder.id])
         XCTAssertEqual(harness.splitGroups.map(\.id), [group.id])
-        XCTAssertEqual(harness.pinnedByProfile[essentialPin.profileId!]?.map(\.id), [essentialPin.id])
+        XCTAssertEqual(harness.pinnedByProfile[favoritePin.profileId!]?.map(\.id), [favoritePin.id])
         XCTAssertEqual(harness.spacePinnedShortcuts[space.id]?.map(\.id), [spacePin.id])
         XCTAssertEqual(harness.pendingPinnedWithoutProfile.map(\.id), [pendingPin.id])
         XCTAssertEqual(harness.currentSpace?.id, space.id)
         XCTAssertEqual(harness.currentTab?.id, tab.id)
-        XCTAssertEqual(harness.favicon.syncedPinIDs, [[essentialPin.id, spacePin.id]])
+        XCTAssertEqual(harness.favicon.syncedPinIDs, [[favoritePin.id, spacePin.id]])
         XCTAssertTrue(
             harness.lookup.lookupOwner.containsExact(tab)
         )

@@ -47,8 +47,8 @@ extension BrowserManager {
             regularTabs: { [regularTabs, spaces] in
                 regularTabs.allTabs(in: spaces.spaces)
             },
-            essentialPins: { [pins] profileID in
-                pins.essentialPins(for: profileID)
+            favoritePins: { [pins] profileID in
+                pins.favoritePins(for: profileID)
             },
             spacePinnedPins: { [pins] spaceID in
                 pins.spacePinnedPins(for: spaceID)

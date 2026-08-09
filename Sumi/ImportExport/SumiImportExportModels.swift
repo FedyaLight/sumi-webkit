@@ -6,10 +6,31 @@ enum SumiImportCategory: String, CaseIterable, Codable, Hashable, Identifiable, 
     case spaces
     case themes
     case bookmarks
-    case essentials
+    case favorite
     case pinnedLaunchers
     case folders
     case regularTabs
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let value = try container.decode(String.self)
+        if value == "essentials" {
+            self = .favorite
+            return
+        }
+        guard let category = Self(rawValue: value) else {
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Unsupported import category: \(value)"
+            )
+        }
+        self = category
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 
     var id: String { rawValue }
 
@@ -19,7 +40,7 @@ enum SumiImportCategory: String, CaseIterable, Codable, Hashable, Identifiable, 
         case .spaces: return "Spaces"
         case .themes: return "Themes"
         case .bookmarks: return "Bookmarks"
-        case .essentials: return "Essentials"
+        case .favorite: return "Favorite"
         case .pinnedLaunchers: return "Pinned"
         case .folders: return "Folders"
         case .regularTabs: return "Regular Tabs"
@@ -118,7 +139,7 @@ struct SumiImportSummary: Equatable, Sendable {
     var profiles: Int
     var spaces: Int
     var folders: Int
-    var essentials: Int
+    var favorite: Int
     var pinnedLaunchers: Int
     var regularTabs: Int
     var bookmarks: Int
@@ -127,7 +148,7 @@ struct SumiImportSummary: Equatable, Sendable {
         profiles = data.profiles.count
         spaces = data.spaces.count
         folders = data.folders.count
-        essentials = data.essentials.count
+        favorite = data.favorite.count
         pinnedLaunchers = data.pinnedLaunchers.count
         regularTabs = data.regularTabs.count
         bookmarks = data.bookmarks.reduce(0) { $0 + $1.totalBookmarkCount }
@@ -173,16 +194,27 @@ struct SumiPortableData: Codable, Equatable, Sendable {
     var profiles: [SumiPortableProfile]
     var spaces: [SumiPortableSpace]
     var folders: [SumiPortableFolder]
-    var essentials: [SumiPortableLauncher]
+    var favorite: [SumiPortableLauncher]
     var pinnedLaunchers: [SumiPortableLauncher]
     var regularTabs: [SumiPortableRegularTab]
     var bookmarks: [SumiPortableBookmarkNode]
+
+    private enum CodingKeys: String, CodingKey {
+        case profiles
+        case spaces
+        case folders
+        case favorite
+        case legacyEssentials = "essentials"
+        case pinnedLaunchers
+        case regularTabs
+        case bookmarks
+    }
 
     init(
         profiles: [SumiPortableProfile] = [],
         spaces: [SumiPortableSpace] = [],
         folders: [SumiPortableFolder] = [],
-        essentials: [SumiPortableLauncher] = [],
+        favorite: [SumiPortableLauncher] = [],
         pinnedLaunchers: [SumiPortableLauncher] = [],
         regularTabs: [SumiPortableRegularTab] = [],
         bookmarks: [SumiPortableBookmarkNode] = []
@@ -190,10 +222,43 @@ struct SumiPortableData: Codable, Equatable, Sendable {
         self.profiles = profiles
         self.spaces = spaces
         self.folders = folders
-        self.essentials = essentials
+        self.favorite = favorite
         self.pinnedLaunchers = pinnedLaunchers
         self.regularTabs = regularTabs
         self.bookmarks = bookmarks
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let decodedFavorite = try container.decodeIfPresent(
+            [SumiPortableLauncher].self,
+            forKey: .favorite
+        )
+        let legacyFavorite = try container.decodeIfPresent(
+            [SumiPortableLauncher].self,
+            forKey: .legacyEssentials
+        )
+        let favorite = decodedFavorite ?? legacyFavorite ?? []
+        self.init(
+            profiles: try container.decode([SumiPortableProfile].self, forKey: .profiles),
+            spaces: try container.decode([SumiPortableSpace].self, forKey: .spaces),
+            folders: try container.decode([SumiPortableFolder].self, forKey: .folders),
+            favorite: favorite,
+            pinnedLaunchers: try container.decode([SumiPortableLauncher].self, forKey: .pinnedLaunchers),
+            regularTabs: try container.decode([SumiPortableRegularTab].self, forKey: .regularTabs),
+            bookmarks: try container.decode([SumiPortableBookmarkNode].self, forKey: .bookmarks)
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(profiles, forKey: .profiles)
+        try container.encode(spaces, forKey: .spaces)
+        try container.encode(folders, forKey: .folders)
+        try container.encode(favorite, forKey: .favorite)
+        try container.encode(pinnedLaunchers, forKey: .pinnedLaunchers)
+        try container.encode(regularTabs, forKey: .regularTabs)
+        try container.encode(bookmarks, forKey: .bookmarks)
     }
 
     var nonEmptyCategories: Set<SumiImportCategory> {
@@ -202,7 +267,7 @@ struct SumiPortableData: Codable, Equatable, Sendable {
         if spaces.isEmpty == false { categories.insert(.spaces) }
         if spaces.contains(where: { $0.themeDataBase64 != nil || $0.color != nil }) { categories.insert(.themes) }
         if bookmarks.isEmpty == false { categories.insert(.bookmarks) }
-        if essentials.isEmpty == false { categories.insert(.essentials) }
+        if favorite.isEmpty == false { categories.insert(.favorite) }
         if pinnedLaunchers.isEmpty == false { categories.insert(.pinnedLaunchers) }
         if folders.isEmpty == false { categories.insert(.folders) }
         if regularTabs.isEmpty == false { categories.insert(.regularTabs) }

@@ -298,11 +298,11 @@ struct SidebarPageGeometryMetrics: Equatable {
     var renderMode: SidebarPageGeometryRenderMode
 }
 
-struct SidebarEssentialsLayoutMetrics: Equatable {
+struct SidebarFavoriteLayoutMetrics: Equatable {
     let profileId: UUID?
     let frame: CGRect
     let dropFrame: CGRect
-    let dropSlotFrames: [SidebarEssentialsDropSlotMetrics]
+    let dropSlotFrames: [SidebarFavoriteDropSlotMetrics]
     let firstSyntheticRowSlot: Int
     let visibleItemCount: Int
     let visibleRowCount: Int
@@ -310,7 +310,7 @@ struct SidebarEssentialsLayoutMetrics: Equatable {
     let itemSize: CGSize
     let canAcceptDrop: Bool
 
-    /// Pre-resolved by `SidebarEssentialsDropHitPolicy` when the metrics are
+    /// Pre-resolved by `SidebarFavoriteDropHitPolicy` when the metrics are
     /// built, so `containsDropLocation` stays a single rect test on every
     /// `draggingUpdated`.
     let dropHitFrame: CGRect
@@ -320,11 +320,11 @@ struct SidebarEssentialsLayoutMetrics: Equatable {
     }
 }
 
-struct SidebarEssentialsLayoutMetricsInput: Equatable {
+struct SidebarFavoriteLayoutMetricsInput: Equatable {
     var profileId: UUID?
     var frame: CGRect
     var dropFrame: CGRect
-    var dropSlotFrames: [SidebarEssentialsDropSlotMetrics] = []
+    var dropSlotFrames: [SidebarFavoriteDropSlotMetrics] = []
     var itemCount: Int
     var columnCount: Int
     var firstSyntheticRowSlot: Int?
@@ -337,11 +337,11 @@ struct SidebarEssentialsLayoutMetricsInput: Equatable {
     var maxDropRowCount: Int?
 }
 
-struct SidebarEssentialsLayoutUpdate: Equatable {
+struct SidebarFavoriteLayoutUpdate: Equatable {
     let spaceId: UUID
-    var input: SidebarEssentialsLayoutMetricsInput?
+    var input: SidebarFavoriteLayoutMetricsInput?
 
-    init(spaceId: UUID, input: SidebarEssentialsLayoutMetricsInput) {
+    init(spaceId: UUID, input: SidebarFavoriteLayoutMetricsInput) {
         self.spaceId = spaceId
         self.input = input
     }
@@ -352,12 +352,12 @@ struct SidebarEssentialsLayoutUpdate: Equatable {
     }
 }
 
-struct SidebarEssentialsDropSlotMetrics: Equatable {
+struct SidebarFavoriteDropSlotMetrics: Equatable {
     var slot: Int
     var frame: CGRect
 }
 
-struct SidebarEssentialsPreviewState: Equatable {
+struct SidebarFavoritePreviewState: Equatable {
     var expandedDropRowCount: Int
     var gapSlot: Int?
 }
@@ -449,14 +449,14 @@ struct SidebarRuntimeGeometryStore {
     var pageGeometryByKey: [SidebarPageGeometryKey: SidebarPageGeometryMetrics] = [:]
     var spaceListLayoutsBySpace: [UUID: PresentedSidebarLayout] = [:]
     var sectionFramesBySpace: [SidebarSectionGeometryKey: CGRect] = [:]
-    var essentialsLayoutMetricsBySpace: [UUID: SidebarEssentialsLayoutMetrics] = [:]
+    var favoriteLayoutMetricsBySpace: [UUID: SidebarFavoriteLayoutMetrics] = [:]
     var hitTestIndex: SidebarGeometryHitTestIndex = .empty
 }
 
 enum SidebarDragGeometryMutationKey: Hashable {
     case presentedSpaceList(spaceID: UUID, generation: Int)
     case page(SidebarPageGeometryKey, generation: Int)
-    case essentials(spaceID: UUID, generation: Int)
+    case favorite(spaceID: UUID, generation: Int)
 }
 
 private struct SidebarDragGeometryMutation {
@@ -495,14 +495,14 @@ struct SidebarGeometrySnapshot: Equatable {
     var folderDropTargets: [UUID: SidebarFolderDropTargetMetrics] = [:]
     var pinnedListHitTargets: [UUID: SidebarPinnedListHitMetrics] = [:]
     var regularListHitTargets: [UUID: SidebarRegularListHitMetrics] = [:]
-    var essentialsLayoutMetricsBySpace: [UUID: SidebarEssentialsLayoutMetrics] = [:]
+    var favoriteLayoutMetricsBySpace: [UUID: SidebarFavoriteLayoutMetrics] = [:]
     var hitTestIndex: SidebarGeometryHitTestIndex = .empty
 
     static let empty = SidebarGeometrySnapshot()
 }
 
 enum SidebarSectionPrefix: Hashable {
-    case essentials
+    case favorite
     case spacePinned
     case spaceRegular
 }
@@ -536,8 +536,8 @@ extension SidebarDragState {
         geometry.geometrySnapshot.pinnedListHitTargets
     }
 
-    var essentialsLayoutMetricsBySpace: [UUID: SidebarEssentialsLayoutMetrics] {
-        geometry.geometrySnapshot.essentialsLayoutMetricsBySpace
+    var favoriteLayoutMetricsBySpace: [UUID: SidebarFavoriteLayoutMetrics] {
+        geometry.geometrySnapshot.favoriteLayoutMetricsBySpace
     }
 
     var topLevelPinnedItemsBySpace: [UUID: [SidebarTopLevelPinnedItemMetrics]] {

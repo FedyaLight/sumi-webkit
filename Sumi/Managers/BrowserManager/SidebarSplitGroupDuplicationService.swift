@@ -195,8 +195,8 @@ final class SavedSplitGroupDuplicationService {
         switch container {
         case .regularTabs:
             return container
-        case .essentialSidebar(let profileID, let index):
-            return .essentialSidebar(
+        case .favoriteSidebar(let profileID, let index):
+            return .favoriteSidebar(
                 profileId: profileID,
                 index: (index ?? 0) + 1
             )

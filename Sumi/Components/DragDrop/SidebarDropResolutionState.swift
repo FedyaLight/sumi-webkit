@@ -27,7 +27,7 @@ enum SidebarDropResolver {
         ).anchored(in: state.geometry.geometrySnapshot)
     }
 
-    private static func resolveEssentials(
+    private static func resolveFavorite(
         location: CGPoint,
         state: SidebarDragState,
         draggedItem: SumiDragItem?,
@@ -35,7 +35,7 @@ enum SidebarDropResolver {
         scope: SidebarDragScope?
     ) -> SidebarDropResolution? {
         guard let hoveredPage,
-              let metrics = state.essentialsLayoutMetricsBySpace[
+              let metrics = state.favoriteLayoutMetricsBySpace[
                   hoveredPage.spaceId
               ],
               scope?.matches(profileId: metrics.profileId) != false,
@@ -45,7 +45,7 @@ enum SidebarDropResolver {
             _ = draggedItem
             return nil
         }
-        return SidebarEssentialsDropPolicy.resolve(
+        return SidebarFavoriteDropPolicy.resolve(
             location: location,
             metrics: metrics
         )
@@ -79,14 +79,14 @@ enum SidebarDropResolver {
         scope: SidebarDragScope?,
         allowsDeferredTargets: Bool
     ) -> SidebarDropResolution {
-        if let essentialsResolution = resolveEssentials(
+        if let favoriteResolution = resolveFavorite(
             location: location,
             state: state,
             draggedItem: draggedItem,
             hoveredPage: hoveredPage,
             scope: scope
         ) {
-            return essentialsResolution
+            return favoriteResolution
         }
 
         if allowsDeferredTargets,
@@ -190,7 +190,7 @@ enum SidebarDropResolver {
             presentedResolution = resolution
         }
         state.presentDropResolution(presentedResolution)
-        state.updateEssentialsPreviewState(
+        state.updateFavoritePreviewState(
             at: location,
             resolution: presentedResolution.slot
         )
@@ -214,7 +214,7 @@ enum SidebarDropResolver {
             context: SidebarPinnedDropContext(
                 page: hoveredPage,
                 sectionFrame: sectionFrame,
-                essentialsBoundaryY: state.essentialsLayoutMetricsBySpace[
+                favoriteBoundaryY: state.favoriteLayoutMetricsBySpace[
                     spaceID
                 ]?.dropHitFrame.maxY ?? hoveredPage.frame.minY + 26,
                 topLevelItems: state.topLevelPinnedItemsBySpace[spaceID] ?? [],

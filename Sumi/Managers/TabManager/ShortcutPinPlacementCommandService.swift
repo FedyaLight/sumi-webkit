@@ -34,8 +34,8 @@ final class ShortcutPinPlacementCommandService {
         )
     }
 
-    func reorderEssential(_ pin: ShortcutPin, to index: Int) -> Bool {
-        reorders.reorderEssential(pin, to: index)
+    func reorderFavorite(_ pin: ShortcutPin, to index: Int) -> Bool {
+        reorders.reorderFavorite(pin, to: index)
     }
 
     func reorderSpacePinned(

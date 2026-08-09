@@ -67,7 +67,7 @@ enum SidebarDragOperationContextValidator {
         switch container {
         case .none:
             return false
-        case .essentials:
+        case .favorite:
             return scope.profileId != nil
         case .spacePinned(let spaceId),
              .spaceRegular(let spaceId):
@@ -89,7 +89,7 @@ enum SidebarDragOperationContextValidator {
                 return spaceID == operation.scope.spaceId
                     && spaceID == sourceSpaceID
 
-            case (.essentialSidebar(let profileID, _), .essentials):
+            case (.favoriteSidebar(let profileID, _), .favorite):
                 return profileID == nil
                     || profileID == operation.scope.profileId
 
@@ -151,7 +151,7 @@ enum SidebarDragOperationContextValidator {
         folderSpaceId: FolderSpaceResolver
     ) -> Bool {
         switch (pin.role, operation.fromContainer) {
-        case (.essential, .essentials):
+        case (.favorite, .favorite):
             return pin.profileId == operation.scope.profileId
         case (.spacePinned, .spacePinned(let spaceId)):
             return pin.spaceId == operation.scope.spaceId

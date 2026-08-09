@@ -28,8 +28,8 @@ private extension ShortcutAction {
              .goToTab7, .goToTab8, .goToLastTab, .duplicateTab,
              .splitGrid, .splitVertical, .splitHorizontal, .unsplit,
              .newEmptySplit, .addSplitTop, .addSplitLeft, .addSplitRight,
-             .addSplitBottom, .pinTab, .unpinTab, .addToEssentials,
-             .removeFromEssentials:
+             .addSplitBottom, .pinTab, .unpinTab, .addToFavorite,
+             .removeFromFavorite:
             .tabs
         case .newWindow, .newPrivateWindow, .closeBrowser:
             .application

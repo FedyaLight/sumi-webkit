@@ -145,7 +145,7 @@ final class SplitGroupMembershipQueryTests: XCTestCase {
     private func makePin(id: UUID) -> ShortcutPin {
         ShortcutPin(
             id: id,
-            role: .essential,
+            role: .favorite,
             profileId: UUID(),
             index: 0,
             launchURL: URL(string: "https://pin.example")!,

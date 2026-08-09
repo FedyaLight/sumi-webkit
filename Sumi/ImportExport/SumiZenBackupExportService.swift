@@ -153,7 +153,7 @@ struct SumiZenBackupExportService {
                     workspaceId: spaceId,
                     contextId: profileId.flatMap { contextByProfile[$0] } ?? 0,
                     pinned: true,
-                    essential: false,
+                    favorite: false,
                     folderId: pin.folderId,
                     index: pin.index
                 )
@@ -165,7 +165,7 @@ struct SumiZenBackupExportService {
             },
             uniquingKeysWith: { first, _ in first }
         )
-        for pin in data.essentials {
+        for pin in data.favorite {
             guard let profileId = pin.profileId,
                   let spaceId = firstSpaceByProfile[profileId] else { continue }
             tabs.append(
@@ -176,7 +176,7 @@ struct SumiZenBackupExportService {
                     workspaceId: spaceId,
                     contextId: contextByProfile[profileId] ?? 0,
                     pinned: true,
-                    essential: true,
+                    favorite: true,
                     folderId: nil,
                     index: pin.index
                 )
@@ -192,7 +192,7 @@ struct SumiZenBackupExportService {
                     workspaceId: tab.spaceId,
                     contextId: profileId.flatMap { contextByProfile[$0] } ?? 0,
                     pinned: false,
-                    essential: false,
+                    favorite: false,
                     folderId: tab.folderId,
                     index: tab.index
                 )
@@ -245,7 +245,7 @@ struct SumiZenBackupExportService {
         workspaceId: String,
         contextId: Int,
         pinned: Bool,
-        essential: Bool,
+        favorite: Bool,
         folderId: String?,
         index: Int
     ) -> [String: Any] {
@@ -257,7 +257,7 @@ struct SumiZenBackupExportService {
             "hidden": false,
             "zenWorkspace": workspaceId,
             "zenSyncId": id,
-            "zenEssential": essential,
+            "zenEssential": favorite,
             "zenDefaultUserContextId": contextId,
             "zenPinnedIcon": NSNull(),
             "zenIsEmpty": false,

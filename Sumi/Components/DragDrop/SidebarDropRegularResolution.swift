@@ -72,21 +72,21 @@ enum SidebarRegularDropPolicy {
     }
 }
 
-enum SidebarEssentialsDropPolicy {
+enum SidebarFavoriteDropPolicy {
     static func resolve(
         location: CGPoint,
-        metrics: SidebarEssentialsLayoutMetrics
+        metrics: SidebarFavoriteLayoutMetrics
     ) -> SidebarDropResolution {
         guard metrics.visibleItemCount > 0 else {
             return SidebarDropResolution(
-                slot: .essentials(slot: 0),
+                slot: .favorite(slot: 0),
                 folderIntent: .none,
                 activeHoveredFolderId: nil
             )
         }
         let slot = resolvedSlot(location: location, metrics: metrics)
         return SidebarDropResolution(
-            slot: .essentials(slot: slot),
+            slot: .favorite(slot: slot),
             folderIntent: .none,
             activeHoveredFolderId: nil
         )
@@ -94,7 +94,7 @@ enum SidebarEssentialsDropPolicy {
 
     private static func resolvedSlot(
         location: CGPoint,
-        metrics: SidebarEssentialsLayoutMetrics
+        metrics: SidebarFavoriteLayoutMetrics
     ) -> Int {
         if let containingSlot = metrics.dropSlotFrames.first(where: {
             $0.frame.contains(location)

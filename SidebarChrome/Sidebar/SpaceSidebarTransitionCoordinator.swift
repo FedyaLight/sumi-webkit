@@ -274,7 +274,7 @@ final class SpaceSidebarTransitionCoordinator {
         // via `startPendingClickAnimation(context:)` once SwiftUI has committed
         // that 0-progress frame — animating inline would collapse the mount and
         // the animation into one transaction and the pages (including
-        // essentials) would swap with no slide.
+        // favorite) would swap with no slide.
         scheduleTransitionCompletion(
             after: SpaceSidebarRenderPolicy.completionDelay,
             commit: true,

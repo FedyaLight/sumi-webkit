@@ -148,14 +148,14 @@ final class SidebarDragGeometryRepository {
         }
     }
 
-    func scheduleEssentialsLayoutMetrics(_ update: SidebarEssentialsLayoutUpdate, generation: Int) {
+    func scheduleFavoriteLayoutMetrics(_ update: SidebarFavoriteLayoutUpdate, generation: Int) {
         enqueueDeferredGeometryMutation(
-            key: .essentials(
+            key: .favorite(
                 spaceID: update.spaceId,
                 generation: generation
             )
         ) { repository in
-            repository.applyEssentialsLayoutMetrics(
+            repository.applyFavoriteLayoutMetrics(
                 update,
                 generation: generation
             )
@@ -194,15 +194,15 @@ final class SidebarDragGeometryRepository {
         }
 
         let spaceId = pendingInteractivePageKey.spaceId
-        let essentialsKey = SidebarSectionGeometryKey(spaceId: spaceId, section: .essentials)
+        let favoriteKey = SidebarSectionGeometryKey(spaceId: spaceId, section: .favorite)
         let pinnedKey = SidebarSectionGeometryKey(spaceId: spaceId, section: .spacePinned)
         let regularKey = SidebarSectionGeometryKey(spaceId: spaceId, section: .spaceRegular)
         let listLayout = pendingGeometryStore.spaceListLayoutsBySpace[spaceId]
 
-        guard pendingGeometryStore.sectionFramesBySpace[essentialsKey] != nil,
+        guard pendingGeometryStore.sectionFramesBySpace[favoriteKey] != nil,
               listLayout?.sectionFrames[pinnedKey.section] != nil,
               listLayout?.sectionFrames[regularKey.section] != nil,
-              pendingGeometryStore.essentialsLayoutMetricsBySpace[spaceId] != nil,
+              pendingGeometryStore.favoriteLayoutMetricsBySpace[spaceId] != nil,
               listLayout != nil else {
             return
         }
@@ -299,7 +299,7 @@ final class SidebarDragGeometryRepository {
         return true
     }
 
-    func applyEssentialsLayoutMetrics(_ update: SidebarEssentialsLayoutUpdate, generation: Int) {
+    func applyFavoriteLayoutMetrics(_ update: SidebarFavoriteLayoutUpdate, generation: Int) {
         var update = update
         if var input = update.input {
             input.frame = normalizedFrame(input.frame, for: generation)
@@ -314,24 +314,24 @@ final class SidebarDragGeometryRepository {
         mutateGeometryStore(for: generation) { store in
             let sectionKey = SidebarSectionGeometryKey(
                 spaceId: update.spaceId,
-                section: .essentials
+                section: .favorite
             )
             guard let input = update.input else {
                 let hadMetrics =
-                    store.essentialsLayoutMetricsBySpace[update.spaceId] != nil
+                    store.favoriteLayoutMetricsBySpace[update.spaceId] != nil
                 let hadSection = store.sectionFramesBySpace[sectionKey] != nil
                 guard hadMetrics || hadSection else { return false }
-                store.essentialsLayoutMetricsBySpace[update.spaceId] = nil
+                store.favoriteLayoutMetricsBySpace[update.spaceId] = nil
                 store.sectionFramesBySpace[sectionKey] = nil
                 return true
             }
 
-            let metrics = makeEssentialsLayoutMetrics(input)
-            guard store.essentialsLayoutMetricsBySpace[update.spaceId]
+            let metrics = makeFavoriteLayoutMetrics(input)
+            guard store.favoriteLayoutMetricsBySpace[update.spaceId]
                     != metrics
                     || store.sectionFramesBySpace[sectionKey] != input.frame
             else { return false }
-            store.essentialsLayoutMetricsBySpace[update.spaceId] = metrics
+            store.favoriteLayoutMetricsBySpace[update.spaceId] = metrics
             store.sectionFramesBySpace[sectionKey] = input.frame
             return true
         }
@@ -435,9 +435,9 @@ final class SidebarDragGeometryRepository {
         return true
     }
 
-    private func makeEssentialsLayoutMetrics(
-        _ input: SidebarEssentialsLayoutMetricsInput
-    ) -> SidebarEssentialsLayoutMetrics {
+    private func makeFavoriteLayoutMetrics(
+        _ input: SidebarFavoriteLayoutMetricsInput
+    ) -> SidebarFavoriteLayoutMetrics {
         let resolvedVisibleRowCount = max(
             input.visibleRowCount ?? Self.resolvedMetricsRowCount(
                 for: input.frame.height,
@@ -460,7 +460,7 @@ final class SidebarDragGeometryRepository {
         let resolvedFirstSyntheticRowSlot = input.firstSyntheticRowSlot
             ?? (max(resolvedVisibleRowCount, 1) * max(input.columnCount, 1))
         let resolvedDropSlotFrames = input.dropSlotFrames.isEmpty
-            ? Self.defaultEssentialsDropSlotFrames(
+            ? Self.defaultFavoriteDropSlotFrames(
                 dropFrame: input.dropFrame,
                 visibleItemCount: input.visibleItemCount ?? input.itemCount,
                 columnCount: input.columnCount,
@@ -476,7 +476,7 @@ final class SidebarDragGeometryRepository {
 
         let resolvedVisibleItemCount = input.visibleItemCount ?? input.itemCount
 
-        return SidebarEssentialsLayoutMetrics(
+        return SidebarFavoriteLayoutMetrics(
             profileId: input.profileId,
             frame: input.frame,
             dropFrame: input.dropFrame,
@@ -487,7 +487,7 @@ final class SidebarDragGeometryRepository {
             maxDropRowCount: resolvedMaxDropRowCount,
             itemSize: input.itemSize,
             canAcceptDrop: input.canAcceptDrop,
-            dropHitFrame: SidebarEssentialsDropHitPolicy.resolvedDropHitFrame(
+            dropHitFrame: SidebarFavoriteDropHitPolicy.resolvedDropHitFrame(
                 frame: input.frame,
                 dropFrame: input.dropFrame,
                 dropSlotFrames: resolvedDropSlotFrames,
@@ -596,7 +596,7 @@ final class SidebarDragGeometryRepository {
             folderDropTargets: folderTargets,
             pinnedListHitTargets: pinnedTargets,
             regularListHitTargets: regularTargets,
-            essentialsLayoutMetricsBySpace: store.essentialsLayoutMetricsBySpace,
+            favoriteLayoutMetricsBySpace: store.favoriteLayoutMetricsBySpace,
             hitTestIndex: store.hitTestIndex
         )
     }
@@ -613,25 +613,25 @@ final class SidebarDragGeometryRepository {
         return max(fallback, derivedRows, 1)
     }
 
-    private static func defaultEssentialsDropSlotFrames(
+    private static func defaultFavoriteDropSlotFrames(
         dropFrame: CGRect,
         visibleItemCount: Int,
         columnCount: Int,
         itemSize: CGSize,
         gridSpacing: CGFloat,
         maxDropRowCount: Int
-    ) -> [SidebarEssentialsDropSlotMetrics] {
+    ) -> [SidebarFavoriteDropSlotMetrics] {
         let safeColumnCount = max(columnCount, 1)
         let safeVisibleItemCount = max(visibleItemCount, 0)
         let maxSlot = min(safeVisibleItemCount, safeColumnCount * max(maxDropRowCount, 1))
         guard itemSize.width > 0, itemSize.height > 0 else {
-            return [SidebarEssentialsDropSlotMetrics(slot: 0, frame: dropFrame)]
+            return [SidebarFavoriteDropSlotMetrics(slot: 0, frame: dropFrame)]
         }
 
         return (0...maxSlot).map { slot in
             let row = max(0, slot / safeColumnCount)
             let column = max(0, min(slot % safeColumnCount, safeColumnCount - 1))
-            return SidebarEssentialsDropSlotMetrics(
+            return SidebarFavoriteDropSlotMetrics(
                 slot: slot,
                 frame: CGRect(
                     x: dropFrame.minX + CGFloat(column) * (itemSize.width + gridSpacing),

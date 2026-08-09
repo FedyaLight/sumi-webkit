@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-struct SumiEssentialBackdropKey: Hashable, Sendable {
+struct SumiFavoriteBackdropKey: Hashable, Sendable {
     struct StoredKey: Hashable, Sendable {
         let partitionComponent: String
         let fileName: String
@@ -33,21 +33,21 @@ struct SumiEssentialBackdropKey: Hashable, Sendable {
 }
 
 @MainActor
-enum SumiEssentialBackdropReconcilePlan {
+enum SumiFavoriteBackdropReconcilePlan {
     struct Result: Equatable {
-        let toBake: Set<SumiEssentialBackdropKey>
-        let toDelete: Set<SumiEssentialBackdropKey.StoredKey>
+        let toBake: Set<SumiFavoriteBackdropKey>
+        let toDelete: Set<SumiFavoriteBackdropKey.StoredKey>
     }
 
     static func entries(
         for pins: [ShortcutPin]
-    ) -> [SumiEssentialBackdropKey: URL] {
+    ) -> [SumiFavoriteBackdropKey: URL] {
         pins.reduce(into: [:]) { result, pin in
-            guard pin.role == .essential,
+            guard pin.role == .favorite,
                   pin.iconAsset == nil,
                   pin.glyphText == nil,
                   pin.chromeTemplateSystemImageName == nil,
-                  let key = SumiEssentialBackdropKey(
+                  let key = SumiFavoriteBackdropKey(
                     documentURL: pin.launchURL,
                     partition: .regular(
                         pin.executionProfileId ?? pin.profileId
@@ -61,8 +61,8 @@ enum SumiEssentialBackdropReconcilePlan {
     }
 
     static func compute(
-        current: Set<SumiEssentialBackdropKey>,
-        existing: Set<SumiEssentialBackdropKey.StoredKey>
+        current: Set<SumiFavoriteBackdropKey>,
+        existing: Set<SumiFavoriteBackdropKey.StoredKey>
     ) -> Result {
         let currentStored = Set(current.map(\.storedKey))
         return Result(

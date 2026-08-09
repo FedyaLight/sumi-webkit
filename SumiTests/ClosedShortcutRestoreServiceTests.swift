@@ -74,15 +74,15 @@ final class ClosedShortcutRestoreServiceTests: XCTestCase {
 
     // MARK: - Launcher
 
-    func testRestoreEssentialLauncherFailsWhenProfileIsGone() {
+    func testRestoreFavoriteLauncherFailsWhenProfileIsGone() {
         let harness = makeHarness()
         let pin = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: UUID(),
             index: 0,
-            launchURL: URL(string: "https://essential.example")!,
-            title: "Essential"
+            launchURL: URL(string: "https://favorite.example")!,
+            title: "Favorite"
         )
 
         XCTAssertFalse(harness.service.restoreLauncher(from: RecentlyClosedShortcutPinState(pin: pin)))
@@ -93,15 +93,15 @@ final class ClosedShortcutRestoreServiceTests: XCTestCase {
         )
     }
 
-    func testRestoreEssentialLauncherWithExistingProfileSucceeds() throws {
+    func testRestoreFavoriteLauncherWithExistingProfileSucceeds() throws {
         let harness = makeHarness()
         let pin = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: harness.profile.id,
             index: 0,
-            launchURL: try XCTUnwrap(URL(string: "https://essential.example")),
-            title: "Essential"
+            launchURL: try XCTUnwrap(URL(string: "https://favorite.example")),
+            title: "Favorite"
         )
 
         XCTAssertTrue(harness.service.restoreLauncher(from: RecentlyClosedShortcutPinState(pin: pin)))
@@ -110,7 +110,7 @@ final class ClosedShortcutRestoreServiceTests: XCTestCase {
             harness.browserManager.shortcutPinCollectionStateOwner
                 .shortcutPin(by: pin.id)
         )
-        XCTAssertEqual(restored.role, .essential)
+        XCTAssertEqual(restored.role, .favorite)
         XCTAssertEqual(restored.profileId, harness.profile.id)
     }
 

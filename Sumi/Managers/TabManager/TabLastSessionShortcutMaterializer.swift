@@ -14,8 +14,8 @@ final class TabLastSessionShortcutMaterializer {
     }
 
     func materialize(_ plan: TabLastSessionMergePlan) {
-        for profileID in plan.essentialPinsByProfile.keys.sorted(by: uuidOrder) {
-            let pins = (plan.essentialPinsByProfile[profileID] ?? [])
+        for profileID in plan.favoritePinsByProfile.keys.sorted(by: uuidOrder) {
+            let pins = (plan.favoritePinsByProfile[profileID] ?? [])
                 .enumerated().map {
                     makeShortcut(from: $0.element, index: $0.offset)
                 }
@@ -38,7 +38,7 @@ final class TabLastSessionShortcutMaterializer {
     ) -> ShortcutPin {
         ShortcutPin(
             id: descriptor.id,
-            role: descriptor.kind == .essential ? .essential : .spacePinned,
+            role: descriptor.kind == .favorite ? .favorite : .spacePinned,
             profileId: descriptor.profileId,
             executionProfileId: descriptor.executionProfileId,
             spaceId: descriptor.spaceId,

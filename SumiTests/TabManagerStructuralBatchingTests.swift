@@ -636,26 +636,26 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         windowState.currentSpaceId = windowSpace.id
         windowState.currentProfileId = windowProfileId
 
-        let windowEssentialPin = ShortcutPin(
+        let windowFavoritePin = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: windowProfileId,
             spaceId: nil,
             index: 0,
             folderId: nil,
-            launchURL: URL(string: "https://window.example/essential")!,
-            title: "Window Essential",
+            launchURL: URL(string: "https://window.example/favorite")!,
+            title: "Window Favorite",
             iconAsset: nil
         )
-        let globalEssentialPin = ShortcutPin(
+        let globalFavoritePin = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: globalProfileId,
             spaceId: nil,
             index: 0,
             folderId: nil,
-            launchURL: URL(string: "https://global.example/essential")!,
-            title: "Global Essential",
+            launchURL: URL(string: "https://global.example/favorite")!,
+            title: "Global Favorite",
             iconAsset: nil
         )
         let windowSpacePin = ShortcutPin(
@@ -669,17 +669,17 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
             title: "Window Pin",
             iconAsset: nil
         )
-        tabManager.structuralCollectionMutationOwner.setPinnedTabs([windowEssentialPin], for: windowProfileId)
-        tabManager.structuralCollectionMutationOwner.setPinnedTabs([globalEssentialPin], for: globalProfileId)
+        tabManager.structuralCollectionMutationOwner.setPinnedTabs([windowFavoritePin], for: windowProfileId)
+        tabManager.structuralCollectionMutationOwner.setPinnedTabs([globalFavoritePin], for: globalProfileId)
         tabManager.structuralCollectionMutationOwner.setSpacePinnedShortcuts([windowSpacePin], for: windowSpace.id)
         tabManager.spaceStateOwner.replaceCurrentSpace(globalSpace)
-        let windowEssential = tabManager.shortcutTabMaterializer.materialize(
-            windowEssentialPin,
+        let windowFavorite = tabManager.shortcutTabMaterializer.materialize(
+            windowFavoritePin,
             in: windowState.id,
             currentSpaceId: windowSpace.id
         )!
-        let globalEssential = tabManager.shortcutTabMaterializer.materialize(
-            globalEssentialPin,
+        let globalFavorite = tabManager.shortcutTabMaterializer.materialize(
+            globalFavoritePin,
             in: UUID(),
             currentSpaceId: globalSpace.id
         )!
@@ -698,10 +698,10 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         ).tabs(in: windowState.id)
         let selectionIds = selection.map(\.id)
 
-        XCTAssertTrue(selectionIds.contains(windowEssential.id))
+        XCTAssertTrue(selectionIds.contains(windowFavorite.id))
         XCTAssertTrue(selectionIds.contains(windowLauncher.id))
         XCTAssertTrue(selectionIds.contains(windowRegular.id))
-        XCTAssertFalse(selectionIds.contains(globalEssential.id))
+        XCTAssertFalse(selectionIds.contains(globalFavorite.id))
         XCTAssertFalse(selectionIds.contains(globalRegular.id))
     }
 

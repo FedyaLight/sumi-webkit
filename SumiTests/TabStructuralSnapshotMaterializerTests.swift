@@ -40,19 +40,19 @@ final class TabStructuralSnapshotMaterializerTests: XCTestCase {
 
         let firstPin = try makePin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: profileId,
             index: 1,
-            urlString: "https://example.com/essential-b",
-            title: "Essential B"
+            urlString: "https://example.com/favorite-b",
+            title: "Favorite B"
         )
         let secondPin = try makePin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: profileId,
             index: 0,
-            urlString: "https://example.com/essential-a",
-            title: "Essential A"
+            urlString: "https://example.com/favorite-a",
+            title: "Favorite A"
         )
         let spacePin = try makePin(
             id: UUID(),

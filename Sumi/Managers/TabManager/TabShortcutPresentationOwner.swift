@@ -23,7 +23,7 @@ final class ShortcutDragProxyFactory {
             url: pin.launchURL,
             name: pin.title,
             favicon: SumiPersistentGlyph.launcherSystemImageFallback,
-            spaceId: pin.role == .essential ? nil : pin.spaceId,
+            spaceId: pin.role == .favorite ? nil : pin.spaceId,
             index: pin.index
         )
         tab.bindToShortcutPin(pin)
@@ -117,12 +117,12 @@ final class TabShortcutPresentationOwner {
         }
     }
 
-    func essentialRuntimeState(
+    func favoriteRuntimeState(
         for pin: ShortcutPin,
         in windowState: BrowserWindowState,
         splitQuery: WindowSplitQuery
-    ) -> SumiEssentialRuntimeState? {
-        essentialRuntimeState(
+    ) -> SumiFavoriteRuntimeState? {
+        favoriteRuntimeState(
             for: pin,
             in: windowState,
             splitQuery: splitQuery,
@@ -130,13 +130,13 @@ final class TabShortcutPresentationOwner {
         )
     }
 
-    func essentialRuntimeState(
+    func favoriteRuntimeState(
         for pin: ShortcutPin,
         in windowState: BrowserWindowState,
         splitQuery: WindowSplitQuery,
         selection: ShortcutSelectionSnapshot
-    ) -> SumiEssentialRuntimeState? {
-        essentialRuntimeState(
+    ) -> SumiFavoriteRuntimeState? {
+        favoriteRuntimeState(
             for: pin,
             liveTab: shortcutLiveTab(for: pin.id, in: windowState.id),
             in: windowState,
@@ -145,14 +145,14 @@ final class TabShortcutPresentationOwner {
         )
     }
 
-    func essentialRuntimeState(
+    func favoriteRuntimeState(
         for pin: ShortcutPin,
         liveTab: Tab?,
         in windowState: BrowserWindowState,
         splitQuery: WindowSplitQuery,
         selection: ShortcutSelectionSnapshot
-    ) -> SumiEssentialRuntimeState? {
-        guard pin.role == .essential else { return nil }
+    ) -> SumiFavoriteRuntimeState? {
+        guard pin.role == .favorite else { return nil }
         guard let liveTab else {
             return .launcherOnly
         }
@@ -274,9 +274,9 @@ final class TabShortcutPresentationOwner {
             .filter { role == nil || $0.shortcutPinRole == role }
     }
 
-    func activeEssentialTabs(for profileId: UUID?) -> [Tab] {
+    func activeFavoriteTabs(for profileId: UUID?) -> [Tab] {
         guard let profileId else { return [] }
-        return activeShortcutTabs(role: .essential).filter { tab in
+        return activeShortcutTabs(role: .favorite).filter { tab in
             guard let shortcutId = tab.shortcutPinId,
                   let pin = pins.shortcutPin(by: shortcutId) else { return false }
             return pin.profileId == profileId

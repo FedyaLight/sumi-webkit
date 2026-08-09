@@ -2,14 +2,14 @@ import Foundation
 
 @MainActor
 final class SidebarRegularTabShortcutCommands {
-    private let essentialPinning: RegularTabEssentialPinningService
+    private let favoritePinning: RegularTabFavoritePinningService
     private let spacePinning: ShortcutPinSpacePinningTransaction
 
     init(
-        essentialPinning: RegularTabEssentialPinningService,
+        favoritePinning: RegularTabFavoritePinningService,
         spacePinning: ShortcutPinSpacePinningTransaction
     ) {
-        self.essentialPinning = essentialPinning
+        self.favoritePinning = favoritePinning
         self.spacePinning = spacePinning
     }
 
@@ -17,14 +17,14 @@ final class SidebarRegularTabShortcutCommands {
         spacePinning.pin(tab, to: spaceID)
     }
 
-    func addTabToEssentials(
+    func addTabToFavorite(
         _ tab: Tab,
         in space: Space,
         windowState: BrowserWindowState
     ) {
-        essentialPinning.pin(
+        favoritePinning.pin(
             tab,
-            context: EssentialsShortcutPlacementOwner.TargetContext(
+            context: FavoriteShortcutPlacementOwner.TargetContext(
                 windowState: windowState,
                 spaceId: space.id
             )

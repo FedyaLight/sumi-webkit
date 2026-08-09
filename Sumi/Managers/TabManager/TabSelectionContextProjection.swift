@@ -31,14 +31,14 @@ final class TabSelectionContextProjection {
         let launcher = windowID
             .flatMap { shortcutPresentation.activeShortcutTab(for: $0) }
             .flatMap { tab -> Tab? in
-                guard tab.shortcutPinRole != .essential else { return nil }
+                guard tab.shortcutPinRole != .favorite else { return nil }
                 guard tab.spaceId == nil || tab.spaceId == spaceID else {
                     return nil
                 }
                 return tab
             }
 
-        return shortcutPresentation.activeEssentialTabs(for: profileID)
+        return shortcutPresentation.activeFavoriteTabs(for: profileID)
             + (launcher.map { [$0] } ?? [])
             + regular
     }

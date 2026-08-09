@@ -223,7 +223,7 @@ final class SidebarDragMultiwindowSplitConversionTests: XCTestCase {
         try assertGroupReorder(secondarySelectsGroup: true)
     }
 
-    func testRegularSplitRowMovesThroughPinnedAndEssentialsWithoutChangingGroupIdentity()
+    func testRegularSplitRowMovesThroughPinnedAndFavoriteWithoutChangingGroupIdentity()
         throws {
         let window = BrowserWindowState()
         let profile = Profile(name: "Profile")
@@ -380,41 +380,41 @@ final class SidebarDragMultiwindowSplitConversionTests: XCTestCase {
                 payload: .splitGroup(regularAgain),
                 scope: regularScope,
                 fromContainer: .spaceRegular(space.id),
-                toContainer: .essentials,
+                toContainer: .favorite,
                 toIndex: 0
             )
         ))
-        let essential = try XCTUnwrap(
+        let favorite = try XCTUnwrap(
             browser.splitGroupStore.group(id: group.id)
         )
-        guard case .essentialSidebar(let profileID, let essentialIndex) =
-            essential.container else {
-            return XCTFail("Expected an Essential split group")
+        guard case .favoriteSidebar(let profileID, let favoriteIndex) =
+            favorite.container else {
+            return XCTFail("Expected a Favorite split group")
         }
         XCTAssertEqual(profileID, profile.id)
-        XCTAssertEqual(essentialIndex, 0)
-        let essentialPinIDs = essential.memberIDs.compactMap {
+        XCTAssertEqual(favoriteIndex, 0)
+        let favoritePinIDs = favorite.memberIDs.compactMap {
             memberID -> UUID? in
             guard case .shortcutPin(let pinID) = memberID else { return nil }
             return pinID
         }
-        XCTAssertEqual(essentialPinIDs.count, 2)
+        XCTAssertEqual(favoritePinIDs.count, 2)
         XCTAssertIdentical(
             browser.shortcutPresentationOwner.shortcutLiveTab(
-                for: essentialPinIDs[0],
+                for: favoritePinIDs[0],
                 in: window.id
             ),
             first
         )
         XCTAssertIdentical(
             browser.shortcutPresentationOwner.shortcutLiveTab(
-                for: essentialPinIDs[1],
+                for: favoritePinIDs[1],
                 in: window.id
             ),
             second
         )
-        let selectedEssentialPinID = try XCTUnwrap(
-            essentialPinIDs.first { pinID in
+        let selectedFavoritePinID = try XCTUnwrap(
+            favoritePinIDs.first { pinID in
                 browser.shortcutPresentationOwner.shortcutLiveTab(
                     for: pinID,
                     in: window.id
@@ -425,7 +425,7 @@ final class SidebarDragMultiwindowSplitConversionTests: XCTestCase {
             window.splitSelection,
             WindowSplitSelection(
                 groupID: group.id,
-                activeMemberID: .shortcutPin(selectedEssentialPinID)
+                activeMemberID: .shortcutPin(selectedFavoritePinID)
             )
         )
     }

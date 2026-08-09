@@ -85,8 +85,8 @@ final class SplitGroupReleaseOrderingService {
                 folderID: folderID,
                 groups: groups
             )
-        case .essentialSidebar(let storedProfileID, _):
-            return essentialPlan(
+        case .favoriteSidebar(let storedProfileID, _):
+            return favoritePlan(
                 group,
                 replacingWith: replacementGroup,
                 storedProfileID: storedProfileID,
@@ -167,7 +167,7 @@ final class SplitGroupReleaseOrderingService {
         }
     }
 
-    private func essentialPlan(
+    private func favoritePlan(
         _ group: SplitGroup,
         replacingWith replacementGroup: SplitGroup?,
         storedProfileID: UUID?,
@@ -182,8 +182,8 @@ final class SplitGroupReleaseOrderingService {
               let profileID = storedProfileID ?? memberPins.first?.profileId
         else { return nil }
 
-        let currentPins = pins.essentialPins(for: profileID)
-        let currentItems = ordering.essentialItems(for: profileID)
+        let currentPins = pins.favoritePins(for: profileID)
+        let currentItems = ordering.favoriteItems(for: profileID)
         guard let expandedItems = expandedLauncherItems(
             currentItems,
             group: group,
@@ -206,7 +206,7 @@ final class SplitGroupReleaseOrderingService {
                 orderedPins.append(pin)
             case .splitGroup(let groupID):
                 guard let currentGroup = groupByID[groupID],
-                      case .essentialSidebar(let ownerProfileID, _) =
+                      case .favoriteSidebar(let ownerProfileID, _) =
                         currentGroup.container,
                       ownerProfileID == nil || ownerProfileID == profileID
                 else { return nil }
@@ -219,7 +219,7 @@ final class SplitGroupReleaseOrderingService {
                 }
                 guard groupPins.count == currentGroup.memberIDs.count,
                       let replacement = currentGroup.changingContainer(
-                        to: .essentialSidebar(
+                        to: .favoriteSidebar(
                             profileId: ownerProfileID,
                             index: orderedPins.count
                         )

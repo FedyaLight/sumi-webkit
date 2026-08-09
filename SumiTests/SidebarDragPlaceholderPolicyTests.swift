@@ -18,7 +18,7 @@ final class SidebarDragPlaceholderPolicyTests: XCTestCase {
             SidebarDragPlaceholderPolicy.shouldHideCommittedCrossContainerPlaceholder(
                 isCompletingDrop: false,
                 sourceContainer: .spaceRegular(spaceId),
-                targetContainer: .essentials,
+                targetContainer: .favorite,
                 targetAlreadyContainsDraggedItem: true
             )
         )
@@ -29,15 +29,15 @@ final class SidebarDragPlaceholderPolicyTests: XCTestCase {
             SidebarDragPlaceholderPolicy.shouldHideCommittedCrossContainerPlaceholder(
                 isCompletingDrop: true,
                 sourceContainer: nil,
-                targetContainer: .essentials,
+                targetContainer: .favorite,
                 targetAlreadyContainsDraggedItem: true
             )
         )
     }
 
     func testHideCommittedPlaceholderTrueWhenRegularTabGainsLauncherIdentity() {
-        // spaceRegular -> essentials/spacePinned/folder: gains a shortcut identity.
-        for target: TabDragManager.DragContainer in [.essentials, .spacePinned(spaceId), .folder(folderId)] {
+        // spaceRegular -> favorite/spacePinned/folder: gains a shortcut identity.
+        for target: TabDragManager.DragContainer in [.favorite, .spacePinned(spaceId), .folder(folderId)] {
             XCTAssertTrue(
                 SidebarDragPlaceholderPolicy.shouldHideCommittedCrossContainerPlaceholder(
                     isCompletingDrop: true,
@@ -67,7 +67,7 @@ final class SidebarDragPlaceholderPolicyTests: XCTestCase {
         XCTAssertTrue(
             SidebarDragPlaceholderPolicy.shouldHideCommittedCrossContainerPlaceholder(
                 isCompletingDrop: true,
-                sourceContainer: .essentials,
+                sourceContainer: .favorite,
                 targetContainer: .spacePinned(spaceId),
                 targetAlreadyContainsDraggedItem: true
             )
@@ -78,8 +78,8 @@ final class SidebarDragPlaceholderPolicyTests: XCTestCase {
         XCTAssertFalse(
             SidebarDragPlaceholderPolicy.shouldHideCommittedCrossContainerPlaceholder(
                 isCompletingDrop: true,
-                sourceContainer: .essentials,
-                targetContainer: .essentials,
+                sourceContainer: .favorite,
+                targetContainer: .favorite,
                 targetAlreadyContainsDraggedItem: true
             )
         )
@@ -89,7 +89,7 @@ final class SidebarDragPlaceholderPolicyTests: XCTestCase {
         XCTAssertFalse(
             SidebarDragPlaceholderPolicy.shouldHideCommittedCrossContainerPlaceholder(
                 isCompletingDrop: true,
-                sourceContainer: .essentials,
+                sourceContainer: .favorite,
                 targetContainer: .spacePinned(spaceId),
                 targetAlreadyContainsDraggedItem: false
             )

@@ -15,7 +15,7 @@ enum BrowserShortcutActionComposition {
         emptySplitCreation: EmptySplitCreationWorkflow,
         spaces: TabSpaceCollectionStateOwner,
         pins: ShortcutPinCollectionStateOwner,
-        essentials: EssentialsShortcutPlacementOwner,
+        favorite: FavoriteShortcutPlacementOwner,
         regularTabShortcuts: SidebarRegularTabShortcutCommands,
         regularTabs: RegularTabCollectionOwner,
         pinCommands: SidebarPinCommands,
@@ -57,7 +57,7 @@ enum BrowserShortcutActionComposition {
         let pinningCommands = BrowserKeyboardPinCommands(
             spaces: spaces,
             pins: pins,
-            essentials: essentials,
+            favorite: favorite,
             regularTabs: regularTabShortcuts,
             tabCollection: regularTabs,
             pinCommands: pinCommands,

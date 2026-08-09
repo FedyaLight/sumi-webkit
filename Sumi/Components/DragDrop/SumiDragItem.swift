@@ -46,15 +46,15 @@ extension NSPasteboard {
 // MARK: - Drop Zone Identity
 
 enum DropZoneID: Hashable {
-    case essentials
+    case favorite
     case spacePinned(UUID)
     case spaceRegular(UUID)
     case folder(UUID)
 
     var asDragContainer: TabDragManager.DragContainer {
         switch self {
-        case .essentials:
-            return .essentials
+        case .favorite:
+            return .favorite
         case .spacePinned(let spaceId):
             return .spacePinned(spaceId)
         case .spaceRegular(let spaceId):

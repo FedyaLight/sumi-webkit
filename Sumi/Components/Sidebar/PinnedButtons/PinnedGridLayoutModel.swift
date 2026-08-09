@@ -5,16 +5,16 @@
 
 import SwiftUI
 
-/// Aggregates the essentials-grid layout/drop-projection derivation that
+/// Aggregates the favorite-grid layout/drop-projection derivation that
 /// `PinnedGrid` needs to render a frame: which items are visible, how they're
 /// projected during a drag, the resolved display rows, and the drop-target
-/// geometry. Orchestrates `SidebarEssentialsProjectionPolicy` and
-/// `SidebarEssentialsGridProjection` — the pure math lives there; this type's
+/// geometry. Orchestrates `SidebarFavoriteProjectionPolicy` and
+/// `SidebarFavoriteGridProjection` — the pure math lives there; this type's
 /// job is bundling their outputs into the single snapshot `PinnedGrid.body`
 /// consumes, so that orchestration can be tested independently of SwiftUI.
 @MainActor
 struct PinnedGridLayoutModel {
-    /// How the zone presents itself while it holds no Essentials.
+    /// How the zone presents itself while it holds no Favorite.
     enum EmptyPresentation: Equatable {
         /// Invisible strip: the hint was dismissed and no drag is hovering.
         case collapsed
@@ -24,8 +24,8 @@ struct PinnedGridLayoutModel {
     }
 
     let width: CGFloat
-    let items: [SidebarEssentialVisualItem]
-    let dragPresentation: SidebarEssentialsDragPresentationFrame
+    let items: [SidebarFavoriteVisualItem]
+    let dragPresentation: SidebarFavoriteDragPresentationFrame
     let dragGeometry: SidebarDragGeometryModule
     let geometrySpaceId: UUID
     let effectiveProfileId: UUID?
@@ -34,13 +34,13 @@ struct PinnedGridLayoutModel {
     let shouldAnimateContentLayout: Bool
     let reportsDetailedGeometry: Bool
 
-    private let gridProjection: SidebarEssentialsGridProjection
-    let projectedLayout: SidebarEssentialsProjectedLayout
+    private let gridProjection: SidebarFavoriteGridProjection
+    let projectedLayout: SidebarFavoriteProjectedLayout
 
     init(
         width: CGFloat,
-        items: [SidebarEssentialVisualItem],
-        dragPresentation: SidebarEssentialsDragPresentationFrame,
+        items: [SidebarFavoriteVisualItem],
+        dragPresentation: SidebarFavoriteDragPresentationFrame,
         dragGeometry: SidebarDragGeometryModule,
         geometrySpaceId: UUID,
         effectiveProfileId: UUID?,
@@ -59,8 +59,8 @@ struct PinnedGridLayoutModel {
         self.effectiveProfileId = effectiveProfileId
         self.showsHint = showsHint
 
-        gridProjection = SidebarEssentialsGridProjection(width: width)
-        projectedLayout = SidebarEssentialsProjectionPolicy.make(
+        gridProjection = SidebarFavoriteGridProjection(width: width)
+        projectedLayout = SidebarFavoriteProjectionPolicy.make(
             items: items,
             width: width,
             dragPresentation: dragPresentation
@@ -76,9 +76,9 @@ struct PinnedGridLayoutModel {
         shouldAnimateContentLayout = animationsAllowed
     }
 
-    var isHoveringThisEssentials: Bool {
+    var isHoveringThisFavorite: Bool {
         guard dragPresentation.isDropProjectionActive,
-              case .essentials = dragPresentation.projectionHoveredSlot else {
+              case .favorite = dragPresentation.projectionHoveredSlot else {
             return false
         }
         return true
@@ -89,7 +89,7 @@ struct PinnedGridLayoutModel {
     var emptyPresentation: EmptyPresentation {
         guard items.isEmpty else { return .collapsed }
         if showsHint { return .placeholder }
-        return isHoveringThisEssentials && projectedLayout.canAcceptDrop
+        return isHoveringThisFavorite && projectedLayout.canAcceptDrop
             ? .placeholder
             : .collapsed
     }
@@ -100,8 +100,8 @@ struct PinnedGridLayoutModel {
 
     var revealHeight: CGFloat {
         emptyPresentation == .placeholder
-            ? EssentialsPlaceholderMetrics.height
-            : PinnedTileMetrics.collapsedEssentialsRevealHeight
+            ? FavoritePlaceholderMetrics.height
+            : PinnedTileMetrics.collapsedFavoriteRevealHeight
     }
 
     var visibleRowCount: Int {
@@ -111,7 +111,7 @@ struct PinnedGridLayoutModel {
     var maxDropRowCount: Int {
         items.isEmpty
             ? 1
-            : SidebarEssentialsProjectionPolicy.neededRowCountAfterDrop(
+            : SidebarFavoriteProjectionPolicy.neededRowCountAfterDrop(
                 itemIDs: items.map(\.id),
                 visibleItemCount: projectedLayout.visibleItemCount,
                 layoutItemCount: projectedLayout.projectedItemCount,
@@ -132,7 +132,7 @@ struct PinnedGridLayoutModel {
             )
     }
 
-    var previewState: SidebarEssentialsPreviewState? {
+    var previewState: SidebarFavoritePreviewState? {
         dragPresentation.previewState(for: geometrySpaceId).flatMap {
             gridProjection.resolvedPreviewState(
                 $0,
@@ -142,7 +142,7 @@ struct PinnedGridLayoutModel {
         }
     }
 
-    var displayRows: [SidebarEssentialsDisplayRow] {
+    var displayRows: [SidebarFavoriteDisplayRow] {
         gridProjection.resolvedDisplayRows(
             for: projectedLayout,
             previewState: previewState,
@@ -154,7 +154,7 @@ struct PinnedGridLayoutModel {
         displayRows.flatMap(\.layoutSignature)
     }
 
-    var dropSlotFrames: [SidebarEssentialsDropSlotMetrics] {
+    var dropSlotFrames: [SidebarFavoriteDropSlotMetrics] {
         gridProjection.resolvedDropSlotFrames(
             for: projectedLayout,
             revealTileSize: revealTileSize,

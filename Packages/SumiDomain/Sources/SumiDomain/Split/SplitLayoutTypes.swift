@@ -46,7 +46,7 @@ public enum SplitDropSide: String, Codable, Hashable, Sendable {
 /// Durable placement of a split group in the browser's shared structure.
 public enum SplitGroupContainer: Hashable, Sendable {
     case regularTabs(spaceId: UUID?)
-    case essentialSidebar(profileId: UUID?, index: Int?)
+    case favoriteSidebar(profileId: UUID?, index: Int?)
     case shortcutSidebar(
         spaceId: UUID,
         profileId: UUID?,
@@ -64,15 +64,36 @@ public enum SplitGroupContainer: Hashable, Sendable {
 
     private enum Kind: String, Codable {
         case regularTabs
-        case essentialSidebar
+        case favoriteSidebar
         case shortcutSidebar
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            let value = try container.decode(String.self)
+            if value == "essentialSidebar" {
+                self = .favoriteSidebar
+                return
+            }
+            guard let kind = Self(rawValue: value) else {
+                throw DecodingError.dataCorruptedError(
+                    in: container,
+                    debugDescription: "Unsupported split group container: \(value)"
+                )
+            }
+            self = kind
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.singleValueContainer()
+            try container.encode(rawValue)
+        }
     }
 
     public var spaceId: UUID? {
         switch self {
         case .regularTabs(let spaceId):
             return spaceId
-        case .essentialSidebar:
+        case .favoriteSidebar:
             return nil
         case .shortcutSidebar(let spaceId, _, _, _):
             return spaceId
@@ -81,7 +102,7 @@ public enum SplitGroupContainer: Hashable, Sendable {
 
     public var isShortcutSidebar: Bool {
         switch self {
-        case .shortcutSidebar, .essentialSidebar:
+        case .shortcutSidebar, .favoriteSidebar:
             return true
         case .regularTabs:
             return false
@@ -112,8 +133,8 @@ extension SplitGroupContainer: Codable {
             self = .regularTabs(
                 spaceId: try container.decodeIfPresent(UUID.self, forKey: .spaceId)
             )
-        case .essentialSidebar:
-            self = .essentialSidebar(
+        case .favoriteSidebar:
+            self = .favoriteSidebar(
                 profileId: try container.decodeIfPresent(UUID.self, forKey: .profileId),
                 index: try container.decodeIfPresent(Int.self, forKey: .index)
             )
@@ -133,8 +154,8 @@ extension SplitGroupContainer: Codable {
         case .regularTabs(let spaceId):
             try container.encode(Kind.regularTabs, forKey: .kind)
             try container.encodeIfPresent(spaceId, forKey: .spaceId)
-        case .essentialSidebar(let profileId, let index):
-            try container.encode(Kind.essentialSidebar, forKey: .kind)
+        case .favoriteSidebar(let profileId, let index):
+            try container.encode(Kind.favoriteSidebar, forKey: .kind)
             try container.encodeIfPresent(profileId, forKey: .profileId)
             try container.encodeIfPresent(index, forKey: .index)
         case .shortcutSidebar(let spaceId, let profileId, let folderId, let index):

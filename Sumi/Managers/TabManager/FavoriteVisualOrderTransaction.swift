@@ -2,7 +2,7 @@ import Foundation
 import SumiDomain
 
 @MainActor
-final class EssentialsVisualOrderTransaction {
+final class FavoriteVisualOrderTransaction {
     private let ordering: SplitGroupSidebarOrderingService
     private let groupMutations: SplitGroupMutationService
     private let pins: ShortcutPinCollectionStateOwner
@@ -25,9 +25,9 @@ final class EssentialsVisualOrderTransaction {
         for profileID: UUID,
         to proposedIndex: Int
     ) -> Bool {
-        let currentPins = pins.essentialPins(for: profileID)
+        let currentPins = pins.favoritePins(for: profileID)
         let currentGroups = ordering.groupsSnapshot
-        var items = SidebarVisualOrdering.essentialItems(
+        var items = SidebarVisualOrdering.favoriteItems(
             pins: currentPins,
             groups: currentGroups,
             profileID: profileID
@@ -89,7 +89,7 @@ final class EssentialsVisualOrderTransaction {
 
             case .splitGroup(let groupID):
                 guard let group = groupsByID[groupID],
-                      case .essentialSidebar(let ownerProfileID, _) = group.container,
+                      case .favoriteSidebar(let ownerProfileID, _) = group.container,
                       ownerProfileID == nil || ownerProfileID == profileID else {
                     return nil
                 }
@@ -102,7 +102,7 @@ final class EssentialsVisualOrderTransaction {
                 }
                 guard memberPins.count == group.memberIDs.count,
                       let replacement = group.changingContainer(
-                        to: .essentialSidebar(
+                        to: .favoriteSidebar(
                             profileId: ownerProfileID,
                             index: rawIndex
                         )

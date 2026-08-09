@@ -80,7 +80,7 @@ final class BrowserKeyboardTabSelectionCommands {
 final class BrowserKeyboardPinCommands {
     private let spaces: TabSpaceCollectionStateOwner
     private let pins: ShortcutPinCollectionStateOwner
-    private let essentials: EssentialsShortcutPlacementOwner
+    private let favorite: FavoriteShortcutPlacementOwner
     private let regularTabs: SidebarRegularTabShortcutCommands
     private let tabCollection: RegularTabCollectionOwner
     private let pinCommands: SidebarPinCommands
@@ -91,7 +91,7 @@ final class BrowserKeyboardPinCommands {
     init(
         spaces: TabSpaceCollectionStateOwner,
         pins: ShortcutPinCollectionStateOwner,
-        essentials: EssentialsShortcutPlacementOwner,
+        favorite: FavoriteShortcutPlacementOwner,
         regularTabs: SidebarRegularTabShortcutCommands,
         tabCollection: RegularTabCollectionOwner,
         pinCommands: SidebarPinCommands,
@@ -101,7 +101,7 @@ final class BrowserKeyboardPinCommands {
     ) {
         self.spaces = spaces
         self.pins = pins
-        self.essentials = essentials
+        self.favorite = favorite
         self.regularTabs = regularTabs
         self.tabCollection = tabCollection
         self.pinCommands = pinCommands
@@ -208,7 +208,7 @@ final class BrowserKeyboardPinCommands {
         )
     }
 
-    func canAddCurrentToEssentials(
+    func canAddCurrentToFavorite(
         in context: BrowserShortcutContext
     ) -> Bool {
         guard context.windowState.isIncognito == false,
@@ -217,28 +217,28 @@ final class BrowserKeyboardPinCommands {
               page.tab.representsSumiNativeSurface == false else {
             return false
         }
-        if let pin = currentPin(in: context), pin.role == .essential {
+        if let pin = currentPin(in: context), pin.role == .favorite {
             return false
         }
         if let group = currentSplitGroup(in: context) {
             let urls = group.memberIDs.compactMap(url(for:))
             guard urls.count == group.memberIDs.count else { return false }
-            return essentials.canAddURLs(
+            return favorite.canAddURLs(
                 urls,
                 using: targetContext(in: context)
             )
         }
-        return essentials.canAddURL(
+        return favorite.canAddURL(
             page.url,
             using: targetContext(in: context)
         )
     }
 
     @discardableResult
-    func addCurrentToEssentials(
+    func addCurrentToFavorite(
         in context: BrowserShortcutContext
     ) -> Bool {
-        guard canAddCurrentToEssentials(in: context),
+        guard canAddCurrentToFavorite(in: context),
               let page = context.page,
               let spaceID = context.windowState.currentSpaceId,
               let space = spaces.space(with: spaceID) else {
@@ -251,21 +251,21 @@ final class BrowserKeyboardPinCommands {
             return moveSplitGroup(
                 group,
                 from: source,
-                to: .essentials,
-                at: splitOrdering.essentialItems(
+                to: .favorite,
+                at: splitOrdering.favoriteItems(
                     for: context.windowState.currentProfileId
                 ).count,
                 in: context
             )
         }
         if let pin = currentPin(in: context) {
-            return pinCommands.copyToEssentials(
+            return pinCommands.copyToFavorite(
                 pin,
                 title: pin.resolvedDisplayTitle(liveTab: page.tab),
                 context: targetContext(in: context)
             ) != nil
         }
-        regularTabs.addTabToEssentials(
+        regularTabs.addTabToFavorite(
             page.tab,
             in: space,
             windowState: context.windowState
@@ -273,7 +273,7 @@ final class BrowserKeyboardPinCommands {
         return true
     }
 
-    func canRemoveCurrentFromEssentials(
+    func canRemoveCurrentFromFavorite(
         in context: BrowserShortcutContext
     ) -> Bool {
         guard context.windowState.isIncognito == false,
@@ -281,9 +281,9 @@ final class BrowserKeyboardPinCommands {
               let pin = currentPin(in: context) else {
             return false
         }
-        guard pin.role == .essential else { return false }
+        guard pin.role == .favorite else { return false }
         if let group = currentSplitGroup(in: context) {
-            guard case .essentialSidebar = group.container else {
+            guard case .favoriteSidebar = group.container else {
                 return false
             }
         }
@@ -291,10 +291,10 @@ final class BrowserKeyboardPinCommands {
     }
 
     @discardableResult
-    func removeCurrentFromEssentials(
+    func removeCurrentFromFavorite(
         in context: BrowserShortcutContext
     ) -> Bool {
-        guard canRemoveCurrentFromEssentials(in: context),
+        guard canRemoveCurrentFromFavorite(in: context),
               let pin = currentPin(in: context),
               let spaceID = context.windowState.currentSpaceId else {
             return false
@@ -302,7 +302,7 @@ final class BrowserKeyboardPinCommands {
         if let group = currentSplitGroup(in: context) {
             return moveSplitGroup(
                 group,
-                from: .essentials,
+                from: .favorite,
                 to: .spacePinned(spaceID),
                 at: splitOrdering.topLevelItems(for: spaceID).count,
                 in: context
@@ -371,8 +371,8 @@ final class BrowserKeyboardPinCommands {
         case .shortcutSidebar(let spaceID, _, let folderID, _):
             folderID.map(TabDragManager.DragContainer.folder)
                 ?? .spacePinned(spaceID)
-        case .essentialSidebar:
-            .essentials
+        case .favoriteSidebar:
+            .favorite
         }
     }
 
@@ -406,8 +406,8 @@ final class BrowserKeyboardPinCommands {
 
     private func targetContext(
         in context: BrowserShortcutContext
-    ) -> EssentialsShortcutPlacementOwner.TargetContext {
-        EssentialsShortcutPlacementOwner.TargetContext(
+    ) -> FavoriteShortcutPlacementOwner.TargetContext {
+        FavoriteShortcutPlacementOwner.TargetContext(
             windowState: context.windowState,
             spaceId: context.windowState.currentSpaceId
         )

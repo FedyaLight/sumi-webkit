@@ -76,7 +76,7 @@ final class RegularTabCollectionOwner {
         if sourceTab.isPinned
             || sourceTab.isSpacePinned
             || sourceTab.shortcutPinRole != nil
-            || shortcutPresentation.activeShortcutTabs(role: .essential)
+            || shortcutPresentation.activeShortcutTabs(role: .favorite)
             .contains(where: { $0.id == sourceTab.id })
             || isSpacePinned(sourceTab) {
             return 0

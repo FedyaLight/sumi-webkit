@@ -176,10 +176,10 @@ final class SidebarDragGeometryRepositoryTests: XCTestCase {
             renderMode: .interactive,
             generation: pendingGeneration
         )
-        repository.applyEssentialsLayoutMetrics(
-            SidebarEssentialsLayoutUpdate(
+        repository.applyFavoriteLayoutMetrics(
+            SidebarFavoriteLayoutUpdate(
                 spaceId: spaceId,
-                input: SidebarEssentialsLayoutMetricsInput(
+                input: SidebarFavoriteLayoutMetricsInput(
                     profileId: profileId,
                     frame: CGRect(x: 0, y: 0, width: 300, height: 140),
                     dropFrame: CGRect(x: 0, y: 0, width: 300, height: 180),

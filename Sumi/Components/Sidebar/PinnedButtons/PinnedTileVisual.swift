@@ -53,7 +53,7 @@ struct PinnedTileVisual: View {
 
         return ZStack {
             if presentationState.isSelected, let resolvedBackdrop {
-                EssentialBackdropSelectionChrome(
+                FavoriteBackdropSelectionChrome(
                     image: resolvedBackdrop,
                     cornerRadius: cornerRadius,
                     plateColor: backgroundColor,
@@ -247,7 +247,7 @@ struct PinnedTileVisual: View {
     }
 }
 
-/// Icon drawn at the center of an essentials/pinned tile. The live tile and the
+/// Icon drawn at the center of a Favorite/pinned tile. The live tile and the
 /// space-transition snapshot tile both render through this view so a space
 /// switch cannot change the glyph's metrics: sidebar rows carry a different
 /// launcher type scale than tiles do, and a snapshot that borrowed the row

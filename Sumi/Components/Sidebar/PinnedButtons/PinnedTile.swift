@@ -9,14 +9,14 @@ struct PinnedTile: View {
     @ObservedObject var pin: ShortcutPin
     let faviconPartition: SumiFaviconPartition
     let faviconImageReader: any BrowserFaviconImageReading
-    let essentialBackdropReader: any BrowserEssentialBackdropReading
+    let favoriteBackdropReader: any BrowserFavoriteBackdropReading
     let presentationState: ShortcutPresentationState
     let liveTab: Tab?
-    let essentialRuntimeState: SumiEssentialRuntimeState?
+    let favoriteRuntimeState: SumiFavoriteRuntimeState?
     let accessibilityID: String
     let onActivate: () -> Void
     let onUnload: () -> Void
-    let contextMenuActions: EssentialTileContextMenuActions
+    let contextMenuActions: FavoriteTileContextMenuActions
     let dragIsEnabled: Bool
     let isAppKitInteractionEnabled: Bool
 
@@ -27,10 +27,10 @@ struct PinnedTile: View {
                     pin: pin,
                     faviconPartition: faviconPartition,
                     faviconImageReader: faviconImageReader,
-                    essentialBackdropReader: essentialBackdropReader,
+                    favoriteBackdropReader: favoriteBackdropReader,
                     liveTab: liveTab,
                     presentationState: presentationState,
-                    essentialRuntimeState: essentialRuntimeState,
+                    favoriteRuntimeState: favoriteRuntimeState,
                     accessibilityID: accessibilityID,
                     onActivate: onActivate,
                     onUnload: onUnload,
@@ -43,9 +43,9 @@ struct PinnedTile: View {
                     pin: pin,
                     faviconPartition: faviconPartition,
                     faviconImageReader: faviconImageReader,
-                    essentialBackdropReader: essentialBackdropReader,
+                    favoriteBackdropReader: favoriteBackdropReader,
                     presentationState: presentationState,
-                    essentialRuntimeState: essentialRuntimeState,
+                    favoriteRuntimeState: favoriteRuntimeState,
                     accessibilityID: accessibilityID,
                     onActivate: onActivate,
                     onUnload: onUnload,
@@ -76,8 +76,8 @@ func makePinnedTileDragSourceConfiguration(
             title: resolvedTitle,
             urlString: pin.launchURL.absoluteString
         ),
-        sourceZone: .essentials,
-        previewKind: .essentialsTile,
+        sourceZone: .favorite,
+        previewKind: .favoriteTile,
         previewIcon: previewIcon,
         previewBackdrop: previewBackdrop,
         chromeTemplateSystemImageName: chromeTemplateSystemImageName,

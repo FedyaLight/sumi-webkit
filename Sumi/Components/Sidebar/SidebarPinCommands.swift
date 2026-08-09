@@ -5,8 +5,8 @@ final class SidebarPinCommands {
     private let runtime: TabRuntimePortConnection
     private let placement: SidebarPinPlacementCommands
     private let lifecycle: SidebarPinLifecycleCommands
-    private let essentialCopy: ShortcutPinEssentialCopyTransaction
-    private let essentialPinning: RegularTabEssentialPinningService
+    private let favoriteCopy: ShortcutPinFavoriteCopyTransaction
+    private let favoritePinning: RegularTabFavoritePinningService
 
     init(
         runtime: TabRuntimePortConnection,
@@ -15,8 +15,8 @@ final class SidebarPinCommands {
         folders: TabFolderCollectionStateOwner,
         structure: SpacePinnedStructureOwner,
         placement: ShortcutPinPlacementCommandService,
-        essentialCopy: ShortcutPinEssentialCopyTransaction,
-        essentialPinning: RegularTabEssentialPinningService,
+        favoriteCopy: ShortcutPinFavoriteCopyTransaction,
+        favoritePinning: RegularTabFavoritePinningService,
         retirement: ShortcutPinRetirementTransaction,
         livePages: ShortcutPinLivePageMutationService,
         metadata: ShortcutPinMetadataMutationService
@@ -35,8 +35,8 @@ final class SidebarPinCommands {
             livePages: livePages,
             metadata: metadata
         )
-        self.essentialCopy = essentialCopy
-        self.essentialPinning = essentialPinning
+        self.favoriteCopy = favoriteCopy
+        self.favoritePinning = favoritePinning
     }
 
     func resetToLaunchURL(
@@ -86,21 +86,21 @@ final class SidebarPinCommands {
         return placement.move(pin, toSpace: spaceID)
     }
 
-    func copyToEssentials(
+    func copyToFavorite(
         _ pin: ShortcutPin,
         title: String,
-        context: EssentialsShortcutPlacementOwner.TargetContext?
+        context: FavoriteShortcutPlacementOwner.TargetContext?
     ) -> ShortcutPin? {
         guard runtime.current != nil else { return nil }
-        return essentialCopy.copy(pin, title: title, context: context)
+        return favoriteCopy.copy(pin, title: title, context: context)
     }
 
     func pinTab(
         _ tab: Tab,
-        context: EssentialsShortcutPlacementOwner.TargetContext?
+        context: FavoriteShortcutPlacementOwner.TargetContext?
     ) {
         guard runtime.current != nil else { return }
-        essentialPinning.pin(tab, context: context)
+        favoritePinning.pin(tab, context: context)
     }
 
     func update(

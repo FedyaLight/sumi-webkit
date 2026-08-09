@@ -48,7 +48,7 @@ final class ProfileSelectionCoordinator {
     ) -> Bool {
         guard let tab,
               tab.isShortcutLiveInstance,
-              tab.shortcutPinRole != .essential,
+              tab.shortcutPinRole != .favorite,
               let shortcutPinID = tab.shortcutPinId,
               pins.shortcutPin(by: shortcutPinID) != nil else {
             return false

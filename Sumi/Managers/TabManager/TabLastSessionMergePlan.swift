@@ -21,13 +21,13 @@ struct TabLastSessionLiveState {
     let spaces: [SpaceReference]
     let currentSpaceId: UUID?
     let foldersBySpace: [UUID: [FolderReference]]
-    let essentialPinsByProfile: [UUID: [TabLastSessionShortcutDescriptor]]
+    let favoritePinsByProfile: [UUID: [TabLastSessionShortcutDescriptor]]
     let spacePinnedShortcuts: [UUID: [TabLastSessionShortcutDescriptor]]
     let regularTabsBySpace: [UUID: [RegularTabReference]]
 
     var allPersistedItemIds: Set<UUID> {
         var ids = Set(foldersBySpace.values.joined().map(\.id))
-        ids.formUnion(essentialPinsByProfile.values.joined().map(\.id))
+        ids.formUnion(favoritePinsByProfile.values.joined().map(\.id))
         ids.formUnion(spacePinnedShortcuts.values.joined().map(\.id))
         ids.formUnion(regularTabsBySpace.values.joined().map(\.id))
         return ids
@@ -43,7 +43,7 @@ struct TabLastSessionFolderPlacement {
 }
 
 enum TabLastSessionShortcutKind: Equatable {
-    case essential
+    case favorite
     case spacePinned
 }
 
@@ -119,7 +119,7 @@ struct TabLastSessionMergePlan {
     let orderedSpaceIds: [UUID]
     let restoredSpacesById: [UUID: TabPersistenceSpace]
     let foldersBySpace: [UUID: [TabLastSessionFolderPlacement]]
-    let essentialPinsByProfile: [UUID: [TabLastSessionShortcutDescriptor]]
+    let favoritePinsByProfile: [UUID: [TabLastSessionShortcutDescriptor]]
     let spacePinnedShortcuts: [UUID: [TabLastSessionShortcutDescriptor]]
     let regularTabsBySpace: [UUID: [TabLastSessionRegularTabPlacement]]
     let spaceSelection: TabLastSessionSpaceSelection

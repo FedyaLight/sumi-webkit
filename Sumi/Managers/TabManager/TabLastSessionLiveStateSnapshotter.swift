@@ -36,7 +36,7 @@ final class TabLastSessionLiveStateSnapshotter {
                 )
             }
         }
-        let essentialPins = shortcutPins.pinnedByProfileSnapshot().mapValues {
+        let favoritePins = shortcutPins.pinnedByProfileSnapshot().mapValues {
             $0.map(shortcutDescriptor)
         }
         let spacePins = shortcutPins.spacePinnedShortcutsSnapshot().mapValues {
@@ -47,7 +47,7 @@ final class TabLastSessionLiveStateSnapshotter {
             spaces: orderedSpaces.map { .init(id: $0.id, profileId: $0.profileId) },
             currentSpaceId: spaces.currentSpaceId,
             foldersBySpace: foldersBySpace,
-            essentialPinsByProfile: essentialPins,
+            favoritePinsByProfile: favoritePins,
             spacePinnedShortcuts: spacePins,
             regularTabsBySpace: regularTabsBySpace.mapValues {
                 $0.map {
@@ -93,7 +93,7 @@ final class TabLastSessionLiveStateSnapshotter {
     ) -> TabLastSessionShortcutDescriptor {
         TabLastSessionShortcutDescriptor(
             id: pin.id,
-            kind: pin.role == .essential ? .essential : .spacePinned,
+            kind: pin.role == .favorite ? .favorite : .spacePinned,
             profileId: pin.profileId,
             executionProfileId: pin.executionProfileId,
             spaceId: pin.spaceId,

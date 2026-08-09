@@ -270,26 +270,26 @@ final class SidebarWindowSelectionQuery {
         )
     }
 
-    func essentialRuntimeState(
+    func favoriteRuntimeState(
         for pin: ShortcutPin,
         in windowState: BrowserWindowState
-    ) -> SumiEssentialRuntimeState? {
-        essentialRuntimeState(
+    ) -> SumiFavoriteRuntimeState? {
+        favoriteRuntimeState(
             for: pin,
             in: windowState,
             selection: SidebarWindowSelectionSnapshot(windowState: windowState)
         )
     }
 
-    func essentialRuntimeState(
+    func favoriteRuntimeState(
         for pin: ShortcutPin,
         in windowState: BrowserWindowState,
         selection: SidebarWindowSelectionSnapshot
-    ) -> SumiEssentialRuntimeState? {
+    ) -> SumiFavoriteRuntimeState? {
         guard isCurrent(windowState) else {
-            return pin.role == .essential ? .launcherOnly : nil
+            return pin.role == .favorite ? .launcherOnly : nil
         }
-        return shortcutPresentation.essentialRuntimeState(
+        return shortcutPresentation.favoriteRuntimeState(
             for: pin,
             in: windowState,
             splitQuery: splitQuery,
@@ -297,16 +297,16 @@ final class SidebarWindowSelectionQuery {
         )
     }
 
-    func essentialRuntimeState(
+    func favoriteRuntimeState(
         for pin: ShortcutPin,
         liveTab: Tab?,
         in windowState: BrowserWindowState,
         selection: SidebarWindowSelectionSnapshot
-    ) -> SumiEssentialRuntimeState? {
+    ) -> SumiFavoriteRuntimeState? {
         guard isCurrent(windowState) else {
-            return pin.role == .essential ? .launcherOnly : nil
+            return pin.role == .favorite ? .launcherOnly : nil
         }
-        return shortcutPresentation.essentialRuntimeState(
+        return shortcutPresentation.favoriteRuntimeState(
             for: pin,
             liveTab: liveTab,
             in: windowState,

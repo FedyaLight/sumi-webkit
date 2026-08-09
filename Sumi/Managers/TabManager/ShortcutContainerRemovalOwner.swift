@@ -1,7 +1,7 @@
 import Foundation
 
 /// Removes a tab from whichever structural container currently holds it: an
-/// essentials/space-pinned shortcut array or a space's regular-tab list.
+/// favorite/space-pinned shortcut array or a space's regular-tab list.
 @MainActor
 final class ShortcutContainerRemovalOwner {
     private let pins: ShortcutPinCollectionStateOwner

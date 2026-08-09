@@ -3,7 +3,7 @@ import SwiftUI
 
 @MainActor
 @Observable
-final class SidebarEssentialBackdropLoader {
+final class SidebarFavoriteBackdropLoader {
     private struct CacheKey: Hashable {
         let launchURL: URL
         let partition: String
@@ -37,7 +37,7 @@ final class SidebarEssentialBackdropLoader {
         launchURL: URL,
         partition: SumiFaviconPartition
     ) {
-        guard SumiEssentialBackdropNotificationMatcher.update(
+        guard SumiFavoriteBackdropNotificationMatcher.update(
             notification,
             matches: launchURL,
             partition: partition
@@ -49,7 +49,7 @@ final class SidebarEssentialBackdropLoader {
     func load(
         launchURL: URL,
         partition: SumiFaviconPartition,
-        reader: any BrowserEssentialBackdropReading,
+        reader: any BrowserFavoriteBackdropReading,
         isCurrentLaunchURL: (URL) -> Bool
     ) async {
         guard let image = await reader.loadBackdrop(

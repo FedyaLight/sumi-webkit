@@ -246,7 +246,7 @@ enum SidebarColumnHostedRoot {
         }
 
         for space in orderedSpaces {
-            for pin in spaceCatalog.essentialPins(profileID: space.profileId) {
+            for pin in spaceCatalog.favoritePins(profileID: space.profileId) {
                 append(pin, spaceID: space.id)
             }
             if let snapshot = inventory.snapshot(for: space.id) {

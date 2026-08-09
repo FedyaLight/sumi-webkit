@@ -1,5 +1,5 @@
 //
-//  SidebarEssentialsDropHitFrameTests.swift
+//  SidebarFavoriteDropHitFrameTests.swift
 //  SumiTests
 //
 
@@ -8,16 +8,16 @@ import XCTest
 @testable import Sumi
 
 @MainActor
-final class SidebarEssentialsDropHitFrameTests: XCTestCase {
+final class SidebarFavoriteDropHitFrameTests: XCTestCase {
     private func makeMetrics(
         frame: CGRect,
         dropFrame: CGRect,
-        dropSlotFrames: [SidebarEssentialsDropSlotMetrics],
+        dropSlotFrames: [SidebarFavoriteDropSlotMetrics],
         visibleItemCount: Int,
         itemSize: CGSize = CGSize(width: 47, height: 47),
         canAcceptDrop: Bool = true
-    ) -> SidebarEssentialsLayoutMetrics {
-        SidebarEssentialsLayoutMetrics(
+    ) -> SidebarFavoriteLayoutMetrics {
+        SidebarFavoriteLayoutMetrics(
             profileId: UUID(),
             frame: frame,
             dropFrame: dropFrame,
@@ -28,7 +28,7 @@ final class SidebarEssentialsDropHitFrameTests: XCTestCase {
             maxDropRowCount: 1,
             itemSize: itemSize,
             canAcceptDrop: canAcceptDrop,
-            dropHitFrame: SidebarEssentialsDropHitPolicy.resolvedDropHitFrame(
+            dropHitFrame: SidebarFavoriteDropHitPolicy.resolvedDropHitFrame(
                 frame: frame,
                 dropFrame: dropFrame,
                 dropSlotFrames: dropSlotFrames,
@@ -47,16 +47,16 @@ final class SidebarEssentialsDropHitFrameTests: XCTestCase {
                 x: 0,
                 y: 100,
                 width: 240,
-                height: PinnedTileMetrics.collapsedEssentialsRevealHeight
+                height: PinnedTileMetrics.collapsedFavoriteRevealHeight
             ),
             dropFrame: CGRect(
                 x: 0,
                 y: 100,
                 width: 240,
-                height: PinnedTileMetrics.collapsedEssentialsRevealHeight
+                height: PinnedTileMetrics.collapsedFavoriteRevealHeight
             ),
             dropSlotFrames: [
-                SidebarEssentialsDropSlotMetrics(
+                SidebarFavoriteDropSlotMetrics(
                     slot: 0,
                     frame: CGRect(x: 0, y: 100, width: 47, height: 47)
                 ),
@@ -76,13 +76,13 @@ final class SidebarEssentialsDropHitFrameTests: XCTestCase {
             x: 0,
             y: 100,
             width: 240,
-            height: EssentialsPlaceholderMetrics.height
+            height: FavoritePlaceholderMetrics.height
         )
         let metrics = makeMetrics(
             frame: dropFrame,
             dropFrame: dropFrame,
             dropSlotFrames: [
-                SidebarEssentialsDropSlotMetrics(slot: 0, frame: dropFrame),
+                SidebarFavoriteDropSlotMetrics(slot: 0, frame: dropFrame),
             ],
             visibleItemCount: 0
         )
@@ -100,7 +100,7 @@ final class SidebarEssentialsDropHitFrameTests: XCTestCase {
             frame: CGRect(x: 0, y: 40, width: 240, height: 54),
             dropFrame: dropFrame,
             dropSlotFrames: [
-                SidebarEssentialsDropSlotMetrics(
+                SidebarFavoriteDropSlotMetrics(
                     slot: 0,
                     frame: CGRect(x: 0, y: 400, width: 47, height: 47)
                 ),
@@ -117,7 +117,7 @@ final class SidebarEssentialsDropHitFrameTests: XCTestCase {
             frame: dropFrame,
             dropFrame: dropFrame,
             dropSlotFrames: [
-                SidebarEssentialsDropSlotMetrics(
+                SidebarFavoriteDropSlotMetrics(
                     slot: 0,
                     frame: CGRect(x: 0, y: 40, width: 47, height: 47)
                 ),

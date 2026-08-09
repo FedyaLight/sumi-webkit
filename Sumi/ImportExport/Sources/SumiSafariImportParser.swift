@@ -79,7 +79,7 @@ struct SumiSafariImportParser {
                     ),
                 ],
                 folders: [],
-                essentials: [],
+                favorite: [],
                 pinnedLaunchers: [],
                 regularTabs: regularTabs,
                 bookmarks: bookmarks

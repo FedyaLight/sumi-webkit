@@ -108,7 +108,7 @@ enum SidebarSplitPairingPolicy {
 
 /// Mathematical slots for dropping generic items within sections.
 enum DropZoneSlot: Equatable {
-    case essentials(slot: Int)
+    case favorite(slot: Int)
     case spacePinned(spaceId: UUID, slot: Int)
     case spaceRegular(spaceId: UUID, slot: Int)
     case folder(folderId: UUID, slot: Int)
@@ -116,7 +116,7 @@ enum DropZoneSlot: Equatable {
 
     var asDragContainer: TabDragManager.DragContainer {
         switch self {
-        case .essentials: return .essentials
+        case .favorite: return .favorite
         case .spacePinned(let id, _): return .spacePinned(id)
         case .spaceRegular(let id, _): return .spaceRegular(id)
         case .folder(let id, _): return .folder(id)
@@ -126,7 +126,7 @@ enum DropZoneSlot: Equatable {
 
     var visualIndex: Int {
         switch self {
-        case .essentials(let index): return index
+        case .favorite(let index): return index
         case .spacePinned(_, let index): return index
         case .spaceRegular(_, let index): return index
         case .folder(_, let index): return index

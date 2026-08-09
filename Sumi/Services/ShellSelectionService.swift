@@ -64,7 +64,7 @@ final class ShellSelectionService {
         if let currentTabId = windowState.currentTabId,
            let currentTab = tabStore.tab(for: currentTabId),
            currentTab.isShortcutLiveInstance,
-           essentialTab(
+           favoriteTab(
                currentTab,
                belongsTo: space.profileId,
                tabStore: tabStore
@@ -205,7 +205,7 @@ final class ShellSelectionService {
         }
 
         if let backgroundShortcut = tabStore.liveShortcutTabs(in: windowState.id)
-            .first(where: { $0.shortcutPinRole != .essential && $0.spaceId == space.id }) {
+            .first(where: { $0.shortcutPinRole != .favorite && $0.spaceId == space.id }) {
             return backgroundShortcut
         }
 
@@ -303,8 +303,8 @@ final class ShellSelectionService {
         in windowState: BrowserWindowState,
         tabStore: ShellSelectionTabStore
     ) -> Bool {
-        if tab.isShortcutLiveInstance && tab.shortcutPinRole == .essential {
-            return essentialTab(
+        if tab.isShortcutLiveInstance && tab.shortcutPinRole == .favorite {
+            return favoriteTab(
                 tab,
                 belongsTo: windowState.currentProfileId,
                 tabStore: tabStore
@@ -312,7 +312,7 @@ final class ShellSelectionService {
         }
 
         guard let currentSpaceId = windowState.currentSpaceId else {
-            return !tab.isShortcutLiveInstance || tab.shortcutPinRole == .essential
+            return !tab.isShortcutLiveInstance || tab.shortcutPinRole == .favorite
         }
 
         let splitTabs = splitQuery.visibleTabIDs(in: windowState.id)
@@ -327,7 +327,7 @@ final class ShellSelectionService {
         return tab.spaceId == currentSpaceId
     }
 
-    private func essentialTab(
+    private func favoriteTab(
         _ tab: Tab,
         belongsTo profileID: UUID?,
         tabStore: ShellSelectionTabStore
@@ -336,7 +336,7 @@ final class ShellSelectionService {
               let pin = tabStore.shortcutPin(by: pinID)
         else { return false }
 
-        guard pin.role == .essential else { return false }
+        guard pin.role == .favorite else { return false }
         return profileID == nil || pin.profileId == profileID
     }
 
@@ -385,8 +385,8 @@ final class ShellSelectionService {
                     for: pinID,
                     in: windowState.id
                 ) else { continue }
-                if tab.shortcutPinRole == .essential {
-                    if essentialTab(
+                if tab.shortcutPinRole == .favorite {
+                    if favoriteTab(
                         tab,
                         belongsTo: space.profileId,
                         tabStore: tabStore

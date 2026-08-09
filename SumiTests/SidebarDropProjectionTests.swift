@@ -170,12 +170,12 @@ final class SidebarDropProjectionTests: XCTestCase {
     }
 
     @MainActor
-    func testEssentialsProjectionRemovesDraggedSourceAndInsertsPlaceholder() {
+    func testFavoriteProjectionRemovesDraggedSourceAndInsertsPlaceholder() {
         let spaceId = UUID()
         let profileId = UUID()
-        let first = makeEssentialPin(profileId: profileId, index: 0, title: "One")
-        let second = makeEssentialPin(profileId: profileId, index: 1, title: "Two")
-        let third = makeEssentialPin(profileId: profileId, index: 2, title: "Three")
+        let first = makeFavoritePin(profileId: profileId, index: 0, title: "One")
+        let second = makeFavoritePin(profileId: profileId, index: 1, title: "Two")
+        let third = makeFavoritePin(profileId: profileId, index: 2, title: "Three")
         let dragState = SidebarDragState()
         dragState.isDragging = true
         dragState.activeDragItemId = first.id
@@ -183,24 +183,24 @@ final class SidebarDropProjectionTests: XCTestCase {
             windowId: nil,
             spaceId: spaceId,
             profileId: profileId,
-            sourceContainer: .essentials,
+            sourceContainer: .favorite,
             sourceItemId: first.id,
             sourceItemKind: .tab
         )
         dragState.presentDropResolution(
             SidebarDropResolution(
-                slot: .essentials(slot: 2),
+                slot: .favorite(slot: 2),
                 folderIntent: .none,
                 activeHoveredFolderId: nil
             )
         )
 
-        let layout = SidebarEssentialsProjectionPolicy.make(
+        let layout = SidebarFavoriteProjectionPolicy.make(
             items: [first, second, third].map(
-                SidebarEssentialVisualItem.pin
+                SidebarFavoriteVisualItem.pin
             ),
             width: 155,
-            dragPresentation: dragState.essentialsPresentation.frame
+            dragPresentation: dragState.favoritePresentation.frame
         )
 
         XCTAssertEqual(layout.visibleItems.compactMap { $0?.id }, [second.id, third.id])
@@ -213,7 +213,7 @@ final class SidebarDropProjectionTests: XCTestCase {
     }
 
     @MainActor
-    func testEssentialsProjectionShowsEmptyStorePlaceholder() {
+    func testFavoriteProjectionShowsEmptyStorePlaceholder() {
         let draggedId = UUID()
         let dragState = SidebarDragState()
         dragState.isDragging = true
@@ -228,16 +228,16 @@ final class SidebarDropProjectionTests: XCTestCase {
         )
         dragState.presentDropResolution(
             SidebarDropResolution(
-                slot: .essentials(slot: 0),
+                slot: .favorite(slot: 0),
                 folderIntent: .none,
                 activeHoveredFolderId: nil
             )
         )
 
-        let layout = SidebarEssentialsProjectionPolicy.make(
+        let layout = SidebarFavoriteProjectionPolicy.make(
             items: [],
             width: 155,
-            dragPresentation: dragState.essentialsPresentation.frame
+            dragPresentation: dragState.favoritePresentation.frame
         )
 
         XCTAssertTrue(layout.canAcceptDrop)
@@ -309,7 +309,7 @@ final class SidebarDropProjectionTests: XCTestCase {
             appliedValues.append(2)
         }
         buffer.enqueue(
-            key: .essentials(spaceID: spaceId, generation: 0)
+            key: .favorite(spaceID: spaceId, generation: 0)
         ) { _ in
             appliedValues.append(3)
         }
@@ -346,10 +346,10 @@ final class SidebarDropProjectionTests: XCTestCase {
     }
 
     @MainActor
-    private func makeEssentialPin(profileId: UUID, index: Int, title: String) -> ShortcutPin {
+    private func makeFavoritePin(profileId: UUID, index: Int, title: String) -> ShortcutPin {
         ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: profileId,
             index: index,
             launchURL: URL(string: "https://example.com/\(index)")!,

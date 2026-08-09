@@ -45,7 +45,7 @@ final class ShortcutPinRuntimeResolutionOwner {
 
     func resolvedLiveSpaceId(for pin: ShortcutPin, currentSpaceId: UUID?) -> UUID? {
         switch pin.role {
-        case .essential:
+        case .favorite:
             return nil
         case .spacePinned:
             return pin.spaceId ?? currentSpaceId
@@ -58,7 +58,7 @@ final class ShortcutPinRuntimeResolutionOwner {
         }
 
         switch pin.role {
-        case .essential:
+        case .favorite:
             return pin.profileId
         case .spacePinned:
             return (pin.spaceId ?? currentSpaceId).flatMap { spaceId in
@@ -69,7 +69,7 @@ final class ShortcutPinRuntimeResolutionOwner {
 
     func desiredLiveTabProfileId(for pin: ShortcutPin) -> UUID? {
         switch pin.role {
-        case .essential:
+        case .favorite:
             return pin.executionProfileId ?? pin.profileId
         case .spacePinned:
             return pin.executionProfileId
@@ -87,7 +87,7 @@ final class ShortcutPinRuntimeResolutionOwner {
             return nil
         }
         switch pin.role {
-        case .essential:
+        case .favorite:
             guard let profileID = pin.profileId,
                   presentationSpace.profileId == profileID else {
                 return nil
@@ -128,7 +128,7 @@ private extension ShortcutPinRuntimeResolutionOwner {
 
         let containerProfileId: UUID?
         switch role {
-        case .essential:
+        case .favorite:
             containerProfileId = profileId
         case .spacePinned:
             containerProfileId = spaceId.flatMap { targetSpaceId in

@@ -53,25 +53,25 @@ final class SidebarDragReorderBoundaryTests: SidebarDragContextTestCase {
         XCTAssertTrue(tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id).allSatisfy { $0.folderId == nil })
     }
 
-    func testEssentialsReorderMovesLauncherWithinSameProfile() throws {
+    func testFavoriteReorderMovesLauncherWithinSameProfile() throws {
         let tabManager = BrowserManager()
         let profileId = UUID()
         let space = try makeSpace(tabManager, name: "Work", profileId: profileId)
-        let first = try makeEssentialPin(
+        let first = try makeFavoritePin(
             tabManager,
             in: space,
             profileId: profileId,
             url: "https://example.com/one",
             index: 0
         )
-        let second = try makeEssentialPin(
+        let second = try makeFavoritePin(
             tabManager,
             in: space,
             profileId: profileId,
             url: "https://example.com/two",
             index: 1
         )
-        let third = try makeEssentialPin(
+        let third = try makeFavoritePin(
             tabManager,
             in: space,
             profileId: profileId,
@@ -81,7 +81,7 @@ final class SidebarDragReorderBoundaryTests: SidebarDragContextTestCase {
         let scope = try makeScope(
             spaceId: space.id,
             profileId: profileId,
-            sourceZone: .essentials,
+            sourceZone: .favorite,
             item: dragItem(first)
         )
 
@@ -89,16 +89,16 @@ final class SidebarDragReorderBoundaryTests: SidebarDragContextTestCase {
             DragOperation(
                 payload: .pin(first),
                 scope: scope,
-                fromContainer: .essentials,
-                toContainer: .essentials,
+                fromContainer: .favorite,
+                toContainer: .favorite,
                 toIndex: 3
             )
         )
 
         XCTAssertTrue(didMove)
-        XCTAssertEqual(tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId).map(\.id), [second.id, third.id, first.id])
-        XCTAssertEqual(tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId).map(\.index), [0, 1, 2])
-        XCTAssertTrue(tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId).allSatisfy { $0.profileId == profileId })
+        XCTAssertEqual(tabManager.shortcutPinCollectionStateOwner.favoritePins(for: profileId).map(\.id), [second.id, third.id, first.id])
+        XCTAssertEqual(tabManager.shortcutPinCollectionStateOwner.favoritePins(for: profileId).map(\.index), [0, 1, 2])
+        XCTAssertTrue(tabManager.shortcutPinCollectionStateOwner.favoritePins(for: profileId).allSatisfy { $0.profileId == profileId })
     }
 
     func testFolderChildReorderMovesLauncherWithinSameFolder() throws {

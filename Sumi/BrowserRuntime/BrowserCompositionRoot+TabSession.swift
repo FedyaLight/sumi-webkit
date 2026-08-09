@@ -624,13 +624,13 @@ extension BrowserCompositionRoot {
                 bindings: shortcutTabBindings
             )
         )
-        let essentialsShortcutPlacementOwner = EssentialsShortcutPlacementOwner(
+        let favoriteShortcutPlacementOwner = FavoriteShortcutPlacementOwner(
             spaces: state.spaces,
             runtimeConnection: runtimeConnection,
             pins: state.shortcutPins,
             splitGroups: state.splitGroups
         )
-        let essentialsVisualOrder = EssentialsVisualOrderTransaction(
+        let favoriteVisualOrder = FavoriteVisualOrderTransaction(
             ordering: splitGroupSidebarOrdering,
             groupMutations: splitGroupMutations,
             pins: state.shortcutPins,
@@ -646,7 +646,7 @@ extension BrowserCompositionRoot {
                 spacePinnedStructure: spacePinnedStructureOwner,
                 spacePinnedVisualOrder: spacePinnedVisualOrder,
                 bindings: shortcutTabBindings,
-                essentialsVisualOrder: essentialsVisualOrder
+                favoriteVisualOrder: favoriteVisualOrder
             )
         let regularTabShortcutConversionCommand =
             RegularTabShortcutConversionCommand(
@@ -676,18 +676,18 @@ extension BrowserCompositionRoot {
             launcherPlacement: splitGroupLauncherPlacement,
             shortcutMoves: splitGroupShortcutMoves,
             shortcutToRegular: shortcutPinToRegularTab,
-            essentialsVisualOrder: essentialsVisualOrder
+            favoriteVisualOrder: favoriteVisualOrder
         )
-        let regularTabEssentialPinning = RegularTabEssentialPinningService(
+        let regularTabFavoritePinning = RegularTabFavoritePinningService(
             structuralLookup: structuralLookupCoordinator,
-            placement: essentialsShortcutPlacementOwner,
+            placement: favoriteShortcutPlacementOwner,
             pins: state.shortcutPins,
             conversion: regularTabShortcutConversion
         )
-        let shortcutPinEssentialCopy = ShortcutPinEssentialCopyTransaction(
+        let shortcutPinFavoriteCopy = ShortcutPinFavoriteCopyTransaction(
             structuralLookup: structuralLookupCoordinator,
-            preparer: ShortcutPinEssentialCopyPreparer(
-                placement: essentialsShortcutPlacementOwner,
+            preparer: ShortcutPinFavoriteCopyPreparer(
+                placement: favoriteShortcutPlacementOwner,
                 pins: state.shortcutPins,
                 resolution: shortcutPinRuntimeResolutionOwner
             ),
@@ -698,7 +698,7 @@ extension BrowserCompositionRoot {
             structuralLookup: structuralLookupCoordinator,
             spaces: state.spaces,
             pins: state.shortcutPins,
-            rebinder: EssentialShortcutSpaceRebinder(
+            rebinder: FavoriteShortcutSpaceRebinder(
                 resolution: shortcutPinRuntimeResolutionOwner,
                 bindings: shortcutTabBindings,
                 store: shortcutPinStoreOwner,
@@ -740,8 +740,8 @@ extension BrowserCompositionRoot {
             folders: state.folders,
             structure: spacePinnedStructureOwner,
             placement: shortcutPinPlacementCommands,
-            essentialCopy: shortcutPinEssentialCopy,
-            essentialPinning: regularTabEssentialPinning,
+            favoriteCopy: shortcutPinFavoriteCopy,
+            favoritePinning: regularTabFavoritePinning,
             retirement: shortcutPinRetirement,
             livePages: shortcutPinLivePages,
             metadata: shortcutPinMetadataMutations
@@ -761,7 +761,7 @@ extension BrowserCompositionRoot {
             placement: shortcutPinPlacementCommands,
             pinToRegular: shortcutPinToRegularTab,
             folders: state.folders,
-            essentialsPlacement: essentialsShortcutPlacementOwner
+            favoritePlacement: favoriteShortcutPlacementOwner
         )
         let folderHierarchyMutations = TabFolderHierarchyMutationService(
             folders: state.folders,
@@ -841,7 +841,7 @@ extension BrowserCompositionRoot {
             shortcuts: SidebarRegularTabShortcutTransaction(
                 placement: shortcutPinPlacementCommands,
                 conversion: regularTabShortcutConversionCommand,
-                essentialsPlacement: essentialsShortcutPlacementOwner,
+                favoritePlacement: favoriteShortcutPlacementOwner,
                 folders: state.folders,
                 pins: state.shortcutPins
             ),
@@ -899,7 +899,7 @@ extension BrowserCompositionRoot {
             )
         let sidebarRegularTabShortcutCommands =
             SidebarRegularTabShortcutCommands(
-            essentialPinning: regularTabEssentialPinning,
+            favoritePinning: regularTabFavoritePinning,
                 spacePinning: shortcutPinSpacePinning
             )
         let sidebarRegularTabPlacementCommands =
@@ -1029,7 +1029,7 @@ extension BrowserCompositionRoot {
             shortcutExecutionProfileAssignments:
                 shortcutExecutionProfileAssignments,
             sidebarDragRouter: sidebarDragRouter,
-            essentialsShortcutPlacementOwner: essentialsShortcutPlacementOwner,
+            favoriteShortcutPlacementOwner: favoriteShortcutPlacementOwner,
             shortcutPinStoreOwner: shortcutPinStoreOwner,
             shortcutPinRuntimeResolutionOwner:
                 shortcutPinRuntimeResolutionOwner,

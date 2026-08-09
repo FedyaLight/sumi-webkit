@@ -121,7 +121,7 @@ struct SumiChromiumImportParser {
                 profiles: portableProfiles,
                 spaces: spaces,
                 folders: [],
-                essentials: [],
+                favorite: [],
                 pinnedLaunchers: pinned,
                 regularTabs: regularTabs,
                 bookmarks: bookmarkRoots

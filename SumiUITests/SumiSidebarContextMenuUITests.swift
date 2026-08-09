@@ -108,10 +108,10 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
             collapsedSidebar: false
         )
 
-        if let essentialID = fixture.essentialID {
+        if let favoriteID = fixture.favoriteID {
             exerciseContextMenuReopen(
-                elementID: "essential-shortcut-\(essentialID)",
-                expectedMenuItem: "Remove from Essentials",
+                elementID: "favorite-shortcut-\(favoriteID)",
+                expectedMenuItem: "Remove from Favorite",
                 app: app,
                 window: window,
                 collapsedSidebar: false
@@ -287,10 +287,10 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
             collapsedSidebar: true
         )
 
-        if let essentialID = fixture.essentialID {
+        if let favoriteID = fixture.favoriteID {
             exerciseContextMenuReopen(
-                elementID: "essential-shortcut-\(essentialID)",
-                expectedMenuItem: "Remove from Essentials",
+                elementID: "favorite-shortcut-\(favoriteID)",
+                expectedMenuItem: "Remove from Favorite",
                 app: app,
                 window: window,
                 collapsedSidebar: true
@@ -740,23 +740,23 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
         )
     }
 
-    func testPersonalVisibleEssentialRemovalKeepsRegularTabDragInteractive() throws {
+    func testPersonalVisibleFavoriteRemovalKeepsRegularTabDragInteractive() throws {
         let fixture = try loadPersonalSidebarFixture()
         let app = try launchApp()
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
-        guard let essentialID = fixture.essentialID else {
-            XCTFail("Smoke fixture does not expose an essential tile")
+        guard let favoriteID = fixture.favoriteID else {
+            XCTFail("Smoke fixture does not expose a Favorite tile")
             return
         }
 
         activatePersonalSpace(fixture, app: app, window: window, collapsedSidebar: false)
         exerciseSidebarDragAfterSourceRemovingContextMenuAction(
-            sourceElementID: "essential-shortcut-\(essentialID)",
-            expectedMenuItem: "Remove from Essentials",
-            menuActionTitle: "Remove from Essentials",
-            expectedSourceDragItemID: essentialID,
+            sourceElementID: "favorite-shortcut-\(favoriteID)",
+            expectedMenuItem: "Remove from Favorite",
+            menuActionTitle: "Remove from Favorite",
+            expectedSourceDragItemID: favoriteID,
             controlElementID: "tab-row-\(fixture.regularTabID)",
             expectedControlDragItemID: fixture.regularTabID,
             app: app,
@@ -765,23 +765,23 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
         )
     }
 
-    func testPersonalCollapsedHoverEssentialRemovalKeepsRegularTabDragInteractive() throws {
+    func testPersonalCollapsedHoverFavoriteRemovalKeepsRegularTabDragInteractive() throws {
         let fixture = try loadPersonalSidebarFixture()
         let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome(isSidebarVisible: false))
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
-        guard let essentialID = fixture.essentialID else {
-            XCTFail("Smoke fixture does not expose an essential tile")
+        guard let favoriteID = fixture.favoriteID else {
+            XCTFail("Smoke fixture does not expose a Favorite tile")
             return
         }
 
         activatePersonalSpace(fixture, app: app, window: window, collapsedSidebar: true)
         exerciseSidebarDragAfterSourceRemovingContextMenuAction(
-            sourceElementID: "essential-shortcut-\(essentialID)",
-            expectedMenuItem: "Remove from Essentials",
-            menuActionTitle: "Remove from Essentials",
-            expectedSourceDragItemID: essentialID,
+            sourceElementID: "favorite-shortcut-\(favoriteID)",
+            expectedMenuItem: "Remove from Favorite",
+            menuActionTitle: "Remove from Favorite",
+            expectedSourceDragItemID: favoriteID,
             controlElementID: "tab-row-\(fixture.regularTabID)",
             expectedControlDragItemID: fixture.regularTabID,
             app: app,
@@ -790,23 +790,23 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
         )
     }
 
-    func testPersonalVisibleEssentialMoveToRegularTabsKeepsRegularTabDragInteractive() throws {
+    func testPersonalVisibleFavoriteMoveToRegularTabsKeepsRegularTabDragInteractive() throws {
         let fixture = try loadPersonalSidebarFixture()
         let app = try launchApp()
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
-        guard let essentialID = fixture.essentialID else {
-            XCTFail("Smoke fixture does not expose an essential tile")
+        guard let favoriteID = fixture.favoriteID else {
+            XCTFail("Smoke fixture does not expose a Favorite tile")
             return
         }
 
         activatePersonalSpace(fixture, app: app, window: window, collapsedSidebar: false)
         exerciseSidebarDragAfterSourceRemovingContextMenuAction(
-            sourceElementID: "essential-shortcut-\(essentialID)",
-            expectedMenuItem: "Remove from Essentials",
+            sourceElementID: "favorite-shortcut-\(favoriteID)",
+            expectedMenuItem: "Remove from Favorite",
             menuActionTitle: "Move to Regular Tabs",
-            expectedSourceDragItemID: essentialID,
+            expectedSourceDragItemID: favoriteID,
             controlElementID: "tab-row-\(fixture.regularTabID)",
             expectedControlDragItemID: fixture.regularTabID,
             app: app,

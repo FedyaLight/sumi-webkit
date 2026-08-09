@@ -15,7 +15,7 @@ extension BrowserManager {
             splitGroups: splitGroupStore,
             pins: shortcutPinCollectionStateOwner,
             folders: folderCollectionStateOwner,
-            essentials: essentialsShortcutPlacementOwner
+            favorite: favoriteShortcutPlacementOwner
         )
     }
 

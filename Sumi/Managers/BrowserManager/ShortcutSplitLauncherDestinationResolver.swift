@@ -15,12 +15,12 @@ struct ShortcutSplitLauncherDestinationResolver {
         pin: ShortcutPin
     ) -> ShortcutSplitLauncherDestination? {
         switch pin.role {
-        case .essential:
+        case .favorite:
             guard let targetProfileID = pin.profileId else {
                 return nil
             }
             return ShortcutSplitLauncherDestination(
-                role: .essential,
+                role: .favorite,
                 profileId: targetProfileID,
                 spaceId: nil,
                 folderId: nil,

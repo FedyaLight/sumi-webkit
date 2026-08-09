@@ -84,7 +84,7 @@ final class GlanceTabAdoptionCommitter {
             return sourceIndex + 1
         }
         if sourceTab?.isPinned == true
-            || sourceTab?.shortcutPinRole == .essential {
+            || sourceTab?.shortcutPinRole == .favorite {
             return 0
         }
         return nil

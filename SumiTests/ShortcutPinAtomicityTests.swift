@@ -16,7 +16,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         )
         let ownerPin = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: fixture.context.profiles.retiring.id,
             index: 0,
             launchURL: URL(string: "https://owner.example")!,
@@ -35,7 +35,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         XCTAssertNil(fixture.store.insert(ownerPin, at: 0))
         XCTAssertNil(fixture.store.insert(executionPin, at: 0))
         XCTAssertTrue(
-            fixture.pins.essentialPins(for: fixture.context.profiles.retiring.id).isEmpty
+            fixture.pins.favoritePins(for: fixture.context.profiles.retiring.id).isEmpty
         )
         XCTAssertTrue(
             fixture.pins.spacePinnedPins(for: space.id).isEmpty
@@ -79,7 +79,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         XCTAssertNil(
             fixture.store.move(
                 ownerSource,
-                to: .essential,
+                to: .favorite,
                 profileId: fixture.context.profiles.retiring.id,
                 spaceId: nil,
                 folderId: nil,
@@ -105,7 +105,7 @@ final class ShortcutPinAtomicityTests: XCTestCase {
             fixture.store.insert(
                 ShortcutPin(
                     id: UUID(),
-                    role: .essential,
+                    role: .favorite,
                     profileId: fixture.context.profiles.retiring.id,
                     index: 0,
                     launchURL: URL(string: "https://owner-update.example")!,
@@ -401,8 +401,8 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         )
     }
 
-    func testFullEssentialDestinationRejectsMoveWithoutLosingSource() throws {
-        let fixture = try makePinEssentialMoveFixture()
+    func testFullFavoriteDestinationRejectsMoveWithoutLosingSource() throws {
+        let fixture = try makePinFavoriteMoveFixture()
         let space = fixture.createSpace("Space", nil)
         let source = try XCTUnwrap(
             fixture.store.insert(
@@ -411,23 +411,23 @@ final class ShortcutPinAtomicityTests: XCTestCase {
             )
         )
         let profileId = UUID()
-        let essentials = try (0..<EssentialsShortcutPlacementOwner.CapacityPolicy.maxStoredMembers)
+        let favorite = try (0..<FavoriteShortcutPlacementOwner.CapacityPolicy.maxStoredMembers)
             .map { index in
                 ShortcutPin(
                     id: UUID(),
-                    role: .essential,
+                    role: .favorite,
                     profileId: profileId,
                     index: index,
                     launchURL: try XCTUnwrap(
-                        URL(string: "https://essential-\(index).example")
+                        URL(string: "https://favorite-\(index).example")
                     ),
-                    title: "Essential \(index)"
+                    title: "Favorite \(index)"
                 )
             }
-        fixture.setEssentials(essentials, profileId)
+        fixture.setFavorite(favorite, profileId)
 
         XCTAssertNil(
-            fixture.moveToEssentials(
+            fixture.moveToFavorite(
                 source,
                 profileId
             )
@@ -437,17 +437,17 @@ final class ShortcutPinAtomicityTests: XCTestCase {
                 .first { $0.id == source.id }
         )
         XCTAssertEqual(
-            fixture.pins.essentialPins(for: profileId)
+            fixture.pins.favoritePins(for: profileId)
                 .count,
-            essentials.count
+            favorite.count
         )
     }
 
-    func testPinLiveEssentialWithoutRegistryLeaseDoesNotCreateDetachedPin() throws {
+    func testPinLiveFavoriteWithoutRegistryLeaseDoesNotCreateDetachedPin() throws {
         let profileId = UUID()
-        let fixture = try makePinEssentialLiveFixture(profileID: profileId)
+        let fixture = try makePinFavoriteLiveFixture(profileID: profileId)
 
-        fixture.setEssentials()
+        fixture.setFavorite()
         fixture.pinToSpace()
 
         XCTAssertTrue(
@@ -797,9 +797,9 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         )
     }
 
-    func makePinEssentialMoveFixture() throws -> PinEssentialMoveFixture {
+    func makePinFavoriteMoveFixture() throws -> PinFavoriteMoveFixture {
         let browser = try makeIsolatedBrowser()
-        return PinEssentialMoveFixture(
+        return PinFavoriteMoveFixture(
             store: browser.shortcutPinStoreOwner,
             pins: browser.shortcutPinCollectionStateOwner,
             createSpace: { name, profileID in
@@ -807,16 +807,16 @@ final class ShortcutPinAtomicityTests: XCTestCase {
                 browser.spaceStateOwner.append(space)
                 return space
             },
-            setEssentials: { pins, profileID in
+            setFavorite: { pins, profileID in
                 browser.structuralCollectionMutationOwner.setPinnedTabs(
                     pins,
                     for: profileID
                 )
             },
-            moveToEssentials: { pin, profileID in
+            moveToFavorite: { pin, profileID in
                 browser.shortcutPinStoreOwner.move(
                     pin,
-                    to: .essential,
+                    to: .favorite,
                     profileId: profileID,
                     spaceId: nil,
                     folderId: nil,
@@ -826,17 +826,17 @@ final class ShortcutPinAtomicityTests: XCTestCase {
         )
     }
 
-    func makePinEssentialLiveFixture(
+    func makePinFavoriteLiveFixture(
         profileID: UUID
-    ) throws -> PinEssentialLiveFixture {
+    ) throws -> PinFavoriteLiveFixture {
         let browser = try makeIsolatedBrowser()
-        let profile = Profile(id: profileID, name: "Essential")
+        let profile = Profile(id: profileID, name: "Favorite")
         try install(profile, in: browser)
         let space = Space(name: "Space")
         browser.spaceStateOwner.append(space)
         let source = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: profileID,
             index: 0,
             launchURL: URL(string: "https://source.example")!,
@@ -849,11 +849,11 @@ final class ShortcutPinAtomicityTests: XCTestCase {
             index: 0
         )
         tab.bindToShortcutPin(source)
-        return PinEssentialLiveFixture(
+        return PinFavoriteLiveFixture(
             space: space,
             input: .init(source: source, tab: tab),
             pins: browser.shortcutPinCollectionStateOwner,
-            setEssentials: {
+            setFavorite: {
                 browser.structuralCollectionMutationOwner
                     .setPinnedTabs([source], for: profileID)
             },
@@ -1180,16 +1180,16 @@ struct PinFolderMutationFixture {
 }
 
 @MainActor
-struct PinEssentialMoveFixture {
+struct PinFavoriteMoveFixture {
     let store: ShortcutPinStoreOwner
     let pins: ShortcutPinCollectionStateOwner
     let createSpace: @MainActor (String, UUID?) -> Space
-    let setEssentials: @MainActor ([ShortcutPin], UUID) -> Void
-    let moveToEssentials: @MainActor (ShortcutPin, UUID) -> ShortcutPin?
+    let setFavorite: @MainActor ([ShortcutPin], UUID) -> Void
+    let moveToFavorite: @MainActor (ShortcutPin, UUID) -> ShortcutPin?
 }
 
 @MainActor
-struct PinEssentialLiveFixture {
+struct PinFavoriteLiveFixture {
     struct Input {
         let source: ShortcutPin
         let tab: Tab
@@ -1198,7 +1198,7 @@ struct PinEssentialLiveFixture {
     let space: Space
     let input: Input
     let pins: ShortcutPinCollectionStateOwner
-    let setEssentials: @MainActor () -> Void
+    let setFavorite: @MainActor () -> Void
     let pinToSpace: @MainActor () -> Void
 }
 

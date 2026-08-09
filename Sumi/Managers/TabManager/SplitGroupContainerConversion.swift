@@ -13,7 +13,7 @@ final class SplitGroupContainerConversion {
     private let launcherPlacement: ShortcutSplitLauncherPlacementService
     private let shortcutMoves: SplitGroupShortcutMoveService
     private let shortcutToRegular: ShortcutPinToRegularTabService
-    private let essentialsVisualOrder: EssentialsVisualOrderTransaction
+    private let favoriteVisualOrder: FavoriteVisualOrderTransaction
 
     init(
         ordering: SplitGroupSidebarOrderingService,
@@ -24,7 +24,7 @@ final class SplitGroupContainerConversion {
         launcherPlacement: ShortcutSplitLauncherPlacementService,
         shortcutMoves: SplitGroupShortcutMoveService,
         shortcutToRegular: ShortcutPinToRegularTabService,
-        essentialsVisualOrder: EssentialsVisualOrderTransaction
+        favoriteVisualOrder: FavoriteVisualOrderTransaction
     ) {
         self.ordering = ordering
         self.mutations = mutations
@@ -34,7 +34,7 @@ final class SplitGroupContainerConversion {
         self.launcherPlacement = launcherPlacement
         self.shortcutMoves = shortcutMoves
         self.shortcutToRegular = shortcutToRegular
-        self.essentialsVisualOrder = essentialsVisualOrder
+        self.favoriteVisualOrder = favoriteVisualOrder
     }
 
     @discardableResult
@@ -43,10 +43,10 @@ final class SplitGroupContainerConversion {
               sourceContainerMatches(group.container, operation.fromContainer)
         else { return false }
 
-        if case .essentialSidebar(let ownerProfileID, _) = group.container,
-           operation.toContainer == .essentials,
+        if case .favoriteSidebar(let ownerProfileID, _) = group.container,
+           operation.toContainer == .favorite,
            let profileID = ownerProfileID ?? operation.scope.profileId {
-            return essentialsVisualOrder.reorder(
+            return favoriteVisualOrder.reorder(
                 .splitGroup(group.id),
                 for: profileID,
                 to: operation.toIndex
@@ -54,9 +54,9 @@ final class SplitGroupContainerConversion {
         }
 
         switch operation.toContainer {
-        case .essentials:
+        case .favorite:
             guard let profileID = operation.scope.profileId else { return false }
-            let container = SplitGroupContainer.essentialSidebar(
+            let container = SplitGroupContainer.favoriteSidebar(
                 profileId: profileID,
                 index: operation.toIndex
             )
@@ -65,7 +65,7 @@ final class SplitGroupContainerConversion {
                     group,
                     to: container,
                     destination: TabShortcutPinDestination(
-                        role: .essential,
+                        role: .favorite,
                         profileId: profileID,
                         spaceId: nil,
                         folderId: nil,
@@ -77,7 +77,7 @@ final class SplitGroupContainerConversion {
             }
             return moveLauncherGroup(group, to: container) { _, offset in
                 ShortcutSplitLauncherDestination(
-                    role: .essential,
+                    role: .favorite,
                     profileId: profileID,
                     spaceId: nil,
                     folderId: nil,
@@ -265,7 +265,7 @@ final class SplitGroupContainerConversion {
         switch (container, dragContainer) {
         case (.regularTabs(let spaceID), .spaceRegular(let draggedSpaceID)):
             return spaceID == draggedSpaceID
-        case (.essentialSidebar, .essentials):
+        case (.favoriteSidebar, .favorite):
             return true
         case (.shortcutSidebar(let spaceID, _, nil, _), .spacePinned(let draggedSpaceID)):
             return spaceID == draggedSpaceID
@@ -278,7 +278,7 @@ final class SplitGroupContainerConversion {
 
     private func isLauncherContainer(_ container: SplitGroupContainer) -> Bool {
         switch container {
-        case .essentialSidebar, .shortcutSidebar:
+        case .favoriteSidebar, .shortcutSidebar:
             return true
         case .regularTabs:
             return false

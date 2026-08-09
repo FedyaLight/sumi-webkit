@@ -26,7 +26,7 @@ extension SumiImportTransactionTests {
         )
         let pendingPin = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             index: 0,
             launchURL: URL(string: "https://pending.example")!,
             title: "Pending"

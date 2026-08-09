@@ -25,7 +25,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             browserContext: browserContext,
             windowState: windowState
         )
-        let sharedEssentials = SpaceSidebarEssentialsPlacementPolicy.usesSharedPinnedGrid(
+        let sharedFavorite = SpaceSidebarFavoritePlacementPolicy.usesSharedPinnedGrid(
             sourceProfileId: sourceProfileId,
             destinationProfileId: destinationProfileId
         )
@@ -42,12 +42,12 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         }
         if let sourceProfileId {
             launcherPinIDs.formUnion(
-                spaceCatalog.essentialPins(profileID: sourceProfileId).map(\.id)
+                spaceCatalog.favoritePins(profileID: sourceProfileId).map(\.id)
             )
         }
         if let destinationProfileId {
             launcherPinIDs.formUnion(
-                spaceCatalog.essentialPins(profileID: destinationProfileId).map(\.id)
+                spaceCatalog.favoritePins(profileID: destinationProfileId).map(\.id)
             )
         }
         let launcherRuntime = selection.launcherRuntimeSnapshot(
@@ -81,15 +81,15 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             settings: settings,
             scrollViewport: scrollViewportForSpace(destinationSpace.id) ?? .zero
         )
-        let stationaryEssentials = sharedEssentials && !windowState.isIncognito
-            ? essentialsSnapshot(
+        let stationaryFavorite = sharedFavorite && !windowState.isIncognito
+            ? favoriteSnapshot(
                 profileId: sourceProfileId,
                 spaceCatalog: spaceCatalog,
                 spaceInventory: sourceProjection,
                 launcherRuntime: launcherRuntime,
                 selection: selection,
                 pinProjection: pinProjection,
-                backdropReader: browserContext.essentialBackdropReader,
+                backdropReader: browserContext.favoriteBackdropReader,
                 windowState: windowState,
                 settings: settings
             )
@@ -98,7 +98,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         return SpaceSidebarTransitionSnapshot(
             source: sourcePage,
             destination: destinationPage,
-            stationaryEssentials: stationaryEssentials
+            stationaryFavorite: stationaryFavorite
         )
     }
 
@@ -160,16 +160,16 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                     profileId: profileId,
                     browserContext: browserContext
                 ),
-            essentials: windowState.isIncognito
+            favorite: windowState.isIncognito
                 ? nil
-                : essentialsSnapshot(
+                : favoriteSnapshot(
                     profileId: profileId,
                     spaceCatalog: spaceCatalog,
                     spaceInventory: projection,
                     launcherRuntime: launcherRuntime,
                     selection: selection,
                     pinProjection: pinProjection,
-                    backdropReader: browserContext.essentialBackdropReader,
+                    backdropReader: browserContext.favoriteBackdropReader,
                     windowState: windowState,
                     settings: settings
                 ),
@@ -244,23 +244,23 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             ?? browserContext.profileAuthority.currentProfile?.id
     }
 
-    private static func essentialsSnapshot(
+    private static func favoriteSnapshot(
         profileId: UUID?,
         spaceCatalog: SidebarSpaceCatalogProjection,
         spaceInventory: SidebarSpaceInventorySnapshot?,
         launcherRuntime: SidebarLauncherRuntimeSnapshot,
         selection: SidebarWindowSelectionQuery,
         pinProjection: SidebarPinFolderProjection,
-        backdropReader: any BrowserEssentialBackdropReading,
+        backdropReader: any BrowserFavoriteBackdropReading,
         windowState: BrowserWindowState,
         settings: SumiSettingsService
-    ) -> EssentialsSnapshot {
+    ) -> FavoriteSnapshot {
         guard let profileId else {
-            return EssentialsSnapshot(items: [], showsPlaceholder: false)
+            return FavoriteSnapshot(items: [], showsPlaceholder: false)
         }
-        let showsPlaceholder = settings.showsEssentialsPlaceholder(profileId: profileId)
-        let pins = spaceCatalog.essentialPins(profileID: profileId)
-        let visualItems = SidebarEssentialVisualProjection.make(
+        let showsPlaceholder = settings.showsFavoritePlaceholder(profileId: profileId)
+        let pins = spaceCatalog.favoritePins(profileID: profileId)
+        let visualItems = SidebarFavoriteVisualProjection.make(
             pins: pins,
             splitGroups: spaceInventory.map {
                 Array($0.splitGroupsByID.values)
@@ -281,7 +281,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                 windowState: windowState
             )
         }
-        return EssentialsSnapshot(
+        return FavoriteSnapshot(
             items: visualItems.compactMap { item in
                 switch item {
                 case .pin(let pin):

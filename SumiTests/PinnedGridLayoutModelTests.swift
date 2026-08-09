@@ -12,7 +12,7 @@ final class PinnedGridLayoutModelTests: XCTestCase {
     private func makePin(index: Int) -> ShortcutPin {
         ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             index: index,
             launchURL: URL(string: "https://example.com/\(index)")!,
             title: "Pin \(index)"
@@ -32,8 +32,8 @@ final class PinnedGridLayoutModelTests: XCTestCase {
     ) -> PinnedGridLayoutModel {
         PinnedGridLayoutModel(
             width: width,
-            items: items.map(SidebarEssentialVisualItem.pin),
-            dragPresentation: dragState.essentialsPresentation.frame,
+            items: items.map(SidebarFavoriteVisualItem.pin),
+            dragPresentation: dragState.favoritePresentation.frame,
             dragGeometry: dragState.geometry,
             geometrySpaceId: UUID(),
             effectiveProfileId: UUID(),
@@ -46,14 +46,14 @@ final class PinnedGridLayoutModelTests: XCTestCase {
         )
     }
 
-    /// Puts the essentials presentation into the state the resolver produces
+    /// Puts the favorite presentation into the state the resolver produces
     /// while a drag hovers an empty zone.
     private func makeHoveringDragState() -> SidebarDragState {
         let dragState = SidebarDragState()
         dragState.beginExternalDragSession(itemId: nil)
         dragState.presentDropResolution(
             SidebarDropResolution(
-                slot: .essentials(slot: 0),
+                slot: .favorite(slot: 0),
                 folderIntent: .none,
                 activeHoveredFolderId: nil
             )
@@ -61,7 +61,7 @@ final class PinnedGridLayoutModelTests: XCTestCase {
         return dragState
     }
 
-    // MARK: - Empty essentials
+    // MARK: - Empty favorite
 
     func testEmptyItemsWithoutHintOrHoverHaveNoVisualRevealHeight() {
         let model = makeModel(items: [], showsHint: false)
@@ -84,10 +84,10 @@ final class PinnedGridLayoutModelTests: XCTestCase {
         let model = makeModel(items: [], showsHint: true)
 
         XCTAssertEqual(model.emptyPresentation, .placeholder)
-        XCTAssertEqual(model.revealHeight, EssentialsPlaceholderMetrics.height)
+        XCTAssertEqual(model.revealHeight, FavoritePlaceholderMetrics.height)
         XCTAssertEqual(
             model.dropFrame,
-            CGRect(x: 0, y: 0, width: 300, height: EssentialsPlaceholderMetrics.height)
+            CGRect(x: 0, y: 0, width: 300, height: FavoritePlaceholderMetrics.height)
         )
     }
 
@@ -99,10 +99,10 @@ final class PinnedGridLayoutModelTests: XCTestCase {
         )
 
         XCTAssertEqual(model.emptyPresentation, .placeholder)
-        XCTAssertEqual(model.revealHeight, EssentialsPlaceholderMetrics.height)
+        XCTAssertEqual(model.revealHeight, FavoritePlaceholderMetrics.height)
     }
 
-    func testDragHoveringAnotherZoneLeavesTheEmptyEssentialsCollapsed() {
+    func testDragHoveringAnotherZoneLeavesTheEmptyFavoriteCollapsed() {
         let dragState = SidebarDragState()
         dragState.beginExternalDragSession(itemId: nil)
         dragState.presentDropResolution(
@@ -118,13 +118,13 @@ final class PinnedGridLayoutModelTests: XCTestCase {
         XCTAssertEqual(model.emptyPresentation, .collapsed)
     }
 
-    func testNonEmptyEssentialsNeverReportAnEmptyPresentation() {
+    func testNonEmptyFavoriteNeverReportAnEmptyPresentation() {
         let model = makeModel(items: [makePin(index: 0)], showsHint: true)
 
         XCTAssertEqual(model.emptyPresentation, .collapsed)
     }
 
-    // MARK: - Non-empty essentials
+    // MARK: - Non-empty favorite
 
     func testNonEmptyItemsProduceDisplayRowsMatchingItemCount() {
         let items = (0..<3).map(makePin)
@@ -139,13 +139,13 @@ final class PinnedGridLayoutModelTests: XCTestCase {
         let items = (0..<3).map(makePin)
         let model = makeModel(width: 300, items: items)
 
-        let expected = SidebarEssentialsProjectionPolicy.neededRowCountAfterDrop(
+        let expected = SidebarFavoriteProjectionPolicy.neededRowCountAfterDrop(
             itemIDs: items.map(\.id),
             visibleItemCount: model.projectedLayout.visibleItemCount,
             layoutItemCount: model.projectedLayout.projectedItemCount,
             columnCount: model.projectedLayout.columnCount,
             canAcceptDrop: model.projectedLayout.canAcceptDrop,
-            dragPresentation: SidebarEssentialsDragPresentationFrame()
+            dragPresentation: SidebarFavoriteDragPresentationFrame()
         )
 
         XCTAssertEqual(model.maxDropRowCount, expected)

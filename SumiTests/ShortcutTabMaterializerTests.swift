@@ -13,11 +13,11 @@ final class ShortcutTabMaterializerTests: XCTestCase {
         tabManager.spaceStateOwner.replaceSpaces([sourceSpace, targetSpace])
         let pin = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: profileID,
             index: 0,
-            launchURL: URL(string: "https://essential.example")!,
-            title: "Essential"
+            launchURL: URL(string: "https://favorite.example")!,
+            title: "Favorite"
         )
         tabManager.shortcutPinCollectionStateOwner.replacePinnedByProfile([
             profileID: [pin],
@@ -64,11 +64,11 @@ final class ShortcutTabMaterializerTests: XCTestCase {
         tabManager.spaceStateOwner.replaceSpaces([sourceSpace, targetSpace])
         let pin = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: profileID,
             index: 0,
-            launchURL: URL(string: "https://essential.example")!,
-            title: "Essential"
+            launchURL: URL(string: "https://favorite.example")!,
+            title: "Favorite"
         )
         tabManager.shortcutPinCollectionStateOwner.replacePinnedByProfile([
             profileID: [pin],
@@ -109,11 +109,11 @@ final class ShortcutTabMaterializerTests: XCTestCase {
         tabManager.spaceStateOwner.replaceSpaces([sourceSpace, targetSpace])
         let pin = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: profileID,
             index: 0,
-            launchURL: URL(string: "https://essential.example")!,
-            title: "Essential"
+            launchURL: URL(string: "https://favorite.example")!,
+            title: "Favorite"
         )
         tabManager.shortcutPinCollectionStateOwner.replacePinnedByProfile([
             profileID: [pin],
@@ -317,7 +317,7 @@ final class ShortcutTabMaterializerTests: XCTestCase {
         tabManager.spaceStateOwner.replaceSpaces([sourceSpace, targetSpace])
         let pin = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: profileID,
             index: 0,
             launchURL: URL(string: "https://reentrant.example")!,
@@ -386,7 +386,7 @@ final class ShortcutTabMaterializerTests: XCTestCase {
         tabManager.spaceStateOwner.replaceSpaces([sourceSpace, targetSpace])
         let pin = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: profileID,
             index: 0,
             launchURL: URL(string: "https://relocation.example")!,
@@ -438,7 +438,7 @@ final class ShortcutTabMaterializerTests: XCTestCase {
         _ = cancellable
     }
 
-    func testFreshEssentialUsesExecutionProfileAndReusesExactIdentity() throws {
+    func testFreshFavoriteUsesExecutionProfileAndReusesExactIdentity() throws {
         let windowId = UUID()
         let ownerProfileId = UUID()
         let executionProfile = Profile(name: "Execution")
@@ -455,14 +455,14 @@ final class ShortcutTabMaterializerTests: XCTestCase {
         let ignoredFolderId = UUID()
         let pin = ShortcutPin(
             id: UUID(),
-            role: .essential,
+            role: .favorite,
             profileId: ownerProfileId,
             executionProfileId: executionProfileId,
             spaceId: ignoredSpaceId,
             index: 0,
             folderId: ignoredFolderId,
-            launchURL: URL(string: "https://essential.example")!,
-            title: "Essential"
+            launchURL: URL(string: "https://favorite.example")!,
+            title: "Favorite"
         )
         var eventCount = 0
         let cancellable = tabManager.tabStructureEventBus
@@ -479,7 +479,7 @@ final class ShortcutTabMaterializerTests: XCTestCase {
 
         XCTAssertEqual(eventCount, 1)
         XCTAssertEqual(fresh.shortcutPinId, pin.id)
-        XCTAssertEqual(fresh.shortcutPinRole, .essential)
+        XCTAssertEqual(fresh.shortcutPinRole, .favorite)
         XCTAssertNil(fresh.spaceId)
         XCTAssertEqual(fresh.profileId, executionProfileId)
         XCTAssertNil(fresh.folderId)
