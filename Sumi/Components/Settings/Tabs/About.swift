@@ -95,10 +95,10 @@ private struct SumiAboutLinksPanel: View {
         SumiAboutCard {
             VStack(spacing: 0) {
                 SumiAboutLinkRow(
-                    title: "What's new in Sumi",
+                    title: "Changelog",
                     systemImageName: "heart.circle.fill",
                     url: changelogURL,
-                    foreground: SumiUpdateSidebarNoticeThemeTokens.Colors.completedAccent
+                    foreground: .secondary
                 )
 
                 SumiAboutLinkRow(
