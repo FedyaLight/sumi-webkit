@@ -21,7 +21,8 @@ extension Tab {
         return info
     }
 
-    func playSumiNativeNowPlayingSession(
+    func setSumiNativeNowPlayingSuspended(
+        _ suspended: Bool,
         using context: SumiNativeNowPlayingRuntimeContext,
         in windowState: BrowserWindowState
     ) async -> Bool {
@@ -29,11 +30,11 @@ extension Tab {
             using: context,
             in: windowState
         ) { webView in
-            await webView.sumiPlayPredominantOrNowPlayingMediaSession()
+            await webView.sumiSetAllMediaPlaybackSuspended(suspended)
         }
     }
 
-    func pauseSumiNativeNowPlayingSession(
+    func dismissSumiNativeNowPlayingSession(
         using context: SumiNativeNowPlayingRuntimeContext,
         in windowState: BrowserWindowState
     ) async -> Bool {
@@ -41,7 +42,8 @@ extension Tab {
             using: context,
             in: windowState
         ) { webView in
-            await webView.sumiPauseNowPlayingMediaSession()
+            guard await webView.sumiPauseAllMediaPlayback() else { return false }
+            return await webView.sumiSetAllMediaPlaybackSuspended(false)
         }
     }
 

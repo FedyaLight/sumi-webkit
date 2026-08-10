@@ -17,8 +17,31 @@ struct SumiBackgroundMediaFaviconSource: Equatable {
     let partition: SumiFaviconPartition
 }
 
+struct SumiMediaResidenceKey: Hashable, Comparable {
+    let tabId: UUID
+    let windowId: UUID
+
+    static func < (lhs: Self, rhs: Self) -> Bool {
+        if lhs.windowId != rhs.windowId {
+            return lhs.windowId < rhs.windowId
+        }
+        return lhs.tabId < rhs.tabId
+    }
+}
+
+struct SumiBackgroundMediaCardID: Hashable {
+    let tabId: UUID
+    let windowId: UUID
+    let residenceGeneration: UInt64
+    let webViewIdentity: ObjectIdentifier
+
+    var residenceKey: SumiMediaResidenceKey {
+        SumiMediaResidenceKey(tabId: tabId, windowId: windowId)
+    }
+}
+
 struct SumiBackgroundMediaCardState: Identifiable, Equatable {
-    let id: String
+    let id: SumiBackgroundMediaCardID
     let tabId: UUID
     let windowId: UUID
     let title: String
@@ -35,22 +58,24 @@ struct SumiBackgroundMediaCardState: Identifiable, Equatable {
     var isPlaying: Bool {
         playbackState == .playing
     }
+}
 
-    func withMuted(_ muted: Bool) -> SumiBackgroundMediaCardState {
-        SumiBackgroundMediaCardState(
-            id: id,
-            tabId: tabId,
-            windowId: windowId,
-            title: title,
-            subtitle: subtitle,
-            sourceHost: sourceHost,
-            tabTitle: tabTitle,
-            playbackState: playbackState,
-            isMuted: muted,
-            faviconSource: faviconSource,
-            canPlayPause: canPlayPause,
-            canMute: canMute,
-            canPictureInPicture: canPictureInPicture
+@MainActor
+enum SumiBackgroundMediaCardProjection {
+    static let maximumVisibleCount = 3
+
+    static func visibleStates(
+        _ states: [SumiBackgroundMediaCardState],
+        in windowState: BrowserWindowState
+    ) -> [SumiBackgroundMediaCardState] {
+        guard !windowState.isIncognito else { return [] }
+        return Array(
+            states.lazy
+                .filter { state in
+                    !(state.windowId == windowState.id
+                        && state.tabId == windowState.currentTabId)
+                }
+                .prefix(maximumVisibleCount)
         )
     }
 }

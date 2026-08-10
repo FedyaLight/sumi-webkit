@@ -12,18 +12,6 @@ import SwiftUI
 /// sidebar shell can shrink without changing observation topology.
 @MainActor
 enum SpaceSidebarChromeBindings {
-    static func shouldMountMiniPlayer(
-        sidebarMiniPlayerEnabled: Bool,
-        nowPlayingController: SumiNativeNowPlayingController,
-        windowState: BrowserWindowState
-    ) -> Bool {
-        guard sidebarMiniPlayerEnabled else { return false }
-        return SumiBackgroundMediaCardStore.shouldMountMiniPlayer(
-            globalState: nowPlayingController.cardState,
-            in: windowState
-        )
-    }
-
     static func shouldShowSidebarExtensionGrid(slotCount: Int) -> Bool {
         ExtensionActionPlacement.resolve(totalActions: slotCount) == .sidebarGrid
     }
@@ -92,23 +80,38 @@ struct SpaceSidebarUpdateNoticeReader: View {
 struct SpaceSidebarMiniPlayer: View {
     @ObservedObject var nowPlayingController: SumiNativeNowPlayingController
     let faviconImageReader: any BrowserFaviconImageReading
-    let mediaStoreConfiguration: SidebarMediaStoreConfigurationOwner
 
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var settings
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        if SpaceSidebarChromeBindings.shouldMountMiniPlayer(
-            sidebarMiniPlayerEnabled: settings.sidebarMiniPlayerEnabled,
-            nowPlayingController: nowPlayingController,
-            windowState: windowState
-        ) {
-            MediaControlsView(
-                nowPlayingController: nowPlayingController,
-                faviconImageReader: faviconImageReader,
-                mediaStoreConfiguration: mediaStoreConfiguration
-            )
-            .environment(windowState)
+        Group {
+            if settings.sidebarMiniPlayerEnabled {
+                let states = SumiBackgroundMediaCardProjection.visibleStates(
+                    nowPlayingController.cardStates,
+                    in: windowState
+                )
+                if !states.isEmpty {
+                    MediaControlsView(
+                        cardStates: states,
+                        controller: nowPlayingController,
+                        faviconImageReader: faviconImageReader
+                    )
+                    .zIndex(100)
+                }
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                nowPlayingController.scheduleRefresh(delayNanoseconds: 0)
+            }
+        }
+        .onChange(of: windowState.currentTabId) { _, _ in
+            nowPlayingController.scheduleRefresh(delayNanoseconds: 0)
+        }
+        .onChange(of: windowState.currentSpaceId) { _, _ in
+            nowPlayingController.scheduleRefresh(delayNanoseconds: 0)
         }
     }
 }

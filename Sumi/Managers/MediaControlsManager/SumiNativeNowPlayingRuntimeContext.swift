@@ -29,19 +29,22 @@ extension SumiNativeNowPlayingRuntimeContext {
         Self(
             candidateTabs: {
                 var candidates: [Candidate] = []
-                var seen = Set<UUID>()
+                var seen = Set<SumiMediaResidenceKey>()
 
                 for windowState in runtime.windowStates() {
                     guard !windowState.isIncognito else { continue }
 
                     let scopedTabs = runtime.mediaCandidateTabs(windowState)
-                    let preferredTabs = scopedTabs.filter(\.audioState.isPlayingAudio)
-                    let discoveryTabs = preferredTabs.isEmpty
+                    let discoveryTabs = scopedTabs.isEmpty
                         ? [runtime.currentTab(windowState)].compactMap(\.self)
-                        : preferredTabs
+                        : scopedTabs
 
                     for tab in discoveryTabs {
-                        guard seen.insert(tab.id).inserted else { continue }
+                        let residenceKey = SumiMediaResidenceKey(
+                            tabId: tab.id,
+                            windowId: windowState.id
+                        )
+                        guard seen.insert(residenceKey).inserted else { continue }
                         candidates.append((tab, windowState))
                     }
                 }

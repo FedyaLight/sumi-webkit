@@ -30,6 +30,8 @@ final class ShortcutLiveRetirementScopedPortEffect {
               let runtime = attachment.lease.registry else { return }
         for tab in tabsRequiringClosurePublication {
             guard attachment.isCurrent() else { return }
+            tab.mediaRuntime.callbacks.notifyNowPlayingTabUnloaded(tab.id)
+            guard attachment.isCurrent() else { return }
             runtime.notifyTabClosedIfLoaded(tab)
             guard attachment.isCurrent() else { return }
         }

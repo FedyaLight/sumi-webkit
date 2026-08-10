@@ -9,29 +9,29 @@ protocol SumiNativeNowPlayingFeatureControlling: AnyObject {
 
 @MainActor
 protocol SumiNativeNowPlayingRuntimeControlling: SumiNativeNowPlayingFeatureControlling {
-    var cardState: SumiBackgroundMediaCardState? { get }
-    var cardStatePublisher: AnyPublisher<SumiBackgroundMediaCardState?, Never> { get }
+    var cardStates: [SumiBackgroundMediaCardState] { get }
 
     func configure(context: SumiNativeNowPlayingRuntimeContext)
-    func handleSceneActive()
     func scheduleRefresh(delayNanoseconds: UInt64)
     func handleTabActivated(_ tabId: UUID)
     func handleTabUnloaded(_ tabId: UUID)
-    func activateOwner()
-    func togglePlayPause() async
-    func toggleMute() async
-    func togglePictureInPicture() async
+    func activateOwner(cardID: SumiBackgroundMediaCardID)
+    func togglePlayPause(cardID: SumiBackgroundMediaCardID) async
+    func toggleMute(cardID: SumiBackgroundMediaCardID) async
+    func togglePictureInPicture(cardID: SumiBackgroundMediaCardID) async
+    func dismiss(cardID: SumiBackgroundMediaCardID) async
 }
 
 @MainActor
 final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayingRuntimeControlling {
     typealias Candidate = SumiNativeNowPlayingRuntimeContext.Candidate
+    private typealias OwnerContext = SumiBackgroundMediaCardID
     typealias CandidateProvider = @MainActor (SumiNativeNowPlayingRuntimeContext) -> [Candidate]
     typealias InfoProvider = @MainActor (Tab, SumiNativeNowPlayingRuntimeContext, BrowserWindowState) async -> SumiNativeNowPlayingInfo?
     typealias CommandExecutor = @MainActor (SumiNativeNowPlayingCommand, Tab, SumiNativeNowPlayingRuntimeContext, BrowserWindowState) async -> Bool
     typealias ActivationHandler = @MainActor (Tab, SumiNativeNowPlayingRuntimeContext, BrowserWindowState) -> Void
 
-    @Published private(set) var cardState: SumiBackgroundMediaCardState?
+    @Published private(set) var cardStates: [SumiBackgroundMediaCardState] = []
 
     private(set) var isFeatureEnabled = true
 
@@ -40,13 +40,12 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
     private let infoProvider: InfoProvider
     private let commandExecutor: CommandExecutor
     private let activationHandler: ActivationHandler
-    private var currentOwner: OwnerContext?
-    private var pausedCardOwner: OwnerContext?
+    private var retainedPausedOwners: Set<OwnerContext> = []
+    private var dismissedOwners: Set<OwnerContext> = []
+    private var inFlightTransportOwners: Set<OwnerContext> = []
+    private var invalidatedResidenceByCandidate: [SumiMediaResidenceKey: OwnerContext] = [:]
     private var refreshTask: Task<Void, Never>?
-
-    var cardStatePublisher: AnyPublisher<SumiBackgroundMediaCardState?, Never> {
-        $cardState.eraseToAnyPublisher()
-    }
+    private var refreshGeneration: UInt64 = 0
 
     convenience init() {
         self.init(
@@ -86,11 +85,6 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
         scheduleRefresh(delayNanoseconds: 0)
     }
 
-    func handleSceneActive() {
-        guard isFeatureEnabled else { return }
-        scheduleRefresh(delayNanoseconds: 0)
-    }
-
     func scheduleRefresh(delayNanoseconds: UInt64 = 100_000_000) {
         guard isFeatureEnabled else { return }
         refreshTask?.cancel()
@@ -105,135 +99,159 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
     }
 
     func refreshImmediately() async {
-        guard isFeatureEnabled else {
-            clearCardState()
+        refreshGeneration &+= 1
+        let generation = refreshGeneration
+
+        guard isFeatureEnabled, let runtimeContext else {
+            publish([])
             return
         }
 
-        guard let runtimeContext else {
-            clearCardState()
-            return
+        pruneInvalidatedResidences(using: runtimeContext)
+        let trackedCandidates = Set(
+            retainedPausedOwners.lazy.map(\.residenceKey)
+        ).union(
+            dismissedOwners.lazy.map(\.residenceKey)
+        )
+        let candidates = prioritizedCandidates(using: runtimeContext)
+            .filter { candidate in
+                canBecomeOwner(candidate.tab, in: candidate.windowState)
+                    && (candidate.tab.audioState.isPlayingAudio
+                        || trackedCandidates.contains(residenceKey(for: candidate)))
+            }
+            .compactMap { candidate -> ResolvedCandidate? in
+                guard let webViewIdentity = resolvedWebViewIdentity(
+                    candidate,
+                    using: runtimeContext
+                ) else { return nil }
+                return ResolvedCandidate(candidate: candidate, webViewIdentity: webViewIdentity)
+            }
+        let liveOwners = Set(candidates.map(\.owner))
+        retainedPausedOwners.formIntersection(liveOwners)
+        dismissedOwners.formIntersection(liveOwners)
+
+        var refreshedStates: [SumiBackgroundMediaCardState] = []
+        for resolvedCandidate in candidates {
+            let candidate = resolvedCandidate.candidate
+            let owner = resolvedCandidate.owner
+            let candidateKey = residenceKey(for: candidate)
+            if let invalidatedOwner = invalidatedResidenceByCandidate[candidateKey] {
+                guard invalidatedOwner != owner else { continue }
+                invalidatedResidenceByCandidate.removeValue(forKey: candidateKey)
+            }
+            guard shouldSample(candidate, owner: owner) else { continue }
+
+            let info = await infoProvider(candidate.tab, runtimeContext, candidate.windowState)
+
+            guard generation == refreshGeneration,
+                  !Task.isCancelled,
+                  isFeatureEnabled,
+                  isStillResolved(candidate, owner: owner, using: runtimeContext),
+                  shouldSample(candidate, owner: owner)
+            else {
+                if generation != refreshGeneration || Task.isCancelled { return }
+                continue
+            }
+
+            if dismissedOwners.contains(owner) {
+                if info?.playbackState != .playing {
+                    dismissedOwners.remove(owner)
+                }
+                continue
+            }
+
+            guard retainedPausedOwners.contains(owner)
+                    || info?.playbackState == .playing
+                    || (info == nil && candidate.tab.audioState.isPlayingAudio)
+            else { continue }
+
+            let state = makeCardState(
+                tab: candidate.tab,
+                windowState: candidate.windowState,
+                info: info,
+                owner: owner
+            )
+            refreshedStates.append(state)
         }
 
-        if currentOwner == nil,
-           pausedCardOwner == nil,
-           !candidateProvider(runtimeContext).contains(where: \.tab.audioState.isPlayingAudio) {
-            clearCardState()
-            return
-        }
-
-        if shouldPreferFreshDiscovery,
-           let discoveredOwner = await discoverOwner(
-            using: runtimeContext,
-            preferCurrentOwner: false,
-            allowsPausedRetention: false
-           ) {
-            apply(cardState: discoveredOwner)
-            return
-        }
-
-        if let retainedOwner = await refreshCurrentOwnerIfPossible(using: runtimeContext) {
-            apply(cardState: retainedOwner)
-            return
-        }
-
-        if let discoveredOwner = await discoverOwner(
-            using: runtimeContext,
-            preferCurrentOwner: true,
-            allowsPausedRetention: true
-        ) {
-            apply(cardState: discoveredOwner)
-            return
-        }
-
-        clearCardState()
+        guard generation == refreshGeneration else { return }
+        publish(refreshedStates)
     }
 
-    func activateOwner() {
+    func activateOwner(cardID: SumiBackgroundMediaCardID) {
         guard isFeatureEnabled,
               let runtimeContext,
-              let owner = resolvedOwner(using: runtimeContext)
-        else {
-            return
-        }
+              let owner = resolvedOwner(cardID: cardID, using: runtimeContext)
+        else { return }
 
         activationHandler(owner.tab, runtimeContext, owner.windowState)
     }
 
-    func togglePlayPause() async {
+    func togglePlayPause(cardID: SumiBackgroundMediaCardID) async {
         guard isFeatureEnabled,
               let runtimeContext,
-              let owner = resolvedOwner(using: runtimeContext),
-              let cardState
-        else {
+              let state = cardStates.first(where: { $0.id == cardID }),
+              state.canPlayPause,
+              let owner = resolvedOwner(cardID: cardID, using: runtimeContext)
+        else { return }
+
+        guard inFlightTransportOwners.insert(cardID).inserted else { return }
+        defer { inFlightTransportOwners.remove(cardID) }
+
+        let command: SumiNativeNowPlayingCommand = state.isPlaying ? .pause : .play
+
+        if command == .pause {
+            retainedPausedOwners.insert(cardID)
+            updateCard(cardID: cardID) { $0.playbackState = .paused }
+        }
+
+        let success = await commandExecutor(
+            command,
+            owner.tab,
+            runtimeContext,
+            owner.windowState
+        )
+
+        guard success else {
+            if command == .pause {
+                retainedPausedOwners.remove(cardID)
+                updateCard(cardID: cardID) { $0.playbackState = .playing }
+            }
             return
         }
 
-        let command: SumiNativeNowPlayingCommand =
-            cardState.isPlaying ? .pause : .play
-        let success = await commandExecutor(command, owner.tab, runtimeContext, owner.windowState)
-        guard success else { return }
-
-        switch command {
-        case .pause:
-            pausedCardOwner = OwnerContext(tabId: owner.tab.id, windowId: owner.windowState.id)
-        case .play:
-            pausedCardOwner = nil
-        case .pictureInPicture:
+        guard isStillResolved(owner, owner: cardID, using: runtimeContext) else {
+            retainedPausedOwners.remove(cardID)
+            removeCard(cardID)
             return
         }
 
-        if var updatedCardState = self.cardState {
-            updatedCardState.playbackState = command == .pause ? .paused : .playing
-            self.cardState = updatedCardState
+        if command == .play {
+            retainedPausedOwners.remove(cardID)
+            updateCard(cardID: cardID) { $0.playbackState = .playing }
         }
         scheduleRefresh(delayNanoseconds: 120_000_000)
     }
 
-    func handleTabActivated(_ tabId: UUID) {
-        guard isFeatureEnabled else { return }
-        if pausedCardOwner?.tabId == tabId {
-            pausedCardOwner = nil
-        }
-        if currentOwner?.tabId == tabId {
-            clearCardState()
-        }
-    }
-
-    func handleTabUnloaded(_ tabId: UUID) {
-        guard isFeatureEnabled else { return }
-        if pausedCardOwner?.tabId == tabId {
-            pausedCardOwner = nil
-        }
-        if currentOwner?.tabId == tabId {
-            clearCardState()
-        }
-    }
-
-    func toggleMute() async {
+    func toggleMute(cardID: SumiBackgroundMediaCardID) async {
         guard isFeatureEnabled,
               let runtimeContext,
-              let owner = resolvedOwner(using: runtimeContext),
-              let cardState,
-              cardState.canMute
-        else {
-            return
-        }
+              let state = cardStates.first(where: { $0.id == cardID }),
+              state.canMute,
+              let owner = resolvedOwner(cardID: cardID, using: runtimeContext)
+        else { return }
 
         owner.tab.toggleMute()
-
-        self.cardState = cardState.withMuted(owner.tab.audioState.isMuted)
-        scheduleRefresh(delayNanoseconds: 0)
+        updateCard(cardID: cardID) { $0.isMuted = owner.tab.audioState.isMuted }
     }
 
-    func togglePictureInPicture() async {
+    func togglePictureInPicture(cardID: SumiBackgroundMediaCardID) async {
         guard isFeatureEnabled,
               let runtimeContext,
-              let owner = resolvedOwner(using: runtimeContext),
-              cardState?.canPictureInPicture == true
-        else {
-            return
-        }
+              let state = cardStates.first(where: { $0.id == cardID }),
+              state.canPictureInPicture,
+              let owner = resolvedOwner(cardID: cardID, using: runtimeContext)
+        else { return }
 
         _ = await commandExecutor(
             .pictureInPicture,
@@ -243,138 +261,123 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
         )
     }
 
-    private var shouldPreferFreshDiscovery: Bool {
-        currentOwner != nil && currentOwner == pausedCardOwner
-    }
+    func dismiss(cardID: SumiBackgroundMediaCardID) async {
+        guard isFeatureEnabled,
+              let runtimeContext,
+              let owner = resolvedOwner(cardID: cardID, using: runtimeContext)
+        else { return }
 
-    private func refreshCurrentOwnerIfPossible(
-        using runtimeContext: SumiNativeNowPlayingRuntimeContext
-    ) async -> SumiBackgroundMediaCardState? {
-        guard let owner = resolvedOwner(using: runtimeContext) else {
-            return nil
-        }
+        guard inFlightTransportOwners.insert(cardID).inserted else { return }
+        defer { inFlightTransportOwners.remove(cardID) }
 
-        guard canBecomeOwner(owner.tab, in: owner.windowState) else {
-            return nil
-        }
+        dismissedOwners.insert(cardID)
+        retainedPausedOwners.remove(cardID)
+        removeCard(cardID)
 
-        guard qualifiesForCard(
+        let success = await commandExecutor(
+            .dismiss,
             owner.tab,
-            in: owner.windowState,
-            allowsPausedRetention: true
-        ) else {
-            return nil
-        }
-
-        let info = await infoProvider(owner.tab, runtimeContext, owner.windowState)
-        return makeCardState(
-            tab: owner.tab,
-            windowState: owner.windowState,
-            info: info
+            runtimeContext,
+            owner.windowState
         )
+        if !success {
+            dismissedOwners.remove(cardID)
+            scheduleRefresh(delayNanoseconds: 0)
+        }
     }
 
-    private func discoverOwner(
-        using runtimeContext: SumiNativeNowPlayingRuntimeContext,
-        preferCurrentOwner: Bool,
-        allowsPausedRetention: Bool
-    ) async -> SumiBackgroundMediaCardState? {
-        let candidates = prioritizedCandidates(
-            using: runtimeContext,
-            preferCurrentOwner: preferCurrentOwner
-        )
+    func handleTabActivated(_ tabId: UUID) {
+        guard isFeatureEnabled else { return }
+        let retained = retainedPausedOwners.filter { $0.tabId == tabId }
+        retainedPausedOwners.subtract(retained)
+        dismissedOwners = dismissedOwners.filter { $0.tabId != tabId }
+        cardStates.removeAll { $0.tabId == tabId }
+        invalidateRefresh()
 
-        for (tab, windowState) in candidates {
-            guard qualifiesForCard(
-                tab,
-                in: windowState,
-                allowsPausedRetention: allowsPausedRetention
-            ) else {
-                continue
+        guard let runtimeContext else { return }
+        for ownerContext in retained {
+            guard let owner = resolvedOwner(ownerContext, using: runtimeContext) else { continue }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                _ = await self.commandExecutor(
+                    .play,
+                    owner.tab,
+                    runtimeContext,
+                    owner.windowState
+                )
             }
-
-            let info = await infoProvider(tab, runtimeContext, windowState)
-            return makeCardState(
-                tab: tab,
-                windowState: windowState,
-                info: info
-            )
         }
+    }
 
-        return nil
+    func handleTabUnloaded(_ tabId: UUID) {
+        guard isFeatureEnabled else { return }
+        for owner in cardStates.lazy.map(\.id) where owner.tabId == tabId {
+            invalidatedResidenceByCandidate[owner.residenceKey] = owner
+        }
+        retainedPausedOwners = retainedPausedOwners.filter { $0.tabId != tabId }
+        dismissedOwners = dismissedOwners.filter { $0.tabId != tabId }
+        cardStates.removeAll { $0.tabId == tabId }
+        invalidateRefresh()
     }
 
     private func prioritizedCandidates(
-        using runtimeContext: SumiNativeNowPlayingRuntimeContext,
-        preferCurrentOwner: Bool
+        using runtimeContext: SumiNativeNowPlayingRuntimeContext
     ) -> [Candidate] {
-        let ownerTabId = preferCurrentOwner ? currentOwner?.tabId : nil
-
+        var seen: Set<SumiMediaResidenceKey> = []
         return candidateProvider(runtimeContext)
-            .filter { canBecomeOwner($0.tab, in: $0.windowState) }
+            .filter { candidate in
+                seen.insert(residenceKey(for: candidate)).inserted
+            }
             .sorted { lhs, rhs in
-                let lhsIsOwner = lhs.tab.id == ownerTabId
-                let rhsIsOwner = rhs.tab.id == ownerTabId
-                if lhsIsOwner != rhsIsOwner {
-                    return lhsIsOwner
-                }
-
                 if lhs.tab.mediaRuntime.lastMediaActivityAt != rhs.tab.mediaRuntime.lastMediaActivityAt {
                     return lhs.tab.mediaRuntime.lastMediaActivityAt > rhs.tab.mediaRuntime.lastMediaActivityAt
                 }
-
-                return lhs.tab.id.uuidString < rhs.tab.id.uuidString
+                return residenceKey(for: lhs) < residenceKey(for: rhs)
             }
     }
 
-    private func canBecomeOwner(
-        _ tab: Tab,
-        in windowState: BrowserWindowState
-    ) -> Bool {
-        guard !windowState.isIncognito else { return false }
-        guard !tab.isEphemeral else { return false }
-        guard windowState.currentTabId != tab.id else { return false }
-        return true
+    private func pruneInvalidatedResidences(
+        using runtimeContext: SumiNativeNowPlayingRuntimeContext
+    ) {
+        invalidatedResidenceByCandidate = invalidatedResidenceByCandidate.filter { key, _ in
+            guard let windowState = runtimeContext.windowState(key.windowId) else {
+                return false
+            }
+            return runtimeContext.resolvedTab(key.tabId, windowState) != nil
+        }
     }
 
-    private func qualifiesForCard(
-        _ tab: Tab,
-        in windowState: BrowserWindowState,
-        allowsPausedRetention: Bool
-    ) -> Bool {
-        let ownerContext = OwnerContext(tabId: tab.id, windowId: windowState.id)
+    private func shouldSample(_ candidate: Candidate, owner: OwnerContext) -> Bool {
+        canBecomeOwner(candidate.tab, in: candidate.windowState)
+            && (
+                candidate.tab.audioState.isPlayingAudio
+                    || retainedPausedOwners.contains(owner)
+                    || dismissedOwners.contains(owner)
+            )
+    }
 
-        if allowsPausedRetention, pausedCardOwner == ownerContext {
-            return true
-        }
-
-        return tab.audioState.isPlayingAudio
+    private func canBecomeOwner(_ tab: Tab, in windowState: BrowserWindowState) -> Bool {
+        !windowState.isIncognito
+            && !tab.isEphemeral
+            && windowState.currentTabId != tab.id
     }
 
     private func makeCardState(
         tab: Tab,
         windowState: BrowserWindowState,
-        info: SumiNativeNowPlayingInfo?
+        info: SumiNativeNowPlayingInfo?,
+        owner: OwnerContext
     ) -> SumiBackgroundMediaCardState {
         let sourceHost = normalizedHost(for: tab.url)
         let tabTitle = normalizedTitle(tab.name) ?? "Media"
         let title = normalizedTitle(info?.title) ?? tabTitle
         let subtitle = normalizedTitle(info?.artist) ?? ""
-        let faviconSource = faviconSource(for: tab)
-        let ownerContext = OwnerContext(tabId: tab.id, windowId: windowState.id)
-        let playbackState: SumiBackgroundMediaPlaybackState
-        if tab.audioState.isPlayingAudio {
-            playbackState = .playing
-        } else if pausedCardOwner == ownerContext {
-            playbackState = .paused
-        } else {
-            playbackState = info?.playbackState ?? .paused
-        }
-
-        currentOwner = OwnerContext(tabId: tab.id, windowId: windowState.id)
+        let playbackState: SumiBackgroundMediaPlaybackState =
+            retainedPausedOwners.contains(owner) ? .paused
+            : info?.playbackState ?? (tab.audioState.isPlayingAudio ? .playing : .paused)
 
         return SumiBackgroundMediaCardState(
-            id: "sumi:\(tab.id.uuidString)",
+            id: owner,
             tabId: tab.id,
             windowId: windowState.id,
             title: title,
@@ -383,7 +386,7 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
             tabTitle: tabTitle,
             playbackState: playbackState,
             isMuted: tab.audioState.isMuted,
-            faviconSource: faviconSource,
+            faviconSource: faviconSource(for: tab),
             canPlayPause: true,
             canMute: playbackState == .playing,
             canPictureInPicture: info?.canPictureInPicture == true
@@ -391,14 +394,51 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
     }
 
     private func faviconSource(for tab: Tab) -> SumiBackgroundMediaFaviconSource? {
-        guard TabFaviconStore.referenceKey(forDocumentURL: tab.url) != nil else {
-            return nil
-        }
-
+        guard TabFaviconStore.referenceKey(forDocumentURL: tab.url) != nil else { return nil }
         return SumiBackgroundMediaFaviconSource(
             documentURL: tab.url,
             partition: tab.faviconService.partition(profile: tab.resolveProfile())
         )
+    }
+
+    private func resolvedOwner(
+        cardID: SumiBackgroundMediaCardID,
+        using runtimeContext: SumiNativeNowPlayingRuntimeContext
+    ) -> Candidate? {
+        guard cardStates.contains(where: { $0.id == cardID }) else { return nil }
+        return resolvedOwner(cardID, using: runtimeContext)
+    }
+
+    private func resolvedOwner(
+        _ owner: OwnerContext,
+        using runtimeContext: SumiNativeNowPlayingRuntimeContext
+    ) -> Candidate? {
+        guard let windowState = runtimeContext.windowState(owner.windowId),
+              let tab = runtimeContext.resolvedTab(owner.tabId, windowState),
+              tab.webViewSession.generation == owner.residenceGeneration,
+              runtimeContext.resolvedNowPlayingWebView(tab, windowState)
+                .map(ObjectIdentifier.init) == owner.webViewIdentity
+        else { return nil }
+        return (tab, windowState)
+    }
+
+    private func isStillResolved(
+        _ candidate: Candidate,
+        owner: OwnerContext,
+        using runtimeContext: SumiNativeNowPlayingRuntimeContext
+    ) -> Bool {
+        guard let resolved = resolvedOwner(owner, using: runtimeContext) else {
+            return false
+        }
+        return resolved.tab === candidate.tab && resolved.windowState === candidate.windowState
+    }
+
+    private func resolvedWebViewIdentity(
+        _ candidate: Candidate,
+        using runtimeContext: SumiNativeNowPlayingRuntimeContext
+    ) -> ObjectIdentifier? {
+        runtimeContext.resolvedNowPlayingWebView(candidate.tab, candidate.windowState)
+            .map(ObjectIdentifier.init)
     }
 
     private func normalizedTitle(_ value: String?) -> String? {
@@ -409,61 +449,83 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
 
     private func normalizedHost(for url: URL) -> String? {
         let host = url.host?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return (host?.isEmpty == false) ? host : nil
+        return host?.isEmpty == false ? host : nil
     }
 
-    private func resolvedOwner(
-        using runtimeContext: SumiNativeNowPlayingRuntimeContext
-    ) -> Candidate? {
-        guard let currentOwner,
-              let windowState = runtimeContext.windowState(currentOwner.windowId),
-              let tab = resolvedTab(
-                tabId: currentOwner.tabId,
-                in: windowState,
-                using: runtimeContext
-              )
-        else {
-            return nil
+    private func updateCard(
+        cardID: SumiBackgroundMediaCardID,
+        update: (inout SumiBackgroundMediaCardState) -> Void
+    ) {
+        guard let index = cardStates.firstIndex(where: { $0.id == cardID }) else { return }
+        update(&cardStates[index])
+    }
+
+    private func removeCard(_ cardID: SumiBackgroundMediaCardID) {
+        cardStates.removeAll { $0.id == cardID }
+    }
+
+    private func publish(_ states: [SumiBackgroundMediaCardState]) {
+        if cardStates != states {
+            cardStates = states
         }
-
-        return (tab, windowState)
     }
 
-    private func resolvedTab(
-        tabId: UUID,
-        in windowState: BrowserWindowState,
-        using runtimeContext: SumiNativeNowPlayingRuntimeContext
-    ) -> Tab? {
-        runtimeContext.resolvedTab(tabId, windowState)
-    }
-
-    private func apply(cardState: SumiBackgroundMediaCardState) {
-        if cardState.isPlaying {
-            pausedCardOwner = nil
-        }
-        self.cardState = cardState
+    private func invalidateRefresh() {
+        refreshGeneration &+= 1
+        refreshTask?.cancel()
+        refreshTask = nil
     }
 
     private func suspend() {
-        refreshTask?.cancel()
-        refreshTask = nil
-        clearCardState()
+        invalidateRefresh()
+        let retained = retainedPausedOwners
+        retainedPausedOwners.removeAll()
+        dismissedOwners.removeAll()
+        inFlightTransportOwners.removeAll()
+        invalidatedResidenceByCandidate.removeAll()
+        publish([])
+
+        guard let runtimeContext else { return }
+        for ownerContext in retained {
+            guard let owner = resolvedOwner(ownerContext, using: runtimeContext) else { continue }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                _ = await self.commandExecutor(
+                    .play,
+                    owner.tab,
+                    runtimeContext,
+                    owner.windowState
+                )
+            }
+        }
     }
 
-    private func clearCardState() {
-        currentOwner = nil
-        pausedCardOwner = nil
-        cardState = nil
+    private func residenceKey(for candidate: Candidate) -> SumiMediaResidenceKey {
+        SumiMediaResidenceKey(
+            tabId: candidate.tab.id,
+            windowId: candidate.windowState.id
+        )
     }
 
-    private struct OwnerContext: Equatable {
-        let tabId: UUID
-        let windowId: UUID
+    private struct ResolvedCandidate {
+        let candidate: Candidate
+        let webViewIdentity: ObjectIdentifier
+
+        @MainActor
+        var owner: OwnerContext {
+            OwnerContext(
+                tabId: candidate.tab.id,
+                windowId: candidate.windowState.id,
+                residenceGeneration: candidate.tab.webViewSession.generation,
+                webViewIdentity: webViewIdentity
+            )
+        }
     }
 
     enum SumiNativeNowPlayingCommand {
         case play
         case pause
+        case dismiss
         case pictureInPicture
     }
 }
@@ -480,10 +542,7 @@ extension SumiNativeNowPlayingController {
         context: SumiNativeNowPlayingRuntimeContext,
         windowState: BrowserWindowState
     ) async -> SumiNativeNowPlayingInfo? {
-        await tab.sampleSumiNativeNowPlayingInfo(
-            using: context,
-            in: windowState
-        )
+        await tab.sampleSumiNativeNowPlayingInfo(using: context, in: windowState)
     }
 
     private static func defaultCommandExecutor(
@@ -494,20 +553,24 @@ extension SumiNativeNowPlayingController {
     ) async -> Bool {
         switch command {
         case .play:
-            return await tab.playSumiNativeNowPlayingSession(
+            return await tab.setSumiNativeNowPlayingSuspended(
+                false,
                 using: context,
                 in: windowState
             )
         case .pause:
-            return await tab.pauseSumiNativeNowPlayingSession(
+            return await tab.setSumiNativeNowPlayingSuspended(
+                true,
+                using: context,
+                in: windowState
+            )
+        case .dismiss:
+            return await tab.dismissSumiNativeNowPlayingSession(
                 using: context,
                 in: windowState
             )
         case .pictureInPicture:
-            return await tab.toggleSumiNativePictureInPicture(
-                using: context,
-                in: windowState
-            )
+            return await tab.toggleSumiNativePictureInPicture(using: context, in: windowState)
         }
     }
 
@@ -519,90 +582,5 @@ extension SumiNativeNowPlayingController {
         NSApp.activate(ignoringOtherApps: true)
         windowState.shellWindow(in: context.windowRegistry())?.makeKeyAndOrderFront(nil)
         context.selectTab(tab, windowState)
-    }
-}
-
-@MainActor
-final class SumiBackgroundMediaCardStore: ObservableObject {
-    @Published private(set) var cardState: SumiBackgroundMediaCardState?
-
-    private let controller: any SumiNativeNowPlayingRuntimeControlling
-    private var cancellables: Set<AnyCancellable> = []
-    weak var windowState: BrowserWindowState?
-
-    init(controller: any SumiNativeNowPlayingRuntimeControlling) {
-        self.controller = controller
-
-        controller.cardStatePublisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] state in
-                self?.applyVisibleState(state)
-            }
-            .store(in: &cancellables)
-    }
-
-    func configure(
-        context: SumiNativeNowPlayingRuntimeContext,
-        windowState: BrowserWindowState
-    ) {
-        self.windowState = windowState
-        controller.configure(context: context)
-        applyVisibleState(controller.cardState)
-    }
-
-    func handleSceneActive() {
-        controller.handleSceneActive()
-    }
-
-    func handleSelectionChange() {
-        controller.scheduleRefresh(delayNanoseconds: 0)
-    }
-
-    func activateSource() {
-        controller.activateOwner()
-    }
-
-    func togglePlayPause() async {
-        await controller.togglePlayPause()
-    }
-
-    func toggleMute() async {
-        await controller.toggleMute()
-    }
-
-    func togglePictureInPicture() async {
-        await controller.togglePictureInPicture()
-    }
-
-    private func applyVisibleState(_ state: SumiBackgroundMediaCardState?) {
-        guard let windowState else {
-            cardState = state
-            return
-        }
-
-        cardState = Self.visibleCardState(globalState: state, in: windowState)
-    }
-
-    /// Whether this window should host `MediaControlsView` for the given global controller state.
-    static func shouldMountMiniPlayer(
-        globalState: SumiBackgroundMediaCardState?,
-        in windowState: BrowserWindowState
-    ) -> Bool {
-        visibleCardState(globalState: globalState, in: windowState) != nil
-    }
-
-    private static func visibleCardState(
-        globalState: SumiBackgroundMediaCardState?,
-        in windowState: BrowserWindowState
-    ) -> SumiBackgroundMediaCardState? {
-        guard !windowState.isIncognito else { return nil }
-        guard let globalState else { return nil }
-
-        if globalState.windowId == windowState.id,
-           globalState.tabId == windowState.currentTabId {
-            return nil
-        }
-
-        return globalState
     }
 }

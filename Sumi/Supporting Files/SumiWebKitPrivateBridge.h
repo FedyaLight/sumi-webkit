@@ -101,8 +101,6 @@ static inline NSView * _Nullable SumiWKWebViewFullScreenPlaceholderView(WKWebVie
 - (void)_nowPlayingMediaTitleAndArtist:(void (^)(NSString * _Nullable title, NSString * _Nullable artist))completionHandler;
 - (void)_updateMediaPlaybackControlsManager;
 - (void)_togglePictureInPicture;
-- (void)_playPredominantOrNowPlayingMediaSession:(void(^)(BOOL success))completionHandler;
-- (void)_pauseNowPlayingMediaSession:(void(^)(BOOL success))completionHandler;
 @end
 
 @interface _WKSessionState : NSObject

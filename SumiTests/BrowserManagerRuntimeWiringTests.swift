@@ -652,25 +652,16 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
 
 @MainActor
 final class FakeNativeNowPlayingController: SumiNativeNowPlayingRuntimeControlling {
-    let subject = CurrentValueSubject<SumiBackgroundMediaCardState?, Never>(nil)
+    var cardStates: [SumiBackgroundMediaCardState] = []
     private(set) var featureEnabledValues: [Bool] = []
     private(set) var scheduledRefreshDelays: [UInt64] = []
     private(set) var activatedTabIds: [UUID] = []
     private(set) var unloadedTabIds: [UUID] = []
     private(set) var configuredContextCount = 0
-    private(set) var sceneActiveCallCount = 0
     private(set) var activateOwnerCallCount = 0
     private(set) var togglePlayPauseCallCount = 0
     private(set) var toggleMuteCallCount = 0
     private(set) var togglePictureInPictureCallCount = 0
-
-    var cardState: SumiBackgroundMediaCardState? {
-        subject.value
-    }
-
-    var cardStatePublisher: AnyPublisher<SumiBackgroundMediaCardState?, Never> {
-        subject.eraseToAnyPublisher()
-    }
 
     func setFeatureEnabled(_ enabled: Bool) {
         featureEnabledValues.append(enabled)
@@ -678,10 +669,6 @@ final class FakeNativeNowPlayingController: SumiNativeNowPlayingRuntimeControlli
 
     func configure(context _: SumiNativeNowPlayingRuntimeContext) {
         configuredContextCount += 1
-    }
-
-    func handleSceneActive() {
-        sceneActiveCallCount += 1
     }
 
     func scheduleRefresh(delayNanoseconds: UInt64) {
@@ -696,21 +683,23 @@ final class FakeNativeNowPlayingController: SumiNativeNowPlayingRuntimeControlli
         unloadedTabIds.append(tabId)
     }
 
-    func activateOwner() {
+    func activateOwner(cardID _: SumiBackgroundMediaCardID) {
         activateOwnerCallCount += 1
     }
 
-    func togglePlayPause() async {
+    func togglePlayPause(cardID _: SumiBackgroundMediaCardID) async {
         togglePlayPauseCallCount += 1
     }
 
-    func toggleMute() async {
+    func toggleMute(cardID _: SumiBackgroundMediaCardID) async {
         toggleMuteCallCount += 1
     }
 
-    func togglePictureInPicture() async {
+    func togglePictureInPicture(cardID _: SumiBackgroundMediaCardID) async {
         togglePictureInPictureCallCount += 1
     }
+
+    func dismiss(cardID _: SumiBackgroundMediaCardID) async {}
 }
 
 @MainActor

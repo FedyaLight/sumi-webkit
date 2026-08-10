@@ -12,7 +12,6 @@ extension BrowserManager {
         let sidebarPresentation = chromeBundle.sidebarPresentationOwner
         let headerContextOwner = urlBarBundle.contextOwner
         let shell = shellRuntime
-        let mediaContext = composeSidebarMediaRuntimeContext()
         let windowIdentity = SidebarWindowIdentityQuery(
             registry: shell.windowRegistry
         )
@@ -114,9 +113,6 @@ extension BrowserManager {
             ),
             extensionSettingsNavigation: urlBarBundle.settingsNavigation,
             sidebarPresentation: sidebarPresentation,
-            mediaStoreConfiguration: SidebarMediaStoreConfigurationOwner(
-                context: mediaContext
-            ),
             windows: windowIdentity
         )
     }
@@ -130,40 +126,4 @@ extension BrowserManager {
         )
     }
 
-    private func composeSidebarMediaRuntimeContext()
-        -> SumiNativeNowPlayingRuntimeContext {
-        let shell = shellRuntime
-        let membership = tabCollectionMembershipOwner
-        let webViewRouting = webViewRoutingService
-        let selection = browserTabSelection
-
-        return SumiNativeNowPlayingRuntimeContext.live(
-            runtime: SumiNativeNowPlayingBrowserRuntime(
-                windowStates: { [windowRegistry] in
-                    Array(windowRegistry.windows.values)
-                },
-                windowState: { [windowRegistry] windowID in
-                    windowRegistry.windows[windowID]
-                },
-                windowRegistry: { [windowRegistry] in windowRegistry },
-                currentTab: { [shell] windowState in
-                    shell.windowTabs.currentTab(for: windowState)
-                },
-                mediaCandidateTabs: { [shell] windowState in
-                    shell.windowTabs.windowScopedMediaCandidateTabs(in: windowState)
-                },
-                tab: { [membership] tabID in membership.tab(for: tabID) },
-                resolvedNowPlayingWebView: { [webViewRouting] tab, windowState in
-                    webViewRouting.windowOwnedWebView(for: tab, in: windowState.id)
-                },
-                selectTab: { [selection] tab, windowState in
-                    _ = selection.selectTab(
-                        tab,
-                        in: windowState,
-                        loadPolicy: .immediate
-                    )
-                }
-            )
-        )
-    }
 }

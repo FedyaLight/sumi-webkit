@@ -16,243 +16,246 @@ enum SidebarMediaCardPresentationPolicy {
     }
 }
 
-struct MediaControlsView: View {
-    @Environment(BrowserWindowState.self) private var windowState
-    @Environment(\.sidebarPresentationContext) private var sidebarPresentationContext
-    @Environment(\.scenePhase) private var scenePhase
+enum SidebarMediaCardStackMetrics {
+    static let collapsedCardHeight: CGFloat = 34
+    static let expandedCardHeight: CGFloat = 76
+    static let stackPeek: CGFloat = 8
+    static let stackGap: CGFloat = 6
 
-    @StateObject private var mediaStore: SumiBackgroundMediaCardStore
+    static func reservedHeight(cardCount: Int) -> CGFloat {
+        guard cardCount > 0 else { return 0 }
+        return collapsedCardHeight + CGFloat(cardCount - 1) * stackPeek
+    }
+
+    static func expandedHeight(cardCount: Int) -> CGFloat {
+        guard cardCount > 0 else { return 0 }
+        return expandedCardHeight * CGFloat(cardCount)
+            + stackGap * CGFloat(cardCount - 1)
+    }
+
+    static func verticalOffset(index: Int, isExpanded: Bool) -> CGFloat {
+        -CGFloat(index) * (isExpanded ? expandedCardHeight + stackGap : stackPeek)
+    }
+}
+
+enum SidebarMediaCardStackMotion {
+    static let duration: TimeInterval = 0.25
+
+    static func expansionAnimation(reduceMotion: Bool) -> Animation? {
+        guard !reduceMotion else { return nil }
+        return .timingCurve(0.25, 1, 0.5, 1, duration: duration)
+    }
+}
+
+private enum SidebarMediaCardHoverLayers {
+    static let stack = SidebarHoverLayer(
+        priority: 40,
+        occludesLowerPriority: true
+    )
+    static let control = SidebarHoverLayer(priority: 50)
+}
+
+struct MediaControlsView: View {
+    @Environment(\.sidebarPresentationContext) private var sidebarPresentationContext
+
+    let cardStates: [SumiBackgroundMediaCardState]
+    let controller: SumiNativeNowPlayingController
     private let faviconImageReader: any BrowserFaviconImageReading
-    private let mediaStoreConfiguration: SidebarMediaStoreConfigurationOwner
 
     init(
-        nowPlayingController: any SumiNativeNowPlayingRuntimeControlling,
-        faviconImageReader: any BrowserFaviconImageReading,
-        mediaStoreConfiguration: SidebarMediaStoreConfigurationOwner
+        cardStates: [SumiBackgroundMediaCardState],
+        controller: SumiNativeNowPlayingController,
+        faviconImageReader: any BrowserFaviconImageReading
     ) {
-        _mediaStore = StateObject(
-            wrappedValue: SumiBackgroundMediaCardStore(controller: nowPlayingController)
-        )
+        self.cardStates = cardStates
+        self.controller = controller
         self.faviconImageReader = faviconImageReader
-        self.mediaStoreConfiguration = mediaStoreConfiguration
     }
 
     var body: some View {
-        Group {
-            if SidebarMediaCardPresentationPolicy.shouldPresentCard(
-                hasCardState: mediaStore.cardState != nil,
-                presentationContext: sidebarPresentationContext
-            ), let cardState = mediaStore.cardState {
-                SumiBackgroundMediaCardView(
-                    cardState: cardState,
-                    faviconImageReader: faviconImageReader,
-                    onFocus: mediaStore.activateSource,
-                    onPlayPause: { Task { await mediaStore.togglePlayPause() } },
-                    onToggleMute: { Task { await mediaStore.toggleMute() } },
-                    onTogglePictureInPicture: {
-                        Task { await mediaStore.togglePictureInPicture() }
+        if SidebarMediaCardPresentationPolicy.shouldPresentCard(
+            hasCardState: !cardStates.isEmpty,
+            presentationContext: sidebarPresentationContext
+        ) {
+            SumiBackgroundMediaCardStack(
+                cardStates: cardStates,
+                controller: controller,
+                faviconImageReader: faviconImageReader
+            )
+            .padding(.horizontal, 8)
+            .padding(.bottom, 4)
+        }
+    }
+}
+
+private struct SumiBackgroundMediaCardStack: View {
+    private static let shieldRoutingPriorityBoost = 39
+
+    let cardStates: [SumiBackgroundMediaCardState]
+    let controller: SumiNativeNowPlayingController
+    let faviconImageReader: any BrowserFaviconImageReading
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.sumiSettings) private var sumiSettings
+    @State private var isHovered = false
+
+    private var reservedHeight: CGFloat {
+        SidebarMediaCardStackMetrics.reservedHeight(cardCount: cardStates.count)
+    }
+
+    private var hoverHeight: CGFloat {
+        isHovered
+            ? SidebarMediaCardStackMetrics.expandedHeight(cardCount: cardStates.count)
+            : reservedHeight
+    }
+
+    private var shieldSourceID: String {
+        let windowID = cardStates.first?.windowId.uuidString ?? "empty"
+        return "sidebar-mini-player-stack-shield-\(windowID)"
+    }
+
+    var body: some View {
+        Color.clear
+            .frame(height: reservedHeight)
+            .overlay(alignment: .bottom) {
+                ZStack(alignment: .bottom) {
+                    ForEach(Array(cardStates.enumerated()), id: \.element.id) { index, cardState in
+                        SumiBackgroundMediaCardView(
+                            cardState: cardState,
+                            controller: controller,
+                            faviconImageReader: faviconImageReader,
+                            isExpanded: isHovered
+                        )
+                        .offset(
+                            y: SidebarMediaCardStackMetrics.verticalOffset(
+                                index: index,
+                                isExpanded: isHovered
+                            )
+                        )
+                        .scaleEffect(
+                            isHovered ? 1 : max(0.92, 1 - CGFloat(index) * 0.04),
+                            anchor: .top
+                        )
+                        .opacity(isHovered ? 1 : max(0.4, 1 - Double(index) * 0.3))
+                        .zIndex(Double(cardStates.count - index))
                     }
-                )
-                .padding(.horizontal, 8)
-                .padding(.bottom, 4)
-                .transition(
-                    .asymmetric(
-                        insertion: .opacity
-                            .combined(with: .offset(y: 10))
-                            .animation(.easeOut(duration: 0.22)),
-                        removal: .opacity
-                            .combined(with: .offset(y: 4))
-                            .animation(.easeInOut(duration: 0.16))
-                    )
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: hoverHeight, alignment: .bottom)
+                .sidebarHover(layer: SidebarMediaCardHoverLayers.stack) { hovering in
+                    updateHoverState(hovering)
+                }
+                .sidebarAppKitPrimaryAction(
+                    sourceID: shieldSourceID,
+                    routingPriorityBoost: Self.shieldRoutingPriorityBoost,
+                    action: {}
                 )
             }
-        }
-        .animation(.easeInOut(duration: 0.2), value: mediaStore.cardState != nil)
-        .onAppear {
-            mediaStoreConfiguration.configure(mediaStore, for: windowState)
-        }
-        .onChange(of: scenePhase) { _, newPhase in
-            if newPhase == .active {
-                mediaStore.handleSceneActive()
+            .zIndex(100)
+    }
+
+    private func updateHoverState(_ hovering: Bool) {
+        guard isHovered != hovering else { return }
+
+        let animation = SidebarMediaCardStackMotion.expansionAnimation(
+            reduceMotion: reduceMotion || sumiSettings.shouldReduceChromeMotion
+        )
+        guard let animation else {
+            SidebarMotionTransaction.withoutAnimation {
+                isHovered = hovering
             }
+            return
         }
-        .onChange(of: windowState.currentTabId) { _, _ in
-            mediaStore.handleSelectionChange()
-        }
-        .onChange(of: windowState.currentSpaceId) { _, _ in
-            mediaStore.handleSelectionChange()
+
+        withAnimation(animation) {
+            isHovered = hovering
         }
     }
 }
 
 private struct SumiBackgroundMediaCardView: View {
-    /// Single spring for layout + clip: avoids opacity fighting height (feels glued to the card edge).
-    private static let hoverExpandAnimation = Animation.spring(response: 0.3, dampingFraction: 0.86)
-
-    private static let collapsedCardHeight: CGFloat = 40
-    private static let cardVerticalPadding: CGFloat = 4
-    private static let controlsRowHeight: CGFloat = 26
-    /// When collapsed, reveal height is 0; band fills the card under vertical padding so Spacers can center the row.
-    private static let controlsBandCollapsedHeight =
-        collapsedCardHeight - cardVerticalPadding * 2
-    private static let cardSurfaceSourceIDPrefix = "sidebar-mini-player-card"
-    private static let focusButtonSourceIDPrefix = "sidebar-mini-player-focus"
-    private static let playPauseButtonSourceIDPrefix = "sidebar-mini-player-play-pause"
-    private static let muteButtonSourceIDPrefix = "sidebar-mini-player-mute"
-    private static let pictureInPictureButtonSourceIDPrefix = "sidebar-mini-player-pip"
-    // The expanded card can visually cover sidebar rows; route mini-player hits above row owners.
     private static let cardSurfaceRoutingPriorityBoost = 40
     private static let controlRoutingPriorityBoost = 50
 
     let cardState: SumiBackgroundMediaCardState
+    let controller: SumiNativeNowPlayingController
     let faviconImageReader: any BrowserFaviconImageReading
-    let onFocus: () -> Void
-    let onPlayPause: () -> Void
-    let onToggleMute: () -> Void
-    let onTogglePictureInPicture: () -> Void
+    let isExpanded: Bool
 
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.chromeThemeTokens) private var scopedChromeTokens
 
-    @State private var isHovered = false
-
     private var tokens: ChromeThemeTokens {
         scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
     }
 
-    private var isExpanded: Bool {
-        isHovered
-    }
-
     private var cardBackground: Color {
-        tokens.toastBackground.opacity(0.985)
+        tokens.floatingSurfaceBackground
     }
 
     private var cardBorder: Color {
-        tokens.toastBorder.opacity(0.92)
-    }
-
-    private var controlBackground: Color {
-        tokens.buttonSecondaryBackground.opacity(0.98)
+        themeContext.nativeSurfaceColorScheme == .dark
+            ? Color.white.opacity(0.10)
+            : Color.clear
     }
 
     private var cardCornerRadius: CGFloat {
-        sumiSettings.resolvedCornerRadius(10)
+        sumiSettings.resolvedCornerRadius(12)
     }
 
-    private var cardSourceIDComponent: String {
-        cardState.tabId.uuidString
+    private var cardShadow: Color {
+        .black.opacity(themeContext.nativeSurfaceColorScheme == .dark ? 0.30 : 0.10)
     }
 
-    private var cardSurfaceSourceID: String {
-        "\(Self.cardSurfaceSourceIDPrefix)-\(cardSourceIDComponent)"
-    }
-
-    private var focusButtonSourceID: String {
-        "\(Self.focusButtonSourceIDPrefix)-\(cardSourceIDComponent)"
-    }
-
-    private var playPauseButtonSourceID: String {
-        "\(Self.playPauseButtonSourceIDPrefix)-\(cardSourceIDComponent)"
-    }
-
-    private var muteButtonSourceID: String {
-        "\(Self.muteButtonSourceIDPrefix)-\(cardSourceIDComponent)"
-    }
-
-    private var pictureInPictureButtonSourceID: String {
-        "\(Self.pictureInPictureButtonSourceIDPrefix)-\(cardSourceIDComponent)"
+    private var sourceIDComponent: String {
+        "\(cardState.windowId.uuidString)-\(cardState.tabId.uuidString)"
     }
 
     var body: some View {
-        cardBody()
-            .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func cardBody() -> some View {
         let shape = RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
 
-        return VStack(alignment: .leading, spacing: 0) {
-            revealSection
-                .frame(maxHeight: isExpanded ? nil : 0, alignment: .top)
-                .clipped()
-                .allowsHitTesting(isExpanded)
-
-            VStack(spacing: 0) {
-                Spacer(minLength: 0)
-                controlsRow
-                Spacer(minLength: 0)
+        VStack(alignment: .leading, spacing: 4) {
+            if isExpanded {
+                SumiBackgroundMediaCardHeader(
+                    title: cardState.title,
+                    subtitle: cardState.subtitle,
+                    canPictureInPicture: cardState.canPictureInPicture,
+                    tokens: tokens,
+                    sourceIDComponent: sourceIDComponent,
+                    routingPriorityBoost: Self.controlRoutingPriorityBoost,
+                    onTogglePictureInPicture: {
+                        Task {
+                            await controller.togglePictureInPicture(cardID: cardState.id)
+                        }
+                    },
+                    onDismiss: {
+                        Task { await controller.dismiss(cardID: cardState.id) }
+                    }
+                )
+                .transition(.opacity.combined(with: .offset(y: 8)))
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: isExpanded ? Self.controlsRowHeight : Self.controlsBandCollapsedHeight)
+
+            controlsRow
         }
         .padding(.horizontal, 6)
-        .padding(.vertical, Self.cardVerticalPadding)
+        .padding(.vertical, 4)
         .frame(maxWidth: .infinity)
-        .frame(height: isExpanded ? nil : Self.collapsedCardHeight, alignment: .top)
-        .background {
-            shape.fill(cardBackground)
-        }
+        .frame(
+            height: isExpanded
+                ? SidebarMediaCardStackMetrics.expandedCardHeight
+                : SidebarMediaCardStackMetrics.collapsedCardHeight
+        )
+        .background { shape.fill(cardBackground) }
         .clipShape(shape)
-        .overlay {
-            shape.stroke(cardBorder, lineWidth: 0.5)
-        }
-        .shadow(color: .black.opacity(0.05), radius: 8, y: 1)
+        .overlay { shape.stroke(cardBorder, lineWidth: 1) }
+        .shadow(color: cardShadow, radius: 6)
         .contentShape(Rectangle())
         .sidebarAppKitPrimaryAction(
-            sourceID: cardSurfaceSourceID,
+            sourceID: "sidebar-mini-player-card-\(sourceIDComponent)",
             routingPriorityBoost: Self.cardSurfaceRoutingPriorityBoost,
-            action: onFocus
+            action: focusSource
         )
-        .sidebarHover { hovering in
-            withAnimation(Self.hoverExpandAnimation) {
-                isHovered = hovering
-            }
-        }
-    }
-
-    private var revealSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            infoRow
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-        .padding(.top, 5)
-        .padding(.bottom, 5)
-        .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private var infoRow: some View {
-        HStack(alignment: .top, spacing: 6) {
-            VStack(alignment: .leading, spacing: 4) {
-                OverflowAwareMarqueeText(
-                    text: cardState.title,
-                    font: .system(size: 11, weight: .semibold),
-                    color: tokens.primaryText
-                )
-
-                if !cardState.subtitle.isEmpty {
-                    Text(cardState.subtitle)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(tokens.secondaryText.opacity(0.9))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-
-            Spacer(minLength: 4)
-
-            compactIconButton(
-                systemName: "pip.enter",
-                help: "Picture in Picture",
-                isEnabled: cardState.canPictureInPicture,
-                sourceID: pictureInPictureButtonSourceID,
-                action: onTogglePictureInPicture
-            )
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var controlsRow: some View {
@@ -260,22 +263,26 @@ private struct SumiBackgroundMediaCardView: View {
             HStack(spacing: 0) {
                 focusButton
                 Spacer(minLength: 0)
-                compactIconButton(
+                mediaButton(
                     systemName: cardState.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
                     help: cardState.isMuted ? "Unmute Audio" : "Mute Audio",
                     isEnabled: cardState.canMute,
-                    sourceID: muteButtonSourceID,
-                    action: onToggleMute
+                    sourceID: "sidebar-mini-player-mute-\(sourceIDComponent)",
+                    action: {
+                        Task { await controller.toggleMute(cardID: cardState.id) }
+                    }
                 )
             }
 
-            compactIconButton(
+            mediaButton(
                 systemName: cardState.isPlaying ? "pause.fill" : "play.fill",
                 help: cardState.isPlaying ? "Pause" : "Play",
                 isEnabled: cardState.canPlayPause,
                 isPrimary: true,
-                sourceID: playPauseButtonSourceID,
-                action: onPlayPause
+                sourceID: "sidebar-mini-player-play-pause-\(sourceIDComponent)",
+                action: {
+                    Task { await controller.togglePlayPause(cardID: cardState.id) }
+                }
             )
         }
         .frame(maxWidth: .infinity)
@@ -283,31 +290,35 @@ private struct SumiBackgroundMediaCardView: View {
     }
 
     private var focusButton: some View {
-        Button(action: onFocus) {
+        let sourceID = "sidebar-mini-player-focus-\(sourceIDComponent)"
+
+        return Button(action: focusSource) {
             SumiMediaSourceIconView(
-                cardState: cardState,
+                sourceHost: cardState.sourceHost,
+                faviconSource: cardState.faviconSource,
                 faviconImageReader: faviconImageReader
             )
-                .frame(width: 26, height: 26)
-                .background(
-                    controlBackground,
-                    in: RoundedRectangle(cornerRadius: 5, style: .continuous)
-                )
-                .overlay {
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .stroke(cardBorder.opacity(0.9), lineWidth: 0.5)
-                }
+            .frame(width: 26, height: 26)
         }
         .buttonStyle(.plain)
+        .modifier(SumiMediaControlHoverModifier(
+            isEnabled: true,
+            sourceID: sourceID,
+            hoverBackground: tokens.chromeControlHoverBackground
+        ))
         .sidebarAppKitPrimaryAction(
-            sourceID: focusButtonSourceID,
+            sourceID: sourceID,
             routingPriorityBoost: Self.controlRoutingPriorityBoost,
-            action: onFocus
+            action: focusSource
         )
         .help("Focus source tab")
     }
 
-    private func compactIconButton(
+    private func focusSource() {
+        controller.activateOwner(cardID: cardState.id)
+    }
+
+    private func mediaButton(
         systemName: String,
         help: String,
         isEnabled: Bool = true,
@@ -320,18 +331,15 @@ private struct SumiBackgroundMediaCardView: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(isPrimary ? tokens.primaryText : tokens.secondaryText)
                 .frame(width: 26, height: 26)
-                .background(
-                    controlBackground,
-                    in: RoundedRectangle(cornerRadius: 5, style: .continuous)
-                )
-                .overlay {
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .stroke(cardBorder.opacity(0.9), lineWidth: 0.5)
-                }
         }
         .buttonStyle(.plain)
         .disabled(!isEnabled)
         .opacity(isEnabled ? 1 : 0.35)
+        .modifier(SumiMediaControlHoverModifier(
+            isEnabled: isEnabled,
+            sourceID: sourceID,
+            hoverBackground: tokens.chromeControlHoverBackground
+        ))
         .sidebarAppKitPrimaryAction(
             isEnabled: isEnabled,
             sourceID: sourceID,
@@ -342,17 +350,129 @@ private struct SumiBackgroundMediaCardView: View {
     }
 }
 
+private struct SumiBackgroundMediaCardHeader: View {
+    let title: String
+    let subtitle: String
+    let canPictureInPicture: Bool
+    let tokens: ChromeThemeTokens
+    let sourceIDComponent: String
+    let routingPriorityBoost: Int
+    let onTogglePictureInPicture: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 6) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(tokens.primaryText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                if !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(tokens.secondaryText.opacity(0.9))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if canPictureInPicture {
+                headerButton(
+                    systemName: "pip.enter",
+                    help: "Picture in Picture",
+                    sourceID: "sidebar-mini-player-pip-\(sourceIDComponent)",
+                    action: onTogglePictureInPicture
+                )
+            }
+
+            headerButton(
+                systemName: "xmark",
+                help: "Close Mini Player",
+                sourceID: "sidebar-mini-player-close-\(sourceIDComponent)",
+                action: onDismiss
+            )
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 38, alignment: .top)
+    }
+
+    private func headerButton(
+        systemName: String,
+        help: String,
+        sourceID: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(tokens.secondaryText)
+                .frame(width: 22, height: 22)
+        }
+        .buttonStyle(.plain)
+        .modifier(SumiMediaControlHoverModifier(
+            isEnabled: true,
+            sourceID: sourceID,
+            hoverBackground: tokens.chromeControlHoverBackground
+        ))
+        .sidebarAppKitPrimaryAction(
+            sourceID: sourceID,
+            routingPriorityBoost: routingPriorityBoost,
+            action: action
+        )
+        .help(help)
+    }
+}
+
+private struct SumiMediaControlHoverModifier: ViewModifier {
+    let isEnabled: Bool
+    let sourceID: String
+    let hoverBackground: Color
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.sumiSettings) private var sumiSettings
+    @State private var isHovered = false
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                isHovered && isEnabled ? hoverBackground : Color.clear,
+                in: RoundedRectangle(cornerRadius: 5, style: .continuous)
+            )
+            .sidebarZenPressEffect(sourceID: sourceID, kind: .split)
+            .sidebarHover(
+                $isHovered,
+                isEnabled: isEnabled,
+                layer: SidebarMediaCardHoverLayers.control
+            )
+            .animation(hoverAnimation, value: isHovered)
+    }
+
+    private var hoverAnimation: Animation? {
+        guard !reduceMotion, !sumiSettings.shouldReduceChromeMotion else { return nil }
+        return .easeOut(duration: 0.10)
+    }
+}
+
 private struct SumiMediaSourceIconView: View {
+    private struct LoadRequest: Equatable {
+        let source: SumiBackgroundMediaFaviconSource?
+        let refreshGeneration: UInt64
+    }
+
     private struct LoadedFavicon {
         let source: SumiBackgroundMediaFaviconSource
         let image: NSImage
     }
 
-    let cardState: SumiBackgroundMediaCardState
+    let sourceHost: String?
+    let faviconSource: SumiBackgroundMediaFaviconSource?
     let faviconImageReader: any BrowserFaviconImageReading
 
     @State private var loadedFavicon: LoadedFavicon?
-    @State private var refreshID = UUID()
+    @State private var refreshGeneration: UInt64 = 0
 
     var body: some View {
         Group {
@@ -361,7 +481,7 @@ private struct SumiMediaSourceIconView: View {
                     .resizable()
                     .scaledToFit()
                     .padding(4)
-            } else if cardState.sourceHost != nil {
+            } else if sourceHost != nil {
                 Image(systemName: "globe")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.secondary)
@@ -375,7 +495,7 @@ private struct SumiMediaSourceIconView: View {
             await loadFavicon()
         }
         .onReceive(NotificationCenter.default.publisher(for: .faviconCacheUpdated)) { notification in
-            guard let source = cardState.faviconSource,
+            guard let source = faviconSource,
                   SumiFaviconNotificationMatcher.update(
                     notification,
                     matches: source.documentURL,
@@ -384,37 +504,25 @@ private struct SumiMediaSourceIconView: View {
             else { return }
 
             loadedFavicon = nil
-            refreshID = UUID()
+            refreshGeneration &+= 1
         }
     }
 
     @MainActor
     private var displayedFavicon: NSImage? {
-        guard let source = cardState.faviconSource else { return nil }
-
-        if let image = cachedFavicon(for: source) {
-            return image
-        }
-
+        guard let source = faviconSource else { return nil }
+        if let image = cachedFavicon(for: source) { return image }
         guard loadedFavicon?.source == source else { return nil }
         return loadedFavicon?.image
     }
 
-    private var faviconLoadID: String {
-        guard let source = cardState.faviconSource else {
-            return "none|\(refreshID.uuidString)"
-        }
-
-        return [
-            source.documentURL.absoluteString,
-            source.partition.storageComponent,
-            refreshID.uuidString,
-        ].joined(separator: "|")
+    private var faviconLoadID: LoadRequest {
+        LoadRequest(source: faviconSource, refreshGeneration: refreshGeneration)
     }
 
     @MainActor
     private func loadFavicon() async {
-        guard let source = cardState.faviconSource else {
+        guard let source = faviconSource else {
             loadedFavicon = nil
             return
         }
@@ -431,7 +539,6 @@ private struct SumiMediaSourceIconView: View {
             priority: .visibleSidebarOrTabStrip,
             imageReader: faviconImageReader
         )
-
         guard !Task.isCancelled else { return }
 
         if let loadedImage {
@@ -449,21 +556,5 @@ private struct SumiMediaSourceIconView: View {
             context: .tabSidebar,
             imageReader: faviconImageReader
         )
-    }
-}
-
-private struct OverflowAwareMarqueeText: View {
-    let text: String
-    let font: Font
-    let color: Color
-
-    var body: some View {
-        Text(text)
-            .font(font)
-            .foregroundStyle(color)
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(height: 14, alignment: .center)
     }
 }

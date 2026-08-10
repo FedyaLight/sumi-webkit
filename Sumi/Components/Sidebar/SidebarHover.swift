@@ -8,6 +8,7 @@ struct SidebarHoverBridge: NSViewRepresentable {
     @Binding var isHovered: Bool
     let session: SidebarHoverSession
     let isEnabled: Bool
+    let layer: SidebarHoverLayer
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -38,7 +39,8 @@ struct SidebarHoverBridge: NSViewRepresentable {
             view: view,
             session: session,
             isHovered: $isHovered,
-            isEnabled: isEnabled
+            isEnabled: isEnabled,
+            layer: layer
         )
     }
 }
@@ -46,6 +48,7 @@ struct SidebarHoverBridge: NSViewRepresentable {
 private struct SidebarHoverModifier: ViewModifier {
     @Binding var isHovered: Bool
     let isEnabled: Bool
+    let layer: SidebarHoverLayer
 
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sidebarPresentationContext) private var presentationContext
@@ -62,7 +65,8 @@ private struct SidebarHoverModifier: ViewModifier {
             SidebarHoverBridge(
                 isHovered: $isHovered,
                 session: windowState.sidebarInteractionState.hoverSession,
-                isEnabled: effectiveIsEnabled
+                isEnabled: effectiveIsEnabled,
+                layer: layer
             )
             .allowsHitTesting(false)
             .accessibilityHidden(true)
@@ -80,6 +84,7 @@ private struct SidebarHoverCallbackBridge: NSViewRepresentable {
 
     let session: SidebarHoverSession
     let isEnabled: Bool
+    let layer: SidebarHoverLayer
     let onChange: (Bool) -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -111,6 +116,7 @@ private struct SidebarHoverCallbackBridge: NSViewRepresentable {
             view: view,
             session: session,
             isEnabled: isEnabled,
+            layer: layer,
             onChange: onChange
         )
     }
@@ -118,6 +124,7 @@ private struct SidebarHoverCallbackBridge: NSViewRepresentable {
 
 private struct SidebarHoverActionModifier: ViewModifier {
     let isEnabled: Bool
+    let layer: SidebarHoverLayer
     let onChange: (Bool) -> Void
 
     @Environment(BrowserWindowState.self) private var windowState
@@ -135,6 +142,7 @@ private struct SidebarHoverActionModifier: ViewModifier {
             SidebarHoverCallbackBridge(
                 session: windowState.sidebarInteractionState.hoverSession,
                 isEnabled: effectiveIsEnabled,
+                layer: layer,
                 onChange: onChange
             )
             .allowsHitTesting(false)
@@ -151,23 +159,27 @@ private struct SidebarHoverActionModifier: ViewModifier {
 extension View {
     func sidebarHover(
         _ isHovered: Binding<Bool>,
-        isEnabled: Bool = true
+        isEnabled: Bool = true,
+        layer: SidebarHoverLayer = .normal
     ) -> some View {
         modifier(
             SidebarHoverModifier(
                 isHovered: isHovered,
-                isEnabled: isEnabled
+                isEnabled: isEnabled,
+                layer: layer
             )
         )
     }
 
     func sidebarHover(
         isEnabled: Bool = true,
+        layer: SidebarHoverLayer = .normal,
         onChange: @escaping (Bool) -> Void
     ) -> some View {
         modifier(
             SidebarHoverActionModifier(
                 isEnabled: isEnabled,
+                layer: layer,
                 onChange: onChange
             )
         )

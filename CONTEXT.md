@@ -49,6 +49,14 @@ _Avoid_: Fullscreen-protected tab, browser fullscreen overlay
 Browser-owned controls for media playing in background pages, presented in the sidebar. Clicking the card explicitly activates the source tab. Its separate play, pause, and mute commands act through the page's native media session without selecting a tab or Space, changing focus, or materializing a page. The Mini Player is independent of the native Media Fullscreen Session and native system media controls.
 _Avoid_: Media Touch Bar, fullscreen controls
 
+**Page Media Session**:
+The page-scoped native media session that supplies metadata and accepts media commands for one Durable Page Identity and exact WebView Residence generation. Global system Now Playing state is never its identity.
+_Avoid_: Audio tab, system media session, current Now Playing app
+
+**Retained Paused Session**:
+A Page Media Session explicitly paused through the Sidebar Mini Player and retained as an eligible player source until the session, document, residence, or page is invalidated. Mere absence of audible output does not invalidate it.
+_Avoid_: Paused card owner, last played tab, stale media card
+
 **Split Group**:
 A durable sidebar item containing two to four ordered page identities and one layout. The group keeps its identity when moved between Regular, Pinned, Folder, and Favorite.
 _Avoid_: Split placeholder row, ghost row
@@ -206,7 +214,7 @@ The single exclusive pointer interaction for one Sidebar Visual Item in a window
 _Avoid_: Row click state, sticky hover, parallel drag flag
 
 **Sidebar Hover Session**:
-The window-local authority that derives hover for every registered sidebar region from current geometry. Native enter/exit events request reconciliation but never own truth; drag and transient sessions suspend hover once at this authority. Nested regions may both be hovered when geometry contains the pointer.
+The window-local authority that derives hover for every registered sidebar region from current geometry. Native enter/exit events request reconciliation but never own truth; drag and transient sessions suspend hover once at this authority. Nested regions may both be hovered when geometry contains the pointer. A visually overlaid region may declare an occluding hover layer; while the pointer is inside it, only that layer and higher-priority nested controls may publish hover, so covered sidebar items cannot react through the overlay.
 _Avoid_: Paired enter/exit truth, row-owned hover lifecycle, continuous mouse-move polling
 
 **Presented Drop Intent**:

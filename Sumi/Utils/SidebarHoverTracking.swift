@@ -8,6 +8,18 @@ enum SidebarHoverChangeSource: Equatable {
     case lifecycle
 }
 
+struct SidebarHoverLayer: Equatable {
+    static let normal = SidebarHoverLayer()
+
+    let priority: Int
+    let occludesLowerPriority: Bool
+
+    init(priority: Int = 0, occludesLowerPriority: Bool = false) {
+        self.priority = priority
+        self.occludesLowerPriority = occludesLowerPriority
+    }
+}
+
 fileprivate struct SidebarHoverSignal {
     let source: SidebarHoverChangeSource
     let timestamp: TimeInterval?
@@ -223,9 +235,26 @@ final class SidebarHoverSession: NSObject {
             return
         }
 
-        for registration in liveRegistrations where registration.view?.window === window {
+        let registrations = liveRegistrations
+        var occlusionPriority: Int?
+        for registration in registrations
+        where registration.view?.window === window
+            && registration.isEnabled
+            && registration.layer.occludesLowerPriority
+            && registration.view?.containsMouse(mouseLocationInWindow) == true {
+            occlusionPriority = max(
+                occlusionPriority ?? registration.layer.priority,
+                registration.layer.priority
+            )
+        }
+
+        for registration in registrations where registration.view?.window === window {
+            let isAboveOcclusionFloor = occlusionPriority.map {
+                registration.layer.priority >= $0
+            } ?? true
             let hovering = registration.isEnabled
                 && registration.view?.containsMouse(mouseLocationInWindow) == true
+                && isAboveOcclusionFloor
             registration.publish(hovering, source: source)
         }
     }
@@ -429,6 +458,7 @@ final class SidebarHoverSession: NSObject {
 final class SidebarHoverRegistration {
     fileprivate weak var view: SidebarHoverTrackingView?
     fileprivate private(set) var isEnabled = false
+    fileprivate private(set) var layer = SidebarHoverLayer.normal
 
     private weak var session: SidebarHoverSession?
     private var onHoverChanged: (Bool, SidebarHoverChangeSource) -> Void = { _, _ in }
@@ -438,6 +468,7 @@ final class SidebarHoverRegistration {
         view: SidebarHoverTrackingView,
         session: SidebarHoverSession,
         isEnabled: Bool,
+        layer: SidebarHoverLayer = .normal,
         onHoverChanged: @escaping (Bool, SidebarHoverChangeSource) -> Void
     ) {
         self.onHoverChanged = onHoverChanged
@@ -457,11 +488,12 @@ final class SidebarHoverRegistration {
             session.register(self)
         }
 
-        let didChangeEnabled = self.isEnabled != isEnabled
+        let didChangeConfiguration = self.isEnabled != isEnabled || self.layer != layer
         self.isEnabled = isEnabled
+        self.layer = layer
         if view.isHoverTrackingEnabled != isEnabled {
             view.setHoverTrackingEnabled(isEnabled)
-        } else if didChangeEnabled {
+        } else if didChangeConfiguration {
             session.receive(
                 SidebarHoverSignal(source: .lifecycle, timestamp: nil, mouseLocationInWindow: nil),
                 from: self
@@ -498,13 +530,15 @@ final class SidebarHoverBindingCoordinator {
         view: SidebarHoverTrackingView,
         session: SidebarHoverSession,
         isHovered: Binding<Bool>,
-        isEnabled: Bool
+        isEnabled: Bool,
+        layer: SidebarHoverLayer = .normal
     ) {
         self.isHovered = isHovered
         registration.update(
             view: view,
             session: session,
-            isEnabled: isEnabled
+            isEnabled: isEnabled,
+            layer: layer
         ) { [weak self] hovering, _ in
             self?.setBindingIfNeeded(hovering)
         }
@@ -531,13 +565,15 @@ final class SidebarHoverCallbackCoordinator {
         view: SidebarHoverTrackingView,
         session: SidebarHoverSession,
         isEnabled: Bool,
+        layer: SidebarHoverLayer = .normal,
         onChange: @escaping (Bool) -> Void
     ) {
         self.onChange = onChange
         registration.update(
             view: view,
             session: session,
-            isEnabled: isEnabled
+            isEnabled: isEnabled,
+            layer: layer
         ) { [weak self] hovering, _ in
             self?.onChange?(hovering)
         }

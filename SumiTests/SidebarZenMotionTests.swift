@@ -927,7 +927,7 @@ final class SidebarZenMotionTests: XCTestCase {
         ), 0)
     }
 
-    func testMiniPlayerCardSurfaceFocusesSourceAndBlocksOverlappingSidebarRowOwner() {
+    func testMiniPlayerStackBlocksCoveredRowsAndRoutesCardControlsByPriority() {
         let state = SidebarInteractionState()
         let coordinator = SidebarTransientSessionCoordinator(
             windowID: UUID(),
@@ -950,6 +950,14 @@ final class SidebarZenMotionTests: XCTestCase {
         var focusCount = 0
         var rowActivationCount = 0
         var playPauseCount = 0
+        var shieldCount = 0
+        let miniPlayerStackShield = makeInteractiveItemView(
+            sourceID: "sidebar-mini-player-stack-shield-test",
+            state: state,
+            routingPriorityBoost: 39
+        ) {
+            shieldCount += 1
+        }
         let miniPlayerCardOwner = makeInteractiveItemView(
             sourceID: "sidebar-mini-player-card-test",
             state: state,
@@ -972,19 +980,25 @@ final class SidebarZenMotionTests: XCTestCase {
         }
         let cardPoint = NSPoint(x: 20, y: 20)
         let playPausePoint = NSPoint(x: 112, y: 20)
+        let stackGapPoint = NSPoint(x: 20, y: 70)
 
+        miniPlayerStackShield.frame = NSRect(x: 0, y: 0, width: 200, height: 100)
         miniPlayerCardOwner.frame = NSRect(x: 0, y: 0, width: 200, height: 60)
+        rowHostView.frame = NSRect(x: 0, y: 0, width: 200, height: 100)
         rowOwner.frame = rowHostView.bounds
         playPauseOwner.frame = NSRect(x: 100, y: 7, width: 26, height: 26)
         window.contentView = containerView
+        containerView.addSubview(miniPlayerStackShield)
         containerView.addSubview(miniPlayerCardOwner)
         containerView.addSubview(rowHostView)
         rowHostView.addSubview(rowOwner)
         miniPlayerCardOwner.addSubview(playPauseOwner)
         miniPlayerCardOwner.contextMenuController = controller
+        miniPlayerStackShield.contextMenuController = controller
         rowOwner.contextMenuController = controller
         playPauseOwner.contextMenuController = controller
         defer {
+            miniPlayerStackShield.prepareForDismantle()
             miniPlayerCardOwner.prepareForDismantle()
             rowOwner.prepareForDismantle()
             playPauseOwner.prepareForDismantle()
@@ -1008,18 +1022,30 @@ final class SidebarZenMotionTests: XCTestCase {
             contextMenuController: controller,
             eventType: .leftMouseDown
         )
+        let routedStackGapClick = SidebarColumnHitTestRouting.routedHit(
+            point: stackGapPoint,
+            in: containerView,
+            originalHit: rowOwner,
+            hostedSidebarView: containerView,
+            contextMenuController: controller,
+            eventType: .leftMouseDown
+        )
 
         XCTAssertTrue(routedCardClick === miniPlayerCardOwner)
         XCTAssertTrue(routedPlayPauseClick === playPauseOwner)
+        XCTAssertTrue(routedStackGapClick === miniPlayerStackShield)
 
         miniPlayerCardOwner.mouseDown(with: mouseEvent(.leftMouseDown, location: cardPoint))
         miniPlayerCardOwner.mouseUp(with: mouseEvent(.leftMouseUp, location: cardPoint))
         playPauseOwner.mouseDown(with: mouseEvent(.leftMouseDown, location: playPausePoint))
         playPauseOwner.mouseUp(with: mouseEvent(.leftMouseUp, location: playPausePoint))
+        miniPlayerStackShield.mouseDown(with: mouseEvent(.leftMouseDown, location: stackGapPoint))
+        miniPlayerStackShield.mouseUp(with: mouseEvent(.leftMouseUp, location: stackGapPoint))
 
         XCTAssertEqual(focusCount, 1)
         XCTAssertEqual(rowActivationCount, 0)
         XCTAssertEqual(playPauseCount, 1)
+        XCTAssertEqual(shieldCount, 1)
     }
 
     func testInteractiveOwnerRoutesOnlyTheVisiblePartOfAClippedRow() {

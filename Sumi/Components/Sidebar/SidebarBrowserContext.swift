@@ -42,6 +42,5 @@ struct SidebarBrowserContext {
     let extensionActionTabs: SidebarExtensionActionTabQuery
     let extensionSettingsNavigation: BrowserSettingsNavigationService
     let sidebarPresentation: BrowserSidebarPresentationOwner
-    let mediaStoreConfiguration: SidebarMediaStoreConfigurationOwner
     let windows: SidebarWindowIdentityQuery
 }

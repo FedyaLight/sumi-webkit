@@ -286,6 +286,62 @@ final class SidebarHoverTests: XCTestCase {
         XCTAssertTrue(actionHovered)
     }
 
+    func testOverlayHoverShieldSuppressesCoveredRegionButKeepsNestedControlHovered() {
+        let window = Self.makeHoverWindow()
+        let coveredView = Self.addHoverView(
+            to: window,
+            frame: NSRect(x: 0, y: 0, width: 120, height: 72)
+        )
+        let overlayView = Self.addHoverView(
+            to: window,
+            frame: NSRect(x: 0, y: 0, width: 120, height: 72)
+        )
+        let controlView = Self.addHoverView(
+            to: window,
+            frame: NSRect(x: 80, y: 10, width: 30, height: 30)
+        )
+        let session = SidebarHoverSession()
+        let coveredRegistration = SidebarHoverRegistration()
+        let overlayRegistration = SidebarHoverRegistration()
+        let controlRegistration = SidebarHoverRegistration()
+        var coveredHovered = false
+        var overlayHovered = false
+        var controlHovered = false
+
+        coveredRegistration.update(
+            view: coveredView,
+            session: session,
+            isEnabled: true
+        ) { hovering, _ in
+            coveredHovered = hovering
+        }
+        overlayRegistration.update(
+            view: overlayView,
+            session: session,
+            isEnabled: true,
+            layer: SidebarHoverLayer(priority: 40, occludesLowerPriority: true)
+        ) { hovering, _ in
+            overlayHovered = hovering
+        }
+        controlRegistration.update(
+            view: controlView,
+            session: session,
+            isEnabled: true,
+            layer: SidebarHoverLayer(priority: 50)
+        ) { hovering, _ in
+            controlHovered = hovering
+        }
+
+        session.reconcile(
+            window: window,
+            mouseLocationInWindow: NSPoint(x: 90, y: 20)
+        )
+
+        XCTAssertFalse(coveredHovered)
+        XCTAssertTrue(overlayHovered)
+        XCTAssertTrue(controlHovered)
+    }
+
     func testLifecycleChangesDoNotPublishSynchronouslyDuringNativeLayout() {
         let window = Self.makeHoverWindow()
         let view = Self.addHoverView(

@@ -145,6 +145,13 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
             in: windowState.id,
             currentSpaceId: space.id
         )!
+        var invalidatedNowPlayingTabIDs: [UUID] = []
+        liveTab.mediaRuntime.callbacks = TabMediaRuntimeCallbacks(
+            scheduleNowPlayingRefresh: { _ in /* No-op. */ },
+            notifyNowPlayingTabUnloaded: { tabID in
+                invalidatedNowPlayingTabIDs.append(tabID)
+            }
+        )
         liveTab.replaceUntrackedWebView(WKWebView())
         windowState.currentTabId = liveTab.id
         windowState.currentShortcutPinId = pin.id
@@ -171,6 +178,7 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
         XCTAssertTrue(probe.tabClosureBatches.isEmpty)
         XCTAssertTrue(probe.extensionClosedTabIds.isEmpty)
         XCTAssertTrue(probe.unloadedTabIds.isEmpty)
+        XCTAssertTrue(invalidatedNowPlayingTabIDs.isEmpty)
     }
 
     func testGenericTabRemovalDelegatesLiveShortcutToCanonicalRetirementOnce() throws {
@@ -302,7 +310,7 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
         _ = cancellable
     }
 
-    func testBackgroundRetirementReportsSuccessAndRunsCompleteTeardownOnce() throws {
+    func testBackgroundLauncherRetirementInvalidatesMediaAndRunsCompleteTeardownOnce() throws {
         let windowState = BrowserWindowState()
         let probe = RetirementProbe()
         let runtimeRetirement = TestRuntimePorts.RetirementCapabilities(
@@ -332,6 +340,13 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
             in: windowState.id,
             currentSpaceId: space.id
         )!
+        var invalidatedNowPlayingTabIDs: [UUID] = []
+        liveTab.mediaRuntime.callbacks = TabMediaRuntimeCallbacks(
+            scheduleNowPlayingRefresh: { _ in /* No-op. */ },
+            notifyNowPlayingTabUnloaded: { tabID in
+                invalidatedNowPlayingTabIDs.append(tabID)
+            }
+        )
         liveTab.replaceUntrackedWebView(WKWebView())
         let unrelatedSelection = UUID()
         windowState.currentTabId = unrelatedSelection
@@ -375,6 +390,7 @@ final class ShortcutLiveTabRetirementServiceTests: XCTestCase {
         XCTAssertTrue(probe.tabClosureBatches.isEmpty)
         XCTAssertEqual(probe.extensionClosedTabIds, [liveTab.id])
         XCTAssertTrue(probe.unloadedTabIds.isEmpty)
+        XCTAssertEqual(invalidatedNowPlayingTabIDs, [liveTab.id])
         XCTAssertEqual(probe.destroyedGenerationTabIDs, [[liveTab.id]])
         XCTAssertEqual(lifecycle.count, 1)
     }

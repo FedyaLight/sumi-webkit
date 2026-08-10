@@ -257,8 +257,7 @@ struct SpacesSideBarView: View {
 
                     SpaceSidebarMiniPlayer(
                         nowPlayingController: nowPlayingController,
-                        faviconImageReader: browserContext.faviconImageReader,
-                        mediaStoreConfiguration: browserContext.mediaStoreConfiguration
+                        faviconImageReader: browserContext.faviconImageReader
                     )
                 }
 
@@ -272,6 +271,7 @@ struct SpacesSideBarView: View {
                 .environment(windowState)
             }
             .fixedSize(horizontal: false, vertical: true)
+            .zIndex(100)
             .padding(.bottom, 8)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
