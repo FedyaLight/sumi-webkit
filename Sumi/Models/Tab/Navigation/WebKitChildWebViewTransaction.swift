@@ -15,10 +15,7 @@ final class WebKitChildWebViewTransaction {
         let sourceDocumentLease: TabMainFrameDocumentLease
         let permissionContext: SumiPopupPermissionTabContext
         let permissionRequest: SumiPopupPermissionRequest
-        let childRequest: WebKitChildSurfaceRouter.Request
-        let modifierFlags: NSEvent.ModifierFlags
-        let isMiddleButtonClick: Bool
-        let shouldDownload: Bool
+        let presentationRequest: WebKitChildPresentationRouter.Request
     }
 
     private enum Preparation {
@@ -30,21 +27,18 @@ final class WebKitChildWebViewTransaction {
     private weak var tab: Tab?
     private let permissions: (any PopupPermissionEvaluating)?
     private let extensionRequests: (any ExtensionPopupRequestConsuming)?
-    private let automaticGlance: (any AutomaticGlanceOpening)?
-    private let childSurfaceRouter: WebKitChildSurfaceRouter
+    private let presentationRouter: WebKitChildPresentationRouter
 
     init(
         tab: Tab,
         permissions: (any PopupPermissionEvaluating)?,
         extensionRequests: (any ExtensionPopupRequestConsuming)?,
-        automaticGlance: (any AutomaticGlanceOpening)?,
-        childSurfaceRouter: WebKitChildSurfaceRouter
+        presentationRouter: WebKitChildPresentationRouter
     ) {
         self.tab = tab
         self.permissions = permissions
         self.extensionRequests = extensionRequests
-        self.automaticGlance = automaticGlance
-        self.childSurfaceRouter = childSurfaceRouter
+        self.presentationRouter = presentationRouter
     }
 
     func open(
@@ -194,19 +188,22 @@ final class WebKitChildWebViewTransaction {
                 sourceDocumentLease: sourceDocumentLease,
                 permissionContext: permissionContext,
                 permissionRequest: permissionRequest,
-                childRequest: WebKitChildSurfaceRouter.Request(
-                    configuration: configuration,
-                    navigationRequest: navigationAction.request,
-                    windowFeatures: windowFeatures,
-                    sourceWebView: sourceWebView,
-                    sourceURL: sourceURL,
-                    policy: policy,
-                    isExtensionOriginated: isExtensionOriginated,
-                    gestureReceipt: gestureReceipt
-                ),
-                modifierFlags: navigationFlags,
-                isMiddleButtonClick: isMiddleButtonClick,
-                shouldDownload: navigationAction.shouldDownload
+                presentationRequest: WebKitChildPresentationRouter.Request(
+                    tab: tab,
+                    childRequest: WebKitChildSurfaceRouter.Request(
+                        configuration: configuration,
+                        navigationRequest: navigationAction.request,
+                        windowFeatures: windowFeatures,
+                        sourceWebView: sourceWebView,
+                        sourceURL: sourceURL,
+                        policy: policy,
+                        isExtensionOriginated: isExtensionOriginated,
+                        gestureReceipt: gestureReceipt
+                    ),
+                    modifierFlags: navigationFlags,
+                    isMiddleButtonClick: isMiddleButtonClick,
+                    shouldDownload: navigationAction.shouldDownload
+                )
             )
         )
     }
@@ -215,40 +212,20 @@ final class WebKitChildWebViewTransaction {
         _ pending: PendingRequest,
         permissionResult: SumiPopupPermissionResult
     ) -> WKWebView? {
+        let presentation = pending.presentationRequest
+        let child = presentation.childRequest
         guard permissionResult.isAllowed,
-              pending.tab.hasBrowserRuntime,
-              pending.sourceWebView.owningTab === pending.tab,
-              pending.tab.committedDocumentRuntime.lease(
-                  for: pending.sourceWebView
+              presentation.tab.hasBrowserRuntime,
+              child.sourceWebView.owningTab === presentation.tab,
+              presentation.tab.committedDocumentRuntime.lease(
+                  for: child.sourceWebView
               ) == pending.sourceDocumentLease,
               pending.permissionContext.isCurrentPage(),
-              pending.childRequest.configuration.websiteDataStore ===
-                pending.sourceWebView.configuration.websiteDataStore
+              child.configuration.websiteDataStore ===
+                child.sourceWebView.configuration.websiteDataStore
         else {
             return nil
         }
-        if AutomaticGlancePolicy.shouldPresent(
-            pending.childRequest.navigationRequest.url,
-            from: pending.tab,
-            ordinaryPolicy: pending.childRequest.policy,
-            modifierFlags: pending.modifierFlags,
-            isExtensionOriginated: pending.childRequest.isExtensionOriginated,
-            isMiddleButtonClick: pending.isMiddleButtonClick,
-            shouldDownload: pending.shouldDownload
-        ),
-           let targetURL = pending.childRequest.navigationRequest.url,
-           let webView = automaticGlance?.openWebKitChild(
-               configuration: pending.childRequest.configuration,
-               requestURL: targetURL,
-               from: pending.sourceWebView,
-               originRectInWindow: pending.sourceWebView.gestures
-                   .recentGlanceOriginRect(maxAge: 2)
-           ) {
-            pending.sourceWebView.gestures.clear(
-                ifCurrent: pending.childRequest.gestureReceipt
-            )
-            return webView
-        }
-        return childSurfaceRouter.open(pending.childRequest)
+        return presentationRouter.open(presentation)
     }
 }

@@ -11,8 +11,11 @@ capabilities="Sumi/Models/Tab/Navigation/PopupNavigationCapabilities.swift"
 runtime_state="Sumi/Models/Tab/TabRuntimeState.swift"
 responder="Sumi/Models/Tab/Navigation/SumiPopupHandlingNavigationResponder.swift"
 child_webview_transaction="Sumi/Models/Tab/Navigation/WebKitChildWebViewTransaction.swift"
+child_presentation_router="Sumi/Models/Tab/Navigation/WebKitChildPresentationRouter.swift"
 child_surface_router="Sumi/Models/Tab/Navigation/WebKitChildSurfaceRouter.swift"
 glance_routing="Sumi/Models/Tab/Navigation/LinkGlanceRouting.swift"
+automatic_glance_policy="Sumi/Models/Tab/Navigation/AutomaticGlancePolicy.swift"
+popup_link_transaction="Sumi/Models/Tab/Navigation/PopupLinkNavigationTransaction.swift"
 delegate_bundle="Sumi/Models/Tab/Navigation/SumiTabNavigationDelegateBundle.swift"
 runtime_factory="Sumi/Managers/BrowserManager/TabBrowserRuntimeFactory.swift"
 lifecycle_factory="Sumi/Managers/BrowserManager/BrowserTabManagerWebViewLifecycleFactory.swift"
@@ -60,8 +63,11 @@ for required in \
   "$runtime_state" \
   "$responder" \
   "$child_webview_transaction" \
+  "$child_presentation_router" \
   "$child_surface_router" \
   "$glance_routing" \
+  "$automatic_glance_policy" \
+  "$popup_link_transaction" \
   "$delegate_bundle" \
   "$runtime_factory" \
   "$lifecycle_factory" \
@@ -100,7 +106,9 @@ fi
 replacement_bag_hits="$(
   guard_capture_matches '\b(class|struct|enum)[[:space:]]+(PopupNavigationServices|PopupNavigationRuntime|PopupNavigationCapabilities)\b|\bstruct[[:space:]]+Dependencies\b' \
     "$runtime_state" "$responder" "$child_webview_transaction" \
-    "$child_surface_router" "$glance_routing" "$extension_opening" \
+    "$child_presentation_router" "$child_surface_router" \
+    "$glance_routing" "$automatic_glance_policy" \
+    "$popup_link_transaction" "$extension_opening" \
     "$physical_popup" "$child_tab_opening" "$child_tab_creation" \
     "$child_tab_settlement"
 )"
@@ -114,6 +122,7 @@ runtime_fields=(
   extensionPopupRequestConsumer
   extensionExternalTabOpening
   physicalWebPopupOpening
+  automaticGlanceOpening
   webKitChildTabOpening
   webKitChildWindowOpening
 )
@@ -148,6 +157,7 @@ for protocol_name in \
   ExtensionPopupRequestConsuming \
   ExtensionExternalTabOpening \
   PhysicalWebPopupOpening \
+  AutomaticGlanceOpening \
   WebKitChildTabOpening \
   WebKitChildWindowOpening; do
   contract_count="$(
@@ -205,12 +215,23 @@ enforce_service_boundary "$child_tab_creation" 120 4
 enforce_service_boundary "$child_tab_settlement" 160 5
 enforce_service_boundary "$responder" 300 3
 enforce_service_boundary "$child_webview_transaction" 250 4
+enforce_service_boundary "$child_presentation_router" 80 2
 enforce_service_boundary "$child_surface_router" 125 4
 enforce_service_boundary "$glance_routing" 140 0
+enforce_service_boundary "$automatic_glance_policy" 90 0
+enforce_service_boundary "$popup_link_transaction" 250 3
 
 contract_count="$(guard_count_matches 'childWebViewTransaction[[:space:]]*=[[:space:]]*WebKitChildWebViewTransaction\(' "$responder")"
 if (( contract_count == 0 )); then
   guard_record_failure "popup responder must compose the exact WebKit child transaction"
+fi
+contract_count="$(guard_count_matches 'linkNavigationTransaction[[:space:]]*=[[:space:]]*PopupLinkNavigationTransaction\(' "$responder")"
+if (( contract_count == 0 )); then
+  guard_record_failure "popup responder must compose the admitted link-navigation transaction"
+fi
+contract_count="$(guard_count_matches 'presentationRouter:[[:space:]]*WebKitChildPresentationRouter\(' "$responder")"
+if (( contract_count == 0 )); then
+  guard_record_failure "WebKit child admission must compose post-admission presentation separately"
 fi
 contract_count="$(guard_count_matches 'childSurfaceRouter:[[:space:]]*WebKitChildSurfaceRouter\(' "$responder")"
 if (( contract_count == 0 )); then
@@ -253,12 +274,26 @@ fi
 
 popup_transaction_root_hits="$(
   guard_capture_matches '\bBrowserManager\b|\bbrowserManager\b|\bTabBrowserRuntime\b|\bTabNavigationRuntime\b' \
-    "$child_webview_transaction" "$child_surface_router" \
-    "$glance_routing"
+    "$child_webview_transaction" "$child_presentation_router" \
+    "$child_surface_router" "$glance_routing" \
+    "$automatic_glance_policy" "$popup_link_transaction"
 )"
 if [[ -n "$popup_transaction_root_hits" ]]; then
   guard_record_failure "popup transaction performs browser-root or runtime lookup:
 $popup_transaction_root_hits"
+fi
+
+contract_count="$(guard_count_matches 'enum[[:space:]]+AutomaticGlancePolicy\b' "$automatic_glance_policy")"
+if (( contract_count != 1 )); then
+  guard_record_failure "automatic Glance policy must have one role-exact declaration"
+fi
+automatic_glance_in_admission="$(
+  guard_capture_matches 'private[[:space:]]+let[[:space:]]+automaticGlance\b' \
+    "$child_webview_transaction"
+)"
+if [[ -n "$automatic_glance_in_admission" ]]; then
+  guard_record_failure "WebKit child admission must not own presentation policy collaborators:
+$automatic_glance_in_admission"
 fi
 
 contract_count="$(guard_count_matches 'guard[[:space:]]+let[[:space:]]+extensionTabs,' "$extension_opening")"

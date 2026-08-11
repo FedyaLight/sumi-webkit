@@ -40,6 +40,7 @@ child_shell_transaction="Sumi/Managers/BrowserManager/WebKitChildWindowShellTran
 retired_tab_state="Sumi/Models/Tab/TabWebViewInteractionStateOwner.swift"
 retired_script_owner="Sumi/Models/Tab/TabScriptMessageRuntimeOwner.swift"
 popup_responder="Sumi/Models/Tab/Navigation/SumiPopupHandlingNavigationResponder.swift"
+popup_link_transaction="Sumi/Models/Tab/Navigation/PopupLinkNavigationTransaction.swift"
 link_glance_routing="Sumi/Models/Tab/Navigation/LinkGlanceRouting.swift"
 child_surface_router="Sumi/Models/Tab/Navigation/WebKitChildSurfaceRouter.swift"
 navigation_protocols="Sumi/Models/Tab/Navigation/SumiNavigationResponding.swift"
@@ -63,6 +64,7 @@ for required in \
   "${manager_free_window_transactions[@]}" \
   "$child_window_transaction" \
   "$child_shell_transaction" \
+  "$popup_link_transaction" \
   "$link_glance_routing" \
   "$child_surface_router"; do
   guard_require_file "$required"
@@ -180,7 +182,7 @@ if (( contract_count == 0 )); then
   guard_record_failure "physical WebView context-menu state type is missing"
 fi
 
-contract_count="$(guard_count_matches 'linkPresentationCommands\.open\(' "$popup_responder")"
+contract_count="$(guard_count_matches 'linkPresentationCommands\.open\(' "$popup_link_transaction")"
 if (( contract_count == 0 )); then
   guard_record_failure "browser-level link routing must use the exact physical presentation command"
 fi
@@ -191,7 +193,7 @@ fi
 
 logical_tab_source_fallback_hits="$(
   guard_capture_matches 'sourceURL.*\?\?.*(tab|sourceTab)\.url|extensionOwnedSourceURL.*(tab|sourceTab)\.url' \
-    "$popup_responder" Sumi/AuxiliaryWindows/AuxiliaryWindowUIDelegate.swift
+    "$popup_link_transaction" Sumi/AuxiliaryWindows/AuxiliaryWindowUIDelegate.swift
 )"
 if [[ -n "$logical_tab_source_fallback_hits" ]]; then
   guard_record_failure "popup origin borrowed from logical Tab URL:
