@@ -6,12 +6,12 @@
         <description>Sumi Alpha update feed.</description>
         <language>en</language>
         <item>
-            <title>0.0.2</title>
-            <pubDate>Mon, 03 Aug 2026 21:15:09 +0300</pubDate>
-            <sparkle:version>4</sparkle:version>
-            <sparkle:shortVersionString>0.0.2</sparkle:shortVersionString>
+            <title>0.0.3</title>
+            <pubDate>Tue, 11 Aug 2026 16:42:58 +0300</pubDate>
+            <sparkle:version>5</sparkle:version>
+            <sparkle:shortVersionString>0.0.3</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.5</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/FedyaLight/sumi-webkit/releases/download/v0.0.2/Sumi-0.0.2-build4-macos-universal.dmg" length="67917798" type="application/octet-stream" sparkle:edSignature="N79es8uRs14O80Tiw8gt4BLaSEzxRkMria/m9UNVkO2an57BZvxs7SBa4kKseNuCRmVrwJA2boPD8rhkIip7DA=="/>
+            <enclosure url="https://github.com/FedyaLight/sumi-webkit/releases/download/v0.0.3/Sumi-0.0.3-build5-macos-universal.dmg" length="68801988" type="application/octet-stream" sparkle:edSignature="FZkeBV5MqCZlRbAMgYsglqi4K/XAaxWXkeLeVr7szlLMJ2pLEJfo/iMJLPO4JxFJnPJnI0pNQ+3WDuic3YZWCQ=="/>
         </item>
     </channel>
 </rss>
