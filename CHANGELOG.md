@@ -2,6 +2,45 @@
 
 Sumi follows semantic product versions. This changelog records public release scope, not every internal refactor.
 
+## 0.0.3 Alpha 3 — 2026-08-11
+
+Alpha 3 improves navigation and Glance behavior, media playback, fullscreen reliability, sidebar interactions, Settings, and WebKit page lifecycle management.
+
+### Navigation and Glance
+
+- Added automatic Glance presentation for eligible primary-click navigation from Favorites and pinned tabs.
+- Preserved ordinary behavior for downloads, external schemes, extension popups, middle-clicks, modifier-clicks, new windows, and same-frame navigation.
+- Fixed navigation inside Glance previews, teardown after closing a preview, and browser link-navigation fallbacks.
+- Integrated page-loading presentation with Glance without conflating their runtime ownership.
+
+### Media and Fullscreen
+
+- Reduced energy consumption during fullscreen video playback.
+- Fixed native fullscreen titlebar auto-hide and hardened WebKit fullscreen and page-presentation lifecycles.
+- Reworked the sidebar mini-player around multiple media-session cards with focus, playback, mute, Picture in Picture, and dismissal controls.
+- Fixed media downloads initiated from the WebKit context menu.
+
+### Sidebar, Tabs, Folders, and Favorites
+
+- Renamed Essentials to Favorites and fixed Favorite selection across profiles.
+- Added configurable dimming and desaturation for unloaded tabs.
+- Fixed tab-close visual handoff hangs and favicon update flicker.
+- Improved collapsed-sidebar hover behavior, docked-sidebar collapse animation, and vertical spacing.
+- Fixed folder transition snapshots, folder-preview appearance changes, custom folder-icon selection, and cancelled split-picker cleanup.
+
+### Settings, Keyboard, and Extensions
+
+- Expanded Search Engine settings with filtering, editing, removal, restoration, and Tab Search controls.
+- Unified native menu and keyboard command routing and moved Keyboard settings search into the toolbar.
+- Fixed duplicate extension context-menu items and prevented middle-clicks from opening the command palette.
+- Renamed the About Sumi “What's new” destination to Changelog.
+
+### Reliability and Polish
+
+- Hardened page and WebKit runtime lifecycle management.
+- Improved the page-loading indicator and long-loading presentation.
+- Improved notification secondary-text contrast.
+
 ## 0.0.2 Alpha 2 — 2026-08-03
 
 Alpha 2 focuses on native macOS interaction, sidebar reliability, extension workflows, media playback, and session restoration.

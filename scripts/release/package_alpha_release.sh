@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-output_dir="${OUTPUT_DIR:-${repo_root}/release/artifacts/0.0.2}"
+output_dir="${OUTPUT_DIR:-${repo_root}/release/artifacts/0.0.3}"
 
 "${repo_root}/scripts/release/run_release_gates.sh"
 
