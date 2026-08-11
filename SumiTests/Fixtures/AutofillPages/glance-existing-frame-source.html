@@ -1,0 +1,16 @@
+<!doctype html>
+<html>
+<body>
+  <a id="switch-player" target="player">Switch player</a>
+  <iframe id="player" name="player" src="about:blank"></iframe>
+  <script>
+    document.getElementById("switch-player").href =
+      `http://127.0.0.1:${location.port}/glance-existing-frame-target.html`;
+    addEventListener("message", event => {
+      if (event.data === "sumi-player-loaded") {
+        document.body.dataset.playerLoaded = "true";
+      }
+    });
+  </script>
+</body>
+</html>

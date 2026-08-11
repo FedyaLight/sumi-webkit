@@ -36,6 +36,11 @@ extension GlanceManager {
         ) -> Bool
         let previewWebView: @MainActor (Tab) -> WKWebView?
         let ensurePreviewWebView: @MainActor (Tab, UUID) -> WKWebView?
+        let installPreviewWebView: @MainActor (
+            Tab,
+            WKWebViewConfiguration,
+            URL
+        ) -> WKWebView?
         let ownsPreviewWebView: @MainActor (Tab, WKWebView) -> Bool
         let releasePreviewWebView: @MainActor (Tab) -> Void
     }

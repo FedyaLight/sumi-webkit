@@ -11,6 +11,8 @@ enum BrowserGlanceRuntimeService {
         let webViewCompositor = browserManager.webViewRuntime.compositorRuntime
         let untrackedMaterialization = browserManager.webViewRuntime
             .untrackedWebViewMaterialization
+        let untrackedInstallation = browserManager.webViewRuntime
+            .untrackedWebViewInstallationService
         let detachedCleanup = browserManager.webViewRuntime.detachedWebViewCleanup
         let extensions = browserManager.optionalModules.extensions
         let tabBrowserRuntime = TabBrowserRuntimeFactory.make(for: browserManager)
@@ -127,6 +129,32 @@ enum BrowserGlanceRuntimeService {
             ensurePreviewWebView: { [untrackedMaterialization] tab, _ in
                 untrackedMaterialization.webView(for: tab)
             },
+            installPreviewWebView: { [untrackedInstallation] tab, configuration, url in
+                guard let profile = tab.resolveProfile(),
+                      configuration.websiteDataStore === profile.dataStore
+                else { return nil }
+                tab.visitedLinkStore.applyStore(
+                    to: configuration,
+                    for: profile
+                )
+                let webView = tab.createPopupWebViewFromWebKitConfiguration(
+                    configuration,
+                    currentURL: url,
+                    isExtensionOriginated: false,
+                    reason: "AutomaticGlanceOpeningService.openWebKitChild"
+                )
+                let outcome = untrackedInstallation.installUntracked(
+                    webView,
+                    for: tab
+                )
+                guard outcome.isAccepted else {
+                    if outcome.callerRetainsWebView {
+                        tab.cleanupCloneWebView(webView)
+                    }
+                    return nil
+                }
+                return webView
+            },
             ownsPreviewWebView: { [weak browserManager] in browserManager?.webViewRoutingService.ownsLiveWebView($1, for: $0) ?? false },
             releasePreviewWebView: { [detachedCleanup, extensions] tab in
                 extensions.notifyTabClosedIfLoaded(tab)
@@ -196,5 +224,56 @@ enum BrowserGlanceRuntimeService {
         ?? sourceTab?.spaceId.flatMap { spaceId in
             spaces.space(with: spaceId)
         }
+    }
+}
+
+@MainActor
+final class AutomaticGlanceOpeningService: AutomaticGlanceOpening {
+    private let sources: PhysicalWebViewSourceResolver
+    private weak var manager: GlanceManager?
+
+    init(
+        sources: PhysicalWebViewSourceResolver,
+        manager: GlanceManager
+    ) {
+        self.sources = sources
+        self.manager = manager
+    }
+
+    func openBrowserTab(
+        _ url: URL,
+        from sourceWebView: FocusableWKWebView,
+        originRectInWindow: CGRect?
+    ) -> Bool {
+        guard let source = sources.resolve(sourceWebView),
+              source.residence != .glancePreview,
+              let manager
+        else { return false }
+        return manager.presentAutomaticExternalURL(
+            url,
+            from: source.tab,
+            in: source.window,
+            originRectInWindow: originRectInWindow
+        )
+    }
+
+    func openWebKitChild(
+        configuration: WKWebViewConfiguration,
+        requestURL: URL,
+        from sourceWebView: FocusableWKWebView,
+        originRectInWindow: CGRect?
+    ) -> WKWebView? {
+        guard let source = sources.resolve(sourceWebView),
+              source.residence != .glancePreview,
+              configuration.websiteDataStore === source.dataStore,
+              let manager
+        else { return nil }
+        return manager.presentAutomaticWebKitChild(
+            requestURL,
+            configuration: configuration,
+            from: source.tab,
+            in: source.window,
+            originRectInWindow: originRectInWindow
+        )
     }
 }

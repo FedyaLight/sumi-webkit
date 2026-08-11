@@ -161,6 +161,14 @@ _Avoid_: Current URL, fallback URL, last request
 One accepted effort to move a Durable Page Identity toward a destination, spanning browser-owned preparation and the native page lifecycle. It either transfers once into that lifecycle or ends through cancellation, failure, supersession, or owner departure; a later attempt never inherits its terminal events.
 _Avoid_: Scheduled load, pending reload, loading flag
 
+**Automatic Glance Policy**:
+The browser-owned choice to present an admitted new tab-like navigation from an eligible pinned source as a temporary Glance instead of using its ordinary tab presentation. The choice depends on navigation semantics and user intent; Live versus newly materialized residence never changes it.
+_Avoid_: Pinned-link rule, cross-host preview heuristic, automatic popup
+
+**Ordinary Navigation Outcome**:
+The page, frame, tab, popup, download, or external handling that an admitted navigation receives when no browser-owned presentation command supersedes it. Choosing not to use Glance preserves this outcome; it never means silently cancelling the navigation.
+_Avoid_: Glance fallback, allow policy, no-op navigation
+
 **Page Reload Command**:
 A user request to revalidate the exact current native history item in the same WebView Residence. It creates a new Page Navigation Attempt and either binds a concrete native reload, names the exact owner it waits or coalesces behind, or fails terminally; it never silently becomes fresh-runtime replacement or URL-only reconstruction.
 _Avoid_: Refresh flag, reload request, best-effort retry

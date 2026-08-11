@@ -33,6 +33,7 @@ struct TabBrowserRuntime {
         (any ExtensionPopupRequestConsuming)?
     var extensionExternalTabOpening: (any ExtensionExternalTabOpening)?
     var physicalWebPopupOpening: (any PhysicalWebPopupOpening)?
+    var automaticGlanceOpening: (any AutomaticGlanceOpening)?
     var webKitChildTabOpening: (any WebKitChildTabOpening)?
     var webKitChildWindowOpening: (any WebKitChildWindowOpening)?
     var webKitUIRuntime: TabWebKitUIRuntime
@@ -66,6 +67,7 @@ struct TabBrowserRuntime {
         extensionPopupRequestConsumer: nil,
         extensionExternalTabOpening: nil,
         physicalWebPopupOpening: nil,
+        automaticGlanceOpening: nil,
         webKitChildTabOpening: nil,
         webKitChildWindowOpening: nil,
         webKitUIRuntime: .inactive,
@@ -615,6 +617,10 @@ final class TabNavigationRuntime {
     var physicalWebPopupOpening: (any PhysicalWebPopupOpening)? {
         get { browserRuntime.runtime.physicalWebPopupOpening }
         set { set(\.physicalWebPopupOpening, to: newValue) }
+    }
+    var automaticGlanceOpening: (any AutomaticGlanceOpening)? {
+        get { browserRuntime.runtime.automaticGlanceOpening }
+        set { set(\.automaticGlanceOpening, to: newValue) }
     }
     var webKitChildTabOpening: (any WebKitChildTabOpening)? {
         get { browserRuntime.runtime.webKitChildTabOpening }

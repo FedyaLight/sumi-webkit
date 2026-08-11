@@ -1,10 +1,73 @@
+import AppKit
 import Foundation
 import SumiDomain
 import WebKit
 
-/// Shared Glance routing policy for native navigation-policy callbacks and
-/// WebKit child-view requests. Presentation still resolves the exact physical
-/// source through `TabLinkPresentationCommands`.
+@MainActor
+enum AutomaticGlancePolicy {
+    static func shouldPresent(
+        _ targetURL: URL?,
+        from tab: Tab,
+        ordinaryBehavior: SumiLinkOpenBehavior,
+        modifierFlags: NSEvent.ModifierFlags,
+        isExtensionOriginated: Bool,
+        isMiddleButtonClick: Bool,
+        shouldDownload: Bool
+    ) -> Bool {
+        guard case .newTab(selected: true) = ordinaryBehavior else { return false }
+        return shouldPresent(
+            targetURL,
+            from: tab,
+            modifierFlags: modifierFlags,
+            isExtensionOriginated: isExtensionOriginated,
+            isMiddleButtonClick: isMiddleButtonClick,
+            shouldDownload: shouldDownload
+        )
+    }
+
+    static func shouldPresent(
+        _ targetURL: URL?,
+        from tab: Tab,
+        ordinaryPolicy: SumiNewWindowPolicy,
+        modifierFlags: NSEvent.ModifierFlags,
+        isExtensionOriginated: Bool,
+        isMiddleButtonClick: Bool,
+        shouldDownload: Bool
+    ) -> Bool {
+        guard case .tab(selected: true) = ordinaryPolicy else { return false }
+        return shouldPresent(
+            targetURL,
+            from: tab,
+            modifierFlags: modifierFlags,
+            isExtensionOriginated: isExtensionOriginated,
+            isMiddleButtonClick: isMiddleButtonClick,
+            shouldDownload: shouldDownload
+        )
+    }
+
+    private static func shouldPresent(
+        _ targetURL: URL?,
+        from tab: Tab,
+        modifierFlags: NSEvent.ModifierFlags,
+        isExtensionOriginated: Bool,
+        isMiddleButtonClick: Bool,
+        shouldDownload: Bool
+    ) -> Bool {
+        guard isExtensionOriginated == false,
+              isMiddleButtonClick == false,
+              shouldDownload == false,
+              let targetURL
+        else { return false }
+        return tab.shouldOpenDynamicallyInGlance(
+            url: targetURL,
+            modifierFlags: modifierFlags
+        )
+    }
+}
+
+/// Explicit Glance routing for native navigation-policy callbacks and WebKit
+/// child-view requests. Automatic routing settles later, after admission and
+/// ordinary disposition are known.
 @MainActor
 enum LinkGlanceRouting {
     struct ChildWebViewRequest {
@@ -57,20 +120,7 @@ enum LinkGlanceRouting {
             return true
         }
 
-        let isDynamicTarget = targetURL.map {
-            tab.shouldOpenDynamicallyInGlance(
-                url: $0,
-                modifierFlags: request.modifierFlags
-            )
-        } ?? false
-        return routeDynamic(
-            targetURL,
-            isRequested: isDynamicTarget,
-            tab: tab,
-            sourceWebView: sourceWebView,
-            isExtensionOriginated: request.isExtensionOriginated,
-            isMiddleButtonClick: request.isMiddleButtonClick
-        )
+        return false
     }
 
     static func routeExplicit(
@@ -81,24 +131,6 @@ enum LinkGlanceRouting {
     ) -> Bool {
         guard let url,
               url.sumiIsGlancePreviewableLink,
-              isRequested
-        else {
-            return false
-        }
-        return present(url, tab: tab, sourceWebView: sourceWebView)
-    }
-
-    static func routeDynamic(
-        _ url: URL?,
-        isRequested: Bool,
-        tab: Tab,
-        sourceWebView: FocusableWKWebView,
-        isExtensionOriginated: Bool,
-        isMiddleButtonClick: Bool = false
-    ) -> Bool {
-        guard let url,
-              isExtensionOriginated == false,
-              isMiddleButtonClick == false,
               isRequested
         else {
             return false

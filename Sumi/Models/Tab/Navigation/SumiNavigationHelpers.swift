@@ -111,7 +111,9 @@ enum SumiNewWindowPolicy: Equatable {
             return
         }
 
-        if windowFeatures.toolbarsVisibility?.boolValue == true, preferTabsToWindows {
+        if windowFeatures.sumiWantsPopup == true {
+            self = .popup(origin: windowFeatures.sumiOrigin, size: windowFeatures.sumiSize)
+        } else if windowFeatures.toolbarsVisibility?.boolValue == true, preferTabsToWindows {
             self = .tab(selected: linkOpenBehavior.shouldSelectNewTab)
         } else if windowFeatures.width != nil {
             self = .popup(origin: windowFeatures.sumiOrigin, size: windowFeatures.sumiSize)
@@ -141,6 +143,16 @@ enum SumiNewWindowPolicy: Equatable {
 }
 
 extension WKWindowFeatures {
+    /// WebCore's complete popup-feature classification. The public feature
+    /// properties omit `popup`, location, scrollbars, and unknown features.
+    var sumiWantsPopup: Bool? {
+        let selector = NSSelectorFromString("_wantsPopup")
+        guard responds(to: selector) else { return nil }
+        typealias Getter = @convention(c) (AnyObject, Selector) -> Bool
+        let getter = unsafeBitCast(method(for: selector), to: Getter.self)
+        return getter(self, selector)
+    }
+
     var sumiOrigin: NSPoint? {
         guard x != nil || y != nil else { return nil }
         return NSPoint(x: x?.intValue ?? 0, y: y?.intValue ?? 0)

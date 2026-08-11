@@ -1075,6 +1075,7 @@ final class GlanceManagerTests: XCTestCase {
                     reason: "GlanceManagerTests.ensurePreviewWebView"
                 )
             },
+            installPreviewWebView: { _, _, _ in nil },
             ownsPreviewWebView: { tab, webView in
                 tab.resolvedCurrentWebView() === webView || tab.resolvedAssignedWebView() === webView
             },

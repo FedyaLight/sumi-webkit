@@ -76,6 +76,22 @@ protocol WebKitChildWindowOpening: AnyObject {
 }
 
 @MainActor
+protocol AutomaticGlanceOpening: AnyObject {
+    func openBrowserTab(
+        _ url: URL,
+        from sourceWebView: FocusableWKWebView,
+        originRectInWindow: CGRect?
+    ) -> Bool
+
+    func openWebKitChild(
+        configuration: WKWebViewConfiguration,
+        requestURL: URL,
+        from sourceWebView: FocusableWKWebView,
+        originRectInWindow: CGRect?
+    ) -> WKWebView?
+}
+
+@MainActor
 protocol BackgroundTabOpenedNotifying: AnyObject {
     func presentBackgroundTabOpenedNotification(
         tabId: UUID,

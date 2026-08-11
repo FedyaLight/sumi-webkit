@@ -398,6 +398,7 @@ final class ShortcutPhysicalSourceRoutingTests: XCTestCase {
             extensionRequests: harness.sourceTab.navigationRuntime.extensionPopupRequestConsumer,
             extensionTabs: harness.sourceTab.navigationRuntime.extensionExternalTabOpening,
             webPopups: harness.sourceTab.navigationRuntime.physicalWebPopupOpening,
+            automaticGlance: harness.sourceTab.navigationRuntime.automaticGlanceOpening,
             childTabs: harness.sourceTab.navigationRuntime.webKitChildTabOpening,
             childWindows: harness.sourceTab.navigationRuntime.webKitChildWindowOpening
         )

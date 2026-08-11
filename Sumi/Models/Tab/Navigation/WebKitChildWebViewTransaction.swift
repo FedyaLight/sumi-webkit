@@ -16,6 +16,9 @@ final class WebKitChildWebViewTransaction {
         let permissionContext: SumiPopupPermissionTabContext
         let permissionRequest: SumiPopupPermissionRequest
         let childRequest: WebKitChildSurfaceRouter.Request
+        let modifierFlags: NSEvent.ModifierFlags
+        let isMiddleButtonClick: Bool
+        let shouldDownload: Bool
     }
 
     private enum Preparation {
@@ -27,17 +30,20 @@ final class WebKitChildWebViewTransaction {
     private weak var tab: Tab?
     private let permissions: (any PopupPermissionEvaluating)?
     private let extensionRequests: (any ExtensionPopupRequestConsuming)?
+    private let automaticGlance: (any AutomaticGlanceOpening)?
     private let childSurfaceRouter: WebKitChildSurfaceRouter
 
     init(
         tab: Tab,
         permissions: (any PopupPermissionEvaluating)?,
         extensionRequests: (any ExtensionPopupRequestConsuming)?,
+        automaticGlance: (any AutomaticGlanceOpening)?,
         childSurfaceRouter: WebKitChildSurfaceRouter
     ) {
         self.tab = tab
         self.permissions = permissions
         self.extensionRequests = extensionRequests
+        self.automaticGlance = automaticGlance
         self.childSurfaceRouter = childSurfaceRouter
     }
 
@@ -164,7 +170,6 @@ final class WebKitChildWebViewTransaction {
             linkOpenBehavior: behavior,
             preferTabsToWindows: true
         )
-
         guard let permissionContext = tab.popupPermissionTabContext(
             for: sourceWebView
         ),
@@ -198,7 +203,10 @@ final class WebKitChildWebViewTransaction {
                     policy: policy,
                     isExtensionOriginated: isExtensionOriginated,
                     gestureReceipt: gestureReceipt
-                )
+                ),
+                modifierFlags: navigationFlags,
+                isMiddleButtonClick: isMiddleButtonClick,
+                shouldDownload: navigationAction.shouldDownload
             )
         )
     }
@@ -218,6 +226,28 @@ final class WebKitChildWebViewTransaction {
                 pending.sourceWebView.configuration.websiteDataStore
         else {
             return nil
+        }
+        if AutomaticGlancePolicy.shouldPresent(
+            pending.childRequest.navigationRequest.url,
+            from: pending.tab,
+            ordinaryPolicy: pending.childRequest.policy,
+            modifierFlags: pending.modifierFlags,
+            isExtensionOriginated: pending.childRequest.isExtensionOriginated,
+            isMiddleButtonClick: pending.isMiddleButtonClick,
+            shouldDownload: pending.shouldDownload
+        ),
+           let targetURL = pending.childRequest.navigationRequest.url,
+           let webView = automaticGlance?.openWebKitChild(
+               configuration: pending.childRequest.configuration,
+               requestURL: targetURL,
+               from: pending.sourceWebView,
+               originRectInWindow: pending.sourceWebView.gestures
+                   .recentGlanceOriginRect(maxAge: 2)
+           ) {
+            pending.sourceWebView.gestures.clear(
+                ifCurrent: pending.childRequest.gestureReceipt
+            )
+            return webView
         }
         return childSurfaceRouter.open(pending.childRequest)
     }

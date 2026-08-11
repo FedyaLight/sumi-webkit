@@ -389,6 +389,138 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         )
     }
 
+    func testPopupResponderSpacePinnedExistingChildFrameNavigationStaysInPage() async throws {
+        let harness = try await makePopupFocusHarness()
+        harness.sourceTab.shortcutPinRole = .spacePinned
+        let responder = popupResponder(for: harness.sourceTab)
+        let adapter = SumiNavigationResponderAdapter(target: responder)
+        let childFrameURL = URL(string: "https://player.example/embed")!
+        var preferences = NavigationPreferences.default
+
+        let policy = await adapter.decidePolicy(
+            for: navigationAction(
+                url: childFrameURL,
+                navigationType: .other,
+                webView: harness.sourceWebView,
+                sourceURL: harness.sourceTab.url,
+                isUserInitiated: true,
+                isMainFrame: true,
+                targetFrameIsMainFrame: false
+            ),
+            preferences: &preferences
+        )
+
+        XCTAssertNil(policy)
+        XCTAssertNil(harness.browserManager.glanceManager.currentSession)
+        XCTAssertEqual(harness.windowState.currentTabId, harness.sourceTab.id)
+    }
+
+    func testSpacePinnedExistingCrossHostFrameActuallyFinishesLoading() async throws {
+        let harness = try await makePopupFocusHarness()
+        let server = try await AutofillPagesHTTPServer.start(preferredPort: 0)
+        addTeardownBlock { server.stop() }
+        let sourceURL = try frameFixtureSourceURL(on: server)
+        let fixtureNavigation = await loadExistingFrameFixture(
+            on: harness.sourceWebView,
+            tab: harness.sourceTab,
+            sourceURL: sourceURL
+        )
+        let pin = harness.browserManager.regularTabShortcutConversion.convert(
+            harness.sourceTab,
+            destination: TabShortcutPinDestination(
+                role: .spacePinned,
+                profileId: nil,
+                spaceId: harness.sourceSpace.id,
+                folderId: nil,
+                index: 0,
+                opensFolder: false
+            ),
+            preferredWindowId: harness.windowState.id
+        )
+        XCTAssertNotNil(pin)
+        XCTAssertEqual(harness.sourceTab.shortcutPinRole, .spacePinned)
+        try await assertPlayerSwitchLoadsInExistingFrame(harness.sourceWebView)
+        XCTAssertNil(harness.browserManager.glanceManager.currentSession)
+        XCTAssertEqual(harness.windowState.currentTabId, harness.sourceTab.id)
+        withExtendedLifetime(fixtureNavigation) {}
+    }
+
+    func testRematerializedSpacePinnedExistingCrossHostFrameFinishesLoading() async throws {
+        let harness = try await makePopupFocusHarness()
+        let server = try await AutofillPagesHTTPServer.start(preferredPort: 0)
+        addTeardownBlock { server.stop() }
+        let sourceURL = try frameFixtureSourceURL(on: server)
+        let pin = ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            executionProfileId: harness.sourceProfile.id,
+            spaceId: harness.sourceSpace.id,
+            index: 0,
+            launchURL: sourceURL,
+            title: "Player"
+        )
+        harness.browserManager.structuralCollectionMutationOwner
+            .setSpacePinnedShortcuts([pin], for: harness.sourceSpace.id)
+
+        let firstLiveTab = try XCTUnwrap(
+            harness.browserManager.shortcutTabMaterializer.materialize(
+                pin,
+                in: harness.windowState.id,
+                currentSpaceId: harness.sourceSpace.id
+            )
+        )
+        XCTAssertTrue(
+            harness.browserManager.composeSidebarShortcutPinUnloadOwner()
+                .unloadShortcutPin(
+                    pin,
+                    in: harness.windowState,
+                    suppressNotification: true
+                )
+        )
+        XCTAssertNil(
+            harness.browserManager.liveShortcutTabs.tab(
+                for: pin.id,
+                in: harness.windowState.id
+            )
+        )
+        let rematerializedTab = try XCTUnwrap(
+            harness.browserManager.shortcutTabMaterializer.materialize(
+                pin,
+                in: harness.windowState.id,
+                currentSpaceId: harness.sourceSpace.id
+            )
+        )
+        XCTAssertFalse(rematerializedTab === firstLiveTab)
+        XCTAssertEqual(rematerializedTab.shortcutPinRole, .spacePinned)
+
+        let webView = try XCTUnwrap(
+            rematerializedTab.makeNormalTabWebView(
+                reason: "AutomaticGlanceParity.rematerializedFixture"
+            ) as? FocusableWKWebView
+        )
+        let assignment = harness.browserManager.testWebViewRuntime()
+            .trackedWebViewAdmission.attemptAssignment(
+                webView,
+                to: rematerializedTab,
+                in: harness.windowState.id,
+                replaySemanticOperation: { XCTFail("Unexpected WebView deferral") }
+        )
+        XCTAssertTrue(assignment.isAccepted)
+        let fixtureNavigation = await loadExistingFrameFixture(
+            on: webView,
+            tab: rematerializedTab,
+            sourceURL: sourceURL
+        )
+        harness.browserManager.selectTab(
+            rematerializedTab,
+            in: harness.windowState
+        )
+        try await assertPlayerSwitchLoadsInExistingFrame(webView)
+        XCTAssertNil(harness.browserManager.glanceManager.currentSession)
+        XCTAssertEqual(harness.windowState.currentTabId, rematerializedTab.id)
+        withExtendedLifetime(fixtureNavigation) {}
+    }
+
     func testPopupResponderSpacePinnedSameHostCleanClickStaysInCurrentTab() async throws {
         let harness = try await makePopupFocusHarness()
         harness.sourceTab.shortcutPinRole = .spacePinned
@@ -448,6 +580,65 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
             regularTabs.first(where: { $0.url == targetURL })
         )
         XCTAssertEqual(harness.windowState.currentTabId, openedTab.id)
+    }
+
+    func testPopupResponderSpacePinnedDownloadContinuesToDownloadPolicy() async throws {
+        let harness = try await makePopupFocusHarness()
+        harness.sourceTab.shortcutPinRole = .spacePinned
+        let initialRegularTabCount = harness.browserManager.tabStateStore
+            .regularTabs.allTabsSnapshot().count
+        let responder = popupResponder(for: harness.sourceTab)
+        let adapter = SumiNavigationResponderAdapter(target: responder)
+        var preferences = NavigationPreferences.default
+
+        let policy = await adapter.decidePolicy(
+            for: navigationAction(
+                url: URL(string: "https://destination.example/archive.zip")!,
+                navigationType: .linkActivated(isMiddleClick: false),
+                shouldDownload: true,
+                webView: harness.sourceWebView,
+                sourceURL: harness.sourceTab.url
+            ),
+            preferences: &preferences
+        )
+
+        XCTAssertNil(policy)
+        XCTAssertNil(harness.browserManager.glanceManager.currentSession)
+        XCTAssertEqual(
+            harness.browserManager.tabStateStore.regularTabs
+                .allTabsSnapshot().count,
+            initialRegularTabCount
+        )
+        XCTAssertEqual(harness.windowState.currentTabId, harness.sourceTab.id)
+    }
+
+    func testPopupResponderSpacePinnedExternalSchemeContinuesToExternalHandler() async throws {
+        let harness = try await makePopupFocusHarness()
+        harness.sourceTab.shortcutPinRole = .spacePinned
+        let initialRegularTabCount = harness.browserManager.tabStateStore
+            .regularTabs.allTabsSnapshot().count
+        let responder = popupResponder(for: harness.sourceTab)
+        let adapter = SumiNavigationResponderAdapter(target: responder)
+        var preferences = NavigationPreferences.default
+
+        let policy = await adapter.decidePolicy(
+            for: navigationAction(
+                url: URL(string: "mailto:person@example.com")!,
+                navigationType: .linkActivated(isMiddleClick: false),
+                webView: harness.sourceWebView,
+                sourceURL: harness.sourceTab.url
+            ),
+            preferences: &preferences
+        )
+
+        XCTAssertNil(policy)
+        XCTAssertNil(harness.browserManager.glanceManager.currentSession)
+        XCTAssertEqual(
+            harness.browserManager.tabStateStore.regularTabs
+                .allTabsSnapshot().count,
+            initialRegularTabCount
+        )
+        XCTAssertEqual(harness.windowState.currentTabId, harness.sourceTab.id)
     }
 
     func testPopupResponderRegularExternalCleanClickDoesNotRouteToGlance() async throws {
@@ -712,8 +903,221 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
             .regularTabs.allTabsSnapshot().count
         let responder = popupResponder(for: harness.sourceTab)
         let targetURL = URL(string: "https://destination.example/page")!
+        let childConfiguration = popupConfiguration(for: harness)
 
         let childWebView = responder.createWebView(
+            from: harness.sourceWebView,
+            with: childConfiguration,
+            for: popupNavigationAction(
+                sourceURL: harness.sourceTab.url,
+                targetURL: targetURL,
+                webView: harness.sourceWebView
+            ),
+            windowFeatures: WKWindowFeatures()
+        )
+
+        let exactChildWebView = try XCTUnwrap(childWebView)
+        XCTAssertEqual(
+            harness.browserManager.tabStateStore.regularTabs
+                .allTabsSnapshot().count,
+            initialRegularTabCount
+        )
+        XCTAssertEqual(
+            harness.browserManager.glanceManager.currentSession?.currentURL,
+            targetURL
+        )
+        let previewTab = try XCTUnwrap(
+            harness.browserManager.glanceManager.currentSession?.previewTab
+        )
+        XCTAssertIdentical(
+            harness.browserManager.webViewRoutingService.anyLiveWebView(for: previewTab),
+            exactChildWebView
+        )
+        XCTAssertIdentical(
+            exactChildWebView.configuration.userContentController,
+            childConfiguration.userContentController
+        )
+    }
+
+    func testPopupCreateWebViewAutomaticGlanceRequiresPopupAdmission() async throws {
+        let harness = try await makePopupFocusHarness()
+        harness.sourceTab.shortcutPinRole = .spacePinned
+        let permissions = PopupPermissionEvaluatorSpy(action: .block(nil))
+        let initialRegularTabCount = harness.browserManager.tabStateStore
+            .regularTabs.allTabsSnapshot().count
+        let responder = SumiPopupHandlingNavigationResponder(
+            tab: harness.sourceTab,
+            permissions: permissions,
+            extensionRequests: harness.sourceTab.navigationRuntime
+                .extensionPopupRequestConsumer,
+            extensionTabs: harness.sourceTab.navigationRuntime
+                .extensionExternalTabOpening,
+            webPopups: harness.sourceTab.navigationRuntime.physicalWebPopupOpening,
+            automaticGlance: harness.sourceTab.navigationRuntime
+                .automaticGlanceOpening,
+            childTabs: harness.sourceTab.navigationRuntime.webKitChildTabOpening,
+            childWindows: harness.sourceTab.navigationRuntime.webKitChildWindowOpening
+        )
+
+        let childWebView = responder.createWebView(
+            from: harness.sourceWebView,
+            with: popupConfiguration(for: harness),
+            for: popupNavigationAction(
+                sourceURL: harness.sourceTab.url,
+                targetURL: URL(string: "https://destination.example/page")!,
+                webView: harness.sourceWebView
+            ),
+            windowFeatures: WKWindowFeatures()
+        )
+
+        XCTAssertNil(childWebView)
+        XCTAssertEqual(permissions.requests.count, 1)
+        XCTAssertNil(harness.browserManager.glanceManager.currentSession)
+        XCTAssertEqual(
+            harness.browserManager.tabStateStore.regularTabs
+                .allTabsSnapshot().count,
+            initialRegularTabCount
+        )
+        XCTAssertEqual(harness.windowState.currentTabId, harness.sourceTab.id)
+    }
+
+    func testPopupCreateWebViewReevaluatesAutomaticGlanceAfterPopupAdmission() async throws {
+        let harness = try await makePopupFocusHarness()
+        harness.sourceTab.shortcutPinRole = .spacePinned
+        let permissions = PopupPermissionEvaluatorSpy()
+        permissions.onAsyncEvaluation = {
+            harness.sourceTab.shortcutPinRole = nil
+        }
+        let responder = SumiPopupHandlingNavigationResponder(
+            tab: harness.sourceTab,
+            permissions: permissions,
+            extensionRequests: nil,
+            extensionTabs: nil,
+            webPopups: harness.sourceTab.navigationRuntime.physicalWebPopupOpening,
+            automaticGlance: harness.sourceTab.navigationRuntime
+                .automaticGlanceOpening,
+            childTabs: harness.sourceTab.navigationRuntime.webKitChildTabOpening,
+            childWindows: harness.sourceTab.navigationRuntime.webKitChildWindowOpening
+        )
+        let initialRegularTabCount = harness.browserManager.tabStateStore
+            .regularTabs.allTabsSnapshot().count
+
+        let childWebView = await responder.createWebViewAsync(
+            from: harness.sourceWebView,
+            with: popupConfiguration(for: harness),
+            for: popupNavigationAction(
+                sourceURL: harness.sourceTab.url,
+                targetURL: URL(string: "https://destination.example/page")!,
+                webView: harness.sourceWebView
+            ),
+            windowFeatures: WKWindowFeatures()
+        )
+
+        XCTAssertNotNil(childWebView)
+        XCTAssertNil(harness.browserManager.glanceManager.currentSession)
+        XCTAssertEqual(
+            harness.browserManager.tabStateStore.regularTabs
+                .allTabsSnapshot().count,
+            initialRegularTabCount + 1
+        )
+    }
+
+    func testPopupCreateWebViewAutomaticGlancePreservesPopupDisposition() async throws {
+        let harness = try await makePopupFocusHarness()
+        harness.sourceTab.shortcutPinRole = .spacePinned
+        let expectedPopupWebView = WKWebView()
+        let webPopups = PhysicalWebPopupOpeningSpy(returning: expectedPopupWebView)
+        let responder = SumiPopupHandlingNavigationResponder(
+            tab: harness.sourceTab,
+            permissions: PopupPermissionEvaluatorSpy(),
+            extensionRequests: nil,
+            extensionTabs: nil,
+            webPopups: webPopups,
+            automaticGlance: harness.sourceTab.navigationRuntime
+                .automaticGlanceOpening,
+            childTabs: harness.sourceTab.navigationRuntime.webKitChildTabOpening,
+            childWindows: harness.sourceTab.navigationRuntime.webKitChildWindowOpening
+        )
+        let configuration = popupConfiguration(for: harness)
+        let targetURL = URL(string: "https://destination.example/popup")!
+
+        let childWebView = responder.createWebView(
+            from: harness.sourceWebView,
+            with: configuration,
+            for: popupNavigationAction(
+                sourceURL: harness.sourceTab.url,
+                targetURL: targetURL,
+                webView: harness.sourceWebView
+            ),
+            windowFeatures: HiddenPopupWindowFeatures()
+        )
+
+        XCTAssertIdentical(childWebView, expectedPopupWebView)
+        XCTAssertIdentical(webPopups.receivedConfiguration, configuration)
+        XCTAssertEqual(webPopups.receivedRequest?.url, targetURL)
+        XCTAssertIdentical(webPopups.receivedSourceWebView, harness.sourceWebView)
+        XCTAssertNil(harness.browserManager.glanceManager.currentSession)
+        XCTAssertEqual(harness.windowState.currentTabId, harness.sourceTab.id)
+    }
+
+    func testPopupCreateWebViewAutomaticGlancePreservesWindowDisposition() async throws {
+        let harness = try await makePopupFocusHarness()
+        harness.sourceTab.shortcutPinRole = .spacePinned
+        let expectedWindowWebView = WKWebView()
+        let childWindows = WebKitChildWindowOpeningSpy(
+            returning: expectedWindowWebView
+        )
+        let responder = SumiPopupHandlingNavigationResponder(
+            tab: harness.sourceTab,
+            permissions: PopupPermissionEvaluatorSpy(),
+            extensionRequests: nil,
+            extensionTabs: nil,
+            webPopups: nil,
+            automaticGlance: harness.sourceTab.navigationRuntime
+                .automaticGlanceOpening,
+            childTabs: harness.sourceTab.navigationRuntime.webKitChildTabOpening,
+            childWindows: childWindows
+        )
+        let configuration = popupConfiguration(for: harness)
+        let targetURL = URL(string: "https://destination.example/window")!
+
+        let childWebView = responder.createWebView(
+            from: harness.sourceWebView,
+            with: configuration,
+            for: popupNavigationAction(
+                sourceURL: harness.sourceTab.url,
+                targetURL: targetURL,
+                webView: harness.sourceWebView
+            ),
+            windowFeatures: ChromeWindowFeatures()
+        )
+
+        XCTAssertIdentical(childWebView, expectedWindowWebView)
+        XCTAssertIdentical(childWindows.receivedConfiguration, configuration)
+        XCTAssertEqual(childWindows.receivedRequestURL, targetURL)
+        XCTAssertIdentical(childWindows.receivedSourceWebView, harness.sourceWebView)
+        XCTAssertNil(harness.browserManager.glanceManager.currentSession)
+        XCTAssertEqual(harness.windowState.currentTabId, harness.sourceTab.id)
+    }
+
+    func testPopupCreateWebViewExistingGlancePreservesOrdinaryNewTab() async throws {
+        let harness = try await makePopupFocusHarness()
+        harness.sourceTab.shortcutPinRole = .spacePinned
+        XCTAssertTrue(
+            harness.browserManager.glanceManager.presentExternalURL(
+                URL(string: "https://existing-glance.example/page")!,
+                from: harness.sourceTab,
+                in: harness.windowState
+            )
+        )
+        let existingSession = try XCTUnwrap(
+            harness.browserManager.glanceManager.currentSession
+        )
+        let initialRegularTabCount = harness.browserManager.tabStateStore
+            .regularTabs.allTabsSnapshot().count
+        let targetURL = URL(string: "https://destination.example/new-tab")!
+
+        let childWebView = popupResponder(for: harness.sourceTab).createWebView(
             from: harness.sourceWebView,
             with: popupConfiguration(for: harness),
             for: popupNavigationAction(
@@ -724,16 +1128,54 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
             windowFeatures: WKWindowFeatures()
         )
 
-        XCTAssertNil(childWebView)
-        XCTAssertEqual(
-            harness.browserManager.tabStateStore.regularTabs
-                .allTabsSnapshot().count,
-            initialRegularTabCount
+        XCTAssertNotNil(childWebView)
+        XCTAssertIdentical(
+            harness.browserManager.glanceManager.currentSession,
+            existingSession
         )
-        XCTAssertEqual(
-            harness.browserManager.glanceManager.currentSession?.currentURL,
-            targetURL
+        let regularTabs = harness.browserManager.tabStateStore.regularTabs
+            .allTabsSnapshot()
+        XCTAssertEqual(regularTabs.count, initialRegularTabCount + 1)
+        let openedTab = try XCTUnwrap(
+            regularTabs.first(where: { $0.id != harness.sourceTab.id })
         )
+        XCTAssertEqual(harness.windowState.currentTabId, openedTab.id)
+        XCTAssertIdentical(
+            (childWebView as? FocusableWKWebView)?.owningTab,
+            openedTab
+        )
+    }
+
+    func testPopupCreateWebViewSpacePinnedSameHostCreatesOrdinaryNewTab() async throws {
+        let harness = try await makePopupFocusHarness()
+        harness.sourceTab.shortcutPinRole = .spacePinned
+        let initialRegularTabCount = harness.browserManager.tabStateStore
+            .regularTabs.allTabsSnapshot().count
+        let targetURL = URL(string: "https://source.example/new-context")!
+
+        let childWebView = popupResponder(for: harness.sourceTab).createWebView(
+            from: harness.sourceWebView,
+            with: popupConfiguration(for: harness),
+            for: popupNavigationAction(
+                sourceURL: harness.sourceTab.url,
+                targetURL: targetURL,
+                webView: harness.sourceWebView
+            ),
+            windowFeatures: WKWindowFeatures()
+        )
+
+        let exactChildWebView = try XCTUnwrap(
+            childWebView as? FocusableWKWebView
+        )
+        XCTAssertNil(harness.browserManager.glanceManager.currentSession)
+        let regularTabs = harness.browserManager.tabStateStore.regularTabs
+            .allTabsSnapshot()
+        XCTAssertEqual(regularTabs.count, initialRegularTabCount + 1)
+        let openedTab = try XCTUnwrap(
+            regularTabs.first(where: { $0.id != harness.sourceTab.id })
+        )
+        XCTAssertIdentical(exactChildWebView.owningTab, openedTab)
+        XCTAssertEqual(harness.windowState.currentTabId, openedTab.id)
     }
 
     func testPopupCreateWebViewSpacePinnedMiddleClickOpensBackgroundTab() async throws {
@@ -1164,6 +1606,7 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
                 tab.navigationRuntime.extensionPopupRequestConsumer,
             extensionTabs: tab.navigationRuntime.extensionExternalTabOpening,
             webPopups: tab.navigationRuntime.physicalWebPopupOpening,
+            automaticGlance: tab.navigationRuntime.automaticGlanceOpening,
             childTabs: tab.navigationRuntime.webKitChildTabOpening,
             childWindows: tab.navigationRuntime.webKitChildWindowOpening
         )
@@ -1290,6 +1733,62 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = harness.sourceProfile.dataStore
         return configuration
+    }
+
+    private func frameFixtureSourceURL(
+        on server: AutofillPagesHTTPServer
+    ) throws -> URL {
+        var components = URLComponents(
+            url: server.pageURL(named: "glance-existing-frame-source.html"),
+            resolvingAgainstBaseURL: false
+        )!
+        components.host = "localhost"
+        return try XCTUnwrap(components.url)
+    }
+
+    private func loadExistingFrameFixture(
+        on webView: FocusableWKWebView,
+        tab: Tab,
+        sourceURL: URL
+    ) async -> NSObject {
+        let didFinish = expectation(description: "existing-frame fixture loaded")
+        let delegate = PopupDocumentNavigationDelegate {
+            didFinish.fulfill()
+        }
+        webView.navigationDelegate = delegate
+        webView.load(URLRequest(url: sourceURL))
+        await fulfillment(of: [didFinish], timeout: 5)
+        webView.navigationDelegate = nil
+        tab.url = sourceURL
+        let navigation = bindCommittedPopupDocument(
+            on: webView,
+            tab: tab,
+            committedURL: sourceURL
+        )
+        tab.installNavigationDelegate(on: webView)
+        return navigation
+    }
+
+    private func assertPlayerSwitchLoadsInExistingFrame(
+        _ webView: FocusableWKWebView
+    ) async throws {
+        _ = try await webView.callAsyncJavaScript(
+            "document.getElementById('switch-player').click();",
+            arguments: [:],
+            in: nil,
+            contentWorld: .page
+        )
+        for _ in 0..<500 {
+            let loaded = try await webView.callAsyncJavaScript(
+                "return document.body.dataset.playerLoaded === 'true';",
+                arguments: [:],
+                in: nil,
+                contentWorld: .page
+            ) as? Bool
+            if loaded == true { return }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTFail("Existing player frame did not finish its ordinary load")
     }
 
     private func makeGlancePopupSource(
@@ -1483,6 +1982,11 @@ private final class PopupPermissionEvaluatorSpy: PopupPermissionEvaluating {
     private(set) var contexts: [SumiPopupPermissionTabContext] = []
     var onAsyncEvaluation: (@MainActor () -> Void)?
     var onSynchronousEvaluation: (@MainActor () -> Void)?
+    let action: SumiPopupPermissionAction
+
+    init(action: SumiPopupPermissionAction = .allow) {
+        self.action = action
+    }
 
     func evaluate(
         _ request: SumiPopupPermissionRequest,
@@ -1491,7 +1995,7 @@ private final class PopupPermissionEvaluatorSpy: PopupPermissionEvaluating {
         requests.append(request)
         contexts.append(tabContext)
         onAsyncEvaluation?()
-        return SumiPopupPermissionResult(action: .allow)
+        return SumiPopupPermissionResult(action: action)
     }
 
     func evaluateSynchronouslyForWebKitFallback(
@@ -1501,7 +2005,41 @@ private final class PopupPermissionEvaluatorSpy: PopupPermissionEvaluating {
         requests.append(request)
         contexts.append(tabContext)
         onSynchronousEvaluation?()
-        return SumiPopupPermissionResult(action: .allow)
+        return SumiPopupPermissionResult(action: action)
+    }
+}
+
+private final class HiddenPopupWindowFeatures: WKWindowFeatures {
+    @objc(_wantsPopup)
+    func wantsPopupForTesting() -> Bool { true }
+}
+
+private final class ChromeWindowFeatures: WKWindowFeatures {
+    override var statusBarVisibility: NSNumber? { true }
+}
+
+@MainActor
+private final class PhysicalWebPopupOpeningSpy: PhysicalWebPopupOpening {
+    private let popupWebView: WKWebView
+    private(set) var receivedConfiguration: WKWebViewConfiguration?
+    private(set) var receivedRequest: URLRequest?
+    private(set) weak var receivedSourceWebView: FocusableWKWebView?
+
+    init(returning popupWebView: WKWebView) {
+        self.popupWebView = popupWebView
+    }
+
+    func open(
+        configuration: WKWebViewConfiguration,
+        request: URLRequest,
+        windowFeatures _: WKWindowFeatures,
+        from sourceWebView: FocusableWKWebView,
+        isExtensionOriginated _: Bool
+    ) -> WKWebView? {
+        receivedConfiguration = configuration
+        receivedRequest = request
+        receivedSourceWebView = sourceWebView
+        return popupWebView
     }
 }
 

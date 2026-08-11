@@ -68,6 +68,10 @@ enum TabBrowserRuntimeFactory {
             sources: physicalSources,
             popups: browserManager.auxiliaryWindows.popups
         )
+        let automaticGlance = AutomaticGlanceOpeningService(
+            sources: physicalSources,
+            manager: browserManager.glanceManager
+        )
         let childTabs = WebKitChildTabOpeningService(
             sources: physicalSources,
             creation: WebKitChildTabCreationTransaction(
@@ -176,6 +180,7 @@ enum TabBrowserRuntimeFactory {
             extensionPopupRequestConsumer: extensions,
             extensionExternalTabOpening: extensionExternalTabs,
             physicalWebPopupOpening: physicalWebPopups,
+            automaticGlanceOpening: automaticGlance,
             webKitChildTabOpening: childTabs,
             webKitChildWindowOpening: childWindows,
             webKitUIRuntime: TabBrowserWebViewRuntimeFactory.webKitUIRuntime(for: browserManager),

@@ -46,6 +46,7 @@ final class SumiTabNavigationDelegateAdapter {
                 tab.navigationRuntime.extensionPopupRequestConsumer,
             extensionTabs: tab.navigationRuntime.extensionExternalTabOpening,
             webPopups: tab.navigationRuntime.physicalWebPopupOpening,
+            automaticGlance: tab.navigationRuntime.automaticGlanceOpening,
             childTabs: tab.navigationRuntime.webKitChildTabOpening,
             childWindows: tab.navigationRuntime.webKitChildWindowOpening
         )

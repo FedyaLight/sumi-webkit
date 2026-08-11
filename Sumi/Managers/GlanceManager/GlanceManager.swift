@@ -78,6 +78,55 @@ final class GlanceManager: ObservableObject {
         )
     }
 
+    @discardableResult
+    func presentAutomaticExternalURL(
+        _ url: URL,
+        from tab: Tab,
+        in sourceWindow: BrowserWindowState,
+        originRectInWindow: CGRect? = nil
+    ) -> Bool {
+        guard currentSession == nil else { return false }
+        return presentExternalURL(
+            url,
+            from: tab,
+            in: sourceWindow,
+            originRectInWindow: originRectInWindow
+        )
+    }
+
+    func presentAutomaticWebKitChild(
+        _ url: URL,
+        configuration: WKWebViewConfiguration,
+        from tab: Tab,
+        in sourceWindow: BrowserWindowState,
+        originRectInWindow: CGRect? = nil
+    ) -> WKWebView? {
+        guard let runtime, currentSession == nil else { return nil }
+        let resolvedOriginRect = originRectInWindow
+            ?? GlanceManager.fallbackOriginRect(
+                in: windowRegistry?.appKitWindow(for: sourceWindow)
+            )
+        var childWebView: WKWebView?
+        let didBegin = beginSession(
+            url,
+            sourceTab: tab,
+            windowState: sourceWindow,
+            fallbackWindowId: sourceWindow.id,
+            originRectInWindow: resolvedOriginRect,
+            persistsWindowSession: true,
+            preparePreviewWebView: { previewTab in
+                let webView = runtime.installPreviewWebView(
+                    previewTab,
+                    configuration,
+                    url
+                )
+                childWebView = webView
+                return webView
+            }
+        )
+        return didBegin ? childWebView : nil
+    }
+
     private func presentExternalURL(
         _ url: URL,
         from tab: Tab?,
@@ -378,7 +427,8 @@ final class GlanceManager: ObservableObject {
         fallbackWindowId: UUID,
         originRectInWindow originRect: CGRect,
         initialTitle: String? = nil,
-        persistsWindowSession: Bool
+        persistsWindowSession: Bool,
+        preparePreviewWebView: ((Tab) -> WKWebView?)? = nil
     ) -> Bool {
         guard let runtime else { return false }
         promotionCompletionOwner.cancel()
@@ -388,12 +438,19 @@ final class GlanceManager: ObservableObject {
 
         let windowId = windowState?.id ?? fallbackWindowId
         var publishedSession: GlanceSession?
+        var publishedPreviewWebView: WKWebView?
         let didPublish = runtime.withPreparedPreviewTab(
             url,
             tab,
             windowState
         ) { [weak self] previewTab in
             guard let self else { return false }
+            if let preparePreviewWebView {
+                guard let webView = preparePreviewWebView(previewTab) else {
+                    return false
+                }
+                publishedPreviewWebView = webView
+            }
             let session = GlanceSession(
                 targetURL: url,
                 windowId: windowId,
@@ -412,6 +469,13 @@ final class GlanceManager: ObservableObject {
         guard didPublish, let session = publishedSession else { return false }
         if persistsWindowSession {
             persistWindowSession(for: windowId)
+        }
+
+        if let publishedPreviewWebView {
+            publishedPreviewWebView.allowsMagnification = false
+            session.observe(publishedPreviewWebView)
+            currentSession = session
+            return true
         }
 
         Task { @MainActor [weak self, weak session] in
