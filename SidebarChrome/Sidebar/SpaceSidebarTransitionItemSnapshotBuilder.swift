@@ -48,11 +48,18 @@ enum SpaceSidebarTransitionItemSnapshotProjector {
         selection: SidebarWindowSelectionQuery,
         pinProjection: SidebarPinFolderProjection,
         windowState: BrowserWindowState,
-        currentTabID: UUID?
+        currentTabID: UUID?,
+        showsUnloadedTabAppearance: Bool
     ) -> [SpaceRegularRowSnapshot] {
         guard let projection else {
             return tabs.map {
-                .tab(tabSnapshot($0, currentTabId: currentTabID))
+                .tab(
+                    tabSnapshot(
+                        $0,
+                        currentTabId: currentTabID,
+                        showsUnloadedTabAppearance: showsUnloadedTabAppearance
+                    )
+                )
             }
         }
 
@@ -86,7 +93,13 @@ enum SpaceSidebarTransitionItemSnapshotProjector {
             switch row.identity {
             case .tab(let tabID):
                 return tabsByID[tabID].map {
-                    .tab(tabSnapshot($0, currentTabId: currentTabID))
+                    .tab(
+                        tabSnapshot(
+                            $0,
+                            currentTabId: currentTabID,
+                            showsUnloadedTabAppearance: showsUnloadedTabAppearance
+                        )
+                    )
                 }
             case .splitGroup(let groupID):
                 return groupsByID[groupID].map {
@@ -517,14 +530,16 @@ enum SpaceSidebarTransitionItemSnapshotProjector {
 
     private static func tabSnapshot(
         _ tab: Tab,
-        currentTabId: UUID?
+        currentTabId: UUID?,
+        showsUnloadedTabAppearance: Bool
     ) -> SpaceTabRowSnapshot {
         SpaceTabRowSnapshot(
             id: tab.id,
             title: tab.name,
             icon: tabIcon(for: tab),
             isSelected: currentTabId == tab.id,
-            showsUnloadedIndicator: tab.showsWebViewUnloadedIndicator,
+            showsUnloadedIndicator: showsUnloadedTabAppearance
+                && tab.showsWebViewUnloadedIndicator,
             showsAudioButton: tab.audioState.showsTabAudioButton,
             isMuted: tab.audioState.isMuted
         )

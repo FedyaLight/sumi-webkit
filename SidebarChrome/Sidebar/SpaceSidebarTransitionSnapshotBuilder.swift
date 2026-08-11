@@ -126,7 +126,8 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             selection: selection,
             pinProjection: pinProjection,
             windowState: windowState,
-            currentTabID: currentTabID
+            currentTabID: currentTabID,
+            showsUnloadedTabAppearance: settings.showUnloadedTabAppearance
         )
         let hasPinnedContent = projection?.topLevelItems.isEmpty == false
         let isPinnedContentCollapsed = hasPinnedContent

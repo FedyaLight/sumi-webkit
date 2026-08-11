@@ -73,12 +73,12 @@ final class SpaceSidebarTransitionCoordinator {
             ?? context.browserContext.profileAuthority.currentProfile?.id
     }
 
-    func sourceOpacity(for travelProgress: Double) -> Double {
-        1 - (travelProgress * 0.12)
+    func sourceOpacity(for _: Double) -> Double {
+        1
     }
 
-    func destinationOpacity(for travelProgress: Double) -> Double {
-        0.88 + (travelProgress * 0.12)
+    func destinationOpacity(for _: Double) -> Double {
+        1
     }
 
     func sourceOffsetX(width: CGFloat) -> CGFloat {

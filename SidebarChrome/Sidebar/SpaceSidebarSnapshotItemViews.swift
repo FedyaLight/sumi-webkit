@@ -10,6 +10,7 @@ struct SpaceSnapshotSplitGroupView: View {
     let splitGroup: SpaceSplitGroupSnapshot
     let rowCornerRadius: CGFloat
     let tokens: ChromeThemeTokens
+    @Environment(\.sumiSettings) private var sumiSettings
     @Environment(SidebarFaviconImageStore.self) private var faviconImageStore
 
     var body: some View {
@@ -83,8 +84,8 @@ struct SpaceSnapshotSplitGroupView: View {
                 size: SidebarRowLayout.faviconSize,
                 foregroundColor: tokens.primaryText
             )
-            .saturation(splitGroup.isLoaded ? 1 : 0)
-            .opacity(splitGroup.isLoaded ? 1 : 0.8)
+            .saturation(showsUnloadedAppearance ? 0 : 1)
+            .opacity(showsUnloadedAppearance ? 0.5 : 1)
 
             SidebarRowTitleLabel(
                 title: splitGroup.displayTitle,
@@ -104,6 +105,10 @@ struct SpaceSnapshotSplitGroupView: View {
         splitGroup.members.map {
             $0.icon.loadKey(using: faviconImageStore)
         }.joined(separator: "|")
+    }
+
+    private var showsUnloadedAppearance: Bool {
+        sumiSettings.showUnloadedTabAppearance && !splitGroup.isLoaded
     }
 }
 
@@ -200,6 +205,7 @@ struct SpaceSnapshotShortcutRowView: View {
     let shortcut: SpaceShortcutSnapshot
     let rowCornerRadius: CGFloat
     let tokens: ChromeThemeTokens
+    @Environment(\.sumiSettings) private var sumiSettings
 
     var body: some View {
         HStack(spacing: 0) {
@@ -254,12 +260,17 @@ struct SpaceSnapshotShortcutRowView: View {
             size: SidebarRowLayout.faviconSize,
             foregroundColor: tokens.primaryText
         )
-        .saturation(shortcut.presentationState.shouldDesaturateIcon ? 0.0 : 1.0)
-        .opacity(shortcut.presentationState.shouldDesaturateIcon ? 0.8 : 1.0)
+        .saturation(showsUnloadedAppearance ? 0.0 : 1.0)
+        .opacity(showsUnloadedAppearance ? 0.5 : 1.0)
         .frame(
             width: SidebarRowLayout.faviconSize,
             height: SidebarRowLayout.faviconSize
         )
+    }
+
+    private var showsUnloadedAppearance: Bool {
+        sumiSettings.showUnloadedTabAppearance
+            && shortcut.presentationState.shouldDesaturateIcon
     }
 
     private var changedURLLeadingAction: some View {

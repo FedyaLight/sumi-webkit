@@ -48,6 +48,15 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         )
     }
 
+    func testTransitionLayersPreserveSnapshotContentOpacity() {
+        let coordinator = SpaceSidebarTransitionCoordinator()
+
+        for progress in [0.0, 0.5, 1.0] {
+            XCTAssertEqual(coordinator.sourceOpacity(for: progress), 1)
+            XCTAssertEqual(coordinator.destinationOpacity(for: progress), 1)
+        }
+    }
+
     func testRenderPolicyKeepsUnresolvedSwipeOnCommittedInteractivePage() {
         let ids = [UUID(), UUID()]
         var state = SpaceSidebarTransitionState()
@@ -625,6 +634,27 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         )
     }
 
+    func testSnapshotShortcutUnloadedAppearanceMatchesLiveOpacityAndSetting() throws {
+        let enabled = try renderedSnapshotShortcutRow(
+            showsChangedURLSlash: false,
+            showUnloadedAppearance: true
+        )
+        let disabled = try renderedSnapshotShortcutRow(
+            showsChangedURLSlash: false,
+            showUnloadedAppearance: false
+        )
+        let iconCenter = CGPoint(
+            x: SidebarRowLayout.leadingInset + SidebarRowLayout.faviconSize / 2,
+            y: SidebarRowLayout.rowHeight / 2
+        )
+        let enabledColor = try XCTUnwrap(color(in: enabled, at: iconCenter))
+        let disabledColor = try XCTUnwrap(color(in: disabled, at: iconCenter))
+
+        XCTAssertEqual(enabledColor.alphaComponent, 0.5, accuracy: 0.05)
+        XCTAssertGreaterThan(disabledColor.redComponent, 0.9)
+        XCTAssertEqual(disabledColor.alphaComponent, 1, accuracy: 0.05)
+    }
+
     func testChangedURLSnapshotKeepsLiveTitleLeadingInset() throws {
         let image = try renderedSnapshotShortcutRow(
             showsChangedURLSlash: true,
@@ -752,6 +782,43 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         XCTAssertEqual(
             regularTabRows(in: snapshot.source).map(\.showsUnloadedIndicator),
             [true]
+        )
+    }
+
+    func testSnapshotBuilderHidesRegularTabUnloadedAppearanceWhenDisabled() {
+        let browserManager = BrowserManager()
+        let windowState = BrowserWindowState()
+        let settings = makeIsolatedSettings()
+        settings.showUnloadedTabAppearance = false
+        let profileId = UUID()
+        let source = Space(name: "Source", profileId: profileId)
+        let destination = Space(name: "Destination", profileId: profileId)
+        let unloadedTab = browserManager.tabFactory.makeTab(
+            url: URL(string: "https://example.com/unloaded")!,
+            name: "Unloaded",
+            spaceId: source.id,
+            index: 0
+        )
+        unloadedTab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
+
+        browserManager.spaceStateOwner.replaceSpaces([source, destination])
+        browserManager.regularTabLifecycleOwner.addTab(unloadedTab)
+        windowState.currentProfileId = profileId
+        windowState.currentSpaceId = source.id
+        windowState.currentTabId = unloadedTab.id
+
+        let snapshot = makeTransitionSnapshot(
+            sourceSpace: source,
+            destinationSpace: destination,
+            browserManager: browserManager,
+            windowState: windowState,
+            settings: settings
+        )
+
+        XCTAssertTrue(unloadedTab.showsWebViewUnloadedIndicator)
+        XCTAssertEqual(
+            regularTabRows(in: snapshot.source).map(\.showsUnloadedIndicator),
+            [false]
         )
     }
 
@@ -1329,7 +1396,8 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
 
     private func renderedSnapshotShortcutRow(
         showsChangedURLSlash: Bool,
-        title: String = ""
+        title: String = "",
+        showUnloadedAppearance: Bool = true
     ) throws -> NSBitmapImageRep {
         let rowWidth: CGFloat = 213
         let rowHeight = SidebarRowLayout.rowHeight
@@ -1367,6 +1435,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             showsChangedURLSlash: showsChangedURLSlash
         )
         let settings = makeIsolatedSettings()
+        settings.showUnloadedTabAppearance = showUnloadedAppearance
         let tokens = ResolvedThemeContext.default.tokens(settings: settings)
         let root = SpaceSnapshotShortcutRowView(
             shortcut: shortcut,
@@ -1374,6 +1443,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             tokens: tokens
         )
         .frame(width: rowWidth, height: rowHeight)
+        .environment(\.sumiSettings, settings)
         .environment(SidebarFaviconImageStore())
         let host = NSHostingView(rootView: root)
         host.wantsLayer = true
@@ -1398,6 +1468,18 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         )
         host.cacheDisplay(in: host.bounds, to: image)
         return image
+    }
+
+    private func color(
+        in image: NSBitmapImageRep,
+        at point: CGPoint
+    ) -> NSColor? {
+        let scaleX = CGFloat(image.pixelsWide) / image.size.width
+        let scaleY = CGFloat(image.pixelsHigh) / image.size.height
+        return image.colorAt(
+            x: Int(point.x * scaleX),
+            y: Int(point.y * scaleY)
+        )?.usingColorSpace(.deviceRGB)
     }
 
     private func renderedSelectedFavoriteSplitSnapshot() throws -> (
