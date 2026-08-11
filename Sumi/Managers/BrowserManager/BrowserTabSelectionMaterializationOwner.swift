@@ -2,30 +2,24 @@ import Foundation
 
 @MainActor
 final class BrowserTabSelectionMaterializationOwner {
-    private let state: BrowserTabSelectionStateApplication
+    private let pages: BrowserTabSelectionMaterializationQuery
     private let startupProtection: BrowserStartupProtectionRuntime
     private let compositor: TabCompositorManager
     private let trackedAdmission: TrackedWebViewAdmissionService
     private let windowVisuals: BrowserWindowVisualCoordinator
-    private let visibleTabs: @MainActor (Tab, BrowserWindowState) -> [Tab]
-    private let tabForID: @MainActor (UUID, BrowserWindowState) -> Tab?
 
     init(
-        state: BrowserTabSelectionStateApplication,
+        pages: BrowserTabSelectionMaterializationQuery,
         startupProtection: BrowserStartupProtectionRuntime,
         compositor: TabCompositorManager,
         trackedAdmission: TrackedWebViewAdmissionService,
-        windowVisuals: BrowserWindowVisualCoordinator,
-        visibleTabs: @escaping @MainActor (Tab, BrowserWindowState) -> [Tab],
-        tabForID: @escaping @MainActor (UUID, BrowserWindowState) -> Tab?
+        windowVisuals: BrowserWindowVisualCoordinator
     ) {
-        self.state = state
+        self.pages = pages
         self.startupProtection = startupProtection
         self.compositor = compositor
         self.trackedAdmission = trackedAdmission
         self.windowVisuals = windowVisuals
-        self.visibleTabs = visibleTabs
-        self.tabForID = tabForID
     }
 
     func scheduleIfNeeded(
@@ -35,7 +29,7 @@ final class BrowserTabSelectionMaterializationOwner {
     ) {
         let requests = windowState.pageMaterializationRequests
         var seen: Set<UUID> = []
-        let candidates = visibleTabs(tab, windowState).filter {
+        let candidates = pages.visibleTabs(including: tab, in: windowState).filter {
             seen.insert($0.id).inserted
         }
         let coldPages = candidates.filter {
@@ -70,7 +64,7 @@ final class BrowserTabSelectionMaterializationOwner {
                     guard let self, let page, let windowState else { return }
                     await Task.yield()
                     guard requests.owns(request),
-                          self.isVisible(page, in: windowState),
+                          self.pages.isVisible(page, in: windowState),
                           page.webViewSession.generation
                             == request.residenceGeneration else {
                         _ = requests.settle(request, as: .superseded)
@@ -118,8 +112,8 @@ final class BrowserTabSelectionMaterializationOwner {
     func retryCurrent(in windowState: BrowserWindowState) {
         let requests = windowState.pageMaterializationRequests
         for request in requests.currentRequests(in: windowState.id) {
-            guard let tab = tabForID(request.pageID, windowState),
-                  isVisible(tab, in: windowState) else {
+            guard let tab = pages.tab(request.pageID, in: windowState),
+                  pages.isVisible(tab, in: windowState) else {
                 _ = requests.settle(request, as: .departed)
                 continue
             }
@@ -169,13 +163,5 @@ final class BrowserTabSelectionMaterializationOwner {
                 as: .failed(.initialSubmissionUnavailable)
             )
         }
-    }
-
-    private func isVisible(
-        _ tab: Tab,
-        in windowState: BrowserWindowState
-    ) -> Bool {
-        guard let selected = state.currentTab(in: windowState) else { return false }
-        return visibleTabs(selected, windowState).contains { $0 === tab }
     }
 }

@@ -155,7 +155,7 @@ final class TabWebViewRebuildService {
             return .failed
         }
 
-        tab.webContentRecoveryAdmission.authorizeRecoveryEpochReset(
+        tab.authorizeWebContentRecoveryReset(
             onCommitFrom: candidate
         )
         let start = runtime.pipeline.begin(

@@ -17,7 +17,7 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
         let runtime = RecordingTabLifecycleNavigationRuntime()
         tab.navigationRuntime.lifecycleNavigationRuntime = runtime.runtime
         let webView = WKWebView()
-        _ = tab.beginMainFrameNavigationIntent(to: targetURL)
+        let intent = tab.beginMainFrameNavigationIntent(to: targetURL)
         let submission = try XCTUnwrap(tab.mainFrameLoads.claimDirectSubmission(on: webView))
         let navigation = NSObject()
         let navigationID = ObjectIdentifier(navigation)
@@ -653,7 +653,7 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
             loadsCachedFaviconOnInit: false,
             mainFrameRuntimeTransaction: transaction
         )
-        let intent = tab.beginMainFrameNavigationIntent(to: targetURL)
+        _ = tab.beginMainFrameNavigationIntent(to: targetURL)
         let crashedNavigation = NSObject()
         let crashedNavigationID = ObjectIdentifier(crashedNavigation)
 
@@ -666,12 +666,11 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
         ))
 
         let firstPlan = transaction.beginRecovery(on: webView)
-        XCTAssertEqual(firstPlan.scope, .replica(intent))
         XCTAssertEqual(firstPlan.disposition, .deliver)
         XCTAssertTrue(tab.webContentRecoveryMarkers.isRecoveryRequired(on: webView))
 
         let duplicatePlan = transaction.beginRecovery(on: webView)
-        XCTAssertEqual(duplicatePlan.scope, .replica(intent))
+        XCTAssertEqual(duplicatePlan.disposition, .duplicate)
         XCTAssertNil(duplicatePlan.authorityContinuation)
         XCTAssertTrue(tab.webContentRecoveryMarkers.isRecoveryRequired(on: webView))
 
@@ -928,10 +927,7 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
         }
         let plan = transaction.beginRecovery(on: webView)
 
-        XCTAssertEqual(
-            plan.scope,
-            .replica(transaction.mainFrameLoads.currentIntent)
-        )
+        XCTAssertEqual(plan.disposition, .deliver)
         XCTAssertEqual(effects.reasons, ["web-content-process-recovery"])
         XCTAssertEqual(roleObservedByEffect, .stale)
         XCTAssertEqual(
@@ -942,10 +938,6 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
 
         let duplicatePlan = transaction.beginRecovery(on: webView)
 
-        XCTAssertEqual(
-            duplicatePlan.scope,
-            .replica(transaction.mainFrameLoads.currentIntent)
-        )
         XCTAssertEqual(duplicatePlan.disposition, .duplicate)
         XCTAssertNil(duplicatePlan.authorityContinuation)
         XCTAssertTrue(effects.reasons.isEmpty)

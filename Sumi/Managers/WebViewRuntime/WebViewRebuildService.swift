@@ -6,18 +6,37 @@ import SumiWebRuntime
 /// destructive-cleanup barrier, or enters the replacement transaction.
 @MainActor
 final class WebViewRebuildService {
+    private let webViewSessions: WebViewSessionRepository
     private let runtimeTabs: WebViewRuntimeTabRegistry
     private let websiteDataCleanup: WebsiteDataCleanupService
     private let engine: TabWebViewRebuildService
 
     init(
+        webViewSessions: WebViewSessionRepository,
         runtimeTabs: WebViewRuntimeTabRegistry,
         websiteDataCleanup: WebsiteDataCleanupService,
         engine: TabWebViewRebuildService
     ) {
+        self.webViewSessions = webViewSessions
         self.runtimeTabs = runtimeTabs
         self.websiteDataCleanup = websiteDataCleanup
         self.engine = engine
+    }
+
+    func repairFailedResidence(
+        for tab: Tab,
+        in windowID: UUID,
+        useNativeSnapshot: Bool
+    ) -> TabWebViewRebuildResult {
+        guard let webView = webViewSessions.webView(
+            for: tab.id,
+            in: windowID
+        ) else { return .failed }
+        return engine.repairFailedResidence(
+            tab: tab,
+            webView: webView,
+            useNativeSnapshot: useNativeSnapshot
+        )
     }
 
     @available(macOS 15.5, *)

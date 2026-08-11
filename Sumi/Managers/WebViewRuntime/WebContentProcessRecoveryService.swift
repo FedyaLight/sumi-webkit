@@ -122,8 +122,7 @@ final class WebContentProcessRecoveryService {
 
         if case .pendingActivation = state.phase {
             guard isVisible(tab, webView) else { return .scheduled }
-            guard tab.webContentRecoveryAdmission
-                .activatePendingRecovery(on: webView) else {
+            guard tab.activatePendingWebContentRecovery(on: webView) else {
                 requestsByWebViewID.removeValue(forKey: webViewID)
                 return .failed
             }
@@ -140,19 +139,10 @@ final class WebContentProcessRecoveryService {
             return outcome
         }
         if outcome == .failed {
-            tab.webContentRecoveryAdmission.failRecoveryDelivery(on: webView)
             requestsByWebViewID.removeValue(forKey: webViewID)
-            settleFailure(tab, on: webView)
+            tab.settleFailedWebContentRecoveryDelivery(on: webView)
             return .failed
         }
         return .scheduled
-    }
-
-    private func settleFailure(_ tab: Tab, on webView: WKWebView) {
-        tab.loadingState = .idle
-        tab.navigationRuntime.webViewRouting.pagePresentationDidChange(
-            tab.id,
-            webView
-        )
     }
 }

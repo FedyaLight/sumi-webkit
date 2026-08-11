@@ -63,6 +63,7 @@ opening='Sumi/Managers/ExtensionManager/ExtensionControllerOpeningCallbackHandle
 opening_runtime='Sumi/Managers/ExtensionManager/ExtensionControllerOpeningCallbackRuntime.swift'
 initial='Sumi/Managers/ExtensionManager/ExtensionInitialDocumentRuntimePreparationOwner.swift'
 content='Sumi/Managers/ExtensionManager/ExtensionContentScriptContextPreparationOwner.swift'
+profile_tasks='Sumi/Managers/ExtensionManager/ExtensionProfileRuntimeTaskOwner.swift'
 native='Sumi/Managers/ExtensionManager/ExtensionInitialDocumentNativeMessagingWarmupOwner.swift'
 residency='Sumi/Managers/ExtensionManager/ExtensionContextResidencyOwner.swift'
 retention='Sumi/Managers/ExtensionManager/ExtensionContextRetentionOwner.swift'
@@ -91,7 +92,7 @@ close_router='Sumi/Managers/BrowserManager/BrowserWebViewCloseRouter.swift'
 permission_runtime='Sumi/Managers/BrowserManager/TabBrowserHostServicesRuntimeFactory.swift'
 compact_window='Sumi/Components/Window/AuxiliaryCompactWindow.swift'
 window_router='Sumi/Managers/ExtensionManager/ExtensionWindowRequestRouter.swift'
-for file in "$bridge" "$opening" "$opening_runtime" "$initial" "$content" "$native" \
+for file in "$bridge" "$opening" "$opening_runtime" "$initial" "$content" "$profile_tasks" "$native" \
   "$residency" "$retention" "$loading" "$settlement" "$deferred" \
   "$weak_events" "$browser_aux" "$session_registry" "$teardown" \
   "$ui_delegate" "$extension_opening" "$popup_opening" "$extension_bridge" \
@@ -336,9 +337,10 @@ if scan_has_matches 'events: self' "$browser_aux" \
   echo 'error: auxiliary integration regained transitive ExtensionManager retention' >&2
   exit 1
 fi
-require_matches 'private struct ScheduledTask' "$content"
-require_matches 'tasksByProfile\[profileID\]\?\.token == token' "$content"
-require_matches 'retiredTokens' "$content"
+require_matches 'private struct ScheduledTask' "$profile_tasks"
+require_matches 'tasksByProfile\[profileID\]\?\.token == token' "$profile_tasks"
+require_matches 'retiredTokens' "$profile_tasks"
+require_matches 'ExtensionProfileRuntimeTaskOwner' "$content" "$native"
 require_matches -F 'target?.notifyAuxiliaryWindowOpened(session) ?? false' "$weak_events"
 
 if scan_has_matches 'private (weak|unowned) var manager|private unowned let manager' \
@@ -377,6 +379,7 @@ for limit_and_file in \
   "90:$opening_runtime" \
   "220:$initial" \
   "150:$content" \
+  "100:$profile_tasks" \
   "170:$native" \
   "140:$residency" \
   "130:$retention" \

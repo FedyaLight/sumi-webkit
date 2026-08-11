@@ -61,18 +61,6 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
         }
     }
 
-    override func keyDown(with event: NSEvent) {
-        let commandModifiers = event.modifierFlags.intersection([
-            .command, .control, .option,
-        ])
-        guard commandModifiers.isEmpty else {
-            super.keyDown(with: event)
-            return
-        }
-        // WebKit and its page responders have already declined this ordinary
-        // key. End the page-local responder path without a system beep.
-    }
-
     init(tabID: UUID, webView: WKWebView) {
         self.tabID = tabID
         retainedWebView = webView
@@ -84,9 +72,6 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
     }
 
     private func configure(webView: WKWebView) {
-        let transferredReaderPresentation = webView.sumiReaderPresentationHost?
-            .takeReaderPresentationForTransfer()
-
         autoresizingMask = [.width, .height]
         wantsLayer = true
         // Clips AppKit subviews (WKWebView) to the tab viewport. In-page extension overlays
@@ -98,9 +83,6 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
 
         addDisplayedContent(webView.sumiDisplayedContentView)
         installPageScrollbarOverlayIfNeeded(for: webView)
-        if let transferredReaderPresentation {
-            installReaderPresentation(transferredReaderPresentation)
-        }
         recordInlineUIContainerClippingIfNeeded()
     }
 
@@ -276,15 +258,6 @@ final class SumiWebViewContainerView: NSView, WebRuntimePromotedHost {
            session.webView.window === presentationWindow {
             presentationWindow.makeFirstResponder(session.webView)
         }
-    }
-
-    private func takeReaderPresentationForTransfer() -> ReaderPresentationSession? {
-        guard let session = readerPresentationSession else { return nil }
-        (webView as? FocusableWKWebView)?.resetPageInteractionState()
-        session.webView.removeFromSuperview()
-        session.detach(from: self)
-        readerPresentationSession = nil
-        return session
     }
 
     private func notifyActivePresentationChanged() {

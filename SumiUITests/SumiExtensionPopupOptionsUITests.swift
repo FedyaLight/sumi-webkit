@@ -46,8 +46,19 @@ final class SumiExtensionPopupOptionsUITests: SumiLaunchSmokeUITestCase {
         let browserWindow = app.windows.element(boundBy: 0)
         XCTAssertTrue(browserWindow.waitForExistence(timeout: 10), "The browser window did not appear")
 
-        app.menuBars.menuBarItems["Extensions"].click()
-        app.menuItems["Manage Extensions..."].click()
+        let action = openExtensionHub(in: app, fixture: fixture)
+        openSidebarContextMenu(
+            on: action,
+            expectedMenuItem: "Manage Extensions",
+            app: app
+        )
+
+        let manageExtensions = app.menuItems["Manage Extensions"]
+        XCTAssertTrue(
+            manageExtensions.waitForExistence(timeout: 5),
+            "The extension action menu does not expose its settings command"
+        )
+        manageExtensions.click()
 
         let details = app.buttons["extension-details-\(Self.extensionID)"]
         XCTAssertTrue(

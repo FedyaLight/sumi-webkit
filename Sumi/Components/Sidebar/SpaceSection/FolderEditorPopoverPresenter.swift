@@ -88,35 +88,31 @@ struct FolderEditorPopover: View {
 private struct FolderEditorIconButton: View {
     @Binding var icon: String
 
-    @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
-    @StateObject private var glyphPickerManager = FolderGlyphPickerManager()
+    @State private var presentsIconPicker = false
 
     var body: some View {
         Button {
-            toggleIconPicker()
+            presentsIconPicker.toggle()
         } label: {
             FolderEditorIconPreview(icon: icon)
                 .frame(width: 26, height: 26)
         }
         .buttonStyle(.plain)
-        .background(FolderGlyphPickerAnchor(manager: glyphPickerManager))
         .help("Change Icon")
         .accessibilityLabel("Change Icon")
-        .onAppear {
-            glyphPickerManager.sidebarRecoveryCoordinator =
-                windowState.sidebarContextMenuController.sidebarRecoveryCoordinator
-        }
-    }
-
-    private func toggleIconPicker() {
-        glyphPickerManager.selectedIcon = SumiZenFolderIconCatalog.normalizedFolderIconValue(icon)
-        glyphPickerManager.toggle(
-            settings: sumiSettings,
-            themeContext: themeContext
-        ) { picked in
-            icon = SumiZenFolderIconCatalog.normalizedFolderIconValue(picked)
+        .popover(isPresented: $presentsIconPicker) {
+            FolderGlyphPicker(
+                currentIcon: icon,
+                tokens: themeContext.nativeSurfaceThemeContext.tokens(
+                    settings: sumiSettings
+                )
+            ) { picked in
+                icon = SumiZenFolderIconCatalog.normalizedFolderIconValue(
+                    picked
+                )
+            }
         }
     }
 }

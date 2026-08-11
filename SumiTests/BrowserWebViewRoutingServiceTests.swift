@@ -23,7 +23,7 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
         )
 
         service.syncTabAcrossWindows(tabId)
-        service.reloadTabAcrossWindows(
+        _ = service.reloadTabAcrossWindows(
             tabId,
             intent: intent,
             policy: .standard
@@ -34,10 +34,17 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
             intent: intent,
             policy: .standard
         )
+        let repairResult = service.repairFailedPage(
+            tabId,
+            in: UUID(),
+            useNativeSnapshot: true
+        )
 
         XCTAssertTrue(commandRecorder.syncCalls.isEmpty)
         XCTAssertTrue(commandRecorder.reloadCalls.isEmpty)
         XCTAssertTrue(commandRecorder.windowReloadCalls.isEmpty)
+        XCTAssertTrue(commandRecorder.repairFailedResidenceCalls.isEmpty)
+        XCTAssertEqual(repairResult, .failed)
     }
 
     func testRoutingCallsDelegateToInjectedCommands() throws {
@@ -68,7 +75,7 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
 
         let webView = service.webView(for: tab.id, in: windowId)
         service.syncTabAcrossWindows(tab.id, originatingWebView: originatingWebView)
-        service.reloadTabAcrossWindows(
+        _ = service.reloadTabAcrossWindows(
             tab.id,
             intent: reloadIntent,
             policy: .standard
@@ -80,6 +87,11 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
             policy: .standard
         )
         service.setMuteState(true, for: tab.id)
+        let repairResult = service.repairFailedPage(
+            tab.id,
+            in: windowId,
+            useNativeSnapshot: true
+        )
 
         XCTAssertIdentical(webView, expectedWebView)
 
@@ -96,6 +108,13 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
         XCTAssertEqual(commandRecorder.muteCalls.count, 1)
         XCTAssertEqual(commandRecorder.muteCalls.first?.muted, true)
         XCTAssertEqual(commandRecorder.muteCalls.first?.tabId, tab.id)
+        let repairCall = try XCTUnwrap(
+            commandRecorder.repairFailedResidenceCalls.first
+        )
+        XCTAssertIdentical(repairCall.tab, tab)
+        XCTAssertEqual(repairCall.windowId, windowId)
+        XCTAssertTrue(repairCall.useNativeSnapshot)
+        XCTAssertEqual(repairResult, .committed)
     }
 
     func testPagePresentationChangeRefreshesOnlyExactTrackedResidence() {
@@ -768,6 +787,12 @@ private final class RecordingWebViewRoutingCommands {
         let webView: WKWebView
     }
 
+    struct RepairFailedResidenceCall {
+        let tab: Tab
+        let windowId: UUID
+        let useNativeSnapshot: Bool
+    }
+
     private(set) var syncCalls: [SyncCall] = []
     private(set) var compositorRefreshWindowIDs: [UUID] = []
     private(set) var reloadCalls: [Tab] = []
@@ -775,6 +800,7 @@ private final class RecordingWebViewRoutingCommands {
     private(set) var processRecoveryCalls: [ProcessRecoveryCall] = []
     private(set) var muteCalls: [MuteCall] = []
     private(set) var materializeCalls: [MaterializeCall] = []
+    private(set) var repairFailedResidenceCalls: [RepairFailedResidenceCall] = []
     var materializedWebView: WKWebView?
     let webViewSessions = WebViewSessionRepository()
 
@@ -824,7 +850,17 @@ private final class RecordingWebViewRoutingCommands {
                 )
                 return self?.materializedWebView
             },
-            rebuildWindowConfiguration: { _, _, _, _ in .notNeeded }
+            rebuildWindowConfiguration: { _, _, _, _ in .notNeeded },
+            repairFailedResidence: { [weak self] tab, windowID, useNativeSnapshot in
+                self?.repairFailedResidenceCalls.append(
+                    RepairFailedResidenceCall(
+                        tab: tab,
+                        windowId: windowID,
+                        useNativeSnapshot: useNativeSnapshot
+                    )
+                )
+                return .committed
+            }
         )
     }
 }

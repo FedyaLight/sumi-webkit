@@ -397,7 +397,10 @@ final class WebViewRuntimeTabRegistryTests: XCTestCase {
         guard case .retiring = repository.residence(of: current) else {
             return XCTFail("Retired generation lost its transaction residence")
         }
-        XCTAssertTrue(graph.processRecoveryService.hasPendingRecovery(for: current))
+        XCTAssertFalse(
+            graph.processRecoveryService.hasPendingRecovery(for: current),
+            "Retirement must cancel recovery even while physical destruction is blocked"
+        )
 
         guard case .rolledBack = repository.rollbackReplacementBatch(lease) else {
             return XCTFail("Expected raw transaction rollback")

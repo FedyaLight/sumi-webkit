@@ -18,20 +18,16 @@ final class SumiWebKitPageStateAdapterTests: XCTestCase {
     }
 
     func testNativeSessionStateProducesConcreteRestoreNavigation() async throws {
+        let server = try await AutofillPagesHTTPServer.start(preferredPort: 0)
+        defer { server.stop() }
         let source = WKWebView()
         let finished = expectation(description: "source document committed")
         let delegate = SessionStateNavigationDelegate {
             finished.fulfill()
         }
         source.navigationDelegate = delegate
-        let fixture = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .appendingPathComponent("Fixtures/AutofillPages/login-basic.html")
-        source.loadFileURL(
-            fixture,
-            allowingReadAccessTo: fixture.deletingLastPathComponent()
-        )
-        await fulfillment(of: [finished], timeout: 5)
+        source.load(URLRequest(url: server.loginBasicURL))
+        await fulfillment(of: [finished], timeout: 10)
 
         let data = try XCTUnwrap(
             SumiWebKitPageStateAdapter.sessionStateData(from: source)

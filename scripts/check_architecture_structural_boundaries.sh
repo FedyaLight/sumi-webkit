@@ -85,6 +85,7 @@ tab_selection_services=(
 tab_selection_role_files=(
   Sumi/Managers/BrowserManager/BrowserTabSelectionActivation.swift
   Sumi/Managers/BrowserManager/BrowserTabSelectionStateApplication.swift
+  Sumi/Managers/BrowserManager/BrowserTabSelectionMaterializationQuery.swift
   Sumi/Managers/BrowserManager/BrowserTabSelectionMaterializationOwner.swift
   Sumi/Managers/BrowserManager/BrowserTabSelectionChromeEffects.swift
   Sumi/Managers/BrowserManager/BrowserTabSelectionMediaEffects.swift

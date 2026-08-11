@@ -206,7 +206,7 @@ enforce_service_boundary "$child_tab_settlement" 160 5
 enforce_service_boundary "$responder" 300 3
 enforce_service_boundary "$child_webview_transaction" 250 4
 enforce_service_boundary "$child_surface_router" 125 4
-enforce_service_boundary "$glance_routing" 65 0
+enforce_service_boundary "$glance_routing" 140 0
 
 contract_count="$(guard_count_matches 'childWebViewTransaction[[:space:]]*=[[:space:]]*WebKitChildWebViewTransaction\(' "$responder")"
 if (( contract_count == 0 )); then

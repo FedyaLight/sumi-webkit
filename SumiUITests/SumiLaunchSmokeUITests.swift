@@ -56,6 +56,77 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
         XCTAssertEqual(app.state, .runningForeground)
     }
 
+    func testSelectingCustomFolderIconDoesNotTerminateApp() throws {
+        let fixture = try loadPersonalSidebarFixture()
+        let folderID = try XCTUnwrap(fixture.folderID)
+        let app = try launchApp(
+            preferencesHomeURL: try prepareSmokePreferencesHome()
+        )
+        let window = app.windows.element(boundBy: 0)
+
+        XCTAssertTrue(window.waitForExistence(timeout: 5))
+        activatePersonalSpace(
+            fixture,
+            app: app,
+            window: window,
+            collapsedSidebar: false
+        )
+
+        let folder = requireElement(
+            withIdentifier: "folder-header-\(folderID)",
+            in: app,
+            window: window,
+            collapsedSidebar: false
+        )
+        openSidebarContextMenu(
+            on: folder,
+            expectedMenuItem: "Edit",
+            app: app
+        )
+        chooseContextMenuItem("Edit", app: app)
+
+        let editor = element(
+            withIdentifier: "folder-editor-popover",
+            in: app
+        )
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+
+        let changeIcon = app.buttons["Change Icon"]
+        XCTAssertTrue(changeIcon.waitForExistence(timeout: 5))
+        changeIcon.click()
+
+        let picker = element(
+            withIdentifier: "folder-glyph-picker-panel",
+            in: app
+        )
+        XCTAssertTrue(picker.waitForExistence(timeout: 5))
+
+        let customIcon = app.buttons["School"]
+        XCTAssertTrue(customIcon.waitForExistence(timeout: 5))
+        customIcon.click()
+
+        window.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(
+            waitForNonExistence(picker, timeout: 5),
+            "Escape did not close the custom folder icon picker"
+        )
+        XCTAssertTrue(editor.exists)
+
+        let done = app.buttons["Done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 5))
+        done.click()
+
+        XCTAssertEqual(
+            app.state,
+            .runningForeground,
+            "Selecting a custom folder icon terminated Sumi"
+        )
+        XCTAssertTrue(
+            waitForNonExistence(editor, timeout: 5),
+            "Saving the custom folder icon did not close the editor"
+        )
+    }
+
     func testSettingsMenuOpensSettingsWindow() throws {
         let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
         let browserWindow = app.windows.element(boundBy: 0)

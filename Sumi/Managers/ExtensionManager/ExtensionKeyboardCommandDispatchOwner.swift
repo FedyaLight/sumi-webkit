@@ -147,11 +147,21 @@ final class ExtensionKeyboardCommandDispatchOwner {
 
     private func reconcileBindings() {
         for (profileID, contexts) in profileRuntime.contextsByProfile {
-            let projected = Dictionary(
-                uniqueKeysWithValues: ((try? assignments.assignments(
+            let projected: [
+                ExtensionCommandBindingIdentity: ExtensionCommandBindingAssignment
+            ]
+            do {
+                projected = Dictionary(
+                    uniqueKeysWithValues: try assignments.assignments(
                     profileID: profileID
-                )) ?? []).map { ($0.identity, $0) }
-            )
+                    ).map { ($0.identity, $0) }
+                )
+            } catch {
+                diagnostics.trace(
+                    "extension keyboard binding reconciliation failed profileId=\(profileID.uuidString) error=\(error.localizedDescription)"
+                )
+                projected = [:]
+            }
 
             for (extensionID, context) in contexts where context.isLoaded {
                 for command in context.commands {

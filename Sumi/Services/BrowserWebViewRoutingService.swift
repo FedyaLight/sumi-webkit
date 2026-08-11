@@ -1,5 +1,5 @@
-import WebKit
 import SumiWebRuntime
+import WebKit
 
 @MainActor
 final class BrowserWebViewRoutingService {
@@ -30,6 +30,11 @@ final class BrowserWebViewRoutingService {
             URL,
             String
         ) -> TabWebViewReplacementOutcome
+        let repairFailedResidence: @MainActor (
+            Tab,
+            UUID,
+            Bool
+        ) -> TabWebViewRebuildResult
     }
 
     private let tabLookup: TabLookup
@@ -180,6 +185,20 @@ final class BrowserWebViewRoutingService {
 
     func cancelWebContentProcessRecovery(on webView: WKWebView) {
         commands.cancelRecovery(webView)
+    }
+
+    @discardableResult
+    func repairFailedPage(
+        _ tabID: UUID,
+        in windowID: UUID,
+        useNativeSnapshot: Bool
+    ) -> TabWebViewRebuildResult {
+        guard let tab = tabLookup(tabID) else { return .failed }
+        return commands.repairFailedResidence(
+            tab,
+            windowID,
+            useNativeSnapshot
+        )
     }
 
     func setMuteState(_ muted: Bool, for tabId: UUID) {
@@ -350,6 +369,13 @@ extension BrowserWebViewRoutingService.Commands {
                 case .noLiveWindows, .failed:
                     return .failed
                 }
+            },
+            repairFailedResidence: { tab, windowID, useNativeSnapshot in
+                rebuild.repairFailedResidence(
+                    for: tab,
+                    in: windowID,
+                    useNativeSnapshot: useNativeSnapshot
+                )
             }
         )
     }

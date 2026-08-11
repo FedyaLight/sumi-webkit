@@ -203,7 +203,6 @@ final class TabMainFrameRuntimeTransaction:
             guard admission != .duplicate else {
                 return TabWebContentProcessRecoveryPlan(
                     disposition: .duplicate,
-                    scope: .replica(intent),
                     authorityContinuation: nil
                 )
             }
@@ -225,7 +224,6 @@ final class TabMainFrameRuntimeTransaction:
 
             return TabWebContentProcessRecoveryPlan(
                 disposition: admission == .failed ? .failed : .deliver,
-                scope: .replica(mainFrameLoads.currentIntent),
                 authorityContinuation: continuation
             )
         }

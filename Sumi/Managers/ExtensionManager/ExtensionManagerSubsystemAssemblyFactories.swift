@@ -133,7 +133,8 @@ enum ExtensionActionUIAssemblyFactory {
         actions: ExtensionActionGraphFoundation,
         actionPolicy: ExtensionActionPolicyAssemblyProduct,
         runtimeAction: ExtensionRuntimeActionPhaseProduct,
-        runtimePopup: ExtensionRuntimePopupPhaseProduct
+        runtimePopup: ExtensionRuntimePopupPhaseProduct,
+        runtimeKeyboard: ExtensionRuntimeKeyboardPhaseProduct
     ) -> ExtensionActionUIAssemblyProduct {
         let surfaceLifetime = ExtensionActionSurfaceResidenceOwner(
             installedExtensions: contexts.installedExtensions,
@@ -159,7 +160,7 @@ enum ExtensionActionUIAssemblyFactory {
             popupCoordinator: runtimePopup.coordinator,
             popupAnchorResolver: runtimePopup.anchorResolver,
             optionsWindows: actions.optionsWindows,
-            keyboardCommands: runtimeAction.keyboardCommands
+            keyboardCommands: runtimeKeyboard.keyboardCommands
         )
         return ExtensionActionUIAssemblyProduct(
             surfaceLifetime: surfaceLifetime,
@@ -177,7 +178,7 @@ enum ExtensionActionUIAssemblyFactory {
                 popupCallbackAdmission: runtimePopup.callbackAdmission,
                 popupCoordinator: runtimePopup.coordinator,
                 popupAnchorResolver: runtimePopup.anchorResolver,
-                keyboardCommands: runtimeAction.keyboardCommands
+                keyboardCommands: runtimeKeyboard.keyboardCommands
             )
         )
     }

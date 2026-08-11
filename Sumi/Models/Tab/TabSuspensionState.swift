@@ -1,19 +1,9 @@
 import Foundation
 import SumiWebRuntime
-import WebKit
 
 enum PageSessionDataStoreIdentity: Equatable {
     case persistent(UUID)
     case runtime(ObjectIdentifier)
-
-    @MainActor
-    init(_ dataStore: WKWebsiteDataStore) {
-        if let identifier = dataStore.identifier {
-            self = .persistent(identifier)
-        } else {
-            self = .runtime(ObjectIdentifier(dataStore))
-        }
-    }
 }
 
 struct PageSessionSnapshot: Equatable {

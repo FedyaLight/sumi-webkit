@@ -129,7 +129,8 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
             .navigationHistoryContext(for: harness.windowState)
             .openURLInCurrentTab(targetURL, source)
 
-        XCTAssertEqual(source.url, targetURL)
+        XCTAssertEqual(source.mainFrameLoads.currentIntent.targetURL, targetURL)
+        XCTAssertEqual(source.url, URL(string: "https://source.example")!)
         XCTAssertEqual(harness.windowState.currentTabId, source.id)
         XCTAssertEqual(harness.windowState.currentSpaceId, harness.primarySpace.id)
     }

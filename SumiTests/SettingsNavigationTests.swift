@@ -13,7 +13,7 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertTrue(appSource.contains(".commandsRemoved()"))
         XCTAssertTrue(commandsSource.contains("CommandGroup(replacing: .appSettings)"))
         XCTAssertTrue(commandsSource.contains("settingsNavigation.openSettings"))
-        XCTAssertTrue(commandsSource.contains(".modifier(dynamicShortcut(.openSettings))"))
+        XCTAssertTrue(commandsSource.contains(".keyboardShortcut(\",\", modifiers: [.command])"))
     }
 
     func testSettingsNativeSurfaceStructureAvoidsDuplicateChromeAndNestedScrolling() throws {

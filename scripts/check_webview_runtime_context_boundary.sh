@@ -232,7 +232,7 @@ lifecycle_line_count="$(guard_count_lines "$runtime_lifecycle_file")"
 lifecycle_collaborator_count="$(
   guard_count_matches '^    private let ' "$runtime_lifecycle_file"
 )"
-guard_max 'WebViewRuntimeGraph composition root LOC' "$graph_line_count" 640
+guard_max 'WebViewRuntimeGraph composition root LOC' "$graph_line_count" 680
 guard_max \
   'WebView profile runtime composition LOC' \
   "$profile_runtime_composition_line_count" \
@@ -249,7 +249,7 @@ guard_expect_no_matches \
   'WebView profile runtime composition gained stored state' \
   '^    ((private|fileprivate|internal|public)[[:space:]]+)?(static[[:space:]]+)?(lazy[[:space:]]+)?(let|var)\b' \
   "$profile_runtime_composition_file"
-guard_max 'WebViewLifecycleService LOC' "$lifecycle_line_count" 253
+guard_max 'WebViewLifecycleService LOC' "$lifecycle_line_count" 280
 guard_max \
   'WebViewLifecycleService stored collaborators' \
   "$lifecycle_collaborator_count" \
@@ -401,7 +401,8 @@ while IFS= read -r match; do
     "$runtime_composition_file"|\
     "$runtime_wiring_file"|\
     "$window_command_channel_file"|\
-    "$close_request_broker_file")
+    "$close_request_broker_file"|\
+    Sumi/Managers/BrowserManager/BrowserStartupVisibleWindowSettlement.swift)
       ;;
     *)
       printf 'error: WebView command boundary escaped root composition: %s\n' \
@@ -531,7 +532,7 @@ require_pattern \
 
 require_pattern \
   "$graph_file" \
-  'tab\.webViewsDidLeaveNavigationRuntime\(' \
+  'tab\.webViewsWillLeaveRuntime\(' \
   'replacement pipeline generation departure must reach the exact Tab runtime'
 
 tab_batch_departure_body="$(

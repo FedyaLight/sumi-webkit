@@ -8,9 +8,6 @@ protocol TabWebContentRecoveryAdmission: AnyObject {
         on webView: WKWebView,
         snapshot: PageRecoverySessionSnapshot?
     ) -> TabWebContentProcessRecoveryPlan
-    func activatePendingRecovery(on webView: WKWebView) -> Bool
-    func failRecoveryDelivery(on webView: WKWebView)
-    func authorizeRecoveryEpochReset(onCommitFrom webView: WKWebView)
 }
 
 /// Read-only marker visibility used by routing and registration services.

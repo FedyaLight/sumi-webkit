@@ -286,7 +286,7 @@ final class TabNavigationCommandOwner {
         if let resolvedWebView,
            tab.webContentRecoveryMarkers.recoveryState(on: resolvedWebView)?
             .isFailure == true {
-            tab.webContentRecoveryAdmission.authorizeRecoveryEpochReset(
+            tab.authorizeWebContentRecoveryReset(
                 onCommitFrom: resolvedWebView
             )
         }

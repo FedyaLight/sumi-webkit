@@ -442,6 +442,19 @@ final class SumiCommandPaletteFocusUITests: SumiLaunchSmokeUITestCase {
                 "Unable to select input source \(id): OSStatus \(status)"
             )
         }
+
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline {
+            let current = TISCopyCurrentKeyboardInputSource()
+                .takeRetainedValue()
+            if inputSourceID(current) == id {
+                return
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        throw FixtureError.missingValue(
+            "Input source \(id) did not become current"
+        )
     }
 
     private func withABCInputSource(

@@ -897,7 +897,11 @@ final class ExtensionRequestedTabServicesTests:
             replacementLoadError = $0
         }
         XCTAssertNil(replacementLoadError)
-        XCTAssertEqual(harness.sourceTab.url, acceptedURL)
+        XCTAssertEqual(
+            harness.sourceTab.mainFrameLoads.currentIntent.targetURL,
+            acceptedURL
+        )
+        XCTAssertEqual(harness.sourceTab.url, originalURL)
     }
 
     func testNormalTabAdapterNeverRebindsToReplacementTabWithSameID()

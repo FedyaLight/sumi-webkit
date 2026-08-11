@@ -179,25 +179,7 @@ final class KeyboardCommandAssignments {
                 forKey: legacyBackupDocumentKey
             )
 
-            guard let elements = try? JSONSerialization.jsonObject(with: data)
-                as? [Any] else {
-                return
-            }
-
-            var seenActions: Set<ShortcutAction> = []
-            for element in elements {
-                guard JSONSerialization.isValidJSONObject(element),
-                      let elementData = try? JSONSerialization.data(
-                        withJSONObject: element
-                      ),
-                      let legacy = try? JSONDecoder().decode(
-                        LegacyOverride.self,
-                        from: elementData
-                      ),
-                      seenActions.insert(legacy.action).inserted else {
-                    continue
-                }
-
+            for legacy in legacyOverrides(from: data) {
                 try connection.keyboardBindings.save(
                     BrowserActionBindingRecord(
                         action: legacy.action,
@@ -209,6 +191,37 @@ final class KeyboardCommandAssignments {
                 )
             }
         }
+    }
+
+    private static func legacyOverrides(from data: Data) -> [LegacyOverride] {
+        let elements: [Any]
+        do {
+            guard let decoded = try JSONSerialization.jsonObject(with: data)
+                as? [Any] else { return [] }
+            elements = decoded
+        } catch {
+            return []
+        }
+
+        var overrides: [LegacyOverride] = []
+        var seenActions: Set<ShortcutAction> = []
+        for element in elements where JSONSerialization.isValidJSONObject(element) {
+            do {
+                let elementData = try JSONSerialization.data(
+                    withJSONObject: element
+                )
+                let legacy = try JSONDecoder().decode(
+                    LegacyOverride.self,
+                    from: elementData
+                )
+                if seenActions.insert(legacy.action).inserted {
+                    overrides.append(legacy)
+                }
+            } catch {
+                continue
+            }
+        }
+        return overrides
     }
 
     static func activeBrowserOwners(

@@ -1299,8 +1299,11 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         tab: Tab,
         webView: FocusableWKWebView
     ) {
+        let server = try await AutofillPagesHTTPServer.start(preferredPort: 0)
+        addTeardownBlock { server.stop() }
+        let documentURL = server.loginBasicURL
         let didPresent = harness.browserManager.glanceManager.presentExternalURL(
-            URL(string: "about:blank")!,
+            documentURL,
             from: harness.sourceTab,
             in: harness.windowState
         )
@@ -1314,21 +1317,8 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
                 as? FocusableWKWebView,
                session.previewTab.committedDocumentRuntime.lease(
                    for: webView
-               ) != nil {
-                let documentURL = URL(string: "https://glance.example/page")!
-                webView.loadHTMLString(
-                    "<html><body>glance source</body></html>",
-                    baseURL: documentURL
-                )
-                for _ in 0..<300 {
-                    if session.previewTab.committedDocumentRuntime.lease(
-                        for: webView
-                    )?.committedURL == documentURL {
-                        return (session, session.previewTab, webView)
-                    }
-                    try await Task.sleep(for: .milliseconds(10))
-                }
-                break
+               )?.committedURL == documentURL {
+                return (session, session.previewTab, webView)
             }
             try await Task.sleep(for: .milliseconds(10))
         }

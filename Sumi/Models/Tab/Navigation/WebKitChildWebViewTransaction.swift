@@ -138,68 +138,16 @@ final class WebKitChildWebViewTransaction {
         )
         let isMiddleButtonClick = navigationAction.buttonNumber == 2
             || sourceWebView.gestures.hasRecentAuxiliaryMouseDown
-        let explicitLinkBehavior = SumiLinkOpenBehavior(
-            buttonIsMiddle: isMiddleButtonClick,
-            modifierFlags: navigationFlags,
-            switchToNewTabWhenOpenedPreference: false
-        )
-        let isActiveGlancePreview = tab.navigationRuntime.permissionRuntime
-            .isActiveGlancePreviewSurface(tab.id, sourceWebView)
-        let isUserActivatedNavigation = navigationAction.navigationType
-            == .linkActivated || navigationAction.isUserInitiated == true
-        if isActiveGlancePreview,
-           explicitLinkBehavior == .currentTab,
-           isUserActivatedNavigation {
-            sourceWebView.load(navigationAction.request)
-            sourceWebView.gestures.clear(ifCurrent: gestureReceipt)
-            return .handled
-        }
-        if isActiveGlancePreview, let targetURL {
-            let disposition: TabLinkDisposition?
-            switch explicitLinkBehavior {
-            case .currentTab:
-                disposition = nil
-            case .newTab(let selected):
-                disposition = .newTab(selected: selected)
-            case .newWindow(let selected):
-                disposition = .newWindow(selected: selected)
-            }
-            if let disposition,
-               tab.linkPresentationCommands.open(
-                   targetURL,
-                   from: sourceWebView,
-                   disposition: disposition
-               ) {
-                sourceWebView.consumeGestureForBrowserCommand()
-                return .handled
-            }
-        }
-        if LinkGlanceRouting.routeExplicit(
-            targetURL,
-            isRequested: !isActiveGlancePreview
-                && tab.isGlanceTriggerActive(navigationFlags),
+        if LinkGlanceRouting.routeChildWebViewRequest(
+            LinkGlanceRouting.ChildWebViewRequest(
+                navigationAction: navigationAction,
+                modifierFlags: navigationFlags,
+                isMiddleButtonClick: isMiddleButtonClick,
+                isExtensionOriginated: isExtensionOriginated,
+                gestureReceipt: gestureReceipt
+            ),
             tab: tab,
             sourceWebView: sourceWebView
-        ) {
-            return .handled
-        }
-
-        let isDynamicGlanceTarget = targetURL.map {
-            tab.shouldOpenDynamicallyInGlance(
-                url: $0,
-                modifierFlags: navigationFlags
-            )
-        } ?? false
-        let shouldOpenDynamicGlance = isExtensionOriginated == false
-            && isMiddleButtonClick == false
-            && isDynamicGlanceTarget
-        if LinkGlanceRouting.routeDynamic(
-            targetURL,
-            isRequested: shouldOpenDynamicGlance,
-            tab: tab,
-            sourceWebView: sourceWebView,
-            isExtensionOriginated: isExtensionOriginated,
-            isMiddleButtonClick: isMiddleButtonClick
         ) {
             return .handled
         }

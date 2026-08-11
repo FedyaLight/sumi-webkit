@@ -6,6 +6,26 @@ import XCTest
 
 @MainActor
 final class TabScriptMessageHandlerIsolationTests: XCTestCase {
+    private var defaultsHarness: TestDefaultsHarness!
+    private var settings: SumiSettingsService!
+    private var pageServer: AutofillPagesHTTPServer?
+
+    override func setUp() {
+        super.setUp()
+        defaultsHarness = TestDefaultsHarness()
+        settings = SumiSettingsService(userDefaults: defaultsHarness.defaults)
+        settings.memoryMode = .balanced
+    }
+
+    override func tearDown() {
+        pageServer?.stop()
+        pageServer = nil
+        settings = nil
+        defaultsHarness.reset()
+        defaultsHarness = nil
+        super.tearDown()
+    }
+
     private struct ScriptShape: Equatable {
         let typeName: String
         let injectionTime: WKUserScriptInjectionTime
@@ -107,6 +127,7 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
         let configuration = WKWebViewConfiguration()
         configuration.userContentController = controller
+        configuration.websiteDataStore = .nonPersistent()
         let webView = FocusableWKWebView(
             frame: CGRect(x: 0, y: 0, width: 800, height: 600),
             configuration: configuration
@@ -114,7 +135,7 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         webView.owningTab = tab
 
         await normalTabController.waitForContentBlockingAssetsInstalled()
-        await loadBlankDocument(into: webView)
+        try await loadBlankDocument(into: webView)
 
         normalTabController.cleanUpBeforeClosing()
 
@@ -402,6 +423,7 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         transaction: TabMainFrameRuntimeTransaction,
         establishDocument: Bool = true
     ) async throws -> FocusableWKWebView {
+        tab.sumiSettings = settings
         let scriptsProvider = SumiNormalTabUserScripts(
             managedUserScripts: tab.normalTabCoreUserScripts()
         )
@@ -411,21 +433,21 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
         let configuration = WKWebViewConfiguration()
         configuration.userContentController = controller
+        configuration.websiteDataStore = .nonPersistent()
         let webView = FocusableWKWebView(
             frame: CGRect(x: 0, y: 0, width: 800, height: 600),
             configuration: configuration
         )
         webView.owningTab = tab
         await normalTabController.waitForContentBlockingAssetsInstalled()
-        await loadBlankDocument(into: webView)
+        try await loadBlankDocument(into: webView)
         if establishDocument {
             establishCommittedDocument(
                 on: webView,
                 for: tab,
                 transaction: transaction
             )
-            let initialEvidenceAccepted = try await postTabSuspensionCanBeSuspended(
-                true,
+            let initialEvidenceAccepted = await waitForTabSuspensionActivation(
                 in: webView
             )
             XCTAssertTrue(initialEvidenceAccepted)
@@ -519,6 +541,21 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         )
     }
 
+    private func waitForTabSuspensionActivation(
+        in webView: WKWebView
+    ) async -> Bool {
+        for _ in 0..<100 {
+            if (try? await postTabSuspensionCanBeSuspended(
+                true,
+                in: webView
+            )) == true {
+                return true
+            }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return false
+    }
+
     private func establishCommittedDocument(
         on webView: WKWebView,
         for tab: Tab,
@@ -548,17 +585,21 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         withExtendedLifetime(navigation) {}
     }
 
-    private func loadBlankDocument(into webView: WKWebView) async {
+    private func loadBlankDocument(into webView: WKWebView) async throws {
         let didFinish = expectation(description: "blank document loaded")
         let delegate = NavigationDelegateBox {
             didFinish.fulfill()
         }
+        let server: AutofillPagesHTTPServer
+        if let pageServer {
+            server = pageServer
+        } else {
+            server = try await AutofillPagesHTTPServer.start(preferredPort: 0)
+            pageServer = server
+        }
 
         webView.navigationDelegate = delegate
-        webView.loadHTMLString(
-            "<!doctype html><html><body>ok</body></html>",
-            baseURL: URL(string: "https://example.com")
-        )
+        webView.load(URLRequest(url: server.loginBasicURL))
 
         await fulfillment(of: [didFinish], timeout: 5.0)
         webView.navigationDelegate = nil

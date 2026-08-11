@@ -8,19 +8,13 @@ final class ExtensionContentScriptContextPreparationOwner {
     typealias ContextLoad = @MainActor (String, UUID) async throws -> Void
     typealias FailureLog = @MainActor (Error, String, UUID, String) -> Void
 
-    private struct ScheduledTask {
-        let token: UUID
-        let task: Task<PageNavigationPrerequisiteResult, Never>
-    }
-
     private let installedExtensions: InstalledExtensionCollection
     private let runtimeIsEnabled: @MainActor () -> Bool
     private let context: ContextQuery
     private let load: ContextLoad
     private let logFailure: FailureLog
-    private var tasksByProfile: [UUID: ScheduledTask] = [:]
-    private var retiredTokens = Set<UUID>()
-    private var finishedBeforeRegistrationTokens = Set<UUID>()
+    private let runtimeTasks =
+        ExtensionProfileRuntimeTaskOwner<PageNavigationPrerequisiteResult>()
 
     init(
         installedExtensions: InstalledExtensionCollection,
@@ -62,15 +56,9 @@ final class ExtensionContentScriptContextPreparationOwner {
         guard runtimeIsEnabled(), profileNeedsLoad(profileID: profileID) else {
             return .ready
         }
-        if let scheduled = tasksByProfile[profileID] {
-            return await scheduled.task.value
-        }
-
-        let token = UUID()
-        let task: Task<PageNavigationPrerequisiteResult, Never> = Self.runtimeTask {
+        return await runtimeTasks.run(profileID: profileID) {
             [weak self] in
             guard let self else { return .cancelled }
-            defer { self.finish(profileID: profileID, token: token) }
             let records = self.contentScriptExtensions()
             var loadedCount = 0
             var failedCount = 0
@@ -92,61 +80,19 @@ final class ExtensionContentScriptContextPreparationOwner {
             if failedCount == 0 { return .ready }
             return loadedCount == 0 ? .failed : .degraded
         }
-        tasksByProfile[profileID] = ScheduledTask(token: token, task: task)
-        clearIfFinishedBeforeRegistration(profileID: profileID, token: token)
-        return await task.value
     }
 
     func cancelAll() {
-        for scheduled in tasksByProfile.values {
-            scheduled.task.cancel()
-            retiredTokens.insert(scheduled.token)
-        }
-        tasksByProfile.removeAll()
-        finishedBeforeRegistrationTokens.removeAll()
+        runtimeTasks.cancelAll()
     }
 
     #if DEBUG
         func runtimeTasksForDrain() -> [Task<Void, Never>] {
-            tasksByProfile.values.map(\.task)
-                .map { task in
-                    Task { _ = await task.value }
-                }
+            runtimeTasks.tasksForDrain()
         }
     #endif
 
-    private func finish(profileID: UUID, token: UUID) {
-        var resolved = false
-        if tasksByProfile[profileID]?.token == token {
-            tasksByProfile.removeValue(forKey: profileID)
-            resolved = true
-        }
-        if retiredTokens.remove(token) != nil { resolved = true }
-        guard resolved == false else { return }
-        finishedBeforeRegistrationTokens.insert(token)
-    }
-
-    private func clearIfFinishedBeforeRegistration(
-        profileID: UUID,
-        token: UUID
-    ) {
-        guard finishedBeforeRegistrationTokens.remove(token) != nil else {
-            return
-        }
-        if tasksByProfile[profileID]?.token == token {
-            tasksByProfile.removeValue(forKey: profileID)
-        }
-    }
-
     private func contentScriptExtensions() -> [InstalledExtension] {
         installedExtensions.enabledContentScriptRecords
-    }
-
-    nonisolated static func runtimeTask<Result: Sendable>(
-        _ operation: @escaping @MainActor @Sendable () async -> Result
-    ) -> Task<Result, Never> {
-        Task { @MainActor in
-            await operation()
-        }
     }
 }

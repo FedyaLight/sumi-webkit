@@ -589,24 +589,8 @@ final class WebViewRuntimeGraph {
         )
     )
 
-    @discardableResult
-    func repairFailedPage(
-        _ tab: Tab,
-        in windowID: UUID,
-        useNativeSnapshot: Bool
-    ) -> TabWebViewRebuildResult {
-        guard let webView = webViewSessions.webView(
-            for: tab.id,
-            in: windowID
-        ) else { return .failed }
-        return tabWebViewRebuild.repairFailedResidence(
-            tab: tab,
-            webView: webView,
-            useNativeSnapshot: useNativeSnapshot
-        )
-    }
-
     private(set) lazy var rebuildService: WebViewRebuildService = WebViewRebuildService(
+        webViewSessions: webViewSessions,
         runtimeTabs: runtimeTabs,
         websiteDataCleanup: websiteDataCleanupService,
         engine: tabWebViewRebuild

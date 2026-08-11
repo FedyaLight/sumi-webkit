@@ -13,6 +13,7 @@
             coordination: ExtensionRuntimeCoordinationPhaseProduct,
             popup: ExtensionRuntimePopupPhaseProduct,
             action: ExtensionRuntimeActionPhaseProduct,
+            keyboard: ExtensionRuntimeKeyboardPhaseProduct,
             termination: ExtensionRuntimeTerminationPhaseProduct,
             services: ExtensionRuntimeServicePhaseProduct,
             browserRoles: ExtensionRuntimeBrowserRolePhaseProduct
@@ -75,7 +76,7 @@
                         invocation: action.actionInvocation,
                         toolbarPinning: core.actionPolicy.toolbarPinning,
                         hubOrdering: core.actionPolicy.hubOrdering,
-                        keyboardCommands: action.keyboardCommands,
+                        keyboardCommands: keyboard.keyboardCommands,
                         optionsWindows: f.actions.optionsWindows
                     ),
                     actionPolicy: .init(

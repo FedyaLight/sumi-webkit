@@ -318,11 +318,6 @@ struct TabMainFrameRuntimeDepartureResult: Equatable {
     var hasReplacementAuthority: Bool { continuation != nil }
 }
 
-enum TabWebContentProcessRecoveryScope: Equatable {
-    case replica(TabMainFrameNavigationIntent)
-    case global(URL)
-}
-
 enum TabWebContentProcessRecoveryDisposition: Equatable {
     case duplicate
     case pendingActivation
@@ -332,7 +327,6 @@ enum TabWebContentProcessRecoveryDisposition: Equatable {
 
 struct TabWebContentProcessRecoveryPlan: Equatable {
     let disposition: TabWebContentProcessRecoveryDisposition
-    let scope: TabWebContentProcessRecoveryScope
     let authorityContinuation: TabMainFrameAuthorityContinuation?
 }
 

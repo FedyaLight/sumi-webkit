@@ -6,204 +6,22 @@
 import AppKit
 import SwiftUI
 
-@MainActor
-final class FolderGlyphPickerManager: NSObject, ObservableObject {
-    var popover: NSPopover?
-    weak var anchorView: NSView?
-    var sidebarRecoveryCoordinator: SidebarHostRecoveryHandling
-
-    @Published var selectedIcon: String = ""
-    @Published var committedIcon: String = ""
-
-    private let pickerViewModel = FolderGlyphPickerViewModel()
-    private var hostingController: NSHostingController<FolderGlyphPickerPanelHost>?
-    private var activeCommitHandler: ((String) -> Void)?
-    private var activeSettings: SumiSettingsService?
-    private var activeThemeContext: ResolvedThemeContext?
-    private var didSelectIcon = false
-
-    init(sidebarRecoveryCoordinator: SidebarHostRecoveryHandling = SidebarHostRecoveryCoordinator()) {
-        self.sidebarRecoveryCoordinator = sidebarRecoveryCoordinator
-        super.init()
-    }
-
-    func toggle(
-        settings: SumiSettingsService? = nil,
-        themeContext: ResolvedThemeContext? = nil,
-        onCommit: ((String) -> Void)? = nil
-    ) {
-        guard let anchorView else { return }
-
-        if popover?.isShown == true {
-            popover?.close()
-            return
-        }
-
-        committedIcon = ""
-        didSelectIcon = false
-        activeCommitHandler = onCommit
-        activeSettings = settings
-        activeThemeContext = themeContext?.nativeSurfaceThemeContext
-        ensureHostingController()
-        pickerViewModel.resetForOpen(currentIcon: selectedIcon)
-
-        if popover == nil {
-            let pop = NSPopover()
-            pop.contentViewController = hostingController
-            pop.behavior = .semitransient
-            pop.delegate = self
-            pop.contentSize = NSSize(
-                width: SumiEmojiPickerMetrics.popoverWidth,
-                height: SumiEmojiPickerMetrics.popoverHeight
-            )
-            pop.animates = true
-            popover = pop
-        }
-
-        popover?.contentSize = NSSize(
-            width: SumiEmojiPickerMetrics.popoverWidth,
-            height: SumiEmojiPickerMetrics.popoverHeight
-        )
-        let colorScheme = PopoverPresenterChromeSupport.nativeSurfaceColorScheme(
-            themeContext: activeThemeContext,
-            anchorView: anchorView
-        )
-        popover?.appearance = NSAppearance.sumiChromeAppearance(
-            for: colorScheme,
-            fallback: anchorView.window?.effectiveAppearance
-        )
-
-        guard let window = anchorView.window,
-              let screen = window.screen
-        else {
-            popover?.show(
-                relativeTo: anchorView.bounds,
-                of: anchorView,
-                preferredEdge: .minY
-            )
-            return
-        }
-
-        let anchorFrameInWindow = anchorView.convert(anchorView.bounds, to: nil)
-        let anchorFrameInScreen = window.convertToScreen(anchorFrameInWindow)
-
-        let popoverWidth = SumiEmojiPickerMetrics.popoverWidth
-        let screenFrame = screen.visibleFrame
-
-        var positioningRect = anchorView.bounds
-
-        let rightEdge = anchorFrameInScreen.maxX
-        let leftEdge = anchorFrameInScreen.minX
-
-        if rightEdge + popoverWidth > screenFrame.maxX {
-            let overflow = (rightEdge + popoverWidth) - screenFrame.maxX
-            positioningRect.origin.x -= overflow
-        } else if leftEdge < screenFrame.minX {
-            let overflow = screenFrame.minX - leftEdge
-            positioningRect.origin.x += overflow
-        }
-
-        popover?.show(
-            relativeTo: positioningRect,
-            of: anchorView,
-            preferredEdge: .maxY
-        )
-    }
-
-    private func ensureHostingController() {
-        let panel = makePanel()
-        if let hostingController {
-            hostingController.rootView = panel
-            return
-        }
-
-        let hosting = NSHostingController(rootView: panel)
-        hosting.view.frame = NSRect(
-            x: 0,
-            y: 0,
-            width: SumiEmojiPickerMetrics.popoverWidth,
-            height: SumiEmojiPickerMetrics.popoverHeight
-        )
-        hostingController = hosting
-    }
-
-    private func makePanel() -> FolderGlyphPickerPanelHost {
-        FolderGlyphPickerPanelHost(
-            model: pickerViewModel,
-            settings: activeSettings,
-            themeContext: activeThemeContext,
-            onIconSelected: { [weak self] icon in
-                DispatchQueue.main.async { [weak self] in
-                    self?.didSelectIcon = true
-                    self?.selectedIcon = icon
-                }
-            }
-        )
-    }
-
-}
-
-extension FolderGlyphPickerManager: NSPopoverDelegate {
-    func popoverDidClose(_ notification: Notification) {
-        let selectedIconForCommit = selectedIcon
-        let shouldCommitSelection = didSelectIcon
-
-        if shouldCommitSelection {
-            if let activeCommitHandler {
-                activeCommitHandler(selectedIconForCommit)
-            } else {
-                committedIcon = selectedIconForCommit
-            }
-        }
-
-        let window = anchorView?.window
-        sidebarRecoveryCoordinator.recover(in: window)
-        sidebarRecoveryCoordinator.recover(anchor: anchorView)
-
-        activeCommitHandler = nil
-        didSelectIcon = false
-    }
-}
-
-struct FolderGlyphPickerAnchor: NSViewRepresentable {
-    let manager: FolderGlyphPickerManager
-
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        manager.anchorView = view
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {}
-}
-
-private struct FolderGlyphPickerPanelHost: View {
-    let model: FolderGlyphPickerViewModel
-    let settings: SumiSettingsService?
-    let themeContext: ResolvedThemeContext?
+struct FolderGlyphPicker: View {
+    let currentIcon: String
+    let tokens: ChromeThemeTokens
     let onIconSelected: (String) -> Void
 
-    var body: some View {
-        if let settings, let themeContext {
-            panel
-                .environment(\.sumiSettings, settings)
-                .sumiNativeSurfaceColorScheme(
-                    themeContext.nativeSurfaceColorScheme,
-                    themeContext: themeContext,
-                    settings: settings
-                )
-        } else if let settings {
-            panel.environment(\.sumiSettings, settings)
-        } else {
-            panel
-        }
-    }
+    @StateObject private var model = FolderGlyphPickerViewModel()
 
-    private var panel: some View {
+    var body: some View {
         FolderGlyphPickerPanel(
             model: model,
+            tokens: tokens,
             onIconSelected: onIconSelected
         )
+        .onAppear {
+            model.resetForOpen(currentIcon: currentIcon)
+        }
     }
 }
 
@@ -242,6 +60,7 @@ private final class FolderGlyphPickerViewModel: ObservableObject {
 
 private struct FolderGlyphPickerPanel: View {
     @ObservedObject var model: FolderGlyphPickerViewModel
+    let tokens: ChromeThemeTokens
     let onIconSelected: (String) -> Void
 
     @State private var displayedEntries: [FolderGlyphPickerEntry] = FolderGlyphPickerCatalog.allEntries
@@ -255,7 +74,8 @@ private struct FolderGlyphPickerPanel: View {
                     get: { model.searchText },
                     set: { model.setSearchText($0) }
                 ),
-                placeholder: "Search icons..."
+                placeholder: "Search icons...",
+                tokens: tokens
             )
             .accessibilityIdentifier("folder-glyph-picker-search")
 
@@ -263,6 +83,7 @@ private struct FolderGlyphPickerPanel: View {
                 LazyVGrid(columns: columns, spacing: 4) {
                     FolderGlyphResetGridCell(
                         isSelected: model.currentIcon.isEmpty,
+                        tokens: tokens,
                         onTap: {
                             model.currentIcon = ""
                             onIconSelected("")
@@ -273,6 +94,7 @@ private struct FolderGlyphPickerPanel: View {
                         FolderGlyphGridCell(
                             entry: entry,
                             isSelected: entry.storageValue == model.currentIcon,
+                            tokens: tokens,
                             onTap: {
                                 model.currentIcon = entry.storageValue
                                 onIconSelected(entry.storageValue)
@@ -286,7 +108,7 @@ private struct FolderGlyphPickerPanel: View {
         }
         .padding(12)
         .frame(width: SumiEmojiPickerMetrics.popoverWidth, height: SumiEmojiPickerMetrics.popoverHeight)
-        .background(FloatingChromeSurfaceFill(.panel))
+        .background(tokens.floatingSurfaceBackground)
         .modifier(FolderGlyphPickerAppearModifier())
         .accessibilityIdentifier("folder-glyph-picker-panel")
         .onAppear {
@@ -307,15 +129,8 @@ private struct FolderGlyphPickerPanel: View {
 private struct FolderGlyphSearchField: View {
     @Binding var text: String
     let placeholder: String
-
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
-    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
+    let tokens: ChromeThemeTokens
     @FocusState private var isFocused: Bool
-
-    private var tokens: ChromeThemeTokens {
-        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
-    }
 
     private var fieldFont: Font {
         .system(size: 13)
@@ -395,16 +210,9 @@ private struct FolderGlyphPickerAppearModifier: ViewModifier {
 private struct FolderGlyphGridCell: View {
     let entry: FolderGlyphPickerEntry
     let isSelected: Bool
+    let tokens: ChromeThemeTokens
     let onTap: () -> Void
-
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
-    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
     @State private var hovering = false
-
-    private var tokens: ChromeThemeTokens {
-        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
-    }
 
     var body: some View {
         Button(action: onTap) {
@@ -444,16 +252,9 @@ private struct FolderGlyphGridCell: View {
 
 private struct FolderGlyphResetGridCell: View {
     let isSelected: Bool
+    let tokens: ChromeThemeTokens
     let onTap: () -> Void
-
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
-    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
     @State private var hovering = false
-
-    private var tokens: ChromeThemeTokens {
-        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
-    }
 
     var body: some View {
         Button(action: onTap) {

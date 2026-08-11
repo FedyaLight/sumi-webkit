@@ -1,35 +1,7 @@
 import Foundation
-import SumiDomain
-
-struct TabRestoreURLResolver: Sendable {
-    func resolve(
-        primary: String,
-        fallback: String? = nil,
-        repairReasons: inout Set<String>
-    ) -> URL? {
-        if let url = validAbsoluteURL(primary) {
-            return url
-        }
-        if let fallback, let url = validAbsoluteURL(fallback) {
-            repairReasons.insert("repaired invalid restored url")
-            return url
-        }
-        repairReasons.insert("repaired invalid restored url")
-        return nil
-    }
-
-    private func validAbsoluteURL(_ value: String) -> URL? {
-        guard let url = URL(string: value),
-              let scheme = url.scheme,
-              scheme.isEmpty == false else {
-            return nil
-        }
-        return url
-    }
-}
 
 struct TabRestoreTabPlanner: Sendable {
-    private let urls = TabRestoreURLResolver()
+    private let pages = TabRestorePageResolver()
 
     func categorize(
         _ records: [TabRestoreTabRecord],
@@ -117,10 +89,10 @@ struct TabRestoreTabPlanner: Sendable {
         } else if record.profileId == nil, defaultProfileId != nil {
             repairReasons.insert("assigned default profile to pinned launcher")
         }
-        guard let launchURL = urls.resolve(
-            primary: record.urlString,
+        guard let launchURL = pages.launchURL(
+            record.urlString,
             repairReasons: &repairReasons
-        ), SumiSurface.isEmptyNewTabURL(launchURL) == false else {
+        ) else {
             repairReasons.insert("removed launcher with invalid destination")
             return
         }
@@ -167,10 +139,10 @@ struct TabRestoreTabPlanner: Sendable {
             folderId = nil
             repairReasons.insert("moved launcher out of missing folder")
         }
-        guard let launchURL = urls.resolve(
-            primary: record.urlString,
+        guard let launchURL = pages.launchURL(
+            record.urlString,
             repairReasons: &repairReasons
-        ), SumiSurface.isEmptyNewTabURL(launchURL) == false else {
+        ) else {
             repairReasons.insert("removed launcher with invalid destination")
             return
         }
@@ -210,29 +182,11 @@ struct TabRestoreTabPlanner: Sendable {
             repairReasons.insert("removed regular tab with missing space")
             return
         }
-        let resolvedURL: URL?
-        switch record.pageKind {
-        case .empty:
-            resolvedURL = SumiSurface.emptyTabURL
-        case .restoreFailure:
-            resolvedURL = nil
-        case .web, nil:
-            let candidate = urls.resolve(
-                primary: record.currentURLString ?? record.urlString,
-                fallback: record.urlString,
-                repairReasons: &repairReasons
-            )
-            if candidate.map(SumiSurface.isEmptyNewTabURL) == true {
-                // Legacy records cannot prove that blank represented a true
-                // Empty Page rather than the old corruption fallback.
-                repairReasons.insert("quarantined legacy blank restored tab")
-                resolvedURL = nil
-            } else {
-                resolvedURL = candidate
-            }
-        }
-        let isRestoreFailure = resolvedURL == nil
-        let url = resolvedURL ?? SumiSurface.restoreFailureURL
+        let page = pages.resolveRegularPage(
+            record,
+            repairReasons: &repairReasons
+        )
+        let url = page.url
         guard ExtensionURLIdentity.isOwned(url) == false else {
             repairReasons.insert("removed extension-owned restored tab")
             return
@@ -248,17 +202,9 @@ struct TabRestoreTabPlanner: Sendable {
                 folderId: nil,
                 canGoBack: false,
                 canGoForward: false,
-                isRestoreFailure: isRestoreFailure,
-                restoreFailureDestination: [
-                    record.currentURLString,
-                    record.urlString,
-                ]
-                .compactMap { $0 }
-                .compactMap(URL.init(string:))
-                .first,
-                restoreFailureRawDestination: isRestoreFailure
-                    ? record.currentURLString ?? record.urlString
-                    : nil
+                isRestoreFailure: page.isRestoreFailure,
+                restoreFailureDestination: page.failureDestination,
+                restoreFailureRawDestination: page.failureRawDestination
             )
         )
         result.regularCount += 1

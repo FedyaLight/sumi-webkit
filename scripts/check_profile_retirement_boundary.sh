@@ -90,10 +90,10 @@ guard_expect_no_matches \
 
 schema_version_write_count="$({
   guard_count_matches \
-    'PRAGMA user_version = 2' \
+    'PRAGMA user_version = 4' \
     "$database_schema"
 })"
-guard_exact 'unified database schema version writes' "$schema_version_write_count" 2
+guard_exact 'unified database schema version writes' "$schema_version_write_count" 4
 
 retirement_table_count="$({
   guard_count_matches \

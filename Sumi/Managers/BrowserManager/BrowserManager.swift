@@ -215,37 +215,15 @@ class BrowserManager: ObservableObject {
             splitMembership: splitGroupMembership
         )
         let materialization = BrowserTabSelectionMaterializationOwner(
-            state: state,
+            pages: BrowserTabSelectionMaterializationQuery(
+                state: state,
+                splitQuery: splitQuery,
+                membership: tabCollectionMembershipOwner
+            ),
             startupProtection: startupProtectionRuntime,
             compositor: compositorManager,
             trackedAdmission: webViewRuntime.trackedWebViewAdmission,
-            windowVisuals: shell.windowVisuals,
-            visibleTabs: {
-                [splitQuery,
-                 membership = tabCollectionMembershipOwner]
-                selected,
-                windowState in
-                let visibleIDs = splitQuery.visibleTabIDs(in: windowState.id)
-                guard visibleIDs.isEmpty == false else { return [selected] }
-                var tabs = visibleIDs.compactMap { tabID in
-                    if windowState.isIncognito {
-                        return windowState.ephemeralTabs.first { $0.id == tabID }
-                    }
-                    return membership.tab(for: tabID)
-                }
-                if tabs.contains(where: { $0 === selected }) == false {
-                    tabs.append(selected)
-                }
-                return tabs
-            },
-            tabForID: { [membership = tabCollectionMembershipOwner]
-                tabID,
-                windowState in
-                if windowState.isIncognito {
-                    return windowState.ephemeralTabs.first { $0.id == tabID }
-                }
-                return membership.tab(for: tabID)
-            }
+            windowVisuals: shell.windowVisuals
         )
         let chromeEffects = BrowserTabSelectionChromeEffects(
             state: state,
@@ -453,10 +431,7 @@ class BrowserManager: ObservableObject {
             visibleWindows: BrowserStartupVisibleWindowSettlement(
                 windows: windowRegistry,
                 visuals: shellRuntime.windowVisuals,
-                retryMaterialization: { [weak self] windowState in
-                    self?.browserTabSelection
-                        .retryCurrentPageMaterializationRequests(in: windowState)
-                }
+                commands: webViewWindowCommands
             )
         )
 

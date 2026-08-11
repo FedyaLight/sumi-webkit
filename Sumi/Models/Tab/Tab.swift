@@ -76,7 +76,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     /// Read by recovery routing as a fail-closed marker status. Recovery
     /// admission itself is callback-local in the lifecycle responder.
     let webContentRecoveryMarkers: any TabWebContentRecoveryMarkerQuery
-    let webContentRecoveryAdmission: any TabWebContentRecoveryAdmission
     let webViewRebuildEpoch = TabWebViewRebuildEpoch()
     let committedDocumentRuntime: TabCommittedDocumentRuntime
     let webViewConfigurationOwner = TabWebViewConfigurationOwner()
@@ -271,6 +270,40 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     func makeAuthenticationNavigationResponder()
         -> SumiTabAuthenticationNavigationResponder {
         SumiTabAuthenticationNavigationResponder(tab: self)
+    }
+
+    func activatePendingWebContentRecovery(on webView: WKWebView) -> Bool {
+        mainFrameRuntimeTransaction.activatePendingRecovery(on: webView)
+    }
+
+    func settleFailedWebContentRecoveryDelivery(on webView: WKWebView) {
+        mainFrameRuntimeTransaction.failRecoveryDelivery(on: webView)
+        loadingState = .idle
+        navigationRuntime.webViewRouting.pagePresentationDidChange(id, webView)
+    }
+
+    func recordFailedWebContentRecovery(
+        on webView: WKWebView,
+        snapshot: PageRecoverySessionSnapshot? = nil
+    ) {
+        let plan = mainFrameRuntimeTransaction.beginRecovery(
+            on: webView,
+            snapshot: snapshot
+        )
+        if let continuation = plan.authorityContinuation {
+            TabMainFrameLifecycleReducer.replayIfNeeded(
+                continuation,
+                tab: self,
+                promotion: mainFrameRuntimeTransaction
+            )
+        }
+        settleFailedWebContentRecoveryDelivery(on: webView)
+    }
+
+    func authorizeWebContentRecoveryReset(onCommitFrom webView: WKWebView) {
+        mainFrameRuntimeTransaction.authorizeRecoveryEpochReset(
+            onCommitFrom: webView
+        )
     }
 
     @discardableResult
@@ -577,7 +610,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         self.mainFrameLoads = mainFrameRuntimeTransaction.mainFrameLoads
         self.mainFrameSubmission = mainFrameRuntimeTransaction
         self.webContentRecoveryMarkers = mainFrameRuntimeTransaction
-        self.webContentRecoveryAdmission = mainFrameRuntimeTransaction
         self.committedDocumentRuntime =
             mainFrameRuntimeTransaction.committedDocumentRuntime
         self.name = name

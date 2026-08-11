@@ -1,5 +1,4 @@
 import Foundation
-import Navigation
 import SumiDomain
 import SumiWebRuntime
 import WebKit

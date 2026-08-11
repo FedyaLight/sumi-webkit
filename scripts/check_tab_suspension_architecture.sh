@@ -40,6 +40,11 @@ if [[ -f Sumi/Managers/MemoryPressureTabSuspensionService.swift ]]; then
   status=1
 fi
 
+if [[ -f Sumi/Managers/TabSuspensionPolicyChangeMonitor.swift ]]; then
+  printf 'error: retired always-on suspension policy monitor still exists\n' >&2
+  status=1
+fi
+
 legacy_hits="$(
   guard_capture_matches '\b(TabSuspensionService|TabSuspensionRuntime|TabSuspensionStateOwner|suspensionStateOwner)\b' \
     Sumi SumiTests -g '*.swift'
@@ -153,7 +158,6 @@ core_files=(
   Sumi/Managers/TabSuspensionVisibilityLedger.swift
   Sumi/Managers/ProactiveTabSuspensionTimerScheduler.swift
   Sumi/Managers/TabSuspensionReconcileScheduler.swift
-  Sumi/Managers/TabSuspensionPolicyChangeMonitor.swift
   Sumi/Managers/ProactiveTabSuspensionLifecycle.swift
   Sumi/Managers/MemoryPressureTabSuspensionHandler.swift
   Sumi/Managers/TabSuspensionController.swift

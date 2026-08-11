@@ -10,9 +10,8 @@ final class TabStartupRestoreLifecycleTests: XCTestCase {
     func testInvalidRestoreDestinationIsNeverRepairedToAboutBlank() {
         var repairReasons = Set<String>()
 
-        let resolved = TabRestoreURLResolver().resolve(
-            primary: "%",
-            fallback: "%%",
+        let resolved = TabRestorePageResolver().launchURL(
+            "%",
             repairReasons: &repairReasons
         )
 

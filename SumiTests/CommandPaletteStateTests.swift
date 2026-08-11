@@ -74,7 +74,11 @@ final class CommandPaletteStateTests: XCTestCase {
         XCTAssertFalse(windowState.commandPaletteDraftNavigatesCurrentTab)
         XCTAssertEqual(browserManager.regularTabCollectionOwner.tabs(in: space).count, 1)
         XCTAssertEqual(browserManager.shellRuntime.windowTabs.currentTab(for: windowState)?.id, currentTab.id)
-        XCTAssertEqual(currentTab.url.absoluteString, "https://example.com/replaced")
+        XCTAssertEqual(
+            currentTab.mainFrameLoads.currentIntent.targetURL.absoluteString,
+            "https://example.com/replaced"
+        )
+        XCTAssertEqual(currentTab.url.absoluteString, "https://example.com/start")
     }
 
     func testNewTabCommandPaletteStillCreatesNewTab() {

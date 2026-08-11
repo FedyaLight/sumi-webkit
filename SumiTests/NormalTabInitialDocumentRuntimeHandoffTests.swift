@@ -903,7 +903,7 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
         XCTAssertEqual(tab.url, siblingCommitURL)
     }
 
-    func testProcessTerminationWithoutSurvivorRequiresGlobalRecovery() throws {
+    func testProcessTerminationWithoutSurvivorRequiresRecoveryWithoutContinuation() throws {
         let targetURL = try XCTUnwrap(URL(string: "https://example.com/process"))
         let webView = WKWebView()
         let (tab, mainFrameRuntimeTransaction) = makeTab(
@@ -923,7 +923,7 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
 
         let recoveryPlan = mainFrameRuntimeTransaction.beginRecovery(on: webView)
 
-        XCTAssertEqual(recoveryPlan.scope, .global(targetURL))
+        XCTAssertEqual(recoveryPlan.disposition, .deliver)
         XCTAssertNil(recoveryPlan.authorityContinuation)
         XCTAssertTrue(tab.webContentRecoveryMarkers.isRecoveryRequired(on: webView))
         XCTAssertFalse(mainFrameRuntimeTransaction.role(
@@ -993,7 +993,7 @@ final class InitialDocumentRuntimeHandoffTests: XCTestCase {
 
         let recoveryPlan = mainFrameRuntimeTransaction.beginRecovery(on: crashedReplica)
 
-        XCTAssertEqual(recoveryPlan.scope, .replica(intent))
+        XCTAssertEqual(recoveryPlan.disposition, .deliver)
         XCTAssertNil(recoveryPlan.authorityContinuation)
         XCTAssertTrue(
             tab.committedDocumentRuntime.lease(for: authorityWebView)?.isAuthority

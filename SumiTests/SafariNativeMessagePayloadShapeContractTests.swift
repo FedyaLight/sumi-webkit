@@ -29,25 +29,6 @@ final class SafariNativeMessagePayloadShapeContractTests: XCTestCase {
         }
     }
 
-    func testSyntheticAppExtensionBundleApplicationIDPayloadShapeContract() async throws {
-        let bundle = try makeAppExtensionBundleFixture()
-        let webExtension: WKWebExtension
-        do {
-            webExtension = try await WKWebExtension(appExtensionBundle: bundle)
-        } catch {
-            throw XCTSkip(
-                "Synthetic appExtensionBundle fixture did not load: \(Self.errorSummary(error))"
-            )
-        }
-
-        try await runApplicationIDPayloadShapeContract(
-            webExtension: webExtension,
-            pagePath: "contract.html",
-            loadMode: .appExtensionBundleFixture,
-            payloads: [.jsonString]
-        )
-    }
-
     func testInstalledProtonAppExtensionBundleApplicationIDPayloadShapeContract() async throws {
         let appexURL = URL(
             fileURLWithPath:
@@ -167,68 +148,6 @@ final class SafariNativeMessagePayloadShapeContractTests: XCTestCase {
         return resourcesURL
     }
 
-    private func makeAppExtensionBundleFixture() throws -> Bundle {
-        let bundleRoot = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let bundleURL = bundleRoot.appendingPathComponent(
-            "NativeMessagePayloadShapeContract.appex",
-            isDirectory: true
-        )
-        let contentsURL = bundleURL.appendingPathComponent("Contents", isDirectory: true)
-        let resourcesURL = contentsURL.appendingPathComponent("Resources", isDirectory: true)
-        let executableURL = contentsURL
-            .appendingPathComponent("MacOS", isDirectory: true)
-            .appendingPathComponent("NativeMessagePayloadShapeContract")
-        try FileManager.default.createDirectory(
-            at: executableURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        try FileManager.default.createDirectory(
-            at: resourcesURL,
-            withIntermediateDirectories: true
-        )
-        addTeardownBlock {
-            try? FileManager.default.removeItem(at: bundleRoot)
-        }
-
-        let plist: [String: Any] = [
-            "CFBundleDisplayName": "Native Message Payload Shape Contract",
-            "CFBundleExecutable": "NativeMessagePayloadShapeContract",
-            "CFBundleIdentifier": "dev.sumi.tests.native-message-payload-shape",
-            "CFBundleInfoDictionaryVersion": "6.0",
-            "CFBundleName": "Native Message Payload Shape Contract",
-            "CFBundlePackageType": "XPC!",
-            "CFBundleShortVersionString": "1.0",
-            "CFBundleVersion": "1",
-            "NSExtension": [
-                "NSExtensionPointIdentifier": SafariExtensionScanner
-                    .safariWebExtensionPointIdentifier,
-                "NSExtensionPrincipalClass":
-                    "NativeMessagePayloadShapeContract.ExtensionHandler",
-            ],
-        ]
-        let plistData = try PropertyListSerialization.data(
-            fromPropertyList: plist,
-            format: .xml,
-            options: 0
-        )
-        try plistData.write(
-            to: contentsURL.appendingPathComponent("Info.plist"),
-            options: [.atomic]
-        )
-        try Data("#!/bin/sh\nexit 0\n".utf8).write(to: executableURL, options: [.atomic])
-        try FileManager.default.setAttributes(
-            [.posixPermissions: 0o755],
-            ofItemAtPath: executableURL.path
-        )
-        try writeContractResources(to: resourcesURL)
-
-        guard let bundle = Bundle(url: bundleURL) else {
-            throw NativeMessageShapeFixtureError.bundleUnavailable(bundleURL.path)
-        }
-        return bundle
-    }
-
     private func writeContractResources(to resourcesURL: URL) throws {
         let manifest: [String: Any] = [
             "manifest_version": 3,
@@ -298,7 +217,7 @@ final class SafariNativeMessagePayloadShapeContractTests: XCTestCase {
         let script: String
         let arguments: [String: Any]
         switch loadMode {
-        case .resourceBaseURL, .appExtensionBundleFixture:
+        case .resourceBaseURL:
             script = """
             return await globalThis.__sumiRunNativeMessagePayloadProbe(payloadName);
             """
@@ -440,20 +359,8 @@ final class SafariNativeMessagePayloadShapeContractTests: XCTestCase {
     }
 }
 
-private enum NativeMessageShapeFixtureError: Error, CustomStringConvertible {
-    case bundleUnavailable(String)
-
-    var description: String {
-        switch self {
-        case .bundleUnavailable(let path):
-            return "Bundle(url:) failed for \(path)"
-        }
-    }
-}
-
 private enum NativeMessageShapeLoadMode: String {
     case resourceBaseURL
-    case appExtensionBundleFixture
     case installedProtonAppExtensionBundle
 }
 

@@ -39,7 +39,7 @@ final class SumiStartupPersistenceTests: XCTestCase {
         )
     }
 
-    func testVersionOneDatabaseMigratesLiveFolderIdentity() throws {
+    func testVersionOneDatabaseMigratesThroughCurrentSchema() throws {
         let fixture = try Fixture()
         let queue = try DatabaseQueue(path: fixture.storeURL.path)
         try queue.write { database in
@@ -52,6 +52,9 @@ final class SumiStartupPersistenceTests: XCTestCase {
                 table.column("color", .text).notNull()
                 table.column("is_open", .boolean).notNull()
                 table.column("position", .integer).notNull()
+            }
+            try database.create(table: "tabs") { table in
+                table.column("id", .blob).primaryKey()
             }
             try database.execute(sql: "PRAGMA user_version = 1")
         }

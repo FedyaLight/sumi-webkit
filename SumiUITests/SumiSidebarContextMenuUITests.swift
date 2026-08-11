@@ -382,12 +382,12 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
         if let folderID = fixture.folderID {
             exerciseTransientActionFlow(
                 elementID: "folder-header-\(folderID)",
-                menuItem: "Change Folder Icon…",
-                transientIdentifier: "folder-icon-picker-sheet",
+                menuItem: "Edit",
+                transientIdentifier: "folder-editor-popover",
                 app: app,
                 window: window,
                 collapsedSidebar: false,
-                dismissTransient: Self.dismissFolderIconPicker
+                dismissTransient: Self.dismissFolderEditor
             )
             assertNewTabButtonOpensCommandPalette(
                 fixture: fixture,
@@ -474,12 +474,12 @@ final class SumiSidebarContextMenuUITests: SumiLaunchSmokeUITestCase {
         if let folderID = fixture.folderID {
             exerciseTransientActionFlow(
                 elementID: "folder-header-\(folderID)",
-                menuItem: "Change Folder Icon…",
-                transientIdentifier: "folder-icon-picker-sheet",
+                menuItem: "Edit",
+                transientIdentifier: "folder-editor-popover",
                 app: app,
                 window: window,
                 collapsedSidebar: true,
-                dismissTransient: Self.dismissFolderIconPicker
+                dismissTransient: Self.dismissFolderEditor
             )
             assertNewTabButtonOpensCommandPalette(
                 fixture: fixture,

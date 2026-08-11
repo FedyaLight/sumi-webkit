@@ -16,7 +16,6 @@ enum FavoritePlaceholderMetrics {
     static let height: CGFloat = 100
     static let horizontalPadding: CGFloat = 14
     static let badgeSize: CGFloat = 22
-    static let badgeGlyphSize: CGFloat = 11
     static let badgeSpacing: CGFloat = 8
     static let titleSpacing: CGFloat = 3
     static let dismissHitSize: CGFloat = 18
@@ -90,7 +89,7 @@ struct FavoritePlaceholderView: View {
             )
             .overlay {
                 Image(systemName: "star.fill")
-                    .font(.system(size: FavoritePlaceholderMetrics.badgeGlyphSize, weight: .semibold))
+                    .font(SidebarThemeTokens.Typography.favoritePlaceholderBadgeGlyph)
                     .foregroundStyle(tokens.buttonPrimaryText)
             }
     }

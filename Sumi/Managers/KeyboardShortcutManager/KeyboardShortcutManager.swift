@@ -119,11 +119,18 @@ class KeyboardShortcutManager {
         } else {
             previousOwner = nil
         }
-        let extensionOwner = profileID.flatMap { profileID in
-            try? extensionAssignments.activeOwner(
-                for: keyCombination,
-                profileID: profileID
-            )?.identity
+        let extensionOwner: ExtensionCommandBindingIdentity?
+        if let profileID {
+            do {
+                extensionOwner = try extensionAssignments.activeOwner(
+                    for: keyCombination,
+                    profileID: profileID
+                )?.identity
+            } catch {
+                return .invalid
+            }
+        } else {
+            extensionOwner = nil
         }
         do {
             try assignments.assign(
@@ -174,31 +181,44 @@ class KeyboardShortcutManager {
             in: shortcutsByAction,
             excludingAction: excludingAction
         )
-        guard browserValidation == .valid,
-              let profileID,
-              let extensionOwner = try? extensionAssignments.activeOwner(
-                for: keyCombination,
-                profileID: profileID
-              ) else {
+        guard browserValidation == .valid, let profileID else {
             return browserValidation
         }
-        return .namedConflict(extensionOwner.title)
+        do {
+            guard let extensionOwner = try extensionAssignments.activeOwner(
+                for: keyCombination,
+                profileID: profileID
+            ) else {
+                return browserValidation
+            }
+            return .namedConflict(extensionOwner.title)
+        } catch {
+            return .invalid
+        }
     }
 
     func extensionCommandAssignments(
         profileID: UUID
     ) -> [ExtensionCommandBindingAssignment] {
-        (try? extensionAssignments.assignments(profileID: profileID)) ?? []
+        do {
+            return try extensionAssignments.assignments(profileID: profileID)
+        } catch {
+            return []
+        }
     }
 
     func validateExtensionCommand(
         _ keyCombination: KeyCombination,
         identity: ExtensionCommandBindingIdentity
     ) -> ShortcutValidationResult {
-        (try? extensionAssignments.validate(
-            keyCombination,
-            for: identity
-        )) ?? .invalid
+        do {
+            return try extensionAssignments.validate(
+                keyCombination,
+                for: identity
+            )
+        } catch {
+            return .invalid
+        }
     }
 
     func setExtensionCommand(

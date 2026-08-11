@@ -26,14 +26,17 @@ final class TabWebKitPermissionUIDelegateOwnerTests: XCTestCase {
     }
 
     func testFilePickerPermissionContextUsesExactFocusableDocument() async throws {
+        let server = try await AutofillPagesHTTPServer.start(preferredPort: 0)
+        defer { server.stop() }
+        let pageURL = server.loginBasicURL
         let browserManager = BrowserManager()
         let space = browserManager.spaceStateOwner.currentSpace
             ?? installTestSpace(
                 in: browserManager.spaceStateOwner,
                 name: "File Picker Permission Tests"
-            )
+        )
         let tab = browserManager.regularTabLifecycleOwner.createNewTab(
-            url: "https://files.example/page",
+            url: pageURL.absoluteString,
             in: space,
             activate: true
         )
@@ -45,7 +48,9 @@ final class TabWebKitPermissionUIDelegateOwnerTests: XCTestCase {
         windowState.currentTabId = tab.id
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
-        let webView = FocusableWKWebView()
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = try XCTUnwrap(tab.resolveProfile()).dataStore
+        let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab
         XCTAssertTrue(browserManager.testWebViewRuntime().trackedWebViewAdmission.attemptAssignment(
             webView,
@@ -53,7 +58,7 @@ final class TabWebKitPermissionUIDelegateOwnerTests: XCTestCase {
             in: windowState.id,
             replaySemanticOperation: { XCTFail("Unexpected WebView deferral") }
         ).isAccepted)
-        await loadDocument(on: webView, at: tab.url)
+        await loadNetworkDocument(on: webView, at: tab.url)
         let committedURL = try XCTUnwrap(webView.committedURL)
         let navigation = await bindCommittedDocument(
             on: webView,
@@ -109,15 +114,18 @@ final class TabWebKitPermissionUIDelegateOwnerTests: XCTestCase {
     }
 
     func testFilePickerWebKitCallbackDoesNotRequireSeparatePopupActivation() async throws {
+        let server = try await AutofillPagesHTTPServer.start(preferredPort: 0)
+        defer { server.stop() }
+        let pageURL = server.loginBasicURL
         let presenter = PermissionFilePickerPanelPresenter()
         let browserManager = BrowserManager(filePickerPanelPresenter: presenter)
         let space = browserManager.spaceStateOwner.currentSpace
             ?? installTestSpace(
                 in: browserManager.spaceStateOwner,
                 name: "File Picker Callback Tests"
-            )
+        )
         let tab = browserManager.regularTabLifecycleOwner.createNewTab(
-            url: "https://files.example/page",
+            url: pageURL.absoluteString,
             in: space,
             activate: true
         )
@@ -129,7 +137,12 @@ final class TabWebKitPermissionUIDelegateOwnerTests: XCTestCase {
         windowState.currentTabId = tab.id
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
-        let callbackWebView = FocusableWKWebView()
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = try XCTUnwrap(tab.resolveProfile()).dataStore
+        let callbackWebView = FocusableWKWebView(
+            frame: .zero,
+            configuration: configuration
+        )
         callbackWebView.owningTab = tab
         XCTAssertTrue(browserManager.testWebViewRuntime().trackedWebViewAdmission.attemptAssignment(
             callbackWebView,
@@ -137,7 +150,7 @@ final class TabWebKitPermissionUIDelegateOwnerTests: XCTestCase {
             in: windowState.id,
             replaySemanticOperation: { XCTFail("Unexpected WebView deferral") }
         ).isAccepted)
-        await loadDocument(on: callbackWebView, at: tab.url)
+        await loadNetworkDocument(on: callbackWebView, at: tab.url)
         let committedURL = try XCTUnwrap(callbackWebView.committedURL)
         let navigation = await bindCommittedDocument(
             on: callbackWebView,
@@ -178,6 +191,17 @@ final class TabWebKitPermissionUIDelegateOwnerTests: XCTestCase {
         }
         webView.navigationDelegate = delegate
         webView.loadHTMLString("<html><body>permission source</body></html>", baseURL: url)
+        await fulfillment(of: [didFinish], timeout: 5)
+        webView.navigationDelegate = nil
+    }
+
+    private func loadNetworkDocument(on webView: WKWebView, at url: URL) async {
+        let didFinish = expectation(description: "permission source document loaded")
+        let delegate = PermissionDocumentNavigationDelegate {
+            didFinish.fulfill()
+        }
+        webView.navigationDelegate = delegate
+        webView.load(URLRequest(url: url))
         await fulfillment(of: [didFinish], timeout: 5)
         webView.navigationDelegate = nil
     }

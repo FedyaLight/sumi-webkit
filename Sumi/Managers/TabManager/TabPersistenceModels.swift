@@ -227,6 +227,26 @@ struct TabRuntimeStateUpdate: Sendable {
         self.canGoForward = canGoForward
         self.pageKind = pageKind
     }
+
+    @MainActor
+    init(tab: Tab) {
+        let durableURL = tab.isRestoreFailure
+            ? tab.restoreFailureRawDestination
+                ?? tab.restoreFailureDestination?.absoluteString
+                ?? tab.url.absoluteString
+            : tab.url.absoluteString
+        self.init(
+            id: tab.id,
+            urlString: durableURL,
+            currentURLString: durableURL,
+            name: tab.name,
+            canGoBack: tab.canGoBack,
+            canGoForward: tab.canGoForward,
+            pageKind: tab.isRestoreFailure
+                ? .restoreFailure
+                : tab.representsSumiEmptySurface ? .empty : .web
+        )
+    }
 }
 
 enum TabPersistenceError: Error, Equatable {

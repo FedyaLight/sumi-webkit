@@ -1,5 +1,3 @@
-import Foundation
-
 @available(macOS 15.5, *)
 @MainActor
 extension ExtensionManagerAssembler {
@@ -68,8 +66,7 @@ extension ExtensionManagerAssembler {
         )
         let popupDiagnostics = assemblePopupDiagnosticsPhase(
             installation: f.installation, runtime: f.runtime,
-            contexts: f.contexts,
-            contextLifecycle: core.contextLifecycle
+            contexts: f.contexts, contextLifecycle: core.contextLifecycle
         )
         let runtimePopup = assembleRuntimePopupPhase(
             runtime: f.runtime, contextLifecycle: core.contextLifecycle,
@@ -78,11 +75,13 @@ extension ExtensionManagerAssembler {
             diagnostics: popupDiagnostics
         )
         let runtimeAction = assembleRuntimeActionPhase(
-            installation: f.installation,
             runtime: f.runtime, contexts: f.contexts, actions: f.actions,
             browser: f.browser, actionPolicy: core.actionPolicy,
             controller: core.controller, coordination: coordination,
             runtimePopup: runtimePopup
+        )
+        let runtimeKeyboard = assembleRuntimeKeyboardPhase(
+            installation: f.installation, runtime: f.runtime, browser: f.browser
         )
         let bookkeeping = assembleRuntimeBookkeepingPhase(
             installation: f.installation, runtime: f.runtime,
@@ -143,7 +142,7 @@ extension ExtensionManagerAssembler {
                 activation: activation,
                 coordination: coordination,
                 popup: runtimePopup,
-                action: runtimeAction,
+                action: runtimeAction, keyboard: runtimeKeyboard,
                 termination: termination,
                 services: services,
                 browserRoles: browserRoles
@@ -169,7 +168,8 @@ extension ExtensionManagerAssembler {
             actions: makeRuntimeActionResult(
                 contexts: f.contexts, actions: f.actions,
                 actionPolicy: core.actionPolicy, popup: core.popup,
-                runtimeAction: runtimeAction, runtimePopup: runtimePopup
+                runtimeAction: runtimeAction, runtimePopup: runtimePopup,
+                runtimeKeyboard: runtimeKeyboard
             ),
             installation: makeRuntimeInstallationResult(
                 installation: f.installation, retirement: core.retirement,

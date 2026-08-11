@@ -147,17 +147,7 @@ final class WebsiteDataCleanupRestorer {
             return
         }
         let tab = participant.tab
-        _ = tab.webContentRecoveryAdmission.beginRecovery(
-            on: participant.webView,
-            snapshot: nil
-        )
-        tab.webContentRecoveryAdmission.failRecoveryDelivery(
-            on: participant.webView
-        )
-        tab.navigationRuntime.webViewRouting.pagePresentationDidChange(
-            tab.id,
-            participant.webView
-        )
+        tab.recordFailedWebContentRecovery(on: participant.webView)
         navigationBarrier.abandon(participant)
     }
 }

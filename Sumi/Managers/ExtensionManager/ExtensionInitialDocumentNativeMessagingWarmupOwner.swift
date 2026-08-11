@@ -14,11 +14,6 @@ final class ExtensionInitialDocumentNativeMessagingWarmupOwner {
     ) async throws -> Void
     typealias FailureLog = @MainActor (Error, String, UUID, String) -> Void
 
-    private struct ScheduledTask {
-        let token: UUID
-        let task: Task<Void, Never>
-    }
-
     private let installedExtensions: InstalledExtensionCollection
     private let runtimeCatalog: ExtensionRuntimeCatalog
     private let runtimeIsEnabled: @MainActor () -> Bool
@@ -26,9 +21,7 @@ final class ExtensionInitialDocumentNativeMessagingWarmupOwner {
     private let backgroundState: BackgroundState
     private let wakeBackground: BackgroundWake
     private let logFailure: FailureLog
-    private var tasksByProfile: [UUID: ScheduledTask] = [:]
-    private var retiredTokens = Set<UUID>()
-    private var finishedBeforeRegistrationTokens = Set<UUID>()
+    private let runtimeTasks = ExtensionProfileRuntimeTaskOwner<Void>()
 
     init(
         installedExtensions: InstalledExtensionCollection,
@@ -56,16 +49,9 @@ final class ExtensionInitialDocumentNativeMessagingWarmupOwner {
         guard runtimeIsEnabled(), profileNeedsWarmup(profileID: profileID) else {
             return
         }
-        if let scheduled = tasksByProfile[profileID] {
-            await scheduled.task.value
-            return
-        }
-
-        let token = UUID()
-        let task = ExtensionContentScriptContextPreparationOwner.runtimeTask {
+        await runtimeTasks.run(profileID: profileID) {
             [weak self] in
             guard let self else { return }
-            defer { self.finish(profileID: profileID, token: token) }
             for record in self.warmupExtensions(profileID: profileID) {
                 guard Task.isCancelled == false else { return }
                 do {
@@ -87,23 +73,15 @@ final class ExtensionInitialDocumentNativeMessagingWarmupOwner {
                 }
             }
         }
-        tasksByProfile[profileID] = ScheduledTask(token: token, task: task)
-        clearIfFinishedBeforeRegistration(profileID: profileID, token: token)
-        await task.value
     }
 
     func cancelAll() {
-        for scheduled in tasksByProfile.values {
-            scheduled.task.cancel()
-            retiredTokens.insert(scheduled.token)
-        }
-        tasksByProfile.removeAll()
-        finishedBeforeRegistrationTokens.removeAll()
+        runtimeTasks.cancelAll()
     }
 
     #if DEBUG
         func runtimeTasksForDrain() -> [Task<Void, Never>] {
-            tasksByProfile.values.map(\.task)
+            runtimeTasks.tasksForDrain()
         }
     #endif
 
@@ -121,23 +99,5 @@ final class ExtensionInitialDocumentNativeMessagingWarmupOwner {
         let manifest = runtimeCatalog.manifest(for: record.id) ?? record.manifest
         return (manifest["permissions"] as? [String] ?? [])
             .contains("nativeMessaging")
-    }
-
-    private func finish(profileID: UUID, token: UUID) {
-        var resolved = false
-        if tasksByProfile[profileID]?.token == token {
-            tasksByProfile.removeValue(forKey: profileID)
-            resolved = true
-        }
-        if retiredTokens.remove(token) != nil { resolved = true }
-        guard resolved == false else { return }
-        finishedBeforeRegistrationTokens.insert(token)
-    }
-
-    private func clearIfFinishedBeforeRegistration(profileID: UUID, token: UUID) {
-        guard finishedBeforeRegistrationTokens.remove(token) != nil else { return }
-        if tasksByProfile[profileID]?.token == token {
-            tasksByProfile.removeValue(forKey: profileID)
-        }
     }
 }

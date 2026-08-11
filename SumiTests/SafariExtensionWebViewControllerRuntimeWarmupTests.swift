@@ -785,7 +785,7 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
         )
     }
 
-    func testDeferredTabNotificationWarmsNativeMessagingAfterContextLoad() async throws {
+    func testDeferredTabNotificationDoesNotWarmNativeMessagingAfterContextLoad() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let managerFixture = makeManager(
@@ -876,14 +876,21 @@ final class SafariExtensionWebViewControllerRuntimeWarmupTests: SafariExtensionW
 
         await deferredTask?.value
 
-        XCTAssertEqual(backgroundWakeCount, 1)
+        XCTAssertEqual(backgroundWakeCount, 0)
         XCTAssertEqual(
             backgroundRuntimeState(
                 in: inspection,
                 extensionID: installed.id,
                 profileID: profile.id
             ),
-            .loaded
+            .neverLoaded
+        )
+        XCTAssertTrue(
+            inspection.normalTabs.deferredRuntime
+                .initialDocumentRuntimePreparationOwner
+                .profileNeedsInitialDocumentNativeMessagingWarmup(
+                    profileId: profile.id
+                )
         )
     }
 

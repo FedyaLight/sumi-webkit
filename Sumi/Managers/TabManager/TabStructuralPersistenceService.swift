@@ -248,23 +248,7 @@ final class TabStructuralPersistenceService {
             markRegularTabsSnapshotDirty(for: spaceId)
         }
 
-        let durableURL = tab.isRestoreFailure
-            ? tab.restoreFailureRawDestination
-                ?? tab.restoreFailureDestination?.absoluteString
-                ?? tab.url.absoluteString
-            : tab.url.absoluteString
-        let payload = TabRuntimeStateUpdate(
-            id: tab.id,
-            urlString: durableURL,
-            currentURLString: durableURL,
-            name: tab.name,
-            canGoBack: tab.canGoBack,
-            canGoForward: tab.canGoForward,
-            pageKind: tab.isRestoreFailure
-                ? .restoreFailure
-                : tab.representsSumiEmptySurface ? .empty : .web
-        )
-        runtimeStateCoalescer.enqueue(payload)
+        runtimeStateCoalescer.enqueue(TabRuntimeStateUpdate(tab: tab))
     }
 
     func cancelRuntimeStatePersistence(for tabId: UUID) {

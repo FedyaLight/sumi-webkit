@@ -328,7 +328,7 @@ private struct SumiBackgroundMediaCardView: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 11, weight: .semibold))
+                .font(SidebarThemeTokens.Typography.MiniPlayer.control)
                 .foregroundStyle(isPrimary ? tokens.primaryText : tokens.secondaryText)
                 .frame(width: 26, height: 26)
         }
@@ -364,14 +364,14 @@ private struct SumiBackgroundMediaCardHeader: View {
         HStack(alignment: .top, spacing: 6) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(SidebarThemeTokens.Typography.MiniPlayer.title)
                     .foregroundStyle(tokens.primaryText)
                     .lineLimit(1)
                     .truncationMode(.tail)
 
                 if !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.system(size: 10, weight: .medium))
+                        .font(SidebarThemeTokens.Typography.MiniPlayer.subtitle)
                         .foregroundStyle(tokens.secondaryText.opacity(0.9))
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -407,7 +407,7 @@ private struct SumiBackgroundMediaCardHeader: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 10, weight: .semibold))
+                .font(SidebarThemeTokens.Typography.MiniPlayer.headerAction)
                 .foregroundStyle(tokens.secondaryText)
                 .frame(width: 22, height: 22)
         }
@@ -483,11 +483,11 @@ private struct SumiMediaSourceIconView: View {
                     .padding(4)
             } else if sourceHost != nil {
                 Image(systemName: "globe")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(SidebarThemeTokens.Typography.MiniPlayer.fallbackSource)
                     .foregroundStyle(.secondary)
             } else {
                 Image(systemName: "waveform")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(SidebarThemeTokens.Typography.MiniPlayer.fallbackSource)
                     .foregroundStyle(.secondary)
             }
         }

@@ -21,6 +21,11 @@ struct ExtensionRuntimePopupPhaseProduct {
 @MainActor
 struct ExtensionRuntimeActionPhaseProduct {
     let actionInvocation: ExtensionActionInvocationService
+}
+
+@available(macOS 15.5, *)
+@MainActor
+struct ExtensionRuntimeKeyboardPhaseProduct {
     let keyboardCommands: ExtensionKeyboardCommandDispatchOwner
 }
 
@@ -103,7 +108,6 @@ extension ExtensionManagerAssembler {
     }
 
     static func assembleRuntimeActionPhase(
-        installation: ExtensionInstallationGraphFoundation,
         runtime: ExtensionRuntimeAuthorityFoundation,
         contexts: ExtensionContextGraphFoundation,
         actions: ExtensionActionGraphFoundation,
@@ -123,7 +127,16 @@ extension ExtensionManagerAssembler {
                 controller: controller,
                 coordination: coordination,
                 runtimePopup: runtimePopup
-            ),
+            )
+        )
+    }
+
+    static func assembleRuntimeKeyboardPhase(
+        installation: ExtensionInstallationGraphFoundation,
+        runtime: ExtensionRuntimeAuthorityFoundation,
+        browser: ExtensionManagerBrowserFoundation
+    ) -> ExtensionRuntimeKeyboardPhaseProduct {
+        ExtensionRuntimeKeyboardPhaseProduct(
             keyboardCommands: ExtensionKeyboardCommandDispatchOwner(
                 database: installation.database,
                 profileRuntime: runtime.profileRuntime,

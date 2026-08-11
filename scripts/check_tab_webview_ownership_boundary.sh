@@ -250,6 +250,7 @@ test_transaction_injection_files="$(
 allowed_test_transaction_injection_files="$(cat <<'EOF'
 SumiTests/BrowserWebViewRoutingServiceTests.swift
 SumiTests/NormalTabInitialDocumentRuntimeHandoffTests.swift
+SumiTests/PagePresentationStateTests.swift
 SumiTests/SumiGPCTests.swift
 SumiTests/SumiReaderPresentationTests.swift
 SumiTests/TabMainFrameFinishSettlementTests.swift

@@ -231,7 +231,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
         XCTAssertTrue(tab.webContentRecoveryMarkers.isRecoveryRequired(on: crashedReplica))
     }
 
-    func testSecondAuthorityProcessTerminationDoesNotStartAnotherAutomaticRecovery() {
+    func testDuplicateAuthorityProcessTerminationDoesNotStartAnotherAutomaticRecovery() {
         let targetURL = URL(string: "https://example.com/global-recovery")!
         let transaction = TabMainFrameRuntimeTransaction(initialURL: targetURL)
         let tab = Tab(
@@ -294,7 +294,8 @@ final class TabRuntimeRoutingTests: XCTestCase {
         )
         XCTAssertEqual(
             tab.webContentRecoveryMarkers.recoveryState(on: crashedWebView)?.phase,
-            .failed
+            .pendingActivation,
+            "A duplicate callback must retain the one admitted recovery request"
         )
         XCTAssertFalse(tab.isLoading)
     }

@@ -10,12 +10,8 @@ extension BrowserManager {
             membership: tabCollectionMembershipOwner,
             windowVisuals: shell.windowVisuals,
             repairFailure: { [weak self] tabID, windowID, useNative in
-                guard let self,
-                      let tab = self.tabCollectionMembershipOwner.tab(
-                        for: tabID
-                      ) else { return }
-                _ = self.webViewRuntime.repairFailedPage(
-                    tab,
+                _ = self?.webViewRoutingService.repairFailedPage(
+                    tabID,
                     in: windowID,
                     useNativeSnapshot: useNative
                 )

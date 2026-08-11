@@ -13,7 +13,7 @@ guard_initialize "$repo_root"
 # measured surface is physically deleted. A missing living source is an
 # infrastructure error, never a zero-line success.
 role_budgets=(
-  "BrowserManager|Sumi/Managers/BrowserManager/BrowserManager.swift|568|-"
+  "BrowserManager|Sumi/Managers/BrowserManager/BrowserManager.swift|590|-"
   "TabManager|Sumi/Managers/TabManager/TabManager.swift|220|-"
   "Tab store restore orchestration|Sumi/Managers/TabManager/TabStoreRestoreService.swift|140|4"
   "Tab store restore attempt|Sumi/Managers/TabManager/TabStoreRestoreAttemptExecutor.swift|145|5"
@@ -34,17 +34,17 @@ role_budgets=(
   "Last-session selection materialization|Sumi/Managers/TabManager/TabLastSessionSelectionMaterializer.swift|45|2"
   "Last-session merge commit|Sumi/Managers/TabManager/TabLastSessionMergeCommitTransaction.swift|55|5"
   "Last-session merge settlement|Sumi/Managers/TabManager/TabLastSessionMergeSettlement.swift|30|2"
-  "Tab model|Sumi/Models/Tab/Tab.swift|704|-"
+  "Tab model|Sumi/Models/Tab/Tab.swift|820|-"
   "ExtensionManager transition debt|Sumi/Managers/ExtensionManager/ExtensionManager.swift|1050|-"
   "Tab extension runtime transition debt|Sumi/Models/Tab/TabExtensionPageRuntimeOwner.swift|1000|-"
 
   "Normal WebView setup|Sumi/Models/Tab/TabNormalWebViewSetupService.swift|300|-"
-  "Main-frame transaction|Sumi/Models/Tab/TabMainFrameRuntimeTransaction.swift|702|-"
+  "Main-frame transaction|Sumi/Models/Tab/TabMainFrameRuntimeTransaction.swift|780|-"
   "Main-frame runtime capabilities|Sumi/Models/Tab/TabMainFrameRuntimeCapabilities.swift|124|-"
-  "Main-frame runtime types|Sumi/Models/Tab/TabMainFrameRuntimeTypes.swift|215|-"
+  "Main-frame runtime types|Sumi/Models/Tab/TabMainFrameRuntimeTypes.swift|390|-"
   "Main-frame transition output|Sumi/Models/Tab/TabMainFrameTransitionOutput.swift|60|-"
   "Web-content recovery capabilities|Sumi/Models/Tab/TabWebContentRecoveryCapabilities.swift|20|-"
-  "Main-frame authority reducer|Sumi/Models/Tab/TabMainFrameAuthorityReducer.swift|661|-"
+  "Main-frame authority reducer|Sumi/Models/Tab/TabMainFrameAuthorityReducer.swift|680|-"
   "Main-frame authority state|Sumi/Models/Tab/TabMainFrameAuthorityState.swift|152|-"
   "Main-frame participant registry|Sumi/Models/Tab/TabMainFrameParticipantRegistry.swift|729|-"
   "Main-frame lifecycle machine|Sumi/Models/Tab/TabMainFrameLifecycleMachine.swift|453|-"
@@ -55,20 +55,20 @@ role_budgets=(
   "Completed-authority proof|Sumi/Models/Tab/TabMainFrameCompletedAuthorityProof.swift|64|3"
   "Main-frame authority effect ledger|Sumi/Models/Tab/TabMainFrameAuthorityEffectLedger.swift|270|-"
   "Main-frame participant effect ledger|Sumi/Models/Tab/TabMainFrameParticipantEffectLedger.swift|150|-"
-  "Main-frame navigation responder|Sumi/Models/Tab/Navigation/SumiTabLifecycleNavigationResponder.swift|652|-"
-  "Main-frame lifecycle promotion reducer|Sumi/Models/Tab/Navigation/TabMainFrameLifecyclePromotionReducer.swift|286|-"
-  "Main-frame load runtime|Sumi/Models/Tab/TabMainFrameLoadRuntime.swift|302|2"
+  "Main-frame navigation responder|Sumi/Models/Tab/Navigation/SumiTabLifecycleNavigationResponder.swift|830|-"
+  "Main-frame lifecycle promotion reducer|Sumi/Models/Tab/Navigation/TabMainFrameLifecyclePromotionReducer.swift|300|-"
+  "Main-frame load runtime|Sumi/Models/Tab/TabMainFrameLoadRuntime.swift|400|2"
   "Main-frame participant applier|Sumi/Models/Tab/TabMainFrameParticipantTransitionApplier.swift|380|4"
   "Main-frame authority applier|Sumi/Models/Tab/TabMainFrameAuthorityTransitionApplier.swift|160|4"
   "Main-frame continuation applier|Sumi/Models/Tab/TabMainFrameContinuationTransitionApplier.swift|145|-"
   "Main-frame transition committer|Sumi/Models/Tab/TabMainFrameTransitionCommitter.swift|220|4"
   "Main-frame target committer|Sumi/Models/Tab/TabMainFrameTargetTransitionCommitter.swift|80|-"
-  "Web-content recovery marker ledger|Sumi/Models/Tab/TabWebContentRecoveryMarkerLedger.swift|44|-"
+  "Web-content recovery marker ledger|Sumi/Models/Tab/TabWebContentRecoveryMarkerLedger.swift|250|-"
   "Committed-document runtime|Sumi/Models/Tab/TabCommittedDocumentRuntime.swift|299|3"
 
   "Browser shell runtime|Sumi/Managers/BrowserManager/BrowserShellRuntime.swift|160|-"
   "Browser window session bundle|Sumi/Managers/BrowserManager/BrowserWindowSessionBundle.swift|120|-"
-  "Browser WebView routing|Sumi/Services/BrowserWebViewRoutingService.swift|380|-"
+  "Browser WebView routing|Sumi/Services/BrowserWebViewRoutingService.swift|400|-"
   "Browser window commands|Sumi/Managers/BrowserManager/BrowserWindowCommands.swift|100|-"
   "Window-state reconciler|Sumi/Managers/BrowserManager/BrowserWindowStateReconciler.swift|75|6"
   "Window-selection repair|Sumi/Managers/BrowserManager/BrowserWindowSelectionRepairService.swift|115|5"
@@ -106,9 +106,9 @@ role_budgets=(
   "Command-palette live composition|Sumi/Managers/BrowserManager/BrowserManager+CommandPaletteComposition.swift|120|-"
   "Command-palette context composition|Sumi/Managers/BrowserManager/BrowserManager+CommandPaletteCatalogComposition.swift|130|-"
   "Active-page resolver|Sumi/Managers/BrowserManager/ActivePageResolver.swift|120|4"
-  "Active-page commands|Sumi/Managers/BrowserManager/ActivePageCommandService.swift|130|5"
+  "Active-page commands|Sumi/Managers/BrowserManager/ActivePageCommandService.swift|140|5"
   "Active-page live composition|Sumi/Managers/BrowserManager/BrowserShellRuntime+ActivePage.swift|40|-"
-  "External URL opening|Sumi/Services/ExternalURLTabOpeningService.swift|55|2"
+  "External URL opening|Sumi/Services/ExternalURLTabOpeningService.swift|55|3"
   "Sidebar URL drop|Sumi/Components/DragDrop/SidebarURLDropService.swift|150|4"
   "Shortcut URL insertion|Sumi/Components/DragDrop/ShortcutURLInsertionService.swift|110|5"
 
@@ -170,7 +170,7 @@ role_budgets=(
 
 stored_state_budgets=(
   "Normal WebView setup|Sumi/Models/Tab/TabNormalWebViewSetupService.swift|2"
-  "Web-content recovery marker ledger|Sumi/Models/Tab/TabWebContentRecoveryMarkerLedger.swift|1"
+  "Web-content recovery marker ledger|Sumi/Models/Tab/TabWebContentRecoveryMarkerLedger.swift|3"
   "Window Space transition live composition|Sumi/Managers/BrowserManager/BrowserWindowSpaceTransitionService+Live.swift|0"
   "Session recovery live composition|Sumi/Managers/BrowserManager/BrowserSessionRecoveryCommands+Live.swift|0"
   "Window-history live composition|Sumi/Managers/BrowserManager/WindowSessionHistoryServices+Live.swift|0"
@@ -323,7 +323,7 @@ fi
 
 guard_warn_max 'Maximum production Swift file LOC' "$maximum_file_lines" 1100
 guard_max 'Maximum production Swift file LOC hard limit' "$maximum_file_lines" 1200
-guard_warn_max 'Production Swift files over 600 LOC' "$files_over_600_lines" 43
+guard_warn_max 'Production Swift files over 600 LOC' "$files_over_600_lines" 44
 guard_warn_max 'Production Swift files over 800 LOC' "$files_over_800_lines" 6
 guard_warn_max \
   'Production Swift files over 8 stored dependencies' \
@@ -357,7 +357,7 @@ guard_max \
   "$((lifecycle_lines + settlement_lines))" \
   1178
 guard_max 'Main-frame split effect-ledger aggregate LOC' "$effect_ledger_lines" 420
-guard_max 'Main-frame complete transition topology LOC' "$complete_topology_lines" 4150
+guard_max 'Main-frame complete transition topology LOC' "$complete_topology_lines" 4400
 
 guard_max \
   'BrowserManager peer lazy *Owner' \

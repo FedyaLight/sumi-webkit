@@ -42,6 +42,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     // Window registry for accessing active window state
     weak var windowRegistry: WindowRegistry?
     private var quitConfirmationInProgress = false
+    private var webContentKeyRedispatchGuard: WebContentKeyRedispatchGuard?
     private let terminationFinalizer: AppTerminationFinalizer
     let sidebarMouseButtonCaptureRegistry = SidebarMouseButtonCaptureRegistry()
     private lazy var mouseButtonRoutingOwner = BrowserMouseButtonRoutingOwner(
@@ -73,6 +74,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     // MARK: - Application Lifecycle
 
     func applicationDidFinishLaunching(_ _: Notification) {
+        webContentKeyRedispatchGuard = WebContentKeyRedispatchGuard()
         UNUserNotificationCenter.current().delegate = self
         setupURLEventHandling()
         setupMouseButtonHandling()

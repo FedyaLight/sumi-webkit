@@ -71,7 +71,7 @@ final class NavigationToolbarContextOwnerTests: XCTestCase {
         let browserManager = BrowserManager()
         let history = NavigationToolbarHistoryRecorder()
         var boundWindow: BrowserWindowState? = BrowserWindowState()
-        weak var releasedBoundWindow = boundWindow
+        weak let releasedBoundWindow = boundWindow
         let owner = NavigationToolbarContextHarness.makeOwner(
             browserManager: browserManager,
             history: history.owner
@@ -352,7 +352,8 @@ private final class NavigationToolbarReloadRecorder {
             cancelRecovery: { _ in },
             setMute: { _, _ in },
             materialize: { [weak self] _, _ in self?.webView },
-            rebuildWindowConfiguration: { _, _, _, _ in .notNeeded }
+            rebuildWindowConfiguration: { _, _, _, _ in .notNeeded },
+            repairFailedResidence: { _, _, _ in .failed }
         )
     )
 

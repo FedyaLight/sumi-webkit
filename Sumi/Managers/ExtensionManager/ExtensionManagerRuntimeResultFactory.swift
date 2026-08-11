@@ -60,14 +60,16 @@ extension ExtensionManagerAssembler {
         actionPolicy: ExtensionActionPolicyAssemblyProduct,
         popup: ExtensionPopupAssemblyProduct,
         runtimeAction: ExtensionRuntimeActionPhaseProduct,
-        runtimePopup: ExtensionRuntimePopupPhaseProduct
+        runtimePopup: ExtensionRuntimePopupPhaseProduct,
+        runtimeKeyboard: ExtensionRuntimeKeyboardPhaseProduct
     ) -> ExtensionActionUIAssemblyProduct {
         ExtensionActionUIAssemblyFactory.make(
             contexts: contexts,
             actions: actions,
             actionPolicy: actionPolicy,
             runtimeAction: runtimeAction,
-            runtimePopup: runtimePopup
+            runtimePopup: runtimePopup,
+            runtimeKeyboard: runtimeKeyboard
         )
     }
 

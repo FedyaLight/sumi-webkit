@@ -1609,8 +1609,8 @@ extension SumiLaunchSmokeUITestCase {
     }
 
     @MainActor
-    static func dismissFolderIconPicker(app: XCUIApplication, window: XCUIElement) {
-        app.buttons["Done"].click()
+    static func dismissFolderEditor(app: XCUIApplication, window: XCUIElement) {
+        app.buttons["Cancel"].click()
     }
 
     @MainActor

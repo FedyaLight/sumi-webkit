@@ -114,24 +114,24 @@ final class ExtensionTabWebViewReplacementService {
             return .rejected(.creationFailed)
         }
         guard isCurrent(request) else {
-            tab.cleanupCloneWebView(replacement)
+            discardUncommittedCandidate(replacement, for: tab)
             return .superseded
         }
         if let validate {
             let isValid = validate(replacement)
             guard isCurrent(request) else {
-                tab.cleanupCloneWebView(replacement)
+                discardUncommittedCandidate(replacement, for: tab)
                 return .superseded
             }
             guard isValid else {
-                tab.cleanupCloneWebView(replacement)
+                discardUncommittedCandidate(replacement, for: tab)
                 finish(request)
                 return .rejected(.validationFailed)
             }
         }
 
         guard isCurrent(request) else {
-            tab.cleanupCloneWebView(replacement)
+            discardUncommittedCandidate(replacement, for: tab)
             return .superseded
         }
 
@@ -143,7 +143,7 @@ final class ExtensionTabWebViewReplacementService {
                 replaySemanticOperation: replay
             )
             guard admission.isAccepted else {
-                tab.cleanupCloneWebView(replacement)
+                discardUncommittedCandidate(replacement, for: tab)
                 if case .deferred = admission {
                     finish(request)
                     return .deferred
@@ -156,7 +156,7 @@ final class ExtensionTabWebViewReplacementService {
                 for: tab,
                 replay: replay
             ) {
-                tab.cleanupCloneWebView(replacement)
+                discardUncommittedCandidate(replacement, for: tab)
                 finish(request)
                 return .deferred
             }
@@ -166,7 +166,7 @@ final class ExtensionTabWebViewReplacementService {
             )
             guard outcome.isAccepted else {
                 if outcome.callerRetainsWebView {
-                    tab.cleanupCloneWebView(replacement)
+                    discardUncommittedCandidate(replacement, for: tab)
                 }
                 finish(request)
                 return .rejected(.untrackedInstallation(outcome))
@@ -178,6 +178,14 @@ final class ExtensionTabWebViewReplacementService {
         guard isCurrent(request) else { return .superseded }
         finish(request)
         return .committed(replacement)
+    }
+
+    private func discardUncommittedCandidate(
+        _ webView: WKWebView,
+        for tab: Tab
+    ) {
+        tab.cancelConfigurationPolicy(for: [webView])
+        tab.cleanupCloneWebView(webView)
     }
 
     private func replacementReplay(

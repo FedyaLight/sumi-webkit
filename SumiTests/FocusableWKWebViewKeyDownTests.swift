@@ -57,44 +57,37 @@ final class FocusableWKWebViewKeyDownTests: XCTestCase {
         )
     }
 
-    func testUnhandledPlainKeyTerminatesAtWebHostWithoutSystemBeep() async throws {
-        let noResponderProbe = try NoResponderProbe.install()
-        defer { noResponderProbe.uninstall() }
-
+    func testUnhandledPlainKeyRedispatchIsConsumedByProcessGuard() throws {
         let webView = FocusableWKWebView(
             frame: NSRect(x: 0, y: 0, width: 320, height: 240),
             configuration: WKWebViewConfiguration()
         )
-        let container = SumiWebViewContainerView(
-            tabID: UUID(),
-            webView: webView
-        )
-        container.frame = webView.frame
         let window = NSWindow(
             contentRect: webView.frame,
             styleMask: [.titled],
             backing: .buffered,
             defer: false
         )
-        window.contentView = container
+        window.contentView = webView
         XCTAssertTrue(window.makeFirstResponder(webView))
+        let guardOwner = WebContentKeyRedispatchGuard(
+            installEventMonitor: false
+        )
 
-        let navigationFinished = expectation(description: "HTML loaded")
-        let navigationDelegate = NavigationFinishedDelegate {
-            navigationFinished.fulfill()
-        }
-        webView.navigationDelegate = navigationDelegate
-        webView.loadHTMLString("<p>Passive page</p>", baseURL: nil)
-        await fulfillment(of: [navigationFinished], timeout: 2)
-
-        window.sendEvent(try Self.keyDownEvent(
+        let event = try Self.keyDownEvent(
             window: window,
             key: "j",
             keyCode: 38
-        ))
-        try await Task.sleep(for: .milliseconds(100))
+        )
+        let distinctEvent = try Self.keyDownEvent(
+            window: window,
+            key: "j",
+            keyCode: 38
+        )
 
-        XCTAssertEqual(noResponderProbe.keyDownCount, 0)
+        XCTAssertIdentical(guardOwner.route(event), event)
+        XCTAssertIdentical(guardOwner.route(distinctEvent), distinctEvent)
+        XCTAssertNil(guardOwner.route(event))
     }
 
     func testNativeCopyAndPasteKeyEquivalentsRemainWebKitOwned() async throws {

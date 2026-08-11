@@ -834,11 +834,15 @@ final class SumiReaderPresentationTests: XCTestCase {
             frame: NSRect(x: 0, y: 0, width: 800, height: 600),
             configuration: WKWebViewConfiguration()
         )
+        let mainFrameRuntimeTransaction = TabMainFrameRuntimeTransaction(
+            initialURL: sourceURL
+        )
         let tab = Tab(
             url: sourceURL,
             existingWebView: canonicalWebView,
             webViewSessions: webViewRuntime.webViewSessions,
-            loadsCachedFaviconOnInit: false
+            loadsCachedFaviconOnInit: false,
+            mainFrameRuntimeTransaction: mainFrameRuntimeTransaction
         )
         canonicalWebView.owningTab = tab
         webViewRuntime.trackedWebViewAdmission.attemptAssignment(
@@ -846,6 +850,12 @@ final class SumiReaderPresentationTests: XCTestCase {
             to: tab,
             in: windowState.id,
             replaySemanticOperation: { XCTFail("Unexpected WebView deferral") }
+        )
+        let navigationLifetime = bindCommittedDocument(
+            on: canonicalWebView,
+            tab: tab,
+            transaction: mainFrameRuntimeTransaction,
+            url: sourceURL
         )
         browserContext.tabsByID[tab.id] = tab
 
@@ -861,25 +871,41 @@ final class SumiReaderPresentationTests: XCTestCase {
             )
         ))
         let readerWebView = promotedHost.activePresentationWebView
-
-        let hostingController = NSHostingController(
-            rootView: compositorWrapper(
-                browserContext: browserContext,
-                browserManager: browserManager,
-                webViewRuntime: webViewRuntime,
-                windowState: windowState
-            )
+        let surfaceStyle = BrowserContentSurfaceStyle(
+            geometry: BrowserChromeGeometry(),
+            backgroundColor: .white
         )
-        let window = NSWindow(
+        let containerView = WindowWebContentSplitHostLayoutView(
+            splitLayout: browserManager.splitWindowContext.layout,
+            splitDrops: browserManager.splitWindowContext.drops,
+            splitDropTargets: browserManager.splitWindowContext.dropTargets,
+            splitPreviews: browserManager.splitWindowContext.previews,
+            sidebarDragState: browserContext.sidebarDragState,
+            windowState: windowState,
+            resolveDragTab: { _ in nil },
+            surfaceStyle: surfaceStyle
+        )
+        let controller = WindowWebContentController(
+            browserContext: browserContext,
+            splitQuery: browserManager.splitWindowContext.query,
+            webViewOwnershipQuery: webViewRuntime.ownershipQuery,
+            webViewCompositorRuntime: webViewRuntime.compositorRuntime,
+            webViewProtectionRuntime: webViewRuntime.protectionRuntime,
+            surfaceStyle: surfaceStyle,
+            windowState: windowState,
+            containerView: containerView
+        )
+        let window = ReaderFocusTestWindow(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
             styleMask: [.titled],
             backing: .buffered,
             defer: false
         )
         window.isReleasedWhenClosed = false
-        window.contentViewController = hostingController
+        window.contentViewController = controller
         window.makeKeyAndOrderFront(nil)
         defer {
+            controller.tearDownController()
             window.orderOut(nil)
             window.contentViewController = nil
         }
@@ -899,11 +925,17 @@ final class SumiReaderPresentationTests: XCTestCase {
         ))
 
         browserContext.currentTab = tab
-        hostingController.rootView = compositorWrapper(
-            browserContext: browserContext,
-            browserManager: browserManager,
-            webViewRuntime: webViewRuntime,
-            windowState: windowState
+        controller.update(
+            displayState: WebsiteDisplayState(
+                splitPresentation: nil,
+                currentId: tab.id,
+                compositorVersion: 0,
+                currentPagePresentation: .live(pageID: tab.id),
+                isSplitDropCaptureActive: false
+            ),
+            hoveredLinkHandler: { _ in },
+            surfaceStyle: surfaceStyle,
+            isSurfaceVisible: true
         )
 
         let promotionCompleted = await waitUntil {
@@ -917,54 +949,16 @@ final class SumiReaderPresentationTests: XCTestCase {
         XCTAssertIdentical(promotedHost.activePresentationWebView, readerWebView)
         XCTAssertTrue(canonicalWebView.isHidden)
         XCTAssertFalse(window.firstResponder === canonicalWebView)
-    }
-
-    func testReaderPresentationTransfersToNewHostWithoutStaleOwnerSideEffects() throws {
-        let sourceURL = try XCTUnwrap(URL(string: "https://example.com/article"))
-        let canonicalWebView = WKWebView()
-        let firstHost = SumiWebViewContainerView(tabID: UUID(), webView: canonicalWebView)
-        let lease = documentLease(for: canonicalWebView, url: sourceURL)
-        XCTAssertTrue(firstHost.presentReader(
-            html: "<html><body><article>Reader</article></body></html>",
-            sourceDocument: presentationSourceDocument(
-                for: canonicalWebView,
-                url: sourceURL,
-                lease: lease
-            )
-        ))
-        let readerWebView = firstHost.activePresentationWebView
-
-        let secondHost = SumiWebViewContainerView(
-            tabID: firstHost.tabID,
-            webView: canonicalWebView
-        )
-
-        XCTAssertFalse(firstHost.hasReaderPresentation())
-        XCTAssertTrue(secondHost.hasReaderPresentation(matching: lease))
-        XCTAssertIdentical(secondHost.activePresentationWebView, readerWebView)
-        XCTAssertIdentical(canonicalWebView.superview, secondHost)
-        XCTAssertIdentical(readerWebView.superview, secondHost)
-        XCTAssertTrue(canonicalWebView.isHidden)
-
-        firstHost.dismissReader()
-        firstHost.removeFromSuperview()
-        XCTAssertTrue(secondHost.hasReaderPresentation(matching: lease))
-        XCTAssertTrue(canonicalWebView.isHidden)
-
-        readerWebView.pageZoom = 1.5
-        secondHost.dismissReader()
-        XCTAssertIdentical(secondHost.activePresentationWebView, canonicalWebView)
-        XCTAssertEqual(canonicalWebView.pageZoom, 1.5, accuracy: 0.001)
-        XCTAssertFalse(canonicalWebView.isHidden)
+        withExtendedLifetime(navigationLifetime) {}
     }
 
     private func bindCommittedDocument(
-        on webView: ReaderExtractionWebView,
+        on webView: WKWebView,
         tab: Tab,
         transaction: TabMainFrameRuntimeTransaction,
         url: URL
     ) -> NSObject {
-        webView.reportedCommittedURL = url
+        (webView as? ReaderExtractionWebView)?.reportedCommittedURL = url
         let navigationLifetime = NSObject()
         let navigationID = ObjectIdentifier(navigationLifetime)
         XCTAssertEqual(tab.beginMainFrameLifecycle(
@@ -1073,36 +1067,6 @@ final class SumiReaderPresentationTests: XCTestCase {
             decisionHandler: { decision = $0 }
         )
         return decision ?? .cancel
-    }
-
-    private func compositorWrapper(
-        browserContext: ReaderFocusBrowserContext,
-        browserManager: BrowserManager,
-        webViewRuntime: WebViewRuntimeGraph,
-        windowState: BrowserWindowState
-    ) -> TabCompositorWrapper {
-        TabCompositorWrapper(
-            browserContext: browserContext,
-            resolveDragTab: { _ in nil },
-            splitQuery: browserManager.splitWindowContext.query,
-            splitPreviews: browserManager.splitWindowContext.previews,
-            splitLayout: browserManager.splitWindowContext.layout,
-            splitDrops: browserManager.splitWindowContext.drops,
-            splitDropTargets: browserManager.splitWindowContext.dropTargets,
-            sidebarDragState: browserContext.sidebarDragState,
-            webViewOwnershipQuery: webViewRuntime.ownershipQuery,
-            webViewCompositorRuntime: webViewRuntime.compositorRuntime,
-            webViewProtectionRuntime: webViewRuntime.protectionRuntime,
-            hoveredLink: .constant(nil),
-            splitPresentation: nil,
-            isSplitDropCaptureActive: false,
-            surfaceStyle: BrowserContentSurfaceStyle(
-                geometry: BrowserChromeGeometry(),
-                backgroundColor: .white
-            ),
-            windowState: windowState,
-            isSurfaceVisible: true
-        )
     }
 
     private func waitUntil(

@@ -4,21 +4,21 @@ import Foundation
 final class BrowserStartupVisibleWindowSettlement {
     private let windows: WindowRegistry
     private let visuals: BrowserWindowVisualCoordinator
-    private let retryMaterialization: @MainActor (BrowserWindowState) -> Void
+    private let commands: BrowserWebViewWindowCommandChannel
 
     init(
         windows: WindowRegistry,
         visuals: BrowserWindowVisualCoordinator,
-        retryMaterialization: @escaping @MainActor (BrowserWindowState) -> Void
+        commands: BrowserWebViewWindowCommandChannel
     ) {
         self.windows = windows
         self.visuals = visuals
-        self.retryMaterialization = retryMaterialization
+        self.commands = commands
     }
 
     func settleVisibleWindows() {
         for windowState in windows.allWindows {
-            retryMaterialization(windowState)
+            commands.retryPageMaterialization(in: windowState.id)
             visuals.schedulePrepareVisibleWebViews(for: windowState)
             visuals.refreshCompositor(for: windowState)
         }
