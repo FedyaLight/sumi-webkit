@@ -184,8 +184,9 @@ final class SumiTabLifecycleNavigationResponder:
             isCurrent: nil
         )
         guard initialRole.isParticipant else { return }
-        guard let committedURL = webView.committedURL
-                ?? webView.backForwardList.currentItem?.url else {
+        guard let committedURL = context.url
+                ?? webView.backForwardList.currentItem?.url
+                ?? webView.committedURL else {
             return
         }
         let isUnexpectedRestoreBlank =
@@ -276,6 +277,18 @@ final class SumiTabLifecycleNavigationResponder:
         ) {
             return
         }
+        settleCommittedNavigation(context, tab: tab, webView: webView)
+    }
+
+    /// A committed navigation owns a displayed document even when WebKit ends
+    /// it with `didFail` (for example a cancelled back-forward cache restore).
+    /// Both terminal callbacks therefore cross the same committed-document
+    /// settlement seam.
+    private func settleCommittedNavigation(
+        _ context: SumiNavigationContext,
+        tab: Tab,
+        webView: WKWebView
+    ) {
         let initialRole = lifecycle.role(
             from: webView,
             navigationID: context.navigationID,
@@ -298,7 +311,7 @@ final class SumiTabLifecycleNavigationResponder:
                 navigationID: context.navigationID,
                 isCurrent: nil
             ).isParticipant else { return }
-            // A terminal success callback proves the document committed;
+            // A committed terminal callback proves the document exists;
             // compensate missed commit callbacks before terminal settlement.
             navigationDidCommit(context)
             guard tab.committedDocumentRuntime.lease(for: webView) != nil else {
@@ -317,8 +330,9 @@ final class SumiTabLifecycleNavigationResponder:
             from: webView,
             navigationID: context.navigationID,
             navigationLifetime: context.navigationLifetime,
-            terminalURL: webView.committedURL
+            terminalURL: context.url
                 ?? webView.backForwardList.currentItem?.url
+                ?? webView.committedURL
         )
         guard case .publish(let publication) = decision else { return }
 
@@ -383,11 +397,12 @@ final class SumiTabLifecycleNavigationResponder:
             navigationDidFinish(context)
             return
         }
+        let preservesCommittedDocument = context.isCommitted == true
         defer {
             finishDestructiveDataCleanupNavigation(
                 on: webView,
                 context: context,
-                succeeded: false
+                succeeded: preservesCommittedDocument
             )
         }
         if shouldSuppressForDestructiveDataCleanup(
@@ -395,6 +410,10 @@ final class SumiTabLifecycleNavigationResponder:
             navigationID: context.navigationID,
             navigationLifetime: context.navigationLifetime
         ) {
+            return
+        }
+        if preservesCommittedDocument {
+            settleCommittedNavigation(context, tab: tab, webView: webView)
             return
         }
         let wasRestoreFallback = tab.suspensionState.phase == .fallingBack
@@ -441,9 +460,7 @@ final class SumiTabLifecycleNavigationResponder:
             break
         }
 
-        tab.loadingState = context.isCommitted == true
-            ? .didFail(error)
-            : .didFailProvisionalNavigation(error)
+        tab.loadingState = .didFailProvisionalNavigation(error)
         tab.navigationRuntime.webViewRouting.pagePresentationDidChange(
             tab.id,
             webView

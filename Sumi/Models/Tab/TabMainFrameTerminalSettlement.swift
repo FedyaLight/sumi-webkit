@@ -1,9 +1,9 @@
 import Foundation
 import WebKit
 
-/// Settles full-document terminal success. It preserves the exact completed
-/// WKNavigation witness so an abandoned publication can only be recovered by
-/// the same physical callback lifetime.
+/// Settles a committed full-document terminal callback. It preserves the
+/// exact completed WKNavigation witness so an abandoned publication can only
+/// be recovered by the same physical callback lifetime.
 @MainActor
 final class TabMainFrameTerminalSettlement {
     struct Result {

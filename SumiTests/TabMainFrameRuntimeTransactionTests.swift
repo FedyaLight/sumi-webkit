@@ -599,7 +599,7 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
         }
     }
 
-    func testFailedIntentRollsBackToDurableCommittedDocumentWithoutReplica() throws {
+    func testFailedIntentKeepsExplicitlyCommittedReplicaWithoutPollingWebViewURL() throws {
         let initialURL = try XCTUnwrap(URL(string: "https://example.com/initial"))
         let committedURL = try XCTUnwrap(URL(string: "https://example.com/committed"))
         let failedURL = try XCTUnwrap(URL(string: "safari-web-extension://broken/page.html"))
@@ -641,7 +641,7 @@ final class TabMainFrameRuntimeTransactionTests: XCTestCase {
             tab.mainFrameLoads.currentIntent(matching: committedURL)
         )
         XCTAssertEqual(rollbackIntent.revision, failedIntent.revision + 1)
-        XCTAssertNil(tab.committedDocumentRuntime.lease(for: webView))
+        XCTAssertNotNil(tab.committedDocumentRuntime.lease(for: webView))
     }
 
     func testSuccessfulSuccessorBindingConsumesExactRecoveryMarker() throws {

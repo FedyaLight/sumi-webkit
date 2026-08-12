@@ -801,6 +801,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         let planner = WindowWebContentPresentationPlanner(
             browserContext: browserContext,
             splitQuery: browserManager.splitWindowContext.query,
+            webViewOwnershipQuery: graph.ownershipQuery,
             windowState: windowState,
             containerView: container,
             hostRegistry: WindowWebContentHostRegistry(),

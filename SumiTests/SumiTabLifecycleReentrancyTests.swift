@@ -87,6 +87,38 @@ final class SumiTabLifecycleReentrancyTests: XCTestCase {
         )
     }
 
+    func testCommittedCancelledBackForwardFailureKeepsDisplayedDocumentLive() {
+        let fixture = makeFixture(contextIsCommitted: true)
+        fixture.responder.navigationDidCommit(fixture.context)
+        XCTAssertNotNil(
+            fixture.tab.committedDocumentRuntime.lease(for: fixture.webView)
+        )
+
+        fixture.webView.reportedCommittedURL = nil
+        fixture.responder.navigationDidFail(
+            WKError(
+                _nsError: NSError(
+                    domain: NSURLErrorDomain,
+                    code: NSURLErrorCancelled
+                )
+            ),
+            context: fixture.context
+        )
+
+        XCTAssertNotNil(
+            fixture.tab.committedDocumentRuntime.lease(for: fixture.webView)
+        )
+        XCTAssertEqual(fixture.tab.loadingState, .didFinish)
+        XCTAssertEqual(
+            PagePresentationResolver.resolve(
+                tab: fixture.tab,
+                windowState: BrowserWindowState(),
+                webView: fixture.webView
+            ),
+            .live(pageID: fixture.tab.id)
+        )
+    }
+
     func testDidStartStopsBeforeAuthorityPreparationWhenSharedStartBecomesStale() {
         let fixture = makeFixture()
         let successorURL = URL(string: "https://successor.example/shared-start")!
@@ -350,21 +382,21 @@ final class SumiTabLifecycleReentrancyTests: XCTestCase {
         )
     }
 
-    func testFinishWithoutCommittedWebKitEvidenceRollsBackInsteadOfPublishingTarget() {
+    func testFinishCallbackIsTrustedCommitEvidenceWithoutPrivateWebViewURL() {
         let fixture = makeFixture(hasCommittedWebKitEvidence: false)
 
         fixture.responder.navigationDidFinish(fixture.context)
 
-        XCTAssertEqual(fixture.tab.url, fixture.initialURL)
-        XCTAssertNotEqual(fixture.tab.loadingState, .didFinish)
-        XCTAssertNil(
+        XCTAssertEqual(fixture.tab.url, fixture.targetURL)
+        XCTAssertEqual(fixture.tab.loadingState, .didFinish)
+        XCTAssertNotNil(
             fixture.tab.committedDocumentRuntime.lease(for: fixture.webView)
         )
         XCTAssertEqual(
             fixture.tab.mainFrameLoads.currentIntent.targetURL,
-            fixture.initialURL
+            fixture.targetURL
         )
-        XCTAssertTrue(fixture.runtime.siteDataPolicyTabIds.isEmpty)
+        XCTAssertEqual(fixture.runtime.siteDataPolicyTabIds, [fixture.tab.id])
     }
 
     func testUnexpectedUnadmittedBlankCannotReplaceCommittedDestination() {
@@ -511,7 +543,7 @@ final class SumiTabLifecycleReentrancyTests: XCTestCase {
         let sameDocumentURL = URL(
             string: "https://target.example/page#section"
         )!
-        let webView = fixture.webView as! SumiNavigationURLReportingWebView
+        let webView = fixture.webView
         webView.reportedURL = sameDocumentURL
         var persistenceCount = 0
         var persistence = TabRuntimePersistenceCallbacks.inactive
@@ -555,7 +587,7 @@ final class SumiTabLifecycleReentrancyTests: XCTestCase {
         let successorURL = URL(
             string: "https://successor.example/same-document"
         )!
-        let webView = fixture.webView as! SumiNavigationURLReportingWebView
+        let webView = fixture.webView
         webView.reportedURL = sameDocumentURL
         var persistenceCount = 0
         var persistence = TabRuntimePersistenceCallbacks.inactive
@@ -600,7 +632,8 @@ final class SumiTabLifecycleReentrancyTests: XCTestCase {
     }
 
     private func makeFixture(
-        hasCommittedWebKitEvidence: Bool = true
+        hasCommittedWebKitEvidence: Bool = true,
+        contextIsCommitted: Bool = false
     ) -> Fixture {
         let initialURL = URL(string: "https://initial.example/page")!
         let targetURL = URL(string: "https://target.example/page")!
@@ -619,7 +652,7 @@ final class SumiTabLifecycleReentrancyTests: XCTestCase {
             action: nil,
             url: targetURL,
             isCurrent: true,
-            isCommitted: false,
+            isCommitted: contextIsCommitted,
             isMainFrame: true,
             webView: webView
         )
@@ -649,7 +682,7 @@ final class SumiTabLifecycleReentrancyTests: XCTestCase {
         let tab: Tab
         let runtime: RecordingTabLifecycleNavigationRuntime
         let responder: SumiTabLifecycleNavigationResponder
-        let webView: WKWebView
+        let webView: SumiNavigationURLReportingWebView
         let context: SumiNavigationContext
         let initialURL: URL
         let targetURL: URL

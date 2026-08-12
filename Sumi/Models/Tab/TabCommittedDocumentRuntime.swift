@@ -16,7 +16,7 @@ final class TabCommittedDocumentRuntime {
     enum Reason: String {
         case documentCommit = "document-commit"
         case authorityPromotion = "document-authority-promotion"
-        case terminalSuccess = "document-terminal-success"
+        case terminalCompletion = "document-terminal-completion"
         case replicaDeparture = "document-replica-departure"
         case navigationAbort = "document-navigation-abort"
         case navigationCancel = "document-navigation-cancel"
@@ -107,11 +107,6 @@ final class TabCommittedDocumentRuntime {
         ledger.updatePresentation(url, on: webView)
     }
 
-    func noteSurvivingDocument(on webView: WKWebView, committedURL: URL) {
-        beginDocumentMutation()
-        ledger.noteSurvivingDocument(on: webView, committedURL: committedURL)
-    }
-
     func removeWebView(_ webView: WKWebView) {
         beginDocumentMutation()
         ledger.removeWebView(webView)
@@ -152,6 +147,10 @@ final class TabCommittedDocumentRuntime {
             matching: proof.evidence,
             isAuthority: proof.isAuthority
         )
+    }
+
+    func hasCommittedDocument(on webView: WKWebView) -> Bool {
+        ledger.hasCommittedDocument(on: webView)
     }
 
     /// Exact canonical-document identity for external admission evidence.

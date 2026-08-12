@@ -259,7 +259,6 @@ final class TabMainFrameRuntimeTransaction:
         from webView: WKWebView,
         navigationID: ObjectIdentifier,
         navigationLifetime: AnyObject,
-        survivingCommittedURL: URL?,
         rollsBackWhenUnreplaced: Bool
     ) -> TabMainFrameNavigationAbortResult {
         committedDocumentRuntime.performTransition(
@@ -270,12 +269,6 @@ final class TabMainFrameRuntimeTransaction:
                 navigationID: navigationID
             ) {
                 return .authoritativeTerminated
-            }
-            if let survivingCommittedURL {
-                committedDocumentRuntime.noteSurvivingDocument(
-                    on: webView,
-                    committedURL: survivingCommittedURL
-                )
             }
             switch lifecycle.abortNavigation(
                 from: webView,
@@ -552,7 +545,7 @@ final class TabMainFrameRuntimeTransaction:
         terminalURL: URL?
     ) -> TabMainFrameTransitionDecision<TabMainFrameFinishPublication> {
         committedDocumentRuntime.performTransition(
-            reason: .terminalSuccess
+            reason: .terminalCompletion
         ) {
             let settlement = terminal.settleFinish(
                 from: webView,
@@ -709,19 +702,11 @@ final class TabMainFrameRuntimeTransaction:
         return snapshot.targetURL
     }
 
-    func rollbackAfterFailedSubmission(
-        survivingWebViews: [WKWebView]
-    ) -> TabMainFrameTransitionOutput.FailedSubmissionRollback {
+    func rollbackAfterFailedSubmission()
+        -> TabMainFrameTransitionOutput.FailedSubmissionRollback {
         committedDocumentRuntime.performTransition(
             reason: .submissionFailure
         ) {
-            for webView in survivingWebViews {
-                guard let committedURL = webView.committedURL else { continue }
-                committedDocumentRuntime.noteSurvivingDocument(
-                    on: webView,
-                    committedURL: committedURL
-                )
-            }
             let navigationStateSource = committedDocumentRuntime.sourceWebView()
             return TabMainFrameTransitionOutput.FailedSubmissionRollback(
                 targetURL: applyDurableDocumentRollback(),

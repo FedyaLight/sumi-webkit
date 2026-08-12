@@ -67,7 +67,7 @@ enum PagePresentationResolver {
             )
         }
         if let webView,
-           tab.committedDocumentRuntime.lease(for: webView) != nil {
+           tab.committedDocumentRuntime.hasCommittedDocument(on: webView) {
             return .live(pageID: tab.id)
         }
         if let request = windowState.pageMaterializationRequests.currentRequest(

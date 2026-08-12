@@ -96,6 +96,60 @@ final class PagePresentationStateTests: XCTestCase {
         )
     }
 
+    func testResolverKeepsCommittedDocumentLiveDuringNextProvisionalNavigation()
+        throws {
+        let committedURL = try XCTUnwrap(
+            URL(string: "https://example.com/document")
+        )
+        let provisionalURL = try XCTUnwrap(
+            URL(string: "https://example.com/download")
+        )
+        let tab = Tab(url: committedURL, loadsCachedFaviconOnInit: false)
+        let webView = SumiNavigationURLReportingWebView(frame: .zero)
+        webView.reportedURL = committedURL
+        webView.reportedCommittedURL = committedURL
+        let responder = tab.makeMainFrameLifecycleResponder()
+
+        let committedNavigation = NSObject()
+        let committedContext = SumiNavigationContext(
+            navigationID: ObjectIdentifier(committedNavigation),
+            navigationLifetime: committedNavigation,
+            action: nil,
+            url: committedURL,
+            isCurrent: true,
+            isCommitted: true,
+            isMainFrame: true,
+            webView: webView
+        )
+        responder.navigationWillStart(committedContext)
+        responder.navigationDidStart(committedContext)
+        responder.navigationDidCommit(committedContext)
+        responder.navigationDidFinish(committedContext)
+
+        let provisionalNavigation = NSObject()
+        let provisionalContext = SumiNavigationContext(
+            navigationID: ObjectIdentifier(provisionalNavigation),
+            navigationLifetime: provisionalNavigation,
+            action: nil,
+            url: provisionalURL,
+            isCurrent: true,
+            isCommitted: false,
+            isMainFrame: true,
+            webView: webView
+        )
+        responder.navigationWillStart(provisionalContext)
+        responder.navigationDidStart(provisionalContext)
+
+        XCTAssertEqual(
+            PagePresentationResolver.resolve(
+                tab: tab,
+                windowState: BrowserWindowState(),
+                webView: webView
+            ),
+            .live(pageID: tab.id)
+        )
+    }
+
     func testResolverPublishesTypedRestoreFailureInsteadOfEmptyPage() throws {
         let destination = try XCTUnwrap(URL(string: "https://example.com/lost"))
         let tab = Tab(
@@ -291,6 +345,7 @@ final class PagePresentationStateTests: XCTestCase {
         let planner = WindowWebContentPresentationPlanner(
             browserContext: context,
             splitQuery: browser.splitWindowContext.query,
+            webViewOwnershipQuery: graph.ownershipQuery,
             windowState: window,
             containerView: container,
             hostRegistry: WindowWebContentHostRegistry(),
@@ -588,6 +643,129 @@ final class PagePresentationStateTests: XCTestCase {
         XCTAssertEqual(webView.reloadCount, 0)
     }
 
+    func testApplyTimeResolutionRejectsQueuedLoadingSurfaceAfterCommit()
+        async throws {
+        let destination = try XCTUnwrap(
+            URL(string: "https://example.com/committed")
+        )
+        let sessions = WebViewSessionRepository()
+        let tab = Tab(
+            url: destination,
+            webViewSessions: sessions,
+            loadsCachedFaviconOnInit: false
+        )
+        let window = BrowserWindowState()
+        let context = PagePresentationBrowserContextStub(
+            tabsByID: [tab.id: tab],
+            currentTab: tab
+        )
+        let browser = BrowserManager()
+        let graph = makeTestWebViewRuntimeGraph(
+            webViewSessions: sessions,
+            resolveRuntimeTab: { tabID in tabID == tab.id ? tab : nil }
+        )
+        let webView = PresentationNavigationCountingWebView()
+        webView.reportedURL = destination
+        webView.reportedCommittedURL = destination
+        XCTAssertTrue(graph.canonicalWebViewPlacement.placeAuxiliaryTracked(
+            webView,
+            for: tab,
+            in: window.id,
+            promoteToPrimary: true
+        ).isAccepted)
+
+        let container = makeContainer(
+            browser: browser,
+            context: context,
+            window: window
+        )
+        let controller = WindowWebContentController(
+            browserContext: context,
+            splitQuery: browser.splitWindowContext.query,
+            webViewOwnershipQuery: graph.ownershipQuery,
+            webViewCompositorRuntime: graph.compositorRuntime,
+            webViewProtectionRuntime: graph.protectionRuntime,
+            surfaceStyle: BrowserContentSurfaceStyle(
+                geometry: BrowserChromeGeometry(),
+                backgroundColor: .windowBackgroundColor
+            ),
+            windowState: window,
+            containerView: container
+        )
+        controller.loadView()
+        defer { controller.tearDownController() }
+
+        let navigation = NSObject()
+        let navigationContext = SumiNavigationContext(
+            navigationID: ObjectIdentifier(navigation),
+            navigationLifetime: navigation,
+            action: nil,
+            url: destination,
+            isCurrent: true,
+            isCommitted: false,
+            isMainFrame: true,
+            webView: webView
+        )
+        XCTAssertEqual(
+            tab.beginMainFrameLifecycle(
+                from: webView,
+                navigationID: navigationContext.navigationID,
+                navigationLifetime: navigation,
+                targetURL: destination,
+                allowsUserInitiatedSupersession: false,
+                continuationKind: nil
+            ),
+            .authority
+        )
+        XCTAssertFalse(
+            graph.compositorRuntime.performImmediateVisualHandoffIfPossible(
+                in: window.id
+            )
+        )
+
+        tab.makeMainFrameLifecycleResponder().navigationDidCommit(
+            navigationContext
+        )
+        XCTAssertNotNil(tab.committedDocumentRuntime.lease(for: webView))
+        controller.update(
+            displayState: WebsiteDisplayState(
+                splitPresentation: nil,
+                currentId: tab.id,
+                compositorVersion: 1,
+                currentPagePresentation: .loading(
+                    pageID: tab.id,
+                    destination: destination
+                ),
+                isSplitDropCaptureActive: false
+            ),
+            hoveredLinkHandler: { _ in },
+            surfaceStyle: BrowserContentSurfaceStyle(
+                geometry: BrowserChromeGeometry(),
+                backgroundColor: .windowBackgroundColor
+            ),
+            isSurfaceVisible: true
+        )
+
+        await drainMainQueue()
+
+        XCTAssertTrue(container.singlePaneView.subviews.contains {
+            ($0 as? SumiWebViewContainerView)?.webView === webView
+        })
+        XCTAssertFalse(container.singlePaneView.subviews.contains {
+            $0 is PagePresentationSurfaceView
+        })
+        XCTAssertEqual(webView.loadCount, 0)
+        XCTAssertEqual(webView.reloadCount, 0)
+    }
+
+    private func drainMainQueue() async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async {
+                continuation.resume()
+            }
+        }
+    }
+
     private func makeContainer(
         browser: BrowserManager,
         context: PagePresentationBrowserContextStub,
@@ -634,8 +812,28 @@ final class PagePresentationStateTests: XCTestCase {
 
 @MainActor
 private final class PresentationNavigationCountingWebView: WKWebView {
+    var reportedURL: URL?
+    var reportedCommittedURL: URL?
     private(set) var loadCount = 0
     private(set) var reloadCount = 0
+
+    override var url: URL? { reportedURL }
+
+    override func responds(to selector: ObjectiveC.Selector?) -> Bool {
+        guard let selector else { return false }
+        let name = NSStringFromSelector(selector)
+        if name == "committedURL" || name == "_committedURL" {
+            return true
+        }
+        return super.responds(to: selector)
+    }
+
+    override func value(forKey key: String) -> Any? {
+        if key == "committedURL" {
+            return MainActor.assumeIsolated { reportedCommittedURL }
+        }
+        return super.value(forKey: key)
+    }
 
     override func load(_ request: URLRequest) -> WKNavigation? {
         loadCount += 1
@@ -658,12 +856,14 @@ private final class PagePresentationBrowserContextStub:
     WindowWebContentBrowserContext {
     let sidebarDragState = SidebarDragState()
     let tabsByID: [UUID: Tab]
+    let currentTabValue: Tab?
 
-    init(tabsByID: [UUID: Tab]) {
+    init(tabsByID: [UUID: Tab], currentTab: Tab? = nil) {
         self.tabsByID = tabsByID
+        self.currentTabValue = currentTab
     }
 
-    func currentTab(for _: BrowserWindowState) -> Tab? { nil }
+    func currentTab(for _: BrowserWindowState) -> Tab? { currentTabValue }
     func tab(for tabID: UUID) -> Tab? { tabsByID[tabID] }
     func enqueueWindowMutationDuringHistorySwipe(
         _: HistorySwipeDeferredWindowMutationKind,

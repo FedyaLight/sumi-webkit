@@ -262,6 +262,63 @@ final class DownloadFlyAnimationTests: XCTestCase {
         )
     }
 
+    func testFallbackRequestRendersInItsRegisteredWindow() async throws {
+        let animationCenter = DownloadFlyAnimationCenter()
+        let windowState = BrowserWindowState()
+        windowState.isSidebarVisible = false
+        let windowRegistry = WindowRegistry()
+        let host = NSHostingView(
+            rootView: DownloadFlyAnimationOverlay(
+                animationCenter: animationCenter,
+                downloadsPopoverPresenter: DownloadsPopoverPresenter(),
+                windowState: windowState,
+                windowRegistry: windowRegistry,
+                sidebarPosition: .left
+            )
+        )
+        host.frame = CGRect(x: 0, y: 0, width: 500, height: 400)
+        let window = NSWindow(
+            contentRect: host.frame,
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        windowRegistry.bindAppKitWindow(window, to: windowState)
+        window.orderFrontRegardless()
+        defer {
+            windowRegistry.unbindAppKitWindow(for: windowState.id)
+            window.orderOut(nil)
+            window.contentView = nil
+            window.close()
+        }
+
+        try await Task.sleep(for: .milliseconds(20))
+        XCTAssertEqual(try visiblePixelCount(in: host), 0)
+
+        animationCenter.requestFallback(
+            from: DownloadFlyAnimationOrigin(
+                windowNumber: window.windowNumber,
+                sourceRectInWindow: CGRect(
+                    x: 300,
+                    y: 180,
+                    width: 44,
+                    height: 44
+                ),
+                nativeOriginalRect: nil
+            ),
+            icon: testFileIcon
+        )
+
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertGreaterThan(
+            try visiblePixelCount(in: host),
+            0,
+            "The registered fallback overlay did not render the request"
+        )
+    }
+
     private func visiblePixelCenter(in host: NSView) throws -> CGPoint {
         host.layoutSubtreeIfNeeded()
         let bitmap = try XCTUnwrap(
@@ -285,5 +342,22 @@ final class DownloadFlyAnimationTests: XCTestCase {
 
         XCTAssertGreaterThan(count, 0)
         return CGPoint(x: totalX / count, y: totalY / count)
+    }
+
+    private func visiblePixelCount(in host: NSView) throws -> Int {
+        host.layoutSubtreeIfNeeded()
+        let bitmap = try XCTUnwrap(
+            host.bitmapImageRepForCachingDisplay(in: host.bounds)
+        )
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        var count = 0
+        for row in 0 ..< bitmap.pixelsHigh {
+            for column in 0 ..< bitmap.pixelsWide {
+                if (bitmap.colorAt(x: column, y: row)?.alphaComponent ?? 0) > 0.05 {
+                    count += 1
+                }
+            }
+        }
+        return count
     }
 }

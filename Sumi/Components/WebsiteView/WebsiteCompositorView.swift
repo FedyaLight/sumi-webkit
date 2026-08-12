@@ -91,6 +91,7 @@ final class WindowWebContentController: NSViewController {
     private lazy var presentationPlanner = WindowWebContentPresentationPlanner(
         browserContext: browserContext,
         splitQuery: splitQuery,
+        webViewOwnershipQuery: webViewOwnershipQuery,
         windowState: windowState,
         containerView: containerView,
         hostRegistry: hostRegistry,

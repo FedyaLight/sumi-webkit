@@ -397,6 +397,37 @@ final class TabCommittedDocumentSuspensionTests: XCTestCase {
         XCTAssertEqual(documentLease.presentationURL, presentationURL)
     }
 
+    func testRollbackKeepsExactDocumentWhenPhysicalURLChangesWithoutCallback() throws {
+        let committedURL = try XCTUnwrap(
+            URL(string: "https://example.com/search?q=sumi")
+        )
+        let presentationURL = try XCTUnwrap(
+            URL(string: "https://example.com/search?q=sumi&view=results")
+        )
+        let webView = SumiNavigationURLReportingWebView()
+        webView.reportedURL = presentationURL
+        webView.reportedCommittedURL = presentationURL
+        let ledger = TabCommittedDocumentLedger(initialURL: committedURL)
+        ledger.adoptCanonicalDocument(evidence(
+            webView: webView,
+            url: committedURL,
+            revision: 1,
+            generation: 1
+        ))
+
+        let snapshot = ledger.rollbackSnapshot()
+
+        let candidate = try XCTUnwrap(snapshot.candidates.first)
+        XCTAssertEqual(snapshot.candidates.count, 1)
+        XCTAssertIdentical(candidate.webView, webView)
+        XCTAssertEqual(candidate.committedURL, committedURL)
+        XCTAssertEqual(candidate.presentationURL, committedURL)
+        XCTAssertEqual(
+            snapshot.preferredAuthorityWebViewID,
+            ObjectIdentifier(webView)
+        )
+    }
+
     func testBatchDepartureRemovesVetoesWithoutDiscardingSurvivorReport() throws {
         let url = try XCTUnwrap(URL(string: "https://example.com/clones"))
         let authorityWebView = WKWebView()

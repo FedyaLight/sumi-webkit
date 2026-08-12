@@ -386,7 +386,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             from: webView,
             navigationID: navigationID,
             navigationLifetime: navigationLifetime,
-            survivingCommittedURL: webView.committedURL,
             rollsBackWhenUnreplaced: rollsBackWhenUnreplaced
         )
         if case .authoritativeRollback(let rollbackURL) = result {
@@ -460,14 +459,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         if let intent, mainFrameLoads.isCurrent(intent) == false {
             return
         }
-        var survivingWebViews = webViewSession.allKnownWebViews
-        if let webView,
-           survivingWebViews.contains(where: { $0 === webView }) == false {
-            survivingWebViews.append(webView)
-        }
-        let rollback = mainFrameRuntimeTransaction.rollbackAfterFailedSubmission(
-            survivingWebViews: survivingWebViews
-        )
+        let rollback = mainFrameRuntimeTransaction.rollbackAfterFailedSubmission()
         let rollbackURL = rollback.targetURL
         _ = webViewRebuildEpoch.advance()
         url = rollbackURL

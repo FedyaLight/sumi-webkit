@@ -186,26 +186,6 @@ final class TabCommittedDocumentLedger {
         replicasByWebViewID[webViewID] = replica
     }
 
-    func noteSurvivingDocument(on webView: WKWebView, committedURL: URL) {
-        let webViewID = ObjectIdentifier(webView)
-        guard var replica = replicasByWebViewID[webViewID],
-              replica.webViewReference.matches(webView),
-              WebRuntimeNavigationIdentity(committedURL)
-                == WebRuntimeNavigationIdentity(replica.document.committedURL),
-              WebRuntimeNavigationIdentity(committedURL)
-                == WebRuntimeNavigationIdentity(committedIdentityURL),
-              isCanonicalReplica(replica.document) else {
-            return
-        }
-        replica.document = replica.document.updatingPresentation(
-            committedPresentationURL
-        )
-        replicasByWebViewID[webViewID] = replica
-        if sourceWebViewReference?.resolve() == nil {
-            sourceWebViewReference = WeakWebViewReference(webView)
-        }
-    }
-
     func sourceWebView() -> WKWebView? {
         guard let webView = sourceWebViewReference?.resolve(),
               let replica = replicasByWebViewID[ObjectIdentifier(webView)],
@@ -214,6 +194,14 @@ final class TabCommittedDocumentLedger {
             return nil
         }
         return webView
+    }
+
+    func hasCommittedDocument(on webView: WKWebView) -> Bool {
+        guard let replica = replicasByWebViewID[ObjectIdentifier(webView)],
+              replica.webViewReference.matches(webView) else {
+            return false
+        }
+        return isCanonicalReplica(replica.document)
     }
 
     func documentLease(
@@ -416,17 +404,11 @@ final class TabCommittedDocumentLedger {
     }
 
     func rollbackSnapshot() -> TabCommittedDocumentRollbackSnapshot {
-        let committedIdentity = WebRuntimeNavigationIdentity(committedIdentityURL)
         var candidates: [TabCommittedDocumentCandidate] = []
         var expiredWebViewIDs: [ObjectIdentifier] = []
 
         for (webViewID, replica) in replicasByWebViewID {
             guard let webView = replica.webViewReference.resolve(),
-                  let physicalCommittedURL = webView.committedURL,
-                  WebRuntimeNavigationIdentity(physicalCommittedURL)
-                    == WebRuntimeNavigationIdentity(replica.document.committedURL),
-                  WebRuntimeNavigationIdentity(replica.document.committedURL)
-                    == committedIdentity,
                   isCanonicalReplica(replica.document) else {
                 expiredWebViewIDs.append(webViewID)
                 continue
