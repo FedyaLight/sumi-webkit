@@ -676,10 +676,15 @@ final class TabNavigationRuntime {
 @MainActor
 final class TabMediaRuntime {
     var lastMediaActivityAt: Date = .distantPast
+    private(set) var playbackStartGeneration: UInt64 = 0
     var audioStateCancellables: [ObjectIdentifier: AnyCancellable] = [:]
     private(set) var pictureInPictureWebViewIDs: Set<ObjectIdentifier> = []
     private var browserRuntime = TabBrowserRuntimeReference(.inactive)
     private var sharesAttachedBrowserRuntime = false
+
+    func notePlaybackStarted() {
+        playbackStartGeneration &+= 1
+    }
 
     var callbacks: TabMediaRuntimeCallbacks {
         get { browserRuntime.runtime.mediaRuntimeCallbacks }

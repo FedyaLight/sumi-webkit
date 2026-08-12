@@ -18,9 +18,17 @@ enum SidebarMediaCardPresentationPolicy {
 
 enum SidebarMediaCardStackMetrics {
     static let collapsedCardHeight: CGFloat = 34
-    static let expandedCardHeight: CGFloat = 76
+    static let expandedCardHeight: CGFloat = 68
+    static let expandedHeaderHeight: CGFloat = 30
+    static let expandedHeaderTopInset: CGFloat = 4
+    static let expandedMetadataBottomSpacing: CGFloat = 4
+    static let headerControlsOffset: CGFloat = -2
     static let stackPeek: CGFloat = 8
     static let stackGap: CGFloat = 6
+
+    static func metadataSlotHeight(isExpanded: Bool) -> CGFloat {
+        isExpanded ? expandedHeaderHeight + expandedMetadataBottomSpacing : 0
+    }
 
     static func reservedHeight(cardCount: Int) -> CGFloat {
         guard cardCount > 0 else { return 0 }
@@ -47,6 +55,24 @@ enum SidebarMediaCardStackMotion {
     }
 }
 
+enum SidebarMediaCardPresenceMotion {
+    static let duration: TimeInterval = 0.18
+    static let verticalOffset: CGFloat = 6
+
+    static func transition(reduceMotion: Bool) -> AnyTransition {
+        guard !reduceMotion else { return .opacity }
+        return .opacity.combined(with: .offset(y: verticalOffset))
+    }
+
+    static let animation = Animation.timingCurve(
+        0.23,
+        1,
+        0.32,
+        1,
+        duration: duration
+    )
+}
+
 private enum SidebarMediaCardHoverLayers {
     static let stack = SidebarHoverLayer(
         priority: 40,
@@ -56,7 +82,9 @@ private enum SidebarMediaCardHoverLayers {
 }
 
 struct MediaControlsView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.sidebarPresentationContext) private var sidebarPresentationContext
+    @Environment(\.sumiSettings) private var settings
 
     let cardStates: [SumiBackgroundMediaCardState]
     let controller: SumiNativeNowPlayingController
@@ -73,18 +101,31 @@ struct MediaControlsView: View {
     }
 
     var body: some View {
-        if SidebarMediaCardPresentationPolicy.shouldPresentCard(
-            hasCardState: !cardStates.isEmpty,
-            presentationContext: sidebarPresentationContext
-        ) {
-            SumiBackgroundMediaCardStack(
-                cardStates: cardStates,
-                controller: controller,
-                faviconImageReader: faviconImageReader
-            )
-            .padding(.horizontal, 8)
-            .padding(.bottom, 4)
+        ZStack(alignment: .bottom) {
+            if SidebarMediaCardPresentationPolicy.shouldPresentCard(
+                hasCardState: !cardStates.isEmpty,
+                presentationContext: sidebarPresentationContext
+            ) {
+                SumiBackgroundMediaCardStack(
+                    cardStates: cardStates,
+                    controller: controller,
+                    faviconImageReader: faviconImageReader
+                )
+                .padding(.horizontal, 8)
+                .padding(.bottom, 4)
+                .transition(presenceTransition)
+            }
         }
+        .animation(
+            SidebarMediaCardPresenceMotion.animation,
+            value: cardStates.map(\.id)
+        )
+    }
+
+    private var presenceTransition: AnyTransition {
+        SidebarMediaCardPresenceMotion.transition(
+            reduceMotion: reduceMotion || settings.shouldReduceChromeMotion
+        )
     }
 }
 
@@ -137,6 +178,7 @@ private struct SumiBackgroundMediaCardStack: View {
                             anchor: .top
                         )
                         .opacity(isHovered ? 1 : max(0.4, 1 - Double(index) * 0.3))
+                        .transition(presenceTransition)
                         .zIndex(Double(cardStates.count - index))
                     }
                 }
@@ -152,6 +194,12 @@ private struct SumiBackgroundMediaCardStack: View {
                 )
             }
             .zIndex(100)
+    }
+
+    private var presenceTransition: AnyTransition {
+        SidebarMediaCardPresenceMotion.transition(
+            reduceMotion: reduceMotion || sumiSettings.shouldReduceChromeMotion
+        )
     }
 
     private func updateHoverState(_ hovering: Bool) {
@@ -215,26 +263,24 @@ private struct SumiBackgroundMediaCardView: View {
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
 
-        VStack(alignment: .leading, spacing: 4) {
-            if isExpanded {
-                SumiBackgroundMediaCardHeader(
-                    title: cardState.title,
-                    subtitle: cardState.subtitle,
-                    canPictureInPicture: cardState.canPictureInPicture,
-                    tokens: tokens,
-                    sourceIDComponent: sourceIDComponent,
-                    routingPriorityBoost: Self.controlRoutingPriorityBoost,
-                    onTogglePictureInPicture: {
-                        Task {
-                            await controller.togglePictureInPicture(cardID: cardState.id)
-                        }
-                    },
-                    onDismiss: {
-                        Task { await controller.dismiss(cardID: cardState.id) }
+        VStack(alignment: .leading, spacing: 0) {
+            SumiBackgroundMediaCardMetadataSlot(
+                isExpanded: isExpanded,
+                title: cardState.title,
+                subtitle: cardState.subtitle,
+                canPictureInPicture: cardState.canPictureInPicture,
+                tokens: tokens,
+                sourceIDComponent: sourceIDComponent,
+                routingPriorityBoost: Self.controlRoutingPriorityBoost,
+                onTogglePictureInPicture: {
+                    Task {
+                        await controller.togglePictureInPicture(cardID: cardState.id)
                     }
-                )
-                .transition(.opacity.combined(with: .offset(y: 8)))
-            }
+                },
+                onDismiss: {
+                    Task { await controller.dismiss(cardID: cardState.id) }
+                }
+            )
 
             controlsRow
         }
@@ -350,6 +396,44 @@ private struct SumiBackgroundMediaCardView: View {
     }
 }
 
+private struct SumiBackgroundMediaCardMetadataSlot: View {
+    let isExpanded: Bool
+    let title: String
+    let subtitle: String
+    let canPictureInPicture: Bool
+    let tokens: ChromeThemeTokens
+    let sourceIDComponent: String
+    let routingPriorityBoost: Int
+    let onTogglePictureInPicture: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            if isExpanded {
+                SumiBackgroundMediaCardHeader(
+                    title: title,
+                    subtitle: subtitle,
+                    canPictureInPicture: canPictureInPicture,
+                    tokens: tokens,
+                    sourceIDComponent: sourceIDComponent,
+                    routingPriorityBoost: routingPriorityBoost,
+                    onTogglePictureInPicture: onTogglePictureInPicture,
+                    onDismiss: onDismiss
+                )
+                .transition(.opacity.combined(with: .offset(y: 8)))
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(
+            height: SidebarMediaCardStackMetrics.metadataSlotHeight(
+                isExpanded: isExpanded
+            ),
+            alignment: .top
+        )
+        .clipped()
+    }
+}
+
 private struct SumiBackgroundMediaCardHeader: View {
     let title: String
     let subtitle: String
@@ -379,24 +463,31 @@ private struct SumiBackgroundMediaCardHeader: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            if canPictureInPicture {
+            HStack(spacing: 6) {
+                if canPictureInPicture {
+                    headerButton(
+                        systemName: "pip.enter",
+                        help: "Picture in Picture",
+                        sourceID: "sidebar-mini-player-pip-\(sourceIDComponent)",
+                        action: onTogglePictureInPicture
+                    )
+                }
+
                 headerButton(
-                    systemName: "pip.enter",
-                    help: "Picture in Picture",
-                    sourceID: "sidebar-mini-player-pip-\(sourceIDComponent)",
-                    action: onTogglePictureInPicture
+                    systemName: "xmark",
+                    help: "Close Mini Player",
+                    sourceID: "sidebar-mini-player-close-\(sourceIDComponent)",
+                    action: onDismiss
                 )
             }
-
-            headerButton(
-                systemName: "xmark",
-                help: "Close Mini Player",
-                sourceID: "sidebar-mini-player-close-\(sourceIDComponent)",
-                action: onDismiss
-            )
+            .offset(y: SidebarMediaCardStackMetrics.headerControlsOffset)
         }
+        .padding(.top, SidebarMediaCardStackMetrics.expandedHeaderTopInset)
         .frame(maxWidth: .infinity)
-        .frame(height: 38, alignment: .top)
+        .frame(
+            height: SidebarMediaCardStackMetrics.expandedHeaderHeight,
+            alignment: .top
+        )
     }
 
     private func headerButton(

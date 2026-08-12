@@ -675,7 +675,7 @@ final class FakeNativeNowPlayingController: SumiNativeNowPlayingRuntimeControlli
         scheduledRefreshDelays.append(delayNanoseconds)
     }
 
-    func handleTabActivated(_ tabId: UUID) {
+    func handleTabActivated(_ tabId: UUID, in _: UUID) {
         activatedTabIds.append(tabId)
     }
 

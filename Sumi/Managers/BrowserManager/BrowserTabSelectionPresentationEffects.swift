@@ -20,7 +20,7 @@ final class BrowserTabSelectionPresentationEffects {
         updateTheme: Bool,
         reconcileSplitSelection: Bool
     ) {
-        media.prepare(tab)
+        media.prepare(tab, in: windowState)
         chrome.publish(
             tab,
             in: windowState,

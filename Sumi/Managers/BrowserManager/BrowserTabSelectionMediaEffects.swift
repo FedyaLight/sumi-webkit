@@ -19,8 +19,8 @@ final class BrowserTabSelectionMediaEffects {
         self.windowVisuals = windowVisuals
     }
 
-    func prepare(_ tab: Tab) {
-        nowPlaying.handleTabActivated(tab.id)
+    func prepare(_ tab: Tab, in windowState: BrowserWindowState) {
+        nowPlaying.handleTabActivated(tab.id, in: windowState.id)
         tab.noteAccess()
     }
 

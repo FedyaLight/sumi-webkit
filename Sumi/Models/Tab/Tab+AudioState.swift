@@ -33,6 +33,10 @@ extension Tab {
         let oldState = audioState
         audioState = newState
 
+        if !oldState.isPlayingAudio && newState.isPlayingAudio {
+            mediaRuntime.notePlaybackStarted()
+        }
+
         if newState.isPlayingAudio {
             mediaRuntime.lastMediaActivityAt = Date()
         }

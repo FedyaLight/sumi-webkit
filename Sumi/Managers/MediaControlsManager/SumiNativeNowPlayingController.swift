@@ -13,7 +13,7 @@ protocol SumiNativeNowPlayingRuntimeControlling: SumiNativeNowPlayingFeatureCont
 
     func configure(context: SumiNativeNowPlayingRuntimeContext)
     func scheduleRefresh(delayNanoseconds: UInt64)
-    func handleTabActivated(_ tabId: UUID)
+    func handleTabActivated(_ tabId: UUID, in windowId: UUID)
     func handleTabUnloaded(_ tabId: UUID)
     func activateOwner(cardID: SumiBackgroundMediaCardID)
     func togglePlayPause(cardID: SumiBackgroundMediaCardID) async
@@ -41,7 +41,8 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
     private let commandExecutor: CommandExecutor
     private let activationHandler: ActivationHandler
     private var retainedPausedOwners: Set<OwnerContext> = []
-    private var dismissedOwners: Set<OwnerContext> = []
+    private var dismissedPlaybackGenerationByOwner: [OwnerContext: UInt64] = [:]
+    private var activationGenerationByResidence: [SumiMediaResidenceKey: UInt64] = [:]
     private var inFlightTransportOwners: Set<OwnerContext> = []
     private var invalidatedResidenceByCandidate: [SumiMediaResidenceKey: OwnerContext] = [:]
     private var refreshTask: Task<Void, Never>?
@@ -111,7 +112,9 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
         let trackedCandidates = Set(
             retainedPausedOwners.lazy.map(\.residenceKey)
         ).union(
-            dismissedOwners.lazy.map(\.residenceKey)
+            dismissedPlaybackGenerationByOwner.keys.lazy.map(\.residenceKey)
+        ).union(
+            activationGenerationByResidence.keys
         )
         let candidates = prioritizedCandidates(using: runtimeContext)
             .filter { candidate in
@@ -128,7 +131,9 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
             }
         let liveOwners = Set(candidates.map(\.owner))
         retainedPausedOwners.formIntersection(liveOwners)
-        dismissedOwners.formIntersection(liveOwners)
+        dismissedPlaybackGenerationByOwner = dismissedPlaybackGenerationByOwner.filter {
+            liveOwners.contains($0.key)
+        }
 
         var refreshedStates: [SumiBackgroundMediaCardState] = []
         for resolvedCandidate in candidates {
@@ -153,23 +158,39 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
                 continue
             }
 
-            if dismissedOwners.contains(owner) {
-                if info?.playbackState != .playing {
-                    dismissedOwners.remove(owner)
+            if let dismissedPlaybackGeneration = dismissedPlaybackGenerationByOwner[owner] {
+                if candidate.tab.mediaRuntime.playbackStartGeneration
+                    > dismissedPlaybackGeneration {
+                    dismissedPlaybackGenerationByOwner.removeValue(forKey: owner)
+                } else {
+                    if info?.playbackState != .playing {
+                        dismissedPlaybackGenerationByOwner.removeValue(forKey: owner)
+                    }
+                    continue
                 }
-                continue
             }
 
-            guard retainedPausedOwners.contains(owner)
-                    || info?.playbackState == .playing
-                    || (info == nil && candidate.tab.audioState.isPlayingAudio)
+            let trustsAudibleState = trustsAudibleStateAfterActivation(
+                for: candidate.tab,
+                info: info,
+                owner: owner
+            )
+            let playbackState = resolvedPlaybackState(
+                for: candidate.tab,
+                info: info,
+                owner: owner,
+                trustsAudibleState: trustsAudibleState
+            )
+            guard playbackState == .playing
+                    || retainedPausedOwners.contains(owner)
             else { continue }
 
             let state = makeCardState(
                 tab: candidate.tab,
                 windowState: candidate.windowState,
                 info: info,
-                owner: owner
+                owner: owner,
+                playbackState: playbackState
             )
             refreshedStates.append(state)
         }
@@ -270,7 +291,9 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
         guard inFlightTransportOwners.insert(cardID).inserted else { return }
         defer { inFlightTransportOwners.remove(cardID) }
 
-        dismissedOwners.insert(cardID)
+        dismissedPlaybackGenerationByOwner[cardID] =
+            owner.tab.mediaRuntime.playbackStartGeneration
+        activationGenerationByResidence.removeValue(forKey: cardID.residenceKey)
         retainedPausedOwners.remove(cardID)
         removeCard(cardID)
 
@@ -281,17 +304,28 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
             owner.windowState
         )
         if !success {
-            dismissedOwners.remove(cardID)
+            dismissedPlaybackGenerationByOwner.removeValue(forKey: cardID)
             scheduleRefresh(delayNanoseconds: 0)
         }
     }
 
-    func handleTabActivated(_ tabId: UUID) {
+    func handleTabActivated(_ tabId: UUID, in windowId: UUID) {
         guard isFeatureEnabled else { return }
-        let retained = retainedPausedOwners.filter { $0.tabId == tabId }
+        let residenceKey = SumiMediaResidenceKey(tabId: tabId, windowId: windowId)
+        let retained = retainedPausedOwners.filter { $0.residenceKey == residenceKey }
         retainedPausedOwners.subtract(retained)
-        dismissedOwners = dismissedOwners.filter { $0.tabId != tabId }
-        cardStates.removeAll { $0.tabId == tabId }
+        dismissedPlaybackGenerationByOwner = dismissedPlaybackGenerationByOwner.filter {
+            $0.key.residenceKey != residenceKey
+        }
+        cardStates.removeAll { $0.id.residenceKey == residenceKey }
+
+        if let runtimeContext,
+           let windowState = runtimeContext.windowState(windowId),
+           let tab = runtimeContext.resolvedTab(tabId, windowState) {
+            activationGenerationByResidence[residenceKey] = tab.webViewSession.generation
+        } else {
+            activationGenerationByResidence.removeValue(forKey: residenceKey)
+        }
         invalidateRefresh()
 
         guard let runtimeContext else { return }
@@ -315,7 +349,12 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
             invalidatedResidenceByCandidate[owner.residenceKey] = owner
         }
         retainedPausedOwners = retainedPausedOwners.filter { $0.tabId != tabId }
-        dismissedOwners = dismissedOwners.filter { $0.tabId != tabId }
+        dismissedPlaybackGenerationByOwner = dismissedPlaybackGenerationByOwner.filter {
+            $0.key.tabId != tabId
+        }
+        activationGenerationByResidence = activationGenerationByResidence.filter {
+            $0.key.tabId != tabId
+        }
         cardStates.removeAll { $0.tabId == tabId }
         invalidateRefresh()
     }
@@ -345,6 +384,12 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
             }
             return runtimeContext.resolvedTab(key.tabId, windowState) != nil
         }
+        activationGenerationByResidence = activationGenerationByResidence.filter { key, _ in
+            guard let windowState = runtimeContext.windowState(key.windowId) else {
+                return false
+            }
+            return runtimeContext.resolvedTab(key.tabId, windowState) != nil
+        }
     }
 
     private func shouldSample(_ candidate: Candidate, owner: OwnerContext) -> Bool {
@@ -352,7 +397,8 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
             && (
                 candidate.tab.audioState.isPlayingAudio
                     || retainedPausedOwners.contains(owner)
-                    || dismissedOwners.contains(owner)
+                    || dismissedPlaybackGenerationByOwner[owner] != nil
+                    || activationGenerationByResidence[owner.residenceKey] != nil
             )
     }
 
@@ -366,15 +412,13 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
         tab: Tab,
         windowState: BrowserWindowState,
         info: SumiNativeNowPlayingInfo?,
-        owner: OwnerContext
+        owner: OwnerContext,
+        playbackState: SumiBackgroundMediaPlaybackState
     ) -> SumiBackgroundMediaCardState {
         let sourceHost = normalizedHost(for: tab.url)
         let tabTitle = normalizedTitle(tab.name) ?? "Media"
         let title = normalizedTitle(info?.title) ?? tabTitle
         let subtitle = normalizedTitle(info?.artist) ?? ""
-        let playbackState: SumiBackgroundMediaPlaybackState =
-            retainedPausedOwners.contains(owner) ? .paused
-            : info?.playbackState ?? (tab.audioState.isPlayingAudio ? .playing : .paused)
 
         return SumiBackgroundMediaCardState(
             id: owner,
@@ -391,6 +435,38 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
             canMute: playbackState == .playing,
             canPictureInPicture: info?.canPictureInPicture == true
         )
+    }
+
+    private func resolvedPlaybackState(
+        for tab: Tab,
+        info: SumiNativeNowPlayingInfo?,
+        owner: OwnerContext,
+        trustsAudibleState: Bool
+    ) -> SumiBackgroundMediaPlaybackState {
+        if retainedPausedOwners.contains(owner) {
+            return .paused
+        }
+        if trustsAudibleState {
+            return .playing
+        }
+        return info?.playbackState
+            ?? (tab.audioState.isPlayingAudio ? .playing : .paused)
+    }
+
+    private func trustsAudibleStateAfterActivation(
+        for tab: Tab,
+        info: SumiNativeNowPlayingInfo?,
+        owner: OwnerContext
+    ) -> Bool {
+        let residenceKey = owner.residenceKey
+        guard activationGenerationByResidence[residenceKey] == owner.residenceGeneration,
+              tab.audioState.isPlayingAudio,
+              info?.playbackState == .paused
+        else {
+            activationGenerationByResidence.removeValue(forKey: residenceKey)
+            return false
+        }
+        return true
     }
 
     private func faviconSource(for tab: Tab) -> SumiBackgroundMediaFaviconSource? {
@@ -480,7 +556,8 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
         invalidateRefresh()
         let retained = retainedPausedOwners
         retainedPausedOwners.removeAll()
-        dismissedOwners.removeAll()
+        dismissedPlaybackGenerationByOwner.removeAll()
+        activationGenerationByResidence.removeAll()
         inFlightTransportOwners.removeAll()
         invalidatedResidenceByCandidate.removeAll()
         publish([])

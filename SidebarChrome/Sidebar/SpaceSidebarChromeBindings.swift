@@ -86,22 +86,19 @@ struct SpaceSidebarMiniPlayer: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        Group {
-            if settings.sidebarMiniPlayerEnabled {
-                let states = SumiBackgroundMediaCardProjection.visibleStates(
+        let states = settings.sidebarMiniPlayerEnabled
+            ? SumiBackgroundMediaCardProjection.visibleStates(
                     nowPlayingController.cardStates,
                     in: windowState
                 )
-                if !states.isEmpty {
-                    MediaControlsView(
-                        cardStates: states,
-                        controller: nowPlayingController,
-                        faviconImageReader: faviconImageReader
-                    )
-                    .zIndex(100)
-                }
-            }
-        }
+            : []
+
+        MediaControlsView(
+            cardStates: states,
+            controller: nowPlayingController,
+            faviconImageReader: faviconImageReader
+        )
+        .zIndex(100)
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 nowPlayingController.scheduleRefresh(delayNanoseconds: 0)
