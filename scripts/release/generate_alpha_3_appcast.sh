@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 artifact_dir="${1:-${repo_root}/release/artifacts/0.0.3}"
 universal_archive="${artifact_dir}/Sumi-0.0.3-macos-universal.dmg"
-sparkle_archive_name="${SPARKLE_ARCHIVE_NAME:-Sumi-0.0.3-build6-macos-universal.dmg}"
+sparkle_archive_name="${SPARKLE_ARCHIVE_NAME:-Sumi-0.0.3-build7-macos-universal.dmg}"
 
 if [[ ! -f "${universal_archive}" ]]; then
   echo "Missing universal Sparkle update archive: ${universal_archive}" >&2
