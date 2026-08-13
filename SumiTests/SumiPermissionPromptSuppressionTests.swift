@@ -67,17 +67,8 @@ final class SumiPermissionPromptSuppressionTests: XCTestCase {
             permissionTypes: [.externalScheme("zoommtg")],
             keys: [key]
         )
-        let request = SumiExternalSchemePermissionRequest(
-            id: "external-a",
-            targetURL: URL(string: "zoommtg://join")!,
-            requestingOrigin: SumiPermissionOrigin(string: "https://example.com"),
-            userActivation: .navigationAction,
-            isMainFrame: true,
-            isRedirectChain: false
-        )
-
         XCTAssertEqual(
-            SumiExternalSchemeDecisionMapper.resultKind(for: decision, request: request),
+            SumiExternalSchemeDecisionMapper.resultKind(for: decision),
             .blockedPromptPresenterUnavailable
         )
     }

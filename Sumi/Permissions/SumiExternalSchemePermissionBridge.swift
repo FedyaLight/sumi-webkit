@@ -91,27 +91,46 @@ final class SumiExternalSchemePermissionBridge {
             )
         }
 
-        let context = securityContext(
-            for: request,
-            tabContext: tabContext,
-            bypassActivationGateForStoreLookup: true
-        )
+        guard tabContext.isCurrentPage?() != false else {
+            return finish(
+                request,
+                tabContext: tabContext,
+                result: .blockedPromptPresenterUnavailable,
+                reason: "external-scheme-stale-page"
+            )
+        }
+
+        let context = securityContext(for: request, tabContext: tabContext)
+        let isForegroundMainFrame = request.isMainFrame && context.canPresentPromptUI
+        guard request.isUserActivated || isForegroundMainFrame else {
+            return finish(
+                request,
+                tabContext: tabContext,
+                result: .blockedByDefault,
+                reason: "external-scheme-background-default-block"
+            )
+        }
+
+        if request.isUserActivated == false,
+           sessionStore.claimAutomaticAttempt(
+               pageId: tabContext.pageId,
+               tabId: tabContext.tabId,
+               profilePartitionId: tabContext.profilePartitionId,
+               isEphemeralProfile: tabContext.isEphemeralProfile
+           ) == false {
+            return finish(
+                request,
+                tabContext: tabContext,
+                result: .blockedByDefault,
+                reason: "external-scheme-automatic-attempt-already-used"
+            )
+        }
+
         let coordinatorDecision = await coordinator.queryPermissionState(context)
-        let result = SumiExternalSchemeDecisionMapper.resultKind(
-            for: coordinatorDecision,
-            request: request
-        )
+        let result = SumiExternalSchemeDecisionMapper.resultKind(for: coordinatorDecision)
 
         switch result {
         case .opened:
-            guard request.isUserActivated else {
-                return finish(
-                    request,
-                    tabContext: tabContext,
-                    result: .blockedByDefault,
-                    reason: SumiPermissionPolicyReason.requiresUserActivation
-                )
-            }
             guard tabContext.isCurrentPage?() != false else {
                 return finish(
                     request,
@@ -138,19 +157,10 @@ final class SumiExternalSchemePermissionBridge {
 
         case .blockedPromptPresenterUnavailable:
             if pendingStrategy.waitsForPromptUI,
-               request.isUserActivated,
-               tabContext.isActiveTab,
-               tabContext.isVisibleTab {
-                let promptContext = securityContext(
-                    for: request,
-                    tabContext: tabContext,
-                    bypassActivationGateForStoreLookup: false
-                )
+               context.canPresentPromptUI {
+                let promptContext = securityContext(for: request, tabContext: tabContext)
                 let settlementDecision = await coordinator.requestPermission(promptContext)
-                let settlementResult = SumiExternalSchemeDecisionMapper.resultKind(
-                    for: settlementDecision,
-                    request: request
-                )
+                let settlementResult = SumiExternalSchemeDecisionMapper.resultKind(for: settlementDecision)
                 if settlementResult == .opened {
                     guard tabContext.isCurrentPage?() != false else {
                         await coordinator.cancel(
@@ -167,10 +177,10 @@ final class SumiExternalSchemePermissionBridge {
                     willOpen()
                     guard appResolver.open(targetURL) else {
                         return finish(
-                        request,
-                        tabContext: tabContext,
-                        result: .openFailed,
-                        reason: "external-scheme-open-failed"
+                            request,
+                            tabContext: tabContext,
+                            result: .openFailed,
+                            reason: "external-scheme-open-failed"
                         )
                     }
                     return finish(
@@ -196,14 +206,6 @@ final class SumiExternalSchemePermissionBridge {
                 reason: pendingStrategy.reason
             )
 
-        case .blockedByDefault where coordinatorDecision.outcome == .promptRequired:
-            return finish(
-                request,
-                tabContext: tabContext,
-                result: .blockedByDefault,
-                reason: "external-scheme-background-default-block"
-            )
-
         case .blockedByStoredDeny, .blockedByDefault, .unsupportedScheme:
             return finish(
                 request,
@@ -224,10 +226,8 @@ final class SumiExternalSchemePermissionBridge {
 
     func securityContext(
         for request: SumiExternalSchemePermissionRequest,
-        tabContext: SumiExternalSchemePermissionTabContext,
-        bypassActivationGateForStoreLookup: Bool = false
+        tabContext: SumiExternalSchemePermissionTabContext
     ) -> SumiPermissionSecurityContext {
-        let hasUserGesture = bypassActivationGateForStoreLookup ? true : request.isUserActivated
         return SumiPermissionSecurityContextBuilder.make(
             requestId: request.id,
             tabId: tabContext.tabId,
@@ -236,7 +236,7 @@ final class SumiExternalSchemePermissionBridge {
             topOrigin: topOrigin(for: tabContext),
             displayDomain: tabContext.displayDomain ?? request.requestingOrigin.displayDomain,
             permissionTypes: [.externalScheme(request.normalizedScheme)],
-            hasUserGesture: hasUserGesture,
+            hasUserGesture: request.isUserActivated,
             isMainFrame: request.isMainFrame,
             committedURL: tabContext.committedURL,
             visibleURL: tabContext.visibleURL,

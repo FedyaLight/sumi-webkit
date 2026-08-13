@@ -18,8 +18,7 @@ struct SumiExternalSchemePermissionResult: Equatable, Sendable {
 
 enum SumiExternalSchemeDecisionMapper {
     static func resultKind(
-        for decision: SumiPermissionCoordinatorDecision,
-        request: SumiExternalSchemePermissionRequest
+        for decision: SumiPermissionCoordinatorDecision
     ) -> SumiExternalSchemeAttemptResult {
         switch decision.outcome {
         case .granted:
@@ -27,7 +26,7 @@ enum SumiExternalSchemeDecisionMapper {
         case .denied where decision.source == .user:
             return .blockedByStoredDeny
         case .promptRequired:
-            return request.isUserActivated ? .blockedPromptPresenterUnavailable : .blockedByDefault
+            return .blockedPromptPresenterUnavailable
         case .suppressed:
             return .blockedPromptPresenterUnavailable
         case .unsupported:

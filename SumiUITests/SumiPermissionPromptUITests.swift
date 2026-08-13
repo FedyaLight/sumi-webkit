@@ -66,7 +66,9 @@ final class SumiPermissionPromptUITests: SumiLaunchSmokeUITestCase {
             <head><meta charset="utf-8"><title>Sumi Permission Oracle</title></head>
             <body>
               <h1>\(bodyMarker)</h1>
-              <a href="mailto:sumi-ui-oracle@example.invalid">\(linkLabel)</a>
+              <button type="button" onclick="setTimeout(() => {
+                window.location.href = 'mailto:sumi-ui-oracle@example.invalid';
+              }, 250)">\(linkLabel)</button>
             </body>
             </html>
             """
@@ -99,7 +101,7 @@ final class SumiPermissionPromptUITests: SumiLaunchSmokeUITestCase {
             for: NSPredicate(format: "exists == true AND hittable == true"),
             on: permissionLink,
             timeout: 10,
-            message: "The user-activated external-scheme link is not available"
+            message: "The OAuth-style external-scheme callback trigger is not available"
         )
         permissionLink.click()
 

@@ -73,9 +73,17 @@ struct SumiExternalSchemeAttemptRecord: Identifiable, Equatable, Sendable {
 
 @MainActor
 final class SumiExternalSchemeSessionStore: ObservableObject {
+    private struct AutomaticAttemptClaim: Hashable {
+        let pageId: String
+        let tabId: String
+        let profilePartitionId: String
+        let isEphemeralProfile: Bool
+    }
+
     @Published private(set) var recordsByPageId: [String: [SumiExternalSchemeAttemptRecord]] = [:]
 
     private var duplicateIndexByPageId: [String: [String: String]] = [:]
+    private var automaticAttemptClaims: Set<AutomaticAttemptClaim> = []
     private var retiredProfileIDs: Set<String> = []
 
     @discardableResult
@@ -111,11 +119,29 @@ final class SumiExternalSchemeSessionStore: ObservableObject {
         recordsByPageId.values.flatMap { $0 }
     }
 
+    func claimAutomaticAttempt(
+        pageId: String,
+        tabId: String,
+        profilePartitionId: String,
+        isEphemeralProfile: Bool
+    ) -> Bool {
+        let profileID = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
+        guard retiredProfileIDs.contains(profileID) == false else { return false }
+        let claim = AutomaticAttemptClaim(
+            pageId: normalizedId(pageId),
+            tabId: normalizedId(tabId),
+            profilePartitionId: profileID,
+            isEphemeralProfile: isEphemeralProfile
+        )
+        return automaticAttemptClaims.insert(claim).inserted
+    }
+
     @discardableResult
     func clear(pageId: String) -> Int {
         let pageId = normalizedId(pageId)
         let removed = recordsByPageId.removeValue(forKey: pageId)?.count ?? 0
         duplicateIndexByPageId.removeValue(forKey: pageId)
+        automaticAttemptClaims = Set(automaticAttemptClaims.filter { $0.pageId != pageId })
         return removed
     }
 
@@ -129,6 +155,7 @@ final class SumiExternalSchemeSessionStore: ObservableObject {
         for pageId in pageIds {
             removed += clear(pageId: pageId)
         }
+        automaticAttemptClaims = Set(automaticAttemptClaims.filter { $0.tabId != tabId })
         return removed
     }
 
@@ -146,6 +173,9 @@ final class SumiExternalSchemeSessionStore: ObservableObject {
             recordsByPageId[pageID] = records.isEmpty ? nil : records
             rebuildDuplicateIndex(forPageId: pageID)
         }
+        automaticAttemptClaims = Set(
+            automaticAttemptClaims.filter { $0.profilePartitionId != profileID }
+        )
         return removed
     }
 

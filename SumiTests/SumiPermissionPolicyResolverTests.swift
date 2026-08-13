@@ -268,9 +268,6 @@ final class SumiPermissionPolicyResolverTests: XCTestCase {
         let popups = await evaluate(.popups, hasUserGesture: true)
         XCTAssertTrue(popups.isAllowedToProceed)
 
-        let externalScheme = await evaluate(.externalScheme("mailto"), hasUserGesture: true)
-        XCTAssertTrue(externalScheme.isAllowedToProceed)
-
         let filePicker = await evaluate(.filePicker, hasUserGesture: true)
         XCTAssertTrue(filePicker.isAllowedToProceed)
         XCTAssertEqual(filePicker.allowedPersistences, [.oneTime])
@@ -279,7 +276,6 @@ final class SumiPermissionPolicyResolverTests: XCTestCase {
     func testUserActivationRequiredPermissionsDenyWithoutGesture() async {
         for permissionType in [
             SumiPermissionType.popups,
-            .externalScheme("mailto"),
             .filePicker,
         ] {
             let result = await evaluate(permissionType, hasUserGesture: false)
@@ -288,6 +284,12 @@ final class SumiPermissionPolicyResolverTests: XCTestCase {
             XCTAssertEqual(result.reason, SumiPermissionPolicyReason.requiresUserActivation)
             XCTAssertEqual(result.decision?.state, .deny)
         }
+    }
+
+    func testExternalSchemeActivationAdmissionIsOwnedByItsBridge() async {
+        let result = await evaluate(.externalScheme("t3code"), hasUserGesture: false)
+
+        XCTAssertTrue(result.isAllowedToProceed)
     }
 
     func testUnknownUserActivationIsConservativeForActivationRequiredPermissions() async {

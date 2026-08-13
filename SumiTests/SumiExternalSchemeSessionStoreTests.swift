@@ -55,6 +55,32 @@ final class SumiExternalSchemeSessionStoreTests: XCTestCase {
         XCTAssertEqual(store.records(forPageId: "tab-b:1").count, 1)
     }
 
+    func testAutomaticAttemptCanBeClaimedOnlyOnceUntilPageIsCleared() {
+        let store = SumiExternalSchemeSessionStore()
+
+        XCTAssertTrue(store.claimAutomaticAttempt(
+            pageId: "tab-a:1",
+            tabId: "tab-a",
+            profilePartitionId: "profile-a",
+            isEphemeralProfile: false
+        ))
+        XCTAssertFalse(store.claimAutomaticAttempt(
+            pageId: "TAB-A:1",
+            tabId: "TAB-A",
+            profilePartitionId: "PROFILE-A",
+            isEphemeralProfile: false
+        ))
+
+        store.clear(pageId: "tab-a:1")
+
+        XCTAssertTrue(store.claimAutomaticAttempt(
+            pageId: "tab-a:1",
+            tabId: "tab-a",
+            profilePartitionId: "profile-a",
+            isEphemeralProfile: false
+        ))
+    }
+
     func testRedactedDisplayStringStripsQueryAndFragment() {
         let redacted = SumiExternalSchemePermissionRequest.redactedDisplayString(
             for: URL(string: "zoommtg://join/123?token=secret#access-token")!

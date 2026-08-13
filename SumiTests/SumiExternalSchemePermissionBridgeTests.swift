@@ -114,7 +114,7 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
         XCTAssertTrue(resolver.openedURLs.isEmpty)
     }
 
-    func testStoredAllowWithoutUserActivationBlocksAndDoesNotOpen() async {
+    func testStoredAllowOpensOneForegroundMainFrameCallbackWithoutUserActivation() async {
         let store = ExternalSchemeBridgePermissionStore()
         await store.seed(
             externalKey(scheme: "mailto"),
@@ -124,17 +124,41 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
         let bridge = realExternalBridge(store: store, resolver: resolver)
         var willOpenCalled = false
 
-        let result = await bridge.evaluate(
+        let firstResult = await bridge.evaluate(
             externalRequest(targetURL: URL(string: "mailto:test@example.com")!, userActivation: .none),
             tabContext: externalTabContext(),
             willOpen: { willOpenCalled = true }
         )
+        let repeatedResult = await bridge.evaluate(
+            externalRequest(
+                id: "external-b",
+                targetURL: URL(string: "mailto:test@example.com")!,
+                userActivation: .none
+            ),
+            tabContext: externalTabContext()
+        )
+        let clickedResult = await bridge.evaluate(
+            externalRequest(
+                id: "external-c",
+                targetURL: URL(string: "mailto:test@example.com")!,
+                userActivation: .navigationAction
+            ),
+            tabContext: externalTabContext()
+        )
 
-        XCTAssertFalse(result.didOpen)
-        XCTAssertFalse(willOpenCalled)
-        XCTAssertEqual(result.record?.result, .blockedByDefault)
-        XCTAssertEqual(result.record?.reason, SumiPermissionPolicyReason.requiresUserActivation)
-        XCTAssertTrue(resolver.openedURLs.isEmpty)
+        XCTAssertTrue(firstResult.didOpen)
+        XCTAssertTrue(willOpenCalled)
+        XCTAssertFalse(repeatedResult.didOpen)
+        XCTAssertEqual(repeatedResult.record?.result, .blockedByDefault)
+        XCTAssertEqual(repeatedResult.record?.reason, "external-scheme-automatic-attempt-already-used")
+        XCTAssertTrue(clickedResult.didOpen)
+        XCTAssertEqual(
+            resolver.openedURLs,
+            [
+                URL(string: "mailto:test@example.com")!,
+                URL(string: "mailto:test@example.com")!,
+            ]
+        )
     }
 
     func testUserActivatedNoDecisionBlocksPromptPresenterUnavailableWithoutPersistingDeny() async {
@@ -155,7 +179,7 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
         XCTAssertEqual(setCount, 0)
     }
 
-    func testBackgroundNoDecisionBlocksByDefaultWithoutPersistingDeny() async {
+    func testForegroundMainFrameNoDecisionDoesNotPersistDenyWhenPromptUIIsUnavailable() async {
         let store = ExternalSchemeBridgePermissionStore()
         let resolver = ExternalSchemeFakeResolver(handlerSchemes: ["mailto"])
         let bridge = realExternalBridge(store: store, resolver: resolver)
@@ -166,14 +190,101 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
         )
 
         XCTAssertFalse(result.didOpen)
-        XCTAssertEqual(result.record?.result, .blockedByDefault)
-        XCTAssertEqual(result.record?.reason, "external-scheme-background-default-block")
+        XCTAssertEqual(result.record?.result, .blockedPromptPresenterUnavailable)
+        XCTAssertEqual(result.record?.reason, SumiExternalSchemePendingStrategy.promptPresenterUnavailableBlock.reason)
         XCTAssertTrue(resolver.openedURLs.isEmpty)
         let setCount = await store.setDecisionCallCount()
         XCTAssertEqual(setCount, 0)
     }
 
-    func testUnknownActivationIsConservativeAndBlocksPendingPromptUI() async {
+    func testActiveVisibleMainFrameOAuthCallbackPromptsAndOpensAfterGrant() async {
+        let callbackURL = URL(string: "t3code://app/?ticket=secret")!
+        let coordinator = ExternalSchemeQueryThenRequestCoordinator(
+            queryDecision: externalCoordinatorDecision(
+                .promptRequired,
+                reason: "ask",
+                scheme: "t3code"
+            ),
+            requestDecision: externalCoordinatorDecision(
+                .granted,
+                reason: "user-allow",
+                scheme: "t3code"
+            )
+        )
+        let resolver = ExternalSchemeFakeResolver(handlerSchemes: ["t3code"])
+        let bridge = SumiExternalSchemePermissionBridge(
+            coordinator: coordinator,
+            appResolver: resolver,
+            now: { externalFixedDate }
+        )
+
+        let result = await bridge.evaluate(
+            externalRequest(targetURL: callbackURL, userActivation: .none),
+            tabContext: externalTabContext()
+        )
+
+        let requestCount = await coordinator.requestCount()
+        XCTAssertTrue(result.didOpen)
+        XCTAssertEqual(requestCount, 1)
+        XCTAssertEqual(resolver.openedURLs, [callbackURL])
+    }
+
+    func testBackgroundSubframeCannotPromptOrOpenWithoutUserActivation() async {
+        let coordinator = ExternalSchemeQueryThenRequestCoordinator(
+            queryDecision: externalCoordinatorDecision(.promptRequired, reason: "ask"),
+            requestDecision: externalCoordinatorDecision(.granted, reason: "should-not-be-used")
+        )
+        let resolver = ExternalSchemeFakeResolver(handlerSchemes: ["mailto"])
+        let bridge = SumiExternalSchemePermissionBridge(
+            coordinator: coordinator,
+            appResolver: resolver,
+            now: { externalFixedDate }
+        )
+
+        let result = await bridge.evaluate(
+            externalRequest(
+                targetURL: URL(string: "mailto:test@example.com")!,
+                userActivation: .none,
+                isMainFrame: false
+            ),
+            tabContext: externalTabContext()
+        )
+
+        let requestCount = await coordinator.requestCount()
+        XCTAssertFalse(result.didOpen)
+        XCTAssertEqual(result.record?.reason, "external-scheme-background-default-block")
+        XCTAssertEqual(requestCount, 0)
+        XCTAssertTrue(resolver.openedURLs.isEmpty)
+    }
+
+    func testNonNormalSurfaceCannotPromptOrOpenWithoutUserActivation() async {
+        let coordinator = ExternalSchemeQueryThenRequestCoordinator(
+            queryDecision: externalCoordinatorDecision(.promptRequired, reason: "ask"),
+            requestDecision: externalCoordinatorDecision(.granted, reason: "should-not-be-used")
+        )
+        let resolver = ExternalSchemeFakeResolver(handlerSchemes: ["mailto"])
+        let bridge = SumiExternalSchemePermissionBridge(
+            coordinator: coordinator,
+            appResolver: resolver,
+            now: { externalFixedDate }
+        )
+
+        let result = await bridge.evaluate(
+            externalRequest(
+                targetURL: URL(string: "mailto:test@example.com")!,
+                userActivation: .none
+            ),
+            tabContext: externalTabContext(surface: .glance)
+        )
+
+        let requestCount = await coordinator.requestCount()
+        XCTAssertFalse(result.didOpen)
+        XCTAssertEqual(result.record?.reason, "external-scheme-background-default-block")
+        XCTAssertEqual(requestCount, 0)
+        XCTAssertTrue(resolver.openedURLs.isEmpty)
+    }
+
+    func testUnknownActivationCanPromptForForegroundMainFrameCallback() async {
         let resolver = ExternalSchemeFakeResolver(handlerSchemes: ["mailto"])
         let bridge = realExternalBridge(store: ExternalSchemeBridgePermissionStore(), resolver: resolver)
 
@@ -183,7 +294,7 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
         )
 
         XCTAssertFalse(result.didOpen)
-        XCTAssertEqual(result.record?.result, .blockedByDefault)
+        XCTAssertEqual(result.record?.result, .blockedPromptPresenterUnavailable)
         XCTAssertTrue(resolver.openedURLs.isEmpty)
     }
 
@@ -242,7 +353,7 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
         XCTAssertEqual(setCount, 0)
     }
 
-    func testSessionAllowWithoutUserActivationBlocksAndDoesNotOpen() async throws {
+    func testSessionAllowOpensForegroundMainFrameCallbackWithoutUserActivation() async throws {
         let memoryStore = InMemoryPermissionStore()
         try await memoryStore.setDecision(
             for: externalKey(scheme: "mailto"),
@@ -271,11 +382,10 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
             willOpen: { willOpenCalled = true }
         )
 
-        XCTAssertFalse(result.didOpen)
-        XCTAssertFalse(willOpenCalled)
-        XCTAssertEqual(result.record?.result, .blockedByDefault)
-        XCTAssertEqual(result.record?.reason, SumiPermissionPolicyReason.requiresUserActivation)
-        XCTAssertTrue(resolver.openedURLs.isEmpty)
+        XCTAssertTrue(result.didOpen)
+        XCTAssertTrue(willOpenCalled)
+        XCTAssertEqual(result.record?.result, .opened)
+        XCTAssertEqual(resolver.openedURLs, [mailURL])
     }
 
     func testEphemeralProfileDoesNotReadOrWritePersistentExternalSchemeDecisions() async {
@@ -293,7 +403,7 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
         )
 
         XCTAssertFalse(result.didOpen)
-        XCTAssertEqual(result.record?.result, .blockedByDefault)
+        XCTAssertEqual(result.record?.result, .blockedPromptPresenterUnavailable)
         XCTAssertTrue(resolver.openedURLs.isEmpty)
         let getCount = await store.getDecisionCallCount()
         let setCount = await store.setDecisionCallCount()
@@ -423,7 +533,7 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
         XCTAssertEqual(context.surface, .glance)
     }
 
-    func testDuplicateBackgroundAttemptsRecordOneSeriesAndAbuseHook() async {
+    func testDuplicateAutomaticAttemptsAreRateLimited() async {
         let resolver = ExternalSchemeFakeResolver(handlerSchemes: ["mailto"])
         var events: [SumiExternalSchemePermissionEvent] = []
         let bridge = realExternalBridge(
@@ -436,9 +546,16 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
         _ = await bridge.evaluate(request, tabContext: externalTabContext())
 
         let records = bridge.sessionStore.records(forPageId: "tab-a:1")
-        XCTAssertEqual(records.count, 1)
-        XCTAssertEqual(records.first?.attemptCount, 2)
-        XCTAssertTrue(events.contains(.possibleAbuse(requestId: "external-a", pageId: "tab-a:1", attemptCount: 2)))
+        XCTAssertEqual(records.count, 2)
+        XCTAssertEqual(records.last?.result, .blockedByDefault)
+        XCTAssertEqual(records.last?.reason, "external-scheme-automatic-attempt-already-used")
+        XCTAssertTrue(events.contains(
+            .blockedByDefault(
+                requestId: "external-a",
+                pageId: "tab-a:1",
+                reason: "external-scheme-automatic-attempt-already-used"
+            )
+        ))
     }
 
     private func realExternalBridge(
@@ -558,6 +675,57 @@ private actor ExternalSchemeFakePermissionCoordinator: SumiPermissionCoordinatin
     }
 }
 
+private actor ExternalSchemeQueryThenRequestCoordinator: SumiPermissionCoordinating {
+    private let queryDecision: SumiPermissionCoordinatorDecision
+    private let requestDecision: SumiPermissionCoordinatorDecision
+    private var requests = 0
+
+    init(
+        queryDecision: SumiPermissionCoordinatorDecision,
+        requestDecision: SumiPermissionCoordinatorDecision
+    ) {
+        self.queryDecision = queryDecision
+        self.requestDecision = requestDecision
+    }
+
+    func requestPermission(_: SumiPermissionSecurityContext) -> SumiPermissionCoordinatorDecision {
+        requests += 1
+        return requestDecision
+    }
+
+    func queryPermissionState(_: SumiPermissionSecurityContext) -> SumiPermissionCoordinatorDecision {
+        queryDecision
+    }
+
+    func activeQuery(forPageId _: String) -> SumiPermissionAuthorizationQuery? { nil }
+    func stateSnapshot() -> SumiPermissionCoordinatorState { SumiPermissionCoordinatorState() }
+    func events() -> AsyncStream<SumiPermissionCoordinatorEvent> {
+        AsyncStream { $0.finish() }
+    }
+
+    @discardableResult
+    func cancel(requestId _: String, reason: String) -> SumiPermissionCoordinatorDecision {
+        externalCoordinatorDecision(.cancelled, reason: reason)
+    }
+
+    @discardableResult
+    func cancel(pageId _: String, reason: String) -> SumiPermissionCoordinatorDecision {
+        externalCoordinatorDecision(.cancelled, reason: reason)
+    }
+
+    @discardableResult
+    func cancelNavigation(pageId _: String, reason: String) -> SumiPermissionCoordinatorDecision {
+        externalCoordinatorDecision(.cancelled, reason: reason)
+    }
+
+    @discardableResult
+    func cancelTab(tabId _: String, reason: String) -> SumiPermissionCoordinatorDecision {
+        externalCoordinatorDecision(.cancelled, reason: reason)
+    }
+
+    func requestCount() -> Int { requests }
+}
+
 private actor ExternalSchemeProceedPolicyResolver: SumiPermissionPolicyResolver {
     func evaluate(_: SumiPermissionSecurityContext) async -> SumiPermissionPolicyResult {
         .proceed(
@@ -656,6 +824,7 @@ private func externalRequest(
     requestingOrigin: SumiPermissionOrigin = externalRequestOrigin,
     userActivation: SumiExternalSchemeUserActivationState,
     classification: SumiExternalSchemeClassification? = nil,
+    isMainFrame: Bool = true,
     isRedirectChain: Bool = false
 ) -> SumiExternalSchemePermissionRequest {
     SumiExternalSchemePermissionRequest(
@@ -664,7 +833,7 @@ private func externalRequest(
         requestingOrigin: requestingOrigin,
         userActivation: userActivation,
         classification: classification,
-        isMainFrame: true,
+        isMainFrame: isMainFrame,
         isRedirectChain: isRedirectChain
     )
 }
@@ -731,7 +900,8 @@ private func externalDecision(
 
 private func externalCoordinatorDecision(
     _ outcome: SumiPermissionCoordinatorOutcome,
-    reason: String
+    reason: String,
+    scheme: String = "mailto"
 ) -> SumiPermissionCoordinatorDecision {
     let state: SumiPermissionState? = {
         switch outcome {
@@ -751,7 +921,7 @@ private func externalCoordinatorDecision(
         persistence: outcome == .granted || outcome == .denied ? .persistent : nil,
         source: outcome == .granted || outcome == .denied ? .user : .defaultSetting,
         reason: reason,
-        permissionTypes: [.externalScheme("mailto")],
-        keys: [externalKey(scheme: "mailto")]
+        permissionTypes: [.externalScheme(scheme)],
+        keys: [externalKey(scheme: scheme)]
     )
 }

@@ -557,7 +557,7 @@ struct DefaultSumiPermissionPolicyResolver: SumiPermissionPolicyResolver {
 
     private func requiresUserActivation(_ permissionType: SumiPermissionType) -> Bool {
         switch permissionType {
-        case .popups, .externalScheme, .filePicker:
+        case .popups, .filePicker:
             return true
         case .camera,
              .microphone,
@@ -566,7 +566,8 @@ struct DefaultSumiPermissionPolicyResolver: SumiPermissionPolicyResolver {
              .notifications,
              .screenCapture,
              .autoplay,
-             .storageAccess:
+             .storageAccess,
+             .externalScheme:
             return false
         }
     }

@@ -182,7 +182,7 @@ final class SumiPermissionPromptBridgeIntegrationTests: XCTestCase {
         withExtendedLifetime(webView) { /* no-op */ }
     }
 
-    func testExternalUserActivatedNoDecisionWaitsAndOpensOnlyAfterAllow() async {
+    func testExternalForegroundMainFrameCallbackWaitsAndOpensOnlyAfterAllow() async {
         let store = PromptBridgePermissionStore()
         let coordinator = makeCoordinator(store: store)
         let resolver = PromptExternalResolver(handlerSchemes: ["mailto"])
@@ -195,7 +195,7 @@ final class SumiPermissionPromptBridgeIntegrationTests: XCTestCase {
 
         let task = Task {
             await bridge.evaluate(
-                externalRequest(targetURL: targetURL, userActivation: .navigationAction),
+                externalRequest(targetURL: targetURL, userActivation: .none),
                 tabContext: externalTabContext()
             )
         }
@@ -208,7 +208,7 @@ final class SumiPermissionPromptBridgeIntegrationTests: XCTestCase {
         XCTAssertEqual(resolver.openedURLs, [targetURL])
     }
 
-    func testExternalBackgroundNoDecisionBlocksWithoutPrompt() async {
+    func testExternalBackgroundSubframeNoDecisionBlocksWithoutPrompt() async {
         let coordinator = makeCoordinator(store: PromptBridgePermissionStore())
         let resolver = PromptExternalResolver(handlerSchemes: ["mailto"])
         let bridge = SumiExternalSchemePermissionBridge(
@@ -220,7 +220,8 @@ final class SumiPermissionPromptBridgeIntegrationTests: XCTestCase {
         let result = await bridge.evaluate(
             externalRequest(
                 targetURL: URL(string: "mailto:test@example.com")!,
-                userActivation: .none
+                userActivation: .none,
+                isMainFrame: false
             ),
             tabContext: externalTabContext()
         )
@@ -360,14 +361,15 @@ final class SumiPermissionPromptBridgeIntegrationTests: XCTestCase {
 
     private func externalRequest(
         targetURL: URL,
-        userActivation: SumiExternalSchemeUserActivationState
+        userActivation: SumiExternalSchemeUserActivationState,
+        isMainFrame: Bool = true
     ) -> SumiExternalSchemePermissionRequest {
         SumiExternalSchemePermissionRequest(
             id: "external-a",
             targetURL: targetURL,
             requestingOrigin: SumiPermissionOrigin(string: "https://request.example"),
             userActivation: userActivation,
-            isMainFrame: true,
+            isMainFrame: isMainFrame,
             isRedirectChain: false
         )
     }
