@@ -1,11 +1,148 @@
-import WebKit
 import SumiWebRuntime
+import WebKit
 import XCTest
 
 @testable import Sumi
 
 @MainActor
 final class SumiTabLifecycleReentrancyTests: XCTestCase {
+    func testCommitDoesNotReplaceCallbackURLWithPreviousPhysicalDocument() {
+        let initialURL = URL(string: "https://initial.example/page")!
+        let destinationURL = URL(string: "https://search.example/results")!
+        let tab = Tab(url: initialURL, loadsCachedFaviconOnInit: false)
+        let webView = SumiNavigationURLReportingWebView(frame: .zero)
+        webView.reportedURL = destinationURL
+        webView.reportedCommittedURL = initialURL
+        let navigation = NSObject()
+        let navigationID = ObjectIdentifier(navigation)
+        XCTAssertEqual(
+            tab.beginMainFrameLifecycle(
+                from: webView,
+                navigationID: navigationID,
+                navigationLifetime: navigation,
+                targetURL: destinationURL,
+                allowsUserInitiatedSupersession: false,
+                continuationKind: nil
+            ),
+            .authority
+        )
+
+        let responder = tab.makeMainFrameLifecycleResponder()
+        let context = SumiNavigationContext(
+            navigationID: navigationID,
+            navigationLifetime: navigation,
+            action: nil,
+            url: destinationURL,
+            isCurrent: true,
+            isCommitted: true,
+            isMainFrame: true,
+            webView: webView
+        )
+        responder.navigationDidCommit(context)
+
+        XCTAssertEqual(tab.url, destinationURL)
+        XCTAssertEqual(tab.mainFrameLoads.currentIntent.targetURL, destinationURL)
+        XCTAssertEqual(
+            tab.committedDocumentRuntime.lease(for: webView)?.committedURL,
+            destinationURL
+        )
+    }
+
+    func testCommitReconcilesClientRedirectWithDisplayedDocument() {
+        let initialURL = URL(string: "https://duckduckgo.com/?q=test+%21ya")!
+        let redirectURL = URL(string: "https://duckduckgo.com/l/")!
+        let destinationURL = URL(string: "https://yandex.ru/search/?text=test")!
+        let tab = Tab(url: initialURL, loadsCachedFaviconOnInit: false)
+        let webView = SumiNavigationURLReportingWebView(frame: .zero)
+        webView.reportedURL = destinationURL
+        webView.reportedCommittedURL = destinationURL
+        let navigation = NSObject()
+        let navigationID = ObjectIdentifier(navigation)
+        XCTAssertEqual(
+            tab.beginMainFrameLifecycle(
+                from: webView,
+                navigationID: navigationID,
+                navigationLifetime: navigation,
+                targetURL: redirectURL,
+                allowsUserInitiatedSupersession: false,
+                continuationKind: nil
+            ),
+            .authority
+        )
+
+        let responder = tab.makeMainFrameLifecycleResponder()
+        let context = SumiNavigationContext(
+            navigationID: navigationID,
+            navigationLifetime: navigation,
+            action: nil,
+            url: redirectURL,
+            isCurrent: true,
+            isCommitted: true,
+            isMainFrame: true,
+            webView: webView
+        )
+
+        responder.navigationDidCommit(context)
+
+        XCTAssertEqual(tab.url, destinationURL)
+        XCTAssertEqual(tab.mainFrameLoads.currentIntent.targetURL, destinationURL)
+        XCTAssertEqual(
+            tab.committedDocumentRuntime.lease(for: webView)?.committedURL,
+            destinationURL
+        )
+
+        responder.navigationDidFinish(context)
+
+        XCTAssertEqual(tab.url, destinationURL)
+        XCTAssertEqual(
+            tab.committedDocumentRuntime.lease(for: webView)?.committedURL,
+            destinationURL
+        )
+    }
+
+    func testFinishPreservesCommittedDocumentWhenPresentationURLChanged() {
+        let fixture = makeFixture()
+        let finalPresentationURL = URL(
+            string: "https://target.example/page?normalized=true"
+        )!
+
+        fixture.responder.navigationDidCommit(fixture.context)
+        XCTAssertTrue(
+            fixture.tab.committedDocumentRuntime.hasCommittedDocument(
+                on: fixture.webView
+            )
+        )
+
+        fixture.webView.reportedURL = finalPresentationURL
+        fixture.responder.navigationDidFinish(fixture.context)
+
+        XCTAssertTrue(
+            fixture.tab.committedDocumentRuntime.hasCommittedDocument(
+                on: fixture.webView
+            )
+        )
+        XCTAssertEqual(
+            fixture.tab.committedDocumentRuntime.lease(
+                for: fixture.webView
+            )?.committedURL,
+            fixture.targetURL
+        )
+        XCTAssertEqual(
+            fixture.tab.committedDocumentRuntime.lease(
+                for: fixture.webView
+            )?.presentationURL,
+            finalPresentationURL
+        )
+        XCTAssertEqual(
+            PagePresentationResolver.resolve(
+                tab: fixture.tab,
+                windowState: BrowserWindowState(),
+                webView: fixture.webView
+            ),
+            .live(pageID: fixture.tab.id)
+        )
+    }
+
     func testLifecycleCallbackOrderMatrixPreservesCommitAuthorityAndSettlesOnce() {
         let cases: [([LifecycleCallback], Bool)] = [
             ([.commit, .finish], true),

@@ -304,11 +304,10 @@ final class TabPermissionSurfaceOwner {
     private func exactPermissionDocument(
         for webView: WKWebView
     ) -> ExactPermissionDocument? {
-        guard let callbackCommittedURL = webView.committedURL,
-              let lease = context.documentLease(webView),
+        guard let lease = context.documentLease(webView),
               lease.webViewID == ObjectIdentifier(webView),
-              Self.matchesPhysicalDocument(
-                  callbackCommittedURL,
+              Self.matchesDisplayedDocument(
+                  in: webView,
                   presentationURL: lease.presentationURL
               )
         else {
@@ -331,15 +330,25 @@ final class TabPermissionSurfaceOwner {
         return { [weak webView] in
             guard let webView,
                   currentDocumentLease(webView) == documentLease,
-                  let committedURL = webView.committedURL,
-                  Self.matchesPhysicalDocument(
-                      committedURL,
+                  Self.matchesDisplayedDocument(
+                      in: webView,
                       presentationURL: documentLease.presentationURL
                   ) else {
                 return false
             }
             return isCurrentPage(pageId, pageGeneration)
         }
+    }
+
+    private static func matchesDisplayedDocument(
+        in webView: WKWebView,
+        presentationURL: URL
+    ) -> Bool {
+        [webView.committedURL, webView.url, webView.backForwardList.currentItem?.url]
+            .compactMap { $0 }
+            .contains {
+                matchesPhysicalDocument($0, presentationURL: presentationURL)
+            }
     }
 
     private static func matchesPhysicalDocument(

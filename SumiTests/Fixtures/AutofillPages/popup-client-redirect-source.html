@@ -1,0 +1,17 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Client redirect source</title>
+</head>
+<body>
+<script>
+    const redirectURL = `http://localhost:${location.port}/redirect-to-popup-source`;
+    const refresh = document.createElement("meta");
+    refresh.httpEquiv = "refresh";
+    refresh.content = `0; url=${redirectURL}`;
+    document.head.append(refresh);
+    setTimeout(() => window.location.replace(redirectURL), 100);
+</script>
+</body>
+</html>

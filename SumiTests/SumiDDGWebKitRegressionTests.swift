@@ -1,7 +1,7 @@
 import AppKit
-@testable import Sumi
 import Combine
 import ObjectiveC.runtime
+@testable import Sumi
 import SumiDomain
 import SumiWebRuntime
 import WebKit
@@ -86,6 +86,76 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         )
 
         XCTAssertFalse(source.contains("sumiSetDrawsBackground(false)"))
+    }
+
+    func testLiveWebContentAttachmentKeepsBrowserFillOutOfWebKitCompositingLayers() {
+        let graph = makeTestWebViewRuntimeGraph()
+        let windowState = BrowserWindowState()
+        let browserManager = BrowserManager()
+        let browserContext = CompositorBrowserContextStub()
+        let backgroundColor = NSColor(
+            srgbRed: 54.0 / 255.0,
+            green: 82.0 / 255.0,
+            blue: 110.0 / 255.0,
+            alpha: 1
+        )
+        let surfaceStyle = BrowserContentSurfaceStyle(
+            geometry: BrowserChromeGeometry(),
+            backgroundColor: backgroundColor
+        )
+        let container = WindowWebContentSplitHostLayoutView(
+            splitLayout: browserManager.splitWindowContext.layout,
+            splitDrops: browserManager.splitWindowContext.drops,
+            splitDropTargets: browserManager.splitWindowContext.dropTargets,
+            splitPreviews: browserManager.splitWindowContext.previews,
+            sidebarDragState: browserContext.sidebarDragState,
+            windowState: windowState,
+            resolveDragTab: { _ in nil },
+            surfaceStyle: surfaceStyle
+        )
+        let hostRegistry = WindowWebContentHostRegistry()
+        let attachments = WindowWebContentHostAttachmentService(
+            containerView: container,
+            hostRegistry: hostRegistry,
+            compositorRuntime: graph.compositorRuntime,
+            protectionRuntime: graph.protectionRuntime,
+            windowID: windowState.id,
+            surfaceStyle: surfaceStyle
+        )
+        let registration = graph.compositorRuntime.registerContainer(
+            container,
+            for: windowState.id
+        )
+        let webView = WKWebView()
+        let host = SumiWebViewContainerView(tabID: UUID(), webView: webView)
+
+        attachments.replaceHost(host, in: .single)
+        attachments.attach(
+            host,
+            to: container.singlePaneView,
+            containerRegistration: registration
+        )
+
+        XCTAssertEqual(webView.underPageBackgroundColor, backgroundColor)
+        XCTAssertEqual(host.layer?.backgroundColor, NSColor.clear.cgColor)
+        XCTAssertNil(webView.layer?.backgroundColor)
+
+        let updatedBackgroundColor = NSColor(
+            srgbRed: 12.0 / 255.0,
+            green: 34.0 / 255.0,
+            blue: 56.0 / 255.0,
+            alpha: 1
+        )
+        attachments.updateSurfaceStyle(
+            BrowserContentSurfaceStyle(
+                geometry: BrowserChromeGeometry(),
+                backgroundColor: updatedBackgroundColor
+            )
+        )
+
+        XCTAssertEqual(webView.underPageBackgroundColor, updatedBackgroundColor)
+        XCTAssertEqual(host.layer?.backgroundColor, NSColor.clear.cgColor)
+        XCTAssertNil(webView.layer?.backgroundColor)
     }
 
     func testVisualHandoffReleaseDoesNotSynchronouslyFlushCoreAnimation() throws {

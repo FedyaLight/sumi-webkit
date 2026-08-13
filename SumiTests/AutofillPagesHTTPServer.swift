@@ -154,6 +154,41 @@ final class AutofillPagesHTTPServer: @unchecked Sendable {
             .map(String.init) ?? "/"
         let path = requestTarget.split(separator: "?", maxSplits: 1).first.map(String.init) ?? requestTarget
         let relativePath = String(path.drop(while: { $0 == "/" }))
+
+        if relativePath == "redirect-to-popup-source" {
+            let header = Data([
+                "HTTP/1.1 302 Found",
+                "Location: /second-redirect-to-popup-source",
+                "Content-Length: 0",
+                "Cache-Control: no-store",
+                "Connection: close",
+                "",
+                "",
+            ].joined(separator: "\r\n").utf8)
+            queue.asyncAfter(deadline: .now() + .milliseconds(250)) {
+                connection.send(content: header, completion: .contentProcessed { _ in
+                    connection.cancel()
+                })
+            }
+            return
+        }
+
+        if relativePath == "second-redirect-to-popup-source" {
+            let header = Data([
+                "HTTP/1.1 302 Found",
+                "Location: /popup-after-server-redirect.html",
+                "Content-Length: 0",
+                "Cache-Control: no-store",
+                "Connection: close",
+                "",
+                "",
+            ].joined(separator: "\r\n").utf8)
+            connection.send(content: header, completion: .contentProcessed { _ in
+                connection.cancel()
+            })
+            return
+        }
+
         let fileURL: URL
         let contentType: String
 

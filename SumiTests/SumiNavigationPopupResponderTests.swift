@@ -821,6 +821,81 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
         XCTAssertNil(childTab?.webViewConfigurationOverride)
     }
 
+    func testRedirectChainDocumentTargetBlankClickOpensNewTabWithoutReplacingSourceWebView()
+        async throws {
+        let harness = try await makePopupFocusHarness()
+        let server = try await AutofillPagesHTTPServer.start(preferredPort: 0)
+        addTeardownBlock { server.stop() }
+        let initialRegularTabCount = harness.browserManager.tabStateStore
+            .regularTabs.allTabsSnapshot().count
+        let sourceWebView = harness.sourceWebView
+        harness.sourceTab.installNavigationDelegate(on: sourceWebView)
+
+        let redirectingURL = server.pageURL(
+            named: "popup-client-redirect-source.html"
+        )
+        _ = harness.sourceTab.beginMainFrameNavigationIntent(to: redirectingURL)
+        XCTAssertEqual(
+            harness.sourceTab.performMainFrameNavigation(on: sourceWebView) {
+                $0.load(URLRequest(url: redirectingURL))
+            },
+            .submitted
+        )
+
+        let redirectedURL = server.pageURL(
+            named: "popup-after-server-redirect.html",
+            cacheBuster: ""
+        )
+        for _ in 0..<500 {
+            if harness.sourceTab.committedDocumentRuntime
+                .lease(for: sourceWebView)?.committedURL.path == redirectedURL.path {
+                break
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(sourceWebView.committedURL?.path, redirectedURL.path)
+        XCTAssertEqual(
+            harness.sourceTab.committedDocumentRuntime
+                .lease(for: sourceWebView)?.committedURL.path,
+            redirectedURL.path
+        )
+        XCTAssertIdentical(harness.sourceTab.resolvedCurrentWebView(), sourceWebView)
+
+        sourceWebView.popupUserActivation.record(
+            event: makeMouseEvent(type: .leftMouseDown, modifierFlags: []),
+            kind: "redirectedDocumentResultClick"
+        )
+        _ = try await sourceWebView.callAsyncJavaScript(
+            "document.getElementById('open-result').click();",
+            arguments: [:],
+            in: nil,
+            contentWorld: .page
+        )
+
+        for _ in 0..<500 {
+            if harness.browserManager.tabStateStore.regularTabs
+                .allTabsSnapshot().count == initialRegularTabCount + 1 {
+                break
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(
+            harness.browserManager.tabStateStore.regularTabs
+                .allTabsSnapshot().count,
+            initialRegularTabCount + 1
+        )
+        XCTAssertTrue(
+            harness.browserManager.tabStateStore.regularTabs
+                .allTabsSnapshot().contains { $0 === harness.sourceTab }
+        )
+        XCTAssertIdentical(harness.sourceTab.resolvedCurrentWebView(), sourceWebView)
+        XCTAssertEqual(
+            harness.sourceTab.committedDocumentRuntime
+                .lease(for: sourceWebView)?.committedURL.path,
+            redirectedURL.path
+        )
+    }
+
     func testGlanceCleanPopupLinkNavigatesInsidePreview() async throws {
         let harness = try await makePopupFocusHarness()
         let glance = try await makeGlancePopupSource(from: harness)
@@ -1592,6 +1667,7 @@ final class SumiNavigationPopupResponderTests: SumiNavigationResponderTestCase {
             moduleRegistry: moduleRegistry,
             startupPersistence: BrowserManagerStartupPersistence(database: try Self.makeInMemoryStartupContainer()
             ),
+            notificationService: FakeSumiNotificationService(),
             automaticallyStartPersistedStateLoad: false
         )
     }

@@ -184,7 +184,8 @@ final class SumiTabLifecycleNavigationResponder:
             isCurrent: nil
         )
         guard initialRole.isParticipant else { return }
-        guard let committedURL = context.url
+        guard let committedURL = webView.url
+                ?? context.url
                 ?? webView.backForwardList.currentItem?.url
                 ?? webView.committedURL else {
             return
@@ -311,9 +312,11 @@ final class SumiTabLifecycleNavigationResponder:
                 navigationID: context.navigationID,
                 isCurrent: nil
             ).isParticipant else { return }
-            // A committed terminal callback proves the document exists;
-            // compensate missed commit callbacks before terminal settlement.
-            navigationDidCommit(context)
+            // Recover a missing commit, but never re-identify a document whose
+            // exact commit was already accepted.
+            if tab.committedDocumentRuntime.lease(for: webView) == nil {
+                navigationDidCommit(context)
+            }
             guard tab.committedDocumentRuntime.lease(for: webView) != nil else {
                 let result = tab.abortMainFrameNavigation(
                     from: webView,
@@ -330,8 +333,9 @@ final class SumiTabLifecycleNavigationResponder:
             from: webView,
             navigationID: context.navigationID,
             navigationLifetime: context.navigationLifetime,
-            terminalURL: context.url
+            terminalURL: webView.url
                 ?? webView.backForwardList.currentItem?.url
+                ?? context.url
                 ?? webView.committedURL
         )
         guard case .publish(let publication) = decision else { return }

@@ -225,6 +225,65 @@ final class TabPermissionSurfaceTests: XCTestCase {
         )
     }
 
+    func testPopupContextUsesDisplayedDocumentWhenPrivateCommittedURLLags() throws {
+        let tabId = UUID()
+        let profile = Profile(
+            id: UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!,
+            name: "Redirected Page"
+        )
+        let displayedURL = URL(string: "https://search.example/results")!
+        let webView = PermissionCommittedURLWebView()
+        webView.reportedURL = displayedURL
+        webView.reportedCommittedURL = URL(
+            string: "https://redirect-source.example/"
+        )!
+        let documentLease = TabMainFrameDocumentLease(
+            revision: 7,
+            documentGeneration: 3,
+            webViewID: ObjectIdentifier(webView),
+            participantID: UUID(),
+            committedURL: displayedURL,
+            presentationURL: displayedURL,
+            isPDF: false,
+            isAuthority: true
+        )
+        let pageId = "\(tabId.uuidString.lowercased()):3"
+        let owner = TabPermissionSurfaceOwner(
+            context: TabPermissionSurfaceOwner.Context(
+                tabId: tabId,
+                currentURL: { displayedURL },
+                resolveProfile: { profile },
+                profile: { _ in profile },
+                surfaceState: { _ in
+                    TabPermissionSurfaceState(isActive: true, isVisible: true)
+                },
+                pageIdentity: {
+                    TabExtensionPageIdentity(
+                        tabId: tabId.uuidString.lowercased(),
+                        pageGeneration: "3",
+                        pageId: pageId
+                    )
+                },
+                documentLease: { candidate in
+                    candidate === webView ? documentLease : nil
+                },
+                isCurrentPage: { candidatePageId, generation in
+                    candidatePageId == pageId && generation == "3"
+                },
+                invalidatePageForWebViewReplacement: {},
+                handlePermissionLifecycleEvent: { _ in },
+                isActiveGlancePreviewSurface: { _ in false },
+                isAuxiliaryMiniWindow: { false }
+            )
+        )
+
+        let popupContext = try XCTUnwrap(owner.popupContext(for: webView))
+
+        XCTAssertEqual(popupContext.committedURL, displayedURL)
+        XCTAssertEqual(popupContext.visibleURL, displayedURL)
+        XCTAssertTrue(try XCTUnwrap(popupContext.isCurrentPage)())
+    }
+
     func testPermissionSurfaceStateAndPopupContextUseActiveVisibleWindowSurface() async throws {
         let browserManager = BrowserManager()
         let tab = makeManagedTab(in: browserManager)
@@ -686,7 +745,10 @@ private final class PermissionDocumentNavigationDelegate: NSObject, WKNavigation
 
 @MainActor
 final class PermissionCommittedURLWebView: WKWebView {
+    var reportedURL: URL?
     var reportedCommittedURL: URL?
+
+    override var url: URL? { reportedURL }
 
     override func responds(to aSelector: Selector!) -> Bool {
         let selectorName = NSStringFromSelector(aSelector)
