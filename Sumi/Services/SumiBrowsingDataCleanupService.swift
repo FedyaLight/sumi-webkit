@@ -137,7 +137,6 @@ struct SumiBrowsingDataSummary: Equatable {
 struct SumiAutomaticBrowsingDataCleanupResult: Equatable {
     var didRun = false
     var deletedHistoryVisitCount = 0
-    var cleanedWebsiteDataProfileCount = 0
 }
 
 @MainActor
@@ -469,13 +468,11 @@ final class SumiBrowsingDataCleanupService {
 
 @MainActor
 final class SumiAutomaticBrowsingDataCleanupService {
-    private let websiteDataCleanupService: any SumiWebsiteDataCleanupServicing
     private let faviconCacheCleaner: any SumiBrowsingDataFaviconCleaning
     private let basicAuthCredentialStore: any SumiBasicAuthCredentialCleaning
     private let userDefaults: UserDefaults
     private let referenceDateProvider: @MainActor () -> Date
     private var scheduledTask: Task<Void, Never>?
-    var destructiveCleanupPreparer: (any SumiDestructiveBrowsingDataCleanupPreparing)?
 
     private let lastRunKey =
         "\(SumiAppIdentity.runtimeBundleIdentifier).browsingData.autoCleanup.lastRunAt"
@@ -485,13 +482,11 @@ final class SumiAutomaticBrowsingDataCleanupService {
     private let defaultDelayNanoseconds: UInt64 = 10_000_000_000
 
     init(
-        websiteDataCleanupService: any SumiWebsiteDataCleanupServicing,
         faviconCacheCleaner: any SumiBrowsingDataFaviconCleaning,
         basicAuthCredentialStore: any SumiBasicAuthCredentialCleaning,
         userDefaults: UserDefaults = .standard,
         referenceDateProvider: @escaping @MainActor () -> Date = { Date() }
     ) {
-        self.websiteDataCleanupService = websiteDataCleanupService
         self.faviconCacheCleaner = faviconCacheCleaner
         self.basicAuthCredentialStore = basicAuthCredentialStore
         self.userDefaults = userDefaults
@@ -500,12 +495,6 @@ final class SumiAutomaticBrowsingDataCleanupService {
 
     deinit {
         scheduledTask?.cancel()
-    }
-
-    func attachDestructiveCleanupPreparer(
-        _ preparer: (any SumiDestructiveBrowsingDataCleanupPreparing)?
-    ) {
-        destructiveCleanupPreparer = preparer
     }
 
     func scheduleIfNeeded(_ request: SumiBrowsingDataCleanupScheduleRequest) {
@@ -527,7 +516,7 @@ final class SumiAutomaticBrowsingDataCleanupService {
                 _ = await self.runIfNeeded(
                     retentionPeriod: request.retentionPeriod,
                     historyManager: historyManager,
-                    profiles: request.profiles,
+                    profileIDs: request.profileIDs,
                     currentProfileId: request.currentProfileId,
                     force: shouldForceRun,
                     reason: request.reason
@@ -542,7 +531,7 @@ final class SumiAutomaticBrowsingDataCleanupService {
     func runIfNeeded(
         retentionPeriod: SumiBrowsingDataRetentionPeriod,
         historyManager: HistoryManager,
-        profiles: [Profile],
+        profileIDs: [UUID],
         currentProfileId: UUID?,
         force: Bool = false,
         reason: String
@@ -562,7 +551,7 @@ final class SumiAutomaticBrowsingDataCleanupService {
         let result = await runCleanup(
             retentionPeriod: retentionPeriod,
             historyManager: historyManager,
-            profiles: profiles,
+            profileIDs: profileIDs,
             currentProfileId: currentProfileId,
             referenceDate: referenceDate,
             reason: reason
@@ -588,7 +577,7 @@ final class SumiAutomaticBrowsingDataCleanupService {
     private func runCleanup(
         retentionPeriod: SumiBrowsingDataRetentionPeriod,
         historyManager: HistoryManager,
-        profiles: [Profile],
+        profileIDs: [UUID],
         currentProfileId: UUID?,
         referenceDate: Date,
         reason: String
@@ -597,31 +586,18 @@ final class SumiAutomaticBrowsingDataCleanupService {
         let query = HistoryQuery.timeRange(start: .distantPast, end: cutoffDate)
         var result = SumiAutomaticBrowsingDataCleanupResult(didRun: true)
 
-        for profile in profiles where !profile.isEphemeral {
+        for profileID in profileIDs {
             result.deletedHistoryVisitCount += await deleteExpiredHistory(
                 query: query,
-                profile: profile,
+                profileID: profileID,
                 currentProfileId: currentProfileId,
                 historyManager: historyManager,
                 referenceDate: referenceDate
             )
-
-            guard let destructiveCleanupPreparer else { continue }
-            let didCleanWebsiteData = await destructiveCleanupPreparer
-                .performDestructiveDataCleanup(profileIDs: [profile.id]) {
-                    await self.websiteDataCleanupService.removeWebsiteData(
-                        ofTypes: WKWebsiteDataStore.sumiAutomaticCleanupDataTypes,
-                        modifiedSince: .distantPast,
-                        in: profile.dataStore
-                    )
-                }
-            if didCleanWebsiteData {
-                result.cleanedWebsiteDataProfileCount += 1
-            }
         }
 
         RuntimeDiagnostics.debug(
-            "Automatic browsing data cleanup completed reason=\(reason) retention=\(retentionPeriod.rawValue)d historyDeleted=\(result.deletedHistoryVisitCount) profiles=\(result.cleanedWebsiteDataProfileCount).",
+            "Automatic history cleanup completed reason=\(reason) retention=\(retentionPeriod.rawValue)d historyDeleted=\(result.deletedHistoryVisitCount).",
             category: "BrowsingDataCleanup"
         )
         return result
@@ -629,7 +605,7 @@ final class SumiAutomaticBrowsingDataCleanupService {
 
     private func deleteExpiredHistory(
         query: HistoryQuery,
-        profile: Profile,
+        profileID: UUID,
         currentProfileId: UUID?,
         historyManager: HistoryManager,
         referenceDate: Date
@@ -637,33 +613,33 @@ final class SumiAutomaticBrowsingDataCleanupService {
         do {
             let oldVisitCount = try await historyManager.store.countVisits(
                 matching: query,
-                profileId: profile.id,
+                profileId: profileID,
                 referenceDate: referenceDate,
                 calendar: .autoupdatingCurrent
             )
             guard oldVisitCount > 0 else { return 0 }
 
-            if profile.id == currentProfileId {
+            if profileID == currentProfileId {
                 await historyManager.delete(query: query)
                 return oldVisitCount
             }
 
             let oldDomains = try await historyManager.store.domains(
                 matching: query,
-                profileId: profile.id,
+                profileId: profileID,
                 referenceDate: referenceDate,
                 calendar: .autoupdatingCurrent
             )
             let deletedCount = try await historyManager.store.deleteVisits(
                 matching: query,
-                profileId: profile.id,
+                profileId: profileID,
                 referenceDate: referenceDate,
                 calendar: .autoupdatingCurrent
             )
             if deletedCount > 0, !oldDomains.isEmpty {
                 let remainingHosts = try await historyManager.store.remainingHistoryHosts(
                     forSiteDomains: oldDomains,
-                    profileId: profile.id
+                    profileId: profileID
                 )
                 await faviconCacheCleaner.burnDomains(
                     oldDomains,

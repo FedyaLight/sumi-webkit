@@ -5,26 +5,16 @@ import XCTest
 
 @MainActor
 final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
-    func testSDK27CleanupDataTypesDoNotRequestDeprecatedWebApplicationCacheOnSupportedSystems() {
+    func testSDK27CacheDataTypesDoNotRequestDeprecatedWebApplicationCacheOnSupportedSystems() {
         if #available(macOS 26.2, *) {
             XCTAssertFalse(
                 WKWebsiteDataStore.sumiCacheDataTypes.contains(
                     WKWebsiteDataTypeOfflineWebApplicationCache
                 )
             )
-            XCTAssertFalse(
-                WKWebsiteDataStore.sumiAutomaticCleanupDataTypes.contains(
-                    WKWebsiteDataTypeOfflineWebApplicationCache
-                )
-            )
         } else {
             XCTAssertTrue(
                 WKWebsiteDataStore.sumiCacheDataTypes.contains(
-                    WKWebsiteDataTypeOfflineWebApplicationCache
-                )
-            )
-            XCTAssertTrue(
-                WKWebsiteDataStore.sumiAutomaticCleanupDataTypes.contains(
                     WKWebsiteDataTypeOfflineWebApplicationCache
                 )
             )
@@ -873,7 +863,6 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
 
         XCTAssertTrue(basicAuthStore.deleteCalls.isEmpty)
     }
-
 }
 
 @MainActor
@@ -947,22 +936,17 @@ func makeBrowsingDataCleanupService(
 
 @MainActor
 func makeAutomaticBrowsingDataCleanupService(
-    websiteDataCleanupService: FakeCleanupService,
     faviconCacheCleaner: FakeFaviconCleaner? = nil,
     basicAuthCredentialStore: FakeBasicAuthCredentialStore? = nil,
-    destructiveCleanupPreparer: FakeDestructiveCleanupPreparer = FakeDestructiveCleanupPreparer(),
     userDefaults: UserDefaults,
     referenceDateProvider: @escaping @MainActor () -> Date = { Date() }
 ) -> SumiAutomaticBrowsingDataCleanupService {
-    let service = SumiAutomaticBrowsingDataCleanupService(
-        websiteDataCleanupService: websiteDataCleanupService,
+    SumiAutomaticBrowsingDataCleanupService(
         faviconCacheCleaner: faviconCacheCleaner ?? FakeFaviconCleaner(),
         basicAuthCredentialStore: basicAuthCredentialStore ?? FakeBasicAuthCredentialStore(),
         userDefaults: userDefaults,
         referenceDateProvider: referenceDateProvider
     )
-    service.attachDestructiveCleanupPreparer(destructiveCleanupPreparer)
-    return service
 }
 
 @MainActor

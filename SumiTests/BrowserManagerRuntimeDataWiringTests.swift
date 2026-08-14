@@ -38,6 +38,10 @@ extension BrowserManagerRuntimeWiringTests {
         let initialProfile = try XCTUnwrap(browserManager.currentProfile)
 
         XCTAssertIdentical(browserManager.browsingDataCleanupService, browsingDataCleanupService)
+        XCTAssertEqual(
+            automaticCleanupService.destructiveCleanupAttachmentCount,
+            0
+        )
         XCTAssertEqual(faviconService.partitionProfileIds, [initialProfile.id])
 
         let tab = browserManager.tabFactory.makeTab(
@@ -454,5 +458,4 @@ extension BrowserManagerRuntimeWiringTests {
         XCTAssertEqual(nowPlayingController.unloadedTabIds, [tab.id])
         XCTAssertEqual(nowPlayingController.scheduledRefreshDelays, [0, 0])
     }
-
 }

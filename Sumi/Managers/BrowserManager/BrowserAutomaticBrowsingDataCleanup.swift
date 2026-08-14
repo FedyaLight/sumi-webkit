@@ -33,7 +33,9 @@ final class BrowserAutomaticBrowsingDataCleanup {
             SumiBrowsingDataCleanupScheduleRequest(
                 retentionPeriod: retentionPeriod,
                 historyManager: history,
-                profiles: profiles.profiles,
+                profileIDs: profiles.profiles
+                    .filter { !$0.isEphemeral }
+                    .map(\.id),
                 currentProfileId: currentProfile.currentProfile?.id,
                 force: force,
                 reason: reason,

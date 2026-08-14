@@ -144,7 +144,7 @@ struct SumiBrowsingDataDialog: View {
             return "Sumi will not delete old browsing data automatically."
         }
         let localizedPeriod = String(localized: period.title)
-        return "Deletes history older than \(localizedPeriod) and clears volatile WebKit data without removing sign-in storage."
+        return "Deletes history older than \(localizedPeriod). Website data and sign-ins are kept."
     }
 
     private func browsingDataToggle(_ category: SumiBrowsingDataCategory) -> some View {

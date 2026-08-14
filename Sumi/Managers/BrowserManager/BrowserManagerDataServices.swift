@@ -218,7 +218,7 @@ protocol PrivatePartitionResidueCleaning: AnyObject {
 struct SumiBrowsingDataCleanupScheduleRequest {
     var retentionPeriod: SumiBrowsingDataRetentionPeriod
     var historyManager: HistoryManager
-    var profiles: [Profile]
+    var profileIDs: [UUID]
     var currentProfileId: UUID?
     var force: Bool = false
     var reason: String
@@ -227,9 +227,6 @@ struct SumiBrowsingDataCleanupScheduleRequest {
 
 @MainActor
 protocol BrowsingDataCleanupScheduling: AnyObject {
-    func attachDestructiveCleanupPreparer(
-        _ preparer: (any SumiDestructiveBrowsingDataCleanupPreparing)?
-    )
     func scheduleIfNeeded(_ request: SumiBrowsingDataCleanupScheduleRequest)
 }
 
@@ -360,7 +357,6 @@ struct BrowserManagerDataServices {
                 visitedLinkStore: visitedLinkStore
             ),
             automaticBrowsingDataCleanupService: SumiAutomaticBrowsingDataCleanupService(
-                websiteDataCleanupService: websiteDataCleanupService,
                 faviconCacheCleaner: browsingDataFaviconCleaner,
                 basicAuthCredentialStore: basicAuthCredentialStore
             ),

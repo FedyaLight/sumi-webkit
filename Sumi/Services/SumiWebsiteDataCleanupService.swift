@@ -549,22 +549,6 @@ extension WKWebsiteDataStore {
             "_WKWebsiteDataTypePrivateClickMeasurements",
         ]
     }()
-
-    static let sumiAutomaticCleanupDataTypes: Set<String> = {
-        Set([
-            WKWebsiteDataTypeDiskCache,
-            WKWebsiteDataTypeMemoryCache,
-            WKWebsiteDataTypeFetchCache,
-            WKWebsiteDataTypeServiceWorkerRegistrations,
-            WKWebsiteDataTypeSearchFieldRecentSearches,
-            WKWebsiteDataTypeHashSalt,
-            "_WKWebsiteDataTypeAdClickAttributions",
-            "_WKWebsiteDataTypePrivateClickMeasurements",
-            "_WKWebsiteDataTypeAlternativeServices",
-            "_WKWebsiteDataTypeHSTSCache",
-            "_WKWebsiteDataTypeResourceLoadStatistics",
-        ]).union(sumiOfflineWebApplicationCacheDataTypes)
-    }()
 }
 
 extension HTTPCookie {

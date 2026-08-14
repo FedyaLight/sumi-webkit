@@ -222,22 +222,15 @@ extension SumiWebsiteDataCleanupServiceTests {
         XCTAssertTrue(faviconCleaner.burnAfterHistoryClearSavedLogins.isEmpty)
     }
 
-    func testAutomaticBrowsingDataCleanupDeletesExpiredHistoryAndSafeWebsiteData() async throws {
+    func testAutomaticBrowsingDataCleanupDeletesExpiredHistoryWithoutMutatingWebsiteData() async throws {
         let harness = try makeHistoryHarness()
-        let cleanupService = FakeCleanupService()
         let suiteName = "SumiBrowsingDataCleanupTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let referenceDate = historyTestDate("2026-04-23T12:00:00Z")
         let service = makeAutomaticBrowsingDataCleanupService(
-            websiteDataCleanupService: cleanupService,
             userDefaults: defaults,
             referenceDateProvider: { referenceDate }
-        )
-        let profile = Profile(
-            id: harness.profileID,
-            name: "Primary",
-            dataStore: .nonPersistent()
         )
 
         try await harness.historyManager.store.recordVisit(
@@ -256,7 +249,7 @@ extension SumiWebsiteDataCleanupServiceTests {
         let result = await service.runIfNeeded(
             retentionPeriod: .sevenDays,
             historyManager: harness.historyManager,
-            profiles: [profile],
+            profileIDs: [harness.profileID],
             currentProfileId: harness.profileID,
             force: true,
             reason: "unit-test"
@@ -268,28 +261,19 @@ extension SumiWebsiteDataCleanupServiceTests {
         ).items
         XCTAssertTrue(result.didRun)
         XCTAssertEqual(result.deletedHistoryVisitCount, 1)
-        XCTAssertEqual(result.cleanedWebsiteDataProfileCount, 1)
         XCTAssertEqual(remaining.map(\.domain), ["recent.example"])
-        XCTAssertEqual(cleanupService.removedWebsiteDataTypes, [WKWebsiteDataStore.sumiAutomaticCleanupDataTypes])
     }
 
     func testAutomaticBrowsingDataCleanupOffDoesNotRunEvenWhenForced() async throws {
         XCTAssertEqual(SumiBrowsingDataRetentionPeriod.persistedValue(nil), .off)
 
         let harness = try makeHistoryHarness()
-        let cleanupService = FakeCleanupService()
         let suiteName = "SumiBrowsingDataCleanupTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let service = makeAutomaticBrowsingDataCleanupService(
-            websiteDataCleanupService: cleanupService,
             userDefaults: defaults,
             referenceDateProvider: { historyTestDate("2026-04-23T12:00:00Z") }
-        )
-        let profile = Profile(
-            id: harness.profileID,
-            name: "Primary",
-            dataStore: .nonPersistent()
         )
 
         try await harness.historyManager.store.recordVisit(
@@ -302,7 +286,7 @@ extension SumiWebsiteDataCleanupServiceTests {
         let result = await service.runIfNeeded(
             retentionPeriod: .off,
             historyManager: harness.historyManager,
-            profiles: [profile],
+            profileIDs: [harness.profileID],
             currentProfileId: harness.profileID,
             force: true,
             reason: "unit-test"
@@ -314,65 +298,41 @@ extension SumiWebsiteDataCleanupServiceTests {
         ).items
         XCTAssertFalse(result.didRun)
         XCTAssertEqual(remaining.map(\.domain), ["old.example"])
-        XCTAssertTrue(cleanupService.removedWebsiteDataTypes.isEmpty)
-    }
-
-    func testAutomaticCleanupDataTypesAvoidAuthCapableStorage() {
-        let types = WKWebsiteDataStore.sumiAutomaticCleanupDataTypes
-
-        XCTAssertFalse(types.contains(WKWebsiteDataTypeCookies))
-        XCTAssertFalse(types.contains(WKWebsiteDataTypeLocalStorage))
-        XCTAssertFalse(types.contains(WKWebsiteDataTypeIndexedDBDatabases))
-        XCTAssertFalse(types.contains(WKWebsiteDataTypeSessionStorage))
-        XCTAssertFalse(types.contains(WKWebsiteDataTypeWebSQLDatabases))
-        XCTAssertFalse(types.contains(WKWebsiteDataTypeFileSystem))
-        XCTAssertFalse(types.contains(WKWebsiteDataTypeMediaKeys))
-        XCTAssertFalse(types.contains("_WKWebsiteDataTypeCredentials"))
-        XCTAssertTrue(types.contains(WKWebsiteDataTypeDiskCache))
-        XCTAssertTrue(types.contains(WKWebsiteDataTypeMemoryCache))
     }
 
     func testAutomaticBrowsingDataCleanupThrottlesUntilRetentionChanges() async throws {
         let harness = try makeHistoryHarness()
-        let cleanupService = FakeCleanupService()
         let suiteName = "SumiBrowsingDataCleanupTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let service = makeAutomaticBrowsingDataCleanupService(
-            websiteDataCleanupService: cleanupService,
             userDefaults: defaults,
             referenceDateProvider: { historyTestDate("2026-04-23T12:00:00Z") }
-        )
-        let profile = Profile(
-            id: harness.profileID,
-            name: "Primary",
-            dataStore: .nonPersistent()
         )
 
         _ = await service.runIfNeeded(
             retentionPeriod: .thirtyDays,
             historyManager: harness.historyManager,
-            profiles: [profile],
+            profileIDs: [harness.profileID],
             currentProfileId: harness.profileID,
             reason: "first"
         )
         let throttled = await service.runIfNeeded(
             retentionPeriod: .thirtyDays,
             historyManager: harness.historyManager,
-            profiles: [profile],
+            profileIDs: [harness.profileID],
             currentProfileId: harness.profileID,
             reason: "second"
         )
         let afterRetentionChange = await service.runIfNeeded(
             retentionPeriod: .sevenDays,
             historyManager: harness.historyManager,
-            profiles: [profile],
+            profileIDs: [harness.profileID],
             currentProfileId: harness.profileID,
             reason: "changed"
         )
 
         XCTAssertFalse(throttled.didRun)
         XCTAssertTrue(afterRetentionChange.didRun)
-        XCTAssertEqual(cleanupService.removedWebsiteDataTypes.count, 2)
     }
 }

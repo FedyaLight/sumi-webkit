@@ -714,11 +714,12 @@ final class FakeBrowsingDataCleanupScheduler: BrowsingDataCleanupScheduling {
     }
 
     private(set) var schedules: [Schedule] = []
+    private(set) var destructiveCleanupAttachmentCount = 0
 
     func attachDestructiveCleanupPreparer(
-        _ preparer: (any SumiDestructiveBrowsingDataCleanupPreparing)?
+        _: (any SumiDestructiveBrowsingDataCleanupPreparing)?
     ) {
-        _ = preparer
+        destructiveCleanupAttachmentCount += 1
     }
 
     func scheduleIfNeeded(_ request: SumiBrowsingDataCleanupScheduleRequest) {
@@ -726,7 +727,7 @@ final class FakeBrowsingDataCleanupScheduler: BrowsingDataCleanupScheduling {
         schedules.append(
             Schedule(
                 retentionPeriod: request.retentionPeriod,
-                profileIds: request.profiles.map(\.id),
+                profileIds: request.profileIDs,
                 currentProfileId: request.currentProfileId,
                 force: request.force,
                 reason: request.reason,

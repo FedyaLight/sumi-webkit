@@ -168,10 +168,6 @@ final class BrowserSettingsAttachmentCoordinatorTests: XCTestCase {
         BrowsingDataCleanupScheduling {
         private(set) var requests: [SumiBrowsingDataCleanupScheduleRequest] = []
 
-        func attachDestructiveCleanupPreparer(
-            _: (any SumiDestructiveBrowsingDataCleanupPreparing)?
-        ) {}
-
         func scheduleIfNeeded(_ request: SumiBrowsingDataCleanupScheduleRequest) {
             requests.append(request)
         }

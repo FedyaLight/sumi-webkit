@@ -94,8 +94,6 @@ enum BrowserManagerRuntimeWiring {
 
         let cleanup = webViewRuntime.websiteDataCleanupService
         browserManager.browsingDataCleanupService.destructiveCleanupPreparer = cleanup
-        browserManager.dataServices.automaticBrowsingDataCleanupService
-            .attachDestructiveCleanupPreparer(cleanup)
         browserManager.dataServices.siteDataPolicyEnforcementService
             .attachDestructiveCleanupPreparer(cleanup)
         browserManager.dataServices.privacyService
