@@ -54,8 +54,16 @@ The page-scoped native media session that supplies metadata and accepts media co
 _Avoid_: Audio tab, system media session, current Now Playing app
 
 **Retained Paused Session**:
-A Page Media Session explicitly paused through the Sidebar Mini Player and retained as an eligible player source until the session, document, residence, or page is invalidated. Mere absence of audible output does not invalidate it.
+A Page Media Session explicitly paused through the Sidebar Mini Player and retained as a card only while its exact WebView Residence stays in the background. Page Activation consumes that presentation retention without issuing a playback command; leaving the still-silent page cannot recreate the card. Only a later native audible playback epoch may admit it again.
 _Avoid_: Paused card owner, last played tab, stale media card
+
+**Retained Muted Session**:
+A Page Media Session explicitly muted through the Sidebar Mini Player and retained as a card only while its exact WebView Residence stays in the background. Page Activation consumes that presentation retention. A page that was already muted outside the Sidebar Mini Player is never admitted on this basis.
+_Avoid_: Muted tab card, silent media owner
+
+**Dismissed Media Session**:
+A Page Media Session whose Sidebar Mini Player close command paused its native media and removed its card. Page Activation never resumes it; only a later audible playback epoch may admit it again.
+_Avoid_: Hidden playing card, temporarily closed player
 
 **Split Group**:
 A durable sidebar item containing two to four ordered page identities and one layout. The group keeps its identity when moved between Regular, Pinned, Folder, and Favorite.

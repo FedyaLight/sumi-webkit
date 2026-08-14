@@ -99,6 +99,7 @@ static inline NSView * _Nullable SumiWKWebViewFullScreenPlaceholderView(WKWebVie
 @property (nonatomic, readonly, getter=_isPlayingAudio) BOOL _playingAudio;
 @property (nonatomic, readonly) BOOL _canTogglePictureInPicture;
 - (void)_nowPlayingMediaTitleAndArtist:(void (^)(NSString * _Nullable title, NSString * _Nullable artist))completionHandler;
+- (void)_playPredominantOrNowPlayingMediaSession:(void (^)(BOOL didPlay))completionHandler;
 - (void)_updateMediaPlaybackControlsManager;
 - (void)_togglePictureInPicture;
 @end

@@ -1,11 +1,14 @@
 import Foundation
+import SumiWebRuntime
 import WebKit
 
 @MainActor
 protocol SumiNowPlayingWebViewAdapter: AnyObject {
+    var sumiNowPlayingAudioState: SumiWebViewAudioState { get }
+
     func sumiRequestNowPlayingInfo() async -> SumiNativeNowPlayingInfo
-    func sumiSetAllMediaPlaybackSuspended(_ suspended: Bool) async -> Bool
-    func sumiPauseAllMediaPlayback() async -> Bool
+    func sumiSetNowPlayingPlayback(_ playbackState: SumiBackgroundMediaPlaybackState) async -> Bool
+    func sumiSetNowPlayingAudioMuted(_ muted: Bool) -> Bool
     func sumiTogglePictureInPicture() -> Bool
 }
 
@@ -37,6 +40,10 @@ enum SumiNowPlayingInfoMapper {
 
 @MainActor
 extension WKWebView: SumiNowPlayingWebViewAdapter {
+    var sumiNowPlayingAudioState: SumiWebViewAudioState {
+        sumiAudioState
+    }
+
     func sumiRequestNowPlayingInfo() async -> SumiNativeNowPlayingInfo {
         let titleAndArtist = await _nowPlayingMediaTitleAndArtist()
         _updateMediaPlaybackControlsManager()
@@ -65,20 +72,25 @@ extension WKWebView: SumiNowPlayingWebViewAdapter {
         }
     }
 
-    func sumiSetAllMediaPlaybackSuspended(_ suspended: Bool) async -> Bool {
+    func sumiSetNowPlayingPlayback(
+        _ playbackState: SumiBackgroundMediaPlaybackState
+    ) async -> Bool {
         await withCheckedContinuation { continuation in
-            setAllMediaPlaybackSuspended(suspended) {
-                continuation.resume(returning: true)
+            switch playbackState {
+            case .playing:
+                _playPredominantOrNowPlayingMediaSession { didPlay in
+                    continuation.resume(returning: didPlay)
+                }
+            case .paused:
+                pauseAllMediaPlayback {
+                    continuation.resume(returning: true)
+                }
             }
         }
     }
 
-    func sumiPauseAllMediaPlayback() async -> Bool {
-        await withCheckedContinuation { continuation in
-            pauseAllMediaPlayback {
-                continuation.resume(returning: true)
-            }
-        }
+    func sumiSetNowPlayingAudioMuted(_ muted: Bool) -> Bool {
+        sumiSetAudioMuted(muted)
     }
 
     func sumiTogglePictureInPicture() -> Bool {

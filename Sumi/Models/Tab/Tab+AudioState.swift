@@ -1,7 +1,7 @@
 import Combine
 import Foundation
-import WebKit
 import SumiWebRuntime
+import WebKit
 
 @MainActor
 extension Tab {
@@ -43,7 +43,8 @@ extension Tab {
 
         guard oldState != newState else { return }
 
-        if oldState.isPlayingAudio != newState.isPlayingAudio {
+        if oldState.isPlayingAudio != newState.isPlayingAudio
+            || oldState.isMuted != newState.isMuted {
             mediaRuntime.callbacks.scheduleNowPlayingRefresh(0)
         }
     }

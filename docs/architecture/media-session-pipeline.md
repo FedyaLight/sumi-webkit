@@ -6,24 +6,37 @@ background page.
 
 ## Ownership
 
-- `SumiNativeNowPlayingController` elects one eligible background tab, publishes
-  card state, and routes explicit card actions.
+- `SumiNativeNowPlayingController` reconciles eligible background residences,
+  publishes card state, retains card-owned pause/mute intent, and routes explicit
+  card actions.
 - `SumiNativeNowPlayingBridge` is the narrow adapter to WebKit's native metadata,
-  play, pause, mute, and Picture in Picture operations.
+  exact residence audio state, play, pause, mute, and Picture in Picture
+  operations.
 - `Tab.mediaRuntime` records event-driven native state used by suspension policy.
 - `MediaControlsView` renders immutable card state and emits user intent.
 
 Only regular, non-incognito tabs are candidates. The active foreground tab is
 not represented by the sidebar card, and card identity is stable for the owner
-tab (`sumi:<tab-id>`).
+Page Media Session (`tab + window + residence generation + WebView identity`).
+
+Initial admission requires unmuted audible output from the exact live WebView
+Residence. Native metadata and generic playback state decorate an admitted card
+but never admit one. A card-originated pause or mute retains that exact Page
+Media Session when audible output stops; an externally muted or silent page does
+not create or retain a card.
 
 ## Command rules
 
 Transport controls resolve the existing live WebView for the owner and send one
-native WebKit command. They do not select a tab, change Space, focus a page,
-materialize a WebView, sleep, or retry. Failure leaves browser selection and
-page lifecycle untouched. Clicking the card itself is the separate, explicit
-command that activates the owner page.
+native Page Media Session command. Pause does not suspend the webpage, so its
+own controls remain able to resume media. Transport commands do not select a
+tab, change Space, focus a page, materialize a WebView, sleep, or retry. Failure
+leaves browser selection and page lifecycle untouched. Clicking the card itself
+is the separate, explicit command that activates the owner page. Page Activation
+only changes
+presentation: it never resumes a Retained Paused Session or a Dismissed Media
+Session. Closing a card pauses its native media and suppresses the card until a
+later audible playback epoch.
 
 ## Suspension and teardown
 

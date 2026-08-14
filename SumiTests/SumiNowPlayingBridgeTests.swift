@@ -1,4 +1,5 @@
 @testable import Sumi
+import SumiWebRuntime
 import XCTest
 
 private func makeMediaCardID(
@@ -77,19 +78,44 @@ final class SumiNowPlayingBridgeTests: XCTestCase {
 
 @MainActor
 final class SumiNativeNowPlayingControllerFeatureGateTests: XCTestCase {
-    func testDisablingFeatureSuspendsController() {
+    func testDisablingFeatureClearsControllerWithoutResumingPausedMedia() async {
+        let tab = Tab(
+            url: URL(string: "https://media.example/feature-disabled")!,
+            loadsCachedFaviconOnInit: false
+        )
+        tab.applyAudioState(.unmuted(isPlayingAudio: true))
+        let window = BrowserWindowState()
+        var commands: [SumiNativeNowPlayingController.SumiNativeNowPlayingCommand] = []
         let controller = SumiNativeNowPlayingController(
-            candidateProvider: { _ in [] },
+            candidateProvider: { _ in [(tab, window)] },
             infoProvider: { _, _, _ in nil },
-            commandExecutor: { _, _, _, _ in false },
+            commandExecutor: { command, _, _, _ in
+                commands.append(command)
+                return true
+            },
             activationHandler: { _, _, _ in /* no-op */ }
         )
+        controller.configure(
+            context: makeContext(
+                candidates: { [(tab, window)] },
+                tabs: [tab],
+                windows: [window]
+            )
+        )
+        await controller.refreshImmediately()
+        guard let cardID = controller.cardStates.first?.id else {
+            return XCTFail("Expected a media card")
+        }
 
-        controller.setFeatureEnabled(true)
+        await controller.togglePlayPause(cardID: cardID)
+        XCTAssertEqual(commands, [.pause])
+
         controller.setFeatureEnabled(false)
+        await Task.yield()
 
         XCTAssertFalse(controller.isFeatureEnabled)
         XCTAssertTrue(controller.cardStates.isEmpty)
+        XCTAssertEqual(commands, [.pause])
     }
 
     func testScheduleRefreshIsNoOpWhenFeatureDisabled() {
@@ -235,6 +261,7 @@ final class SumiNativeNowPlayingControllerFeatureGateTests: XCTestCase {
         )
         tab.applyAudioState(.unmuted(isPlayingAudio: true))
         let windowState = BrowserWindowState()
+        let webView = PagePlaybackNowPlayingWebViewStub()
         var exposesCandidates = false
         var didBeginInfoRequest = false
         var releaseInfoRequest: CheckedContinuation<Void, Never>?
@@ -262,7 +289,8 @@ final class SumiNativeNowPlayingControllerFeatureGateTests: XCTestCase {
             context: makeContext(
                 candidates: { exposesCandidates ? [(tab, windowState)] : [] },
                 tabs: [tab],
-                windows: [windowState]
+                windows: [windowState],
+                webView: webView
             )
         )
         await Task.yield()
@@ -274,6 +302,7 @@ final class SumiNativeNowPlayingControllerFeatureGateTests: XCTestCase {
         }
 
         tab.applyAudioState(.unmuted(isPlayingAudio: false))
+        webView.audioState = .unmuted(isPlayingAudio: false)
         releaseInfoRequest?.resume()
         await refreshTask.value
 
@@ -388,6 +417,10 @@ final class SumiNativeNowPlayingControllerFeatureGateTests: XCTestCase {
         )
         firstTab.applyAudioState(.unmuted(isPlayingAudio: true))
         let windowState = BrowserWindowState()
+        let firstWebView = PagePlaybackNowPlayingWebViewStub()
+        let replacementWebView = PagePlaybackNowPlayingWebViewStub(
+            audioState: .unmuted(isPlayingAudio: false)
+        )
         var exposesCandidates = false
         var didBeginPause = false
         var releasePause: CheckedContinuation<Void, Never>?
@@ -410,15 +443,21 @@ final class SumiNativeNowPlayingControllerFeatureGateTests: XCTestCase {
             activationHandler: { _, _, _ in /* no-op */ }
         )
         controller.configure(
-            context: makeContext(
-                candidates: {
+            context: SumiNativeNowPlayingRuntimeContext(
+                candidateTabs: {
                     exposesCandidates
                         ? [(firstTab, windowState), (replacementTab, windowState)]
                         : []
                 },
-                tabs: [firstTab, replacementTab],
-                windows: [windowState],
-                webView: PagePlaybackNowPlayingWebViewStub()
+                windowState: { id in id == windowState.id ? windowState : nil },
+                windowRegistry: { nil },
+                resolvedTab: { id, _ in
+                    [firstTab, replacementTab].first(where: { $0.id == id })
+                },
+                resolvedNowPlayingWebView: { tab, _ in
+                    tab === firstTab ? firstWebView : replacementWebView
+                },
+                selectTab: { _, _ in /* no-op */ }
             )
         )
         await Task.yield()
@@ -436,8 +475,14 @@ final class SumiNativeNowPlayingControllerFeatureGateTests: XCTestCase {
         }
 
         firstTab.applyAudioState(.unmuted(isPlayingAudio: false))
+        firstWebView.audioState = .unmuted(isPlayingAudio: false)
         replacementTab.applyAudioState(.unmuted(isPlayingAudio: true))
+        replacementWebView.audioState = .unmuted(isPlayingAudio: true)
         await controller.refreshImmediately()
+        XCTAssertEqual(
+            controller.cardStates.first(where: { $0.tabId == firstTab.id })?.playbackState,
+            .paused
+        )
         XCTAssertEqual(
             controller.cardStates.first(where: { $0.tabId == replacementTab.id })?.playbackState,
             .playing
@@ -499,7 +544,9 @@ final class SumiNativeNowPlayingControllerFeatureGateTests: XCTestCase {
         tab.applyAudioState(.unmuted(isPlayingAudio: true))
         let pausedWindow = BrowserWindowState()
         let playingWindow = BrowserWindowState()
-        let pausedWebView = PagePlaybackNowPlayingWebViewStub()
+        let pausedWebView = PagePlaybackNowPlayingWebViewStub(
+            audioState: .unmuted(isPlayingAudio: false)
+        )
         let playingWebView = PagePlaybackNowPlayingWebViewStub()
         let windows = [pausedWindow, playingWindow]
 
@@ -535,7 +582,7 @@ final class SumiNativeNowPlayingControllerFeatureGateTests: XCTestCase {
         controller.setFeatureEnabled(false)
     }
 
-    func testActivationResetOverridesOnlyTheVisitedResidence() async {
+    func testExactAudibleStateSelectsOnlyThePlayingResidence() async {
         let tab = Tab(
             url: URL(string: "https://media.example/visited-residence")!,
             loadsCachedFaviconOnInit: false
@@ -545,7 +592,9 @@ final class SumiNativeNowPlayingControllerFeatureGateTests: XCTestCase {
         visitedWindow.currentTabId = tab.id
         otherWindow.currentTabId = UUID()
         let visitedWebView = PagePlaybackNowPlayingWebViewStub()
-        let otherWebView = PagePlaybackNowPlayingWebViewStub()
+        let otherWebView = PagePlaybackNowPlayingWebViewStub(
+            audioState: .unmuted(isPlayingAudio: false)
+        )
         let windows = [visitedWindow, otherWindow]
 
         let controller = SumiNativeNowPlayingController(
@@ -684,7 +733,7 @@ final class SumiNativeNowPlayingControllerFeatureGateTests: XCTestCase {
         controller.setFeatureEnabled(false)
     }
 
-    func testRevisitedDismissedTabReturnsWhenAudibleStateLeadsPausedSnapshot() async {
+    func testRevisitedDismissedTabNeedsANewAudibleEventToReturn() async {
         let tab = Tab(
             url: URL(string: "https://media.example/revisited")!,
             loadsCachedFaviconOnInit: false
@@ -739,16 +788,6 @@ final class SumiNativeNowPlayingControllerFeatureGateTests: XCTestCase {
         window.currentTabId = otherTabID
         await controller.refreshImmediately()
 
-        XCTAssertEqual(controller.cardStates.first?.tabId, tab.id)
-        XCTAssertEqual(controller.cardStates.first?.playbackState, .playing)
-        guard let revisitedCardID = controller.cardStates.first?.id else {
-            return XCTFail("Expected the revisited media card")
-        }
-
-        await controller.dismiss(cardID: revisitedCardID)
-        await controller.refreshImmediately()
-        await controller.refreshImmediately()
-
         XCTAssertTrue(controller.cardStates.isEmpty)
         controller.setFeatureEnabled(false)
     }
@@ -769,6 +808,7 @@ final class SumiNativeNowPlayingControllerFeatureGateTests: XCTestCase {
                 switch command {
                 case .pause: commands.append("pause")
                 case .play: commands.append("play")
+                case .setMuted: commands.append("mute")
                 case .dismiss: commands.append("dismiss")
                 case .pictureInPicture: commands.append("pip")
                 }
@@ -801,7 +841,452 @@ final class SumiNativeNowPlayingControllerFeatureGateTests: XCTestCase {
         controller.setFeatureEnabled(false)
     }
 
-    func testRefreshResolvesAndSamplesOnlyEligiblePlayingTabs() async {
+    func testExplicitPausePreservesLastKnownArtistWhenNativeMetadataDropsIt() async {
+        let tab = Tab(
+            url: URL(string: "https://media.example/artist-after-pause")!,
+            loadsCachedFaviconOnInit: false
+        )
+        tab.applyAudioState(.unmuted(isPlayingAudio: true))
+        let window = BrowserWindowState()
+        let webView = PagePlaybackNowPlayingWebViewStub()
+        var reportedArtist: String? = "Artist"
+        var reportedPlaybackState = SumiBackgroundMediaPlaybackState.playing
+
+        let controller = SumiNativeNowPlayingController(
+            candidateProvider: { _ in [(tab, window)] },
+            infoProvider: { _, _, _ in
+                SumiNativeNowPlayingInfo(
+                    title: "Track",
+                    artist: reportedArtist,
+                    playbackState: reportedPlaybackState,
+                    canPictureInPicture: false
+                )
+            },
+            commandExecutor: { command, _, _, _ in
+                guard command == .pause else { return false }
+                reportedArtist = nil
+                reportedPlaybackState = .paused
+                webView.audioState = .unmuted(isPlayingAudio: false)
+                return true
+            },
+            activationHandler: { _, _, _ in /* no-op */ }
+        )
+        controller.configure(
+            context: makeContext(
+                candidates: { [(tab, window)] },
+                tabs: [tab],
+                windows: [window],
+                webView: webView
+            )
+        )
+        await controller.refreshImmediately()
+        guard let cardID = controller.cardStates.first?.id else {
+            return XCTFail("Expected a media card")
+        }
+        XCTAssertEqual(controller.cardStates.first?.subtitle, "Artist")
+
+        await controller.togglePlayPause(cardID: cardID)
+        await controller.refreshImmediately()
+
+        XCTAssertEqual(controller.cardStates.first?.playbackState, .paused)
+        XCTAssertEqual(controller.cardStates.first?.subtitle, "Artist")
+        controller.setFeatureEnabled(false)
+    }
+
+    func testExplicitPlayKeepsCardWhileNativeAudibilityCatchesUp() async {
+        let tab = Tab(
+            url: URL(string: "https://media.example/play-audibility-lag")!,
+            loadsCachedFaviconOnInit: false
+        )
+        tab.applyAudioState(.unmuted(isPlayingAudio: true))
+        let window = BrowserWindowState()
+        let webView = PagePlaybackNowPlayingWebViewStub()
+        var reportedPlaybackState = SumiBackgroundMediaPlaybackState.playing
+
+        let controller = SumiNativeNowPlayingController(
+            candidateProvider: { _ in [(tab, window)] },
+            infoProvider: { _, _, _ in
+                SumiNativeNowPlayingInfo(
+                    title: "Track",
+                    artist: "Artist",
+                    playbackState: reportedPlaybackState,
+                    canPictureInPicture: false
+                )
+            },
+            commandExecutor: { command, _, _, _ in
+                switch command {
+                case .pause:
+                    reportedPlaybackState = .paused
+                    webView.audioState = .unmuted(isPlayingAudio: false)
+                case .play:
+                    reportedPlaybackState = .playing
+                case .setMuted, .dismiss, .pictureInPicture:
+                    return false
+                }
+                return true
+            },
+            activationHandler: { _, _, _ in /* no-op */ }
+        )
+        controller.configure(
+            context: makeContext(
+                candidates: { [(tab, window)] },
+                tabs: [tab],
+                windows: [window],
+                webView: webView
+            )
+        )
+        await controller.refreshImmediately()
+        guard let cardID = controller.cardStates.first?.id else {
+            return XCTFail("Expected a media card")
+        }
+
+        await controller.togglePlayPause(cardID: cardID)
+        await controller.refreshImmediately()
+        await controller.togglePlayPause(cardID: cardID)
+        await controller.refreshImmediately()
+
+        XCTAssertEqual(controller.cardStates.first?.id, cardID)
+        XCTAssertEqual(controller.cardStates.first?.playbackState, .playing)
+        controller.setFeatureEnabled(false)
+    }
+
+    func testActivatingPausedCardSourceDoesNotResumeMedia() async {
+        let tab = Tab(
+            url: URL(string: "https://media.example/paused-visit")!,
+            loadsCachedFaviconOnInit: false
+        )
+        tab.applyAudioState(.unmuted(isPlayingAudio: true))
+        let window = BrowserWindowState()
+        let otherTabID = UUID()
+        window.currentTabId = otherTabID
+        var reportedPlaybackState = SumiBackgroundMediaPlaybackState.playing
+        var commands: [String] = []
+
+        let controller = SumiNativeNowPlayingController(
+            candidateProvider: { _ in [(tab, window)] },
+            infoProvider: { _, _, _ in
+                SumiNativeNowPlayingInfo(
+                    title: "Paused visit",
+                    artist: nil,
+                    playbackState: reportedPlaybackState,
+                    canPictureInPicture: false
+                )
+            },
+            commandExecutor: { command, _, _, _ in
+                switch command {
+                case .pause:
+                    commands.append("pause")
+                    reportedPlaybackState = .paused
+                case .play:
+                    commands.append("play")
+                    reportedPlaybackState = .playing
+                case .setMuted:
+                    commands.append("mute")
+                case .dismiss:
+                    commands.append("dismiss")
+                case .pictureInPicture:
+                    commands.append("pip")
+                }
+                return true
+            },
+            activationHandler: { _, _, _ in /* no-op */ }
+        )
+        controller.configure(
+            context: makeContext(
+                candidates: { [(tab, window)] },
+                tabs: [tab],
+                windows: [window]
+            )
+        )
+        await controller.refreshImmediately()
+        guard let cardID = controller.cardStates.first?.id else {
+            return XCTFail("Expected a media card")
+        }
+
+        await controller.togglePlayPause(cardID: cardID)
+        XCTAssertEqual(controller.cardStates.first?.playbackState, .paused)
+
+        window.currentTabId = tab.id
+        controller.handleTabActivated(tab.id, in: window.id)
+        await Task.yield()
+
+        XCTAssertEqual(reportedPlaybackState, .paused)
+        XCTAssertEqual(commands, ["pause"])
+        XCTAssertTrue(controller.cardStates.isEmpty)
+
+        window.currentTabId = otherTabID
+        await controller.refreshImmediately()
+
+        XCTAssertTrue(controller.cardStates.isEmpty)
+        XCTAssertEqual(commands, ["pause"])
+        controller.setFeatureEnabled(false)
+    }
+
+    func testPagePlaybackAfterActivationReplacesMiniPlayerPauseRetention() async {
+        let tab = Tab(
+            url: URL(string: "https://media.example/page-resume")!,
+            loadsCachedFaviconOnInit: false
+        )
+        tab.applyAudioState(.unmuted(isPlayingAudio: true))
+        let window = BrowserWindowState()
+        let otherTabID = UUID()
+        window.currentTabId = otherTabID
+        let webView = PagePlaybackNowPlayingWebViewStub()
+        var reportedPlaybackState = SumiBackgroundMediaPlaybackState.playing
+
+        let controller = SumiNativeNowPlayingController(
+            candidateProvider: { _ in [(tab, window)] },
+            infoProvider: { _, _, _ in
+                SumiNativeNowPlayingInfo(
+                    title: "Page resume",
+                    artist: "Artist",
+                    playbackState: reportedPlaybackState,
+                    canPictureInPicture: false
+                )
+            },
+            commandExecutor: { command, _, _, _ in
+                guard command == .pause else { return false }
+                reportedPlaybackState = .paused
+                tab.applyAudioState(.unmuted(isPlayingAudio: false))
+                webView.audioState = .unmuted(isPlayingAudio: false)
+                return true
+            },
+            activationHandler: { _, _, _ in /* no-op */ }
+        )
+        controller.configure(
+            context: makeContext(
+                candidates: { [(tab, window)] },
+                tabs: [tab],
+                windows: [window],
+                webView: webView
+            )
+        )
+        await controller.refreshImmediately()
+        guard let cardID = controller.cardStates.first?.id else {
+            return XCTFail("Expected a media card")
+        }
+
+        await controller.togglePlayPause(cardID: cardID)
+        window.currentTabId = tab.id
+        controller.handleTabActivated(tab.id, in: window.id)
+
+        reportedPlaybackState = .playing
+        tab.applyAudioState(.unmuted(isPlayingAudio: true))
+        webView.audioState = .unmuted(isPlayingAudio: true)
+        await controller.refreshImmediately()
+
+        window.currentTabId = otherTabID
+        await controller.refreshImmediately()
+
+        XCTAssertEqual(controller.cardStates.first?.id, cardID)
+        XCTAssertEqual(controller.cardStates.first?.playbackState, .playing)
+        controller.setFeatureEnabled(false)
+    }
+
+    func testActivatingDismissedCardSourceDoesNotResumeMedia() async {
+        let tab = Tab(
+            url: URL(string: "https://media.example/dismissed-visit")!,
+            loadsCachedFaviconOnInit: false
+        )
+        tab.applyAudioState(.unmuted(isPlayingAudio: true))
+        let window = BrowserWindowState()
+        window.currentTabId = UUID()
+        let webView = PagePlaybackNowPlayingWebViewStub()
+        var reportedPlaybackState = SumiBackgroundMediaPlaybackState.playing
+        var commands: [String] = []
+
+        let controller = SumiNativeNowPlayingController(
+            candidateProvider: { _ in [(tab, window)] },
+            infoProvider: { _, _, _ in
+                SumiNativeNowPlayingInfo(
+                    title: "Dismissed visit",
+                    artist: nil,
+                    playbackState: reportedPlaybackState,
+                    canPictureInPicture: false
+                )
+            },
+            commandExecutor: { command, _, _, _ in
+                switch command {
+                case .dismiss:
+                    commands.append("dismiss")
+                    reportedPlaybackState = .paused
+                    tab.applyAudioState(.unmuted(isPlayingAudio: false))
+                    webView.audioState = .unmuted(isPlayingAudio: false)
+                case .play:
+                    commands.append("play")
+                    reportedPlaybackState = .playing
+                case .pause:
+                    commands.append("pause")
+                case .setMuted:
+                    commands.append("mute")
+                case .pictureInPicture:
+                    commands.append("pip")
+                }
+                return true
+            },
+            activationHandler: { _, _, _ in /* no-op */ }
+        )
+        controller.configure(
+            context: makeContext(
+                candidates: { [(tab, window)] },
+                tabs: [tab],
+                windows: [window],
+                webView: webView
+            )
+        )
+        await controller.refreshImmediately()
+        guard let cardID = controller.cardStates.first?.id else {
+            return XCTFail("Expected a media card")
+        }
+
+        await controller.dismiss(cardID: cardID)
+        XCTAssertEqual(reportedPlaybackState, .paused)
+        XCTAssertEqual(commands, ["dismiss"])
+        XCTAssertTrue(controller.cardStates.isEmpty)
+
+        window.currentTabId = tab.id
+        controller.handleTabActivated(tab.id, in: window.id)
+        await Task.yield()
+
+        XCTAssertEqual(reportedPlaybackState, .paused)
+        XCTAssertEqual(commands, ["dismiss"])
+        XCTAssertTrue(controller.cardStates.isEmpty)
+
+        window.currentTabId = UUID()
+        await controller.refreshImmediately()
+
+        XCTAssertEqual(reportedPlaybackState, .paused)
+        XCTAssertEqual(commands, ["dismiss"])
+        XCTAssertTrue(controller.cardStates.isEmpty)
+        controller.setFeatureEnabled(false)
+    }
+
+    func testMutedTabCannotCreateCardWithoutMiniPlayerMuteIntent() async {
+        let tab = Tab(
+            url: URL(string: "https://media.example/already-muted")!,
+            loadsCachedFaviconOnInit: false
+        )
+        tab.applyAudioState(.muted(isPlayingAudio: true))
+        let window = BrowserWindowState()
+
+        let controller = SumiNativeNowPlayingController(
+            candidateProvider: { _ in [(tab, window)] },
+            infoProvider: { _, _, _ in
+                SumiNativeNowPlayingInfo(
+                    title: "Already muted",
+                    artist: nil,
+                    playbackState: .playing,
+                    canPictureInPicture: false
+                )
+            },
+            commandExecutor: { _, _, _, _ in false },
+            activationHandler: { _, _, _ in /* no-op */ }
+        )
+        controller.configure(
+            context: makeContext(
+                candidates: { [(tab, window)] },
+                tabs: [tab],
+                windows: [window],
+                webView: PagePlaybackNowPlayingWebViewStub(
+                    audioState: .muted(isPlayingAudio: true)
+                )
+            )
+        )
+
+        await controller.refreshImmediately()
+
+        XCTAssertTrue(controller.cardStates.isEmpty)
+        controller.setFeatureEnabled(false)
+    }
+
+    func testMiniPlayerMuteRetainsItsCard() async {
+        let tab = Tab(
+            url: URL(string: "https://media.example/card-muted")!,
+            loadsCachedFaviconOnInit: false
+        )
+        tab.applyAudioState(.unmuted(isPlayingAudio: true))
+        let window = BrowserWindowState()
+        let webView = PagePlaybackNowPlayingWebViewStub()
+        let controller = SumiNativeNowPlayingController(
+            candidateProvider: { _ in [(tab, window)] },
+            infoProvider: { _, _, _ in
+                SumiNativeNowPlayingInfo(
+                    title: "Card muted",
+                    artist: nil,
+                    playbackState: .playing,
+                    canPictureInPicture: false
+                )
+            },
+            commandExecutor: { command, _, _, _ in
+                guard case .setMuted(let muted) = command else { return false }
+                webView.audioState = webView.audioState.withMuted(muted)
+                tab.applyAudioState(tab.audioState.withMuted(muted))
+                return true
+            },
+            activationHandler: { _, _, _ in /* no-op */ }
+        )
+        controller.configure(
+            context: makeContext(
+                candidates: { [(tab, window)] },
+                tabs: [tab],
+                windows: [window],
+                webView: webView
+            )
+        )
+        await controller.refreshImmediately()
+        guard let cardID = controller.cardStates.first?.id else {
+            return XCTFail("Expected a media card")
+        }
+
+        await controller.toggleMute(cardID: cardID)
+        await controller.refreshImmediately()
+
+        XCTAssertEqual(controller.cardStates.first?.tabId, tab.id)
+        XCTAssertEqual(controller.cardStates.first?.isMuted, true)
+        controller.setFeatureEnabled(false)
+    }
+
+    func testExternalMuteRemovesExistingCard() async {
+        let tab = Tab(
+            url: URL(string: "https://media.example/externally-muted")!,
+            loadsCachedFaviconOnInit: false
+        )
+        tab.applyAudioState(.unmuted(isPlayingAudio: true))
+        let window = BrowserWindowState()
+        let webView = PagePlaybackNowPlayingWebViewStub()
+        let controller = SumiNativeNowPlayingController(
+            candidateProvider: { _ in [(tab, window)] },
+            infoProvider: { _, _, _ in
+                SumiNativeNowPlayingInfo(
+                    title: "Externally muted",
+                    artist: nil,
+                    playbackState: .playing,
+                    canPictureInPicture: false
+                )
+            },
+            commandExecutor: { _, _, _, _ in false },
+            activationHandler: { _, _, _ in /* no-op */ }
+        )
+        controller.configure(
+            context: makeContext(
+                candidates: { [(tab, window)] },
+                tabs: [tab],
+                windows: [window],
+                webView: webView
+            )
+        )
+        await controller.refreshImmediately()
+        XCTAssertEqual(controller.cardStates.first?.tabId, tab.id)
+
+        tab.applyAudioState(.muted(isPlayingAudio: true))
+        webView.audioState = .muted(isPlayingAudio: true)
+        await controller.refreshImmediately()
+
+        XCTAssertTrue(controller.cardStates.isEmpty)
+        controller.setFeatureEnabled(false)
+    }
+
+    func testRefreshSamplesOnlyExactAudibleResidences() async {
         let playing = Tab(
             url: URL(string: "https://media.example/playing")!,
             loadsCachedFaviconOnInit: false
@@ -813,7 +1298,10 @@ final class SumiNativeNowPlayingControllerFeatureGateTests: XCTestCase {
         playing.applyAudioState(.unmuted(isPlayingAudio: true))
         let window = BrowserWindowState()
         let tabs = [playing, idle]
-        let webView = PagePlaybackNowPlayingWebViewStub()
+        let playingWebView = PagePlaybackNowPlayingWebViewStub()
+        let idleWebView = PagePlaybackNowPlayingWebViewStub(
+            audioState: .unmuted(isPlayingAudio: false)
+        )
         var resolvedTabIDs: [UUID] = []
         var sampledTabIDs: [UUID] = []
 
@@ -834,7 +1322,7 @@ final class SumiNativeNowPlayingControllerFeatureGateTests: XCTestCase {
                 resolvedTab: { id, _ in tabs.first(where: { $0.id == id }) },
                 resolvedNowPlayingWebView: { tab, _ in
                     resolvedTabIDs.append(tab.id)
-                    return webView
+                    return tab === playing ? playingWebView : idleWebView
                 },
                 selectTab: { _, _ in /* no-op */ }
             )
@@ -845,7 +1333,7 @@ final class SumiNativeNowPlayingControllerFeatureGateTests: XCTestCase {
 
         await controller.refreshImmediately()
 
-        XCTAssertEqual(Set(resolvedTabIDs), Set([playing.id]))
+        XCTAssertEqual(Set(resolvedTabIDs), Set(tabs.map(\.id)))
         XCTAssertEqual(sampledTabIDs, [playing.id])
         controller.setFeatureEnabled(false)
     }
@@ -994,13 +1482,13 @@ final class SumiNativeNowPlayingRuntimeContextTests: XCTestCase {
             selectTab: { _, _ in selectionCount += 1 }
         )
 
-        let didPlay = await tab.setSumiNativeNowPlayingSuspended(
-            false,
+        let didPlay = await tab.setSumiNativeNowPlayingPlayback(
+            .playing,
             using: context,
             in: window
         )
-        let didPause = await tab.setSumiNativeNowPlayingSuspended(
-            true,
+        let didPause = await tab.setSumiNativeNowPlayingPlayback(
+            .paused,
             using: context,
             in: window
         )
@@ -1033,7 +1521,7 @@ final class SumiNativeNowPlayingRuntimeContextTests: XCTestCase {
         XCTAssertEqual(selectionCount, 0)
     }
 
-    func testPlaybackCommandsStayOnResolvedPageWebView() async {
+    func testPlaybackCommandsUseResolvedPageMediaSessionWithoutSuspendingPage() async {
         let tab = makeTab("https://example.com/media")
         let window = BrowserWindowState()
         let webView = PagePlaybackNowPlayingWebViewStub()
@@ -1046,13 +1534,13 @@ final class SumiNativeNowPlayingRuntimeContextTests: XCTestCase {
             selectTab: { _, _ in XCTFail("Playback commands must not select the tab") }
         )
 
-        let didPause = await tab.setSumiNativeNowPlayingSuspended(
-            true,
+        let didPause = await tab.setSumiNativeNowPlayingPlayback(
+            .paused,
             using: context,
             in: window
         )
-        let didPlay = await tab.setSumiNativeNowPlayingSuspended(
-            false,
+        let didPlay = await tab.setSumiNativeNowPlayingPlayback(
+            .playing,
             using: context,
             in: window
         )
@@ -1064,8 +1552,7 @@ final class SumiNativeNowPlayingRuntimeContextTests: XCTestCase {
         XCTAssertTrue(didPause)
         XCTAssertTrue(didPlay)
         XCTAssertTrue(didDismiss)
-        XCTAssertEqual(webView.suspendedValues, [true, false, false])
-        XCTAssertEqual(webView.pauseAllCallCount, 1)
+        XCTAssertEqual(webView.playbackStates, [.paused, .playing, .paused])
     }
 
     private func makeTab(_ url: String) -> Tab {
@@ -1080,6 +1567,11 @@ final class SumiNativeNowPlayingRuntimeContextTests: XCTestCase {
 private final class PictureInPictureNowPlayingWebViewStub: SumiNowPlayingWebViewAdapter {
     private let toggleResult: Bool
     private(set) var togglePictureInPictureCallCount = 0
+    private var audioState = SumiWebViewAudioState.unmuted(isPlayingAudio: true)
+
+    var sumiNowPlayingAudioState: SumiWebViewAudioState {
+        audioState
+    }
 
     init(toggleResult: Bool) {
         self.toggleResult = toggleResult
@@ -1094,9 +1586,12 @@ private final class PictureInPictureNowPlayingWebViewStub: SumiNowPlayingWebView
         )
     }
 
-    func sumiSetAllMediaPlaybackSuspended(_: Bool) async -> Bool { false }
+    func sumiSetNowPlayingPlayback(_: SumiBackgroundMediaPlaybackState) async -> Bool { false }
 
-    func sumiPauseAllMediaPlayback() async -> Bool { false }
+    func sumiSetNowPlayingAudioMuted(_ muted: Bool) -> Bool {
+        audioState = audioState.withMuted(muted)
+        return true
+    }
 
     func sumiTogglePictureInPicture() -> Bool {
         togglePictureInPictureCallCount += 1
@@ -1106,8 +1601,16 @@ private final class PictureInPictureNowPlayingWebViewStub: SumiNowPlayingWebView
 
 @MainActor
 private final class PagePlaybackNowPlayingWebViewStub: SumiNowPlayingWebViewAdapter {
-    private(set) var suspendedValues: [Bool] = []
-    private(set) var pauseAllCallCount = 0
+    private(set) var playbackStates: [SumiBackgroundMediaPlaybackState] = []
+    var audioState: SumiWebViewAudioState
+
+    init(audioState: SumiWebViewAudioState = .unmuted(isPlayingAudio: true)) {
+        self.audioState = audioState
+    }
+
+    var sumiNowPlayingAudioState: SumiWebViewAudioState {
+        audioState
+    }
 
     func sumiRequestNowPlayingInfo() async -> SumiNativeNowPlayingInfo {
         SumiNativeNowPlayingInfo(
@@ -1118,13 +1621,15 @@ private final class PagePlaybackNowPlayingWebViewStub: SumiNowPlayingWebViewAdap
         )
     }
 
-    func sumiSetAllMediaPlaybackSuspended(_ suspended: Bool) async -> Bool {
-        suspendedValues.append(suspended)
+    func sumiSetNowPlayingPlayback(
+        _ playbackState: SumiBackgroundMediaPlaybackState
+    ) async -> Bool {
+        playbackStates.append(playbackState)
         return true
     }
 
-    func sumiPauseAllMediaPlayback() async -> Bool {
-        pauseAllCallCount += 1
+    func sumiSetNowPlayingAudioMuted(_ muted: Bool) -> Bool {
+        audioState = audioState.withMuted(muted)
         return true
     }
 
