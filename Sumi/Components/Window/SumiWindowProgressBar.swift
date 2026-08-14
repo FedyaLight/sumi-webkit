@@ -157,12 +157,16 @@ private final class SumiProgressBarView: NSView {
     private let railLayer = CALayer()
     private let sweepLayer = CALayer()
 
-    private var isLoading = false
     private var isLongLoad = false
     private var currentAccentColor = NSColor.controlAccentColor
     private var isDarkTheme = false
     private var reduceMotion = false
     private var longLoadTimer: Timer?
+    private lazy var loadingPresentationSession = PageLoadingIndicatorSession {
+        [weak self] isPresenting in
+        guard let self else { return }
+        isPresenting ? startLoading() : stopLoading()
+    }
 
     override var isFlipped: Bool {
         true
@@ -183,7 +187,7 @@ private final class SumiProgressBarView: NSView {
     }
 
     override func isAccessibilityElement() -> Bool {
-        isLoading
+        loadingPresentationSession.isPresenting
     }
 
     override func accessibilityRole() -> NSAccessibility.Role? {
@@ -200,12 +204,11 @@ private final class SumiProgressBarView: NSView {
         isDark: Bool,
         reduceMotion: Bool
     ) {
-        let loadingChanged = self.isLoading != isLoading
+        let wasPresentingLoading = loadingPresentationSession.isPresenting
         let colorChanged = currentAccentColor != accentColor
             || isDarkTheme != isDark
         let motionPreferenceChanged = self.reduceMotion != reduceMotion
 
-        self.isLoading = isLoading
         currentAccentColor = accentColor
         isDarkTheme = isDark
         self.reduceMotion = reduceMotion
@@ -214,15 +217,14 @@ private final class SumiProgressBarView: NSView {
             updateColors()
         }
 
-        if loadingChanged {
-            isLoading ? startLoading() : stopLoading()
-        } else if isLoading, motionPreferenceChanged {
+        loadingPresentationSession.observe(isLoading: isLoading)
+        if wasPresentingLoading, isLoading, motionPreferenceChanged {
             startLoading()
         }
     }
 
     func prepareForRemoval() {
-        isLoading = false
+        loadingPresentationSession.invalidate()
         longLoadTimer?.invalidate()
         longLoadTimer = nil
         railLayer.removeAllAnimations()
@@ -378,7 +380,7 @@ private final class SumiProgressBarView: NSView {
 
     @objc private func enterLongLoad() {
         longLoadTimer = nil
-        guard isLoading, !reduceMotion else { return }
+        guard loadingPresentationSession.isPresenting, !reduceMotion else { return }
 
         let presentationBounds = railLayer.presentation()?.bounds ?? railLayer.bounds
         let presentationOpacity = railLayer.presentation()?.opacity ?? railLayer.opacity

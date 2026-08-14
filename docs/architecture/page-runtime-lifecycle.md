@@ -81,6 +81,12 @@ surface with no browser-internal status text. Only recovery failure exposes
 repair actions, matching the error-page role in other WebKit browsers. Retrying
 it starts a new exact materialization request.
 
+The window loading indicator is a visual projection, not navigation authority.
+It keeps one presentation alive while a terminal callback is settling and
+cancels that settlement when a successor main-frame load begins immediately.
+This makes redirect and supersession chains visually continuous without merging
+their `WKNavigation` lifecycles or changing the tab's exact loading state.
+
 ## Restore and `about:blank`
 
 Session restore is data-first. Durable URL and structural state are restored
