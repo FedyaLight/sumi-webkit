@@ -3,7 +3,7 @@ import Foundation
 @MainActor
 protocol WindowWebContentBrowserContext: AnyObject {
     func currentTab(for windowState: BrowserWindowState) -> Tab?
-    func tab(for tabId: UUID) -> Tab?
+    func tab(for tabId: UUID, in windowState: BrowserWindowState) -> Tab?
     func enqueueWindowMutationDuringHistorySwipe(
         _ kind: HistorySwipeDeferredWindowMutationKind,
         for windowState: BrowserWindowState
@@ -46,8 +46,11 @@ final class BrowserManagerWindowWebContentContext: WindowWebContentBrowserContex
         windowTabs.currentTab(for: windowState)
     }
 
-    func tab(for tabId: UUID) -> Tab? {
-        membership.tab(for: tabId)
+    func tab(for tabId: UUID, in windowState: BrowserWindowState) -> Tab? {
+        if windowState.isIncognito {
+            return windowState.ephemeralTabs.first { $0.id == tabId }
+        }
+        return membership.tab(for: tabId)
     }
 
     func enqueueWindowMutationDuringHistorySwipe(

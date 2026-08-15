@@ -1511,7 +1511,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             nil
         }
 
-        func tab(for tabID: UUID) -> Tab? {
+        func tab(for tabID: UUID, in _: BrowserWindowState) -> Tab? {
             tabsByID[tabID]
         }
 

@@ -100,6 +100,78 @@ final class SumiTabLifecycleReentrancyTests: XCTestCase {
         )
     }
 
+    func testFinishRecoversCommitForCurrentRewriteInsteadOfReusingPriorDocumentLease() {
+        let firstURL = URL(string: "https://example.com/first")!
+        let redirectURL = URL(string: "https://example.com/redirected")!
+        let tab = Tab(url: firstURL, loadsCachedFaviconOnInit: false)
+        let webView = SumiNavigationURLReportingWebView(frame: .zero)
+        let responder = tab.makeMainFrameLifecycleResponder()
+        var presentedURLs: [URL?] = []
+        var routing = TabWebViewRoutingRuntime.inactive
+        routing.pagePresentationDidChange = { _, presentedWebView in
+            presentedURLs.append(presentedWebView.url)
+        }
+        tab.navigationRuntime.webViewRouting = routing
+        let firstNavigation = NSObject()
+        let firstContext = SumiNavigationContext(
+            navigationID: ObjectIdentifier(firstNavigation),
+            navigationLifetime: firstNavigation,
+            action: nil,
+            url: firstURL,
+            isCurrent: true,
+            isCommitted: true,
+            isMainFrame: true,
+            webView: webView
+        )
+        webView.reportedURL = firstURL
+        webView.reportedCommittedURL = firstURL
+        XCTAssertEqual(
+            tab.beginMainFrameLifecycle(
+                from: webView,
+                navigationID: firstContext.navigationID,
+                navigationLifetime: firstNavigation,
+                targetURL: firstURL,
+                allowsUserInitiatedSupersession: false,
+                continuationKind: nil
+            ),
+            .authority
+        )
+        responder.navigationDidCommit(firstContext)
+        XCTAssertNotNil(tab.committedDocumentRuntime.lease(for: webView))
+
+        let redirectNavigation = NSObject()
+        let redirectContext = SumiNavigationContext(
+            navigationID: ObjectIdentifier(redirectNavigation),
+            navigationLifetime: redirectNavigation,
+            action: nil,
+            url: redirectURL,
+            isCurrent: true,
+            isCommitted: true,
+            isMainFrame: true,
+            webView: webView
+        )
+        webView.reportedURL = redirectURL
+        webView.reportedCommittedURL = redirectURL
+        XCTAssertEqual(
+            tab.beginMainFrameLifecycle(
+                from: webView,
+                navigationID: redirectContext.navigationID,
+                navigationLifetime: redirectNavigation,
+                targetURL: redirectURL,
+                allowsUserInitiatedSupersession: false,
+                continuationKind: .requestRewrite
+            ),
+            .authority
+        )
+
+        responder.navigationDidFinish(redirectContext)
+
+        let redirectLease = tab.committedDocumentRuntime.lease(for: webView)
+        XCTAssertEqual(redirectLease?.committedURL, redirectURL)
+        XCTAssertEqual(tab.url, redirectURL)
+        XCTAssertEqual(presentedURLs, [firstURL, redirectURL])
+    }
+
     func testFinishPreservesCommittedDocumentWhenPresentationURLChanged() {
         let fixture = makeFixture()
         let finalPresentationURL = URL(

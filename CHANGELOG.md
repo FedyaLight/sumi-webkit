@@ -2,6 +2,30 @@
 
 Sumi follows semantic product versions. This changelog records public release scope, not every internal refactor.
 
+## 0.0.4 Alpha 4 — 2026-08-15
+
+Alpha 4 improves redirect and external-app handoffs, keeps navigation feedback continuous, makes Sidebar Mini Player sessions more predictable, and prevents automatic history retention from signing users out of websites.
+
+### Navigation and External Apps
+
+- Fixed OAuth and other external-app callbacks so an active main-frame redirect can ask for permission and complete even when WebKit no longer reports the original click.
+- Limited automatic external-app attempts to one per page while keeping iframe, background, Glance, and other non-normal surfaces blocked.
+- Preserved the committed page across redirect settlement and presentation-URL changes so popup and page ownership remain attached to the document actually on screen.
+- Recovered the exact current document when WebKit finishes a rewritten navigation without delivering its commit callback, preventing an older page lease from hiding the new page.
+- Kept the loading indicator continuous across short redirect and successor-navigation chains instead of briefly disappearing between loads.
+
+### Sidebar Mini Player
+
+- Reworked media-card state around the exact page session in its window, preventing controls from affecting another residence of the same tab.
+- Kept cards stable after pausing or muting from the Mini Player, without resuming media when the page is activated.
+- Made dismissed cards stay dismissed until a new audible playback session starts, and rolled back failed or stale media commands cleanly.
+
+### Privacy and Reliability
+
+- Changed automatic retention to delete only expired browsing history; website data and sign-ins are preserved. Manual website-data and cache clearing remain available.
+- Fixed private-window pages loading in WebKit without being attached to the visible compositor.
+- Hardened external-app admission so stored permissions cannot be reused by subframes or auxiliary surfaces, even after a user interaction.
+
 ## 0.0.3 Alpha 3 — 2026-08-11
 
 Alpha 3 improves navigation and Glance behavior, media playback, fullscreen reliability, sidebar interactions, Settings, and WebKit page lifecycle management.

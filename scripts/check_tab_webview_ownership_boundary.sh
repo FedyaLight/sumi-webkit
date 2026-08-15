@@ -24,6 +24,7 @@ main_frame_load_runtime="Sumi/Models/Tab/TabMainFrameLoadRuntime.swift"
 web_view_rebuild_epoch="Sumi/Models/Tab/TabWebViewRebuildEpoch.swift"
 main_frame_transaction="Sumi/Models/Tab/TabMainFrameRuntimeTransaction.swift"
 main_frame_capabilities="Sumi/Models/Tab/TabMainFrameRuntimeCapabilities.swift"
+main_frame_lifecycle_capabilities="Sumi/Models/Tab/TabMainFrameLifecycleRuntimeCapabilities.swift"
 authority_effect_ledger="Sumi/Models/Tab/TabMainFrameAuthorityEffectLedger.swift"
 participant_effect_ledger="Sumi/Models/Tab/TabMainFrameParticipantEffectLedger.swift"
 authority_reducer="Sumi/Models/Tab/TabMainFrameAuthorityReducer.swift"
@@ -141,7 +142,7 @@ while IFS= read -r match; do
   file="${match%%:*}"
   content="${match#*:*:}"
   case "$file" in
-    "$main_frame_capabilities")
+    "$main_frame_capabilities"|"$main_frame_lifecycle_capabilities")
       ;;
     "$main_frame_transaction")
       if [[ ! "$content" =~ ^[[:space:]]+TabMainFrame(Lifecycle|Promotion)Settlement,$ ]]; then

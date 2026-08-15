@@ -1555,6 +1555,40 @@ final class SumiNativeNowPlayingRuntimeContextTests: XCTestCase {
         XCTAssertEqual(webView.playbackStates, [.paused, .playing, .paused])
     }
 
+    func testMuteCommandChangesOnlyResolvedPageMediaSession() {
+        let tab = makeTab("https://example.com/media")
+        let window = BrowserWindowState()
+        let webView = PagePlaybackNowPlayingWebViewStub()
+        var broadcastMuteCommands: [(Bool, UUID)] = []
+        var routing = TabWebViewRoutingRuntime.inactive
+        routing.setMuteState = { muted, tabID in
+            broadcastMuteCommands.append((muted, tabID))
+        }
+        tab.navigationRuntime.webViewRouting = routing
+        let context = SumiNativeNowPlayingRuntimeContext(
+            candidateTabs: { [] },
+            windowState: { _ in window },
+            windowRegistry: { nil },
+            resolvedTab: { _, _ in tab },
+            resolvedNowPlayingWebView: { _, _ in webView },
+            selectTab: { _, _ in XCTFail("Mute must not select the tab") }
+        )
+
+        let didMute = tab.setSumiNativeNowPlayingMuted(
+            true,
+            using: context,
+            in: window
+        )
+
+        XCTAssertTrue(didMute)
+        XCTAssertTrue(webView.audioState.isMuted)
+        XCTAssertTrue(tab.audioState.isMuted)
+        XCTAssertTrue(
+            broadcastMuteCommands.isEmpty,
+            "An exact Page Media Session command must not mute sibling residences"
+        )
+    }
+
     private func makeTab(_ url: String) -> Tab {
         Tab(
             url: URL(string: url)!,

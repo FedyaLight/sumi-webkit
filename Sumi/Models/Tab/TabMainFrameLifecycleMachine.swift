@@ -122,6 +122,22 @@ final class TabMainFrameLifecycleMachine {
         )
     }
 
+    func documentLease(
+        _ lease: TabMainFrameDocumentLease,
+        matches webView: WKWebView,
+        navigationID: ObjectIdentifier,
+        navigationLifetime: AnyObject,
+        currentIntent: TabMainFrameNavigationIntent
+    ) -> Bool {
+        participantTransitions.documentLease(
+            lease,
+            matches: webView,
+            navigationID: navigationID,
+            navigationLifetime: navigationLifetime,
+            currentIntent: currentIntent
+        )
+    }
+
     func loadingWebViews(revision: UInt64) -> [WKWebView] {
         participantTransitions.loadingWebViews(revision: revision)
     }

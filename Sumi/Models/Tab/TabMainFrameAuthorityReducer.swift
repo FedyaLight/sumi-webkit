@@ -427,10 +427,18 @@ enum TabMainFrameAuthorityReducer {
                 becomesAuthority = true
                 beganNewGeneration = true
             }
+        } else if kind == .requestRewrite,
+                  participant.hasCommittedDocument,
+                  ownsAuthority,
+                  participant.documentGeneration == next.documentGeneration {
+            next.documentGeneration &+= 1
+            participant.documentGeneration = next.documentGeneration
+            becomesAuthority = true
+            beganNewGeneration = true
         }
         participant.targetURL = targetURL
         participant.phase = .active(navigationID: navigationID)
-        if kind == .clientRedirect {
+        if kind == .clientRedirect || beganNewGeneration {
             participant.hasCommittedDocument = false
             participant.committedDocumentURL = nil
             participant.isPDFResponse = nil

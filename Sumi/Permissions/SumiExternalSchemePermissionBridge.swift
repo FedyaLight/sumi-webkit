@@ -102,7 +102,7 @@ final class SumiExternalSchemePermissionBridge {
 
         let context = securityContext(for: request, tabContext: tabContext)
         let isForegroundMainFrame = request.isMainFrame && context.canPresentPromptUI
-        guard request.isUserActivated || isForegroundMainFrame else {
+        guard isForegroundMainFrame else {
             return finish(
                 request,
                 tabContext: tabContext,

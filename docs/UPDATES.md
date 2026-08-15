@@ -22,14 +22,14 @@ Run this only for a Sumi bundle you intentionally downloaded. Sumi itself never 
 ## Update Flow
 
 - Alpha 1 reads `appcast.xml`; Alpha 2 is published there once as a migration bridge for existing installations.
-- Alpha 2 and later Alpha builds read `https://fedyalight.github.io/sumi-webkit/appcast-alpha.xml`; Alpha 3 is published there as `0.0.3 build 5`.
+- Alpha 2 and later Alpha builds read `https://fedyalight.github.io/sumi-webkit/appcast-alpha.xml`; Alpha 4 is published there as `0.0.4 build 8`.
 - `Sumi/Info.plist` contains the Sparkle EdDSA public key as `SUPublicEDKey`.
 - Sparkle verifies update archives using the signature in the appcast enclosure.
 - Users explicitly start installation from Settings > About or the sidebar notice.
 - Sparkle handles download, installation, and relaunch.
 - After relaunch, the completed sidebar notice links to `https://sumi-browser.netlify.app/changelog/#<display-version>`; each public release entry must use its display version as the Changelog anchor.
 
-The appcast for Alpha 1 was intentionally empty because no older public build existed. Alpha 2 established the bridge and Alpha channel; Alpha 3 advances that channel with one signed Universal update archive for both Apple silicon and Intel installations.
+The appcast for Alpha 1 was intentionally empty because no older public build existed. Alpha 2 established the bridge and Alpha channel; each later Alpha advances that channel with one signed Universal update archive for both Apple silicon and Intel installations.
 
 ## Signing Boundaries
 

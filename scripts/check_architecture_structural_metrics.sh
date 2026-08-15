@@ -41,6 +41,7 @@ role_budgets=(
   "Normal WebView setup|Sumi/Models/Tab/TabNormalWebViewSetupService.swift|300|-"
   "Main-frame transaction|Sumi/Models/Tab/TabMainFrameRuntimeTransaction.swift|780|-"
   "Main-frame runtime capabilities|Sumi/Models/Tab/TabMainFrameRuntimeCapabilities.swift|124|-"
+  "Main-frame lifecycle capabilities|Sumi/Models/Tab/TabMainFrameLifecycleRuntimeCapabilities.swift|85|-"
   "Main-frame runtime types|Sumi/Models/Tab/TabMainFrameRuntimeTypes.swift|390|-"
   "Main-frame transition output|Sumi/Models/Tab/TabMainFrameTransitionOutput.swift|60|-"
   "Web-content recovery capabilities|Sumi/Models/Tab/TabWebContentRecoveryCapabilities.swift|20|-"

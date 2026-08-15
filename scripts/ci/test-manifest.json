@@ -481,6 +481,7 @@
         "SumiTests/NativeSurfaceScrollHoverCoordinatorTests",
         "SumiTests/OpenWindowSessionCatalogTests",
         "SumiTests/OverlayScrollIndicatorStyleTests",
+        "SumiTests/PageLoadingIndicatorSessionTests",
         "SumiTests/PendingShortcutPinAdopterTests",
         "SumiTests/PendingTabProfileInheritanceTests",
         "SumiTests/PerformanceSettingsTests",

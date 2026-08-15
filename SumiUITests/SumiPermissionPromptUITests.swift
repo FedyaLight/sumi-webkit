@@ -96,7 +96,7 @@ final class SumiPermissionPromptUITests: SumiLaunchSmokeUITestCase {
             timeout: 20,
             message: "The loopback permission fixture did not render"
         )
-        let permissionLink = renderedElement(label: linkLabel, in: browserWindow)
+        let permissionLink = browserWindow.buttons[linkLabel]
         wait(
             for: NSPredicate(format: "exists == true AND hittable == true"),
             on: permissionLink,

@@ -172,7 +172,7 @@ final class WindowWebContentPresentationPlanner {
                 presentation: .empty
             )
         }
-        guard let tab = browserContext.tab(for: pageID) else {
+        guard let tab = browserContext.tab(for: pageID, in: windowState) else {
             return WindowWebContentPaneDecision(
                 pageID: pageID,
                 tab: nil,

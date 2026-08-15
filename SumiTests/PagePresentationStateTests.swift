@@ -864,7 +864,9 @@ private final class PagePresentationBrowserContextStub:
     }
 
     func currentTab(for _: BrowserWindowState) -> Tab? { currentTabValue }
-    func tab(for tabID: UUID) -> Tab? { tabsByID[tabID] }
+    func tab(for tabID: UUID, in _: BrowserWindowState) -> Tab? {
+        tabsByID[tabID]
+    }
     func enqueueWindowMutationDuringHistorySwipe(
         _: HistorySwipeDeferredWindowMutationKind,
         for _: BrowserWindowState

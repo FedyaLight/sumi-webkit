@@ -105,6 +105,26 @@ final class TabMainFrameParticipantTransitionApplier {
         )
     }
 
+    func documentLease(
+        _ lease: TabMainFrameDocumentLease,
+        matches webView: WKWebView,
+        navigationID: ObjectIdentifier,
+        navigationLifetime: AnyObject,
+        currentIntent: TabMainFrameNavigationIntent
+    ) -> Bool {
+        guard let participant = participants.exactActiveEntry(
+            for: webView,
+            navigationID: navigationID,
+            navigationLifetime: navigationLifetime,
+            revision: currentIntent.revision
+        ) else { return false }
+        return lease.webViewID == ObjectIdentifier(webView)
+            && lease.revision == participant.revision
+            && lease.documentGeneration == participant.documentGeneration
+            && lease.participantID == participant.id
+            && participant.hasCommittedDocument
+    }
+
     func loadingWebViews(revision: UInt64) -> [WKWebView] {
         participants.loadingWebViews(revision: revision)
     }

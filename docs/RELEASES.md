@@ -2,17 +2,17 @@
 
 Sumi releases are built on a local release Mac with the checked-in Xcode project signing settings. GitHub-hosted runners run portable guardrails, but do not produce the public DMGs because their macOS image may lag the SDK required by Sumi's WebKit runtime.
 
-## Alpha 3 Identity
+## Alpha 4 Identity
 
-- Product version: `0.0.3`
-- Build number: `5`
-- Product stage: `Alpha 3`
+- Product version: `0.0.4`
+- Build number: `8`
+- Product stage: `Alpha 4`
 - Update channel: `alpha`
-- Tag: `v0.0.3`
+- Tag: `v0.0.4`
 - GitHub release: ordinary public Release, not draft and not GitHub prerelease
-- Apple silicon DMG: `release/artifacts/0.0.3/Sumi-0.0.3-macos-arm64.dmg`
-- Intel DMG: `release/artifacts/0.0.3/Sumi-0.0.3-macos-x86_64.dmg`
-- Sparkle archive: `Sumi-0.0.3-build5-macos-universal.dmg`
+- Apple silicon DMG: `release/artifacts/0.0.4/Sumi-0.0.4-macos-arm64.dmg`
+- Intel DMG: `release/artifacts/0.0.4/Sumi-0.0.4-macos-x86_64.dmg`
+- Sparkle archive: `Sumi-0.0.4-build8-macos-universal.dmg`
 - Alpha appcast: `https://fedyalight.github.io/sumi-webkit/appcast-alpha.xml`
 
 The `0.0.x` version line is Sumi's public Alpha line. GitHub's prerelease flag is not used: Alpha builds are ordinary Releases. Alpha status remains explicit in the release title, notes, application About panel, update channel, and repository documentation.
@@ -42,39 +42,39 @@ The architecture-specific DMGs are direct downloads. The Universal DMG is copied
 After the final Universal DMG exists:
 
 ```sh
-DOWNLOAD_URL_PREFIX="https://github.com/FedyaLight/sumi-webkit/releases/download/v0.0.3/" \
+DOWNLOAD_URL_PREFIX="https://github.com/FedyaLight/sumi-webkit/releases/download/v0.0.4/" \
 SPARKLE_ED_KEY_FILE="/path/to/sumi-sparkle-ed25519.key" \
-scripts/release/generate_alpha_3_appcast.sh
+scripts/release/generate_current_alpha_appcast.sh
 ```
 
-Alpha 3 updates only `appcast-alpha.xml`. The legacy `appcast.xml` remains on Alpha 2 so installed `0.0.1` builds can cross the one-time bridge and then move to the Alpha channel.
+Alpha 4 updates only `appcast-alpha.xml`. The legacy `appcast.xml` remains on Alpha 2 so installed `0.0.1` builds can cross the one-time bridge and then move to the Alpha channel.
 
-## Publish Alpha 3
+## Publish Alpha 4
 
 Do not publish until the release artifacts, signatures, appcast signature, and update path have passed the checks below:
 
 ```sh
-gh release create v0.0.3 \
-  release/artifacts/0.0.3/Sumi-0.0.3-macos-arm64.dmg \
-  release/artifacts/0.0.3/Sumi-0.0.3-macos-x86_64.dmg \
-  release/artifacts/0.0.3/Sumi-0.0.3-build5-macos-universal.dmg \
-  --title "Sumi 0.0.3 Alpha 3" \
-  --notes-file docs/releases/0.0.3.md \
+gh release create v0.0.4 \
+  release/artifacts/0.0.4/Sumi-0.0.4-macos-arm64.dmg \
+  release/artifacts/0.0.4/Sumi-0.0.4-macos-x86_64.dmg \
+  release/artifacts/0.0.4/Sumi-0.0.4-build8-macos-universal.dmg \
+  --title "Sumi 0.0.4 Alpha 4" \
+  --notes-file docs/releases/0.0.4.md \
   --latest
 ```
 
-Do not pass `--prerelease`. Alpha 3 is a normal public GitHub Release.
+Do not pass `--prerelease`. Alpha 4 is a normal public GitHub Release.
 
 ## Verification
 
-- Confirm version `0.0.3`, build `5`, channel `alpha`, feed URL, and executable architecture.
+- Confirm version `0.0.4`, build `8`, channel `alpha`, feed URL, and executable architecture.
 - Mount every DMG and verify its Finder layout and code signature.
 - Confirm the Universal Sparkle artifact contains both `arm64` and `x86_64` executable slices.
 - Verify the Sparkle enclosure length and EdDSA signature against the published immutable asset.
 - Test the Apple-silicon artifact on Apple silicon.
 - Test the Intel artifact on physical Intel hardware when available.
 - Confirm release notes, asset names, SHA-256 values, and the `latest` release link.
-- Confirm an installed `0.0.2` build offers `0.0.3 build 5` from `appcast-alpha.xml`.
+- Confirm an installed Alpha 2 or later build offers `0.0.4 build 8` from `appcast-alpha.xml`.
 
 ## Distribution Boundary
 

@@ -314,10 +314,10 @@ final class SumiTabLifecycleNavigationResponder:
             ).isParticipant else { return }
             // Recover a missing commit, but never re-identify a document whose
             // exact commit was already accepted.
-            if tab.committedDocumentRuntime.lease(for: webView) == nil {
+            if !hasCurrentDocumentLease(tab, webView, context) {
                 navigationDidCommit(context)
             }
-            guard tab.committedDocumentRuntime.lease(for: webView) != nil else {
+            guard hasCurrentDocumentLease(tab, webView, context) else {
                 let result = tab.abortMainFrameNavigation(
                     from: webView,
                     navigationID: context.navigationID,
@@ -344,6 +344,22 @@ final class SumiTabLifecycleNavigationResponder:
             publication,
             tab: tab,
             lifecycle: lifecycle
+        )
+    }
+
+    private func hasCurrentDocumentLease(
+        _ tab: Tab,
+        _ webView: WKWebView,
+        _ context: SumiNavigationContext
+    ) -> Bool {
+        guard let lease = tab.committedDocumentRuntime.lease(for: webView) else {
+            return false
+        }
+        return lifecycle.documentLease(
+            lease,
+            matches: webView,
+            navigationID: context.navigationID,
+            navigationLifetime: context.navigationLifetime
         )
     }
 
@@ -807,19 +823,5 @@ final class SumiTabLifecycleNavigationResponder:
                 context.navigationLifetime,
                 succeeded
             )
-    }
-}
-
-private extension WKError {
-    var sumiIsContentPluginHandledLoad: Bool {
-        let nsError = self as NSError
-        return (nsError.domain == WKErrorDomain
-                || nsError.domain == "WebKitErrorDomain")
-            && nsError.code == 204
-    }
-
-    var sumiIsNavigationCancelled: Bool {
-        let nsError = self as NSError
-        return nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled
     }
 }

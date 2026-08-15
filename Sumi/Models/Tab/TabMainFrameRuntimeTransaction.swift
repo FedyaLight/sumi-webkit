@@ -400,6 +400,21 @@ final class TabMainFrameRuntimeTransaction:
         )
     }
 
+    func documentLease(
+        _ lease: TabMainFrameDocumentLease,
+        matches webView: WKWebView,
+        navigationID: ObjectIdentifier,
+        navigationLifetime: AnyObject
+    ) -> Bool {
+        lifecycle.documentLease(
+            lease,
+            matches: webView,
+            navigationID: navigationID,
+            navigationLifetime: navigationLifetime,
+            currentIntent: mainFrameLoads.currentIntent
+        )
+    }
+
     func prepareAuthorityForCommit(
         from webView: WKWebView,
         navigationID: ObjectIdentifier, navigationLifetime: AnyObject

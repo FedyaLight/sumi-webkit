@@ -42,7 +42,6 @@ extension Tab {
         ), webView.sumiSetNowPlayingAudioMuted(muted)
         else { return false }
 
-        navigationRuntime.webViewRouting.setMuteState(muted, id)
         applyAudioState(audioState.withMuted(muted))
         return true
     }

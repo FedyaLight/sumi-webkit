@@ -1160,7 +1160,7 @@ private final class ReaderFocusBrowserContext: WindowWebContentBrowserContext {
         currentTab
     }
 
-    func tab(for tabId: UUID) -> Tab? {
+    func tab(for tabId: UUID, in _: BrowserWindowState) -> Tab? {
         tabsByID[tabId]
     }
 

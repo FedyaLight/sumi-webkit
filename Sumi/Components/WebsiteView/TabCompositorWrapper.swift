@@ -154,7 +154,7 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
             pageID in
             let tab = currentTab?.id == pageID
                 ? currentTab
-                : browserContext.tab(for: pageID)
+                : browserContext.tab(for: pageID, in: windowState)
             return (pageID, pagePresentation(for: tab))
         })
         return WebsiteDisplayState(

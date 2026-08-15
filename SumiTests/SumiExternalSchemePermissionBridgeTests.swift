@@ -257,6 +257,33 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
         XCTAssertTrue(resolver.openedURLs.isEmpty)
     }
 
+    func testUserActivatedSubframeCannotReuseAllowOrOpen() async {
+        let coordinator = ExternalSchemeFakePermissionCoordinator(
+            decision: externalCoordinatorDecision(.granted, reason: "stored-allow")
+        )
+        let resolver = ExternalSchemeFakeResolver(handlerSchemes: ["mailto"])
+        let bridge = SumiExternalSchemePermissionBridge(
+            coordinator: coordinator,
+            appResolver: resolver,
+            now: { externalFixedDate }
+        )
+
+        let result = await bridge.evaluate(
+            externalRequest(
+                targetURL: URL(string: "mailto:test@example.com")!,
+                userActivation: .navigationAction,
+                isMainFrame: false
+            ),
+            tabContext: externalTabContext()
+        )
+
+        let contexts = await coordinator.recordedContexts()
+        XCTAssertFalse(result.didOpen)
+        XCTAssertEqual(result.record?.reason, "external-scheme-background-default-block")
+        XCTAssertTrue(contexts.isEmpty)
+        XCTAssertTrue(resolver.openedURLs.isEmpty)
+    }
+
     func testNonNormalSurfaceCannotPromptOrOpenWithoutUserActivation() async {
         let coordinator = ExternalSchemeQueryThenRequestCoordinator(
             queryDecision: externalCoordinatorDecision(.promptRequired, reason: "ask"),
@@ -281,6 +308,32 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
         XCTAssertFalse(result.didOpen)
         XCTAssertEqual(result.record?.reason, "external-scheme-background-default-block")
         XCTAssertEqual(requestCount, 0)
+        XCTAssertTrue(resolver.openedURLs.isEmpty)
+    }
+
+    func testUserActivatedNonNormalSurfaceCannotReuseAllowOrOpen() async {
+        let coordinator = ExternalSchemeFakePermissionCoordinator(
+            decision: externalCoordinatorDecision(.granted, reason: "stored-allow")
+        )
+        let resolver = ExternalSchemeFakeResolver(handlerSchemes: ["mailto"])
+        let bridge = SumiExternalSchemePermissionBridge(
+            coordinator: coordinator,
+            appResolver: resolver,
+            now: { externalFixedDate }
+        )
+
+        let result = await bridge.evaluate(
+            externalRequest(
+                targetURL: URL(string: "mailto:test@example.com")!,
+                userActivation: .navigationAction
+            ),
+            tabContext: externalTabContext(surface: .glance)
+        )
+
+        let contexts = await coordinator.recordedContexts()
+        XCTAssertFalse(result.didOpen)
+        XCTAssertEqual(result.record?.reason, "external-scheme-background-default-block")
+        XCTAssertTrue(contexts.isEmpty)
         XCTAssertTrue(resolver.openedURLs.isEmpty)
     }
 
