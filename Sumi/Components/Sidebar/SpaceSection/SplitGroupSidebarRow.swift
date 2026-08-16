@@ -482,7 +482,6 @@ private struct SplitGroupTrailingActionButton: View {
             )
         )
         .opacity(showsAction ? 1 : 0)
-        .sidebarZenActionOpacity(showsAction)
         .allowsHitTesting(showsAction && !freezesHoverState)
         .accessibilityHidden(!showsAction)
         .sidebarHover(

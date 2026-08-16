@@ -73,25 +73,6 @@ private struct SidebarZenPressEffectModifier: ViewModifier {
     }
 }
 
-private struct SidebarZenActionOpacityModifier: ViewModifier {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.sumiSettings) private var sumiSettings
-    let isVisible: Bool
-
-    func body(content: Content) -> some View {
-        content.animation(
-            SidebarMotionPolicy.actionFadeAnimation(
-                for: SidebarMotionPolicy.currentMode(reduceMotion: shouldReduceMotion)
-            ),
-            value: isVisible
-        )
-    }
-
-    private var shouldReduceMotion: Bool {
-        reduceMotion || sumiSettings.shouldReduceChromeMotion
-    }
-}
-
 struct SidebarZenActionButtonStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.sumiSettings) private var sumiSettings
@@ -195,9 +176,5 @@ extension View {
     /// SwiftUI swaps the live and snapshot trees.
     func sidebarZenPressEffectRestingGeometry() -> some View {
         scaleEffect(1)
-    }
-
-    func sidebarZenActionOpacity(_ isVisible: Bool) -> some View {
-        modifier(SidebarZenActionOpacityModifier(isVisible: isVisible))
     }
 }

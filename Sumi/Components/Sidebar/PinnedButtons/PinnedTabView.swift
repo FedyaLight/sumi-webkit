@@ -78,7 +78,6 @@ struct PinnedTabView: View {
                             )
                         )
                         .opacity(shouldShowActionButton ? 1 : 0)
-                        .sidebarZenActionOpacity(shouldShowActionButton)
                         .allowsHitTesting(shouldShowActionButton && !freezesHoverState)
                         .accessibilityHidden(!shouldShowActionButton)
                         .accessibilityIdentifier(actionAccessibilityID ?? "pinned-tile-action")

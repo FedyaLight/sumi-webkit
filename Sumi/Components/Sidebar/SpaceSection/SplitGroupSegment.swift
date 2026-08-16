@@ -113,7 +113,6 @@ struct SplitGroupSegment: View {
             )
         )
         .opacity(showsMemberAction ? 1 : 0)
-        .sidebarZenActionOpacity(showsMemberAction)
         .allowsHitTesting(showsMemberAction && !freezesHoverState)
         .accessibilityHidden(!showsMemberAction)
         .sidebarHover(

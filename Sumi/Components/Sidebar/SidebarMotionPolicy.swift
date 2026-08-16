@@ -68,11 +68,6 @@ enum SidebarMotionPolicy {
         return .easeOut(duration: split ? 0.10 : 0.20)
     }
 
-    static func actionFadeAnimation(for mode: Mode) -> Animation? {
-        guard mode != .reducedMotion else { return nil }
-        return .easeOut(duration: 0.10)
-    }
-
     static func dragGapAnimation(for mode: Mode) -> Animation? {
         guard mode != .reducedMotion else { return nil }
         return .interactiveSpring(response: 0.22, dampingFraction: 0.86)

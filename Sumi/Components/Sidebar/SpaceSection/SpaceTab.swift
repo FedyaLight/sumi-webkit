@@ -384,7 +384,6 @@ struct SpaceTab: View {
             )
         )
         .opacity(showsCloseButton ? 1 : 0)
-        .sidebarZenActionOpacity(showsCloseButton)
         .allowsHitTesting(showsCloseButton && !freezesHoverState)
         .accessibilityHidden(!showsCloseButton)
         .sidebarHover(
@@ -449,7 +448,6 @@ struct SidebarGlanceTrailingAccessory: View {
             )
         )
         .opacity(showsCloseButton ? 1 : 0)
-        .sidebarZenActionOpacity(showsCloseButton)
         .allowsHitTesting(showsCloseButton && isEnabled)
         .accessibilityHidden(!showsCloseButton)
         .sidebarHover(
