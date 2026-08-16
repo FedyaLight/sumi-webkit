@@ -241,17 +241,10 @@ struct SpaceTab: View {
         tokens.primaryText
     }
 
-    @ViewBuilder
     private var favicon: some View {
-        if showsUnloadedAppearance {
-            SidebarUnloadedRegularTabFaviconIndicator(
-                size: SidebarRowLayout.faviconSize
-            ) {
-                SidebarTabFaviconView(tab: tab, size: SidebarRowLayout.faviconSize)
-            }
-        } else {
-            SidebarTabFaviconView(tab: tab, size: SidebarRowLayout.faviconSize)
-        }
+        SidebarTabFaviconView(tab: tab, size: SidebarRowLayout.faviconSize)
+            .saturation(showsUnloadedAppearance ? 0 : 1)
+            .opacity(showsUnloadedAppearance ? 0.5 : 1)
     }
 
     private var showsUnloadedAppearance: Bool {

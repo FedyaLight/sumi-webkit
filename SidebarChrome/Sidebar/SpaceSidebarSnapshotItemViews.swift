@@ -412,25 +412,14 @@ private struct SpaceSnapshotRegularTabRowView: View {
         .sidebarZenPressEffectRestingGeometry()
     }
 
-    @ViewBuilder
     private var favicon: some View {
-        if tab.showsUnloadedIndicator {
-            SidebarUnloadedRegularTabFaviconIndicator(
-                size: SidebarRowLayout.faviconSize
-            ) {
-                SpaceSnapshotIconView(
-                    icon: tab.icon,
-                    size: SidebarRowLayout.faviconSize,
-                    foregroundColor: tokens.primaryText
-                )
-            }
-        } else {
-            SpaceSnapshotIconView(
-                icon: tab.icon,
-                size: SidebarRowLayout.faviconSize,
-                foregroundColor: tokens.primaryText
-            )
-        }
+        SpaceSnapshotIconView(
+            icon: tab.icon,
+            size: SidebarRowLayout.faviconSize,
+            foregroundColor: tokens.primaryText
+        )
+            .saturation(tab.showsUnloadedIndicator ? 0 : 1)
+            .opacity(tab.showsUnloadedIndicator ? 0.5 : 1)
     }
 }
 
