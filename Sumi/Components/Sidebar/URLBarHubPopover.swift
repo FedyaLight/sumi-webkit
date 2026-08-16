@@ -17,20 +17,6 @@ private struct URLBarHubPopoverContentSizePreferenceKey: PreferenceKey {
     }
 }
 
-private struct URLBarHubNativeBackground: View {
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-
-    var body: some View {
-        ZStack {
-            NativeChromeMaterialBackground(role: .popover)
-
-            if reduceTransparency {
-                URLBarHubNativeStyle.backgroundFallback
-            }
-        }
-    }
-}
-
 struct URLBarHubPopover: View {
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(WindowRegistry.self) private var windowRegistry
@@ -194,7 +180,6 @@ struct URLBarHubPopover: View {
                 .transition(navigation.modeTransition)
         }
         .frame(width: navigation.containerWidth)
-        .background(URLBarHubNativeBackground())
         .background(
             GeometryReader { proxy in
                 Color.clear.preference(

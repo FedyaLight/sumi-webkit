@@ -220,6 +220,8 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
             browserContext: browserContext,
             windowID: windowState.id
         )
+        hostingController.view.wantsLayer = true
+        hostingController.view.layer?.backgroundColor = NSColor.clear.cgColor
         let initialSize = measuredContentSize(
             for: hostingController,
             fallback: Metrics.fallbackControlsSize
