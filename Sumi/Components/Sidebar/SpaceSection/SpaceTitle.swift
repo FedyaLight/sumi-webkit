@@ -44,9 +44,6 @@ enum SpaceTitleLeadingPresentation: Equatable {
 
 enum SpaceTitleCollapseMotion {
     static let presentationDuration: TimeInterval = 0.1
-    static let rotationOvershootDuration: TimeInterval = 0.11
-    static let rotationSettleDelay: TimeInterval = 0.055
-    static let rotationSettleDuration: TimeInterval = 0.1
 
     static func animation(
         reduceMotion: Bool,
@@ -55,33 +52,13 @@ enum SpaceTitleCollapseMotion {
         guard !reduceMotion, !shouldReduceChromeMotion else { return nil }
         return .easeInOut(duration: presentationDuration)
     }
-
-    static var rotationOvershootAnimation: Animation {
-        .timingCurve(
-            0.2,
-            0.0,
-            0.0,
-            1.0,
-            duration: rotationOvershootDuration
-        )
-    }
-
-    static var rotationSettleAnimation: Animation {
-        .easeInOut(duration: rotationSettleDuration)
-            .delay(rotationSettleDelay)
-    }
 }
 
 struct SpaceTitleChevronRotationPlan: Equatable {
-    let overshootDegrees: Double
     let destinationDegrees: Double
 
     static func resolve(isExpanded: Bool) -> Self {
-        let destinationDegrees = isExpanded ? 90.0 : 0.0
-        return Self(
-            overshootDegrees: destinationDegrees + (isExpanded ? 20.0 : -20.0),
-            destinationDegrees: destinationDegrees
-        )
+        Self(destinationDegrees: isExpanded ? 90.0 : 0.0)
     }
 }
 
@@ -181,22 +158,11 @@ private struct SpaceTitleLeadingGlyphView: View {
         rotationGeneration += 1
         let generation = rotationGeneration
         isRotationActive = true
-        withAnimation(
-            SpaceTitleCollapseMotion.rotationOvershootAnimation,
-            completionCriteria: .logicallyComplete
-        ) {
-            displayedDegrees = plan.overshootDegrees
+        withAnimation(presentationAnimation, completionCriteria: .logicallyComplete) {
+            displayedDegrees = plan.destinationDegrees
         } completion: {
             guard rotationGeneration == generation else { return }
-            withAnimation(
-                SpaceTitleCollapseMotion.rotationSettleAnimation,
-                completionCriteria: .logicallyComplete
-            ) {
-                displayedDegrees = plan.destinationDegrees
-            } completion: {
-                guard rotationGeneration == generation else { return }
-                isRotationActive = false
-            }
+            isRotationActive = false
         }
     }
 

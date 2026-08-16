@@ -170,23 +170,6 @@ final class SpaceTitleLeadingPresentationTests: XCTestCase {
         )
     }
 
-    func testChevronRotationOvershootsBothDestinationsByTwentyDegrees() {
-        XCTAssertEqual(
-            SpaceTitleChevronRotationPlan.resolve(isExpanded: true),
-            SpaceTitleChevronRotationPlan(
-                overshootDegrees: 110,
-                destinationDegrees: 90
-            )
-        )
-        XCTAssertEqual(
-            SpaceTitleChevronRotationPlan.resolve(isExpanded: false),
-            SpaceTitleChevronRotationPlan(
-                overshootDegrees: -20,
-                destinationDegrees: 0
-            )
-        )
-    }
-
 }
 
 @MainActor
