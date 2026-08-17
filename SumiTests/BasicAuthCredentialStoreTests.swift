@@ -127,7 +127,7 @@ final class BasicAuthCredentialStoreTests: XCTestCase {
                     capturedTab = tab
                     return true
                 },
-                presentCertificateTrustWarning: { _, _ in
+                presentCertificateTrustWarning: { _, _, _ in
                     XCTFail("Certificate trust sheet should not be used for HTTP Basic authentication")
                     return false
                 },

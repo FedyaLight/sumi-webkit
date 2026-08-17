@@ -267,7 +267,7 @@ struct TabLifecycleNavigationRuntime {
     var resolveAuthenticationChallenge: (
         _ challenge: URLAuthenticationChallenge,
         _ tab: Tab,
-        _ webView: WKWebView?,
+        _ webView: WKWebView,
         _ mainFrameURL: URL?
     ) async -> SumiAuthChallengeDisposition?
     var destructiveDataCleanupNavigationWillStart: (

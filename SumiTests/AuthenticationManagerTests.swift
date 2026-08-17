@@ -23,7 +23,7 @@ final class AuthenticationManagerTests: XCTestCase {
                     capturedSession = session
                     return true
                 },
-                presentCertificateTrustWarning: { _, _ in false },
+                presentCertificateTrustWarning: { _, _, _ in false },
                 dismissNativeModalPresentation: { dismissCount += 1 }
             )
         )
@@ -61,7 +61,7 @@ final class AuthenticationManagerTests: XCTestCase {
                     XCTFail("Basic Auth sheet should not be used for server trust")
                     return false
                 },
-                presentCertificateTrustWarning: { session, _ in
+                presentCertificateTrustWarning: { session, _, _ in
                     capturedSession = session
                     warningPresented.fulfill()
                     return true
@@ -101,7 +101,7 @@ final class AuthenticationManagerTests: XCTestCase {
         manager.attach(
             runtime: AuthenticationManagerRuntime(
                 presentBasicAuthSheet: { _, _ in false },
-                presentCertificateTrustWarning: { session, _ in
+                presentCertificateTrustWarning: { session, _, _ in
                     capturedSession = session
                     warningPresented.fulfill()
                     return true
@@ -141,7 +141,7 @@ final class AuthenticationManagerTests: XCTestCase {
         manager.attach(
             runtime: AuthenticationManagerRuntime(
                 presentBasicAuthSheet: { _, _ in false },
-                presentCertificateTrustWarning: { session, _ in
+                presentCertificateTrustWarning: { session, _, _ in
                     capturedSession = session
                     warningPresented.fulfill()
                     return true
@@ -177,7 +177,7 @@ final class AuthenticationManagerTests: XCTestCase {
         manager.attach(
             runtime: AuthenticationManagerRuntime(
                 presentBasicAuthSheet: { _, _ in false },
-                presentCertificateTrustWarning: { session, _ in
+                presentCertificateTrustWarning: { session, _, _ in
                     presentedCount += 1
                     capturedSession = session
                     if presentedCount == 1 {
@@ -228,7 +228,7 @@ final class AuthenticationManagerTests: XCTestCase {
         manager.attach(
             runtime: AuthenticationManagerRuntime(
                 presentBasicAuthSheet: { _, _ in false },
-                presentCertificateTrustWarning: { _, _ in
+                presentCertificateTrustWarning: { _, _, _ in
                     presentedCount += 1
                     return true
                 },
@@ -268,7 +268,7 @@ final class AuthenticationManagerTests: XCTestCase {
         manager.attach(
             runtime: AuthenticationManagerRuntime(
                 presentBasicAuthSheet: { _, _ in false },
-                presentCertificateTrustWarning: { session, _ in
+                presentCertificateTrustWarning: { session, _, _ in
                     presentedCount += 1
                     capturedSession = session
                     warningPresented.fulfill()
@@ -326,13 +326,13 @@ final class AuthenticationManagerTests: XCTestCase {
         manager.attach(
             runtime: AuthenticationManagerRuntime(
                 presentBasicAuthSheet: { _, _ in false },
-                presentCertificateTrustWarning: { session, _ in
+                presentCertificateTrustWarning: { session, _, _ in
                     capturedSession = session
                     warningPresented.fulfill()
                     return true
                 },
                 dismissNativeModalPresentation: {},
-                dismissCertificateTrustWarning: { _ in dismissCount += 1 }
+                dismissCertificateTrustWarning: { _, _, _ in dismissCount += 1 }
             )
         )
 

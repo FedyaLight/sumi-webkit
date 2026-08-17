@@ -72,7 +72,7 @@ final class SumiTabNavigationDelegateAdapter {
             autoplayPolicy: tab.navigationRuntime.navigationDelegateRuntime.autoplayPolicy
         )
         self.autoplayPolicyAdapter = SumiNavigationResponderAdapter(target: autoplayPolicy)
-        self.authentication = tab.makeAuthenticationNavigationResponder()
+        self.authentication = SumiTabAuthenticationNavigationResponder(tab: tab)
         self.authenticationAdapter = SumiNavigationResponderAdapter(
             target: authentication
         )
@@ -101,6 +101,7 @@ final class SumiTabNavigationDelegateAdapter {
     }
 
     func install(on webView: WKWebView) {
+        authenticationAdapter.bind(to: webView)
         lifecycleAdapter.bind(to: webView)
         webView.navigationDelegate = navigationResponderChain
     }

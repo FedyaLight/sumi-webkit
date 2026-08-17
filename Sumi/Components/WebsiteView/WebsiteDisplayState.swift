@@ -4,6 +4,7 @@ import WebKit
 enum PagePresentation: Equatable {
     case empty
     case browserSurface(pageID: UUID)
+    case certificateTrustWarning(pageID: UUID, host: String)
     case dataClearing(pageID: UUID, destination: URL)
     case loading(pageID: UUID, destination: URL)
     case live(pageID: UUID)
@@ -43,6 +44,12 @@ enum PagePresentationResolver {
         }
         guard tab.requiresPrimaryWebView else {
             return .browserSurface(pageID: tab.id)
+        }
+        if let session = tab.certificateTrustWarningSession {
+            return .certificateTrustWarning(
+                pageID: tab.id,
+                host: session.host
+            )
         }
         if let mutation = tab.websiteDataMutationPresentation {
             return .dataClearing(

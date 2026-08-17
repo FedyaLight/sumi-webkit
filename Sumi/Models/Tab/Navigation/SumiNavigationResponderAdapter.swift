@@ -124,11 +124,14 @@ final class SumiNavigationResponderAdapter: NavigationResponder {
         for navigation: Navigation?
     ) async -> AuthChallengeDisposition? {
         guard let responder = target as? any SumiNavigationAuthChallengeResponding else { return .next }
+        let context = navigation.map(SumiNavigationContext.init)
+        guard let webView = context?.webView ?? installedWebView else { return .next }
         authenticationChallengeWaitCount += 1
         defer { authenticationChallengeWaitCount -= 1 }
         let decision = await responder.didReceive(
             authenticationChallenge,
-            context: navigation.map(SumiNavigationContext.init)
+            webView: webView,
+            mainFrameURL: context?.url
         )
         return decision?.navigationAuthChallengeDisposition
     }

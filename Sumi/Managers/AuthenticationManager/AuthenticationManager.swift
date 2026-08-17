@@ -13,9 +13,17 @@ import WebKit
 @MainActor
 struct AuthenticationManagerRuntime {
     var presentBasicAuthSheet: (BasicAuthSheetSession, Tab) -> Bool
-    var presentCertificateTrustWarning: (CertificateTrustWarningSession, WKWebView?) -> Bool
+    var presentCertificateTrustWarning: (
+        CertificateTrustWarningSession,
+        Tab,
+        WKWebView?
+    ) -> Bool
     var dismissNativeModalPresentation: () -> Void
-    var dismissCertificateTrustWarning: (WKWebView?) -> Void = { _ in }
+    var dismissCertificateTrustWarning: (
+        CertificateTrustWarningSession,
+        Tab?,
+        WKWebView?
+    ) -> Void = { _, _, _ in }
 }
 
 @MainActor
@@ -41,15 +49,12 @@ final class AuthenticationManager: NSObject {
         let key: CertificateTrustPendingKey
         var challenges: [CertificateTrustPendingChallenge] = []
         var session: CertificateTrustWarningSession?
+        weak var tab: Tab?
         weak var webView: WKWebView?
 
         init(key: CertificateTrustPendingKey) {
             self.key = key
         }
-    }
-
-    private struct BasicAuthPendingRequest {
-        let session: BasicAuthSheetSession
     }
 
     private var runtime: AuthenticationManagerRuntime?
@@ -58,7 +63,7 @@ final class AuthenticationManager: NSObject {
     private var pendingCertificateTrustRequests: [
         CertificateTrustPendingKey: CertificateTrustPendingRequest
     ] = [:]
-    private var pendingBasicAuthRequests: [UUID: BasicAuthPendingRequest] = [:]
+    private var pendingBasicAuthRequests: [UUID: BasicAuthSheetSession] = [:]
     private var externallyCancelledBasicAuthRequestIDs = Set<UUID>()
     private var evaluatingServerTrustCompletions: [
         UUID: CertificateTrustCompletion
@@ -134,9 +139,9 @@ final class AuthenticationManager: NSObject {
 
     @discardableResult
     func cancelAuthenticationChallenge(requestID: UUID) -> Bool {
-        if let pending = pendingBasicAuthRequests[requestID] {
+        if let session = pendingBasicAuthRequests[requestID] {
             externallyCancelledBasicAuthRequestIDs.insert(requestID)
-            pending.session.cancel()
+            session.cancel()
             return true
         }
 
@@ -158,7 +163,13 @@ final class AuthenticationManager: NSObject {
         challenge.completion(.cancelAuthenticationChallenge, nil)
         if pending.challenges.isEmpty {
             pendingCertificateTrustRequests.removeValue(forKey: pending.key)
-            runtime?.dismissCertificateTrustWarning(pending.webView)
+            if let session = pending.session {
+                runtime?.dismissCertificateTrustWarning(
+                    session,
+                    pending.tab,
+                    pending.webView
+                )
+            }
             pending.session?.cancel()
         }
         return true
@@ -239,7 +250,7 @@ final class AuthenticationManager: NSObject {
             certificateFingerprint: Self.certificateFingerprint(for: trust)
         )
 
-        if isCertificateTrustApproved(for: pendingKey) {
+        if approvedCertificateTrustKeys.contains(pendingKey) {
             completionHandler(.useCredential, URLCredential(trust: trust))
             return
         }
@@ -285,18 +296,13 @@ final class AuthenticationManager: NSObject {
             }
         )
         pending.session = session
+        pending.tab = tab
         pending.webView = webView
         pendingCertificateTrustRequests[pendingKey] = pending
 
-        if runtime.presentCertificateTrustWarning(session, webView) == false {
+        if runtime.presentCertificateTrustWarning(session, tab, webView) == false {
             session.cancel()
         }
-    }
-
-    private func isCertificateTrustApproved(
-        for key: CertificateTrustPendingKey
-    ) -> Bool {
-        approvedCertificateTrustKeys.contains(key)
     }
 
     private func completeCertificateTrustRequest(
@@ -305,6 +311,14 @@ final class AuthenticationManager: NSObject {
     ) {
         guard pendingCertificateTrustRequests[pending.key] === pending else { return }
         pendingCertificateTrustRequests.removeValue(forKey: pending.key)
+
+        if let session = pending.session {
+            runtime?.dismissCertificateTrustWarning(
+                session,
+                pending.tab,
+                pending.webView
+            )
+        }
 
         if allowing {
             approvedCertificateTrustKeys.insert(pending.key)
@@ -403,9 +417,7 @@ final class AuthenticationManager: NSObject {
             }
         )
 
-        pendingBasicAuthRequests[requestID] = BasicAuthPendingRequest(
-            session: session
-        )
+        pendingBasicAuthRequests[requestID] = session
 
         if runtime.presentBasicAuthSheet(session, tab) == false {
             session.cancel()

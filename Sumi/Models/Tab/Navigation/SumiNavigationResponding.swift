@@ -255,20 +255,11 @@ protocol SumiNavigationCommitResponding: AnyObject {
 
 @MainActor
 protocol SumiNavigationAuthChallengeResponding: AnyObject {
-    func didReceive(_ authenticationChallenge: URLAuthenticationChallenge) async -> SumiAuthChallengeDisposition?
     func didReceive(
         _ authenticationChallenge: URLAuthenticationChallenge,
-        context: SumiNavigationContext?
+        webView: WKWebView,
+        mainFrameURL: URL?
     ) async -> SumiAuthChallengeDisposition?
-}
-
-extension SumiNavigationAuthChallengeResponding {
-    func didReceive(
-        _ authenticationChallenge: URLAuthenticationChallenge,
-        context: SumiNavigationContext?
-    ) async -> SumiAuthChallengeDisposition? {
-        await didReceive(authenticationChallenge)
-    }
 }
 
 @MainActor

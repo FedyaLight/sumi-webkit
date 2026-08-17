@@ -254,27 +254,21 @@ extension SumiNavigationResponderTests {
         let lifecycle = RecordingTabLifecycleNavigationRuntime()
         lifecycle.authDisposition = .credential(credential)
         tab.navigationRuntime.lifecycleNavigationRuntime = lifecycle.runtime
-        let responder = tab.makeAuthenticationNavigationResponder()
+        let responder = SumiTabAuthenticationNavigationResponder(tab: tab)
         let challenge = makeAuthenticationChallenge()
-        let navigation = NSObject()
+        let webView = WKWebView(frame: .zero)
         let mainFrameURL = URL(string: "https://auth.example/login")!
 
         let disposition = await responder.didReceive(
             challenge,
-            context: SumiNavigationContext(
-                navigationID: ObjectIdentifier(navigation),
-                navigationLifetime: navigation,
-                action: nil,
-                url: mainFrameURL,
-                isCurrent: true,
-                isMainFrame: true,
-                webView: nil
-            )
+            webView: webView,
+            mainFrameURL: mainFrameURL
         )
 
         XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertEqual(lifecycle.authChallengeHosts, ["auth.example"])
         XCTAssertEqual(lifecycle.authTabIds, [tab.id])
+        XCTAssertEqual(lifecycle.authWebViewIds, [ObjectIdentifier(webView)])
         XCTAssertEqual(lifecycle.authMainFrameURLs, [mainFrameURL])
         guard case .credential(let resolvedCredential)? = disposition else {
             return XCTFail("Expected credential disposition, got \(String(describing: disposition))")
@@ -282,6 +276,25 @@ extension SumiNavigationResponderTests {
         XCTAssertEqual(resolvedCredential.user, credential.user)
         XCTAssertEqual(resolvedCredential.password, credential.password)
         XCTAssertEqual(resolvedCredential.persistence, credential.persistence)
+    }
+
+    func testInstalledNavigationDelegateRoutesContextlessAuthenticationChallengeToOwningWebView() async {
+        let webView = WKWebView(frame: .zero)
+        let tab = Tab(existingWebView: webView, loadsCachedFaviconOnInit: false)
+        let lifecycle = RecordingTabLifecycleNavigationRuntime()
+        tab.navigationRuntime.lifecycleNavigationRuntime = lifecycle.runtime
+        tab.installNavigationDelegate(on: webView)
+        let completion = expectation(description: "authentication challenge completed")
+
+        webView.navigationDelegate?.webView?(
+            webView,
+            didReceive: makeAuthenticationChallenge()
+        ) { _, _ in
+            completion.fulfill()
+        }
+
+        await fulfillment(of: [completion], timeout: 1)
+        XCTAssertEqual(lifecycle.authWebViewIds, [ObjectIdentifier(webView)])
     }
 
     func testTabLifecycleDestructiveCleanupCallbacksPublishNoPageState() {
@@ -770,14 +783,17 @@ extension SumiNavigationResponderTests {
     func testSumiNavigationResponderAdapterMapsNilAuthResultToNext() async {
         let target = SumiNavigationAuthProbeResponder(decision: .next)
         let adapter = SumiNavigationResponderAdapter(target: target)
+        let webView = WKWebView(frame: .zero)
+        adapter.bind(to: webView)
 
         let disposition = await adapter.didReceive(makeAuthenticationChallenge(), for: nil)
 
         XCTAssertNil(disposition)
         XCTAssertEqual(target.callCount, 1)
         XCTAssertEqual(target.observedProtectionSpaceHosts, ["auth.example"])
-        XCTAssertEqual(target.observedContexts.count, 1)
-        XCTAssertNil(target.observedContexts.first ?? nil)
+        XCTAssertEqual(target.observedWebViewIds, [ObjectIdentifier(webView)])
+        XCTAssertEqual(target.observedMainFrameURLs.count, 1)
+        XCTAssertNil(target.observedMainFrameURLs.first ?? nil)
     }
 
     func testSumiNavigationResponderAdapterMapsNonAuthTargetToNext() async {
@@ -799,6 +815,8 @@ extension SumiNavigationResponderTests {
         for (sumiDisposition, expectedDisposition) in cases {
             let target = SumiNavigationAuthProbeResponder(decision: sumiDisposition)
             let adapter = SumiNavigationResponderAdapter(target: target)
+            let webView = WKWebView(frame: .zero)
+            adapter.bind(to: webView)
 
             let disposition = await adapter.didReceive(makeAuthenticationChallenge(), for: nil)
 
@@ -810,6 +828,8 @@ extension SumiNavigationResponderTests {
     func testSumiNavigationResponderAdapterDisablesLongDecisionCheckWhileAuthIsPending() async {
         let target = SuspendingSumiNavigationAuthProbeResponder()
         let adapter = SumiNavigationResponderAdapter(target: target)
+        let webView = WKWebView(frame: .zero)
+        adapter.bind(to: webView)
         let task = Task { @MainActor in
             await adapter.didReceive(makeAuthenticationChallenge(), for: nil)
         }
@@ -827,20 +847,21 @@ extension SumiNavigationResponderTests {
         XCTAssertFalse(adapter.shouldDisableLongDecisionMakingChecks)
     }
 
-    func testSumiNavigationResponderAdapterPassesAuthNavigationContextWhenAvailable() async {
+    func testSumiNavigationResponderAdapterPassesAuthNavigationDetailsWhenAvailable() async {
         let target = SumiNavigationAuthProbeResponder(decision: .next)
         let adapter = SumiNavigationResponderAdapter(target: target)
+        let webView = WKWebView(frame: .zero)
         let navigation = mainFrameNavigation(receiving: navigationAction(
             url: URL(string: "https://example.com/auth")!,
-            navigationType: .linkActivated(isMiddleClick: false)
+            navigationType: .linkActivated(isMiddleClick: false),
+            webView: webView
         ))
 
         _ = await adapter.didReceive(makeAuthenticationChallenge(), for: navigation)
 
         XCTAssertEqual(target.callCount, 1)
-        XCTAssertEqual(target.observedContexts.count, 1)
-        XCTAssertEqual(target.observedContexts.first??.url, URL(string: "https://example.com/auth")!)
-        XCTAssertEqual(target.observedContexts.first??.isMainFrame, true)
+        XCTAssertEqual(target.observedWebViewIds, [ObjectIdentifier(webView)])
+        XCTAssertEqual(target.observedMainFrameURLs, [URL(string: "https://example.com/auth")!])
     }
 
     func testSumiNavigationResponderAdapterMapsSameDocumentNavigationType() {
@@ -1140,13 +1161,10 @@ private final class SuspendingSumiNavigationAuthProbeResponder: SumiNavigationAu
     private var continuation: CheckedContinuation<Void, Never>?
     private(set) var didBegin = false
 
-    func didReceive(_ authenticationChallenge: URLAuthenticationChallenge) async -> SumiAuthChallengeDisposition? {
-        await didReceive(authenticationChallenge, context: nil)
-    }
-
     func didReceive(
-        _ authenticationChallenge: URLAuthenticationChallenge,
-        context _: SumiNavigationContext?
+        _: URLAuthenticationChallenge,
+        webView _: WKWebView,
+        mainFrameURL _: URL?
     ) async -> SumiAuthChallengeDisposition? {
         didBegin = true
         await withCheckedContinuation { continuation in

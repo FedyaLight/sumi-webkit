@@ -194,6 +194,8 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         sessionID: UUID,
         destination: URL
     )?
+    private(set) var certificateTrustWarningSession:
+        CertificateTrustWarningSession?
 
     var isUnloaded: Bool {
         resolvedCurrentWebView() == nil
@@ -216,6 +218,24 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             return
         }
         websiteDataMutationPresentation = nil
+        publishPagePresentationChangeForOwnedWebViews()
+    }
+
+    @discardableResult
+    func beginCertificateTrustWarningPresentation(
+        _ session: CertificateTrustWarningSession
+    ) -> Bool {
+        guard certificateTrustWarningSession == nil else { return false }
+        certificateTrustWarningSession = session
+        publishPagePresentationChangeForOwnedWebViews()
+        return true
+    }
+
+    func endCertificateTrustWarningPresentation(
+        _ session: CertificateTrustWarningSession
+    ) {
+        guard certificateTrustWarningSession === session else { return }
+        certificateTrustWarningSession = nil
         publishPagePresentationChangeForOwnedWebViews()
     }
 
@@ -265,11 +285,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             promotion: mainFrameRuntimeTransaction,
             recovery: mainFrameRuntimeTransaction
         )
-    }
-
-    func makeAuthenticationNavigationResponder()
-        -> SumiTabAuthenticationNavigationResponder {
-        SumiTabAuthenticationNavigationResponder(tab: self)
     }
 
     func activatePendingWebContentRecovery(on webView: WKWebView) -> Bool {

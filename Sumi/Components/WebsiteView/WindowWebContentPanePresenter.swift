@@ -8,13 +8,27 @@ final class PagePresentationSurfaceView: NSView {
 
     init(
         presentation: PagePresentation,
-        repairAction: ((Bool) -> Void)? = nil
+        repairAction: ((Bool) -> Void)? = nil,
+        certificateTrustWarningSession: CertificateTrustWarningSession? = nil
     ) {
         self.presentation = presentation
         self.repairAction = repairAction
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+
+        if case .certificateTrustWarning = presentation,
+           let certificateTrustWarningSession {
+            let warning = CertificateTrustWarningView(
+                session: certificateTrustWarningSession,
+                onFinish: { _ in }
+            )
+            warning.frame = bounds
+            warning.autoresizingMask = [.width, .height]
+            addSubview(warning)
+            setAccessibilityElement(false)
+            return
+        }
 
         guard case .recoveryFailure(
             _, let destination, let nativeSnapshotAvailable
@@ -83,7 +97,10 @@ final class PagePresentationSurfaceView: NSView {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        repairAction == nil ? nil : super.hitTest(point)
+        if case .certificateTrustWarning = presentation {
+            return super.hitTest(point)
+        }
+        return repairAction == nil ? nil : super.hitTest(point)
     }
 
     @objc private func repairAndRestore() { repairAction?(true) }
@@ -157,7 +174,7 @@ final class WindowWebContentPanePresenter {
                 presentation = pane.presentation
             }
             containerView.singlePaneView.placePresentationSurface(
-                surface(for: presentation)
+                surface(for: presentation, tab: pane.tab)
             )
         }
 
@@ -237,7 +254,7 @@ final class WindowWebContentPanePresenter {
                     surfacePresentation = pane.presentation
                 }
                 paneView.placePresentationSurface(
-                    surface(for: surfacePresentation)
+                    surface(for: surfacePresentation, tab: pane.tab)
                 )
             }
         }
@@ -248,8 +265,21 @@ final class WindowWebContentPanePresenter {
     }
 
     private func surface(
-        for presentation: PagePresentation
+        for presentation: PagePresentation,
+        tab: Tab?
     ) -> PagePresentationSurfaceView {
+        if case .certificateTrustWarning(let pageID, let host) = presentation {
+            guard let session = tab?.certificateTrustWarningSession,
+                  session.host == host else {
+                return PagePresentationSurfaceView(
+                    presentation: .integrityFailure(pageID: pageID)
+                )
+            }
+            return PagePresentationSurfaceView(
+                presentation: presentation,
+                certificateTrustWarningSession: session
+            )
+        }
         guard case .recoveryFailure(let pageID, _, _) = presentation else {
             return PagePresentationSurfaceView(presentation: presentation)
         }

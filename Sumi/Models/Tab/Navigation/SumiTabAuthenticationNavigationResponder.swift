@@ -13,21 +13,16 @@ final class SumiTabAuthenticationNavigationResponder:
 
     func didReceive(
         _ authenticationChallenge: URLAuthenticationChallenge,
-        context: SumiNavigationContext?
+        webView: WKWebView,
+        mainFrameURL: URL?
     ) async -> SumiAuthChallengeDisposition? {
         guard let tab else { return .next }
         return await tab.navigationRuntime.lifecycleNavigationRuntime
             .resolveAuthenticationChallenge(
                 authenticationChallenge,
                 tab,
-                context?.webView,
-                context?.url
+                webView,
+                mainFrameURL
             )
-    }
-
-    func didReceive(
-        _ authenticationChallenge: URLAuthenticationChallenge
-    ) async -> SumiAuthChallengeDisposition? {
-        await didReceive(authenticationChallenge, context: nil)
     }
 }

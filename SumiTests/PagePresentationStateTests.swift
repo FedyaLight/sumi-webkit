@@ -96,6 +96,96 @@ final class PagePresentationStateTests: XCTestCase {
         )
     }
 
+    func testCertificateWarningPreemptsColdPageWithoutAHostedWebView() throws {
+        let destination = try XCTUnwrap(
+            URL(string: "https://untrusted.example")
+        )
+        let tab = Tab(url: destination, loadsCachedFaviconOnInit: false)
+        let session = CertificateTrustWarningSession(
+            host: "untrusted.example",
+            onVisitSite: {},
+            onClosePage: {},
+            onCancel: {}
+        )
+
+        XCTAssertTrue(tab.beginCertificateTrustWarningPresentation(session))
+        let presentation = PagePresentationResolver.resolve(
+            tab: tab,
+            windowState: BrowserWindowState(),
+            webView: nil
+        )
+
+        XCTAssertEqual(
+            presentation,
+            .certificateTrustWarning(
+                pageID: tab.id,
+                host: "untrusted.example"
+            )
+        )
+        let surface = PagePresentationSurfaceView(
+            presentation: presentation,
+            certificateTrustWarningSession: session
+        )
+        XCTAssertTrue(allSubviews(of: surface).contains {
+            $0 is CertificateTrustWarningView
+        })
+
+        tab.endCertificateTrustWarningPresentation(session)
+        XCTAssertNil(tab.certificateTrustWarningSession)
+    }
+
+    func testCertificateWarningSurfaceRoutesClicksToBothActions() throws {
+        var actions: [String] = []
+
+        func clickButton(
+            titled title: String,
+            session: CertificateTrustWarningSession
+        ) throws {
+            let surface = PagePresentationSurfaceView(
+                presentation: .certificateTrustWarning(
+                    pageID: UUID(),
+                    host: session.host
+                ),
+                certificateTrustWarningSession: session
+            )
+            surface.frame = NSRect(x: 0, y: 0, width: 900, height: 600)
+            surface.layoutSubtreeIfNeeded()
+            let button = try XCTUnwrap(
+                allSubviews(of: surface)
+                    .compactMap { $0 as? NSButton }
+                    .first { $0.title == title }
+            )
+            let point = surface.convert(
+                NSPoint(x: button.bounds.midX, y: button.bounds.midY),
+                from: button
+            )
+            let hitButton = try XCTUnwrap(surface.hitTest(point) as? NSButton)
+            XCTAssertIdentical(hitButton, button)
+            hitButton.performClick(nil)
+        }
+
+        try clickButton(
+            titled: "Close Page",
+            session: CertificateTrustWarningSession(
+                host: "untrusted.example",
+                onVisitSite: {},
+                onClosePage: { actions.append("close") },
+                onCancel: {}
+            )
+        )
+        try clickButton(
+            titled: "Visit Anyway",
+            session: CertificateTrustWarningSession(
+                host: "untrusted.example",
+                onVisitSite: { actions.append("visit") },
+                onClosePage: {},
+                onCancel: {}
+            )
+        )
+
+        XCTAssertEqual(actions, ["close", "visit"])
+    }
+
     func testResolverKeepsCommittedDocumentLiveDuringNextProvisionalNavigation()
         throws {
         let committedURL = try XCTUnwrap(
@@ -256,7 +346,7 @@ final class PagePresentationStateTests: XCTestCase {
         XCTAssertEqual(actions, [true, false])
     }
 
-    func testEveryNonLivePresentationHasAStaticTypedSurface() throws {
+    func testStaticNonLivePresentationsHaveTypedSurfaces() throws {
         let pageID = UUID()
         let destination = try XCTUnwrap(URL(string: "https://example.com/page"))
         let presentations: [PagePresentation] = [

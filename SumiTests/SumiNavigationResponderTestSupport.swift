@@ -415,6 +415,7 @@ final class RecordingTabLifecycleNavigationRuntime {
     private(set) var siteDataPolicyTabIds: [UUID] = []
     private(set) var authChallengeHosts: [String] = []
     private(set) var authTabIds: [UUID] = []
+    private(set) var authWebViewIds: [ObjectIdentifier] = []
     private(set) var authMainFrameURLs: [URL?] = []
     private(set) var cleanupCheckWebViewIds: [ObjectIdentifier] = []
     private(set) var finishedCleanupWebViewIds: [ObjectIdentifier] = []
@@ -454,10 +455,11 @@ final class RecordingTabLifecycleNavigationRuntime {
             enforceSiteDataPolicyAfterNavigation: { [weak self] tab in
                 self?.siteDataPolicyTabIds.append(tab.id)
             },
-            resolveAuthenticationChallenge: { [weak self] challenge, tab, _, mainFrameURL in
+            resolveAuthenticationChallenge: { [weak self] challenge, tab, webView, mainFrameURL in
                 guard let self else { return .next }
                 authChallengeHosts.append(challenge.protectionSpace.host)
                 authTabIds.append(tab.id)
+                authWebViewIds.append(ObjectIdentifier(webView))
                 authMainFrameURLs.append(mainFrameURL)
                 return authDisposition
             },
@@ -740,23 +742,22 @@ final class SumiNavigationAuthProbeResponder: SumiNavigationAuthChallengeRespond
     private let decision: SumiAuthChallengeDisposition?
     private(set) var callCount = 0
     private(set) var observedProtectionSpaceHosts: [String] = []
-    private(set) var observedContexts: [SumiNavigationContext?] = []
+    private(set) var observedWebViewIds: [ObjectIdentifier] = []
+    private(set) var observedMainFrameURLs: [URL?] = []
 
     init(decision: SumiAuthChallengeDisposition?) {
         self.decision = decision
     }
 
-    func didReceive(_ authenticationChallenge: URLAuthenticationChallenge) async -> SumiAuthChallengeDisposition? {
-        await didReceive(authenticationChallenge, context: nil)
-    }
-
     func didReceive(
         _ authenticationChallenge: URLAuthenticationChallenge,
-        context: SumiNavigationContext?
+        webView: WKWebView,
+        mainFrameURL: URL?
     ) async -> SumiAuthChallengeDisposition? {
         callCount += 1
         observedProtectionSpaceHosts.append(authenticationChallenge.protectionSpace.host)
-        observedContexts.append(context)
+        observedWebViewIds.append(ObjectIdentifier(webView))
+        observedMainFrameURLs.append(mainFrameURL)
         return decision
     }
 }
