@@ -196,6 +196,7 @@ private final class SumiSettingsSplitViewController: NSSplitViewController, NSTo
     override func viewDidAppear() {
         super.viewDidAppear()
         configureWindowIfNeeded()
+        view.window?.makeKeyAndOrderFront(nil)
     }
 
     func update(selectedPane: SettingsTabs, themeContext: ResolvedThemeContext) {

@@ -146,6 +146,11 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
             settingsWindow.waitForExistence(timeout: 5),
             "The application menu should open the Settings window."
         )
+        expectation(
+            for: NSPredicate(format: "hasKeyboardFocus == true"),
+            evaluatedWith: settingsWindow
+        )
+        waitForExpectations(timeout: 5)
 
         app.menuBars.menuBarItems["Sumi"].click()
         XCTAssertEqual(
