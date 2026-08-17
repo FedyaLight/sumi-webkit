@@ -28,37 +28,6 @@ struct BrowserProtectionPolicy: ProtectionPolicyReading {
         protection.surfaceEligibility(for: url).normalizedSiteHost
     }
 
-    func diagnostics(
-        _ context: ReloadProtectionDiagnosticsContext
-    ) -> SumiProtectionCurrentTabDiagnostics? {
-        let actualAttachedOverrideIdentifiers: [String]
-        let hasActualAttachedOverride: Bool
-        switch context.actualAttachedRuleLists {
-        case .deriveFromDiagnostics:
-            actualAttachedOverrideIdentifiers = []
-            hasActualAttachedOverride = false
-        case .identifiers(let identifiers):
-            actualAttachedOverrideIdentifiers = identifiers
-            hasActualAttachedOverride = true
-        }
-        return protection.currentTabDiagnostics(
-            for: context.currentURL,
-            appliedState: context.appliedState,
-            reloadRequired: context.reloadRequired,
-            reloadRequiredReason: context.reloadRequiredReason,
-            didManualReloadRebuildWebView:
-                context.didManualReloadRebuildWebView,
-            appliedAfterManualReload: context.appliedAfterManualReload,
-            actualAttachedRuleListIdentifiers:
-                hasActualAttachedOverride
-                    ? actualAttachedOverrideIdentifiers
-                    : nil,
-            contentBlockingAssetSummary:
-                context.contentBlockingAssetSummary,
-            webViewRebuildDuration: context.webViewRebuildDuration,
-            urlHubSummaryDuration: context.urlHubSummaryDuration
-        )
-    }
 }
 
 @MainActor

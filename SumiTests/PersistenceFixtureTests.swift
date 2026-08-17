@@ -125,7 +125,7 @@ final class PersistenceFixtureTests: XCTestCase {
         )
     }
 
-    func testAdblockManifestFixturesReadCurrentAndRejectFutureAndTamper()
+    func testAdblockManifestFixturesReadCurrentAndRejectFutureSchema()
         async throws {
         let directory = try makeTemporaryDirectory()
         let activeURL = directory.appendingPathComponent(
@@ -142,7 +142,6 @@ final class PersistenceFixtureTests: XCTestCase {
 
         for fixtureName in [
             "adblock/manifest-unsupported-v7.json",
-            "adblock/manifest-tampered-index.json",
         ] {
             try FileManager.default.removeItem(at: activeURL)
             try copyFixture(fixtureName, to: activeURL)

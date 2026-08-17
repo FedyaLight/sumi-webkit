@@ -49,6 +49,9 @@ enum TabBrowserWebViewRuntimeFactory {
     ) -> TabWebViewConfigurationContext {
         .make(
             browserConfiguration: browserManager.browserConfiguration,
+            adBlockingModule: { [weak browserManager] in
+                browserManager?.adBlockingModule
+            },
             extensionsModule: { [weak browserManager] in
                 browserManager?.optionalModules.extensions
             },
@@ -170,12 +173,16 @@ extension TabWebKitUIRuntime {
 extension TabWebViewConfigurationContext {
     static func make(
         browserConfiguration: BrowserConfiguration,
+        adBlockingModule: @escaping () -> SumiAdBlockingModule?,
         extensionsModule: @escaping () -> SumiExtensionsModule?,
         boostsModule: @escaping () -> SumiBoostsModule?,
         protectionCoordinator: @escaping () -> SumiProtectionCoordinator?
     ) -> Self {
         Self(
             browserConfiguration: browserConfiguration,
+            adBlockingNormalTabUserScripts: { url in
+                adBlockingModule()?.normalTabUserScripts(for: url) ?? []
+            },
             extensionNormalTabUserScripts: {
                 extensionsModule()?.normalTabUserScripts() ?? []
             },
@@ -186,11 +193,8 @@ extension TabWebViewConfigurationContext {
                     isEphemeral: isEphemeral
                 ) ?? []
             },
-            protectionDecision: { url, profileId in
-                protectionCoordinator()?.normalTabDecision(
-                    for: url,
-                    profileId: profileId
-                )
+            protectionDecision: { url, _ in
+                protectionCoordinator()?.normalTabDecision(for: url)
             },
             protectionDesiredAttachmentState: { url in
                 protectionCoordinator()?.desiredAttachmentState(for: url)
@@ -210,6 +214,14 @@ extension TabWebViewConfigurationContext {
                 ) ?? []
             },
             prepareWebViewConfigForExtensionRuntime: { configuration, profileId, reason in
+                if let profileId {
+                    if let extensionsModule = extensionsModule() {
+                        adBlockingModule()?.reconcileURLCleaning(
+                            for: profileId,
+                            using: extensionsModule
+                        )
+                    }
+                }
                 extensionsModule()?.prepareWebViewConfigForExtensionRuntime(
                     configuration,
                     profileId: profileId,

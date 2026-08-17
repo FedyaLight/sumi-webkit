@@ -313,6 +313,12 @@ struct URLBarHubPopover: View {
                     currentTab?.markProtectionReloadRequiredIfNeeded(
                         afterChangingPolicyFor: currentTab?.url
                     )
+                    if let currentTab {
+                        _ = browserContext.reloadAfterProtectionPolicyChange(
+                            currentTab,
+                            windowState
+                        )
+                    }
                     refreshCoordinator.scheduleCoalescedRefresh()
                 }
             )

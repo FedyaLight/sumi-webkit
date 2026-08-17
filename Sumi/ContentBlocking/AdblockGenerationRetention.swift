@@ -4,24 +4,14 @@ actor AdblockGenerationRetention {
     private let archive: AdblockGenerationArchive
     private let contentRuleListStore: any SumiContentRuleListCompiling
     private let fileManager: FileManager
-    #if DEBUG
-        private let startupDiagnostics: any SumiProtectionStartupRestoreDiagnosticsRecording
-    #endif
-
     init(
         archive: AdblockGenerationArchive,
         contentRuleListStore: any SumiContentRuleListCompiling,
-        fileManager: FileManager = .default,
-        startupDiagnostics: (any SumiProtectionStartupRestoreDiagnosticsRecording)? = nil
+        fileManager: FileManager = .default
     ) {
         self.archive = archive
         self.contentRuleListStore = contentRuleListStore
         self.fileManager = fileManager
-        #if DEBUG
-            self.startupDiagnostics = startupDiagnostics ?? SumiProtectionStartupRestoreDiagnosticsDefaults.recorder
-        #else
-            _ = startupDiagnostics
-        #endif
     }
 
     func removeUnrecoverableGenerations() async -> AdblockGenerationCleanupReport {
@@ -49,12 +39,6 @@ actor AdblockGenerationRetention {
                 do {
                     try await contentRuleListStore.removeContentRuleList(forIdentifier: identifier)
                     report.removedWebKitIdentifiers.append(identifier)
-                    #if DEBUG
-                        startupDiagnostics.recordCompiledRuleListRemoval(
-                            identifiers: [identifier],
-                            reason: "Adblock retention removed an unrecoverable WebKit rule list"
-                        )
-                    #endif
                 } catch {
                     report.diagnostics.append(
                         "Failed to remove WebKit rule list \(identifier): \(error.localizedDescription)"
@@ -65,7 +49,7 @@ actor AdblockGenerationRetention {
             for generationId in try await archive.archivedGenerationIds()
                 where !preservedGenerationIds.contains(generationId) {
                 try Task.checkCancellation()
-                let url = try await archive.generationDirectoryURL(generationId: generationId)
+                let url = try archive.generationDirectoryURL(generationId: generationId)
                 removeItemIfInsideArchive(url, report: &report)
             }
 

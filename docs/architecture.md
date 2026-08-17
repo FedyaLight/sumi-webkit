@@ -494,16 +494,15 @@ preserve user organization while reducing unnecessary live runtime state.
 Extensions, Live Folders, Boosts, and privacy cleanup are feature areas that
 remain optional. When disabled, they should avoid background runtime cost.
 
-## Protection
+## Adblock
 
-Tracking Protection and Adblock are owned by the native content-blocking
-runtime under `Sumi/ContentBlocking`. Sumi consumes prepared bundles from
-`sumi-protection-bundles`, verifies their manifests and shard hashes, compiles
-the selected groups through WebKit, and keeps the previous generation available
-for rollback. The browser must not fetch raw filter lists, parse ABP/uBO syntax,
-run `adblock-rust`, or convert DuckDuckGo Tracker Radar data at runtime.
-The bundle format is defined in
-[Sumi Native Rule Bundle v1](adblock-native-rule-bundle-v1.md).
+Adblock is owned by `Sumi/ContentBlocking`. Explicit Apply downloads the
+selected catalog entries and builds one native, advanced, and URL-cleaning
+generation locally. Startup only restores the cached generation; browsing never
+downloads or converts lists. It does not use DuckDuckGo Tracker Radar or the
+retired `sumi-protection-bundles` repository. Off creates no blocker runtime.
+The generation format is defined in
+[Local Adblock Generation](adblock-native-rule-bundle-v1.md).
 
 ## Extensions
 

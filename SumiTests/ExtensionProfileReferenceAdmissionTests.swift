@@ -8,12 +8,13 @@ import XCTest
 final class ExtensionProfileReferenceAdmissionTests: XCTestCase {
     func testUnavailableAdmissionRejectsInitialAndControllerPublication() {
         let profile = Profile(name: "Unavailable")
-        let runtime = ExtensionProfileRuntime(
-            initialProfileId: profile.id,
-            initialProfile: profile,
-            profileReferenceAdmission: .failClosed()
+        let host = SumiProfileWebExtensionRuntime(
+            browserConfiguration: BrowserConfiguration(),
+            profileReferenceAdmission: .failClosed(),
+            initialProfileProvider: { profile }
         )
-        let provisioning = makeProvisioning(runtime: runtime)
+        let runtime = host.profileRuntimeForUserDemand(initialProfile: profile)
+        let provisioning = makeProvisioning(runtime: runtime, host: host)
 
         XCTAssertNil(runtime.currentProfileId)
         XCTAssertNil(runtime.rememberedProfile(for: profile.id))
@@ -58,13 +59,16 @@ final class ExtensionProfileReferenceAdmissionTests: XCTestCase {
     func testReservedProfileRejectsProvisioningAndRetirementRemovesExactKeys()
         throws {
         let fixture = try makeFixture()
-        let runtime = ExtensionProfileRuntime(
-            initialProfileId: fixture.retiring.id,
-            initialProfile: fixture.retiring,
-            profileReferenceAdmission: fixture.ledger
+        let host = SumiProfileWebExtensionRuntime(
+            browserConfiguration: BrowserConfiguration(),
+            profileReferenceAdmission: fixture.ledger,
+            initialProfileProvider: { fixture.retiring }
+        )
+        let runtime = host.profileRuntimeForUserDemand(
+            initialProfile: fixture.retiring
         )
         XCTAssertTrue(runtime.rememberProfile(fixture.fallback))
-        let provisioning = makeProvisioning(runtime: runtime)
+        let provisioning = makeProvisioning(runtime: runtime, host: host)
         let retiringController = try XCTUnwrap(
             provisioning.controllerIfAdmitted(for: fixture.retiring.id)
         )
@@ -130,20 +134,17 @@ final class ExtensionProfileReferenceAdmissionTests: XCTestCase {
     }
 
     private func makeProvisioning(
-        runtime: ExtensionProfileRuntime
+        runtime: ExtensionProfileRuntime,
+        host: SumiProfileWebExtensionRuntime
     ) -> ExtensionControllerProvisioningOwner {
         ExtensionControllerProvisioningOwner(dependencies: .init(
-            browserConfiguration: BrowserConfiguration(),
             profileRuntime: runtime,
-            currentProfileId: { runtime.currentProfileId },
+            profileWebExtensionRuntime: host,
             assignControllerDelegate: { _ in },
             controllerDelegateReadiness: ExtensionControllerDelegateReadiness(
                 profileRuntime: runtime,
                 bind: { _ in }
-            ),
-            traceControllerBinding: { _, _, _, _ in },
-            controllerDescription: { _ in "" },
-            trace: { _ in }
+            )
         ))
     }
 

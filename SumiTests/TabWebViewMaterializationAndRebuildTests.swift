@@ -1146,6 +1146,7 @@ final class TabWebViewMaterializationAndRebuildTests: XCTestCase {
         runtime.webViewConfigurationContext = {
             TabWebViewConfigurationContext(
                 browserConfiguration: BrowserConfiguration(),
+                adBlockingNormalTabUserScripts: { _ in [] },
                 extensionNormalTabUserScripts: { [] },
                 boostsNormalTabUserScripts: { _, _, _ in [] },
                 protectionDecision: { _, _ in nil },

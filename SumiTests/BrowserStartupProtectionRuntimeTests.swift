@@ -7,7 +7,7 @@ import XCTest
 @MainActor
 final class BrowserStartupProtectionRuntimeTests: XCTestCase {
     func testMaterializationPolicyDefersOnlyPrimaryNormalTabsUntilRestoreFinishes() {
-        let fixture = makeBrowser(appliedLevel: .protection)
+        let fixture = makeBrowser(appliedLevel: .adblock)
         let runtime = fixture.browser.startupProtectionRuntime
         let normalTab = Tab(
             url: URL(string: "https://example.com/article")!,
@@ -40,7 +40,7 @@ final class BrowserStartupProtectionRuntimeTests: XCTestCase {
     }
 
     func testBeginInTestsOpensNormalTabMaterializationGate() {
-        let fixture = makeBrowser(appliedLevel: .protection)
+        let fixture = makeBrowser(appliedLevel: .adblock)
         let runtime = fixture.browser.startupProtectionRuntime
         let normalTab = Tab(
             url: URL(string: "https://example.com/startup")!,
@@ -66,17 +66,12 @@ final class BrowserStartupProtectionRuntimeTests: XCTestCase {
         let settings = SumiProtectionSettings(userDefaults: defaults)
         settings.setAppliedLevel(appliedLevel)
         let adBlockingModule = SumiAdBlockingModule(
-            moduleRegistry: moduleRegistry,
-            preparedBundleResourceURL: nil,
-            preparedBundleRemoteRootURL: nil,
+            filterListCatalog: nil,
             compiledRuleListCatalog: SumiCompiledContentRuleListCatalog()
         )
         let protectionCoordinator = SumiProtectionCoordinator(
             settings: settings,
             adBlockingModule: adBlockingModule,
-            bundleUpdateStatusStore: SumiProtectionBundleUpdateStatusStore(
-                userDefaults: defaults
-            ),
             compiledRuleListCatalog: SumiCompiledContentRuleListCatalog()
         )
         let browser = BrowserManager(

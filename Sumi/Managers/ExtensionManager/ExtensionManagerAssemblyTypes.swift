@@ -67,6 +67,7 @@ struct ExtensionActionGraphFoundation {
 struct ExtensionControllerGraphFoundation {
     let browserConfiguration: BrowserConfiguration
     let nativeMessagingPorts: ExtensionNativeMessagingPortRegistry
+    let profileWebExtensionRuntime: SumiProfileWebExtensionRuntime
 }
 
 /// Factory-only, role-specific views over the single browser attachment

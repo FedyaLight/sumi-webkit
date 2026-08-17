@@ -110,15 +110,6 @@ extension Tab {
         )
     }
 
-    func protectionCurrentTabDiagnostics()
-        -> SumiProtectionCurrentTabDiagnostics? {
-        protectionReloadState.diagnostics(
-            for: url,
-            existingWebView: resolvedCurrentWebView(),
-            policy: navigationRuntime.reloadPolicies.protection
-        )
-    }
-
     func noteProtectionManualReloadResult(
         rebuiltForConfigurationPolicy: Bool,
         targetURL: URL?

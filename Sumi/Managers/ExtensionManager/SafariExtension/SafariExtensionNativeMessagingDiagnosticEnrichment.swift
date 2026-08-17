@@ -21,8 +21,6 @@ enum SafariExtensionNativeMessagingDiagnosticEnrichment {
                 return .extensionDisabled
             case .extensionNotSafariImport, .arbitraryNativeMessagingDenied:
                 return .extensionNotImported
-            case .privateBrowsingDenied:
-                return .privateBrowsingDenied
             }
         }
 

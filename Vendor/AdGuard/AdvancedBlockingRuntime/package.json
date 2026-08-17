@@ -1,0 +1,25 @@
+{
+  "name": "@sumi/advanced-blocking-runtime",
+  "version": "4.3.0",
+  "private": true,
+  "type": "module",
+  "license": "GPL-3.0-or-later",
+  "scripts": {
+    "build": "rollup --config rollup.config.mjs && terser dist/sumi-advanced-blocking.js --compress --mangle --comments '/SafariConverterLib/' --output ../../../Sumi/Resources/ContentBlocking/sumi-advanced-blocking.js && terser dist/sumi-scriptlet-compiler.js --compress --mangle --comments '/AdGuard Scriptlets/' --output ../../../Sumi/Resources/ContentBlocking/sumi-scriptlet-compiler.js"
+  },
+  "dependencies": {
+    "@adguard/extended-css": "2.1.1",
+    "@adguard/scriptlets": "2.3.1"
+  },
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "25.0.8",
+    "@rollup/plugin-json": "6.1.0",
+    "@rollup/plugin-node-resolve": "15.3.1",
+    "@rollup/plugin-typescript": "11.1.6",
+    "rollup": "3.29.5",
+    "terser": "5.44.0",
+    "tslib": "2.8.1",
+    "typescript": "5.7.3"
+  },
+  "packageManager": "pnpm@11.19.0"
+}

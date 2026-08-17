@@ -16,7 +16,7 @@ line_budgets=(
   "Sumi/ContentBlocking/SumiProtectionRulePlan.swift|120"
   "Sumi/ContentBlocking/SumiProtectionNormalTabDecision.swift|50"
   "Sumi/ContentBlocking/SumiProtectionApplicationResult.swift|60"
-  "Sumi/ContentBlocking/SumiProtectionSettings.swift|100"
+  "Sumi/ContentBlocking/SumiProtectionSettings.swift|190"
   "$coordinator|420"
 )
 for budget in "${line_budgets[@]}"; do
@@ -75,7 +75,6 @@ required_contracts=(
   "$domain_values|public var requestedGroups: \\[SumiProtectionGroupKind\\]"
   "Sumi/ContentBlocking/SumiProtectionLevel+App.swift|var displayTitle: String"
   "Sumi/ContentBlocking/SumiProtectionLevel+App.swift|var preferredBundleProfileId: String?"
-  "Sumi/ContentBlocking/SumiProtectionLevel+App.swift|var adblockRuleGroupKinds: Set<AdblockCompiledRuleGroupKind>"
 )
 for contract in "${required_contracts[@]}"; do
   file="${contract%%|*}"

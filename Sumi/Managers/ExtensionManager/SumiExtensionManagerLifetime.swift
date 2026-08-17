@@ -176,12 +176,14 @@ final class SumiExtensionManagerLifetime {
 
     private func moduleIfNeededForNormalTabRuntime()
         -> ExtensionManagerModuleResidence? {
-        guard isEnabled, runtime != nil else { return nil }
+        guard runtime != nil else { return nil }
         if let resident {
+            guard isEnabled else { return nil }
             return resident.module.lifetimeControl.hasNormalTabRuntimeDemand()
                 ? resident.module
                 : nil
         }
+        guard isEnabled else { return nil }
         guard hasEnabledPersistedExtensions() else { return nil }
         return moduleIfEnabled()
     }
@@ -241,7 +243,7 @@ final class SumiExtensionManagerLifetime {
     }
 
     func containsProfileRuntimeReference(to profileID: UUID) -> Bool {
-        resident?.module.profileRetirement.containsReference(to: profileID)
+        return resident?.module.profileRetirement.containsReference(to: profileID)
             ?? false
     }
 
@@ -262,11 +264,11 @@ final class SumiExtensionManagerLifetime {
             return
         }
         guard result.completed else { return }
+        self.resident = nil
         _ = resident.module.executeRebuildPlan(
             result.tabRebuildPlan,
             reason: reason
         )
-        self.resident = nil
     }
 
     private func scheduleRuntimeTeardownRetry(

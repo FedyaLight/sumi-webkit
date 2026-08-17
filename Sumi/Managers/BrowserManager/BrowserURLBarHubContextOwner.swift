@@ -112,6 +112,12 @@ final class BrowserURLBarHubContextOwner {
             openSiteSettings: { [commands] tab, windowState in
                 commands.openSiteSettings(tab: tab, in: windowState)
             },
+            reloadAfterProtectionPolicyChange: { [commands] tab, windowState in
+                commands.reloadAfterProtectionPolicyChange(
+                    for: tab,
+                    in: windowState
+                )
+            },
             setSafariContentBlockerSiteOverride: { [extensions] override, url in
                 extensions.setSafariContentBlockerSiteOverride(override, for: url)
             },

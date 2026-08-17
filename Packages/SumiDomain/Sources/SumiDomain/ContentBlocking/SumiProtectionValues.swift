@@ -1,6 +1,5 @@
 public enum SumiProtectionLevel: String, Codable, CaseIterable, Identifiable, Sendable {
     case off
-    case protection
     case adblock
 
     public var id: String { rawValue }
@@ -9,18 +8,14 @@ public enum SumiProtectionLevel: String, Codable, CaseIterable, Identifiable, Se
         switch self {
         case .off:
             return []
-        case .protection:
-            return [.trackingNetwork]
         case .adblock:
-            return [.trackingNetwork, .adblockAdsPrivacyNetwork]
+            return [.adblockAdsPrivacyNetwork]
         }
     }
 }
 
 public enum SumiProtectionGroupKind: String, Codable, CaseIterable, Hashable, Sendable {
-    case trackingNetwork
     case adblockAdsPrivacyNetwork
-    case cosmetic
 }
 
 public struct SumiProtectionAttachmentState: Equatable, Sendable {
@@ -43,8 +38,9 @@ public struct SumiProtectionAttachmentState: Equatable, Sendable {
     public func hasSameEffectiveWebViewAttachment(
         as other: SumiProtectionAttachmentState
     ) -> Bool {
-        effectiveWebViewRuleListIdentifiers
-            == other.effectiveWebViewRuleListIdentifiers
+        isEnabled == other.isEnabled
+            && effectiveWebViewRuleListIdentifiers
+                == other.effectiveWebViewRuleListIdentifiers
     }
 
     public init(

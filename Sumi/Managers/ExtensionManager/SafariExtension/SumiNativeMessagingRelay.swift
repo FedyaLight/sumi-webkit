@@ -44,7 +44,6 @@ final class SumiNativeMessagingRelay {
     private let launchPolicy: SumiCompanionAppLaunchPolicy
     private let loopGuard: SumiNativeMessagingRelayLoopGuard
     private let extensionsModuleEnabled: () -> Bool
-    private let fallbackIsPrivateBrowsing: () -> Bool
     private let profileRuntimeLoaded: () -> Bool
     private let sessionStore: SumiNativeMessagingRelaySessionStore
     private let routeResolver: SumiNativeMessagingRelayRouteResolver
@@ -62,7 +61,6 @@ final class SumiNativeMessagingRelay {
         launchPolicy: SumiCompanionAppLaunchPolicy = SumiCompanionAppLaunchPolicy(),
         loopGuard: SumiNativeMessagingRelayLoopGuard = SumiNativeMessagingRelayLoopGuard(),
         extensionsModuleEnabled: @escaping @MainActor () -> Bool = { true },
-        isPrivateBrowsing: @escaping @MainActor () -> Bool = { false },
         profileRuntimeLoaded: @escaping @MainActor () -> Bool = { true },
         logDiagnostic: (@MainActor (SafariExtensionNativeMessagingDiagnostic) -> Void)? = nil
     ) {
@@ -73,7 +71,6 @@ final class SumiNativeMessagingRelay {
         self.launchPolicy = launchPolicy
         self.loopGuard = loopGuard
         self.extensionsModuleEnabled = extensionsModuleEnabled
-        self.fallbackIsPrivateBrowsing = isPrivateBrowsing
         self.profileRuntimeLoaded = profileRuntimeLoaded
         let sessionStore = SumiNativeMessagingRelaySessionStore(adapterRegistry: adapterRegistry)
         self.sessionStore = sessionStore
@@ -123,7 +120,6 @@ final class SumiNativeMessagingRelay {
         importStore: SafariExtensionImportStore,
         launcher: SumiHostApplicationLaunching = SumiNSWorkspaceHostApplicationLauncher(),
         extensionsModuleEnabled: @escaping @MainActor () -> Bool,
-        isPrivateBrowsing: @escaping @MainActor () -> Bool = { false },
         profileRuntimeLoaded: @escaping @MainActor () -> Bool = { true },
         logDiagnostic: (@MainActor (SafariExtensionNativeMessagingDiagnostic) -> Void)? = nil
     ) -> SumiNativeMessagingRelay {
@@ -137,7 +133,6 @@ final class SumiNativeMessagingRelay {
             launchPolicy: SumiCompanionAppLaunchPolicy(),
             loopGuard: SumiNativeMessagingRelayLoopGuard(),
             extensionsModuleEnabled: extensionsModuleEnabled,
-            isPrivateBrowsing: isPrivateBrowsing,
             profileRuntimeLoaded: profileRuntimeLoaded,
             logDiagnostic: logDiagnostic
         )
@@ -152,8 +147,6 @@ final class SumiNativeMessagingRelay {
         message: Any,
         extensionId: String?,
         profileId: UUID? = nil,
-        isPrivateBrowsing: Bool? = nil,
-        privateAccessAllowed: Bool? = nil,
         installedExtensions: [InstalledExtension],
         extensionDisplayName: String? = nil,
         executionAdmission: @escaping @MainActor () -> Bool = { true },
@@ -164,8 +157,6 @@ final class SumiNativeMessagingRelay {
             message: message,
             extensionId: extensionId,
             profileId: profileId,
-            isPrivateBrowsing: isPrivateBrowsing,
-            privateAccessAllowed: privateAccessAllowed,
             installedExtensions: installedExtensions,
             extensionDisplayName: extensionDisplayName,
             evaluatePolicy: evaluatePolicy,
@@ -181,8 +172,6 @@ final class SumiNativeMessagingRelay {
         port: any SumiNativeMessagingPortControlling,
         extensionId: String?,
         profileId: UUID? = nil,
-        isPrivateBrowsing: Bool? = nil,
-        privateAccessAllowed: Bool? = nil,
         installedExtensions: [InstalledExtension],
         registerHandler: (SumiNativeMessagingPortSession) -> Bool,
         unregisterHandler: @escaping (SumiNativeMessagingPortSession) -> Void = { _ in },
@@ -193,8 +182,6 @@ final class SumiNativeMessagingRelay {
             port: port,
             extensionId: extensionId,
             profileId: profileId,
-            isPrivateBrowsing: isPrivateBrowsing,
-            privateAccessAllowed: privateAccessAllowed,
             installedExtensions: installedExtensions,
             registerHandler: registerHandler,
             unregisterHandler: unregisterHandler,
@@ -363,8 +350,6 @@ final class SumiNativeMessagingRelay {
     private func evaluatePolicy(
         extensionId: String,
         installed: InstalledExtension?,
-        isPrivateBrowsing: Bool?,
-        privateAccessAllowed: Bool?,
         requestedApplicationIdentifier: String?
     ) -> Result<Void, SumiNativeMessagingRelayPolicyDenial> {
         SumiNativeMessagingRelayPolicy.evaluate(
@@ -372,8 +357,6 @@ final class SumiNativeMessagingRelay {
                 extensionsModuleEnabled: extensionsModuleEnabled(),
                 extensionId: extensionId,
                 installedExtension: installed,
-                isPrivateBrowsing: isPrivateBrowsing ?? fallbackIsPrivateBrowsing(),
-                privateAccessAllowed: privateAccessAllowed,
                 requestedApplicationIdentifier: requestedApplicationIdentifier
             )
         )

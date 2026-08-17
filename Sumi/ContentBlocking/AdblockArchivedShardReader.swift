@@ -4,22 +4,12 @@ import Foundation
 struct AdblockArchivedShardReader {
     private let storageRoot: URL
     private let fileManager: FileManager
-    #if DEBUG
-        private let startupDiagnostics: any SumiProtectionStartupRestoreDiagnosticsRecording
-    #endif
-
     init(
         storageRoot: URL,
-        fileManager: FileManager = .default,
-        startupDiagnostics: (any SumiProtectionStartupRestoreDiagnosticsRecording)? = nil
+        fileManager: FileManager = .default
     ) {
         self.storageRoot = storageRoot
         self.fileManager = fileManager
-        #if DEBUG
-            self.startupDiagnostics = startupDiagnostics ?? SumiProtectionStartupRestoreDiagnosticsDefaults.recorder
-        #else
-            _ = startupDiagnostics
-        #endif
     }
 
     func definition(for shard: NativeContentBlockingShardDescriptor) throws -> SumiContentRuleListDefinition {
@@ -47,14 +37,6 @@ struct AdblockArchivedShardReader {
             throw diagnostics("Missing compiled Adblock shard JSON: \(shard.id)", shard: shard)
         }
         let data = try Data(contentsOf: url)
-        #if DEBUG
-            startupDiagnostics.recordShardJSONRead(
-                identifier: shard.webKitIdentifier,
-                path: url.path,
-                byteCount: data.count,
-                reason: "persisted Adblock generation loaded shard JSON"
-            )
-        #endif
         guard !data.isEmpty else {
             throw diagnostics("Empty compiled Adblock shard JSON: \(shard.id)", shard: shard)
         }

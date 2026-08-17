@@ -14,14 +14,13 @@ final class SumiProtectionRulePlannerTests: XCTestCase {
             for: URL(string: "https://www.example.com/article"),
             requestedLevel: .adblock,
             activeManifest: nil,
-            includeExpensiveDiagnostics: false,
             loadRuleDefinitions: false,
             siteOverrideProvider: { _ in .disabled },
-            globalAttachmentPlanProvider: { level, _, _ in
+            globalAttachmentPlanProvider: { level, _ in
                 globalPlanCallCount += 1
                 return Self.globalPlan(
                     level: level,
-                    activeGroups: [.trackingNetwork, .adblockAdsPrivacyNetwork],
+                    activeGroups: [.adblockAdsPrivacyNetwork],
                     expectedRuleListIdentifiers: ["sumi.adblock.network.1"]
                 )
             },
@@ -37,10 +36,8 @@ final class SumiProtectionRulePlannerTests: XCTestCase {
         XCTAssertEqual(plan.requestedLevel, .adblock)
         XCTAssertEqual(plan.effectiveLevel, .off)
         XCTAssertEqual(plan.siteHost, "example.com")
-        XCTAssertEqual(plan.siteOverride, .disabled)
         XCTAssertFalse(plan.sitePolicyAllowsProtection)
         XCTAssertTrue(plan.activeGroups.isEmpty)
-        XCTAssertTrue(plan.inactiveGroups.isEmpty)
         XCTAssertTrue(plan.expectedRuleListIdentifiers.isEmpty)
     }
 
@@ -52,20 +49,19 @@ final class SumiProtectionRulePlannerTests: XCTestCase {
 
         let plan = planner.makeRulePlan(
             for: URL(string: "sumi://history"),
-            requestedLevel: .protection,
+            requestedLevel: .adblock,
             activeManifest: nil,
-            includeExpensiveDiagnostics: false,
             loadRuleDefinitions: false,
             siteOverrideProvider: { _ in
                 siteOverrideCallCount += 1
                 return .disabled
             },
-            globalAttachmentPlanProvider: { level, _, _ in
+            globalAttachmentPlanProvider: { level, _ in
                 globalPlanCallCount += 1
                 return Self.globalPlan(
                     level: level,
-                    activeGroups: [.trackingNetwork],
-                    expectedRuleListIdentifiers: ["sumi.tracking.network.1"]
+                    activeGroups: [.adblockAdsPrivacyNetwork],
+                    expectedRuleListIdentifiers: ["sumi.adblock.network.1"]
                 )
             },
             emptyGlobalAttachmentPlanProvider: { level, manifest in
@@ -78,12 +74,10 @@ final class SumiProtectionRulePlannerTests: XCTestCase {
         XCTAssertEqual(siteOverrideCallCount, 0)
         XCTAssertEqual(globalPlanCallCount, 0)
         XCTAssertEqual(emptyPlanCallCount, 1)
-        XCTAssertEqual(plan.requestedLevel, .protection)
+        XCTAssertEqual(plan.requestedLevel, .adblock)
         XCTAssertEqual(plan.effectiveLevel, .off)
         XCTAssertNil(plan.siteHost)
-        XCTAssertEqual(plan.siteOverride, .inherit)
         XCTAssertFalse(plan.sitePolicyAllowsProtection)
-        XCTAssertEqual(plan.ineligibleSurfaceReason, "Internal Sumi surface")
     }
 
     private static func globalPlan(
@@ -94,21 +88,10 @@ final class SumiProtectionRulePlannerTests: XCTestCase {
         SumiProtectionGlobalAttachmentPlan(
             level: level,
             activeGroups: activeGroups,
-            inactiveGroups: level.requestedGroups.filter { !activeGroups.contains($0) },
-            ruleCountsByGroup: [:],
-            shardCountsByGroup: [:],
             expectedRuleListIdentifiers: expectedRuleListIdentifiers,
-            dedupeSummary: .empty,
-            overlapSummary: .deferred,
-            planningErrors: [],
             ruleDefinitions: [],
-            bundleSource: nil,
-            nativeRuleBundleId: nil,
             bundleProfileId: nil,
-            requiredBundleProfileId: level.preferredBundleProfileId,
-            activeGenerationId: nil,
-            previousGenerationId: nil,
-            previousGenerationRetained: false
+            activeGenerationId: nil
         )
     }
 }

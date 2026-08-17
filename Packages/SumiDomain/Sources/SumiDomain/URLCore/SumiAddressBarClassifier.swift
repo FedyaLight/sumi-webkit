@@ -120,10 +120,26 @@ public enum SumiAddressBarClassifier {
         }
 
         guard let encodedAuthority = normalizeAuthority(authority, expandIPv4: false) else { return nil }
-        guard isNavigableBareHost(hostPart(of: authority)) else { return nil }
+        let host = hostPart(of: authority)
+        guard isNavigableBareHost(host) else { return nil }
         guard let encodedTail = encodeTail(tail) else { return nil }
 
-        return URL(string: "http://\(encodedAuthority)\(encodedTail)").map { .navigate($0) }
+        let scheme = defaultScheme(forBareHost: host)
+        return URL(string: "\(scheme)://\(encodedAuthority)\(encodedTail)").map { .navigate($0) }
+    }
+
+    /// Public hosts start securely and avoid an unnecessary HTTP redirect and
+    /// WebContent process swap. Local development endpoints retain HTTP so a
+    /// bare localhost or IPv4 address remains usable without a certificate.
+    private static func defaultScheme(forBareHost host: String) -> String {
+        if host.lowercased() == "localhost" {
+            return "http"
+        }
+        let labels = host.components(separatedBy: ".")
+        if parseIPv4(labels: labels, allowShorthand: false) != nil {
+            return "http"
+        }
+        return "https"
     }
 
     /// macOS policy: localhost and full IPv4 addresses navigate; other

@@ -12,8 +12,6 @@ final class SumiNativeMessagingPortConnectRelayFlow {
     typealias PolicyEvaluator = (
         _ extensionId: String,
         _ installed: InstalledExtension?,
-        _ isPrivateBrowsing: Bool?,
-        _ privateAccessAllowed: Bool?,
         _ requestedApplicationIdentifier: String?
     ) -> Result<Void, SumiNativeMessagingRelayPolicyDenial>
 
@@ -84,8 +82,6 @@ final class SumiNativeMessagingPortConnectRelayFlow {
         port: any SumiNativeMessagingPortControlling,
         extensionId: String?,
         profileId: UUID?,
-        isPrivateBrowsing: Bool?,
-        privateAccessAllowed: Bool?,
         installedExtensions: [InstalledExtension],
         registerHandler: (SumiNativeMessagingPortSession) -> Bool,
         unregisterHandler: @escaping (SumiNativeMessagingPortSession) -> Void,
@@ -149,8 +145,6 @@ final class SumiNativeMessagingPortConnectRelayFlow {
         switch evaluatePolicy(
             extensionId,
             installed,
-            isPrivateBrowsing,
-            privateAccessAllowed,
             applicationIdentifier
         ) {
         case .failure(let denial):

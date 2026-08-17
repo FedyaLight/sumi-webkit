@@ -70,6 +70,46 @@ enum SettingsSurfaceStyle {
 
 typealias SettingsTypography = SettingsThemeTokens.Typography
 
+struct SettingsFeatureToggleCard: View {
+    let title: String
+    var badgeTitle: String?
+    @Binding var isEnabled: Bool
+
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
+
+    private var tokens: ChromeThemeTokens {
+        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(title)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(tokens.primaryText)
+
+            if let badgeTitle {
+                SettingsPillBadge(title: badgeTitle)
+            }
+
+            Spacer(minLength: 16)
+
+            Toggle("", isOn: $isEnabled)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.regular)
+                .accessibilityLabel(title)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(tokens.fieldBackground.opacity(0.78))
+        )
+    }
+}
+
 struct SettingsSection<Content: View>: View {
     let title: String?
     var subtitle: String?

@@ -491,8 +491,8 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
         let extensionStorageDirectories = try [profile.id, secondProfile.id]
             .map { profileID in
                 let cleanupStore = WebExtensionStorageCleanupStore(
-                    controllerStorageId: ExtensionControllerProvisioningOwner
-                        .extensionControllerIdentifier(for: profileID),
+                    controllerStorageId: ExtensionProfileControllerIdentity
+                        .runtimeIdentifier(for: profileID),
                     planner: WebExtensionStorageCleanupPlanner(),
                     storageDirectoryNameResolver: { _ in runtimeIdentifier }
                 )

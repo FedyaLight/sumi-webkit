@@ -4,24 +4,14 @@ actor AdblockGenerationRecovery {
     private let archive: AdblockGenerationArchive
     private let publisher: any AdblockRuleListPublishing
     private let contentRuleListStore: any SumiContentRuleListCompiling
-    #if DEBUG
-        private let startupDiagnostics: any SumiProtectionStartupRestoreDiagnosticsRecording
-    #endif
-
     init(
         archive: AdblockGenerationArchive,
         publisher: any AdblockRuleListPublishing,
-        contentRuleListStore: any SumiContentRuleListCompiling,
-        startupDiagnostics: (any SumiProtectionStartupRestoreDiagnosticsRecording)? = nil
+        contentRuleListStore: any SumiContentRuleListCompiling
     ) {
         self.archive = archive
         self.publisher = publisher
         self.contentRuleListStore = contentRuleListStore
-        #if DEBUG
-            self.startupDiagnostics = startupDiagnostics ?? SumiProtectionStartupRestoreDiagnosticsDefaults.recorder
-        #else
-            _ = startupDiagnostics
-        #endif
     }
 
     func restorePreviousGenerationIfNeeded() async -> AdblockGenerationRollbackReport {
@@ -33,12 +23,6 @@ actor AdblockGenerationRecovery {
             try Task.checkCancellation()
             let activeMissingIdentifiers = await missingIdentifiers(in: activeManifest)
             guard !activeMissingIdentifiers.isEmpty else {
-                #if DEBUG
-                    startupDiagnostics.recordGenerationStaleCheck(
-                        consideredStale: false,
-                        reason: "Active generation WebKit smoke lookup succeeded"
-                    )
-                #endif
                 return AdblockGenerationRollbackReport(
                     rolledBack: false,
                     activeGenerationId: activeManifest.activeGenerationId,
@@ -49,12 +33,6 @@ actor AdblockGenerationRecovery {
             guard let previousGenerationId = activeManifest.previousGenerationId,
                   let previousManifest = try await archive.archivedManifest(generationId: previousGenerationId)
             else {
-                #if DEBUG
-                    startupDiagnostics.recordGenerationStaleCheck(
-                        consideredStale: true,
-                        reason: "Active generation smoke lookup failed; no previous generation is available"
-                    )
-                #endif
                 return AdblockGenerationRollbackReport(
                     rolledBack: false,
                     activeGenerationId: activeManifest.activeGenerationId,
@@ -65,12 +43,6 @@ actor AdblockGenerationRecovery {
 
             let previousMissingIdentifiers = await missingIdentifiers(in: previousManifest)
             guard previousMissingIdentifiers.isEmpty else {
-                #if DEBUG
-                    startupDiagnostics.recordGenerationStaleCheck(
-                        consideredStale: true,
-                        reason: "Active and previous Adblock generations failed smoke lookup"
-                    )
-                #endif
                 return AdblockGenerationRollbackReport(
                     rolledBack: false,
                     activeGenerationId: activeManifest.activeGenerationId,
@@ -92,13 +64,6 @@ actor AdblockGenerationRecovery {
             try await archive.replaceActiveManifest(previousManifest)
             await publisher.commitPublication(publication)
 
-            #if DEBUG
-                let reason = "Active generation smoke lookup failed; restored \(previousManifest.activeGenerationId) after missing identifiers: \(activeMissingIdentifiers.joined(separator: ","))"
-                startupDiagnostics.recordGenerationStaleCheck(consideredStale: true, reason: reason)
-                startupDiagnostics.recordFallback(reason: reason)
-                startupDiagnostics.recordPayloadBackedRestoreUsed(reason: reason)
-                startupDiagnostics.recordRepairCompileUsed(reason: reason)
-            #endif
             return AdblockGenerationRollbackReport(
                 rolledBack: true,
                 activeGenerationId: activeManifest.activeGenerationId,
@@ -114,18 +79,10 @@ actor AdblockGenerationRecovery {
         var missing = [String]()
         for identifier in manifest.webKitRuleListIdentifiers {
             guard !Task.isCancelled else { return manifest.webKitRuleListIdentifiers }
-            #if DEBUG
-                startupDiagnostics.recordLookupAttempt(identifiers: [identifier])
-            #endif
-            if await contentRuleListStore.canLookUpContentRuleList(forIdentifier: identifier) {
-                #if DEBUG
-                    startupDiagnostics.recordLookupHit(identifier)
-                #endif
-            } else {
+            if await contentRuleListStore.canLookUpContentRuleList(
+                forIdentifier: identifier
+            ) == false {
                 missing.append(identifier)
-                #if DEBUG
-                    startupDiagnostics.recordLookupMiss(identifier)
-                #endif
             }
         }
         return missing

@@ -310,7 +310,7 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
 
     func testStartupRetryTransfersTheExactAcceptedMaterializationRequest()
         throws {
-        let harness = try makeHarness(appliedProtectionLevel: .protection)
+        let harness = try makeHarness(appliedProtectionLevel: .adblock)
         let tab = harness.manager.tabFactory.makeTab(
             url: try XCTUnwrap(URL(string: "file:///tmp/sumi-materialization.html")),
             name: "Deferred",
@@ -359,7 +359,7 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
 
     func testSelectedLauncherCanRetryMaterializationWithoutGroupUnload()
         throws {
-        let harness = try makeHarness(appliedProtectionLevel: .protection)
+        let harness = try makeHarness(appliedProtectionLevel: .adblock)
         let destination = try XCTUnwrap(
             URL(string: "file:///tmp/sumi-launcher-retry.html")
         )
@@ -456,9 +456,7 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
             let settings = SumiProtectionSettings(userDefaults: defaults)
             settings.setAppliedLevel(appliedProtectionLevel)
             let blocker = SumiAdBlockingModule(
-                moduleRegistry: moduleRegistry,
-                preparedBundleResourceURL: nil,
-                preparedBundleRemoteRootURL: nil,
+                filterListCatalog: nil,
                 compiledRuleListCatalog: SumiCompiledContentRuleListCatalog()
             )
             manager = BrowserManager(
@@ -469,9 +467,6 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
                 protectionCoordinator: SumiProtectionCoordinator(
                     settings: settings,
                     adBlockingModule: blocker,
-                    bundleUpdateStatusStore: SumiProtectionBundleUpdateStatusStore(
-                        userDefaults: defaults
-                    ),
                     compiledRuleListCatalog: SumiCompiledContentRuleListCatalog()
                 )
             )

@@ -88,6 +88,12 @@ final class AdblockSitePolicyStore: ObservableObject {
         changesSubject.eraseToAnyPublisher()
     }
 
+    var disabledHosts: [String] {
+        siteOverrides.compactMap { host, override in
+            override == .disabled ? host : nil
+        }.sorted()
+    }
+
     init(
         database: SumiDatabase? = nil,
         registrableDomainResolver: any SumiRegistrableDomainResolving =

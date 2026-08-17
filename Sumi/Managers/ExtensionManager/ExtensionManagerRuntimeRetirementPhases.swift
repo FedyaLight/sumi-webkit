@@ -52,8 +52,7 @@ extension ExtensionManagerAssembler {
                     ?? profileRuntime.currentRememberedProfile?.id
             },
             controllerStorageID: {
-                ExtensionControllerProvisioningOwner
-                    .extensionControllerIdentifier(for: $0)
+                ExtensionProfileControllerIdentity.runtimeIdentifier(for: $0)
             },
             persistentProfileIDs: {
                 try installation.database.read {
@@ -94,11 +93,10 @@ extension ExtensionManagerAssembler {
                 actionPopupInvocations: actions.actionPopupInvocations
             ),
             controllerRelease: ExtensionControllerRuntimeRelease(
-                browserConfiguration: controller.browserConfiguration,
-                profileRuntime: runtime.profileRuntime,
                 runtimeLifecycle: runtime.lifecycle,
                 runtimeDemand: runtime.demand,
-                controllerDelegateReadiness: controllerCore.delegateReadiness
+                controllerDelegateReadiness: controllerCore.delegateReadiness,
+                controllerProvisioning: controllerCore.provisioning
             ),
             storageCleanup: storageCleanup
         )

@@ -18,9 +18,9 @@ The `verify` command runs unsigned Debug and Release app builds, then the focuse
 - normal-tab WebKit configuration hot paths
 - extension-rule lookup/cache attachment paths
 - disabled-runtime startup boundaries
-- prepared-bundle memory and source-boundary guards
+- local-generation memory and disabled-runtime guards
 
-The harness intentionally uses method-level selectors for the broad prepared-bundle and browser-configuration suites. Keep that shape so the smoke remains focused on startup, normal-tab setup, extension-rule lookup, and memory-boundary coverage instead of running every unrelated browser test.
+The harness intentionally uses method-level selectors for broad browser-configuration suites so the smoke stays focused on startup, normal-tab setup, extension-rule lookup, and memory boundaries.
 
 Optional launch smoke:
 

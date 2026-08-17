@@ -14,22 +14,13 @@
   ],
   "fixtures": [
     {
-      "path": "SumiTests/Fixtures/Persistence/adblock/manifest-tampered-index.json",
-      "sha256": "b479b318abd4e2ae2e8babfda7b889d38ebe75ce9a2e2d0c973c5c6fbe47253b",
-      "bytes": 402,
-      "family": "rebuildable-caches",
-      "role": "tampered manifest",
-      "provenance": "adversarial-format-mutation",
-      "test": "testAdblockManifestFixturesReadCurrentAndRejectFutureAndTamper"
-    },
-    {
       "path": "SumiTests/Fixtures/Persistence/adblock/manifest-unsupported-v7.json",
       "sha256": "d1a2fe2c1414e69803cb20d67599ebd1f305082fd8ac59c6cd9a027490c84c09",
       "bytes": 353,
       "family": "rebuildable-caches",
       "role": "unsupported future manifest",
       "provenance": "adversarial-format-mutation",
-      "test": "testAdblockManifestFixturesReadCurrentAndRejectFutureAndTamper"
+      "test": "testAdblockManifestFixturesReadCurrentAndRejectFutureSchema"
     },
     {
       "path": "SumiTests/Fixtures/Persistence/adblock/manifest-v6.json",
@@ -38,7 +29,7 @@
       "family": "rebuildable-caches",
       "role": "current generation manifest v6",
       "provenance": "current-codable-format",
-      "test": "testAdblockManifestFixturesReadCurrentAndRejectFutureAndTamper"
+      "test": "testAdblockManifestFixturesReadCurrentAndRejectFutureSchema"
     },
     {
       "path": "SumiTests/Fixtures/Persistence/backups/logical-backup-malformed.sumibackup",

@@ -13,6 +13,12 @@ extension SumiExtensionsModule {
         profileId: UUID? = nil,
         reason: String
     ) {
+        if let profileId {
+            profileWebExtensionRuntime.prepareNormalTabConfiguration(
+                configuration,
+                profileID: profileId
+            )
+        }
         runtimeSurface.prepareWebViewConfiguration(
             configuration,
             profileID: profileId,
@@ -116,7 +122,12 @@ extension SumiExtensionsModule {
 
     func ensureInitialExtensionContextsIfNeeded(profileId: UUID) async
         -> PageNavigationPrerequisiteResult {
-        await runtimeSurface.ensureInitialExtensionContexts(profileID: profileId)
+        let internalResult = await profileWebExtensionRuntime
+            .waitForInternalContribution(profileID: profileId)
+        guard internalResult == .ready else { return internalResult }
+        return await runtimeSurface.ensureInitialExtensionContexts(
+            profileID: profileId
+        )
     }
 
     func warmInitialDocumentNativeMessagingIfNeeded(profileId: UUID) async {

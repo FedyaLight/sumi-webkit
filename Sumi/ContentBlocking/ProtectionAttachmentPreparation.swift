@@ -5,21 +5,14 @@ import SumiDomain
 final class ProtectionAttachmentPreparation {
     private let ruleProvider: any ProtectionAttachmentRuleProviding
     private let planner: ProtectionAttachmentPlanner
-    private let bundleProjection: ProtectionPreparedBundleProjection
+    private let bundleProjection: AdblockGenerationProjection
     private let cacheStore: ProtectionAttachmentCacheStore
     private let serviceFactory: @MainActor () -> SumiContentBlockingService
-    #if DEBUG
-        private let startupDiagnostics:
-            any SumiProtectionStartupRestoreDiagnosticsRecording
-    #endif
-
     init(
         ruleProvider: any ProtectionAttachmentRuleProviding,
         planner: ProtectionAttachmentPlanner,
-        bundleProjection: ProtectionPreparedBundleProjection,
+        bundleProjection: AdblockGenerationProjection,
         cacheStore: ProtectionAttachmentCacheStore,
-        startupDiagnostics:
-            (any SumiProtectionStartupRestoreDiagnosticsRecording)?,
         serviceFactory: @escaping @MainActor () -> SumiContentBlockingService
     ) {
         self.ruleProvider = ruleProvider
@@ -27,12 +20,6 @@ final class ProtectionAttachmentPreparation {
         self.bundleProjection = bundleProjection
         self.cacheStore = cacheStore
         self.serviceFactory = serviceFactory
-        #if DEBUG
-            self.startupDiagnostics = startupDiagnostics
-                ?? SumiProtectionStartupRestoreDiagnosticsDefaults.recorder
-        #else
-            _ = startupDiagnostics
-        #endif
     }
 
     func prepare(for level: SumiProtectionLevel) async throws {
@@ -43,15 +30,8 @@ final class ProtectionAttachmentPreparation {
 
         let metadataPlan = currentPlan(
             for: level,
-            includeExpensiveDiagnostics: false,
             loadRuleDefinitions: false
         )
-        #if DEBUG
-            startupDiagnostics.recordExpectedShardIdentifiers(
-                metadataPlan.expectedRuleListIdentifiers
-            )
-        #endif
-
         try ProtectionAttachmentReadiness.validate(metadataPlan)
         guard metadataPlan.isAttachable else {
             cacheStore.replace(
@@ -78,25 +58,12 @@ final class ProtectionAttachmentPreparation {
                     with: planner.metadataOnlyPlan(metadataPlan),
                     service: service
                 )
-                #if DEBUG
-                    startupDiagnostics.recordMetadataOnlyRestoreUsed()
-                #endif
                 return
-            } catch {
-                #if DEBUG
-                    let reason = "Protection attachment lookup-only restore failed: \(error.localizedDescription)"
-                    startupDiagnostics.recordFallback(reason: reason)
-                    startupDiagnostics.recordPayloadBackedRestoreUsed(
-                        reason: reason
-                    )
-                    startupDiagnostics.recordRepairCompileUsed(reason: reason)
-                #endif
-            }
+            } catch {}
         }
 
         let payloadPlan = currentPlan(
             for: level,
-            includeExpensiveDiagnostics: false,
             loadRuleDefinitions: true
         )
         try ProtectionAttachmentReadiness.validate(payloadPlan)
@@ -121,14 +88,12 @@ final class ProtectionAttachmentPreparation {
 
     private func currentPlan(
         for level: SumiProtectionLevel,
-        includeExpensiveDiagnostics: Bool,
         loadRuleDefinitions: Bool
     ) -> SumiProtectionGlobalAttachmentPlan {
         planner.globalPlan(
             for: level,
             manifest: ruleProvider.activeManifestIfLoaded(),
             cachedPlan: cacheStore.attachmentPlan,
-            includeExpensiveDiagnostics: includeExpensiveDiagnostics,
             loadRuleDefinitions: loadRuleDefinitions
         )
     }

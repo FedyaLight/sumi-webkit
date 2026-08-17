@@ -42,7 +42,10 @@ extension BrowserManager {
             extensions: optionalModules.extensions,
             settings: settingsNavigation,
             sharing: chrome.sharingPickerPresentationOwner,
-            bookmarks: bookmarkEditorPresentationState
+            bookmarks: bookmarkEditorPresentationState,
+            activePages: shell.activePageResolver,
+            pageCommands: chrome.activePageCommands,
+            webViews: webViews
         )
         let hub = BrowserURLBarHubContextOwner(
             bookmarks: bookmarkManager,

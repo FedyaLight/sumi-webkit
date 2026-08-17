@@ -27,6 +27,7 @@ struct TabConfigurationPolicyState: Equatable {
         TabConfigurationPolicyFingerprint(
             profileID: profileID,
             websiteDataStoreIdentity: websiteDataStoreIdentity,
+            isProtectionEnabled: protectionAttachment?.isEnabled == true,
             protectionRuleListIdentifiers: protectionAttachment?
                 .effectiveWebViewRuleListIdentifiers ?? [],
             safariRuleIdentities: safariContentBlockerAttachment?
@@ -42,6 +43,7 @@ struct TabConfigurationPolicyState: Equatable {
 struct TabConfigurationPolicyFingerprint: Equatable {
     let profileID: UUID?
     let websiteDataStoreIdentity: ObjectIdentifier?
+    let isProtectionEnabled: Bool
     let protectionRuleListIdentifiers: [String]
     let safariRuleIdentities: [String]
     let autoplayState: SumiRuntimeAutoplayState?

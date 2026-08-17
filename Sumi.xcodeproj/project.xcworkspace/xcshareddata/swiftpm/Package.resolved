@@ -1,5 +1,5 @@
 {
-  "originHash" : "141141f024e12f2782668070858e6b6648e1173cfe5606f580d5bff6955cbf07",
+  "originHash" : "b457476172dfc7446c96d4b7d0aa1ccdee53f828e9c1edb735d59ab8195c6ac5",
   "pins" : [
     {
       "identity" : "grdb.swift",
@@ -11,12 +11,47 @@
       }
     },
     {
+      "identity" : "punycodeswift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/gumob/PunycodeSwift.git",
+      "state" : {
+        "revision" : "30a462bdb4398ea835a3585472229e0d74b36ba5",
+        "version" : "3.0.0"
+      }
+    },
+    {
+      "identity" : "safariconverterlib",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/AdguardTeam/SafariConverterLib.git",
+      "state" : {
+        "revision" : "7a2e93f0afa70479cc59985f332025236c3f0c39"
+      }
+    },
+    {
       "identity" : "sparkle",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/sparkle-project/Sparkle",
       "state" : {
         "revision" : "d46d456107feacc80711b21847b82b07bd9fb46e",
         "version" : "2.9.3"
+      }
+    },
+    {
+      "identity" : "swift-argument-parser",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-argument-parser",
+      "state" : {
+        "revision" : "41982a3656a71c768319979febd796c6fd111d5c",
+        "version" : "1.5.0"
+      }
+    },
+    {
+      "identity" : "swift-psl",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/ameshkov/swift-psl",
+      "state" : {
+        "revision" : "2fcc99d7475fe3a71767e52cef60fc2dee9e34f2",
+        "version" : "1.1.161"
       }
     }
   ],

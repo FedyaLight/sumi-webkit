@@ -72,7 +72,11 @@ struct ExtensionManagerModuleResidence {
         reason: String,
         admission: ExtensionRuntimeShutdown.Admission = .forced
     ) -> ExtensionRuntimeShutdown.Result {
-        runtimeTermination.shutDown(reason: reason, admission: admission)
+        let result = runtimeTermination.shutDown(
+            reason: reason,
+            admission: admission
+        )
+        return result
     }
 
     func executeRebuildPlan(

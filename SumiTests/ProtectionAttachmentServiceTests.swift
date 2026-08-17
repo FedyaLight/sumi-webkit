@@ -13,10 +13,9 @@ final class ProtectionAttachmentServiceTests: XCTestCase {
         )
 
         service.syncRuntime(for: .adblock)
-        service.syncRuntime(for: .protection)
         service.syncRuntime(for: .off)
 
-        XCTAssertEqual(provider.runtimeLevelUpdates, [.adblock, .protection, .off])
+        XCTAssertEqual(provider.runtimeLevelUpdates, [.adblock, .off])
     }
 
     func testOffPlanDoesNotTouchManifestRulesOrServiceFactory() async throws {
@@ -33,7 +32,6 @@ final class ProtectionAttachmentServiceTests: XCTestCase {
 
         let plan = service.cachedRulePlan(
             for: URL(string: "https://example.com"),
-            profileId: nil,
             requestedLevel: .off
         )
         try await service.prepareCachedAttachmentService(for: .off)
@@ -49,9 +47,9 @@ final class ProtectionAttachmentServiceTests: XCTestCase {
 
     func testPrepareCachedAttachmentServiceUsesMetadataOnlyRestoreWhenCompiledRuleListExists() async throws {
         let ruleList = SumiContentRuleListDefinition(
-            name: "sumi.test.tracking.1",
+            name: "sumi.test.adblock.1",
             encodedContentRuleList: Self.validRuleListJSON,
-            storeIdentifierOverride: "sumi.test.tracking.1"
+            storeIdentifierOverride: "sumi.test.adblock.1"
         )
         let provider = FakeProtectionAttachmentRuleProvider(
             manifest: Self.makeManifest(ruleList: ruleList),
@@ -70,15 +68,14 @@ final class ProtectionAttachmentServiceTests: XCTestCase {
             }
         )
 
-        try await service.prepareCachedAttachmentService(for: .protection)
+        try await service.prepareCachedAttachmentService(for: .adblock)
         let decision = service.normalTabDecision(
             for: URL(string: "https://example.com/article"),
-            profileId: nil,
-            requestedLevel: .protection
+            requestedLevel: .adblock
         )
 
         XCTAssertEqual(provider.ruleDefinitionCallCount, 0)
-        XCTAssertEqual(decision.plan.activeGroups, [.trackingNetwork])
+        XCTAssertEqual(decision.plan.activeGroups, [.adblockAdsPrivacyNetwork])
         XCTAssertEqual(decision.plan.expectedRuleListIdentifiers, [ruleList.webKitStoreIdentifier])
         XCTAssertEqual(
             decision.contentBlockingService?.latestRuleListIdentifiers,
@@ -86,59 +83,29 @@ final class ProtectionAttachmentServiceTests: XCTestCase {
         )
     }
 
-    func testExpensiveOverlapDiagnosticsReportsInvalidRuleListJSONWithoutDroppingValidOverlap() {
-        let trackingRuleList = SumiContentRuleListDefinition(
-            name: "sumi.test.tracking.1",
-            encodedContentRuleList: Self.validRuleListJSON,
-            storeIdentifierOverride: "sumi.test.tracking.1"
-        )
-        let matchingAdblockRuleList = SumiContentRuleListDefinition(
+    func testAdblockReadinessDoesNotRequireSeparateTrackingGroup() {
+        let ruleList = SumiContentRuleListDefinition(
             name: "sumi.test.adblock.1",
             encodedContentRuleList: Self.validRuleListJSON,
             storeIdentifierOverride: "sumi.test.adblock.1"
         )
-        let invalidAdblockRuleList = SumiContentRuleListDefinition(
-            name: "sumi.test.adblock.invalid",
-            encodedContentRuleList: "{",
-            storeIdentifierOverride: "sumi.test.adblock.invalid"
-        )
         let provider = FakeProtectionAttachmentRuleProvider(
             manifest: Self.makeManifest(
-                ruleLists: [
-                    (trackingRuleList, .trackingNetwork),
-                    (matchingAdblockRuleList, .adblockAdsPrivacyNetwork),
-                    (invalidAdblockRuleList, .adblockAdsPrivacyNetwork),
-                ]
+                ruleLists: [(ruleList, .adblockAdsPrivacyNetwork)]
             ),
-            definitions: [
-                trackingRuleList,
-                matchingAdblockRuleList,
-                invalidAdblockRuleList,
-            ]
+            definitions: [ruleList]
         )
         let service = ProtectionAttachmentService(
             ruleProvider: provider,
             compiledRuleListCatalog: SumiCompiledContentRuleListCatalog()
         )
-
         let plan = service.globalAttachmentPlan(
             for: .adblock,
-            includeExpensiveDiagnostics: true,
-            loadRuleDefinitions: true
+            loadRuleDefinitions: false
         )
 
-        XCTAssertEqual(plan.overlapSummary.exactCanonicalOverlapCount, 1)
-        XCTAssertFalse(plan.overlapSummary.exactComparisonAvailable)
-        XCTAssertTrue(
-            plan.overlapSummary.notes.contains {
-                $0.contains("cannot be safely canonicalized")
-            }
-        )
-        XCTAssertTrue(
-            plan.overlapSummary.notes.contains {
-                $0.contains("sumi.test.adblock.invalid")
-            }
-        )
+        XCTAssertEqual(plan.activeGroups, [.adblockAdsPrivacyNetwork])
+        XCTAssertNoThrow(try service.validateRequiredGroupsReady(in: plan))
     }
 
     private static var validRuleListJSON: String {
@@ -159,7 +126,7 @@ final class ProtectionAttachmentServiceTests: XCTestCase {
     private static func makeManifest(
         ruleList: SumiContentRuleListDefinition
     ) -> AdblockCompiledGenerationManifest {
-        makeManifest(ruleLists: [(ruleList, .trackingNetwork)])
+        makeManifest(ruleLists: [(ruleList, .adblockAdsPrivacyNetwork)])
     }
 
     private static func makeManifest(
@@ -170,33 +137,20 @@ final class ProtectionAttachmentServiceTests: XCTestCase {
                 id: "\(entry.group.rawValue)-\(String(format: "%04d", index + 1))",
                 generationId: "generation-1",
                 kind: .network,
-                sourceListIdentifiers: [entry.group.rawValue],
-                sourceCategories: [.privacyOverlap],
                 protectionGroup: entry.group,
                 webKitIdentifier: entry.definition.webKitStoreIdentifier,
                 contentHash: entry.definition.contentHash,
                 approximateRuleCount: 1,
-                jsonByteCount: entry.definition.encodedContentRuleList.utf8.count,
-                compilerIdentity: nil,
-                diagnosticsSummary: "test"
+                jsonByteCount: entry.definition.encodedContentRuleList.utf8.count
             )
         }
         return AdblockCompiledGenerationManifest(
             schemaVersion: 1,
             activeGenerationId: "generation-1",
-            createdDate: Date(timeIntervalSince1970: 0),
             selectedFilterLists: [],
             networkShards: shards,
-            nativeCSSShards: [],
-            nativeCompiler: nil,
-            nativeCompilerSourceLists: nil,
-            nativeLogicalGroups: nil,
-            nativeCompilationSummary: nil,
-            compilerDiagnosticsSummary: "test",
             lastSuccessfulUpdateDate: Date(timeIntervalSince1970: 1),
             previousGenerationId: nil,
-            generationSource: .embeddedBundle,
-            nativeRuleBundleId: "bundle-\(SumiProtectionBundleProfile.adblock)",
             bundleProfileId: SumiProtectionBundleProfile.adblock
         )
     }

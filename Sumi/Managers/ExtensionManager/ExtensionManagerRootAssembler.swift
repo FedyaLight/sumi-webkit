@@ -25,7 +25,7 @@ enum ExtensionManagerRootAssembler {
         browserConfiguration: BrowserConfiguration,
         moduleRegistry: SumiModuleRegistry,
         extensionPreferences: UserDefaults,
-        profileReferenceAdmission: ProfileReferenceAdmissionLedger,
+        profileWebExtensionRuntime: SumiProfileWebExtensionRuntime,
         assemblySeams: ExtensionManagerAssemblySeams
     ) -> ExtensionManagerRootGraphs {
         let runtimeLoadStatus = ExtensionRuntimeLoadStatusAuthority()
@@ -40,11 +40,8 @@ enum ExtensionManagerRootAssembler {
         let siteAccessStore = SafariExtensionSiteAccessPolicyStore(
             database: database
         )
-        let profileRuntime = ExtensionProfileRuntime(
-            initialProfileId: initialProfile?.id,
-            initialProfile: initialProfile,
-            profileReferenceAdmission: profileReferenceAdmission
-        )
+        let profileRuntime = profileWebExtensionRuntime
+            .profileRuntimeForUserDemand(initialProfile: initialProfile)
         let diagnostics = ExtensionRuntimeDiagnostics()
         let loadRevisions = ExtensionLoadRevisionAuthority()
         #if DEBUG
@@ -161,7 +158,8 @@ enum ExtensionManagerRootAssembler {
                 actions: actionFoundation,
                 controller: ExtensionControllerGraphFoundation(
                     browserConfiguration: browserConfiguration,
-                    nativeMessagingPorts: nativePorts
+                    nativeMessagingPorts: nativePorts,
+                    profileWebExtensionRuntime: profileWebExtensionRuntime
                 ),
                 browser: ExtensionManagerBrowserFoundation(
                     attachment: browserAttachment,

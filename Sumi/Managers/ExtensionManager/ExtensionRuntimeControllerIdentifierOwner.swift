@@ -169,3 +169,35 @@ final class ExtensionControllerIdentifierOwner {
         }
     #endif
 }
+
+@available(macOS 15.5, *)
+@MainActor
+enum ExtensionProfileControllerIdentity {
+    nonisolated static func persistentIdentifier(for profileID: UUID) -> UUID {
+        var uuid = profileID.uuid
+        uuid.15 ^= 0xA5
+        return UUID(uuid: uuid)
+    }
+
+    static func runtimeIdentifier(for profileID: UUID) -> UUID {
+        #if DEBUG
+            // Tests run inside Sumi.app and must never reuse a production
+            // profile's persistent WebKit extension-storage namespace.
+            if RuntimeDiagnostics.isRunningTests {
+                if let existing = testIdentifiersByProfile[profileID] {
+                    return existing
+                }
+                let identifier = UUID()
+                testIdentifiersByProfile[profileID] = identifier
+                ExtensionControllerIdentifierOwner
+                    .registerTestControllerIdentifierIfRunningTests(identifier)
+                return identifier
+            }
+        #endif
+        return persistentIdentifier(for: profileID)
+    }
+
+    #if DEBUG
+        private static var testIdentifiersByProfile: [UUID: UUID] = [:]
+    #endif
+}

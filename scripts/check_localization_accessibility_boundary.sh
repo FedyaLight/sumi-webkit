@@ -91,7 +91,6 @@ semantic_contracts=(
   "Sumi/Components/Sidebar/SumiNavigationToolbarControls.swift|navigation-reload-or-stop"
   "Sumi/Components/Sidebar/URLBarHubScreenshotSettingsPresenter.swift|screenshot-settings-confirm"
   "Sumi/Components/Settings/PrivacySettingsView.swift|privacy-global-privacy-control"
-  "Sumi/Components/Settings/PrivacySettingsView.swift|privacy-update-protection-bundles"
   "App/SumiCommands.swift|dynamicShortcut(.findInPage)"
   "App/SumiCommands.swift|dynamicShortcut(.refresh)"
 )

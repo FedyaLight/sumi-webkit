@@ -90,6 +90,7 @@ final class SumiNativeMessagingDiagnosticsRecorder {
         loopKey: SumiNativeMessagingRelayLoopGuard.SessionKey? = nil,
         hostBundleIdentifier: String? = nil
     ) {
+        guard RuntimeDiagnostics.supportsVerboseDiagnostics else { return }
         let sessionState: SumiNativeMessagingSessionState?
         if let loopKey, let host = hostBundleIdentifier ?? diagnostic.hostBundleIdentifier {
             sessionState = loopGuard.sessionState(

@@ -8,30 +8,13 @@ import OSLog
 final class SumiCompiledContentRuleListRetirement {
     private let compiler: any SumiContentRuleListCompiling
     private let catalog: SumiCompiledContentRuleListCataloging
-    #if DEBUG
-        private let startupDiagnostics: any SumiProtectionStartupRestoreDiagnosticsRecording
-    #endif
-
-    #if DEBUG
-        init(
-            compiler: any SumiContentRuleListCompiling,
-            catalog: SumiCompiledContentRuleListCataloging,
-            startupDiagnostics: any SumiProtectionStartupRestoreDiagnosticsRecording =
-                SumiProtectionStartupRestoreDiagnosticsDefaults.recorder
-        ) {
-            self.compiler = compiler
-            self.catalog = catalog
-            self.startupDiagnostics = startupDiagnostics
-        }
-    #else
-        init(
+    init(
             compiler: any SumiContentRuleListCompiling,
             catalog: SumiCompiledContentRuleListCataloging
         ) {
             self.compiler = compiler
             self.catalog = catalog
         }
-    #endif
 
     @discardableResult
     func retireOrphanedRuleLists(
@@ -62,13 +45,6 @@ final class SumiCompiledContentRuleListRetirement {
         let identifiers = Self.uniqueIdentifiers(identifiers)
         guard !identifiers.isEmpty else { return nil }
 
-        #if DEBUG
-            startupDiagnostics.recordCompiledRuleListRemoval(
-                identifiers: identifiers,
-                reason: "\(reason) queued"
-            )
-            let diagnostics = startupDiagnostics
-        #endif
         return Task { @MainActor [compiler] in
             for identifier in identifiers {
                 do {
@@ -77,12 +53,6 @@ final class SumiCompiledContentRuleListRetirement {
                     )
                 } catch {
                     Self.logRemovalFailure(identifier: identifier, error: error)
-                    #if DEBUG
-                        diagnostics.recordCompiledRuleListRemoval(
-                            identifiers: [identifier],
-                            reason: "\(reason) failed for \(identifier): \(error.localizedDescription)"
-                        )
-                    #endif
                 }
             }
         }

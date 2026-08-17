@@ -239,11 +239,17 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         )
         registry.enable(.extensions)
         let browserConfiguration = BrowserConfiguration()
+        let profileWebExtensionRuntime = SumiProfileWebExtensionRuntime(
+            browserConfiguration: browserConfiguration,
+            profileReferenceAdmission: .testingAllowingReferences(),
+            initialProfileProvider: { profile }
+        )
         let fixture = makeSafariExtensionManagerTestFixture(
             context: container,
             initialProfile: profile,
             browserConfiguration: browserConfiguration,
-            moduleRegistry: registry
+            moduleRegistry: registry,
+            profileWebExtensionRuntime: profileWebExtensionRuntime
         )
         let manager = fixture.manager
         let inspection = fixture.inspection
@@ -252,6 +258,8 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
             database: container,
             browserConfiguration: browserConfiguration,
             initialProfileProvider: { profile },
+            profileReferenceAdmission: .testingAllowingReferences(),
+            profileWebExtensionRuntime: profileWebExtensionRuntime,
             managerFactory: { _, _, _, _ in manager }
         )
         let windowRegistry = WindowRegistry()

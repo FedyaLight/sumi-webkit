@@ -1,0 +1,906 @@
+{
+  "lists": [
+    {
+      "category": "ads",
+      "defaultEnabled": true,
+      "description": "Comprehensive ad-blocking rules by AdGuard.",
+      "displayName": "AdGuard Base Filter",
+      "id": "adguard-base-safari",
+      "url": "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/platforms/extension/safari/filters/2_optimized.txt"
+    },
+    {
+      "category": "privacy",
+      "defaultEnabled": true,
+      "description": "Blocks online tracking and web analytics systems.",
+      "displayName": "AdGuard Tracking Protection Filter",
+      "id": "adguard-tracking-safari",
+      "url": "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/platforms/extension/safari/filters/3_optimized.txt"
+    },
+    {
+      "category": "privacy",
+      "defaultEnabled": false,
+      "description": "Unblocks affiliate and tracking referral links that otherwise break in emails, search results, and redirects.",
+      "displayName": "HaGeZi Referral Allowlist",
+      "id": "hagezi-referral-allowlist",
+      "trustLevel": "high",
+      "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/whitelist-referral.txt"
+    },
+    {
+      "category": "privacy",
+      "defaultEnabled": true,
+      "description": "Removes tracking parameters from URLs.",
+      "displayName": "AdGuard URL Tracking Protection Filter",
+      "id": "adguard-url-tracking",
+      "trustLevel": "high",
+      "url": "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/filters/filter_17_TrackParam/filter.txt"
+    },
+    {
+      "category": "privacy",
+      "defaultEnabled": true,
+      "description": "Shortens links by removing unnecessary tracking and clutter parameters.",
+      "displayName": "Actually Legitimate URL Shortener Tool",
+      "id": "actually-legitimate-url-shortener",
+      "trustLevel": "high",
+      "url": "https://raw.githubusercontent.com/DandelionSprout/adfilt/master/LegitimateURLShortener.txt"
+    },
+    {
+      "category": "annoyances",
+      "defaultEnabled": false,
+      "description": "Blocks cookie consent notices on web pages.",
+      "displayName": "AdGuard Cookie Notices",
+      "id": "adguard-cookie-notices",
+      "url": "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/platforms/extension/safari/filters/18_optimized.txt"
+    },
+    {
+      "category": "annoyances",
+      "defaultEnabled": false,
+      "description": "Blocks promotional pop-ups, newsletter sign-ups, and notification requests.",
+      "displayName": "AdGuard Popups",
+      "id": "adguard-popups",
+      "url": "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/platforms/extension/safari/filters/19_optimized.txt"
+    },
+    {
+      "category": "annoyances",
+      "defaultEnabled": false,
+      "description": "Blocks banners promoting mobile app downloads.",
+      "displayName": "AdGuard Mobile App Banners",
+      "id": "adguard-mobile-app-banners",
+      "url": "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/platforms/extension/safari/filters/20_optimized.txt"
+    },
+    {
+      "category": "annoyances",
+      "defaultEnabled": false,
+      "description": "Blocks miscellaneous irritating elements not covered by other filters.",
+      "displayName": "AdGuard Other Annoyances",
+      "id": "adguard-other-annoyances",
+      "url": "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/platforms/extension/safari/filters/21_optimized.txt"
+    },
+    {
+      "category": "annoyances",
+      "defaultEnabled": false,
+      "description": "Blocks third-party widgets, chat assistants, and support widgets.",
+      "displayName": "AdGuard Widgets",
+      "id": "adguard-widgets",
+      "url": "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/platforms/extension/safari/filters/22_optimized.txt"
+    },
+    {
+      "category": "annoyances",
+      "defaultEnabled": false,
+      "description": "Blocks social media widgets and buttons.",
+      "displayName": "AdGuard Social Media Filter",
+      "id": "adguard-social-media-filter",
+      "url": "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/platforms/extension/safari/filters/4_optimized.txt"
+    },
+    {
+      "category": "annoyances",
+      "defaultEnabled": false,
+      "description": "Hides in-page pop-ups, banners, and other unwanted page elements.",
+      "displayName": "Fanboy's Annoyances Filter",
+      "id": "fanboy-s-annoyances-filter",
+      "url": "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/platforms/extension/safari/filters/122_optimized.txt"
+    },
+    {
+      "category": "annoyances",
+      "defaultEnabled": false,
+      "description": "Blocks social media content on webpages.",
+      "displayName": "Fanboy's Social Blocking List",
+      "id": "fanboy-s-social-blocking-list",
+      "url": "https://easylist.to/easylist/fanboy-social.txt"
+    },
+    {
+      "category": "annoyances",
+      "defaultEnabled": false,
+      "description": "Blocks AI-generated suggestions and recommendations on search engines and websites.",
+      "displayName": "Fanboy's Anti-AI Suggestions",
+      "id": "fanboy-s-anti-ai-suggestions",
+      "url": "https://raw.githubusercontent.com/easylist/easylist/refs/heads/master/fanboy-addon/fanboy_ai_suggestions.txt"
+    },
+    {
+      "category": "security",
+      "defaultEnabled": true,
+      "description": "Protects against suspicious URLs, phishing sites, and unwanted software.",
+      "displayName": "Online Security Filter",
+      "id": "online-malicious-url-safari",
+      "url": "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/platforms/extension/safari/filters/208_optimized.txt"
+    },
+    {
+      "category": "annoyances",
+      "defaultEnabled": true,
+      "description": "Blocks ads and tracking servers to enhance privacy.",
+      "displayName": "Peter Lowe's Blocklist",
+      "id": "peter-lowe-safari",
+      "url": "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/platforms/extension/safari/filters/204_optimized.txt"
+    },
+    {
+      "category": "annoyances",
+      "defaultEnabled": true,
+      "description": "Bypasses Anti-Adblock scripts used on some websites.",
+      "displayName": "Anti-Adblock List",
+      "id": "adblock-warning-removal-safari",
+      "url": "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/platforms/extension/safari/filters/207_optimized.txt"
+    },
+    {
+      "category": "annoyances",
+      "defaultEnabled": false,
+      "description": "Blocks paywall-related elements. Enable the corresponding userscript for best results.",
+      "displayName": "Bypass Paywalls Clean Filter",
+      "id": "bypass-paywalls-clean-filter",
+      "url": "https://bpc-filter-proxy.wmailrelayb8d890.workers.dev"
+    },
+    {
+      "category": "experimental",
+      "defaultEnabled": false,
+      "description": "Contains new rules and fixes not yet included in other filters.",
+      "displayName": "AdGuard Experimental Filter",
+      "id": "adguard-experimental-filter",
+      "url": "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/platforms/extension/safari/filters/5_optimized.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Additional filter list for websites in Indonesian.",
+      "displayName": "ABPindo",
+      "id": "abpindo",
+      "languages": [
+        "id"
+      ],
+      "trustLevel": "high",
+      "url": "https://raw.githubusercontent.com/ABPindo/indonesianadblockrules/master/subscriptions/abpindo.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Vietnamese adblock filter list.",
+      "displayName": "ABPVN List",
+      "id": "abpvn-list",
+      "languages": [
+        "vi"
+      ],
+      "trustLevel": "high",
+      "url": "https://raw.githubusercontent.com/abpvn/abpvn/master/filter/abpvn_adguard.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Finnish ad blocking filter list.",
+      "displayName": "Adblock List for Finland",
+      "id": "adblock-list-for-finland",
+      "languages": [
+        "fi"
+      ],
+      "trustLevel": "high",
+      "url": "https://raw.githubusercontent.com/finnish-easylist-addition/finnish-easylist-addition/gh-pages/Finland_adb.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Additional filter list for websites in Indonesian.",
+      "displayName": "AdBlockID",
+      "id": "adblockid",
+      "languages": [
+        "id"
+      ],
+      "trustLevel": "high",
+      "url": "https://raw.githubusercontent.com/realodix/AdBlockID/main/dist/adblockid.adfl.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Community filter list that blocks ads on Albanian and Kosovar websites.",
+      "displayName": "Adblock List for Albania and Kosovo",
+      "id": "adblock-list-for-albania-and-kosovo",
+      "languages": [
+        "sq"
+      ],
+      "trustLevel": "low",
+      "url": "https://raw.githubusercontent.com/AnXh3L0/blocklist/master/albanian-easylist-addition/Albania.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "EasyList China + AdGuard Chinese filter. Filter list that specifically removes ads on websites in Chinese language.",
+      "displayName": "AdGuard Chinese filter",
+      "id": "adguard-chinese-filter",
+      "languages": [
+        "zh"
+      ],
+      "trustLevel": "full",
+      "url": "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/refs/heads/master/platforms/extension/safari/filters/224_optimized.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "EasyList Dutch + AdGuard Dutch filter. Filter list that specifically removes ads on websites in Dutch language.",
+      "displayName": "AdGuard Dutch filter",
+      "id": "adguard-dutch-filter",
+      "languages": [
+        "nl"
+      ],
+      "trustLevel": "full",
+      "url": "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/refs/heads/master/platforms/extension/safari/filters/8_optimized.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Liste FR + AdGuard French filter. Filter list that specifically removes ads on websites in French language.",
+      "displayName": "AdGuard French filter",
+      "id": "adguard-french-filter",
+      "languages": [
+        "fr"
+      ],
+      "trustLevel": "full",
+      "url": "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/refs/heads/master/platforms/extension/safari/filters/16_optimized.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "EasyList Germany + AdGuard German filter. Filter list that specifically removes ads on websites in German language.",
+      "displayName": "AdGuard German filter",
+      "id": "adguard-german-filter",
+      "languages": [
+        "de"
+      ],
+      "trustLevel": "full",
+      "url": "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/refs/heads/master/platforms/extension/safari/filters/6_optimized.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Filter that enables ad blocking on websites in Japanese language.",
+      "displayName": "AdGuard Japanese filter",
+      "id": "adguard-japanese-filter",
+      "languages": [
+        "ja"
+      ],
+      "trustLevel": "full",
+      "url": "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/refs/heads/master/platforms/extension/safari/filters/7_optimized.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Filter that enables ad blocking on websites in Russian language.",
+      "displayName": "AdGuard Russian filter",
+      "id": "adguard-russian-filter",
+      "languages": [
+        "ru"
+      ],
+      "trustLevel": "full",
+      "url": "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/refs/heads/master/platforms/extension/safari/filters/1_optimized.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Filter list that specifically removes ads on websites in Spanish, Portuguese, and Brazilian Portuguese languages.",
+      "displayName": "AdGuard Spanish/Portuguese filter",
+      "id": "adguard-spanish-portuguese-filter",
+      "languages": [
+        "es",
+        "pt"
+      ],
+      "trustLevel": "full",
+      "url": "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/refs/heads/master/platforms/extension/safari/filters/9_optimized.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Filter list that specifically removes ads on websites in Turkish language.",
+      "displayName": "AdGuard Turkish filter",
+      "id": "adguard-turkish-filter",
+      "languages": [
+        "tr"
+      ],
+      "trustLevel": "full",
+      "url": "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/refs/heads/master/platforms/extension/safari/filters/13_optimized.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Filter that enables ad blocking on websites in Ukrainian language.",
+      "displayName": "AdGuard Ukrainian filter",
+      "id": "adguard-ukrainian-filter",
+      "languages": [
+        "uk"
+      ],
+      "trustLevel": "full",
+      "url": "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/refs/heads/master/platforms/extension/safari/filters/23_optimized.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Additional filter list for websites in Bulgarian.",
+      "displayName": "Bulgarian list",
+      "id": "bulgarian-list",
+      "languages": [
+        "bg"
+      ],
+      "trustLevel": "high",
+      "url": "https://stanev.org/abp/adblock_bg.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Supplement for EasyList China+EasyList and EasyPrivacy.",
+      "displayName": "CJX's Annoyances List",
+      "id": "cjx-s-annoyances-list",
+      "languages": [
+        "zh"
+      ],
+      "trustLevel": "low",
+      "url": "https://raw.githubusercontent.com/cjx82630/cjxlist/master/cjx-annoyance.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "This list covers websites for Norway, Denmark, Iceland, Danish territories, and the Sami indigenous population.",
+      "displayName": "Dandelion Sprout's Nordic Filters",
+      "id": "dandelion-sprout-s-nordic-filters",
+      "languages": [
+        "no",
+        "da",
+        "is",
+        "fo",
+        "kl"
+      ],
+      "trustLevel": "high",
+      "url": "https://raw.githubusercontent.com/DandelionSprout/adfilt/master/NorwegianExperimentalList%20alternate%20versions/NordicFiltersAdGuard.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "A filter list for websites in Serbian, Montenegrin, Croatian, and Bosnian.",
+      "displayName": "Dandelion Sprout's Serbo-Croatian List",
+      "id": "dandelion-sprout-s-serbo-croatian-list",
+      "languages": [
+        "sr",
+        "hr",
+        "bs",
+        "cnr"
+      ],
+      "trustLevel": "high",
+      "url": "https://raw.githubusercontent.com/DandelionSprout/adfilt/master/SerboCroatianList.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Additional filter list for websites in Chinese. Already included in AdGuard Chinese filter.",
+      "displayName": "EasyList China",
+      "id": "easylist-china",
+      "languages": [
+        "zh"
+      ],
+      "trustLevel": "high",
+      "url": "https://raw.githubusercontent.com/easylist/easylistchina/master/easylistchina.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Additional filter list for websites in Czech and Slovak.",
+      "displayName": "EasyList Czech and Slovak",
+      "id": "easylist-czech-and-slovak",
+      "languages": [
+        "cs",
+        "sk"
+      ],
+      "trustLevel": "high",
+      "url": "https://raw.githubusercontent.com/tomasko126/easylistczechandslovak/master/filters.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Additional filter list for websites in Dutch. Already included in AdGuard Dutch filter.",
+      "displayName": "EasyList Dutch",
+      "id": "easylist-dutch",
+      "languages": [
+        "nl"
+      ],
+      "trustLevel": "low",
+      "url": "https://easylist-downloads.adblockplus.org/easylistdutch.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Additional filter list for websites in German. Already included in AdGuard German filter.",
+      "displayName": "EasyList Germany",
+      "id": "easylist-germany",
+      "languages": [
+        "de"
+      ],
+      "trustLevel": "low",
+      "url": "https://easylist.to/easylistgermany/easylistgermany.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Additional filter list for websites in Hebrew.",
+      "displayName": "EasyList Hebrew",
+      "id": "easylist-hebrew",
+      "languages": [
+        "he"
+      ],
+      "trustLevel": "high",
+      "url": "https://raw.githubusercontent.com/easylist/EasyListHebrew/master/EasyListHebrew.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Additional filter list for websites in Italian.",
+      "displayName": "EasyList Italy",
+      "id": "easylist-italy",
+      "languages": [
+        "it"
+      ],
+      "trustLevel": "high",
+      "url": "https://easylist-downloads.adblockplus.org/easylistitaly.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Additional filter list for websites in Lithuanian.",
+      "displayName": "EasyList Lithuania",
+      "id": "easylist-lithuania",
+      "languages": [
+        "lt"
+      ],
+      "trustLevel": "high",
+      "url": "https://raw.githubusercontent.com/EasyList-Lithuania/easylist_lithuania/master/easylistlithuania.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Additional filter list for websites in Polish.",
+      "displayName": "EasyList Polish",
+      "id": "easylist-polish",
+      "languages": [
+        "pl"
+      ],
+      "trustLevel": "low",
+      "url": "https://easylist-downloads.adblockplus.org/easylistpolish.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Additional filter list for websites in Spanish and Portuguese.",
+      "displayName": "EasyList Portuguese",
+      "id": "easylist-portuguese",
+      "languages": [
+        "es",
+        "pt"
+      ],
+      "trustLevel": "low",
+      "url": "https://easylist-downloads.adblockplus.org/easylistportuguese.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Additional filter list for websites in Spanish.",
+      "displayName": "EasyList Spanish",
+      "id": "easylist-spanish",
+      "languages": [
+        "es"
+      ],
+      "trustLevel": "low",
+      "url": "https://easylist-downloads.adblockplus.org/easylistspanish.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Filter that blocks ads on Thai sites.",
+      "displayName": "EasyList Thailand",
+      "id": "easylist-thailand",
+      "languages": [
+        "th"
+      ],
+      "trustLevel": "high",
+      "url": "https://raw.githubusercontent.com/easylist-thailand/easylist-thailand/master/subscription/easylist-thailand.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Filter for ad blocking on Estonian sites.",
+      "displayName": "Estonian List",
+      "id": "estonian-list",
+      "languages": [
+        "et"
+      ],
+      "trustLevel": "low",
+      "url": "https://adblock.ee/list.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Filter that aims to remove regional Swedish ads, tracking, social media, annoyances, sponsored articles etc.",
+      "displayName": "Frellwit's Swedish Filter",
+      "id": "frellwit-s-swedish-filter",
+      "languages": [
+        "sv"
+      ],
+      "trustLevel": "high",
+      "url": "https://raw.githubusercontent.com/lassekongo83/Frellwits-filter-lists/master/Frellwits-Swedish-Filter.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "EasyList supplement by eyeo for websites in Thai, Greek, Slovenian, Croatian, Serbian, Bosnian, and Filipino.",
+      "displayName": "Global Filters",
+      "id": "global-filters",
+      "languages": [
+        "th",
+        "el",
+        "sl",
+        "hr",
+        "sr",
+        "bs",
+        "fil"
+      ],
+      "trustLevel": "high",
+      "url": "https://easylist-downloads.adblockplus.org/global-filters.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Additional filter list for websites in Greek.",
+      "displayName": "Greek AdBlock Filter",
+      "id": "greek-adblock-filter",
+      "languages": [
+        "el"
+      ],
+      "trustLevel": "low",
+      "url": "https://www.void.gr/kargig/void-gr-filters.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Hufilter. Filter list that specifically removes ads on websites in the Hungarian language.",
+      "displayName": "Hungarian filter",
+      "id": "hungarian-filter",
+      "languages": [
+        "hu"
+      ],
+      "trustLevel": "high",
+      "url": "https://cdn.jsdelivr.net/gh/hufilter/hufilter@gh-pages/hufilter-adguard.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Additional filter list for websites in Icelandic.",
+      "displayName": "Icelandic ABP List",
+      "id": "icelandic-abp-list",
+      "languages": [
+        "is"
+      ],
+      "trustLevel": "high",
+      "url": "https://adblock.gardar.net/is.abp.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Additional filter list for websites in Hindi, Tamil and other Dravidian and Indic languages.",
+      "displayName": "IndianList",
+      "id": "indianlist",
+      "languages": [
+        "hi",
+        "as",
+        "bn",
+        "gu",
+        "kn",
+        "mai",
+        "ml",
+        "mr",
+        "ne",
+        "or",
+        "pa",
+        "si",
+        "ta",
+        "te"
+      ],
+      "trustLevel": "low",
+      "url": "https://easylist-downloads.adblockplus.org/indianlist.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Filter that protects against various types of scams in the Polish network, such as mass text messaging, fake online stores, etc.",
+      "displayName": "KAD - Anti-Scam",
+      "id": "kad-anti-scam",
+      "languages": [
+        "pl"
+      ],
+      "trustLevel": "low",
+      "url": "https://raw.githubusercontent.com/FiltersHeroes/KAD/master/KAD.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Additional filter list for websites in Latvian.",
+      "displayName": "Latvian List",
+      "id": "latvian-list",
+      "languages": [
+        "lv"
+      ],
+      "trustLevel": "high",
+      "url": "https://raw.githubusercontent.com/Latvian-List/adblock-latvian/master/lists/latvian-list.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Filter that removes ads and various scripts from websites with Korean content. Combined and augmented with AdGuard-specific rules for enhanced filtering. This filter is expected to be used alongside with AdGuard Base filter.",
+      "displayName": "List-KR",
+      "id": "list-kr",
+      "languages": [
+        "ko"
+      ],
+      "trustLevel": "high",
+      "url": "https://filters.adtidy.org/extension/safari/filters/227_optimized.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Additional filter list for websites in Arabic.",
+      "displayName": "Liste AR",
+      "id": "liste-ar",
+      "languages": [
+        "ar"
+      ],
+      "trustLevel": "high",
+      "url": "https://easylist-downloads.adblockplus.org/Liste_AR.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Additional filter list for websites in French. Already included in AdGuard French filter.",
+      "displayName": "Liste FR",
+      "id": "liste-fr",
+      "languages": [
+        "fr"
+      ],
+      "trustLevel": "low",
+      "url": "https://easylist-downloads.adblockplus.org/liste_fr.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Blocks ads and trackers on various Macedonian websites.",
+      "displayName": "Macedonian adBlock Filters",
+      "id": "macedonian-adblock-filters",
+      "languages": [
+        "mk"
+      ],
+      "trustLevel": "low",
+      "url": "https://raw.githubusercontent.com/RandomAdversary/Macedonian-adBlock-Filters/master/Filters"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Additional filter list for websites in Polish.",
+      "displayName": "Official Polish filters for AdBlock, uBlock Origin & AdGuard",
+      "id": "official-polish-filters-for-adblock-ublock-origin-adguard",
+      "languages": [
+        "pl"
+      ],
+      "trustLevel": "high",
+      "url": "https://raw.githubusercontent.com/MajkiIT/polish-ads-filter/master/polish-adblock-filters/adblock.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Filter list for blocking ads and trackers on websites in Persian.",
+      "displayName": "Persian Blocker",
+      "id": "persian-blocker",
+      "languages": [
+        "fa",
+        "tg",
+        "ps"
+      ],
+      "trustLevel": "high",
+      "url": "https://raw.githubusercontent.com/MasterKia/PersianBlocker/main/PersianBlocker.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Filter list that hides and blocks pop-ups, widgets, newsletters, push notifications, arrows, tagged internal links that are off-topic, and other irritating elements. Polish GDPR-Cookies Filters is already in it.",
+      "displayName": "Polish Annoyances Filters",
+      "id": "polish-annoyances-filters",
+      "languages": [
+        "pl"
+      ],
+      "trustLevel": "high",
+      "url": "https://raw.githubusercontent.com/PolishFiltersTeam/PolishAnnoyanceFilters/master/PPB.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Official Polish filters against Adblock alerts.",
+      "displayName": "Polish Anti Adblock Filters",
+      "id": "polish-anti-adblock-filters",
+      "languages": [
+        "pl"
+      ],
+      "trustLevel": "high",
+      "url": "https://raw.githubusercontent.com/olegwukr/polish-privacy-filters/master/anti-adblock.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Filters that block and hide RSS elements and remnants of hidden newsletters combined with social elements on Polish websites.",
+      "displayName": "Polish Anti-Annoying Special Supplement",
+      "id": "polish-anti-annoying-special-supplement",
+      "languages": [
+        "pl"
+      ],
+      "trustLevel": "high",
+      "url": "https://raw.githubusercontent.com/FiltersHeroes/PolishAntiAnnoyingSpecialSupplement/master/polish_rss_filters.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Polish filter list for cookies blocking.",
+      "displayName": "Polish GDPR-Cookies Filters",
+      "id": "polish-gdpr-cookies-filters",
+      "languages": [
+        "pl"
+      ],
+      "trustLevel": "high",
+      "url": "https://raw.githubusercontent.com/MajkiIT/polish-ads-filter/master/cookies_filters/adblock_cookies.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Polish filter list for social widgets, popups, etc.",
+      "displayName": "Polish Social Filters",
+      "id": "polish-social-filters",
+      "languages": [
+        "pl"
+      ],
+      "trustLevel": "high",
+      "url": "https://raw.githubusercontent.com/MajkiIT/polish-ads-filter/master/adblock_social_filters/adblock_social_list.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Community filter list that blocks ads on Dhivehi (Maldivian) websites.",
+      "displayName": "Raajje AdList",
+      "id": "raajje-adlist",
+      "languages": [
+        "dv"
+      ],
+      "trustLevel": "low",
+      "url": "https://raw.githubusercontent.com/lonum1rus/Raajje-AdList/master/filter.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Romanian ad blocking filter subscription.",
+      "displayName": "road-block light",
+      "id": "road-block-light",
+      "languages": [
+        "ro"
+      ],
+      "trustLevel": "high",
+      "url": "https://raw.githubusercontent.com/tcptomato/ROad-Block/master/road-block-filters-light.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Additional filter list for websites in Romanian.",
+      "displayName": "ROList",
+      "id": "rolist",
+      "languages": [
+        "ro"
+      ],
+      "trustLevel": "low",
+      "url": "https://www.zoso.ro/pages/rolist.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "This is a complementary list for ROList with annoyances that are not necessarily banners. It is a very aggressive list and not recommended for beginners.",
+      "displayName": "ROLIST2",
+      "id": "rolist2",
+      "languages": [
+        "ro"
+      ],
+      "trustLevel": "low",
+      "url": "https://www.zoso.ro/pages/rolist2.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Russian-language filter list that also covers Ukrainian, Kazakh, and Uzbek websites.",
+      "displayName": "RU AdList",
+      "id": "ru-adlist",
+      "languages": [
+        "ru",
+        "uk",
+        "kk",
+        "uz"
+      ],
+      "trustLevel": "low",
+      "url": "https://easylist-downloads.adblockplus.org/advblock.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "RU AdList supplement for trackers blocking.",
+      "displayName": "RU AdList: Counters",
+      "id": "ru-adlist-counters",
+      "languages": [
+        "ru"
+      ],
+      "trustLevel": "low",
+      "url": "https://easylist-downloads.adblockplus.org/cntblock.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Italian adblock filter list.",
+      "displayName": "Xfiles",
+      "id": "xfiles",
+      "languages": [
+        "it"
+      ],
+      "trustLevel": "low",
+      "url": "https://raw.githubusercontent.com/gioxx/xfiles/master/filtri.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Blocks ads on the Chinese video platforms (MangoTV, DouYu and others).",
+      "displayName": "xinggsf",
+      "id": "xinggsf",
+      "languages": [
+        "zh"
+      ],
+      "trustLevel": "high",
+      "url": "https://raw.githubusercontent.com/xinggsf/Adblock-Plus-Rule/master/rule.txt"
+    },
+    {
+      "category": "foreign",
+      "defaultEnabled": false,
+      "description": "Filter that blocks ads on Korean sites.",
+      "displayName": "YousList",
+      "id": "youslist",
+      "languages": [
+        "ko"
+      ],
+      "trustLevel": "high",
+      "url": "https://raw.githubusercontent.com/yous/YousList/master/youslist.txt"
+    },
+    {
+      "category": "privacy",
+      "defaultEnabled": true,
+      "description": "Blocks tracking scripts, web beacons, and other privacy-invasive elements.",
+      "displayName": "EasyPrivacy",
+      "id": "easyprivacy-safari",
+      "url": "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/platforms/extension/safari/filters/118_optimized.txt"
+    },
+    {
+      "category": "annoyances",
+      "defaultEnabled": false,
+      "description": "Extensive blocklist targeting ads, trackers, and other unwanted content.",
+      "displayName": "Hagezi Pro Mini",
+      "id": "hagezi-pro-mini",
+      "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/pro.mini.txt"
+    }
+  ],
+  "schemaVersion": 1
+}

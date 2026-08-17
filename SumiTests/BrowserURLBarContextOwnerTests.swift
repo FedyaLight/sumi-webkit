@@ -194,6 +194,19 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
             previousRevision
         )
         XCTAssertEqual(tab.mainFrameLoads.currentIntent.targetURL, tab.url)
+
+        let hubReloadRevision = tab.mainFrameLoads.currentIntent.revision
+        XCTAssertTrue(
+            harness.browserManager.urlBarBundle.contextOwner.urlBarHubContext
+                .reloadAfterProtectionPolicyChange(
+                    tab,
+                    harness.windowState
+                )
+        )
+        XCTAssertGreaterThan(
+            tab.mainFrameLoads.currentIntent.revision,
+            hubReloadRevision
+        )
         webView.stopLoading()
     }
 

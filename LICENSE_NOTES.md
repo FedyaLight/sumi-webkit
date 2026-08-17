@@ -3,15 +3,12 @@
 Sumi is GPL-3.0. Third-party components keep their own notices where they are
 vendored or directly used.
 
-Prepared protection bundles are generated outside Sumi.app. Their manifests
-carry source metadata for the generated rule data:
+Adblock artifacts are generated locally from the filter lists selected by the
+user. Those source lists keep their own upstream terms.
 
-- `trackingNetwork` is derived from DuckDuckGo Tracker Radar / Tracker Data Set
-  and is marked CC BY-NC-SA 4.0, non-commercial, and share-alike in bundle
-  metadata.
-- Adblock groups are generated from upstream filter lists such as AdGuard and
-  uBlock lists. The source lists keep their own upstream terms; bundle metadata
-  records list names, URLs, hashes, byte sizes, and rule counts.
+Sumi's advanced blocker links SafariConverterLib 4.3.0 and embeds generated
+code from AdGuard ExtendedCss 2.1.1 and AdGuard Scriptlets 2.3.1. Those
+components and Sumi's adapters are GPL-3.0-compatible.
 
 User-imported third-party extensions are not redistributed by Sumi and keep
 their own upstream licenses.

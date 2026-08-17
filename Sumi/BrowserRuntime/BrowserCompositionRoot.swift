@@ -39,6 +39,7 @@ enum BrowserCompositionRoot {
         database: SumiDatabase,
         profileReferenceAdmission: ProfileReferenceAdmissionLedger,
         compiledRuleListCatalog: SumiCompiledContentRuleListCataloging,
+        adblockLegacyMigration: SumiAdblockLegacyMigration? = nil,
         adBlockingModule: SumiAdBlockingModule? = nil,
         protectionCoordinator: SumiProtectionCoordinator? = nil,
         adblockZapperStore: SumiAdblockZapperStore? = nil,
@@ -46,7 +47,6 @@ enum BrowserCompositionRoot {
     ) -> AssembledModules {
         let resolvedAdBlocking = adBlockingModule
             ?? SumiAdBlockingModule(
-                moduleRegistry: moduleRegistry,
                 database: database,
                 compiledRuleListCatalog: compiledRuleListCatalog
             )
@@ -54,10 +54,8 @@ enum BrowserCompositionRoot {
             ?? SumiProtectionCoordinator(
                 settings: SumiProtectionSettings(userDefaults: moduleRegistry.userDefaults),
                 adBlockingModule: resolvedAdBlocking,
-                bundleUpdateStatusStore: SumiProtectionBundleUpdateStatusStore(
-                    userDefaults: moduleRegistry.userDefaults
-                ),
-                compiledRuleListCatalog: compiledRuleListCatalog
+                compiledRuleListCatalog: compiledRuleListCatalog,
+                legacyMigration: adblockLegacyMigration
             )
         return AssembledModules(
             adBlockingModule: resolvedAdBlocking,
@@ -262,6 +260,23 @@ enum BrowserCompositionRoot {
             moduleRegistry: moduleRegistry
         )
         let tabStructureEventBus = TabStructureEventBus()
+        let adblockLegacyMigration: SumiAdblockLegacyMigration?
+        if RuntimeDiagnostics.isRunningTests {
+            adblockLegacyMigration = nil
+        } else {
+            let migration = SumiAdblockLegacyMigration(
+                userDefaults: moduleRegistry.userDefaults,
+                database: startupDatabase
+            )
+            do {
+                try migration.prepareOwnedStateIfNeeded()
+            } catch {
+                RuntimeDiagnostics.emit(
+                    "[Adblock] Legacy state migration failed: \(error)"
+                )
+            }
+            adblockLegacyMigration = migration
+        }
         let compiledRuleListCatalog =
             SumiCompiledContentRuleListCatalog(database: startupDatabase)
         let modules = assembleModules(
@@ -269,6 +284,7 @@ enum BrowserCompositionRoot {
             database: startupDatabase,
             profileReferenceAdmission: profileReferenceAdmission,
             compiledRuleListCatalog: compiledRuleListCatalog,
+            adblockLegacyMigration: adblockLegacyMigration,
             adBlockingModule: adBlockingModule,
             protectionCoordinator: protectionCoordinator,
             adblockZapperStore: adblockZapperStore,

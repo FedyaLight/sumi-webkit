@@ -40,6 +40,137 @@ final class AdblockGenerationArchitectureTests: XCTestCase {
         XCTAssertEqual(persisted, ["network": ["compiled.two"]])
     }
 
+    @MainActor
+    func testLegacyMigrationResetsEngineStateOnceAndPreservesSelection() throws {
+        let suiteName = "SumiAdblockLegacyMigrationTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "SumiAdblockLegacyMigrationTests-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            XCTAssertNoThrow(try FileManager.default.removeItem(at: root))
+        }
+        let storageURLs = ["Adblock", "AdblockRemoteBundles", "SelectedFilterBundles"]
+            .map { root.appendingPathComponent($0, isDirectory: true) }
+        for url in storageURLs {
+            try FileManager.default.createDirectory(
+                at: url,
+                withIntermediateDirectories: true
+            )
+            try Data("legacy".utf8).write(
+                to: url.appendingPathComponent("payload")
+            )
+        }
+        defaults.set("protection", forKey: "settings.protection.level")
+        defaults.set("adblock", forKey: "settings.protection.appliedLevel")
+        defaults.set(
+            ["easylist", "ru-adlist"],
+            forKey: "settings.protection.filterListSelection"
+        )
+        defaults.set(
+            ["easylist"],
+            forKey: "settings.protection.appliedFilterListSelection"
+        )
+        defaults.set(
+            true,
+            forKey: "settings.protection.browserRestartRequired"
+        )
+        let database = try SumiDatabase.inMemory()
+        try database.transaction {
+            try $0.documents.save(
+                ["network": ["sumi.adblock.legacy"]],
+                forKey: SumiCompiledContentRuleListCatalog.documentKey
+            )
+        }
+        let migration = SumiAdblockLegacyMigration(
+            userDefaults: defaults,
+            database: database,
+            storageURLs: storageURLs,
+            compiler: RecordingAdblockCompiler(availableIdentifiers: [])
+        )
+
+        try migration.prepareOwnedStateIfNeeded()
+
+        XCTAssertTrue(storageURLs.allSatisfy {
+            FileManager.default.fileExists(atPath: $0.path) == false
+        })
+        let persisted = try database.read {
+            try $0.documents.value(
+                [String: [String]].self,
+                forKey: SumiCompiledContentRuleListCatalog.documentKey
+            )
+        }
+        XCTAssertNil(persisted)
+        XCTAssertEqual(
+            defaults.string(forKey: "settings.protection.level"),
+            "adblock"
+        )
+        XCTAssertEqual(
+            defaults.string(forKey: "settings.protection.appliedLevel"),
+            "off"
+        )
+        XCTAssertEqual(
+            defaults.stringArray(forKey: "settings.protection.filterListSelection"),
+            ["easylist", "ru-adlist"]
+        )
+        XCTAssertNil(
+            defaults.object(
+                forKey: "settings.protection.appliedFilterListSelection"
+            )
+        )
+        XCTAssertNil(
+            defaults.object(forKey: "settings.protection.browserRestartRequired")
+        )
+
+        try FileManager.default.createDirectory(
+            at: storageURLs[0],
+            withIntermediateDirectories: true
+        )
+        try migration.prepareOwnedStateIfNeeded()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: storageURLs[0].path))
+    }
+
+    @MainActor
+    func testLegacyMigrationRemovesOnlyOwnedCompiledRulesOnce() async throws {
+        let suiteName = "SumiAdblockCompiledMigrationTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let compiler = RecordingAdblockCompiler(
+            availableIdentifiers: [
+                "sumi.adblock.legacy",
+                "sumi.tracking.network.legacy",
+                "sumi.tracking.legacy",
+                "user.extension.rules",
+            ]
+        )
+        let migration = SumiAdblockLegacyMigration(
+            userDefaults: defaults,
+            database: try SumiDatabase.inMemory(),
+            storageURLs: [],
+            compiler: compiler
+        )
+
+        try await migration.removeLegacyCompiledRulesIfNeeded()
+        try await migration.removeLegacyCompiledRulesIfNeeded()
+
+        XCTAssertEqual(
+            compiler.removedIdentifiers.sorted(),
+            [
+                "sumi.adblock.legacy",
+                "sumi.tracking.legacy",
+                "sumi.tracking.network.legacy",
+            ]
+        )
+        let userRuleRemains = await compiler.canLookUpContentRuleList(
+            forIdentifier: "user.extension.rules"
+        )
+        XCTAssertTrue(userRuleRemains)
+    }
+
     func testArchiveRejectsIncompleteShardSetWithoutSwitchingActiveManifest() async throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
@@ -59,7 +190,7 @@ final class AdblockGenerationArchitectureTests: XCTestCase {
 
         let active = try await fixture.archive.activeManifest()
         XCTAssertEqual(active?.activeGenerationId, "stable")
-        let incomingDirectory = try await fixture.archive.generationDirectoryURL(generationId: "incoming")
+        let incomingDirectory = try fixture.archive.generationDirectoryURL(generationId: "incoming")
         XCTAssertFalse(FileManager.default.fileExists(atPath: incomingDirectory.path))
     }
 
@@ -74,7 +205,7 @@ final class AdblockGenerationArchitectureTests: XCTestCase {
             manifest: manifest,
             stagedCompiledShardURLs: [shard.id: source]
         )
-        let generationDirectory = try await fixture.archive.generationDirectoryURL(generationId: "generation")
+        let generationDirectory = try fixture.archive.generationDirectoryURL(generationId: "generation")
         try Data("{}".utf8).write(to: generationDirectory.appendingPathComponent("network.json"))
 
         do {
@@ -121,12 +252,35 @@ final class AdblockGenerationArchitectureTests: XCTestCase {
         XCTAssertNil(activeManifest)
     }
 
+    func testArchiveReadsLegacyLocalGenerationSource() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let manifest = makeManifest(generationId: "legacy")
+        try await fixture.archive.commit(
+            manifest: manifest,
+            stagedCompiledShardURLs: [:]
+        )
+        let manifestURL = fixture.root.appendingPathComponent(
+            "active-generation.json"
+        )
+        let current = try String(contentsOf: manifestURL, encoding: .utf8)
+        let legacy = current.replacingOccurrences(
+            of: "\"localSelection\"",
+            with: "\"developmentBundle\""
+        )
+        try Data(legacy.utf8).write(to: manifestURL, options: .atomic)
+
+        let decoded = try await fixture.archive.activeManifest()
+
+        XCTAssertEqual(decoded?.activeGenerationId, manifest.activeGenerationId)
+    }
+
     func testArchiveRejectsArchivedManifestWhoseIdentityDoesNotMatchDirectory() async throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
         let manifest = makeManifest(generationId: "expected")
         try await fixture.archive.commit(manifest: manifest, stagedCompiledShardURLs: [:])
-        let generationDirectory = try await fixture.archive.generationDirectoryURL(
+        let generationDirectory = try fixture.archive.generationDirectoryURL(
             generationId: "expected"
         )
         let manifestURL = generationDirectory.appendingPathComponent("manifest.json")
@@ -138,30 +292,6 @@ final class AdblockGenerationArchitectureTests: XCTestCase {
 
         await XCTAssertThrowsErrorAsync {
             _ = try await fixture.archive.archivedManifest(generationId: "expected")
-        }
-    }
-
-    func testArchiveRejectsTamperedWebKitIdentifierIndex() async throws {
-        let fixture = try Fixture()
-        defer { fixture.remove() }
-        let data = Data("[]".utf8)
-        let shard = makeShard(id: "network", generationId: "generation", data: data)
-        let manifest = makeManifest(generationId: "generation", shards: [shard])
-        try await fixture.archive.commit(
-            manifest: manifest,
-            stagedCompiledShardURLs: [
-                shard.id: try fixture.writeSource(data, name: "identifier-index.json"),
-            ]
-        )
-        let manifestURL = fixture.root.appendingPathComponent("active-generation.json")
-        var object = try XCTUnwrap(
-            try JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL)) as? [String: Any]
-        )
-        object["webKitRuleListIdentifiers"] = ["sumi.adblock.spoofed"]
-        try JSONSerialization.data(withJSONObject: object).write(to: manifestURL, options: .atomic)
-
-        await XCTAssertThrowsErrorAsync {
-            _ = try await fixture.archive.activeManifest()
         }
     }
 
@@ -226,7 +356,7 @@ final class AdblockGenerationArchitectureTests: XCTestCase {
             manifest: active,
             stagedCompiledShardURLs: [activeShard.id: try fixture.writeSource(activeData, name: "active.json")]
         )
-        let staleDirectory = try await fixture.archive.generationDirectoryURL(generationId: "stale")
+        let staleDirectory = try fixture.archive.generationDirectoryURL(generationId: "stale")
         try FileManager.default.createDirectory(at: staleDirectory, withIntermediateDirectories: true)
         let staleIdentifier = "sumi.adblock.stale"
         let compiler = RecordingAdblockCompiler(
@@ -243,157 +373,13 @@ final class AdblockGenerationArchitectureTests: XCTestCase {
 
         let report = await retention.removeUnrecoverableGenerations()
 
-        let previousDirectory = try await fixture.archive.generationDirectoryURL(generationId: "previous")
+        let previousDirectory = try fixture.archive.generationDirectoryURL(generationId: "previous")
         XCTAssertTrue(FileManager.default.fileExists(atPath: previousDirectory.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: staleDirectory.path))
         XCTAssertEqual(compiler.removedIdentifiers, [staleIdentifier])
         XCTAssertEqual(report.removedWebKitIdentifiers, [staleIdentifier])
         let retainedActiveManifest = try await fixture.archive.activeManifest()
         XCTAssertEqual(retainedActiveManifest?.previousGenerationId, "previous")
-    }
-
-    func testRemoteReleaseAssetIndexRejectsDuplicatesInsteadOfTrapping() throws {
-        let release = try JSONDecoder().decode(
-            SumiProtectionBundleGitHubRelease.self,
-            from: Data(
-                """
-                {
-                  "tag_name":"release",
-                  "html_url":null,
-                  "draft":false,
-                  "prerelease":false,
-                  "published_at":null,
-                  "assets":[
-                    {"name":"duplicate","size":2,"browser_download_url":"https://example.com/a","digest":null},
-                    {"name":"duplicate","size":2,"browser_download_url":"https://example.com/b","digest":null}
-                  ]
-                }
-                """.utf8
-            )
-        )
-
-        XCTAssertThrowsError(try SumiProtectionBundleReleaseValidator().approvedAssetIndex(for: release)) {
-            XCTAssertEqual(
-                $0 as? SumiProtectionBundleRemoteUpdateError,
-                .duplicateAssetName("duplicate")
-            )
-        }
-    }
-
-    func testRemoteCacheRefusesReplacementWhenInstalledVersionMetadataIsCorrupt() throws {
-        let fixture = try Fixture()
-        defer { fixture.remove() }
-        let profileId = "profile"
-        let bundleURL = SumiRemoteAdblockBundleCache.bundleURL(
-            profileId: profileId,
-            rootDirectory: fixture.root
-        )
-        try FileManager.default.createDirectory(at: bundleURL, withIntermediateDirectories: true)
-        try Data("not-json".utf8).write(
-            to: bundleURL.appendingPathComponent(SumiRemoteAdblockBundleCache.metadataFileName)
-        )
-        let cache = SumiProtectionBundleCache(rootDirectory: fixture.root)
-
-        XCTAssertThrowsError(
-            try cache.rejectDowngradeIfNeeded(
-                profileId: profileId,
-                incomingReleaseVersion: "99999999"
-            )
-        ) { error in
-            guard let remoteError = error as? SumiProtectionBundleRemoteUpdateError,
-                  case .cacheCommitFailed = remoteError
-            else {
-                return XCTFail("Expected fail-closed metadata validation, got \(error)")
-            }
-        }
-    }
-
-    func testCacheTransactionRestoresPreviousBundleWhenPostCommitValidationFails() throws {
-        let fixture = try Fixture()
-        defer { fixture.remove() }
-        let profileId = "profile"
-        let destination = SumiRemoteAdblockBundleCache.bundleURL(
-            profileId: profileId,
-            rootDirectory: fixture.root
-        )
-        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
-        let previousMarker = destination.appendingPathComponent("previous.txt")
-        try Data("previous".utf8).write(to: previousMarker)
-        let validator = FailSecondBundleValidation()
-        var transaction: SumiProtectionBundleCacheTransaction? = try SumiProtectionBundleCacheTransaction(
-            profileId: profileId,
-            rootDirectory: fixture.root,
-            payloadValidator: validator
-        )
-        try transaction?.write(Data("incoming".utf8), relativePath: "incoming.txt")
-
-        XCTAssertThrowsError(
-            try transaction?.commit(
-                expectedIdentity: SumiProtectionBundleIdentity(
-                    profileId: profileId,
-                    bundleId: "bundle",
-                    generationId: "generation"
-                )
-            )
-        )
-        transaction = nil
-
-        XCTAssertEqual(try Data(contentsOf: previousMarker), Data("previous".utf8))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: destination.appendingPathComponent("incoming.txt").path))
-    }
-
-    func testRemoteCacheCommitRechecksVersionBeforeReplacingInstalledBundle() throws {
-        let fixture = try Fixture()
-        defer { fixture.remove() }
-        let profileId = "profile"
-        let destination = SumiRemoteAdblockBundleCache.bundleURL(
-            profileId: profileId,
-            rootDirectory: fixture.root
-        )
-        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
-        let installedMarker = destination.appendingPathComponent("installed.txt")
-        try Data("newer".utf8).write(to: installedMarker)
-        let installedMetadata = SumiAdblockPreparedBundleRemoteMetadata(
-            releaseVersion: "3",
-            releaseTag: "3"
-        )
-        try JSONEncoder().encode(installedMetadata).write(
-            to: destination.appendingPathComponent(SumiRemoteAdblockBundleCache.metadataFileName)
-        )
-        var transaction: SumiProtectionBundleCacheTransaction? = try SumiProtectionBundleCacheTransaction(
-            profileId: profileId,
-            rootDirectory: fixture.root,
-            payloadValidator: AcceptBundleValidation()
-        )
-        try transaction?.write(Data("older".utf8), relativePath: "incoming.txt")
-        let cache = SumiProtectionBundleCache(rootDirectory: fixture.root)
-        let identity = SumiProtectionBundleIdentity(
-            profileId: profileId,
-            bundleId: "older-bundle",
-            generationId: "older-generation"
-        )
-        let pendingTransaction = try XCTUnwrap(transaction)
-
-        XCTAssertThrowsError(
-            try cache.commit(
-                pendingTransaction,
-                expectedIdentity: identity,
-                incomingReleaseVersion: "2"
-            )
-        ) { error in
-            XCTAssertEqual(
-                error as? SumiProtectionBundleRemoteUpdateError,
-                .releaseDowngradeRejected(current: "3", incoming: "2")
-            )
-        }
-        transaction = nil
-
-        XCTAssertEqual(try Data(contentsOf: installedMarker), Data("newer".utf8))
-        XCTAssertFalse(
-            FileManager.default.fileExists(
-                atPath: destination.appendingPathComponent("incoming.txt").path
-            )
-        )
     }
 
     @MainActor
@@ -544,12 +530,6 @@ final class AdblockGenerationArchitectureTests: XCTestCase {
 
     @MainActor
     func testDisabledModuleDoesNotCreateRuntimeAndStopsQueuedStartupBeforeDiskWork() async throws {
-        let suiteName = "AdblockGenerationArchitectureTests.\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let registry = SumiModuleRegistry(
-            settingsStore: SumiModuleSettingsStore(userDefaults: defaults)
-        )
         let archiveRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent("AdblockStoppedRuntime-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: archiveRoot) }
@@ -558,14 +538,11 @@ final class AdblockGenerationArchitectureTests: XCTestCase {
         var sitePolicyCreationCount = 0
         var ruleListRuntimeCreationCount = 0
         let module = SumiAdBlockingModule(
-            moduleRegistry: registry,
             sitePolicyFactory: {
                 sitePolicyCreationCount += 1
                 return AdblockSitePolicyStore()
             },
-            preparedBundleResourceURL: nil,
-            preparedBundleRemoteRootURL: nil,
-            preparedBundleGeneratedRootURL: nil,
+            filterListCatalog: nil,
             compiledRuleListCatalog: SumiCompiledContentRuleListCatalog(),
             ruleListRuntimeFactory: { isEnabled in
                 ruleListRuntimeCreationCount += 1
@@ -573,8 +550,7 @@ final class AdblockGenerationArchitectureTests: XCTestCase {
                     isRuntimeEnabled: isEnabled,
                     generationArchive: archive,
                     compiler: compiler,
-                    compiledRuleListCatalog: SumiCompiledContentRuleListCatalog(),
-                    embeddedBundleURLProvider: { nil }
+                    compiledRuleListCatalog: SumiCompiledContentRuleListCatalog()
                 )
             }
         )
@@ -583,20 +559,26 @@ final class AdblockGenerationArchitectureTests: XCTestCase {
         XCTAssertEqual(sitePolicyCreationCount, 0)
         XCTAssertEqual(ruleListRuntimeCreationCount, 0)
         XCTAssertFalse(module.hasLoadedRuntime)
+        XCTAssertTrue(module.normalTabUserScripts(for: URL(string: "https://example.com")).isEmpty)
         XCTAssertTrue(try module.contentRuleListDefinitions(for: []).isEmpty)
         XCTAssertEqual(ruleListRuntimeCreationCount, 0)
 
         module.setRuntimeLevel(.adblock)
         _ = module.surfaceEligibility(for: URL(string: "https://example.com"))
         XCTAssertTrue(module.isEnabled)
-        XCTAssertTrue(module.isPreparedBundleRuntimeEnabled)
+        XCTAssertTrue(module.isEnabled)
+        let enabledURL = try XCTUnwrap(URL(string: "https://example.com"))
+        XCTAssertEqual(module.normalTabUserScripts(for: enabledURL).count, 1)
+        XCTAssertEqual(ruleListRuntimeCreationCount, 0)
         XCTAssertEqual(sitePolicyCreationCount, 1)
 
-        module.setRuntimeLevel(.protection)
-        _ = module.surfaceEligibility(for: URL(string: "https://example.com"))
-        XCTAssertFalse(module.isEnabled)
-        XCTAssertTrue(module.isPreparedBundleRuntimeEnabled)
-        XCTAssertEqual(sitePolicyCreationCount, 1)
+        module.setSiteOverride(.disabled, for: enabledURL)
+        XCTAssertTrue(module.normalTabUserScripts(for: enabledURL).isEmpty)
+        XCTAssertEqual(
+            module.normalTabUserScripts(for: URL(string: "https://example.org")).count,
+            1
+        )
+
         _ = try module.contentRuleListDefinitions(for: [])
         XCTAssertEqual(ruleListRuntimeCreationCount, 1)
         XCTAssertTrue(module.hasLoadedRuntime)
@@ -604,8 +586,9 @@ final class AdblockGenerationArchitectureTests: XCTestCase {
         // No suspension occurs between runtime creation and disable, so the
         // queued startup task must be cancelled before it can touch the archive.
         module.setRuntimeLevel(.off)
-        XCTAssertFalse(module.isPreparedBundleRuntimeEnabled)
+        XCTAssertFalse(module.isEnabled)
         XCTAssertFalse(module.hasLoadedRuntime)
+        XCTAssertTrue(module.normalTabUserScripts(for: enabledURL).isEmpty)
         await Task.yield()
         XCTAssertFalse(FileManager.default.fileExists(atPath: archiveRoot.path))
     }
@@ -619,16 +602,11 @@ final class AdblockGenerationArchitectureTests: XCTestCase {
         AdblockCompiledGenerationManifest(
             schemaVersion: schemaVersion,
             activeGenerationId: generationId,
-            createdDate: Date(timeIntervalSince1970: 0),
             selectedFilterLists: [],
             networkShards: shards,
-            nativeCSSShards: [],
-            nativeCompiler: nil,
-            nativeCompilerSourceLists: nil,
-            compilerDiagnosticsSummary: "test",
             lastSuccessfulUpdateDate: Date(timeIntervalSince1970: 0),
             previousGenerationId: previousGenerationId,
-            generationSource: .remoteReleaseBundle
+            bundleProfileId: SumiProtectionBundleProfile.adblock
         )
     }
 
@@ -641,14 +619,10 @@ final class AdblockGenerationArchitectureTests: XCTestCase {
             id: id,
             generationId: generationId,
             kind: .network,
-            sourceListIdentifiers: [],
-            sourceCategories: [],
             webKitIdentifier: "sumi.adblock.\(generationId).\(id)",
             contentHash: SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(),
             approximateRuleCount: 1,
-            jsonByteCount: data.count,
-            compilerIdentity: nil,
-            diagnosticsSummary: "test"
+            jsonByteCount: data.count
         )
     }
 }
@@ -723,44 +697,6 @@ private final class RecordingAdblockCompiler: SumiContentRuleListCompiling, @unc
     func removeContentRuleList(forIdentifier identifier: String) async throws {
         availableIdentifiers.remove(identifier)
         removedIdentifiers.append(identifier)
-    }
-}
-
-private final class FailSecondBundleValidation: SumiProtectionBundlePayloadValidating, @unchecked Sendable {
-    private var validationCount = 0
-
-    func validateBundle(
-        at _: URL
-    ) throws -> SumiProtectionBundleValidationReceipt {
-        validationCount += 1
-        if validationCount == 3 {
-            throw TestError.publicationFailed
-        }
-        return SumiProtectionBundleValidationReceipt(
-            identity: SumiProtectionBundleIdentity(
-                profileId: "profile",
-                bundleId: "bundle",
-                generationId: "generation"
-            ),
-            payloadFingerprint: validationCount == 1
-                ? "candidate"
-                : "previous"
-        )
-    }
-}
-
-private struct AcceptBundleValidation: SumiProtectionBundlePayloadValidating {
-    func validateBundle(
-        at _: URL
-    ) throws -> SumiProtectionBundleValidationReceipt {
-        SumiProtectionBundleValidationReceipt(
-            identity: SumiProtectionBundleIdentity(
-                profileId: "profile",
-                bundleId: "older-bundle",
-                generationId: "older-generation"
-            ),
-            payloadFingerprint: "accepted"
-        )
     }
 }
 

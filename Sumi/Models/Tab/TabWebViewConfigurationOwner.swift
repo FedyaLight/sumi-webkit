@@ -5,6 +5,7 @@ import WebKit
 @MainActor
 struct TabWebViewConfigurationContext {
     let browserConfiguration: BrowserConfiguration
+    let adBlockingNormalTabUserScripts: (URL?) -> [SumiPageScript]
     let extensionNormalTabUserScripts: () -> [SumiPageScript]
     let boostsNormalTabUserScripts: (URL, UUID?, Bool) -> [SumiPageScript]
     let protectionDecision: (URL, UUID) -> SumiProtectionNormalTabDecision?
@@ -16,6 +17,7 @@ struct TabWebViewConfigurationContext {
 
     static let empty = TabWebViewConfigurationContext(
         browserConfiguration: .shared,
+        adBlockingNormalTabUserScripts: { _ in [] },
         extensionNormalTabUserScripts: { [] },
         boostsNormalTabUserScripts: { _, _, _ in [] },
         protectionDecision: { _, _ in nil },
@@ -84,8 +86,9 @@ final class TabWebViewConfigurationOwner {
         context: TabWebViewConfigurationContext,
         isEphemeral: Bool
     ) -> [SumiPageScript] {
-        guard let targetURL else { return [] }
-        return context.boostsNormalTabUserScripts(
+        let adBlockingScripts = context.adBlockingNormalTabUserScripts(targetURL)
+        guard let targetURL else { return adBlockingScripts }
+        return adBlockingScripts + context.boostsNormalTabUserScripts(
             targetURL,
             profileIdProvider(),
             isEphemeral

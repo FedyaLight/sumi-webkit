@@ -19,8 +19,7 @@ struct URLBarHubProtectionSection: View {
 
     private var plan: SumiProtectionRulePlan {
         coordinator.cachedRulePlan(
-            for: currentTab?.url,
-            profileId: currentTab?.resolveProfile()?.id
+            for: currentTab?.url
         )
     }
 

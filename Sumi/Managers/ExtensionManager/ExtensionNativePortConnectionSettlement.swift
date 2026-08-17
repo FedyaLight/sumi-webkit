@@ -120,8 +120,6 @@ final class ExtensionNativePortConnectionSettlement {
             port: port,
             extensionId: extensionId,
             profileId: profileId,
-            isPrivateBrowsing: profileRuntime.isPrivateRuntimeProfile(profileId),
-            privateAccessAllowed: evidence.context.hasAccessToPrivateData,
             installedExtensions: installedExtensions.records,
             registerHandler: { [admission] session in
                 guard admission.isCurrent(evidence) else { return false }

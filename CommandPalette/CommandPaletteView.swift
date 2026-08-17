@@ -184,8 +184,8 @@ struct CommandPaletteView: View {
                                             onTab: {
                                                 handleTab()
                                             },
-                                            onReturn: {
-                                                handleReturn()
+                                            onReturn: { submittedText in
+                                                handleReturn(submittedText: submittedText)
                                             },
                                             onMoveSelection: { direction in
                                                 searchSession.navigateSuggestions(direction: direction)
@@ -465,7 +465,10 @@ struct CommandPaletteView: View {
         }
     }
 
-    private func handleReturn() {
+    private func handleReturn(submittedText: String) {
+        if searchSession.text != submittedText {
+            searchSession.text = submittedText
+        }
         guard let intent = searchSession.commitIntentForReturn() else { return }
         performCommitIntent(intent)
     }

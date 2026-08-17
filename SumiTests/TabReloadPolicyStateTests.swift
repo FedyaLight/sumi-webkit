@@ -50,13 +50,13 @@ final class TabReloadPolicyStateTests: XCTestCase {
         )
         let applied = SumiProtectionAttachmentState.disabled(
             siteHost: "example.com",
-            requestedLevel: .protection
+            requestedLevel: .adblock
         )
         let desired = SumiProtectionAttachmentState(
             siteHost: "example.com",
-            requestedLevel: .protection,
-            effectiveLevel: .protection,
-            activeGroups: [.trackingNetwork],
+            requestedLevel: .adblock,
+            effectiveLevel: .adblock,
+            activeGroups: [.adblockAdsPrivacyNetwork],
             attachedRuleListIdentifiers: ["tracking-rule"],
             activeGenerationId: "generation-1"
         )
@@ -160,9 +160,6 @@ final class TabReloadPolicyStateTests: XCTestCase {
         protectionSurfaceHost: @escaping (URL?) -> String? = {
             _ in nil
         },
-        protectionCurrentTabDiagnostics: @escaping (
-            ReloadProtectionDiagnosticsContext
-        ) -> SumiProtectionCurrentTabDiagnostics? = { _ in nil },
         autoplayPolicy: @escaping (URL?, Profile?)
             -> SumiAutoplayPolicy = { _, _ in .default },
         evaluateAutoplayPolicyChange: @escaping (
@@ -176,8 +173,7 @@ final class TabReloadPolicyStateTests: XCTestCase {
             ),
             protection: ProtectionPolicyStub(
                 attachment: protectionAttachmentState,
-                host: protectionSurfaceHost,
-                diagnosticsResult: protectionCurrentTabDiagnostics
+                host: protectionSurfaceHost
             ),
             autoplay: AutoplayPolicyStub(
                 policyResult: autoplayPolicy,
@@ -202,8 +198,6 @@ private struct SafariPolicyStub: SafariContentBlockerPolicyReading {
 private struct ProtectionPolicyStub: ProtectionPolicyReading {
     let attachment: (URL?) -> SumiProtectionAttachmentState
     let host: (URL?) -> String?
-    let diagnosticsResult: (ReloadProtectionDiagnosticsContext)
-        -> SumiProtectionCurrentTabDiagnostics?
 
     func attachmentState(
         for url: URL?
@@ -213,11 +207,6 @@ private struct ProtectionPolicyStub: ProtectionPolicyReading {
 
     func surfaceHost(for url: URL?) -> String? { host(url) }
 
-    func diagnostics(
-        _ context: ReloadProtectionDiagnosticsContext
-    ) -> SumiProtectionCurrentTabDiagnostics? {
-        diagnosticsResult(context)
-    }
 }
 
 @MainActor

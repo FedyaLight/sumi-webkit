@@ -55,8 +55,9 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
         XCTAssertTrue(controller.configuration.isPersistent)
         XCTAssertEqual(
             controller.configuration.identifier,
-            ExtensionControllerProvisioningOwner
-                .extensionControllerIdentifier(for: profile.id)
+            ExtensionProfileControllerIdentity.runtimeIdentifier(
+                for: profile.id
+            )
         )
         let profileStore = profile.dataStore
         let controllerDefaultStore = try XCTUnwrap(

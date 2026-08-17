@@ -5,37 +5,28 @@ import Foundation
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionControllerRuntimeRelease {
-    private let browserConfiguration: BrowserConfiguration
-    private let profileRuntime: ExtensionProfileRuntime
     private let runtimeLifecycle: ExtensionRuntimeLifecycleAuthority
     private let runtimeDemand: ExtensionRuntimeDemandAuthority
     private let controllerDelegateReadiness:
         ExtensionControllerDelegateReadiness
+    private let controllerProvisioning: ExtensionControllerProvisioningOwner
 
     init(
-        browserConfiguration: BrowserConfiguration,
-        profileRuntime: ExtensionProfileRuntime,
         runtimeLifecycle: ExtensionRuntimeLifecycleAuthority,
         runtimeDemand: ExtensionRuntimeDemandAuthority,
         controllerDelegateReadiness:
-            ExtensionControllerDelegateReadiness
+            ExtensionControllerDelegateReadiness,
+        controllerProvisioning: ExtensionControllerProvisioningOwner
     ) {
-        self.browserConfiguration = browserConfiguration
-        self.profileRuntime = profileRuntime
         self.runtimeLifecycle = runtimeLifecycle
         self.runtimeDemand = runtimeDemand
         self.controllerDelegateReadiness = controllerDelegateReadiness
+        self.controllerProvisioning = controllerProvisioning
     }
 
     func releaseAfterShutdown() {
         controllerDelegateReadiness.cancelAll()
-        browserConfiguration.webViewConfiguration.webExtensionController = nil
-        for controller in profileRuntime.controllersByProfile.values {
-            controller.delegate = nil
-        }
-        profileRuntime.replaceControllers([:])
-        profileRuntime.removeAllWebsiteDataStores()
-        profileRuntime.unbindBrowserProfileQuery()
+        controllerProvisioning.releaseUserRuntime()
         runtimeDemand.reset()
         runtimeLifecycle.resetAfterShutdown()
     }

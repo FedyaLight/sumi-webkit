@@ -8,8 +8,6 @@ final class ProtectionReloadState {
     private(set) var requirement: SumiProtectionReloadRequirement?
     private(set) var didManualReloadRebuildWebView = false
     private(set) var appliedAfterManualReload = false
-    var lastWebViewRebuildDuration: TimeInterval?
-    var lastURLHubSummaryDuration: TimeInterval?
 
     init(policyLedger: TabConfigurationPolicyLedger) {
         self.policyLedger = policyLedger
@@ -118,43 +116,6 @@ final class ProtectionReloadState {
         )
     }
 
-    func diagnostics(
-        for currentURL: URL,
-        existingWebView: WKWebView?,
-        policy: any ProtectionPolicyReading
-    ) -> SumiProtectionCurrentTabDiagnostics? {
-        let contentBlockingSummary = existingWebView?
-            .configuration
-            .userContentController
-            .sumiNormalTabUserContentController?
-            .contentBlockingAssetSummary
-        let actualAttachedRuleLists: AttachedRuleListSnapshot
-        if let identifiers = contentBlockingSummary?
-            .globalRuleListIdentifiers {
-            actualAttachedRuleLists = .identifiers(identifiers)
-        } else {
-            actualAttachedRuleLists = .deriveFromDiagnostics
-        }
-
-        return policy.diagnostics(
-            ReloadProtectionDiagnosticsContext(
-                currentURL: currentURL,
-                appliedState: appliedAttachmentState,
-                reloadRequired: isReloadRequired,
-                reloadRequiredReason: requirement.map {
-                    "desired=\($0.desiredAttachmentState.effectiveLevel.rawValue)"
-                },
-                didManualReloadRebuildWebView:
-                    didManualReloadRebuildWebView,
-                appliedAfterManualReload: appliedAfterManualReload,
-                actualAttachedRuleLists: actualAttachedRuleLists,
-                contentBlockingAssetSummary: contentBlockingSummary,
-                webViewRebuildDuration: lastWebViewRebuildDuration,
-                urlHubSummaryDuration: lastURLHubSummaryDuration
-            )
-        )
-    }
-
     func recordManualReloadResult(
         rebuiltForConfigurationPolicy: Bool,
         targetURL: URL?,
@@ -167,17 +128,12 @@ final class ProtectionReloadState {
             ) == true
     }
 
-    func recordWebViewRebuildSucceeded(startedAt start: Date) {
-        lastWebViewRebuildDuration = Date().timeIntervalSince(start)
-    }
-
     private func setRequirement(
         _ newValue: SumiProtectionReloadRequirement
     ) -> Bool {
         guard requirement != newValue else { return false }
         didManualReloadRebuildWebView = false
         appliedAfterManualReload = false
-        lastWebViewRebuildDuration = nil
         requirement = newValue
         return true
     }

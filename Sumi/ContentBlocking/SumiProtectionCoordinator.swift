@@ -1,23 +1,15 @@
 import Combine
 import Foundation
 import SumiDomain
-import OSLog
 
 @MainActor
 final class SumiProtectionCoordinator {
     let settings: SumiProtectionSettings
+    let filterListCatalog: SumiFilterListCatalog?
     private let adBlockingModule: SumiAdBlockingModule
     private let attachmentService: ProtectionAttachmentService
-    private let bundleLifecycle: SumiProtectionBundleLifecycle
-    #if DEBUG
-        private let startupDiagnostics: any SumiProtectionStartupRestoreDiagnosticsRecording
-    #endif
-
-    var bundleUpdateStatusStore: SumiProtectionBundleUpdateStatusStore {
-        bundleLifecycle.statusStore
-    }
-
-    private(set) var lastApplySummary: String?
+    private let selectedFilterBundleBuilder: SumiSelectedFilterBundleBuilder
+    private var legacyMigration: SumiAdblockLegacyMigration?
     private(set) var lastApplyError: String?
     private var runtimeAppliedLevel: SumiProtectionLevel
 
@@ -25,37 +17,20 @@ final class SumiProtectionCoordinator {
         settings: SumiProtectionSettings,
         adBlockingModule: SumiAdBlockingModule,
         siteNormalizer: SumiProtectionSiteNormalizer = SumiProtectionSiteNormalizer(),
-        bundleRemoteUpdater: any SumiProtectionBundleRemoteUpdating = SumiProtectionBundleRemoteUpdater(),
-        bundleUpdateStatusStore: SumiProtectionBundleUpdateStatusStore,
         compiledRuleListCatalog: SumiCompiledContentRuleListCataloging,
-        startupDiagnostics: (any SumiProtectionStartupRestoreDiagnosticsRecording)? = nil
+        selectedFilterBundleBuilder: SumiSelectedFilterBundleBuilder =
+            SumiSelectedFilterBundleBuilder(),
+        legacyMigration: SumiAdblockLegacyMigration? = nil
     ) {
         self.settings = settings
         self.adBlockingModule = adBlockingModule
-        #if DEBUG
-            let startupDiagnostics = startupDiagnostics ?? SumiProtectionStartupRestoreDiagnosticsDefaults.recorder
-            self.startupDiagnostics = startupDiagnostics
-        #else
-            _ = startupDiagnostics
-        #endif
-        #if DEBUG
-        self.attachmentService = ProtectionAttachmentService(
-            ruleProvider: adBlockingModule,
-            siteNormalizer: siteNormalizer,
-            startupDiagnostics: startupDiagnostics,
-            compiledRuleListCatalog: compiledRuleListCatalog
-        )
-        #else
+        self.filterListCatalog = adBlockingModule.filterListCatalog
+        self.selectedFilterBundleBuilder = selectedFilterBundleBuilder
+        self.legacyMigration = legacyMigration
         self.attachmentService = ProtectionAttachmentService(
             ruleProvider: adBlockingModule,
             siteNormalizer: siteNormalizer,
             compiledRuleListCatalog: compiledRuleListCatalog
-        )
-        #endif
-        self.bundleLifecycle = SumiProtectionBundleLifecycle(
-            preparedBundleManager: adBlockingModule,
-            remoteUpdater: bundleRemoteUpdater,
-            statusStore: bundleUpdateStatusStore
         )
         self.runtimeAppliedLevel = settings.appliedLevel
         attachmentService.syncRuntime(for: runtimeAppliedLevel)
@@ -66,54 +41,55 @@ final class SumiProtectionCoordinator {
     }
 
     var applyNeeded: Bool {
-        attachmentService.applyNeeded(
+        let levelApplyNeeded = attachmentService.applyNeeded(
             selectedLevel: settings.level,
-            appliedLevel: settings.appliedLevel,
-            browserRestartRequired: settings.browserRestartRequired
+            appliedLevel: settings.appliedLevel
+        )
+        let listApplyNeeded = settings.level == .adblock
+            && filterListCatalog.map {
+                settings.filterListSelectionApplyNeeded(in: $0)
+            } == true
+        return levelApplyNeeded || listApplyNeeded
+    }
+
+    func setFilterList(_ id: String, enabled: Bool) {
+        guard let filterListCatalog else { return }
+        settings.setFilterList(
+            id,
+            enabled: enabled,
+            catalog: filterListCatalog
         )
     }
 
-    func applySelectedLevel() async throws -> SumiProtectionApplyOutcome {
+    func resetFilterListsToDefaults() {
+        settings.resetFilterListsToDefaults()
+    }
+
+    func applySelectedLevel() async throws {
+        try await finishLegacyMigrationIfNeeded()
         let selectedLevel = settings.level
         let previousAppliedLevel = settings.appliedLevel
-        let wasApplyNeeded = applyNeeded
         attachmentService.syncRuntime(for: selectedLevel)
 
         do {
-            var installedBundleProfileId: String?
-            if let requiredBundleProfileId = selectedLevel.preferredBundleProfileId {
-                installedBundleProfileId = try await bundleLifecycle.ensurePreparedBundleInstalled(
-                    profileId: requiredBundleProfileId
-                )
+            if selectedLevel == .adblock {
+                _ = try await installSelectedAdblockBundle()
                 let readinessPlan = attachmentService.globalAttachmentPlan(
                     for: selectedLevel,
-                    includeExpensiveDiagnostics: false,
                     loadRuleDefinitions: false
                 )
                 try attachmentService.validateRequiredGroupsReady(in: readinessPlan)
-            } else {
-                clearPreparedBundleLookupDiagnostics()
+                if let filterListCatalog {
+                    settings.markFilterListSelectionApplied(
+                        in: filterListCatalog
+                    )
+                }
             }
 
             settings.setAppliedLevel(selectedLevel)
-            if wasApplyNeeded || selectedLevel != previousAppliedLevel {
-                settings.setBrowserRestartRequired(true)
-            }
             runtimeAppliedLevel = selectedLevel
             attachmentService.syncRuntime(for: runtimeAppliedLevel)
-            let summary = applySummary(
-                selectedLevel: selectedLevel,
-                installedBundleProfileId: installedBundleProfileId
-            )
-            lastApplySummary = summary
             lastApplyError = nil
-            return SumiProtectionApplyOutcome(
-                selectedLevel: selectedLevel,
-                previousAppliedLevel: previousAppliedLevel,
-                appliedLevel: settings.appliedLevel,
-                installedBundleProfileId: installedBundleProfileId,
-                summary: summary
-            )
         } catch {
             attachmentService.syncRuntime(for: runtimeAppliedLevel)
             let message: String
@@ -123,7 +99,6 @@ final class SumiProtectionCoordinator {
                 message = "Could not apply \(selectedLevel.displayTitle): \(error.localizedDescription)"
             }
             settings.setAppliedLevel(previousAppliedLevel)
-            lastApplySummary = nil
             lastApplyError = message
             if selectedLevel == .off {
                 attachmentService.clearCachedAttachmentService()
@@ -132,50 +107,34 @@ final class SumiProtectionCoordinator {
         }
     }
 
-    func updatePreparedBundlesManually() async throws -> SumiProtectionBundleManualUpdateOutcome {
-        let appliedLevel = settings.appliedLevel
-        attachmentService.syncRuntime(for: appliedLevel)
-        return try await bundleLifecycle.updatePreparedBundlesManually(
-            appliedLevel: appliedLevel,
-            currentBrowserRestartRequired: settings.browserRestartRequired
-        ) { summary in
-            try await attachmentService.prepareCachedAttachmentService(for: appliedLevel)
-            settings.setBrowserRestartRequired(true)
-            lastApplySummary = summary
-            lastApplyError = nil
-        }
-    }
-
     @discardableResult
     func restoreAppliedLevelForStartup() async throws -> AdblockCompiledGenerationManifest? {
+        try await finishLegacyMigrationIfNeeded()
         let appliedLevel = settings.appliedLevel
-#if DEBUG
-        let startupDiagnosticsToken = startupDiagnostics.begin(
-            appliedLevel: appliedLevel,
-            trackedGenerationId: nil
-        )
-        defer {
-            let snapshot = startupDiagnostics.finish(startupDiagnosticsToken)
-            Logger.sumi(category: "ProtectionStartupRestore").debug("\(snapshot.developerReport, privacy: .public)")
-        }
-#endif
         runtimeAppliedLevel = appliedLevel
         attachmentService.syncRuntime(for: appliedLevel)
-        guard let requiredBundleProfileId = appliedLevel.preferredBundleProfileId else {
-            clearPreparedBundleLookupDiagnostics()
+        guard appliedLevel == .adblock else {
             try await attachmentService.prepareCachedAttachmentService(for: appliedLevel)
-            settings.setBrowserRestartRequired(false)
             lastApplyError = nil
             return nil
         }
 
         do {
-            let manifest = try await bundleLifecycle.restorePreparedBundleForStartup(
-                profileId: requiredBundleProfileId
-            )
+            guard let manifest = try await adBlockingModule
+                .restoreLocalGenerationForStartup()
+            else {
+                throw SumiProtectionApplyError.requiredGenerationUnavailable(
+                    profileId: SumiProtectionBundleProfile.adblock,
+                    detail: "No locally generated filter cache is available. Apply Adblock once to create it."
+                )
+            }
+            if let filterListCatalog {
+                settings.setAppliedFilterListIDs(
+                    Set(manifest.selectedFilterLists.map(\.id)),
+                    catalog: filterListCatalog
+                )
+            }
             try await attachmentService.prepareCachedAttachmentService(for: appliedLevel)
-            settings.setBrowserRestartRequired(false)
-            lastApplySummary = "Restored \(appliedLevel.displayTitle) using prepared bundle \(requiredBundleProfileId)."
             lastApplyError = nil
             return manifest
         } catch {
@@ -185,19 +144,14 @@ final class SumiProtectionCoordinator {
             } else {
                 message = "Could not restore \(appliedLevel.displayTitle) at startup: \(error.localizedDescription)"
             }
-            lastApplySummary = nil
             lastApplyError = message
             throw SumiProtectionApplyError.applyFailed(message)
         }
     }
 
-    func normalTabDecision(
-        for url: URL?,
-        profileId: UUID?
-    ) -> SumiProtectionNormalTabDecision {
+    func normalTabDecision(for url: URL?) -> SumiProtectionNormalTabDecision {
         attachmentService.normalTabDecision(
             for: url,
-            profileId: profileId,
             requestedLevel: runtimeAppliedLevel
         )
     }
@@ -209,141 +163,56 @@ final class SumiProtectionCoordinator {
         )
     }
 
-    func rulePlan(
-        for url: URL?,
-        profileId: UUID?,
-        includeExpensiveDiagnostics: Bool = false
-    ) -> SumiProtectionRulePlan {
+    func rulePlan(for url: URL?) -> SumiProtectionRulePlan {
         attachmentService.rulePlan(
             for: url,
-            profileId: profileId,
-            requestedLevel: runtimeAppliedLevel,
-            includeExpensiveDiagnostics: includeExpensiveDiagnostics
-        )
-    }
-
-    func cachedRulePlan(
-        for url: URL?,
-        profileId: UUID?
-    ) -> SumiProtectionRulePlan {
-        attachmentService.cachedRulePlan(
-            for: url,
-            profileId: profileId,
             requestedLevel: runtimeAppliedLevel
         )
     }
 
-    private func clearPreparedBundleLookupDiagnostics() {
-        bundleLifecycle.clearPreparedBundleLookupDiagnostics()
-    }
-
-    func currentTabDiagnostics(
-        for url: URL?,
-        appliedState: SumiProtectionAttachmentState?,
-        reloadRequired: Bool,
-        reloadRequiredReason: String? = nil,
-        didManualReloadRebuildWebView: Bool = false,
-        appliedAfterManualReload: Bool = false,
-        actualAttachedRuleListIdentifiers: [String]? = nil,
-        contentBlockingAssetSummary: SumiNormalTabContentBlockingAssetSummary? = nil,
-        webViewRebuildDuration: TimeInterval? = nil,
-        urlHubSummaryDuration: TimeInterval? = nil
-    ) -> SumiProtectionCurrentTabDiagnostics {
-        let planStart = Date()
-        let plan = rulePlan(
+    func cachedRulePlan(for url: URL?) -> SumiProtectionRulePlan {
+        attachmentService.cachedRulePlan(
             for: url,
-            profileId: nil,
-            includeExpensiveDiagnostics: true
-        )
-        let planComputeDuration = Date().timeIntervalSince(planStart)
-        return SumiProtectionDiagnosticsReporter.currentTabDiagnostics(
-            for: url,
-            appliedState: appliedState,
-            reloadRequired: reloadRequired,
-            reloadRequiredReason: reloadRequiredReason,
-            didManualReloadRebuildWebView: didManualReloadRebuildWebView,
-            appliedAfterManualReload: appliedAfterManualReload,
-            actualAttachedRuleListIdentifiers: actualAttachedRuleListIdentifiers,
-            contentBlockingAssetSummary: contentBlockingAssetSummary,
-            webViewRebuildDuration: webViewRebuildDuration,
-            urlHubSummaryDuration: urlHubSummaryDuration,
-            plan: plan,
-            planComputeDuration: planComputeDuration,
-            contentBlockingServiceGenerationId: attachmentService.contentBlockingServiceGenerationId,
-            bundleLookupDuration: bundleLifecycle.lastBundleLookupDuration
+            requestedLevel: runtimeAppliedLevel
         )
     }
 
-    func globalDiagnostics() -> SumiProtectionGlobalDiagnostics {
-        let selectedLevel = settings.level
-        let appliedLevel = settings.appliedLevel
-        let manifest = selectedLevel == .off && appliedLevel == .off
-            ? nil
-            : adBlockingModule.activeManifestIfLoaded()
-        let activePreparedProfileId = manifest.flatMap {
-            attachmentService.preparedBundleProfileId(in: $0)
+    private func installSelectedAdblockBundle() async throws -> AdblockCompiledGenerationManifest? {
+        guard let filterListCatalog else {
+            throw SumiProtectionApplyError.requiredGenerationUnavailable(
+                profileId: SumiProtectionBundleProfile.adblock,
+                detail: "The Adblock filter-list catalog is missing."
+            )
         }
-        let requiredBundleProfileId = selectedLevel.preferredBundleProfileId
-        let bundleDiagnostics = bundleLifecycle.diagnostics(
-            manifest: manifest,
-            requiredBundleProfileId: requiredBundleProfileId,
-            activePreparedBundleProfileId: activePreparedProfileId
+        let selectedIDs = settings.selectedFilterListIDs(
+            in: filterListCatalog
         )
-        let trackingSourceAvailable = attachmentService.trackingSourceAvailable(
-            manifest: manifest
+        let selectedLists = filterListCatalog.lists.filter {
+            selectedIDs.contains($0.id)
+        }
+        let bundleURL = try await selectedFilterBundleBuilder.build(
+            selectedLists: selectedLists
         )
-        let availableGroups = attachmentService.globallyAvailableGroups(
-            manifest: manifest,
-            trackingSourceAvailable: trackingSourceAvailable
-        )
-        let adblockBundleAvailable = requiredBundleProfileId.map {
-            activePreparedProfileId == $0
-        } ?? true
-
-        return SumiProtectionDiagnosticsReporter.globalDiagnostics(
-            selectedLevel: selectedLevel,
-            appliedLevel: appliedLevel,
-            browserRestartRequired: settings.browserRestartRequired,
-            manifest: manifest,
-            bundleDiagnostics: bundleDiagnostics,
-            requiredBundleProfileId: requiredBundleProfileId,
-            applyNeeded: applyNeeded,
-            lastApplySummary: lastApplySummary,
-            lastApplyError: lastApplyError,
-            availableGroups: availableGroups,
-            trackingSourceAvailable: trackingSourceAvailable,
-            adblockBundleAvailable: adblockBundleAvailable,
-            strictOffActive: selectedLevel == .off
-                && appliedLevel == .off
-                && attachmentService.isCacheEmpty
-                && !adBlockingModule.isEnabled
-        )
+        do {
+            let manifest = try await adBlockingModule
+                .installGeneratedRuleBundle(at: bundleURL)
+            await selectedFilterBundleBuilder.discard(bundleURL)
+            return manifest
+        } catch {
+            await selectedFilterBundleBuilder.discard(bundleURL)
+            throw error
+        }
     }
 
-#if DEBUG
-    func copyDiagnosticsReport(
-        for url: URL?,
-        currentTabDiagnostics: SumiProtectionCurrentTabDiagnostics?,
-        targetDescription: String = "current tab",
-        requestingURL: URL? = nil
-    ) -> String {
-        SumiProtectionDiagnosticsReporter.copyDiagnosticsReport(
-            global: globalDiagnostics(),
-            plan: rulePlan(
-                for: url,
-                profileId: nil,
-                includeExpensiveDiagnostics: true
-            ),
-            url: url,
-            currentTabDiagnostics: currentTabDiagnostics,
-            targetDescription: targetDescription,
-            requestingURL: requestingURL,
-            contentBlockingServiceGenerationId: attachmentService.contentBlockingServiceGenerationId,
-            bundleLookupDuration: bundleLifecycle.lastBundleLookupDuration,
-            startupSnapshot: startupDiagnostics.latestSnapshot
-        )
+    private func finishLegacyMigrationIfNeeded() async throws {
+        guard let legacyMigration else { return }
+        try await legacyMigration.removeLegacyCompiledRulesIfNeeded()
+        self.legacyMigration = nil
     }
-#endif
+
+    var lastSuccessfulUpdateDate: Date? {
+        adBlockingModule.activeManifestIfLoaded()?.lastSuccessfulUpdateDate
+    }
 
     func setSiteOverride(_ override: SumiAdblockSiteOverride, for url: URL?) {
         adBlockingModule.setSiteOverride(override, for: url)
@@ -357,13 +226,4 @@ final class SumiProtectionCoordinator {
         attachmentService.surfaceEligibility(for: url)
     }
 
-    private func applySummary(
-        selectedLevel: SumiProtectionLevel,
-        installedBundleProfileId: String?
-    ) -> String {
-        if let installedBundleProfileId {
-            return "Saved \(selectedLevel.displayTitle) using prepared bundle \(installedBundleProfileId). Restart Sumi to apply global protection changes."
-        }
-        return "Saved \(selectedLevel.displayTitle). Restart Sumi to apply global protection changes."
-    }
 }

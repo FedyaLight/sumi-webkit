@@ -75,13 +75,11 @@ final class AdblockManifestRuleListProvider: SumiContentRuleListSetProviding {
 
     static func diskBackedDefinitionLoader(
         storageRoot: URL,
-        fileManager: FileManager = .default,
-        startupDiagnostics: (any SumiProtectionStartupRestoreDiagnosticsRecording)? = nil
+        fileManager: FileManager = .default
     ) -> (NativeContentBlockingShardDescriptor) throws -> SumiContentRuleListDefinition {
         let reader = AdblockArchivedShardReader(
             storageRoot: storageRoot,
-            fileManager: fileManager,
-            startupDiagnostics: startupDiagnostics
+            fileManager: fileManager
         )
         return reader.definition
     }

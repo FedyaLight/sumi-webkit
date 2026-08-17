@@ -47,7 +47,8 @@ enum BrowserTabManagerRuntimePortsFactory {
                 profileAssignment: webViewRuntime.profileAssignmentService,
                 compositor: browserManager.compositorManager,
                 webViewRouting: browserManager.webViewRoutingService,
-                tabBrowserRuntime: browserManager.tabBrowserRuntimeReference
+                tabBrowserRuntime: browserManager.tabBrowserRuntimeReference,
+                startupProtection: browserManager.startupProtectionRuntime
             )
         )
     }

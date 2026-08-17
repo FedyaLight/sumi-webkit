@@ -114,7 +114,6 @@ struct SiteControlsSnapshot: Equatable {
         url: URL?,
         profile: Profile?,
         protectionCoordinator: SumiProtectionCoordinator? = nil,
-        protectionBrowserRestartRequired: Bool = false,
         protectionReloadRequired: Bool = false,
         extensionsModule: SumiExtensionsModule? = nil,
         safariContentBlockerReloadRequired: Bool = false
@@ -153,11 +152,9 @@ struct SiteControlsSnapshot: Equatable {
             _ = profile
 
             if let protectionCoordinator {
-                let plan = protectionCoordinator.cachedRulePlan(for: url, profileId: profile?.id)
+                let plan = protectionCoordinator.cachedRulePlan(for: url)
                 let subtitle: String
-                if protectionBrowserRestartRequired {
-                    subtitle = "Restart Sumi to apply global changes"
-                } else if protectionReloadRequired {
+                if protectionReloadRequired {
                     subtitle = "Reload required"
                 } else if plan.requestedLevel == .off {
                     subtitle = "Off globally"

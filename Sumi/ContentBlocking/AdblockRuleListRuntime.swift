@@ -9,16 +9,15 @@ final class AdblockRuleListRuntime {
     let contentBlockingService: SumiContentBlockingService
 
     private let generationArchive: AdblockGenerationArchive
+    private let advancedBlockingRuntime: SumiAdvancedBlockingRuntime
     private let ruleListProvider: AdblockManifestRuleListProvider
-    private let preparedBundleInstaller: AdblockPreparedBundleInstaller
+    private let generationInstaller: AdblockGenerationInstaller
     private let persistedGenerationActivation: AdblockPersistedGenerationActivation
+    private let generationRecovery: AdblockGenerationRecovery
+    private let generationRetention: AdblockGenerationRetention
     private let mutationGate = AdblockGenerationMutationGate()
     private let isRuntimeEnabled: @Sendable () async -> Bool
-    private let startup: AdblockGenerationStartup
-    #if DEBUG
-        private let startupDiagnostics: any SumiProtectionStartupRestoreDiagnosticsRecording
-    #endif
-    private var startupTask: Task<Void, Never>?
+    private var activeManifestDidChange: (@MainActor () -> Void)?
 
     var activeManifest: AdblockCompiledGenerationManifest? {
         ruleListProvider.activeManifest
@@ -28,34 +27,14 @@ final class AdblockRuleListRuntime {
         isRuntimeEnabled: @escaping @Sendable () async -> Bool = { true },
         generationArchive: AdblockGenerationArchive? = nil,
         compiler: SumiContentRuleListCompiling = SumiWKContentRuleListCompiler(),
-        compiledRuleListCatalog: SumiCompiledContentRuleListCataloging,
-        embeddedBundleURLProvider: @escaping @MainActor () -> URL? = {
-            SumiAdblockNativeBundleReader().bundledDirectoryURL(
-                for: SumiProtectionBundleProfile.adblock
-            )
-        },
-        startupDiagnostics: (any SumiProtectionStartupRestoreDiagnosticsRecording)? = nil
+        compiledRuleListCatalog: SumiCompiledContentRuleListCataloging
     ) {
-        #if DEBUG
-            let diagnostics = startupDiagnostics
-                ?? SumiProtectionStartupRestoreDiagnosticsDefaults.recorder
-            self.startupDiagnostics = diagnostics
-            let archive = generationArchive ?? AdblockGenerationArchive(
-                startupDiagnostics: diagnostics
-            )
-            let definitionLoader = AdblockManifestRuleListProvider
-                .diskBackedDefinitionLoader(
-                    storageRoot: archive.storageRoot,
-                    startupDiagnostics: diagnostics
-                )
-        #else
-            _ = startupDiagnostics
-            let archive = generationArchive ?? AdblockGenerationArchive()
-            let definitionLoader = AdblockManifestRuleListProvider
-                .diskBackedDefinitionLoader(storageRoot: archive.storageRoot)
-        #endif
+        let archive = generationArchive ?? AdblockGenerationArchive()
+        let definitionLoader = AdblockManifestRuleListProvider
+            .diskBackedDefinitionLoader(storageRoot: archive.storageRoot)
 
         self.generationArchive = archive
+        advancedBlockingRuntime = SumiAdvancedBlockingRuntime(archive: archive)
         self.isRuntimeEnabled = isRuntimeEnabled
         let provider = AdblockManifestRuleListProvider(
             manifest: nil,
@@ -63,119 +42,45 @@ final class AdblockRuleListRuntime {
         )
         ruleListProvider = provider
 
-        #if DEBUG
-            let service = SumiContentBlockingService(
-                policy: .disabled,
-                compiler: compiler,
-                ruleListProvider: provider,
-                compiledRuleListCatalog: compiledRuleListCatalog,
-                startupDiagnostics: diagnostics
-            )
-        #else
-            let service = SumiContentBlockingService(
-                policy: .disabled,
-                compiler: compiler,
-                ruleListProvider: provider,
-                compiledRuleListCatalog: compiledRuleListCatalog
-            )
-        #endif
+        let service = SumiContentBlockingService(
+            policy: .disabled,
+            compiler: compiler,
+            ruleListProvider: provider,
+            compiledRuleListCatalog: compiledRuleListCatalog
+        )
         contentBlockingService = service
 
         let publisher = AdblockRuleListPublisher(
             ruleListProvider: provider,
             contentBlockingService: service
         )
-        #if DEBUG
-            let retention = AdblockGenerationRetention(
-                archive: archive,
-                contentRuleListStore: compiler,
-                startupDiagnostics: diagnostics
-            )
-            let recovery = AdblockGenerationRecovery(
-                archive: archive,
-                publisher: publisher,
-                contentRuleListStore: compiler,
-                startupDiagnostics: diagnostics
-            )
-            let installer = AdblockPreparedBundleInstaller(
-                archive: archive,
-                publisher: publisher,
-                retention: retention,
-                mutationGate: mutationGate,
-                startupDiagnostics: diagnostics
-            )
-            let activation = AdblockPersistedGenerationActivation(
-                archive: archive,
-                contentBlockingService: service,
-                publisher: publisher,
-                mutationGate: mutationGate,
-                startupDiagnostics: diagnostics
-            )
-            let startup = AdblockGenerationStartup(
-                archive: archive,
-                ruleListProvider: provider,
-                recovery: recovery,
-                retention: retention,
-                preparedBundleInstaller: installer,
-                mutationGate: mutationGate,
-                isRuntimeEnabled: isRuntimeEnabled,
-                embeddedBundleURLProvider: embeddedBundleURLProvider,
-                diagnostics: diagnostics
-            )
-        #else
-            let retention = AdblockGenerationRetention(
-                archive: archive,
-                contentRuleListStore: compiler
-            )
-            let recovery = AdblockGenerationRecovery(
-                archive: archive,
-                publisher: publisher,
-                contentRuleListStore: compiler
-            )
-            let installer = AdblockPreparedBundleInstaller(
-                archive: archive,
-                publisher: publisher,
-                retention: retention,
-                mutationGate: mutationGate
-            )
-            let activation = AdblockPersistedGenerationActivation(
-                archive: archive,
-                contentBlockingService: service,
-                publisher: publisher,
-                mutationGate: mutationGate
-            )
-            let startup = AdblockGenerationStartup(
-                archive: archive,
-                ruleListProvider: provider,
-                recovery: recovery,
-                retention: retention,
-                preparedBundleInstaller: installer,
-                mutationGate: mutationGate,
-                isRuntimeEnabled: isRuntimeEnabled,
-                embeddedBundleURLProvider: embeddedBundleURLProvider
-            )
-        #endif
-        preparedBundleInstaller = installer
-        persistedGenerationActivation = activation
-        self.startup = startup
-        startupTask = Task { @MainActor [weak self] in
-            await self?.runStartup()
-        }
-    }
-
-    deinit {
-        startupTask?.cancel()
+        let retention = AdblockGenerationRetention(
+            archive: archive,
+            contentRuleListStore: compiler
+        )
+        let recovery = AdblockGenerationRecovery(
+            archive: archive,
+            publisher: publisher,
+            contentRuleListStore: compiler
+        )
+        generationInstaller = AdblockGenerationInstaller(
+            archive: archive,
+            publisher: publisher,
+            retention: retention,
+            mutationGate: mutationGate
+        )
+        persistedGenerationActivation = AdblockPersistedGenerationActivation(
+            archive: archive,
+            contentBlockingService: service,
+            publisher: publisher,
+            mutationGate: mutationGate
+        )
+        generationRecovery = recovery
+        generationRetention = retention
     }
 
     #if DEBUG
         func drainStartupTasksForTests(cancel: Bool = false) async {
-            if cancel {
-                startupTask?.cancel()
-            }
-            if let startupTask {
-                await startupTask.value
-                self.startupTask = nil
-            }
             await contentBlockingService.drainScheduledTasksForTests(cancel: cancel)
         }
     #endif
@@ -186,7 +91,52 @@ final class AdblockRuleListRuntime {
         try ruleListProvider.persistedDefinitions(for: protectionGroups)
     }
 
-    func restorePreparedManifestIfAvailable(
+    func advancedConfiguration(
+        for document: SumiAdvancedBlockingDocumentContext
+    ) async throws -> SumiAdvancedBlockingConfiguration? {
+        guard await isRuntimeEnabled(),
+              let manifest = activeManifest,
+              manifest.advancedBlocking != nil
+        else {
+            return nil
+        }
+        return try await advancedBlockingRuntime.configuration(
+            for: document,
+            in: manifest
+        )
+    }
+
+    func urlCleaningContribution(
+        disabledDomains: [String]
+    ) -> SumiURLCleaningContribution? {
+        guard let manifest = activeManifest,
+              let artifact = manifest.advancedBlocking?.artifacts.first(
+                where: { $0.role == .urlCleaningRules }
+              ),
+              let rulesURL = try? generationArchive.advancedArtifactURL(
+                generationID: manifest.activeGenerationId,
+                relativePath: artifact.relativePath
+              )
+        else {
+            return nil
+        }
+        return SumiURLCleaningContribution(
+            generationID: manifest.activeGenerationId,
+            rulesURL: rulesURL,
+            disabledDomains: disabledDomains.sorted()
+        )
+    }
+
+    func setActiveManifestDidChange(
+        _ observer: (@MainActor () -> Void)?
+    ) {
+        activeManifestDidChange = observer
+        if activeManifest != nil {
+            observer?()
+        }
+    }
+
+    func restoreLocalManifestIfAvailable(
         profileId: String
     ) async throws -> AdblockCompiledGenerationManifest? {
         guard await isRuntimeEnabled() else { return nil }
@@ -197,34 +147,22 @@ final class AdblockRuleListRuntime {
         guard mutationGate.owns(lease), !Task.isCancelled else {
             throw CancellationError()
         }
+        _ = await generationRecovery.restorePreviousGenerationIfNeeded()
         guard let manifest = try await generationArchive.activeManifest(),
-              SumiProtectionPreparedBundleIdentity.preparedBundleProfileId(
-                in: manifest
-              ) == profileId
+              manifest.bundleProfileId == profileId
         else {
-            #if DEBUG
-                startupDiagnostics.recordFallback(
-                    reason: "No persisted prepared manifest matched profile \(profileId)"
-                )
-            #endif
             return nil
         }
-        #if DEBUG
-            startupDiagnostics.recordManifest(manifest)
-            startupDiagnostics.recordGenerationStaleCheck(
-                consideredStale: false,
-                reason: "Persisted prepared manifest matches requested profile \(profileId)"
-            )
-        #endif
         try await persistedGenerationActivation.activate(manifest, lease: lease)
+        _ = await generationRetention.removeUnrecoverableGenerations()
+        await advancedBlockingRuntime.prepare(for: manifest)
+        activeManifestDidChange?()
         return manifest
     }
 
-    func installPreparedBundle(
+    func installGeneratedBundle(
         at bundleURL: URL,
-        source: SumiAdblockBundleInstallSource,
-        profileId: String,
-        remoteMetadata: SumiAdblockPreparedBundleRemoteMetadata? = nil
+        profileId: String
     ) async throws -> AdblockCompiledGenerationManifest? {
         guard await isRuntimeEnabled() else { return nil }
         guard let lease = await mutationGate.acquire() else {
@@ -234,48 +172,25 @@ final class AdblockRuleListRuntime {
         guard mutationGate.owns(lease), !Task.isCancelled else {
             throw CancellationError()
         }
-        return try await preparedBundleInstaller.install(
+        let manifest = try await generationInstaller.install(
             at: bundleURL,
-            source: source,
             profileId: profileId,
             previousManifest: try await generationArchive.activeManifest(),
-            remoteMetadata: remoteMetadata,
             lease: lease
         )
+        await advancedBlockingRuntime.deactivate()
+        await advancedBlockingRuntime.prepare(for: manifest)
+        activeManifestDidChange?()
+        return manifest
     }
 
     func stop() {
-        startupTask?.cancel()
         mutationGate.stop()
         contentBlockingService.setPolicy(.disabled)
         contentBlockingService.stopRuntime()
+        let advancedBlockingRuntime = advancedBlockingRuntime
+        Task {
+            await advancedBlockingRuntime.deactivate()
+        }
     }
-
-    private func runStartup() async {
-        guard let lease = await mutationGate.acquire() else { return }
-        defer { mutationGate.release(lease) }
-        await startup.run(lease: lease)
-    }
-}
-
-@MainActor
-final class AdblockRetainingCompiledRuleListCatalog:
-    SumiCompiledContentRuleListCataloging
-{
-    func cachedIdentifiersToForget(
-        replacing previousRules: [SumiContentBlockerRules],
-        with activeRules: [SumiContentBlockerRules]
-    ) -> [String] {
-        let activeIdentifiers = Set(activeRules.map(\.identifier.stringValue))
-        return previousRules
-            .map(\.identifier.stringValue)
-            .filter { !activeIdentifiers.contains($0) }
-    }
-
-    func orphanedIdentifiers(
-        replacing previousRules: [SumiContentBlockerRules],
-        with activeRules: [SumiContentBlockerRules]
-    ) -> [String] { [] }
-
-    func forgetIdentifiers(_ identifiers: [String]) {}
 }

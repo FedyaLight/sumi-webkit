@@ -168,7 +168,6 @@ enum ExtensionManagerGraphFinalizer {
                 _ = demand.requestRuntimeExplicitly(reason: .browserSession)
             }
         )
-
         #if DEBUG
             let contextGraph = ExtensionContextLifecycleGraph(
                 runtimeLifetime: assembled.contexts.runtimeLifetime,

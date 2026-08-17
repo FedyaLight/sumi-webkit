@@ -181,6 +181,24 @@ final class TabConfigurationPolicyLedgerTests: XCTestCase {
         XCTAssertEqual(ledger.revision, 1)
     }
 
+    func testAdvancedOnlyProtectionChangeHasDifferentPhysicalFingerprint() {
+        let dataStore = WKWebsiteDataStore.nonPersistent()
+        var enabled = state(profileID: UUID(), dataStore: dataStore)
+        enabled.protectionAttachment = .init(
+            siteHost: "example.com",
+            requestedLevel: .adblock,
+            effectiveLevel: .adblock,
+            activeGroups: [.adblockAdsPrivacyNetwork]
+        )
+        var disabled = enabled
+        disabled.protectionAttachment = .disabled(
+            siteHost: "example.com",
+            requestedLevel: .adblock
+        )
+
+        XCTAssertNotEqual(enabled.fingerprint, disabled.fingerprint)
+    }
+
     func testMixedClonePolicySetCancelsWithoutLedgerMutation() {
         let ledger = TabConfigurationPolicyLedger()
         let dataStore = WKWebsiteDataStore.nonPersistent()

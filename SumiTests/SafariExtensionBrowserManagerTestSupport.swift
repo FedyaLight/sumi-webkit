@@ -73,6 +73,7 @@ extension XCTestCase {
         browserConfiguration: BrowserConfiguration? = nil,
         moduleRegistry: SumiModuleRegistry = .unavailable(),
         extensionPreferences: UserDefaults? = nil,
+        profileWebExtensionRuntime: SumiProfileWebExtensionRuntime? = nil,
         assemblyOverrides: ExtensionManagerTestAssemblyOverrides? = nil
     ) -> SafariExtensionManagerTestFixture {
         let attachedRuntime = ExtensionAttachedRuntimeCapture()
@@ -83,6 +84,7 @@ extension XCTestCase {
             browserConfiguration: browserConfiguration,
             moduleRegistry: moduleRegistry,
             extensionPreferences: extensionPreferences,
+            profileWebExtensionRuntime: profileWebExtensionRuntime,
             attachedRuntimeCapture: attachedRuntime,
             inspectionCapture: inspection,
             assemblyOverrides: assemblyOverrides
@@ -100,6 +102,7 @@ extension XCTestCase {
         browserConfiguration: BrowserConfiguration? = nil,
         moduleRegistry: SumiModuleRegistry = .unavailable(),
         extensionPreferences: UserDefaults? = nil,
+        profileWebExtensionRuntime: SumiProfileWebExtensionRuntime? = nil,
         attachedRuntimeCapture: ExtensionAttachedRuntimeCapture? = nil,
         inspectionCapture: ExtensionManagerInspectionCapture? = nil,
         assemblyOverrides: ExtensionManagerTestAssemblyOverrides? = nil
@@ -114,6 +117,7 @@ extension XCTestCase {
                 browserConfiguration: browserConfiguration,
                 moduleRegistry: moduleRegistry,
                 extensionPreferences: preferences,
+                profileWebExtensionRuntime: profileWebExtensionRuntime,
                 attachedRuntimeDidInstall: attachedRuntimeCapture.install,
                 testInspectionDidAssemble: inspectionCapture?.install,
                 testAssemblyOverrides: assemblyOverrides
@@ -125,6 +129,7 @@ extension XCTestCase {
                 browserConfiguration: browserConfiguration,
                 moduleRegistry: moduleRegistry,
                 extensionPreferences: preferences,
+                profileWebExtensionRuntime: profileWebExtensionRuntime,
                 testInspectionDidAssemble: inspectionCapture.install,
                 testAssemblyOverrides: assemblyOverrides
             )
@@ -135,6 +140,7 @@ extension XCTestCase {
                 browserConfiguration: browserConfiguration,
                 moduleRegistry: moduleRegistry,
                 extensionPreferences: preferences,
+                profileWebExtensionRuntime: profileWebExtensionRuntime,
                 testAssemblyOverrides: assemblyOverrides
             )
         } else {
@@ -143,7 +149,8 @@ extension XCTestCase {
                 initialProfile: initialProfile,
                 browserConfiguration: browserConfiguration,
                 moduleRegistry: moduleRegistry,
-                extensionPreferences: preferences
+                extensionPreferences: preferences,
+                profileWebExtensionRuntime: profileWebExtensionRuntime
             )
         }
         let teardownBox = SafariExtensionManagerTeardownBox(manager: manager)
@@ -191,9 +198,7 @@ extension XCTestCase {
             moduleRegistry.enable(.extensions)
         }
         let adBlockingModule = SumiAdBlockingModule(
-            moduleRegistry: moduleRegistry,
-            preparedBundleResourceURL: nil,
-            preparedBundleRemoteRootURL: nil,
+            filterListCatalog: nil,
             compiledRuleListCatalog: SumiCompiledContentRuleListCatalog()
         )
         let protectionDefaults = UserDefaults(suiteName: UUID().uuidString)!
@@ -202,9 +207,6 @@ extension XCTestCase {
                 userDefaults: protectionDefaults
             ),
             adBlockingModule: adBlockingModule,
-            bundleUpdateStatusStore: SumiProtectionBundleUpdateStatusStore(
-                userDefaults: protectionDefaults
-            ),
             compiledRuleListCatalog: SumiCompiledContentRuleListCatalog()
         )
         let browserManager = BrowserManager(

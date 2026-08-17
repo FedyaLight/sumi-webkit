@@ -37,7 +37,6 @@ struct TabConfigurationPolicyRebuildService {
             return .notNeeded
         }
 
-        let rebuildStart = Date()
         let outcome = webViewReplacement.replaceNormalWebView(
             in: tab,
             targetURL: targetURL ?? tab.url,
@@ -59,11 +58,6 @@ struct TabConfigurationPolicyRebuildService {
                 policy: policies.protection
             )
         )
-        if requiresProtectionRebuild {
-            protection.recordWebViewRebuildSucceeded(
-                startedAt: rebuildStart
-            )
-        }
         tab.publishNavigationStateChangeIfNeeded(
             autoplay.updateRequirement(
                 currentURL: tab.url,

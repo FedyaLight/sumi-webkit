@@ -3,27 +3,6 @@ import SumiDomain
 import WebKit
 
 @MainActor
-enum AttachedRuleListSnapshot {
-    case deriveFromDiagnostics
-    case identifiers([String])
-}
-
-@MainActor
-struct ReloadProtectionDiagnosticsContext {
-    let currentURL: URL
-    let appliedState: SumiProtectionAttachmentState?
-    let reloadRequired: Bool
-    let reloadRequiredReason: String?
-    let didManualReloadRebuildWebView: Bool
-    let appliedAfterManualReload: Bool
-    let actualAttachedRuleLists: AttachedRuleListSnapshot
-    let contentBlockingAssetSummary:
-        SumiNormalTabContentBlockingAssetSummary?
-    let webViewRebuildDuration: TimeInterval?
-    let urlHubSummaryDuration: TimeInterval?
-}
-
-@MainActor
 protocol SafariContentBlockerPolicyReading {
     func attachmentState(
         for url: URL?
@@ -34,9 +13,6 @@ protocol SafariContentBlockerPolicyReading {
 protocol ProtectionPolicyReading {
     func attachmentState(for url: URL?) -> SumiProtectionAttachmentState
     func surfaceHost(for url: URL?) -> String?
-    func diagnostics(
-        _ context: ReloadProtectionDiagnosticsContext
-    ) -> SumiProtectionCurrentTabDiagnostics?
 }
 
 @MainActor
@@ -68,11 +44,6 @@ struct InactiveProtectionPolicy: ProtectionPolicyReading {
 
     func surfaceHost(for url: URL?) -> String? { nil }
 
-    func diagnostics(
-        _ context: ReloadProtectionDiagnosticsContext
-    ) -> SumiProtectionCurrentTabDiagnostics? {
-        nil
-    }
 }
 
 @MainActor

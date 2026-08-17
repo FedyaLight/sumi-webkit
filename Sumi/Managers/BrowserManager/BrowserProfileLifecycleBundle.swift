@@ -48,6 +48,7 @@ extension BrowserManager {
         let profileDeletion = self.profileDeletion
         let tabPersistence = structuralPersistence
         let privacy = privacyBundle
+        let adBlockingModule = adBlockingModule
         let notificationPresenter = notificationPresenter
         let profileSwitch = BrowserProfileSwitchTransitionOwner(
             admission: BrowserProfileSwitchAdmission(
@@ -121,10 +122,14 @@ extension BrowserManager {
                     [extensions = optionalModules.extensions]
                     profileID,
                     fallbackProfileID in
-                    extensions.retireProfileRuntimeIfLoaded(
+                    let retired = extensions.retireProfileRuntimeIfLoaded(
                         profileID: profileID,
                         fallbackProfileID: fallbackProfileID
                     )
+                    if retired {
+                        adBlockingModule.forgetURLCleaningProfile(profileID)
+                    }
+                    return retired
                 }
             ),
             migration: BrowserProfileReferenceMigrationTransaction(

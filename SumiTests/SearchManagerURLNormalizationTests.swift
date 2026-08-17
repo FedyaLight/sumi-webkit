@@ -5,6 +5,24 @@ import XCTest
 final class SearchManagerURLNormalizationTests: XCTestCase {
     private let template = SearchProvider.google.queryTemplate
 
+    func testNormalizeURLUsesHTTPSForBarePublicHost() {
+        XCTAssertEqual(
+            normalizeURL("youtube.com", queryTemplate: template),
+            "https://youtube.com/"
+        )
+    }
+
+    func testNormalizeURLKeepsHTTPForBareLocalDevelopmentHosts() {
+        XCTAssertEqual(
+            normalizeURL("localhost:8080", queryTemplate: template),
+            "http://localhost:8080/"
+        )
+        XCTAssertEqual(
+            normalizeURL("127.0.0.1", queryTemplate: template),
+            "http://127.0.0.1/"
+        )
+    }
+
     func testNormalizeURLPassesThroughWebKitExtensionScheme() {
         let url =
             "webkit-extension://ext-31353238616531302d306536392d343862642d623263362d356234313731653934303063/help/index.html"

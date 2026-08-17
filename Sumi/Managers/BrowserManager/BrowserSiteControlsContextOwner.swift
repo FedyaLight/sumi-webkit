@@ -23,7 +23,6 @@ final class BrowserSiteControlsContextOwner {
             url: url,
             profile: profile,
             protectionCoordinator: protection,
-            protectionBrowserRestartRequired: protection.settings.browserRestartRequired,
             protectionReloadRequired: protectionReloadRequired,
             extensionsModule: extensions,
             safariContentBlockerReloadRequired: contentBlockerReloadRequired

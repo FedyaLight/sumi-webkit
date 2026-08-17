@@ -21,7 +21,7 @@ final class SumiCompiledContentRuleListCatalog:
     SumiCompiledContentRuleListCataloging
 {
     private static let log = Logger.sumi(category: "ContentBlocking")
-    private static let documentKey = "content-blocking.compiled-identifiers"
+    static let documentKey = "content-blocking.compiled-identifiers"
     private let database: SumiDatabase?
     private let persistentStateWasReadable: Bool
     private var identifiersByName: [String: Set<String>]

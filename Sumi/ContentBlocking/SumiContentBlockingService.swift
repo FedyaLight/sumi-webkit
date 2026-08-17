@@ -26,104 +26,49 @@ final class SumiContentBlockingService {
         publication.latestRuleListIdentifiers
     }
 
-    #if DEBUG
-        convenience init(
-            policy: SumiContentBlockingPolicy = .defaultPolicy,
-            compiler: SumiContentRuleListCompiling =
-                SumiWKContentRuleListCompiler(),
-            ruleListProvider: SumiContentRuleListSetProviding? = nil,
-            compiledRuleListCatalog: SumiCompiledContentRuleListCataloging =
-                SumiContentBlockingService.defaultCompiledRuleListCatalog,
-            startupDiagnostics: any SumiProtectionStartupRestoreDiagnosticsRecording =
-                SumiProtectionStartupRestoreDiagnosticsDefaults.recorder
-        ) {
-            let materializer = SumiContentRuleListMaterializer(
+    convenience init(
+        policy: SumiContentBlockingPolicy = .defaultPolicy,
+        compiler: SumiContentRuleListCompiling =
+            SumiWKContentRuleListCompiler(),
+        ruleListProvider: SumiContentRuleListSetProviding? = nil,
+        compiledRuleListCatalog: SumiCompiledContentRuleListCataloging =
+            SumiContentBlockingService.defaultCompiledRuleListCatalog
+    ) {
+        let materializer = SumiContentRuleListMaterializer(compiler: compiler)
+        self.init(
+            policy: policy,
+            ruleListProvider: ruleListProvider,
+            ruleListMaterializer: materializer,
+            retirement: SumiCompiledContentRuleListRetirement(
                 compiler: compiler,
-                startupDiagnostics: startupDiagnostics
-            )
-            self.init(
-                policy: policy,
-                ruleListProvider: ruleListProvider,
-                ruleListMaterializer: materializer,
-                retirement: SumiCompiledContentRuleListRetirement(
-                    compiler: compiler,
-                    catalog: compiledRuleListCatalog,
-                    startupDiagnostics: startupDiagnostics
-                ),
-                publishesInitialDisabledUpdate: true,
-                schedulesInitialCompilation: true
-            )
-        }
+                catalog: compiledRuleListCatalog
+            ),
+            publishesInitialDisabledUpdate: true,
+            schedulesInitialCompilation: true
+        )
+    }
 
-        convenience init(
-            pendingCompiledRuleListCatalog:
-                SumiCompiledContentRuleListCataloging,
-            compiler: SumiContentRuleListCompiling =
-                SumiWKContentRuleListCompiler(),
-            startupDiagnostics: any SumiProtectionStartupRestoreDiagnosticsRecording =
-                SumiProtectionStartupRestoreDiagnosticsDefaults.recorder
-        ) {
-            let materializer = SumiContentRuleListMaterializer(
+    convenience init(
+        pendingCompiledRuleListCatalog:
+            SumiCompiledContentRuleListCataloging,
+        compiler: SumiContentRuleListCompiling =
+            SumiWKContentRuleListCompiler()
+    ) {
+        let materializer = SumiContentRuleListMaterializer(
+            compiler: compiler
+        )
+        self.init(
+            policy: .disabled,
+            ruleListProvider: nil,
+            ruleListMaterializer: materializer,
+            retirement: SumiCompiledContentRuleListRetirement(
                 compiler: compiler,
-                startupDiagnostics: startupDiagnostics
-            )
-            self.init(
-                policy: .disabled,
-                ruleListProvider: nil,
-                ruleListMaterializer: materializer,
-                retirement: SumiCompiledContentRuleListRetirement(
-                    compiler: compiler,
-                    catalog: pendingCompiledRuleListCatalog,
-                    startupDiagnostics: startupDiagnostics
-                ),
-                publishesInitialDisabledUpdate: false,
-                schedulesInitialCompilation: false
-            )
-        }
-    #else
-        convenience init(
-            policy: SumiContentBlockingPolicy = .defaultPolicy,
-            compiler: SumiContentRuleListCompiling =
-                SumiWKContentRuleListCompiler(),
-            ruleListProvider: SumiContentRuleListSetProviding? = nil,
-            compiledRuleListCatalog: SumiCompiledContentRuleListCataloging
-        ) {
-            let materializer = SumiContentRuleListMaterializer(compiler: compiler)
-            self.init(
-                policy: policy,
-                ruleListProvider: ruleListProvider,
-                ruleListMaterializer: materializer,
-                retirement: SumiCompiledContentRuleListRetirement(
-                    compiler: compiler,
-                    catalog: compiledRuleListCatalog
-                ),
-                publishesInitialDisabledUpdate: true,
-                schedulesInitialCompilation: true
-            )
-        }
-
-        convenience init(
-            pendingCompiledRuleListCatalog:
-                SumiCompiledContentRuleListCataloging,
-            compiler: SumiContentRuleListCompiling =
-                SumiWKContentRuleListCompiler()
-        ) {
-            let materializer = SumiContentRuleListMaterializer(
-                compiler: compiler
-            )
-            self.init(
-                policy: .disabled,
-                ruleListProvider: nil,
-                ruleListMaterializer: materializer,
-                retirement: SumiCompiledContentRuleListRetirement(
-                    compiler: compiler,
-                    catalog: pendingCompiledRuleListCatalog
-                ),
-                publishesInitialDisabledUpdate: false,
-                schedulesInitialCompilation: false
-            )
-        }
-    #endif
+                catalog: pendingCompiledRuleListCatalog
+            ),
+            publishesInitialDisabledUpdate: false,
+            schedulesInitialCompilation: false
+        )
+    }
 
     private init(
         policy: SumiContentBlockingPolicy,
@@ -163,11 +108,9 @@ final class SumiContentBlockingService {
         }
     }
 
-    #if DEBUG
     private static let defaultCompiledRuleListCatalog:
         SumiCompiledContentRuleListCataloging =
             SumiCompiledContentRuleListCatalog()
-    #endif
 
     isolated deinit {
         taskRegistry.cancelAll()

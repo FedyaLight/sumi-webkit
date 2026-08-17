@@ -17,25 +17,10 @@ final class SumiURLHubPermissionsSubmenuTests: XCTestCase {
                     requestedLevel: .adblock,
                     effectiveLevel: .adblock,
                     siteHost: "example.com",
-                    siteOverride: .inherit,
                     sitePolicyAllowsProtection: true,
-                    activeGroups: [.trackingNetwork, .adblockAdsPrivacyNetwork],
-                    inactiveGroups: [],
-                    bundleSource: nil,
-                    nativeRuleBundleId: "bundle",
-                    bundleProfileId: SumiProtectionBundleProfile.adblock,
-                    requiredBundleProfileId: SumiProtectionBundleProfile.adblock,
+                    activeGroups: [.adblockAdsPrivacyNetwork],
                     activeGenerationId: "generation",
-                    previousGenerationId: nil,
-                    previousGenerationRetained: false,
-                    ruleCountsByGroup: [:],
-                    shardCountsByGroup: [:],
-                    expectedRuleListIdentifiers: ["sumi.adblock.network.1"],
-                    dedupeSummary: .empty,
-                    overlapSummary: .deferred,
-                    ineligibleSurfaceReason: nil,
-                    planningErrors: [],
-                    ruleDefinitions: []
+                    expectedRuleListIdentifiers: ["sumi.adblock.network.1"]
                 ),
                 reloadRequired: false
             )

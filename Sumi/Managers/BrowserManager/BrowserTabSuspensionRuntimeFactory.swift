@@ -9,6 +9,7 @@ enum BrowserTabSuspensionRuntimeFactory {
         lazyRestore: TabLazyRestoreCoordinator,
         windowTabs: BrowserWindowTabContext,
         splitQuery: WindowSplitQuery,
+        canStartLazyRestore: @escaping @MainActor () -> Bool,
         webView: TabSuspensionWebViewRuntime
     ) -> TabSuspensionRuntimePorts {
         TabSuspensionRuntimePorts(
@@ -36,6 +37,7 @@ enum BrowserTabSuspensionRuntimeFactory {
                     )
                 },
                 refreshLazyRestoreQueue: { context in
+                    guard canStartLazyRestore() else { return }
                     refreshLazyRestoreQueue(
                         context,
                         windowRegistry: windowRegistry(),

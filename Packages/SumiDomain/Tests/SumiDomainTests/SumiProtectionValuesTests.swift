@@ -1,5 +1,5 @@
-import XCTest
 @testable import SumiDomain
+import XCTest
 
 final class SumiProtectionValuesTests: XCTestCase {
     func testProtectionLevelAndGroupKindsRoundTripTheirStableRawValues() throws {
@@ -7,14 +7,12 @@ final class SumiProtectionValuesTests: XCTestCase {
             [SumiProtectionLevel].self,
             from: JSONEncoder().encode(SumiProtectionLevel.allCases)
         )
-        XCTAssertEqual(levels, [.off, .protection, .adblock])
+        XCTAssertEqual(levels, [.off, .adblock])
         XCTAssertEqual(SumiProtectionLevel.off.requestedGroups, [])
-        XCTAssertEqual(SumiProtectionLevel.protection.requestedGroups, [.trackingNetwork])
         XCTAssertEqual(
             SumiProtectionLevel.adblock.requestedGroups,
-            [.trackingNetwork, .adblockAdsPrivacyNetwork]
+            [.adblockAdsPrivacyNetwork]
         )
-        XCTAssertEqual(SumiProtectionGroupKind.cosmetic.rawValue, "cosmetic")
     }
 
     func testAttachmentStateCanonicalizesCollectionOrder() {
@@ -22,11 +20,11 @@ final class SumiProtectionValuesTests: XCTestCase {
             siteHost: "example.com",
             requestedLevel: .adblock,
             effectiveLevel: .adblock,
-            activeGroups: [.trackingNetwork, .adblockAdsPrivacyNetwork],
+            activeGroups: [.adblockAdsPrivacyNetwork],
             attachedRuleListIdentifiers: ["tracking", "ads"]
         )
 
-        XCTAssertEqual(state.activeGroups, [.adblockAdsPrivacyNetwork, .trackingNetwork])
+        XCTAssertEqual(state.activeGroups, [.adblockAdsPrivacyNetwork])
         XCTAssertEqual(state.attachedRuleListIdentifiers, ["ads", "tracking"])
         XCTAssertTrue(state.isEnabled)
     }
@@ -37,9 +35,8 @@ final class SumiProtectionValuesTests: XCTestCase {
             requestedLevel: .adblock,
             effectiveLevel: .adblock,
             activeGroups: [
-                .trackingNetwork,
                 .adblockAdsPrivacyNetwork,
-                .trackingNetwork,
+                .adblockAdsPrivacyNetwork,
             ],
             attachedRuleListIdentifiers: ["tracking", "ads", "tracking"]
         )
@@ -49,14 +46,13 @@ final class SumiProtectionValuesTests: XCTestCase {
             effectiveLevel: .adblock,
             activeGroups: [
                 .adblockAdsPrivacyNetwork,
-                .trackingNetwork,
             ],
             attachedRuleListIdentifiers: ["ads", "tracking"]
         )
 
         XCTAssertEqual(
             first.activeGroups,
-            [.adblockAdsPrivacyNetwork, .trackingNetwork]
+            [.adblockAdsPrivacyNetwork]
         )
         XCTAssertEqual(first.attachedRuleListIdentifiers, ["ads", "tracking"])
         XCTAssertTrue(first.hasSameEffectiveWebViewAttachment(as: reversed))
@@ -65,7 +61,7 @@ final class SumiProtectionValuesTests: XCTestCase {
     func testDisabledAttachmentAndReloadRequirementRemainPureValues() {
         let state = SumiProtectionAttachmentState.disabled(
             siteHost: "example.com",
-            requestedLevel: .protection
+            requestedLevel: .adblock
         )
         let requirement = SumiProtectionReloadRequirement(
             siteHost: "example.com",
@@ -73,7 +69,7 @@ final class SumiProtectionValuesTests: XCTestCase {
         )
 
         XCTAssertFalse(state.isEnabled)
-        XCTAssertEqual(state.requestedLevel, .protection)
+        XCTAssertEqual(state.requestedLevel, .adblock)
         XCTAssertEqual(state.effectiveLevel, .off)
         XCTAssertEqual(requirement.desiredAttachmentState, state)
     }
@@ -81,9 +77,9 @@ final class SumiProtectionValuesTests: XCTestCase {
     func testEffectiveWebViewAttachmentIgnoresSiteAndDiagnosticMetadata() {
         let first = SumiProtectionAttachmentState(
             siteHost: "a.example",
-            requestedLevel: .protection,
-            effectiveLevel: .protection,
-            activeGroups: [.trackingNetwork],
+            requestedLevel: .adblock,
+            effectiveLevel: .adblock,
+            activeGroups: [.adblockAdsPrivacyNetwork],
             attachedRuleListIdentifiers: ["tracking"],
             activeGenerationId: "generation-a"
         )
@@ -91,7 +87,7 @@ final class SumiProtectionValuesTests: XCTestCase {
             siteHost: "b.example",
             requestedLevel: .adblock,
             effectiveLevel: .adblock,
-            activeGroups: [.adblockAdsPrivacyNetwork, .trackingNetwork],
+            activeGroups: [.adblockAdsPrivacyNetwork],
             attachedRuleListIdentifiers: ["tracking"],
             activeGenerationId: "generation-b"
         )
@@ -102,6 +98,24 @@ final class SumiProtectionValuesTests: XCTestCase {
         XCTAssertFalse(
             first.hasSameEffectiveWebViewAttachment(
                 as: .disabled(siteHost: "b.example")
+            )
+        )
+    }
+
+    func testEnabledAdvancedAttachmentDoesNotMatchDisabledWhenBothHaveNoRuleLists() {
+        let enabled = SumiProtectionAttachmentState(
+            siteHost: "enabled.example",
+            requestedLevel: .adblock,
+            effectiveLevel: .adblock,
+            activeGroups: [.adblockAdsPrivacyNetwork]
+        )
+
+        XCTAssertFalse(
+            enabled.hasSameEffectiveWebViewAttachment(
+                as: .disabled(
+                    siteHost: "disabled.example",
+                    requestedLevel: .adblock
+                )
             )
         )
     }

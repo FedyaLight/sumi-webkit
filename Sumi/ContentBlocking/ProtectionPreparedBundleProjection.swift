@@ -1,28 +1,28 @@
 import Foundation
 import SumiDomain
 
-struct ProtectionPreparedBundleProjection {
-    func preparedProfileID(
+struct AdblockGenerationProjection {
+    func profileID(
         in manifest: AdblockCompiledGenerationManifest
     ) -> String? {
-        SumiProtectionPreparedBundleIdentity.preparedBundleProfileId(in: manifest)
+        manifest.bundleProfileId
     }
 
     func installedProfileID(
         from manifest: AdblockCompiledGenerationManifest?
     ) -> String? {
-        SumiProtectionPreparedBundleIdentity.installedBundleProfileId(from: manifest)
+        manifest?.bundleProfileId
     }
 
     func groups(
         for level: SumiProtectionLevel,
         in manifest: AdblockCompiledGenerationManifest
-    ) -> [ProtectionPreparedGroup] {
-        guard let bundleProfileID = preparedProfileID(in: manifest) else {
+    ) -> [AdblockGenerationGroup] {
+        guard let bundleProfileID = profileID(in: manifest) else {
             return []
         }
-        let groups = manifest.allNativeShards.reduce(
-            into: [SumiProtectionGroupKind: ProtectionPreparedGroup]()
+        let groups = manifest.networkShards.reduce(
+            into: [SumiProtectionGroupKind: AdblockGenerationGroup]()
         ) { result, shard in
             guard let group = protectionGroup(
                 for: shard,
@@ -30,7 +30,7 @@ struct ProtectionPreparedBundleProjection {
                 level: level
             ) else { return }
             let existing = result[group]
-            result[group] = ProtectionPreparedGroup(
+            result[group] = AdblockGenerationGroup(
                 group: group,
                 identifiers: (existing?.identifiers ?? [])
                     + [shard.webKitIdentifier],
@@ -65,29 +65,14 @@ struct ProtectionPreparedBundleProjection {
             }
     }
 
-    func trackingSourceAvailable(
-        in manifest: AdblockCompiledGenerationManifest?
-    ) -> Bool {
-        guard let manifest else { return false }
-        return groups(for: .protection, in: manifest).contains {
-            $0.group == .trackingNetwork && $0.shardCount > 0
-        }
-    }
-
     func globallyAvailableGroups(
-        in manifest: AdblockCompiledGenerationManifest?,
-        trackingSourceAvailable: Bool
+        in manifest: AdblockCompiledGenerationManifest?
     ) -> [SumiProtectionGroupKind] {
-        var groups = trackingSourceAvailable
-            ? [SumiProtectionGroupKind.trackingNetwork]
-            : []
-        if let manifest, preparedProfileID(in: manifest) != nil {
-            groups.append(
-                contentsOf: self.groups(for: .adblock, in: manifest)
-                    .map(\.group)
-            )
+        guard let manifest, profileID(in: manifest) != nil else {
+            return []
         }
-        return Array(Set(groups)).sorted { $0.rawValue < $1.rawValue }
+        return Array(Set(groups(for: .adblock, in: manifest).map(\.group)))
+            .sorted { $0.rawValue < $1.rawValue }
     }
 
     private func protectionGroup(
@@ -108,7 +93,7 @@ struct ProtectionPreparedBundleProjection {
     }
 }
 
-struct ProtectionPreparedGroup: Equatable, Sendable {
+struct AdblockGenerationGroup: Equatable, Sendable {
     let group: SumiProtectionGroupKind
     let identifiers: [String]
     let shardCount: Int

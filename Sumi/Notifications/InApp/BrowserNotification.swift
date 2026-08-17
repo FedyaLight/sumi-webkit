@@ -220,16 +220,6 @@ extension BrowserNotification {
         )
     }
 
-    static func protectionBundlesUpdated(releaseVersion: String) -> Self {
-        Self(
-            messageKey: "protection-restart-required",
-            title: "Protection lists updated to \(releaseVersion)",
-            subtitle: "Restart Sumi to apply the change",
-            duration: 4.0,
-            icon: "shield.lefthalf.filled"
-        )
-    }
-
     static func profileSwitch(profileName: String) -> Self {
         Self(
             messageKey: "profile-switch",

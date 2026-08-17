@@ -29,6 +29,33 @@ struct AdblockGenerationPaths: Sendable {
             .appendingPathComponent("\(shardId).json")
     }
 
+    func advancedArtifactURL(
+        generationId: String,
+        relativePath: String
+    ) throws -> URL {
+        guard relativePath.isEmpty == false,
+              relativePath.hasPrefix("/") == false,
+              relativePath.contains("\\") == false,
+              relativePath.contains("\0") == false,
+              relativePath.split(separator: "/", omittingEmptySubsequences: false)
+                .allSatisfy({ $0.isEmpty == false && $0 != "." && $0 != ".." })
+        else {
+            throw AdblockUpdateDiagnostics(
+                summary: "Invalid advanced-blocking artifact path: \(relativePath)"
+            )
+        }
+        let generation = try generationDirectory(generationId)
+            .standardizedFileURL
+        let candidate = generation.appendingPathComponent(relativePath)
+            .standardizedFileURL
+        guard candidate.path.hasPrefix(generation.path + "/") else {
+            throw AdblockUpdateDiagnostics(
+                summary: "Advanced-blocking artifact escaped its generation: \(relativePath)"
+            )
+        }
+        return candidate
+    }
+
     static func validatePathComponent(_ value: String, kind: String) throws {
         guard !value.isEmpty,
               value != ".",

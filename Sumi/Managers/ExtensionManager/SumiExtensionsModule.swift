@@ -7,7 +7,7 @@ import Foundation
 /// composes those roles and preserves the product-facing API without exposing
 /// `ExtensionManager` as a service locator.
 @MainActor
-final class SumiExtensionsModule {
+final class SumiExtensionsModule: SumiURLCleaningContributionHosting {
     private let demand: SumiExtensionModuleDemand
     private let managerLifetime: SumiExtensionManagerLifetime
     let settingsCatalog: SumiExtensionSettingsCatalogSurface
@@ -15,6 +15,7 @@ final class SumiExtensionsModule {
     let toolbarActions: SumiExtensionToolbarActionSurface
     let runtimeSurface: SumiExtensionRuntimeSurface
     let compatibilityDiagnostics: SumiExtensionCompatibilityDiagnosticsSurface
+    let profileWebExtensionRuntime: SumiProfileWebExtensionRuntime
 
     var surfaceStore: BrowserExtensionSurfaceStore {
         managerLifetime.surfaceStore
@@ -27,6 +28,7 @@ final class SumiExtensionsModule {
         browserConfiguration: BrowserConfiguration? = nil,
         initialProfileProvider: @escaping @MainActor () -> Profile? = { nil },
         profileReferenceAdmission: ProfileReferenceAdmissionLedger = .failClosed(),
+        profileWebExtensionRuntime: SumiProfileWebExtensionRuntime? = nil,
         safariExtensionImportStore:
             (any SafariExtensionImportStoring & SafariExtensionImportRecordProviding)? = nil,
         managerFactory: (@MainActor (
@@ -43,6 +45,7 @@ final class SumiExtensionsModule {
             browserConfiguration: browserConfiguration,
             initialProfileProvider: initialProfileProvider,
             profileReferenceAdmission: profileReferenceAdmission,
+            profileWebExtensionRuntime: profileWebExtensionRuntime,
             compiledRuleListCatalog: SumiCompiledContentRuleListCatalog(),
             safariExtensionImportStore: safariExtensionImportStore,
             managerFactory: managerFactory,
@@ -57,6 +60,7 @@ final class SumiExtensionsModule {
         browserConfiguration: BrowserConfiguration? = nil,
         initialProfileProvider: @escaping @MainActor () -> Profile? = { nil },
         profileReferenceAdmission: ProfileReferenceAdmissionLedger = .failClosed(),
+        profileWebExtensionRuntime: SumiProfileWebExtensionRuntime? = nil,
         compiledRuleListCatalog: SumiCompiledContentRuleListCataloging,
         safariExtensionImportStore:
             (any SafariExtensionImportStoring & SafariExtensionImportRecordProviding)? = nil,
@@ -80,6 +84,13 @@ final class SumiExtensionsModule {
         } else {
             resolvedImportStore = SafariExtensionImportStore.transient
         }
+        let resolvedBrowserConfiguration = browserConfiguration ?? .shared
+        let profileWebExtensionRuntime = profileWebExtensionRuntime
+            ?? SumiProfileWebExtensionRuntime(
+                browserConfiguration: resolvedBrowserConfiguration,
+                profileReferenceAdmission: profileReferenceAdmission,
+                initialProfileProvider: initialProfileProvider
+            )
         let resolvedManagerFactory = managerFactory ?? {
             ExtensionManager(
                 database: $0,
@@ -87,13 +98,14 @@ final class SumiExtensionsModule {
                 profileReferenceAdmission: profileReferenceAdmission,
                 browserConfiguration: $2,
                 moduleRegistry: $3,
-                extensionPreferences: $3.userDefaults
+                extensionPreferences: $3.userDefaults,
+                profileWebExtensionRuntime: profileWebExtensionRuntime
             )
         }
         let managerLifetime = SumiExtensionManagerLifetime(
             moduleRegistry: moduleRegistry,
             database: database,
-            browserConfiguration: browserConfiguration ?? .shared,
+            browserConfiguration: resolvedBrowserConfiguration,
             initialProfileProvider: initialProfileProvider,
             managerFactory: resolvedManagerFactory,
             surfaceStore: resolvedSurfaceStore
@@ -114,6 +126,7 @@ final class SumiExtensionsModule {
         )
 
         self.managerLifetime = managerLifetime
+        self.profileWebExtensionRuntime = profileWebExtensionRuntime
         self.contentBlocking = contentBlocking
         self.toolbarActions = toolbarActions
         self.settingsCatalog = settingsCatalog
@@ -157,10 +170,29 @@ final class SumiExtensionsModule {
         profileID: UUID,
         fallbackProfileID: UUID
     ) -> Bool {
-        managerLifetime.retireProfileRuntimeIfLoaded(
+        let suspended = profileWebExtensionRuntime
+            .suspendInternalContribution(profileID: profileID)
+        let retired = managerLifetime.retireProfileRuntimeIfLoaded(
             profileID: profileID,
             fallbackProfileID: fallbackProfileID
         )
+        let commonRuntimeRetired: Bool
+        if retired {
+            commonRuntimeRetired = profileWebExtensionRuntime
+                .finishProfileRetirement(
+                profileID: profileID,
+                fallbackProfileID: fallbackProfileID
+            )
+        } else {
+            commonRuntimeRetired = false
+        }
+        if commonRuntimeRetired == false, let suspended {
+            profileWebExtensionRuntime.setInternalContribution(
+                suspended,
+                profileID: profileID
+            )
+        }
+        return retired && commonRuntimeRetired
     }
 
     func retireBrowserAttachmentIfLoaded() {
@@ -168,7 +200,18 @@ final class SumiExtensionsModule {
     }
 
     func containsProfileRuntimeReference(to profileID: UUID) -> Bool {
-        managerLifetime.containsProfileRuntimeReference(to: profileID)
+        profileWebExtensionRuntime.containsProfileReference(to: profileID)
+            || managerLifetime.containsProfileRuntimeReference(to: profileID)
+    }
+
+    func reconcileInternalURLCleaning(
+        _ contribution: SumiURLCleaningContribution?,
+        profileID: UUID
+    ) {
+        profileWebExtensionRuntime.setInternalContribution(
+            contribution,
+            profileID: profileID
+        )
     }
 
     #if DEBUG

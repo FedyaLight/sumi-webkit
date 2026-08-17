@@ -23,8 +23,8 @@ final class ExtensionProfilePrivateDataCleaner {
         deleteControllerStorage: @escaping @MainActor (UUID) throws -> Void = {
             profileID in
             try WebExtensionStorageCleanupStore(
-                controllerStorageId: ExtensionControllerProvisioningOwner
-                    .persistentControllerIdentifier(for: profileID),
+                controllerStorageId: ExtensionProfileControllerIdentity
+                    .persistentIdentifier(for: profileID),
                 planner: WebExtensionStorageCleanupPlanner()
             ).deleteControllerStorageDirectory()
         },

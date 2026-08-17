@@ -194,12 +194,12 @@ cancel_line="$(
     | cut -d: -f1
 )"
 release_line="$(
-  guard_capture_matches 'webExtensionController = nil' "$controller_release" -F \
+  guard_capture_matches 'controllerProvisioning.releaseUserRuntime()' "$controller_release" -F \
     | cut -d: -f1
 )"
 if [[ -z "$cancel_line" || -z "$release_line" ]] \
     || (( cancel_line >= release_line )); then
-  printf 'error: pending delegate receipts are not cancelled before controller release\n' >&2
+  printf 'error: pending delegate receipts are not cancelled before user-runtime release\n' >&2
   exit 1
 fi
 

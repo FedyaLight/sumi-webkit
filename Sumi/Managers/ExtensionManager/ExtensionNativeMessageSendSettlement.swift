@@ -56,32 +56,31 @@ final class ExtensionNativeMessageSendSettlement {
                 )
         }
 
-        let isPrivateBrowsing = profileRuntime.isPrivateRuntimeProfile(profileId)
         let extensionDisplayName = ExtensionDisplayNameResolver.displayName(
             for: extensionId,
             installedExtensions: installedExtensions.records
         )
-        diagnostics.traceNativeMessagingContextBinding(
-            phase: "delegateSendMessage",
-            extensionId: extensionId,
-            profileId: profileId,
-            loadSource: SafariAppExtensionRuntimeLoadSource.installedSource(
-                for: extensionId,
-                in: installedExtensions.records
-            ),
-            webExtension: evidence.context.webExtension,
-            extensionContext: evidence.context,
-            controller: evidence.controller,
-            configuration: evidence.context.webViewConfiguration,
-            profileController: profileRuntime.controller(
-                for: profileId
-            ),
-            expectedControllerDelegate: evidence.controller.delegate
-        )
-        let messageShape = SafariExtensionNativeMessagingRoutingProbe
-            .sanitizedMessageShape(for: message)
         #if DEBUG || SUMI_DIAGNOSTICS
             if RuntimeDiagnostics.isVerboseEnabled {
+                diagnostics.traceNativeMessagingContextBinding(
+                    phase: "delegateSendMessage",
+                    extensionId: extensionId,
+                    profileId: profileId,
+                    loadSource: SafariAppExtensionRuntimeLoadSource.installedSource(
+                        for: extensionId,
+                        in: installedExtensions.records
+                    ),
+                    webExtension: evidence.context.webExtension,
+                    extensionContext: evidence.context,
+                    controller: evidence.controller,
+                    configuration: evidence.context.webViewConfiguration,
+                    profileController: profileRuntime.controller(
+                        for: profileId
+                    ),
+                    expectedControllerDelegate: evidence.controller.delegate
+                )
+                let messageShape = SafariExtensionNativeMessagingRoutingProbe
+                    .sanitizedMessageShape(for: message)
                 RuntimeDiagnostics.debug(category: "SafariNativeMessagingRouting") {
                     """
                     WKWebExtensionControllerDelegate.sendMessage \
@@ -102,8 +101,6 @@ final class ExtensionNativeMessageSendSettlement {
             message: message,
             extensionId: extensionId,
             profileId: profileId,
-            isPrivateBrowsing: isPrivateBrowsing,
-            privateAccessAllowed: evidence.context.hasAccessToPrivateData,
             installedExtensions: installedExtensions.records,
             extensionDisplayName: extensionDisplayName,
             executionAdmission: { [admission] in admission.isCurrent(evidence) },

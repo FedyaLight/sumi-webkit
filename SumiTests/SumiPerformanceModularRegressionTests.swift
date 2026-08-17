@@ -223,7 +223,7 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         XCTAssertFalse(browserManager.adBlockingModule.hasLoadedRuntime)
         XCTAssertFalse(browserManager.optionalModules.boosts.hasLoadedRuntime)
         XCTAssertFalse(browserManager.adBlockingModule.isEnabled)
-        XCTAssertFalse(browserManager.adBlockingModule.isPreparedBundleRuntimeEnabled)
+        XCTAssertFalse(browserManager.adBlockingModule.isEnabled)
 
         XCTAssertNil(
             tab.normalTabCoreUserScripts().first {

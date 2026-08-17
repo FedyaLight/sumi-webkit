@@ -14,6 +14,7 @@
 		B11DD030B11D000100000005 /* SumiWebRuntime in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD030B11D000100000011 /* SumiWebRuntime */; };
 		B11DD031B11D000100000005 /* SumiWebRuntime in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD030B11D000100000012 /* SumiWebRuntime */; };
 		C0DE0001B11D000100000001 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = C0DE0001B11D000100000002 /* GRDB */; };
+		C0DE0002B11D000100000001 /* ContentBlockerConverter in Frameworks */ = {isa = PBXBuildFile; productRef = C0DE0002B11D000100000002 /* ContentBlockerConverter */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -179,6 +180,7 @@
 				B11DD030B11D000100000005 /* SumiWebRuntime in Frameworks */,
 				3ABB06E087FC4AB7B21B2B6B /* Sparkle in Frameworks */,
 				C0DE0001B11D000100000001 /* GRDB in Frameworks */,
+				C0DE0002B11D000100000001 /* ContentBlockerConverter in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -284,6 +286,7 @@
 				A11DD030B11D000100000011 /* SumiWebRuntime */,
 				3E692AE1701C49119B0EB052 /* Sparkle */,
 				C0DE0001B11D000100000002 /* GRDB */,
+				C0DE0002B11D000100000002 /* ContentBlockerConverter */,
 			);
 			productName = Sumi;
 			productReference = 7F8340FC2E37F39400674A5D /* Sumi.app */;
@@ -327,6 +330,7 @@
 				A11DD030B11D000100000010 /* XCLocalSwiftPackageReference "Packages/SumiWebRuntime" */,
 				9AD90DB4528040A5950C146D /* XCRemoteSwiftPackageReference "Sparkle" */,
 				C0DE0001B11D000100000003 /* XCRemoteSwiftPackageReference "GRDB.swift" */,
+				C0DE0002B11D000100000003 /* XCRemoteSwiftPackageReference "SafariConverterLib" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 7F8340FD2E37F39400674A5D /* Products */;
@@ -564,6 +568,7 @@
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_COVERAGE_MAPPING = NO;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
@@ -594,6 +599,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = 2ZJ6H8V8AZ;
+				ENABLE_CODE_COVERAGE = NO;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -680,6 +686,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = logo;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				AUTOMATION_APPLE_EVENTS = YES;
+				CLANG_COVERAGE_MAPPING = NO;
 				CODE_SIGN_ENTITLEMENTS = Sumi/Sumi.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
@@ -799,6 +806,14 @@
 				minimumVersion = 7.10.0;
 			};
 		};
+		C0DE0002B11D000100000003 /* XCRemoteSwiftPackageReference "SafariConverterLib" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/AdguardTeam/SafariConverterLib.git";
+			requirement = {
+				kind = revision;
+				revision = 7a2e93f0afa70479cc59985f332025236c3f0c39;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -836,6 +851,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C0DE0001B11D000100000003 /* XCRemoteSwiftPackageReference "GRDB.swift" */;
 			productName = GRDB;
+		};
+		C0DE0002B11D000100000002 /* ContentBlockerConverter */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C0DE0002B11D000100000003 /* XCRemoteSwiftPackageReference "SafariConverterLib" */;
+			productName = ContentBlockerConverter;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

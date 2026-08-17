@@ -73,6 +73,7 @@ struct URLBarHubBrowserContext {
     let siteControlsSnapshot: (URL?, Profile?, Bool, Bool) -> SiteControlsSnapshot
     let openExtensionSettings: (BrowserWindowState) -> Void
     let openSiteSettings: (Tab?, BrowserWindowState) -> Void
+    let reloadAfterProtectionPolicyChange: (Tab, BrowserWindowState) -> Bool
     let setSafariContentBlockerSiteOverride: (SumiSafariContentBlockerSiteOverride, URL) -> Void
     let canBoost: (URL?) -> Bool
     let changedBoosts: (URL?, UUID?) -> [SumiBoost]

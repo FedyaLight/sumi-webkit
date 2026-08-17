@@ -1,27 +1,28 @@
+import CryptoKit
 import Foundation
 
 actor AdblockGenerationArchive {
     private let fileManager: FileManager
     private let paths: AdblockGenerationPaths
-    #if DEBUG
-        private let startupDiagnostics: any SumiProtectionStartupRestoreDiagnosticsRecording
-    #endif
-
     init(
         fileManager: FileManager = .default,
-        rootDirectory: URL? = nil,
-        startupDiagnostics: (any SumiProtectionStartupRestoreDiagnosticsRecording)? = nil
+        rootDirectory: URL? = nil
     ) {
         self.fileManager = fileManager
         paths = AdblockGenerationPaths(rootDirectory: rootDirectory ?? Self.defaultRootDirectory())
-        #if DEBUG
-            self.startupDiagnostics = startupDiagnostics ?? SumiProtectionStartupRestoreDiagnosticsDefaults.recorder
-        #else
-            _ = startupDiagnostics
-        #endif
     }
 
     nonisolated var storageRoot: URL { paths.rootDirectory }
+
+    nonisolated func advancedArtifactURL(
+        generationID: String,
+        relativePath: String
+    ) throws -> URL {
+        try paths.advancedArtifactURL(
+            generationId: generationID,
+            relativePath: relativePath
+        )
+    }
 
     func activeManifest() throws -> AdblockCompiledGenerationManifest? {
         guard let manifest = try decodeManifestIfPresent(at: paths.activeManifestURL) else {
@@ -50,7 +51,7 @@ actor AdblockGenerationArchive {
         includingRuleKinds ruleKinds: Set<AdblockCompiledRuleGroupKind> = [.network]
     ) throws -> [SumiContentRuleListDefinition] {
         try validateManifestTopology(manifest)
-        return try manifest.allNativeShards
+        return try manifest.networkShards
             .filter { ruleKinds.contains($0.kind) }
             .sorted(by: Self.shardSort)
             .map(shardReader.definition)
@@ -58,21 +59,36 @@ actor AdblockGenerationArchive {
 
     func validateCompiledShardFiles(for manifest: AdblockCompiledGenerationManifest) throws {
         try validateManifestTopology(manifest)
-        try manifest.allNativeShards.forEach(shardReader.validate)
+        try manifest.networkShards.forEach(shardReader.validate)
+        try validateAdvancedArtifactFiles(for: manifest)
     }
 
     func commit(
         manifest: AdblockCompiledGenerationManifest,
-        stagedCompiledShardURLs: [String: URL]
+        stagedCompiledShardURLs: [String: URL],
+        stagedAdvancedArtifactURLs: [String: URL] = [:]
     ) throws {
         try validateManifestTopology(manifest)
-        let expectedShardIds = Set(manifest.allNativeShards.map(\.id))
+        let expectedShardIds = Set(manifest.networkShards.map(\.id))
         let suppliedShardIds = Set(stagedCompiledShardURLs.keys)
         guard expectedShardIds == suppliedShardIds else {
             let missing = expectedShardIds.subtracting(suppliedShardIds).sorted()
             let unexpected = suppliedShardIds.subtracting(expectedShardIds).sorted()
             throw AdblockUpdateDiagnostics(
                 summary: "Adblock generation staging set mismatch; missing=\(missing.joined(separator: ",")); unexpected=\(unexpected.joined(separator: ","))"
+            )
+        }
+        let expectedArtifactPaths = Set(
+            manifest.advancedBlocking?.artifacts.map(\.relativePath) ?? []
+        )
+        let suppliedArtifactPaths = Set(stagedAdvancedArtifactURLs.keys)
+        guard expectedArtifactPaths == suppliedArtifactPaths else {
+            let missing = expectedArtifactPaths
+                .subtracting(suppliedArtifactPaths).sorted()
+            let unexpected = suppliedArtifactPaths
+                .subtracting(expectedArtifactPaths).sorted()
+            throw AdblockUpdateDiagnostics(
+                summary: "Advanced-blocking generation staging set mismatch; missing=\(missing.joined(separator: ",")); unexpected=\(unexpected.joined(separator: ","))"
             )
         }
 
@@ -85,7 +101,7 @@ actor AdblockGenerationArchive {
         try fileManager.createDirectory(at: stagedGeneration, withIntermediateDirectories: true)
         defer { removeIfPresent(transactionRoot) }
 
-        for shard in manifest.allNativeShards.sorted(by: Self.shardSort) {
+        for shard in manifest.networkShards.sorted(by: Self.shardSort) {
             guard let source = stagedCompiledShardURLs[shard.id] else {
                 throw AdblockUpdateDiagnostics(
                     summary: "Missing staged Adblock shard: \(shard.id)",
@@ -99,8 +115,31 @@ actor AdblockGenerationArchive {
             try fileManager.copyItem(at: source, to: destination)
         }
 
+        for artifact in (manifest.advancedBlocking?.artifacts ?? [])
+            .sorted(by: { $0.relativePath < $1.relativePath }) {
+            guard let source = stagedAdvancedArtifactURLs[artifact.relativePath]
+            else {
+                throw AdblockUpdateDiagnostics(
+                    summary: "Missing staged advanced-blocking artifact: \(artifact.relativePath)"
+                )
+            }
+            let destination = try transactionPaths.advancedArtifactURL(
+                generationId: manifest.activeGenerationId,
+                relativePath: artifact.relativePath
+            )
+            try fileManager.createDirectory(
+                at: destination.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try fileManager.copyItem(at: source, to: destination)
+        }
+
         let stagedReader = makeShardReader(storageRoot: transactionRoot)
-        try manifest.allNativeShards.forEach(stagedReader.validate)
+        try manifest.networkShards.forEach(stagedReader.validate)
+        try validateAdvancedArtifactFiles(
+            for: manifest,
+            using: transactionPaths
+        )
         try encodedManifest(manifest).write(
             to: stagedGeneration.appendingPathComponent("manifest.json"),
             options: .atomic
@@ -126,7 +165,7 @@ actor AdblockGenerationArchive {
         }
     }
 
-    func generationDirectoryURL(generationId: String) throws -> URL {
+    nonisolated func generationDirectoryURL(generationId: String) throws -> URL {
         try paths.generationDirectory(generationId)
     }
 
@@ -139,15 +178,10 @@ actor AdblockGenerationArchive {
     }
 
     private func makeShardReader(storageRoot: URL) -> AdblockArchivedShardReader {
-        #if DEBUG
-            AdblockArchivedShardReader(
-                storageRoot: storageRoot,
-                fileManager: fileManager,
-                startupDiagnostics: startupDiagnostics
-            )
-        #else
-            AdblockArchivedShardReader(storageRoot: storageRoot, fileManager: fileManager)
-        #endif
+        AdblockArchivedShardReader(
+            storageRoot: storageRoot,
+            fileManager: fileManager
+        )
     }
 
     private func publish(
@@ -196,9 +230,7 @@ actor AdblockGenerationArchive {
                 )
             }
         }
-        guard manifest.networkShards.allSatisfy({ $0.kind == .network }),
-              manifest.nativeCSSShards.allSatisfy({ $0.kind == .nativeCosmeticCSS })
-        else {
+        guard manifest.networkShards.allSatisfy({ $0.kind == .network }) else {
             throw AdblockUpdateDiagnostics(
                 summary: "Persisted Adblock shard collection contains a mismatched rule kind"
             )
@@ -213,7 +245,7 @@ actor AdblockGenerationArchive {
         }
         var shardIds = Set<String>()
         var webKitIdentifiers = Set<String>()
-        for shard in manifest.allNativeShards {
+        for shard in manifest.networkShards {
             try AdblockGenerationPaths.validatePathComponent(shard.id, kind: "shard")
             guard shard.generationId == manifest.activeGenerationId else {
                 throw AdblockUpdateDiagnostics(
@@ -232,6 +264,80 @@ actor AdblockGenerationArchive {
             }
             guard webKitIdentifiers.insert(shard.webKitIdentifier).inserted else {
                 throw AdblockUpdateDiagnostics(summary: "Duplicate Adblock WebKit identifier: \(shard.webKitIdentifier)")
+            }
+        }
+        if let advanced = manifest.advancedBlocking {
+            guard advanced.format
+                    == AdvancedBlockingGenerationDescriptor
+                        .safariConverterFormat,
+                  advanced.schemaVersion == 1,
+                  advanced.runtimeVersion.isEmpty == false,
+                  advanced.ruleCount > 0
+            else {
+                throw AdblockUpdateDiagnostics(
+                    summary: "Persisted advanced-blocking generation has incompatible metadata"
+                )
+            }
+            let roles = advanced.artifacts.map(\.role)
+            let artifactPaths = advanced.artifacts.map(\.relativePath)
+            let requiredRoles: Set<AdvancedBlockingArtifactRole> = [
+                .ruleStorage,
+                .engineIndex,
+                .engineMetadata,
+            ]
+            guard Set(roles).isSuperset(of: requiredRoles),
+                  Set(roles).count == roles.count,
+                  Set(artifactPaths).count == artifactPaths.count
+            else {
+                throw AdblockUpdateDiagnostics(
+                    summary: "Persisted advanced-blocking artifact index is incomplete or duplicated"
+                )
+            }
+            for artifact in advanced.artifacts {
+                guard artifact.byteSize > 0,
+                      artifact.hash.count == 64,
+                      artifact.hash.allSatisfy({ $0.isHexDigit })
+                else {
+                    throw AdblockUpdateDiagnostics(
+                        summary: "Persisted advanced-blocking artifact metadata is invalid: \(artifact.relativePath)"
+                    )
+                }
+                _ = try paths.advancedArtifactURL(
+                    generationId: manifest.activeGenerationId,
+                    relativePath: artifact.relativePath
+                )
+            }
+        }
+    }
+
+    private func validateAdvancedArtifactFiles(
+        for manifest: AdblockCompiledGenerationManifest,
+        using validationPaths: AdblockGenerationPaths? = nil
+    ) throws {
+        let resolvedPaths = validationPaths ?? paths
+        for artifact in manifest.advancedBlocking?.artifacts ?? [] {
+            let url = try resolvedPaths.advancedArtifactURL(
+                generationId: manifest.activeGenerationId,
+                relativePath: artifact.relativePath
+            )
+            guard fileManager.fileExists(atPath: url.path) else {
+                throw AdblockUpdateDiagnostics(
+                    summary: "Missing archived advanced-blocking artifact: \(artifact.relativePath)"
+                )
+            }
+            let data = try Data(contentsOf: url, options: [.mappedIfSafe])
+            guard data.count == artifact.byteSize else {
+                throw AdblockUpdateDiagnostics(
+                    summary: "Archived advanced-blocking artifact size mismatch: \(artifact.relativePath)"
+                )
+            }
+            let hash = SHA256.hash(data: data)
+                .map { String(format: "%02x", $0) }
+                .joined()
+            guard hash == artifact.hash.lowercased() else {
+                throw AdblockUpdateDiagnostics(
+                    summary: "Archived advanced-blocking artifact hash mismatch: \(artifact.relativePath)"
+                )
             }
         }
     }

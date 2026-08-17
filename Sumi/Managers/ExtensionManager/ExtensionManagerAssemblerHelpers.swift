@@ -124,38 +124,13 @@ extension ExtensionManagerAssembler {
     ) -> ExtensionControllerProvisioningOwner {
         ExtensionControllerProvisioningOwner(
             dependencies: .init(
-                browserConfiguration: f.controller.browserConfiguration,
                 profileRuntime: f.runtime.profileRuntime,
-                currentProfileId: { [profileRuntime = f.runtime.profileRuntime] in
-                    profileRuntime.currentProfileId
-                },
+                profileWebExtensionRuntime:
+                    f.controller.profileWebExtensionRuntime,
                 assignControllerDelegate: { [delegateBridge] controller in
                     controller.delegate = delegateBridge
                 },
-                controllerDelegateReadiness: delegateReadiness,
-                traceControllerBinding: {
-                    [diagnostics = f.runtime.diagnostics,
-                     profileRuntime = f.runtime.profileRuntime,
-                     delegateBridge]
-                    phase, profileID, controller, configuration in
-                    diagnostics.traceNativeMessagingContextBinding(
-                        phase: phase,
-                        extensionId: nil,
-                        profileId: profileID,
-                        controller: controller,
-                        configuration: configuration,
-                        profileController: profileID.flatMap {
-                            profileRuntime.controller(for: $0)
-                        },
-                        expectedControllerDelegate: delegateBridge
-                    )
-                },
-                controllerDescription: {
-                    ExtensionRuntimeDiagnostics.objectDescription($0)
-                },
-                trace: { [diagnostics = f.runtime.diagnostics] message in
-                    diagnostics.trace(message())
-                }
+                controllerDelegateReadiness: delegateReadiness
             )
         )
     }

@@ -2,9 +2,8 @@
 //  ExtensionControllerProvisioningOwner.swift
 //  Sumi
 //
-//  Owns per-profile WKWebExtensionController provisioning: controller and
-//  extension-page configuration construction, delegate (re)binding, website
-//  data store resolution, and storage verification.
+//  Adapts user-extension runtime roles to the browser-owned profile host and
+//  binds the user-extension delegate to its shared controller.
 //
 
 import Foundation
@@ -54,142 +53,40 @@ final class ExtensionControllerProvisioningOwner:
     ExtensionWebViewConfigurationProvisioning,
     ExtensionControllerProvisioning {
     struct Dependencies {
-        let browserConfiguration: BrowserConfiguration
         let profileRuntime: ExtensionProfileRuntime
-        let currentProfileId: @MainActor () -> UUID?
+        let profileWebExtensionRuntime: SumiProfileWebExtensionRuntime
         let assignControllerDelegate: @MainActor (WKWebExtensionController) -> Void
         let controllerDelegateReadiness:
             ExtensionControllerDelegateReadiness
-        let traceControllerBinding:
-            @MainActor (String, UUID?, WKWebExtensionController, WKWebViewConfiguration?) -> Void
-        let controllerDescription: @MainActor (WKWebExtensionController?) -> String
-        let trace: @MainActor (() -> String) -> Void
     }
 
     private let dependencies: Dependencies
-    private var extensionPageUserContentControllersByProfile:
-        [UUID: WKUserContentController] = [:]
+    private var installedBindingsByProfile:
+        [UUID: ExtensionControllerBindingSnapshot] = [:]
 
     init(dependencies: Dependencies) {
         self.dependencies = dependencies
     }
-
-    nonisolated static func persistentControllerIdentifier(
-        for profileId: UUID
-    ) -> UUID {
-        var uuid = profileId.uuid
-        uuid.15 ^= 0xA5
-        return UUID(uuid: uuid)
-    }
-
-    static func extensionControllerIdentifier(for profileId: UUID) -> UUID {
-        #if DEBUG
-            // Test processes are hosted inside Sumi.app and share the real
-            // WebKit storage root with the user's running browser. Never hand
-            // a test the production (profile-derived) controller identifier —
-            // a test that loads a real profile would otherwise operate on,
-            // and clean up, the user's live extension storage.
-            if RuntimeDiagnostics.isRunningTests {
-                return testScopedControllerIdentifier(for: profileId)
-            }
-        #endif
-        return persistentControllerIdentifier(for: profileId)
-    }
-
-    #if DEBUG
-        @MainActor
-        private static var testScopedControllerIdentifiersByProfile: [UUID: UUID] = [:]
-
-        /// Process-stable random controller identifier per profile for test
-        /// runs, registered for cross-process storage cleanup once the test
-        /// process exits.
-        @MainActor
-        private static func testScopedControllerIdentifier(for profileId: UUID) -> UUID {
-            if let existing = testScopedControllerIdentifiersByProfile[profileId] {
-                return existing
-            }
-            let identifier = UUID()
-            testScopedControllerIdentifiersByProfile[profileId] = identifier
-            ExtensionControllerIdentifierOwner.registerTestControllerIdentifierIfRunningTests(
-                identifier
-            )
-            return identifier
-        }
-    #endif
 
     @discardableResult
     func controllerIfAdmitted(
         for profileId: UUID,
         mutationLease suppliedLease: ProfileReferenceMutationLease?
     ) -> WKWebExtensionController? {
-        let mutationLease: ProfileReferenceMutationLease
-        let ownsMutationLease: Bool
-        if let suppliedLease {
-            mutationLease = suppliedLease
-            ownsMutationLease = false
-        } else {
-            guard let acquired = dependencies.profileRuntime
-                .beginProfileReferenceMutation(to: profileId)
-            else { return nil }
-            mutationLease = acquired
-            ownsMutationLease = true
-        }
-        defer {
-            if ownsMutationLease {
-                _ = dependencies.profileRuntime.endProfileReferenceMutation(
-                    mutationLease
-                )
-            }
-        }
-        guard dependencies.profileRuntime.validateProfileReferenceMutation(
-            mutationLease,
-            profileID: profileId
-        ) else { return nil }
-        if let existing = dependencies.profileRuntime.controller(for: profileId) {
-            return existing
-        }
-
-        let signpostState = PerformanceTrace.beginInterval(
-            "ExtensionManager.setupExtensionController"
-        )
-        defer {
-            PerformanceTrace.endInterval(
-                "ExtensionManager.setupExtensionController",
-                signpostState
-            )
-        }
-
-        guard let defaultDataStore = websiteDataStoreIfAdmitted(
-            for: profileId,
-            mutationLease: mutationLease
-        ) else { return nil }
-        let controller = makeExtensionController(
-            defaultDataStore: defaultDataStore,
-            profileId: profileId
-        )
-        guard let controllerBinding = dependencies.profileRuntime
-            .publishControllerIfAdmitted(
-                controller,
+        guard let controller = dependencies.profileWebExtensionRuntime
+            .controllerIfAdmitted(
                 for: profileId,
-                mutationLease: mutationLease
-            ) else { return nil }
-        dependencies.controllerDelegateReadiness.controllerInstalled(
-            controllerBinding
-        )
-
-        // The browser's normal-tab configuration is a projection of the
-        // currently selected profile. Auxiliary extension pages use their own
-        // configuration, so this assignment cannot leak a controller into a
-        // different profile.
-        if dependencies.currentProfileId() == profileId {
-            dependencies.browserConfiguration.webViewConfiguration
-                .webExtensionController = controller
+                mutationLease: suppliedLease
+            ) else {
+            return nil
         }
-
-        dependencies.trace {
-            "ensureExtensionController profile=\(profileId.uuidString) controller=\(self.dependencies.controllerDescription(controller))"
+        if let binding = dependencies.profileRuntime
+            .controllerBindingSnapshot(for: profileId),
+           isInstalled(binding) == false {
+            dependencies.assignControllerDelegate(controller)
+            dependencies.controllerDelegateReadiness.controllerInstalled(binding)
+            installedBindingsByProfile[profileId] = binding
         }
-        verifyExtensionStorage(profileId: profileId)
         return controller
     }
 
@@ -197,28 +94,9 @@ final class ExtensionControllerProvisioningOwner:
         for profileId: UUID,
         mutationLease suppliedLease: ProfileReferenceMutationLease?
     ) -> WKWebsiteDataStore? {
-        let mutationLease: ProfileReferenceMutationLease
-        let ownsMutationLease: Bool
-        if let suppliedLease {
-            mutationLease = suppliedLease
-            ownsMutationLease = false
-        } else {
-            guard let acquired = dependencies.profileRuntime
-                .beginProfileReferenceMutation(to: profileId)
-            else { return nil }
-            mutationLease = acquired
-            ownsMutationLease = true
-        }
-        defer {
-            if ownsMutationLease {
-                _ = dependencies.profileRuntime.endProfileReferenceMutation(
-                    mutationLease
-                )
-            }
-        }
-        return dependencies.profileRuntime.websiteDataStoreIfAdmitted(
+        dependencies.profileWebExtensionRuntime.websiteDataStoreIfAdmitted(
             for: profileId,
-            mutationLease: mutationLease
+            mutationLease: suppliedLease
         )
     }
 
@@ -241,98 +119,42 @@ final class ExtensionControllerProvisioningOwner:
     #endif
 
     func removeAllExtensionPageUserContentControllers() {
-        extensionPageUserContentControllersByProfile.removeAll()
+        dependencies.profileWebExtensionRuntime
+            .removeAllExtensionPageUserContentControllers()
+    }
+
+    func releaseUserRuntime() {
+        installedBindingsByProfile.removeAll()
+        dependencies.profileWebExtensionRuntime.releaseUserRuntime()
     }
 
     func retireProfileController(
         profileID: UUID,
         fallbackProfileID: UUID
     ) {
-        let retiredController = dependencies.profileRuntime.controller(
-            for: profileID
+        installedBindingsByProfile.removeValue(forKey: profileID)
+        dependencies.profileWebExtensionRuntime.retireProfileController(
+            profileID: profileID,
+            fallbackProfileID: fallbackProfileID
         )
-        extensionPageUserContentControllersByProfile.removeValue(
-            forKey: profileID
-        )
-        let runtimeConfiguration = dependencies.browserConfiguration
-            .webViewConfiguration
-        if runtimeConfiguration.webExtensionController === retiredController {
-            runtimeConfiguration.webExtensionController = dependencies
-                .profileRuntime.controller(for: fallbackProfileID)
-        }
     }
 
     func containsProfileReference(to profileID: UUID) -> Bool {
-        extensionPageUserContentControllersByProfile[profileID] != nil
+        dependencies.profileWebExtensionRuntime
+            .containsExtensionPageReference(to: profileID)
     }
 
     var hasExtensionPageUserContentControllers: Bool {
-        extensionPageUserContentControllersByProfile.isEmpty == false
+        dependencies.profileWebExtensionRuntime
+            .hasExtensionPageUserContentControllers
     }
 
-    private func makeExtensionController(
-        defaultDataStore: WKWebsiteDataStore,
-        profileId: UUID
-    ) -> WKWebExtensionController {
-        // A private partition must not own persistent controller storage:
-        // WebKit writes a unique on-disk directory for every identified
-        // configuration, so an incognito session would outlive its window.
-        let configuration = dependencies.profileRuntime
-            .isPrivateRuntimeProfile(profileId)
-            ? WKWebExtensionController.Configuration.nonPersistent()
-            : WKWebExtensionController.Configuration(
-                identifier: Self.extensionControllerIdentifier(for: profileId)
-            )
-        let runtimeWebConfiguration = dependencies.browserConfiguration.webViewConfiguration
-        let extensionPageConfiguration = makeExtensionPageBaseWebViewConfiguration(
-            from: runtimeWebConfiguration,
-            websiteDataStore: defaultDataStore
-        )
-        configuration.webViewConfiguration = extensionPageConfiguration
-        configuration.defaultWebsiteDataStore = defaultDataStore
-
-        let controller = WKWebExtensionController(configuration: configuration)
-        extensionPageUserContentControllersByProfile[profileId] =
-            extensionPageConfiguration.userContentController
-        dependencies.assignControllerDelegate(controller)
-        dependencies.traceControllerBinding(
-            "controllerCreated",
-            profileId,
-            controller,
-            extensionPageConfiguration
-        )
-
-        runtimeWebConfiguration.defaultWebpagePreferences.allowsContentJavaScript = true
-
-        return controller
-    }
-
-    private func makeExtensionPageBaseWebViewConfiguration(
-        from source: WKWebViewConfiguration,
-        websiteDataStore: WKWebsiteDataStore
-    ) -> WKWebViewConfiguration {
-        let configuration = dependencies.browserConfiguration
-            .auxiliaryWebViewConfiguration(
-                from: source,
-                surface: .extensionOptions
-            )
-        configuration.websiteDataStore = websiteDataStore
-        configuration.sumiIsNormalTabWebViewConfiguration = false
-        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
-        return configuration
-    }
-
-    private func verifyExtensionStorage(profileId: UUID) {
-        guard RuntimeDiagnostics.isVerboseEnabled else {
-            return
-        }
-        guard let dataStore = dependencies.profileRuntime.controller(for: profileId)?
-            .configuration.defaultWebsiteDataStore
-        else {
-            return
-        }
-        dataStore.fetchDataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes()) { records in
-            ExtensionManager.logger.debug("Extension data store ready for profile \(profileId.uuidString, privacy: .public): \(records.count) records")
-        }
+    private func isInstalled(
+        _ binding: ExtensionControllerBindingSnapshot
+    ) -> Bool {
+        guard let installed = installedBindingsByProfile[binding.profileID]
+        else { return false }
+        return installed.revision == binding.revision
+            && installed.controller === binding.controller
     }
 }

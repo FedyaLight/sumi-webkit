@@ -91,6 +91,8 @@ debug-pages/
 ManualTests/
 specs/
 default.profraw
+Vendor/AdGuard/AdvancedBlockingRuntime/node_modules/
+Vendor/AdGuard/AdvancedBlockingRuntime/dist/
 
 # Local documentation (not published to GitHub)
 docs/

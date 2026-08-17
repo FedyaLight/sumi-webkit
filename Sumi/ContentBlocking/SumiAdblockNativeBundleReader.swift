@@ -1,78 +1,13 @@
 import CryptoKit
 import Foundation
-import OSLog
 
 /// The filesystem boundary for prepared native rule bundles. All manifest and
 /// shard reads pass through the same path, size, hash, and JSON validation.
 struct SumiAdblockNativeBundleReader: @unchecked Sendable {
-    private static let log = Logger.sumi(category: "ContentBlocking")
-
     private let fileManager: FileManager
 
     init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
-    }
-
-    func bundledDirectoryURL(
-        for profileId: String,
-        in bundle: Bundle = .main
-    ) -> URL? {
-        guard let resourceURL = bundle.resourceURL else { return nil }
-        return bundledDirectoryURL(
-            for: profileId,
-            resourceURL: resourceURL
-        )
-    }
-
-    func bundledDirectoryURL(
-        for profileId: String,
-        resourceURL: URL
-    ) -> URL? {
-        let candidates = [
-            resourceURL
-                .appendingPathComponent(
-                    "SumiAdblockBundles",
-                    isDirectory: true
-                )
-                .appendingPathComponent(profileId, isDirectory: true)
-                .appendingPathComponent(
-                    SumiAdblockNativeRuleBundle.directoryName,
-                    isDirectory: true
-                ),
-            resourceURL
-                .appendingPathComponent(profileId, isDirectory: true)
-                .appendingPathComponent(
-                    SumiAdblockNativeRuleBundle.directoryName,
-                    isDirectory: true
-                ),
-            resourceURL.appendingPathComponent(
-                SumiAdblockNativeRuleBundle.directoryName,
-                isDirectory: true
-            ),
-        ]
-
-        for candidate in candidates {
-            let manifestURL = candidate.appendingPathComponent(
-                SumiAdblockNativeRuleBundle.manifestFileName
-            )
-            guard fileManager.fileExists(atPath: manifestURL.path) else {
-                continue
-            }
-
-            do {
-                let ruleBundle = try load(from: candidate)
-                guard ruleBundle.manifest.profileId == profileId else {
-                    continue
-                }
-                return candidate
-            } catch {
-                Self.log.error(
-                    "Embedded Adblock bundle candidate failed to load at \(candidate.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
-                )
-            }
-        }
-
-        return nil
     }
 
     func load(from directoryURL: URL) throws -> SumiAdblockNativeRuleBundle {
@@ -92,14 +27,7 @@ struct SumiAdblockNativeBundleReader: @unchecked Sendable {
                 manifest.schemaVersion
             )
         }
-        guard manifest.nativeCSSSafetyPolicyVersion
-            == SumiAdblockNativeRuleBundle.requiredNativeCSSSafetyPolicyVersion
-        else {
-            throw SumiAdblockNativeRuleBundleError
-                .unsupportedNativeCSSSafetyPolicyVersion(
-                    manifest.nativeCSSSafetyPolicyVersion
-                )
-        }
+        try validateAdvancedDescriptor(manifest.advancedBlocking)
         return SumiAdblockNativeRuleBundle(
             directoryURL: directoryURL,
             manifest: manifest
@@ -107,11 +35,10 @@ struct SumiAdblockNativeBundleReader: @unchecked Sendable {
     }
 
     func contentRuleListDefinitions(
-        from bundle: SumiAdblockNativeRuleBundle,
-        including ruleKinds: Set<AdblockCompiledRuleGroupKind> = [.network]
+        from bundle: SumiAdblockNativeRuleBundle
     ) throws -> [SumiContentRuleListDefinition] {
         try bundle.manifest.shards
-            .filter { ruleKinds.contains($0.ruleGroupKind) }
+            .filter { $0.ruleGroupKind == .network }
             .sorted(by: shardSort)
             .map { shard in
                 let data = try verifiedShardData(shard, in: bundle)
@@ -128,15 +55,11 @@ struct SumiAdblockNativeBundleReader: @unchecked Sendable {
     }
 
     func stagedShardURLs(
-        from bundle: SumiAdblockNativeRuleBundle,
-        including ruleKinds: Set<AdblockCompiledRuleGroupKind> = [
-            .network,
-            .nativeCosmeticCSS,
-        ]
+        from bundle: SumiAdblockNativeRuleBundle
     ) throws -> [String: URL] {
         try Dictionary(
             uniqueKeysWithValues: bundle.manifest.shards
-                .filter { ruleKinds.contains($0.ruleGroupKind) }
+                .filter { $0.ruleGroupKind == .network }
                 .map { shard in
                     _ = try verifiedShardData(shard, in: bundle)
                     return (
@@ -147,42 +70,21 @@ struct SumiAdblockNativeBundleReader: @unchecked Sendable {
         )
     }
 
-    /// Validates every declared shard and fingerprints the exact manifest and
-    /// shard bytes that were validated. Callers can compare this receipt after
-    /// a filesystem exchange before treating the destination as active.
-    func validatedPayloadFingerprint(
+    func stagedAdvancedArtifactURLs(
         from bundle: SumiAdblockNativeRuleBundle
-    ) throws -> String {
-        let manifestURL = bundle.directoryURL.appendingPathComponent(
-            SumiAdblockNativeRuleBundle.manifestFileName
-        )
-        let manifestData = try Data(contentsOf: manifestURL)
-        let reloadedManifest = try JSONDecoder().decode(
-            SumiAdblockNativeRuleBundleManifest.self,
-            from: manifestData
-        )
-        guard reloadedManifest == bundle.manifest else {
-            throw SumiAdblockNativeRuleBundleError
-                .manifestChangedDuringValidation
+    ) throws -> [String: URL] {
+        guard let descriptor = bundle.manifest.advancedBlocking else {
+            return [:]
         }
-
-        var components = [fingerprintComponent(
-            path: SumiAdblockNativeRuleBundle.manifestFileName,
-            data: manifestData
-        )]
-        for shard in bundle.manifest.shards.sorted(by: {
-            $0.relativePath < $1.relativePath
-        }) {
-            components.append(
-                fingerprintComponent(
-                    path: shard.relativePath,
-                    data: try verifiedShardData(shard, in: bundle)
+        return try Dictionary(
+            uniqueKeysWithValues: descriptor.artifacts.map { artifact in
+                _ = try verifiedAdvancedArtifactData(artifact, in: bundle)
+                return (
+                    artifact.relativePath,
+                    try advancedArtifactURL(artifact, in: bundle)
                 )
-            )
-        }
-        return SHA256.hash(data: Data(components.joined(separator: "\n").utf8))
-            .map { String(format: "%02x", $0) }
-            .joined()
+            }
+        )
     }
 
     private func verifiedShardData(
@@ -196,15 +98,6 @@ struct SumiAdblockNativeBundleReader: @unchecked Sendable {
             )
         }
         let data = try Data(contentsOf: url)
-        #if DEBUG
-            SumiProtectionStartupRestoreDiagnosticsDefaults.recorder
-                .recordShardJSONRead(
-                    identifier: shard.webKitIdentifier,
-                    path: url.path,
-                    byteCount: data.count,
-                    reason: "prepared native bundle install loaded shard JSON"
-                )
-        #endif
         guard !data.isEmpty else {
             throw SumiAdblockNativeRuleBundleError.emptyShard(
                 shard.relativePath
@@ -254,19 +147,149 @@ struct SumiAdblockNativeBundleReader: @unchecked Sendable {
         return url
     }
 
+    private func validateAdvancedDescriptor(
+        _ descriptor: AdvancedBlockingGenerationDescriptor?
+    ) throws {
+        guard let descriptor else { return }
+        guard descriptor.format
+                == AdvancedBlockingGenerationDescriptor.safariConverterFormat,
+              descriptor.schemaVersion == 1,
+              descriptor.runtimeVersion.isEmpty == false,
+              descriptor.ruleCount > 0
+        else {
+            throw SumiAdblockNativeRuleBundleError.invalidAdvancedDescriptor(
+                "unsupported format, schema, runtime version, or empty rule set"
+            )
+        }
+
+        let requiredRoles: Set<AdvancedBlockingArtifactRole> = [
+            .ruleStorage,
+            .engineIndex,
+            .engineMetadata,
+        ]
+        let roles = descriptor.artifacts.map(\.role)
+        guard Set(roles).isSuperset(of: requiredRoles),
+              Set(roles).count == roles.count
+        else {
+            throw SumiAdblockNativeRuleBundleError.invalidAdvancedDescriptor(
+                "required artifact roles are missing or duplicated"
+            )
+        }
+        let paths = descriptor.artifacts.map(\.relativePath)
+        guard Set(paths).count == paths.count else {
+            throw SumiAdblockNativeRuleBundleError.invalidAdvancedDescriptor(
+                "artifact paths are duplicated"
+            )
+        }
+
+        let requiredPaths: [AdvancedBlockingArtifactRole: String] = [
+            .ruleStorage: ".webext/rules.bin",
+            .engineIndex: ".webext/engine.bin",
+            .engineMetadata: ".webext/meta.bin",
+            .sourceRules: ".webext/rules.txt",
+            .urlCleaningRules: ".webext/removeparam.json",
+        ]
+        for artifact in descriptor.artifacts {
+            guard artifact.byteSize > 0,
+                  artifact.hash.count == 64,
+                  artifact.hash.allSatisfy({ $0.isHexDigit }),
+                  requiredPaths[artifact.role] == artifact.relativePath
+            else {
+                throw SumiAdblockNativeRuleBundleError.invalidAdvancedDescriptor(
+                    "invalid metadata for \(artifact.role.rawValue)"
+                )
+            }
+            _ = try safePayloadURL(
+                relativePath: artifact.relativePath,
+                in: URL(fileURLWithPath: "/advanced-descriptor-root")
+            )
+        }
+    }
+
+    private func verifiedAdvancedArtifactData(
+        _ artifact: AdvancedBlockingGenerationDescriptor.Artifact,
+        in bundle: SumiAdblockNativeRuleBundle
+    ) throws -> Data {
+        let url = try advancedArtifactURL(artifact, in: bundle)
+        guard fileManager.fileExists(atPath: url.path) else {
+            throw SumiAdblockNativeRuleBundleError.missingAdvancedArtifact(
+                artifact.relativePath
+            )
+        }
+        let data = try Data(contentsOf: url, options: [.mappedIfSafe])
+        guard data.isEmpty == false else {
+            throw SumiAdblockNativeRuleBundleError.emptyAdvancedArtifact(
+                artifact.relativePath
+            )
+        }
+        guard data.count == artifact.byteSize else {
+            throw SumiAdblockNativeRuleBundleError
+                .advancedArtifactSizeMismatch(
+                    path: artifact.relativePath,
+                    expected: artifact.byteSize,
+                    actual: data.count
+                )
+        }
+        let actualHash = SHA256.hash(data: data)
+            .map { String(format: "%02x", $0) }
+            .joined()
+        guard actualHash == artifact.hash.lowercased() else {
+            throw SumiAdblockNativeRuleBundleError
+                .advancedArtifactHashMismatch(
+                    path: artifact.relativePath,
+                    expected: artifact.hash,
+                    actual: actualHash
+                )
+        }
+        return data
+    }
+
+    private func advancedArtifactURL(
+        _ artifact: AdvancedBlockingGenerationDescriptor.Artifact,
+        in bundle: SumiAdblockNativeRuleBundle
+    ) throws -> URL {
+        do {
+            return try safePayloadURL(
+                relativePath: artifact.relativePath,
+                in: bundle.directoryURL
+            )
+        } catch {
+            throw SumiAdblockNativeRuleBundleError.invalidAdvancedArtifactPath(
+                artifact.relativePath
+            )
+        }
+    }
+
+    private func safePayloadURL(
+        relativePath: String,
+        in root: URL
+    ) throws -> URL {
+        guard relativePath.isEmpty == false,
+              relativePath.hasPrefix("/") == false,
+              relativePath.contains("\\") == false,
+              relativePath.contains("\0") == false,
+              relativePath.split(separator: "/", omittingEmptySubsequences: false)
+                .allSatisfy({ $0.isEmpty == false && $0 != "." && $0 != ".." })
+        else {
+            throw SumiAdblockNativeRuleBundleError
+                .invalidAdvancedArtifactPath(relativePath)
+        }
+        let standardizedRoot = root.standardizedFileURL
+        let candidate = root.appendingPathComponent(relativePath)
+            .standardizedFileURL
+        guard candidate.path.hasPrefix(standardizedRoot.path + "/") else {
+            throw SumiAdblockNativeRuleBundleError
+                .invalidAdvancedArtifactPath(relativePath)
+        }
+        return candidate
+    }
+
     private func shardIdentifier(
         _ shard: SumiAdblockNativeRuleBundleManifest.Shard
     ) -> String {
         URL(fileURLWithPath: shard.relativePath)
             .deletingPathExtension()
             .lastPathComponent
-    }
-
-    private func fingerprintComponent(path: String, data: Data) -> String {
-        let digest = SHA256.hash(data: data)
-            .map { String(format: "%02x", $0) }
-            .joined()
-        return "\(path.utf8.count):\(path):\(data.count):\(digest)"
     }
 
     private func shardSort(

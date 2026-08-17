@@ -40,7 +40,6 @@ checks=(
   "scripts/check_import_export_boundaries.sh"
   "scripts/check_bookmark_import_dto_boundary.sh"
   "scripts/check_bookmark_publication_boundary.sh"
-  "scripts/check_prepared_bundle_runtime_boundary.sh"
   "scripts/check_safari_extension_clean_import.sh"
   "scripts/check_settings_browser_manager_boundary.sh"
   "scripts/check_general_settings_boundaries.sh"

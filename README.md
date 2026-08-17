@@ -69,7 +69,7 @@ Sumi implements the browser application layer. WebKit still owns HTML/CSS render
 
 - Profile-specific `WKWebsiteDataStore` partitions and a fully ephemeral private partition.
 - Browser permission surfaces for camera, microphone, location, notifications, popups, autoplay, screen sharing, and related site settings.
-- Manual tracking-protection and ad-blocking levels backed by prepared, verified WebKit content-rule bundles. Raw filter lists are not downloaded or compiled in the browser process.
+- Per-profile Adblock with user-selectable filter lists. Apply downloads the selected sources and builds verified WebKit and advanced-blocking artifacts locally.
 - Manual cleanup for history, site data, and caches; automatic retention for old history; and Global Privacy Control.
 
 ### Extensions
@@ -191,6 +191,6 @@ Do not report vulnerabilities or include credentials, cookies, private browsing 
 
 Sumi is licensed under the GNU General Public License v3.0. See [LICENSE](LICENSE).
 
-The codebase began from the GPL-licensed Nook browser and has since been substantially reworked around Sumi's product and runtime architecture. It also contains vendored or adapted components from DuckDuckGo's Apple browser projects under their applicable licenses. Prepared protection bundles are built in [`FedyaLight/sumi-protection-bundles`](https://github.com/FedyaLight/sumi-protection-bundles) from attributed upstream datasets and filter lists.
+The codebase began from the GPL-licensed Nook browser and has since been substantially reworked around Sumi's product and runtime architecture. It also contains vendored or adapted components from DuckDuckGo's Apple browser projects under their applicable licenses. Adblock artifacts are generated locally from the filter lists selected by the user.
 
 The complete attribution and copied/adapted-code inventory is maintained in [NOTICE.md](NOTICE.md), [LICENSE_NOTES.md](LICENSE_NOTES.md), [Vendor/DDG/README.md](Vendor/DDG/README.md), and [docs/permissions/LICENSE_NOTES.md](docs/permissions/LICENSE_NOTES.md).

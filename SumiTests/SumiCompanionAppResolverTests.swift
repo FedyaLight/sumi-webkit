@@ -138,7 +138,6 @@ final class SumiCompanionAppResolverTests: XCTestCase {
                     extensionsModuleEnabled: true,
                     extensionId: installed.id,
                     installedExtension: installed,
-                    isPrivateBrowsing: false,
                     requestedApplicationIdentifier: "app"
                 )
             ).get()
@@ -148,7 +147,6 @@ final class SumiCompanionAppResolverTests: XCTestCase {
                 extensionsModuleEnabled: true,
                 extensionId: unrelated.id,
                 installedExtension: unrelated,
-                isPrivateBrowsing: false,
                 requestedApplicationIdentifier: "app"
             )
         ) {
@@ -171,7 +169,6 @@ final class SumiCompanionAppResolverTests: XCTestCase {
                 extensionsModuleEnabled: true,
                 extensionId: installed.id,
                 installedExtension: installed,
-                isPrivateBrowsing: false,
                 requestedApplicationIdentifier: "com.8bit.bitwarden"
             )
         )
@@ -195,7 +192,6 @@ final class SumiCompanionAppResolverTests: XCTestCase {
                 extensionsModuleEnabled: true,
                 extensionId: installed.id,
                 installedExtension: installed,
-                isPrivateBrowsing: false,
                 requestedApplicationIdentifier: "com.bitwarden.desktop"
             )
         )
@@ -205,7 +201,7 @@ final class SumiCompanionAppResolverTests: XCTestCase {
         }
     }
 
-    func testNativeMessagingPolicyDeniesPrivateOriginWithoutContextPrivateAccess() throws {
+    func testNativeMessagingPolicyDoesNotConflatePrivatePageAccessWithBackgroundMessaging() throws {
         let appexPath = try makeFixtureApp(
             appBundleID: "com.example.host",
             appexBundleID: "com.example.host.extension"
@@ -217,39 +213,12 @@ final class SumiCompanionAppResolverTests: XCTestCase {
                 extensionsModuleEnabled: true,
                 extensionId: installed.id,
                 installedExtension: installed,
-                isPrivateBrowsing: true,
-                privateAccessAllowed: false,
                 requestedApplicationIdentifier: "com.example.host"
             )
         )
 
         if case .failure(let denial) = result {
-            XCTAssertEqual(denial, .privateBrowsingDenied)
-        } else {
-            XCTFail("Expected private-origin native messaging to require context private access")
-        }
-    }
-
-    func testNativeMessagingPolicyAllowsPrivateOriginWithContextPrivateAccess() throws {
-        let appexPath = try makeFixtureApp(
-            appBundleID: "com.example.host",
-            appexBundleID: "com.example.host.extension"
-        )
-        let installed = makeInstalledExtension(id: "ext-private-allowed", sourceBundlePath: appexPath)
-
-        let result = SumiNativeMessagingRelayPolicy.evaluate(
-            SumiNativeMessagingRelayPolicyContext(
-                extensionsModuleEnabled: true,
-                extensionId: installed.id,
-                installedExtension: installed,
-                isPrivateBrowsing: true,
-                privateAccessAllowed: true,
-                requestedApplicationIdentifier: "com.example.host"
-            )
-        )
-
-        if case .failure(let denial) = result {
-            XCTFail("Expected private-origin native messaging to be allowed, got \(denial)")
+            XCTFail("Expected background native messaging to remain available, got \(denial)")
         }
     }
 
@@ -265,7 +234,6 @@ final class SumiCompanionAppResolverTests: XCTestCase {
                 extensionsModuleEnabled: true,
                 extensionId: installed.id,
                 installedExtension: installed,
-                isPrivateBrowsing: false,
                 requestedApplicationIdentifier: "com.bitwarden.desktop"
             )
         )

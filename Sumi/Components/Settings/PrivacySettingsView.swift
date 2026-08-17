@@ -48,12 +48,12 @@ struct PrivacySettingsView: View {
                     }
 
                     if let protectionCoordinator {
-                        AdblockProtectionSettingsView(
+                        AdblockSettingsView(
                             coordinator: protectionCoordinator
                         )
                     } else {
-                        SettingsSection(title: "Adblock & Protection") {
-                            Text("Protection settings are unavailable outside the browser runtime.")
+                        SettingsSection(title: "Adblock") {
+                            Text("Adblock settings are unavailable outside the browser runtime.")
                                 .font(.callout)
                                 .foregroundStyle(.secondary)
                         }
@@ -95,22 +95,45 @@ private struct GlobalPrivacyControlSettingsView: View {
     }
 }
 
-private struct AdblockProtectionSettingsView: View {
+private struct AdblockSettingsView: View {
     let coordinator: SumiProtectionCoordinator
     @ObservedObject private var settings: SumiProtectionSettings
-    @ObservedObject private var bundleUpdateStatus: SumiProtectionBundleUpdateStatusStore
     @State private var isApplying = false
-    @State private var isUpdatingBundles = false
     @State private var presentedNotification: BrowserNotification?
 
     init(coordinator: SumiProtectionCoordinator) {
         self.coordinator = coordinator
         _settings = ObservedObject(wrappedValue: coordinator.settings)
-        _bundleUpdateStatus = ObservedObject(wrappedValue: coordinator.bundleUpdateStatusStore)
     }
 
     var body: some View {
-        protectionSettingsSection
+        VStack(alignment: .leading, spacing: 20) {
+            SettingsFeatureToggleCard(
+                title: "Adblock",
+                isEnabled: enabledBinding
+            )
+            .accessibilityIdentifier("privacy-adblock-enabled")
+
+            if settings.level == .adblock,
+               let catalog = coordinator.filterListCatalog {
+                AdblockFilterListsSection(
+                    catalog: catalog,
+                    selectedIDs: settings.selectedFilterListIDs(in: catalog),
+                    statusText: filterListStatusText(in: catalog),
+                    isApplying: isApplying,
+                    resetToDefaults: coordinator.resetFilterListsToDefaults,
+                    setEnabled: coordinator.setFilterList,
+                    apply: applySelectedLevel
+                )
+            } else if hasPendingChanges {
+                AdblockPendingDisableSection(
+                    statusText: lastUpdateErrorText
+                        ?? "Apply changes to turn off Adblock.",
+                    isApplying: isApplying,
+                    apply: applySelectedLevel
+                )
+            }
+        }
             .alert(item: $presentedNotification) { notification in
                 Alert(
                     title: Text(notification.title),
@@ -120,115 +143,44 @@ private struct AdblockProtectionSettingsView: View {
             }
     }
 
-    private var protectionSettingsSection: some View {
-        SettingsSection(title: "Adblock & Protection") {
-            levelControls
-
-            SettingsDivider()
-
-            lastUpdateRow
-        }
-    }
-
-    private var levelBinding: Binding<SumiProtectionLevel> {
+    private var enabledBinding: Binding<Bool> {
         Binding(
-            get: { settings.level },
-            set: { level in
-                coordinator.setLevel(level)
-            }
+            get: { settings.level == .adblock },
+            set: { coordinator.setLevel($0 ? .adblock : .off) }
         )
     }
 
-    private var levelControls: some View {
-        SettingsRow(
-            title: "Protection level",
-            subtitle: levelSubtitle
-        ) {
-            HStack(spacing: 8) {
-                Picker("", selection: levelBinding) {
-                    ForEach(SumiProtectionLevel.allCases) { level in
-                        Text(level.displayTitle).tag(level)
-                    }
-                }
-                .settingsMenuPicker(width: 150)
-                .accessibilityLabel("Protection level")
-                .accessibilityIdentifier("privacy-protection-level")
-
-                Button {
-                    applySelectedLevel()
-                } label: {
-                    if isApplying {
-                        ProgressView()
-                            .controlSize(.small)
-                            .frame(width: 44)
-                    } else {
-                        Text("Apply")
-                            .frame(width: 44)
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-                .disabled(isApplying || !coordinator.applyNeeded)
-                .accessibilityIdentifier("privacy-apply-protection-level")
-                .help("Apply the selected protection level")
-            }
-            .frame(maxWidth: .infinity, alignment: .trailing)
-        }
-    }
-
-    private var lastUpdateRow: some View {
-        SettingsRow(
-            title: "Last update",
-            subtitle: lastUpdateErrorText ?? lastUpdateText
-        ) {
-            Button {
-                updatePreparedBundles()
-            } label: {
-                if isUpdatingBundles {
-                    HStack(spacing: 6) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Updating")
-                    }
-                } else {
-                    Label("Update", systemImage: "arrow.clockwise")
-                }
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .disabled(isUpdatingBundles)
-            .accessibilityIdentifier("privacy-update-protection-bundles")
-            .help("Check for updated protection lists")
-        }
-    }
-
-    /// Restart-required is announced as a toast when it happens; the row keeps a
-    /// quiet trace of it so the pending restart stays discoverable afterwards.
-    private var levelSubtitle: String? {
-        if coordinator.applyNeeded {
-            return "Apply changes to use the selected level."
-        }
-        if settings.browserRestartRequired {
-            return "Restart Sumi to finish applying this level."
-        }
-        return nil
-    }
-
-    private var globalDiagnostics: SumiProtectionGlobalDiagnostics {
-        coordinator.globalDiagnostics()
+    private var hasPendingChanges: Bool {
+        guard settings.level == settings.appliedLevel else { return true }
+        guard settings.level == .adblock,
+              let catalog = coordinator.filterListCatalog else { return false }
+        return settings.filterListSelectionApplyNeeded(in: catalog)
     }
 
     private var lastUpdateText: String {
-        let global = globalDiagnostics
-        if let date = global.lastSuccessfulBundleInstallDate ?? bundleUpdateStatus.lastSuccessDate {
+        if let date = coordinator.lastSuccessfulUpdateDate {
             return settingsDateString(date)
         }
         return "Never"
     }
 
     private var lastUpdateErrorText: String? {
-        guard let reason = bundleUpdateStatus.lastFailureReason else { return nil }
+        guard let reason = coordinator.lastApplyError else { return nil }
         return "Update failed: \(Self.compactUpdateError(reason))"
+    }
+
+    private func filterListStatusText(
+        in catalog: SumiFilterListCatalog
+    ) -> String {
+        if let lastUpdateErrorText {
+            return lastUpdateErrorText
+        }
+        let selectedCount = settings.selectedFilterListIDs(in: catalog).count
+        let selectionText = "\(selectedCount) of \(catalog.lists.count) enabled"
+        if hasPendingChanges {
+            return "\(selectionText). Changes not applied."
+        }
+        return "\(selectionText). Last updated \(lastUpdateText)."
     }
 
     private func applySelectedLevel() {
@@ -236,40 +188,17 @@ private struct AdblockProtectionSettingsView: View {
         isApplying = true
         Task {
             do {
-                let outcome = try await coordinator.applySelectedLevel()
+                try await coordinator.applySelectedLevel()
                 await MainActor.run {
                     isApplying = false
-                    if settings.browserRestartRequired {
-                        presentedNotification =
-                            .protectionLevelApplied(
-                                levelTitle: outcome.appliedLevel.displayTitle
-                            )
-                    }
+                    presentedNotification =
+                        .protectionLevelApplied(
+                            levelTitle: settings.appliedLevel.displayTitle
+                        )
                 }
             } catch {
                 await MainActor.run {
                     isApplying = false
-                }
-            }
-        }
-    }
-
-    private func updatePreparedBundles() {
-        guard !isUpdatingBundles else { return }
-        isUpdatingBundles = true
-        Task {
-            do {
-                let outcome = try await coordinator.updatePreparedBundlesManually()
-                await MainActor.run {
-                    isUpdatingBundles = false
-                    if outcome.activation == .installedRestartRequired {
-                        presentedNotification =
-                            .protectionBundlesUpdated(releaseVersion: outcome.releaseVersion)
-                    }
-                }
-            } catch {
-                await MainActor.run {
-                    isUpdatingBundles = false
                 }
             }
         }
@@ -294,5 +223,172 @@ private struct AdblockProtectionSettingsView: View {
         let limit = 140
         guard singleLine.count > limit else { return singleLine }
         return "\(singleLine.prefix(limit))..."
+    }
+}
+
+private struct AdblockFilterListsSection: View {
+    let catalog: SumiFilterListCatalog
+    let selectedIDs: Set<String>
+    let statusText: String
+    let isApplying: Bool
+    let resetToDefaults: () -> Void
+    let setEnabled: (String, Bool) -> Void
+    let apply: () -> Void
+
+    var body: some View {
+        SettingsSection(
+            title: "Filter lists",
+            subtitle: statusText,
+            headerAccessory: {
+                AdblockFilterActions(
+                    defaultsDisabled: selectedIDs == catalog.defaultEnabledIDs,
+                    isApplying: isApplying,
+                    resetToDefaults: resetToDefaults,
+                    apply: apply
+                )
+            }
+        ) {
+            ForEach(
+                Array(catalog.categories.enumerated()),
+                id: \.element
+            ) { index, category in
+                if index > 0 {
+                    SettingsDivider()
+                }
+                AdblockFilterListCategoryView(
+                    category: category,
+                    lists: catalog.lists.filter { $0.category == category },
+                    selectedIDs: selectedIDs,
+                    setEnabled: setEnabled
+                )
+            }
+        }
+    }
+}
+
+private struct AdblockPendingDisableSection: View {
+    let statusText: String
+    let isApplying: Bool
+    let apply: () -> Void
+
+    var body: some View {
+        SettingsSection(
+            subtitle: statusText,
+            headerAccessory: {
+                AdblockFilterActions(
+                    defaultsDisabled: true,
+                    isApplying: isApplying,
+                    resetToDefaults: {},
+                    apply: apply
+                )
+            }
+        ) {
+            EmptyView()
+        }
+    }
+}
+
+private struct AdblockFilterActions: View {
+    let defaultsDisabled: Bool
+    let isApplying: Bool
+    let resetToDefaults: () -> Void
+    let apply: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button(action: resetToDefaults) {
+                Image(systemName: "arrow.counterclockwise")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(defaultsDisabled || isApplying)
+            .accessibilityLabel("Restore default filter lists")
+            .accessibilityIdentifier("privacy-reset-filter-lists")
+            .help("Restore default filter lists")
+
+            Button(action: apply) {
+                if isApplying {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(width: 50)
+                } else {
+                    Text("Apply")
+                        .frame(width: 50)
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .disabled(isApplying)
+            .accessibilityIdentifier("privacy-apply-adblock")
+            .help("Apply Adblock changes")
+        }
+    }
+}
+
+private struct AdblockFilterListCategoryView: View {
+    let category: SumiFilterListCatalog.List.Category
+    let lists: [SumiFilterListCatalog.List]
+    let selectedIDs: Set<String>
+    let setEnabled: (String, Bool) -> Void
+    @State private var isExpanded = false
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $isExpanded) {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(lists) { list in
+                    AdblockFilterListRow(
+                        list: list,
+                        isEnabled: selectedIDs.contains(list.id),
+                        setEnabled: setEnabled
+                    )
+                }
+            }
+            .padding(.top, 6)
+        } label: {
+            Button {
+                isExpanded.toggle()
+            } label: {
+                Text(category.displayTitle)
+                    .font(.body.weight(.medium))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .padding(.vertical, 10)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+}
+
+private struct AdblockFilterListRow: View {
+    let list: SumiFilterListCatalog.List
+    let isEnabled: Bool
+    let setEnabled: (String, Bool) -> Void
+
+    var body: some View {
+        SettingsRow(
+            title: list.displayName,
+            subtitle: subtitle,
+            verticalPadding: 7
+        ) {
+            Toggle(
+                "",
+                isOn: Binding(
+                    get: { isEnabled },
+                    set: { setEnabled(list.id, $0) }
+                )
+            )
+            .labelsHidden()
+            .toggleStyle(.switch)
+            .accessibilityLabel(list.displayName)
+            .accessibilityIdentifier("privacy-filter-list-\(list.id)")
+        }
+    }
+
+    private var subtitle: String? {
+        let parts = [
+            list.defaultEnabled ? "Recommended" : nil,
+            list.description.isEmpty ? nil : list.description,
+        ].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }

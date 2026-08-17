@@ -53,8 +53,9 @@ struct SumiSettingsModuleToggleGate<EnabledContent: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            SumiSettingsModuleToggleCard(
-                descriptor: descriptor,
+            SettingsFeatureToggleCard(
+                title: descriptor.toggleTitle,
+                badgeTitle: descriptor.badgeTitle,
                 isEnabled: isEnabledBinding
             )
             .disabled(injectedIsEnabled == nil)
@@ -100,50 +101,5 @@ struct SumiSettingsModuleToggleGate<EnabledContent: View>: View {
                 registry: moduleRegistry
             ).setEnabled(isEnabled)
         }
-    }
-}
-
-private struct SumiSettingsModuleToggleCard: View {
-    let descriptor: SumiSettingsModuleToggleDescriptor
-    @Binding var isEnabled: Bool
-
-    @Environment(\.sumiSettings) private var sumiSettings
-    @Environment(\.resolvedThemeContext) private var themeContext
-    @Environment(\.chromeThemeTokens) private var scopedChromeTokens
-
-    private var tokens: ChromeThemeTokens {
-        scopedChromeTokens ?? themeContext.tokens(settings: sumiSettings)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 12) {
-                Text(descriptor.toggleTitle)
-                    .font(.headline)
-                    .foregroundStyle(tokens.primaryText)
-
-                if let badgeTitle = descriptor.badgeTitle {
-                    SettingsPillBadge(title: badgeTitle)
-                }
-
-                Spacer(minLength: 16)
-
-                Toggle("", isOn: $isEnabled)
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.regular)
-                    .accessibilityLabel(descriptor.toggleTitle)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(tokens.fieldBackground.opacity(0.78))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(tokens.separator.opacity(0.62), lineWidth: 1)
-        )
     }
 }

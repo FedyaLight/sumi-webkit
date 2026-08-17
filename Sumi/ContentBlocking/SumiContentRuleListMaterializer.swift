@@ -14,24 +14,11 @@ final class SumiContentRuleListMaterializer {
     }
 
     private let compiler: SumiContentRuleListCompiling
-    #if DEBUG
-        private let startupDiagnostics: any SumiProtectionStartupRestoreDiagnosticsRecording
-    #endif
     private var compiledRulesByIdentifier: [String: SumiContentBlockerRules] = [:]
 
-    #if DEBUG
-        init(
-            compiler: SumiContentRuleListCompiling,
-            startupDiagnostics: any SumiProtectionStartupRestoreDiagnosticsRecording = SumiProtectionStartupRestoreDiagnosticsDefaults.recorder
-        ) {
-            self.compiler = compiler
-            self.startupDiagnostics = startupDiagnostics
-        }
-    #else
     init(compiler: SumiContentRuleListCompiling) {
         self.compiler = compiler
     }
-    #endif
 
     func updateEvent(
         for definitions: [SumiContentRuleListDefinition]
@@ -87,24 +74,13 @@ final class SumiContentRuleListMaterializer {
         var lookupSucceededIdentifiers = [String]()
         var lookupFailedIdentifiers = [String]()
         let storeIdentifiers = definitions.map { storeIdentifier(for: $0) }
-#if DEBUG
-        startupDiagnostics.recordLookupAttempt(identifiers: storeIdentifiers)
-#endif
-
         let lookupStart = Date()
         for (index, definition) in definitions.enumerated() {
             let storeIdentifier = storeIdentifiers[index]
             guard let ruleList = await compiler.lookUpContentRuleList(forIdentifier: storeIdentifier) else {
                 lookupFailedIdentifiers.append(storeIdentifier)
-#if DEBUG
-                startupDiagnostics.recordLookupMiss(storeIdentifier)
-#endif
                 throw SumiContentBlockingCompilationError.missingCompiledRuleList(storeIdentifier)
             }
-#if DEBUG
-            startupDiagnostics.recordLookupHit(storeIdentifier)
-#endif
-
             let rules = SumiContentBlockerRules(
                 name: definition.name,
                 storeIdentifier: storeIdentifier,
@@ -137,18 +113,9 @@ final class SumiContentRuleListMaterializer {
 
     private func canLookUpCompiledRuleList(forIdentifier identifier: String) async -> Bool {
         for _ in 0..<3 {
-#if DEBUG
-            startupDiagnostics.recordLookupAttempt(identifiers: [identifier])
-#endif
             if await compiler.canLookUpContentRuleList(forIdentifier: identifier) {
-#if DEBUG
-                startupDiagnostics.recordLookupHit(identifier)
-#endif
                 return true
             }
-#if DEBUG
-            startupDiagnostics.recordLookupMiss(identifier)
-#endif
             await Task.yield()
         }
         return false
@@ -167,22 +134,10 @@ final class SumiContentRuleListMaterializer {
 
         let ruleList: WKContentRuleList
         let storeReadiness: RuleStoreReadiness
-#if DEBUG
-        startupDiagnostics.recordLookupAttempt(identifiers: [storeIdentifier])
-#endif
         if let cachedRuleList = await compiler.lookUpContentRuleList(forIdentifier: storeIdentifier) {
-#if DEBUG
-            startupDiagnostics.recordLookupHit(storeIdentifier)
-#endif
             ruleList = cachedRuleList
             storeReadiness = .verifiedByStoreLookup
         } else {
-#if DEBUG
-            startupDiagnostics.recordLookupMiss(storeIdentifier)
-            startupDiagnostics.recordRepairCompileUsed(
-                reason: "Compiled WebKit rule list missing for \(storeIdentifier); compiling payload-backed repair"
-            )
-#endif
             do {
                 ruleList = try await compiler.compileContentRuleList(
                     forIdentifier: storeIdentifier,

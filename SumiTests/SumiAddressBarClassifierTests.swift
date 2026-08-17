@@ -28,23 +28,23 @@ final class SumiAddressBarClassifierTests: XCTestCase {
     }
 
     func testBareDomainsNavigate() {
-        assertNavigate("regular-domain.com/path/to/directory/", "http://regular-domain.com/path/to/directory/")
-        assertNavigate("regular-domain.com", "http://regular-domain.com/")
-        assertNavigate("regular-domain.com/", "http://regular-domain.com/")
-        assertNavigate("regular-domain.com/filename", "http://regular-domain.com/filename")
-        assertNavigate("regular-domain.com/filename?a=b&b=c", "http://regular-domain.com/filename?a=b&b=c")
-        assertNavigate("apple.com/mac/", "http://apple.com/mac/")
-        assertNavigate("duckduckgo.com", "http://duckduckgo.com/")
-        assertNavigate("www.duckduckgo.com", "http://www.duckduckgo.com/")
-        assertNavigate(" duckduckgo.com", "http://duckduckgo.com/")
-        assertNavigate("regular-domain.com/path/to/file ", "http://regular-domain.com/path/to/file")
+        assertNavigate("regular-domain.com/path/to/directory/", "https://regular-domain.com/path/to/directory/")
+        assertNavigate("regular-domain.com", "https://regular-domain.com/")
+        assertNavigate("regular-domain.com/", "https://regular-domain.com/")
+        assertNavigate("regular-domain.com/filename", "https://regular-domain.com/filename")
+        assertNavigate("regular-domain.com/filename?a=b&b=c", "https://regular-domain.com/filename?a=b&b=c")
+        assertNavigate("apple.com/mac/", "https://apple.com/mac/")
+        assertNavigate("duckduckgo.com", "https://duckduckgo.com/")
+        assertNavigate("www.duckduckgo.com", "https://www.duckduckgo.com/")
+        assertNavigate(" duckduckgo.com", "https://duckduckgo.com/")
+        assertNavigate("regular-domain.com/path/to/file ", "https://regular-domain.com/path/to/file")
     }
 
     func testIntranetMultiLabelHostsNavigate() {
         // macOS policy: multi-label hosts navigate without consulting the PSL.
-        assertNavigate("stuff.stor", "http://stuff.stor/")
-        assertNavigate("stuff.store", "http://stuff.store/")
-        assertNavigate("windows.applicationmodel.store.dll", "http://windows.applicationmodel.store.dll/")
+        assertNavigate("stuff.stor", "https://stuff.stor/")
+        assertNavigate("stuff.store", "https://stuff.store/")
+        assertNavigate("windows.applicationmodel.store.dll", "https://windows.applicationmodel.store.dll/")
     }
 
     func testSearchPhrases() {
@@ -121,9 +121,9 @@ final class SumiAddressBarClassifierTests: XCTestCase {
         assertNavigate("http://user: @domain.com", "http://user:%20@domain.com/")
         assertNavigate("http://user:,,@domain.com", "http://user:,,@domain.com/")
         assertNavigate("http://user:pass@domain.com", "http://user:pass@domain.com/")
-        assertNavigate("user:pass@domain.com", "http://user:pass@domain.com/")
-        assertNavigate("user:,,@domain.com", "http://user:,,@domain.com/")
-        assertNavigate("user:::@domain.com", "http://user:%3A%3A@domain.com/")
+        assertNavigate("user:pass@domain.com", "https://user:pass@domain.com/")
+        assertNavigate("user:,,@domain.com", "https://user:,,@domain.com/")
+        assertNavigate("user:::@domain.com", "https://user:%3A%3A@domain.com/")
         assertNavigate("https://user@domain.com", "https://user@domain.com/")
         assertNavigate("https://user:pass@domain.com", "https://user:pass@domain.com/")
         // Empty password drops the dangling separator.

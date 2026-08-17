@@ -21,26 +21,18 @@ Some AppKit/WebKit helper code in the Sumi app is adapted from DuckDuckGo
 macOS browser code. Directly reused portions should retain their upstream
 copyright and SPDX headers.
 
-## Protection Bundle Sources
+## Filter Lists
 
-Sumi consumes prepared protection bundles generated outside the browser in
-`FedyaLight/sumi-protection-bundles`. Sumi.app verifies release manifests,
-hashes, byte sizes, paths, and signatures, then compiles prepared WebKit rule
-shards. It does not fetch raw filter lists, parse ABP/uBO syntax, run
-`adblock-rust`, or convert DuckDuckGo Tracker Radar data at runtime.
+Sumi downloads the filter lists selected by the user and generates WebKit and
+advanced-blocking artifacts locally with SafariConverterLib 4.3.0. Each source
+list keeps its own upstream license and attribution terms.
 
-The `trackingNetwork` group is derived from DuckDuckGo Tracker Radar / Tracker
-Data Set (TDS). Bundle metadata identifies the source as DuckDuckGo Tracker
-Radar / TDS, records the TDS source URL and SHA-256 hash, and marks the
-generated tracking data as CC BY-NC-SA 4.0, non-commercial, and share-alike.
-Those terms apply to the generated tracking data in the protection bundles.
+## Advanced Blocking Runtime
 
-The current `adguardAdsPrivacy` adblock profile is generated from source lists
-identified in the bundle manifest, including AdGuard DNS filter, AdGuard Base,
-and uBlock filters for ads, badware risks, privacy, unbreak, and quick fixes.
-Those source lists keep their own upstream terms. Sumi records source-list
-names, URLs, hashes, byte sizes, and rule counts in bundle metadata rather than
-claiming a single license for the combined adblock output.
+Sumi links SafariConverterLib 4.3.0 and embeds adapted generated runtime code
+from AdGuard ExtendedCss 2.1.1 and AdGuard Scriptlets 2.3.1. These components
+are licensed under GPL-3.0. Reproducible adapter sources and exact version pins
+live in `Vendor/AdGuard/AdvancedBlockingRuntime`.
 
 ## Browser Migration Compatibility
 

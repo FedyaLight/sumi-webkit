@@ -10,7 +10,7 @@ final class BrowserManagerLifecycleWiringTests: XCTestCase {
     func testInitializationAttachesRuntimeGraphButDefersLifecycleUntilRecoveryGate() throws {
         let moduleRegistry = SumiModuleRegistry.unavailable()
         SumiProtectionSettings(userDefaults: moduleRegistry.userDefaults)
-            .setAppliedLevel(.protection)
+            .setAppliedLevel(.adblock)
         let browserManager = BrowserManager(
             moduleRegistry: moduleRegistry,
             startupPersistence: BrowserManagerStartupPersistence(database: try makeInMemoryStartupContainer()

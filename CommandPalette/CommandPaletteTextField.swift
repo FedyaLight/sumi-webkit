@@ -15,7 +15,7 @@ struct CommandPaletteTextField: NSViewRepresentable {
     let focusRequestID: UInt
     let focusSelectAll: Bool
     let onTab: () -> Bool
-    let onReturn: () -> Void
+    let onReturn: (String) -> Void
     let onMoveSelection: (Int) -> Void
     let onEscape: () -> Void
     let onDeleteAtEmptySiteSearch: () -> Bool
@@ -64,7 +64,7 @@ struct CommandPaletteTextField: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextFieldDelegate {
         @Binding private var text: String
         private var onTab: () -> Bool = { false }
-        private var onReturn: () -> Void = { /* No-op. */ }
+        private var onReturn: (String) -> Void = { _ in /* No-op. */ }
         private var onMoveSelection: (Int) -> Void = { _ in /* No-op. */ }
         private var onEscape: () -> Void = { /* No-op. */ }
         private var onDeleteAtEmptySiteSearch: () -> Bool = { false }
@@ -75,7 +75,7 @@ struct CommandPaletteTextField: NSViewRepresentable {
 
         func configure(
             onTab: @escaping () -> Bool,
-            onReturn: @escaping () -> Void,
+            onReturn: @escaping (String) -> Void,
             onMoveSelection: @escaping (Int) -> Void,
             onEscape: @escaping () -> Void,
             onDeleteAtEmptySiteSearch: @escaping () -> Bool
@@ -93,7 +93,7 @@ struct CommandPaletteTextField: NSViewRepresentable {
         }
 
         func control(
-            _: NSControl,
+            _ control: NSControl,
             textView _: NSTextView,
             doCommandBy commandSelector: Selector
         ) -> Bool {
@@ -111,7 +111,11 @@ struct CommandPaletteTextField: NSViewRepresentable {
             case #selector(NSResponder.insertTab(_:)):
                 return onTab()
             case #selector(NSResponder.insertNewline(_:)):
-                onReturn()
+                let submittedText = (control as? NSTextField)?.stringValue ?? text
+                if text != submittedText {
+                    text = submittedText
+                }
+                onReturn(submittedText)
                 return true
             case #selector(NSResponder.cancelOperation(_:)):
                 onEscape()

@@ -10,8 +10,12 @@ enum SumiAdblockNativeRuleBundleError: Error, LocalizedError, Equatable {
     case shardHashMismatch(path: String, expected: String, actual: String)
     case shardSizeMismatch(path: String, expected: Int, actual: Int)
     case invalidShardJSON(String)
-    case unsupportedNativeCSSSafetyPolicyVersion(String?)
-    case manifestChangedDuringValidation
+    case missingAdvancedArtifact(String)
+    case emptyAdvancedArtifact(String)
+    case invalidAdvancedArtifactPath(String)
+    case advancedArtifactHashMismatch(path: String, expected: String, actual: String)
+    case advancedArtifactSizeMismatch(path: String, expected: Int, actual: Int)
+    case invalidAdvancedDescriptor(String)
 
     var errorDescription: String? {
         switch self {
@@ -31,24 +35,26 @@ enum SumiAdblockNativeRuleBundleError: Error, LocalizedError, Equatable {
             return "Embedded Adblock bundle shard size mismatch for \(path): expected \(expected), got \(actual)"
         case .invalidShardJSON(let path):
             return "Embedded Adblock bundle shard JSON is invalid: \(path)"
-        case .unsupportedNativeCSSSafetyPolicyVersion(let version):
-            return "Embedded Adblock bundle native CSS safety policy is unsupported: \(version ?? "missing")"
-        case .manifestChangedDuringValidation:
-            return "Embedded Adblock bundle manifest changed while its payload was being validated."
+        case .missingAdvancedArtifact(let path):
+            return "Missing prepared advanced-blocking artifact: \(path)"
+        case .emptyAdvancedArtifact(let path):
+            return "Prepared advanced-blocking artifact is empty: \(path)"
+        case .invalidAdvancedArtifactPath(let path):
+            return "Prepared advanced-blocking artifact path is invalid: \(path)"
+        case .advancedArtifactHashMismatch(let path, let expected, let actual):
+            return "Prepared advanced-blocking artifact hash mismatch for \(path): expected \(expected), got \(actual)"
+        case .advancedArtifactSizeMismatch(let path, let expected, let actual):
+            return "Prepared advanced-blocking artifact size mismatch for \(path): expected \(expected), got \(actual)"
+        case .invalidAdvancedDescriptor(let reason):
+            return "Prepared advanced-blocking descriptor is invalid: \(reason)"
         }
     }
 }
 
 struct SumiAdblockNativeRuleBundleManifest: Codable, Equatable, Sendable {
-    struct Compiler: Codable, Equatable, Sendable {
-        let name: String
-        let version: String
-    }
-
     struct SourceList: Codable, Equatable, Sendable {
         let id: String
         let displayName: String
-        let url: String
         let hash: String
         let byteSize: Int
         let ruleCount: Int
@@ -96,80 +102,18 @@ struct SumiAdblockNativeRuleBundleManifest: Codable, Equatable, Sendable {
         }
     }
 
-    struct DedupeSummary: Codable, Equatable, Sendable {
-        let inputRawRuleCount: Int
-        let rawDuplicateCountRemoved: Int
-        let nativeJSONDuplicateCountRemoved: Int
-        let skippedDedupeCount: Int
-        let skippedDedupeReasons: [String: Int]
-        let finalRuleCount: Int
-        let finalShardCount: Int
-    }
-
-    struct DiagnosticsSummary: Codable, Equatable, Sendable {
-        let inputRuleCount: Int
-        let finalRuleCount: Int
-        let finalShardCount: Int
-        let networkRuleCount: Int
-        let nativeCSSRuleCount: Int
-        let unsafeCSSFilteredCount: Int
-        let warnings: [String]
-    }
-
-    struct Group: Codable, Equatable, Sendable {
-        struct Source: Codable, Equatable, Sendable {
-            let type: String?
-            let name: String?
-            let sourceName: String?
-            let url: String?
-            let sourceURL: String?
-            let license: String?
-            let sourceLicense: String?
-            let sourceLicenseURL: String?
-            let attribution: String?
-            let generatedAt: String?
-            let sourceSha256: String?
-            let sourceByteSize: Int?
-            let ruleCount: Int?
-            let shardCount: Int?
-            let nonCommercialOnly: Bool?
-            let shareAlike: Bool?
-            let generator: String?
-        }
-
-        let id: SumiProtectionGroupKind
-        let displayName: String?
-        let status: String?
-        let activeLevels: [String]?
-        let ruleCount: Int
-        let shardCount: Int
-        let assetRelativePaths: [String]?
-        let source: Source?
-        let notes: [String]?
-    }
-
     let schemaVersion: Int
     let bundleId: String
     let generationId: String
     let profileId: String
-    let compiler: Compiler
-    let nativeCSSSafetyPolicyVersion: String?
-    let generatedDate: String
     let lists: [SourceList]
-    let profileLevelMapping: [String: [SumiProtectionGroupKind]]?
-    let groups: [Group]?
     let shards: [Shard]
-    let diagnosticsSummary: DiagnosticsSummary
-    let unsafeCSSFilteredCount: Int
-    let deduplication: DedupeSummary
+    let advancedBlocking: AdvancedBlockingGenerationDescriptor?
 }
 
 struct SumiAdblockNativeRuleBundle: Sendable {
     static let directoryName = "SumiAdblockBundle"
     static let manifestFileName = "manifest.json"
-    static let requiredNativeCSSSafetyPolicyVersion =
-        "sumi-native-css-safety/0.4"
-
     let directoryURL: URL
     let manifest: SumiAdblockNativeRuleBundleManifest
 }

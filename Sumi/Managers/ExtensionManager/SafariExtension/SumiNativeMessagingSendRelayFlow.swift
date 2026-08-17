@@ -45,8 +45,6 @@ final class SumiNativeMessagingSendRelayFlow {
         message: Any,
         extensionId: String?,
         profileId: UUID?,
-        isPrivateBrowsing: Bool?,
-        privateAccessAllowed: Bool?,
         installedExtensions: [InstalledExtension],
         extensionDisplayName: String?,
         evaluatePolicy: SumiNativeMessagingPortConnectRelayFlow.PolicyEvaluator,
@@ -63,20 +61,24 @@ final class SumiNativeMessagingSendRelayFlow {
         SumiNativeMessagingRuntimeCounters.recordSendMessage(
             applicationIdentifier: applicationIdentifier
         )
-        diagnostics.logRoutingEntry(
-            delegateMethod: "sendMessage",
-            direction: .send,
-            applicationIdentifier: applicationIdentifier,
-            extensionId: extensionId,
-            extensionDisplayName: extensionDisplayName
-                ?? ExtensionDisplayNameResolver.displayName(
-                    for: extensionId,
-                    installedExtensions: installedExtensions
-                ),
-            profileId: profileId,
-            messageShape: SafariExtensionNativeMessagingRoutingProbe
-                .sanitizedMessageShape(for: message)
-        )
+        #if DEBUG || SUMI_DIAGNOSTICS
+            if RuntimeDiagnostics.isVerboseEnabled {
+                diagnostics.logRoutingEntry(
+                    delegateMethod: "sendMessage",
+                    direction: .send,
+                    applicationIdentifier: applicationIdentifier,
+                    extensionId: extensionId,
+                    extensionDisplayName: extensionDisplayName
+                        ?? ExtensionDisplayNameResolver.displayName(
+                            for: extensionId,
+                            installedExtensions: installedExtensions
+                        ),
+                    profileId: profileId,
+                    messageShape: SafariExtensionNativeMessagingRoutingProbe
+                        .sanitizedMessageShape(for: message)
+                )
+            }
+        #endif
 
         guard let extensionId else {
             let diagnostic = SafariExtensionNativeMessagingDiagnostic(
@@ -122,8 +124,6 @@ final class SumiNativeMessagingSendRelayFlow {
         switch evaluatePolicy(
             extensionId,
             installed,
-            isPrivateBrowsing,
-            privateAccessAllowed,
             applicationIdentifier
         ) {
         case .failure(let denial):

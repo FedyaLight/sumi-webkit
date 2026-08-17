@@ -1,10 +1,3 @@
-//
-//  ExtensionManager.swift
-//  Sumi
-//
-//  Browser-independent WebExtension composition root and public facade.
-//
-
 import Foundation
 import OSLog
 import WebKit
@@ -41,7 +34,8 @@ final class ExtensionManager: NSObject {
         profileReferenceAdmission: ProfileReferenceAdmissionLedger,
         browserConfiguration: BrowserConfiguration? = nil,
         moduleRegistry: SumiModuleRegistry = .unavailable(),
-        extensionPreferences: UserDefaults = .standard
+        extensionPreferences: UserDefaults = .standard,
+        profileWebExtensionRuntime: SumiProfileWebExtensionRuntime? = nil
     ) {
         self.init(
             database: database,
@@ -50,6 +44,7 @@ final class ExtensionManager: NSObject {
             browserConfiguration: browserConfiguration,
             moduleRegistry: moduleRegistry,
             extensionPreferences: extensionPreferences,
+            profileWebExtensionRuntime: profileWebExtensionRuntime,
             assemblySeams: .production
         )
     }
@@ -60,7 +55,8 @@ final class ExtensionManager: NSObject {
             initialProfile: Profile?,
             browserConfiguration: BrowserConfiguration? = nil,
             moduleRegistry: SumiModuleRegistry = .unavailable(),
-            extensionPreferences: UserDefaults = .standard
+            extensionPreferences: UserDefaults = .standard,
+            profileWebExtensionRuntime: SumiProfileWebExtensionRuntime? = nil
         ) {
             self.init(
                 database: database,
@@ -69,6 +65,7 @@ final class ExtensionManager: NSObject {
                 browserConfiguration: browserConfiguration,
                 moduleRegistry: moduleRegistry,
                 extensionPreferences: extensionPreferences,
+                profileWebExtensionRuntime: profileWebExtensionRuntime,
                 assemblySeams: .production
             )
         }
@@ -79,6 +76,7 @@ final class ExtensionManager: NSObject {
             browserConfiguration: BrowserConfiguration? = nil,
             moduleRegistry: SumiModuleRegistry = .unavailable(),
             extensionPreferences: UserDefaults = .standard,
+            profileWebExtensionRuntime: SumiProfileWebExtensionRuntime? = nil,
             attachedRuntimeDidInstall:
                 @escaping ExtensionBrowserAttachmentAuthority.DidInstall,
             testInspectionDidAssemble:
@@ -93,6 +91,7 @@ final class ExtensionManager: NSObject {
                 browserConfiguration: browserConfiguration,
                 moduleRegistry: moduleRegistry,
                 extensionPreferences: extensionPreferences,
+                profileWebExtensionRuntime: profileWebExtensionRuntime,
                 assemblySeams: ExtensionManagerAssemblySeams(
                     attachedRuntimeDidInstall: attachedRuntimeDidInstall,
                     inspectionDidAssemble: testInspectionDidAssemble,
@@ -107,6 +106,7 @@ final class ExtensionManager: NSObject {
             browserConfiguration: BrowserConfiguration? = nil,
             moduleRegistry: SumiModuleRegistry = .unavailable(),
             extensionPreferences: UserDefaults = .standard,
+            profileWebExtensionRuntime: SumiProfileWebExtensionRuntime? = nil,
             testInspectionDidAssemble:
                 @escaping ExtensionManagerTestInspection.DidAssemble,
             testAssemblyOverrides:
@@ -119,6 +119,7 @@ final class ExtensionManager: NSObject {
                 browserConfiguration: browserConfiguration,
                 moduleRegistry: moduleRegistry,
                 extensionPreferences: extensionPreferences,
+                profileWebExtensionRuntime: profileWebExtensionRuntime,
                 assemblySeams: ExtensionManagerAssemblySeams(
                     attachedRuntimeDidInstall: nil,
                     inspectionDidAssemble: testInspectionDidAssemble,
@@ -133,6 +134,7 @@ final class ExtensionManager: NSObject {
             browserConfiguration: BrowserConfiguration? = nil,
             moduleRegistry: SumiModuleRegistry = .unavailable(),
             extensionPreferences: UserDefaults = .standard,
+            profileWebExtensionRuntime: SumiProfileWebExtensionRuntime? = nil,
             testAssemblyOverrides:
                 ExtensionManagerTestAssemblyOverrides
         ) {
@@ -143,6 +145,7 @@ final class ExtensionManager: NSObject {
                 browserConfiguration: browserConfiguration,
                 moduleRegistry: moduleRegistry,
                 extensionPreferences: extensionPreferences,
+                profileWebExtensionRuntime: profileWebExtensionRuntime,
                 assemblySeams: ExtensionManagerAssemblySeams(
                     attachedRuntimeDidInstall: nil,
                     inspectionDidAssemble: nil,
@@ -159,6 +162,7 @@ final class ExtensionManager: NSObject {
         browserConfiguration: BrowserConfiguration?,
         moduleRegistry: SumiModuleRegistry,
         extensionPreferences: UserDefaults,
+        profileWebExtensionRuntime: SumiProfileWebExtensionRuntime? = nil,
         assemblySeams: ExtensionManagerAssemblySeams
     ) {
         let signpostState = PerformanceTrace.beginInterval("ExtensionManager.init")
@@ -179,13 +183,20 @@ final class ExtensionManager: NSObject {
             let moduleUserScripts: [SumiPageScript] = []
         #endif
 
+        let resolvedBrowserConfiguration = browserConfiguration ?? .shared
+        let resolvedProfileWebExtensionRuntime = profileWebExtensionRuntime
+            ?? SumiProfileWebExtensionRuntime(
+                browserConfiguration: resolvedBrowserConfiguration,
+                profileReferenceAdmission: profileReferenceAdmission,
+                initialProfileProvider: { initialProfile }
+            )
         let graphs = ExtensionManagerRootAssembler.assemble(
             database: database,
             initialProfile: initialProfile,
-            browserConfiguration: browserConfiguration ?? .shared,
+            browserConfiguration: resolvedBrowserConfiguration,
             moduleRegistry: moduleRegistry,
             extensionPreferences: extensionPreferences,
-            profileReferenceAdmission: profileReferenceAdmission,
+            profileWebExtensionRuntime: resolvedProfileWebExtensionRuntime,
             assemblySeams: assemblySeams
         )
         controllerGraph = graphs.controller

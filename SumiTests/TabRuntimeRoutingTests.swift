@@ -685,9 +685,9 @@ final class TabRuntimeRoutingTests: XCTestCase {
         )
         let protectionState = SumiProtectionAttachmentState(
             siteHost: "example.com",
-            requestedLevel: .protection,
-            effectiveLevel: .protection,
-            activeGroups: [.trackingNetwork],
+            requestedLevel: .adblock,
+            effectiveLevel: .adblock,
+            activeGroups: [.adblockAdsPrivacyNetwork],
             attachedRuleListIdentifiers: ["tracking-rule"],
             activeGenerationId: "generation-1"
         )
@@ -906,11 +906,6 @@ private struct RuntimeRoutingProtectionPolicy: ProtectionPolicyReading {
 
     func surfaceHost(for url: URL?) -> String? { "example.com" }
 
-    func diagnostics(
-        _ context: ReloadProtectionDiagnosticsContext
-    ) -> SumiProtectionCurrentTabDiagnostics? {
-        nil
-    }
 }
 
 @MainActor

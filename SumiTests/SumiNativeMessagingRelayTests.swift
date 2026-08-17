@@ -555,49 +555,6 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
         XCTAssertEqual(error.code, SumiNativeMessagingRelay.ErrorCode.policyDenied.rawValue)
     }
 
-    func testPolicyDeniesPrivateBrowsingWhenIncognitoNotAllowed() async throws {
-        let relay = SumiNativeMessagingRelay(
-            extensionsModuleEnabled: { true },
-            isPrivateBrowsing: { true }
-        )
-        let installed = makeInstalledExtension(
-            id: "ext-1",
-            sourceBundlePath: "/tmp/x.appex",
-            incognitoMode: .notAllowed
-        )
-
-        let reply = await sendMessageReply(
-            relay: relay,
-            installed: installed,
-            applicationIdentifier: "com.bitwarden.desktop"
-        )
-
-        let error = try XCTUnwrap(reply.error as NSError?)
-        XCTAssertEqual(error.code, SumiNativeMessagingRelay.ErrorCode.policyDenied.rawValue)
-    }
-
-    func testPolicyDeniesPrivateOriginWhenContextPrivateAccessDenied() async throws {
-        let relay = SumiNativeMessagingRelay(extensionsModuleEnabled: { true })
-        let installed = makeInstalledExtension(
-            id: "ext-private-denied",
-            sourceBundlePath: try makeFixtureApp(
-                appBundleID: "com.example.host",
-                appexBundleID: "com.example.host.extension"
-            )
-        )
-
-        let reply = await sendMessageReply(
-            relay: relay,
-            installed: installed,
-            applicationIdentifier: "com.example.host",
-            isPrivateBrowsing: true,
-            privateAccessAllowed: false
-        )
-
-        let error = try XCTUnwrap(reply.error as NSError?)
-        XCTAssertEqual(error.code, SumiNativeMessagingRelay.ErrorCode.policyDenied.rawValue)
-    }
-
     func testPolicyDeniesProductAliasBeforeAdapterRoute() async throws {
         let appexPath = try makeFixtureApp(
             appBundleID: "com.bitwarden.desktop",
@@ -751,8 +708,6 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
         relay: SumiNativeMessagingRelay,
         installed: InstalledExtension,
         applicationIdentifier: String,
-        isPrivateBrowsing: Bool? = nil,
-        privateAccessAllowed: Bool? = nil,
         timeout: TimeInterval = 5
     ) async -> (value: Any?, error: (any Error)?) {
         let expectation = expectation(description: "nativeMessagingReply")
@@ -762,8 +717,6 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
             applicationIdentifier: applicationIdentifier,
             message: ["type": "ping"],
             extensionId: installed.id,
-            isPrivateBrowsing: isPrivateBrowsing,
-            privateAccessAllowed: privateAccessAllowed,
             installedExtensions: [installed]
         ) { value, error in
             replyValue = value

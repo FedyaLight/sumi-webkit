@@ -8,23 +8,29 @@ private final class BrowserTabWebViewAvailabilityParticipant:
     private let ownership: WebViewOwnershipQuery
     private let trackedAdmission: TrackedWebViewAdmissionService
     private let tabBrowserRuntime: TabBrowserRuntimeReference
+    private let startupProtection: BrowserStartupProtectionRuntime
 
     init(
         compositor: TabCompositorManager,
         ownership: WebViewOwnershipQuery,
         trackedAdmission: TrackedWebViewAdmissionService,
-        tabBrowserRuntime: TabBrowserRuntimeReference
+        tabBrowserRuntime: TabBrowserRuntimeReference,
+        startupProtection: BrowserStartupProtectionRuntime
     ) {
         self.compositor = compositor
         self.ownership = ownership
         self.trackedAdmission = trackedAdmission
         self.tabBrowserRuntime = tabBrowserRuntime
+        self.startupProtection = startupProtection
     }
 
     func materializeVisibleWebViewIfNeeded(
         for tab: Tab,
         in windowState: BrowserWindowState
     ) {
+        guard startupProtection.canMaterializeWebViewDuringStartup(tab) else {
+            return
+        }
         compositor.markTabAccessed(tab.id)
         guard ownership.webView(for: tab.id, in: windowState.id) == nil else {
             return
@@ -33,6 +39,10 @@ private final class BrowserTabWebViewAvailabilityParticipant:
     }
 
     func load(_ tab: Tab) {
+        guard startupProtection.canMaterializeWebViewDuringStartup(tab) else {
+            startupProtection.deferBackgroundTabUntilStartupReady(tab)
+            return
+        }
         compositor.loadTab(tab)
     }
 
@@ -170,14 +180,16 @@ enum BrowserTabManagerWebViewLifecycleFactory {
         profileAssignment: WebViewProfileAssignmentService,
         compositor: TabCompositorManager,
         webViewRouting: BrowserWebViewRoutingService,
-        tabBrowserRuntime: TabBrowserRuntimeReference
+        tabBrowserRuntime: TabBrowserRuntimeReference,
+        startupProtection: BrowserStartupProtectionRuntime
     ) -> TabManagerWebViewLifecycleService {
         TabManagerWebViewLifecycleService(
             availability: BrowserTabWebViewAvailabilityParticipant(
                 compositor: compositor,
                 ownership: ownershipQuery,
                 trackedAdmission: trackedAdmission,
-                tabBrowserRuntime: tabBrowserRuntime
+                tabBrowserRuntime: tabBrowserRuntime,
+                startupProtection: startupProtection
             ),
             ownership: BrowserTabWebViewOwnershipParticipant(
                 lifecycle: webViewLifecycle,

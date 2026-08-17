@@ -14,7 +14,7 @@ There is no compatibility path for other installations or historical app version
 - The database uses WAL for the persistent installation, enables foreign keys, bounds busy waits, and exposes no GRDB or raw SQL types to browser UI and managers.
 - Incognito state remains memory-only and WebKit continues to own cookies, local storage, IndexedDB, service workers, and other website data.
 - Recently closed items remain process-local because they are an undo surface, not durable browser state.
-- Keychain continues to own credentials. Extension packages, favicon/preview blobs, compiled content rules, remote bundles, downloads, and user-selected exports remain files.
+- Keychain continues to own credentials. Extension packages, favicon/preview blobs, filter-list sources, generated Adblock artifacts, downloads, and user-selected exports remain files.
 - Scalar preferences such as theme and feature toggles remain in `UserDefaults`; browser records and Codable session payloads do not.
 - Import parsers remain read-only source adapters. Every supported browser importer publishes parsed records through the canonical stores for the selected Browser Profile. Structural records and bookmarks use bounded SQLite transactions; bulk history is written in bounded batches. A durable database journal and compensation receipts coordinate these commits with WebKit-owned website data.
 - Profile deletion removes only the selected profile's database-owned data by

@@ -1,10 +1,39 @@
 import AppKit
+import SwiftUI
 import XCTest
 
 @testable import Sumi
 
 @MainActor
 final class CommandPaletteNativeInteractionTests: XCTestCase {
+    func testReturnPublishesNativeFieldValueBeforeCommitCallback() {
+        var boundText = "Yandex"
+        let coordinator = CommandPaletteTextField.Coordinator(
+            text: Binding(
+                get: { boundText },
+                set: { boundText = $0 }
+            )
+        )
+        var submittedText: String?
+        coordinator.configure(
+            onTab: { false },
+            onReturn: { submittedText = $0 },
+            onMoveSelection: { _ in },
+            onEscape: {},
+            onDeleteAtEmptySiteSearch: { false }
+        )
+        let field = NSTextField()
+        field.stringValue = "youtube.com"
+
+        XCTAssertTrue(coordinator.control(
+            field,
+            textView: NSTextView(),
+            doCommandBy: #selector(NSResponder.insertNewline(_:))
+        ))
+        XCTAssertEqual(boundText, "youtube.com")
+        XCTAssertEqual(submittedText, "youtube.com")
+    }
+
     func testFocusRunsOnlyForCurrentWindowSession() async {
         let interaction = CommandPaletteNativeInteraction()
         let windowID = UUID()
