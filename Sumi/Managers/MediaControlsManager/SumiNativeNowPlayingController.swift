@@ -265,7 +265,7 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
             residence.windowState
         )
         if !success {
-            sessions[cardID]?.clearSuppression()
+            sessions[cardID]?.cancelDismissal()
             scheduleRefresh(delayNanoseconds: 0)
         }
     }
@@ -278,7 +278,9 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
            let tab = runtimeContext.resolvedTab(tabId, windowState) {
             let playbackGeneration = tab.mediaRuntime.playbackStartGeneration
             for sessionID in sessions.keys where sessionID.residenceKey == residenceKey {
-                sessions[sessionID]?.suppress(at: playbackGeneration)
+                sessions[sessionID]?.suppressOnTabActivationIfNeeded(
+                    at: playbackGeneration
+                )
             }
         }
         cardStates.removeAll { $0.id.residenceKey == residenceKey }
@@ -345,7 +347,7 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
         }
 
         let audioState = residence.webView.sumiNowPlayingAudioState
-        let hasAudibleOutput = audioState.isPlayingAudio && !audioState.isMuted
+        let hasAudibleOutput = audioState.showsTabAudioButton && !audioState.isMuted
         guard var session = sessions[residence.id], !session.isSuppressed else { return nil }
         guard session.canRemainAdmitted(hasAudibleOutput: hasAudibleOutput) else {
             retireSession(residence.id)
@@ -379,7 +381,7 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
         }
 
         let audioState = residence.webView.sumiNowPlayingAudioState
-        let hasAudibleOutput = audioState.isPlayingAudio && !audioState.isMuted
+        let hasAudibleOutput = audioState.showsTabAudioButton && !audioState.isMuted
         var session = sessions[residence.id]
 
         if var currentSession = session {
@@ -395,8 +397,8 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
             if currentSession.suppressionHasExpired(
                 playbackGeneration: residence.tab.mediaRuntime.playbackStartGeneration
             ) {
-                sessions.removeValue(forKey: residence.id)
-                session = nil
+                currentSession.resumeAfterPlaybackRestart()
+                session = currentSession
             } else if currentSession.isSuppressed {
                 sessions[residence.id] = currentSession
                 return false
@@ -606,6 +608,7 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
     private struct SessionRecord {
         private var playbackHold = PlaybackHold.none
         private var mutedByMiniPlayer = false
+        private var requiresNewPlaybackAfterActivation = false
         private var suppressedPlaybackGeneration: UInt64?
         private var lastKnownInfo: SumiNativeNowPlayingInfo?
 
@@ -620,6 +623,11 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
 
         var isSuppressed: Bool {
             suppressedPlaybackGeneration != nil
+        }
+
+        private var hasPausedPlaybackRetention: Bool {
+            if case .pausedByMiniPlayer = playbackHold { return true }
+            return false
         }
 
         mutating func setPlayback(
@@ -637,6 +645,7 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
         }
 
         mutating func dismiss(at playbackGeneration: UInt64) {
+            requiresNewPlaybackAfterActivation = true
             suppress(at: playbackGeneration)
         }
 
@@ -646,7 +655,19 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
             suppressedPlaybackGeneration = playbackGeneration
         }
 
-        mutating func clearSuppression() {
+        mutating func suppressOnTabActivationIfNeeded(
+            at playbackGeneration: UInt64
+        ) {
+            guard hasPausedPlaybackRetention || requiresNewPlaybackAfterActivation else { return }
+            suppress(at: playbackGeneration)
+        }
+
+        mutating func cancelDismissal() {
+            requiresNewPlaybackAfterActivation = false
+            suppressedPlaybackGeneration = nil
+        }
+
+        mutating func resumeAfterPlaybackRestart() {
             suppressedPlaybackGeneration = nil
         }
 

@@ -306,7 +306,12 @@ private struct SumiBackgroundMediaCardView: View {
     private var controlsRow: some View {
         ZStack {
             HStack(spacing: 0) {
-                focusButton
+                SumiMediaSourceIconView(
+                    sourceHost: cardState.sourceHost,
+                    faviconSource: cardState.faviconSource,
+                    faviconImageReader: faviconImageReader
+                )
+                .frame(width: 26, height: 26)
                 Spacer(minLength: 0)
                 mediaButton(
                     systemName: cardState.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
@@ -332,31 +337,6 @@ private struct SumiBackgroundMediaCardView: View {
         }
         .frame(maxWidth: .infinity)
         .frame(height: 26)
-    }
-
-    private var focusButton: some View {
-        let sourceID = "sidebar-mini-player-focus-\(sourceIDComponent)"
-
-        return Button(action: focusSource) {
-            SumiMediaSourceIconView(
-                sourceHost: cardState.sourceHost,
-                faviconSource: cardState.faviconSource,
-                faviconImageReader: faviconImageReader
-            )
-            .frame(width: 26, height: 26)
-        }
-        .buttonStyle(.plain)
-        .modifier(SumiMediaControlHoverModifier(
-            isEnabled: true,
-            sourceID: sourceID,
-            hoverBackground: tokens.chromeControlHoverBackground
-        ))
-        .sidebarAppKitPrimaryAction(
-            sourceID: sourceID,
-            routingPriorityBoost: Self.controlRoutingPriorityBoost,
-            action: focusSource
-        )
-        .help("Focus source tab")
     }
 
     private func focusSource() {
