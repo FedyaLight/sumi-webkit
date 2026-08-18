@@ -4,13 +4,13 @@ import XCTest
 
 @MainActor
 final class PerformanceSettingsTests: XCTestCase {
-    func testDefaultMemoryModeIsOff() {
+    func testDefaultMemoryModeIsBalanced() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
 
         let settings = SumiSettingsService(userDefaults: harness.defaults)
 
-        XCTAssertEqual(settings.memoryMode, .off)
+        XCTAssertEqual(settings.memoryMode, .balanced)
         XCTAssertEqual(settings.memorySaverCustomDeactivationDelay, 2 * 60 * 60)
     }
 
@@ -34,7 +34,7 @@ final class PerformanceSettingsTests: XCTestCase {
             ("lightweight", .maximum),
             ("performance", .moderate),
             ("balanced", .balanced),
-            ("unknown", .off),
+            ("unknown", .balanced),
         ]
 
         for testCase in cases {

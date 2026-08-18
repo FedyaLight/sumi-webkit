@@ -14,7 +14,7 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         let registry = SumiModuleRegistry(settingsStore: store)
         let settings = SumiSettingsService(userDefaults: harness.defaults)
 
-        XCTAssertEqual(settings.memoryMode, .off)
+        XCTAssertEqual(settings.memoryMode, .balanced)
         XCTAssertEqual(settings.memorySaverCustomDeactivationDelay, 2 * 60 * 60)
         for moduleID in SumiModuleID.allCases {
             XCTAssertFalse(registry.isEnabled(moduleID), "\(moduleID.rawValue) should default to disabled")
@@ -54,7 +54,7 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         harness.defaults.set("performance", forKey: "settings.memoryMode")
         XCTAssertEqual(SumiSettingsService(userDefaults: harness.defaults).memoryMode, .moderate)
         harness.defaults.set("unknown", forKey: "settings.memoryMode")
-        XCTAssertEqual(SumiSettingsService(userDefaults: harness.defaults).memoryMode, .off)
+        XCTAssertEqual(SumiSettingsService(userDefaults: harness.defaults).memoryMode, .balanced)
 
         XCTAssertEqual(TabSuspensionPolicy(memoryMode: .moderate).proactiveDeactivationDelay, 6 * 60 * 60)
         XCTAssertEqual(TabSuspensionPolicy(memoryMode: .balanced).proactiveDeactivationDelay, 4 * 60 * 60)
@@ -75,15 +75,15 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         let tab = Tab(loadsCachedFaviconOnInit: false)
         tab.sumiSettings = settings
 
-        XCTAssertFalse(tab.normalTabCoreUserScripts().contains {
-            $0.source.contains("__sumiTabSuspension")
-        })
-        settings.memoryMode = .balanced
         XCTAssertTrue(tab.normalTabCoreUserScripts().contains {
             $0.source.contains("__sumiTabSuspension")
         })
         settings.memoryMode = .off
         XCTAssertFalse(tab.normalTabCoreUserScripts().contains {
+            $0.source.contains("__sumiTabSuspension")
+        })
+        settings.memoryMode = .balanced
+        XCTAssertTrue(tab.normalTabCoreUserScripts().contains {
             $0.source.contains("__sumiTabSuspension")
         })
     }

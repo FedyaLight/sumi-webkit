@@ -78,7 +78,7 @@ enum SumiMemoryMode: String, CaseIterable, Codable, Hashable, Identifiable, Send
         case "performance":
             return .moderate
         default:
-            return .off
+            return .balanced
         }
     }
 

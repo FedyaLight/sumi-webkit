@@ -359,7 +359,7 @@ class SumiSettingsService {
             "settings.newTabMode": SumiNewTabMode.commandPalette.rawValue,
             "settings.newTab.pageURL": SumiNewTabPageURL.defaultURLString,
             "settings.didFinishOnboarding": true,
-            "settings.memoryMode": SumiMemoryMode.off.rawValue,
+            "settings.memoryMode": SumiMemoryMode.balanced.rawValue,
             "settings.memorySaver.customDeactivationDelay": SumiMemorySaverCustomDelay.defaultDelay,
             "settings.energySaver.mode": SumiEnergySaverMode.automatic.rawValue,
             "settings.energySaver.batteryThreshold": SumiEnergySaverPolicy.defaultBatteryThreshold,

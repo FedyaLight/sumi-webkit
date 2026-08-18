@@ -12,15 +12,6 @@ struct SumiMemoryModeSettingsDescriptor: Identifiable, Equatable {
 
     var id: SumiMemoryMode { mode }
 
-    var segmentedTitle: String {
-        switch mode {
-        case .custom:
-            return "Custom"
-        default:
-            return title
-        }
-    }
-
     static let moderate = SumiMemoryModeSettingsDescriptor(
         mode: .moderate,
         title: "Moderate",
@@ -72,14 +63,12 @@ struct SettingsPerformanceTab: View {
                     title: "Mode",
                     subtitle: selectedDescriptor?.detail
                 ) {
-                    Picker("Mode", selection: $settings.memoryMode) {
+                    Picker("", selection: $settings.memoryMode) {
                         ForEach(SumiMemoryModeSettingsDescriptor.all) { descriptor in
-                            Text(descriptor.segmentedTitle).tag(descriptor.mode)
+                            Text(descriptor.title).tag(descriptor.mode)
                         }
                     }
-                    .labelsHidden()
-                    .pickerStyle(.segmented)
-                    .settingsTrailingControl(width: 340)
+                    .settingsMenuPicker(width: 210)
                 }
 
                 if settings.memoryMode == .custom {
