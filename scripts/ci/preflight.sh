@@ -22,7 +22,7 @@ run_fast_checks() {
   git diff --cached --check
 
   while IFS= read -r script; do
-    [[ -n "$script" ]] && bash -n "$script"
+    [[ -f "$script" ]] && bash -n "$script"
   done < <(git ls-files '*.sh' '.githooks/*')
 
   for json_file in \
@@ -60,4 +60,3 @@ case "${1:-}" in
     exit 2
     ;;
 esac
-

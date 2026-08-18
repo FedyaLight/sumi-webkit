@@ -349,40 +349,38 @@ final class SumiDatabase: @unchecked Sendable {
         ) == 1
         guard tableExists else { return }
 
-        try database.inTransaction {
-            let oldRows = try PermissionDecisionRow.fetchAll(database)
-            try database.execute(sql: """
-                CREATE TABLE permission_decisions_v5 (
-                    identity TEXT PRIMARY KEY,
-                    profile_id BLOB,
-                    profile_partition_id TEXT NOT NULL,
-                    requesting_origin TEXT NOT NULL,
-                    top_origin TEXT NOT NULL,
-                    permission_type TEXT NOT NULL,
-                    display_domain TEXT NOT NULL,
-                    state TEXT NOT NULL,
-                    persistence TEXT NOT NULL,
-                    source TEXT NOT NULL,
-                    reason TEXT,
-                    created_at DATETIME NOT NULL,
-                    updated_at DATETIME NOT NULL,
-                    expires_at DATETIME,
-                    last_used_at DATETIME,
-                    system_authorization TEXT,
-                    metadata BLOB
-                )
-                """)
-            try database.execute(sql: "DROP TABLE permission_decisions")
-            try database.execute(sql: "ALTER TABLE permission_decisions_v5 RENAME TO permission_decisions")
+        // Schema initialization already owns the enclosing writer transaction.
+        let oldRows = try PermissionDecisionRow.fetchAll(database)
+        try database.execute(sql: """
+            CREATE TABLE permission_decisions_v5 (
+                identity TEXT PRIMARY KEY,
+                profile_id BLOB,
+                profile_partition_id TEXT NOT NULL,
+                requesting_origin TEXT NOT NULL,
+                top_origin TEXT NOT NULL,
+                permission_type TEXT NOT NULL,
+                display_domain TEXT NOT NULL,
+                state TEXT NOT NULL,
+                persistence TEXT NOT NULL,
+                source TEXT NOT NULL,
+                reason TEXT,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL,
+                expires_at DATETIME,
+                last_used_at DATETIME,
+                system_authorization TEXT,
+                metadata BLOB
+            )
+            """)
+        try database.execute(sql: "DROP TABLE permission_decisions")
+        try database.execute(sql: "ALTER TABLE permission_decisions_v5 RENAME TO permission_decisions")
 
-            for row in try Self.globalPermissionRows(from: oldRows) {
-                try row.insert(database)
-            }
-
-            try database.execute(sql: "CREATE INDEX permission_decisions_profile_domain ON permission_decisions(profile_partition_id, display_domain)")
-            try database.execute(sql: "CREATE INDEX permission_decisions_profile_type ON permission_decisions(profile_partition_id, permission_type)")
-            return .commit
+        for row in try Self.globalPermissionRows(from: oldRows) {
+            try row.insert(database)
         }
+
+        try database.execute(sql: "CREATE INDEX permission_decisions_profile_domain ON permission_decisions(profile_partition_id, display_domain)")
+        try database.execute(sql: "CREATE INDEX permission_decisions_profile_type ON permission_decisions(profile_partition_id, permission_type)")
     }
 
     private static func globalPermissionRows(

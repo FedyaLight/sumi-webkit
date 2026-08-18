@@ -54,7 +54,7 @@ enum SumiHTTPDiskCacheBudget {
         database: SumiDatabase,
         now: Date = Date(),
         observe: @escaping @MainActor (Profile) async -> UInt64?,
-        clearDiskCache: @escaping @MainActor (Profile) async -> Void
+        clearDiskCache: @escaping @MainActor (Profile) async -> Bool
     ) async throws -> [UUID] {
         let regularProfiles = profiles.filter { $0.isEphemeral == false }
         let liveProfileIDs = Set(regularProfiles.map(\.id))
@@ -113,7 +113,9 @@ enum SumiHTTPDiskCacheBudget {
                 }
                 guard foregroundProfileID() != profile.id else { continue }
 
-                await clearDiskCache(profile)
+                guard await clearDiskCache(profile) else {
+                    return clearedProfileIDs
+                }
                 guard let bytes = await observe(profile) else {
                     return clearedProfileIDs
                 }
@@ -195,7 +197,14 @@ enum SumiHTTPDiskCacheBudget {
             else {
                 return State()
             }
-            return (try? JSONDecoder().decode(State.self, from: data)) ?? State()
+            do {
+                return try JSONDecoder().decode(State.self, from: data)
+            } catch {
+                RuntimeDiagnostics.emit(
+                    "[StorageMaintenance] Discarded invalid HTTP DiskCache budget state: \(error)"
+                )
+                return State()
+            }
         }
     }
 

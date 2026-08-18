@@ -128,10 +128,8 @@ final class SumiExtensionPopupOptionsUITests: SumiLaunchSmokeUITestCase {
             tabName: "Extension UI Oracle"
         )
 
-        let packageURL = preferencesHomeURL
-            .appendingPathComponent("Library", isDirectory: true)
-            .appendingPathComponent("Application Support", isDirectory: true)
-            .appendingPathComponent("com.sumi.browser", isDirectory: true)
+        let applicationSupportURL = try XCTUnwrap(smokeAppSupportURL)
+        let packageURL = applicationSupportURL
             .appendingPathComponent("ExtensionPackageGenerations-v1", isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(

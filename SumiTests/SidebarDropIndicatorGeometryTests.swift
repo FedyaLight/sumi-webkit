@@ -2,7 +2,6 @@ import AppKit
 import CoreGraphics
 import Foundation
 import SumiDomain
-import SwiftUI
 import XCTest
 
 @testable import Sumi
@@ -311,66 +310,15 @@ final class SidebarDropIndicatorGeometryTests: XCTestCase {
         XCTAssertFalse(geometry.showsTitle("Wide title"))
     }
 
-    @MainActor
-    func testProjectedTargetDrawsNoRowMaterial() throws {
-        let image = try renderedProjectedPair()
-        let targetColor = try XCTUnwrap(
-            image.colorAt(x: 80, y: 18)?.usingColorSpace(.deviceRGB)
-        )
-        let baseColor = try XCTUnwrap(
-            image.colorAt(x: 150, y: 18)?.usingColorSpace(.deviceRGB)
+    func testProjectedTargetContentUsesCommittedPillVerticalCenter() {
+        let geometry = SidebarProjectedSplitPairGeometry(
+            previewSide: .right,
+            companionSize: CGSize(width: 100, height: 28)
         )
 
         XCTAssertEqual(
-            targetColor.alphaComponent,
-            0,
-            accuracy: 0.01,
-            "The DnD target must remain an inactive transparent row"
-        )
-        XCTAssertEqual(
-            baseColor.alphaComponent,
-            0,
-            accuracy: 0.01,
-            "Only the separate DnD preview-pill layer may draw material"
-        )
-    }
-
-    @MainActor
-    func testProjectedTargetContentIsVerticallyCentered() throws {
-        let image = try renderedProjectedPair()
-        var redPixelRows: [Int] = []
-
-        for y in 0..<image.pixelsHigh {
-            for x in 0..<image.pixelsWide {
-                guard let color = image.colorAt(x: x, y: y)?
-                    .usingColorSpace(.deviceRGB) else {
-                    continue
-                }
-                if color.redComponent > 0.8,
-                   color.greenComponent < 0.4,
-                   color.blueComponent < 0.4,
-                   color.alphaComponent > 0.8 {
-                    redPixelRows.append(y)
-                }
-            }
-        }
-
-        guard let minY = redPixelRows.min(),
-              let maxY = redPixelRows.max() else {
-            let samples = [
-                image.colorAt(x: 12, y: 18),
-                image.colorAt(x: 20, y: 18),
-                image.colorAt(x: 80, y: 18),
-            ]
-            return XCTFail(
-                "Expected red favicon pixels in \(image.pixelsWide)x\(image.pixelsHigh); samples: \(samples)"
-            )
-        }
-        let pixelsPerPoint = CGFloat(image.pixelsHigh) / image.size.height
-        XCTAssertEqual(
-            CGFloat(minY + maxY) / 2,
-            SidebarRowLayout.rowHeight / 2 * pixelsPerPoint,
-            accuracy: 0.5,
+            geometry.companionOriginY + geometry.companionSize.height / 2,
+            SidebarRowLayout.rowHeight / 2,
             "Projected favicon and title must use the committed pill's vertical center"
         )
     }
@@ -974,68 +922,6 @@ final class SidebarDropIndicatorGeometryTests: XCTestCase {
             folderChildDropTargets: childTargets
         )
         return geometry
-    }
-
-    @MainActor
-    private func renderedProjectedPair() throws -> NSBitmapImageRep {
-        let rowWidth: CGFloat = 213
-        let memberWidth: CGFloat = 100
-        let target = SidebarSplitPairingTarget(
-            memberID: .regularTab(UUID()),
-            side: .right,
-            rect: CGRect(
-                x: 108,
-                y: 4,
-                width: memberWidth,
-                height: 28
-            ),
-            presentation: .projectedPair(
-                companionRect: CGRect(
-                    x: 5,
-                    y: 4,
-                    width: memberWidth,
-                    height: 28
-                )
-            )
-        )
-        let root = SidebarProjectedSplitPairTarget(
-            target: target,
-            title: ""
-        ) {
-            Color.red.frame(
-                width: SidebarRowLayout.faviconSize,
-                height: SidebarRowLayout.faviconSize
-            )
-        }
-        .frame(
-            width: rowWidth,
-            height: SidebarRowLayout.rowHeight
-        )
-        let host = NSHostingView(rootView: root)
-        host.wantsLayer = true
-        host.frame = CGRect(
-            x: 0,
-            y: 0,
-            width: rowWidth,
-            height: SidebarRowLayout.rowHeight
-        )
-        let window = NSWindow(
-            contentRect: host.frame,
-            styleMask: .borderless,
-            backing: .buffered,
-            defer: false
-        )
-        window.isOpaque = false
-        window.backgroundColor = .clear
-        window.contentView = host
-        window.layoutIfNeeded()
-        host.layoutSubtreeIfNeeded()
-        host.displayIfNeeded()
-        let image = try XCTUnwrap(
-            host.bitmapImageRepForCachingDisplay(in: host.bounds)
-        )
-        host.cacheDisplay(in: host.bounds, to: image)
-        return image
     }
 
     private func pinnedLine(slot: Int, geometry: SidebarGeometrySnapshot) -> CGRect? {

@@ -8,7 +8,9 @@ final class WebExtensionStorageCleanupStoreTests: XCTestCase {
 
     override func tearDownWithError() throws {
         for directory in temporaryDirectories {
-            try? FileManager.default.removeItem(at: directory)
+            if FileManager.default.fileExists(atPath: directory.path) {
+                try FileManager.default.removeItem(at: directory)
+            }
         }
         temporaryDirectories.removeAll()
         try super.tearDownWithError()

@@ -114,7 +114,6 @@ final class ExtensionRequestedTabCallbackSurfaceFactory {
             profileRuntime: profileRuntime,
             installedExtensions: installedExtensions,
             browserConfiguration: browserConfiguration,
-            configurationPreparation: configurationPreparation,
             websiteDataAdmission: bridge.websiteDataAdmission
         )
         let visibility = ExtensionWindowVisibilityResolver(

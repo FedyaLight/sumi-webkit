@@ -27,8 +27,8 @@ final class BrowserStartupServices {
                     history: browserManager.historyManager,
                     bookmarks: browserManager.bookmarkManager,
                     profiles: browserManager.profileManager.profiles,
-                    websiteDataCleanupService: browserManager.dataServices
-                        .websiteDataCleanupService,
+                    browsingDataCleanupService: browserManager
+                        .browsingDataCleanupService,
                     database: browserManager.database,
                     foregroundProfileID: { [weak browserManager] in
                         browserManager?.currentProfile?.id

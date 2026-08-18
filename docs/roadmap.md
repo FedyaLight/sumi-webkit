@@ -16,7 +16,7 @@
 
 ## Current Boundaries
 
-- Apple-silicon and Intel artifacts are independently compiled and package-verified. Intel hardware behavior still needs a pass on a physical Intel Mac.
+- Releases target Apple silicon only. Intel support ends with `v0.0.4`; Sparkle's Arm64 hardware requirement prevents incompatible updates on native Intel Macs.
 - The DMGs are distributed outside the Mac App Store and are not yet Developer ID signed or notarized.
 - Safari Web Extension compatibility remains extension- and workflow-specific.
 - 1Password 8 native-core integration is blocked by a macOS host-entitlement boundary outside Safari.
@@ -27,7 +27,6 @@
 ## Next Priorities
 
 - Crash, data-safety, restoration, and update-path hardening.
-- A physical Intel Mac verification pass.
 - Developer ID signing, hardened runtime, notarization, and stapling.
 - Broader extension compatibility where public WebKit and macOS APIs permit a generic solution.
 - Accessibility and interaction-quality passes for sidebar, drag-and-drop, focus, and native window behavior.

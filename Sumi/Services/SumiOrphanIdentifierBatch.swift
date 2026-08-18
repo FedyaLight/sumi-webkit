@@ -50,7 +50,14 @@ enum SumiOrphanIdentifierBatch {
             else {
                 return nil
             }
-            return try? JSONDecoder().decode([UUID].self, from: data)
+            do {
+                return try JSONDecoder().decode([UUID].self, from: data)
+            } catch {
+                RuntimeDiagnostics.emit(
+                    "[StorageMaintenance] Discarded invalid orphan identifier batch: \(error)"
+                )
+                return nil
+            }
         }
     }
 

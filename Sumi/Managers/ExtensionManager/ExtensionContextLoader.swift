@@ -1,7 +1,7 @@
 import Foundation
 import WebKit
 
-/// Orchestrates source resolution and immutable context/storage preparation,
+/// Orchestrates source resolution and immutable context preparation,
 /// then delegates the only structural mutation to the controller transaction.
 @available(macOS 15.5, *)
 @MainActor

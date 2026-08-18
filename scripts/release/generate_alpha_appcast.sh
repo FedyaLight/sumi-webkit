@@ -39,7 +39,7 @@ if [[ -n "${bridge_output_appcast}" ]]; then
   mkdir -p "$(dirname "${bridge_output_appcast}")"
   cp "${output_appcast}" "${bridge_output_appcast}"
   "${repo_root}/scripts/release/validate_appcast_signatures.sh" "${bridge_output_appcast}"
-  printf 'Generated legacy 0.0.1 bridge appcast:\n%s\n' "${bridge_output_appcast}"
+  printf 'Generated additional appcast:\n%s\n' "${bridge_output_appcast}"
 fi
 
 printf 'Generated alpha appcast:\n%s\n' "${output_appcast}"

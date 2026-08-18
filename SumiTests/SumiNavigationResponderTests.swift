@@ -1094,7 +1094,7 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         XCTAssertEqual(filePreferences.autoplayPolicy, .default)
     }
 
-    func testAutoplayPolicyResponderKeepsProfileDecisionsIsolated() async throws {
+    func testAutoplayPolicyResponderAppliesPersistentDecisionAcrossRegularProfiles() async throws {
         let harness = try makeAutoplayHarness()
         let profileA = makeProfile("dddddddd-bbbb-cccc-dddd-eeeeeeeeeeee")
         let profileB = makeProfile("eeeeeeee-bbbb-cccc-dddd-eeeeeeeeeeee")
@@ -1118,7 +1118,7 @@ final class SumiNavigationResponderTests: SumiNavigationResponderTestCase {
         )
 
         XCTAssertTrue(preferences.mustApplyAutoplayPolicy)
-        XCTAssertEqual(preferences.autoplayPolicy, .allow)
+        XCTAssertEqual(preferences.autoplayPolicy, .deny)
     }
 
     func testSumiNavigationValueAdaptersMapProductDirections() {

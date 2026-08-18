@@ -64,8 +64,6 @@ final class ExtensionOptionsWindowCallbackComposer {
     private let profileRuntime: ExtensionProfileRuntime
     private let installedExtensions: InstalledExtensionCollection
     private let browserConfiguration: BrowserConfiguration
-    private let configurationPreparation:
-        ExtensionWebViewConfigurationPreparation
     private let websiteDataAdmission:
         ExtensionWebsiteDataMutationAdmission
 
@@ -75,7 +73,6 @@ final class ExtensionOptionsWindowCallbackComposer {
         profileRuntime: ExtensionProfileRuntime,
         installedExtensions: InstalledExtensionCollection,
         browserConfiguration: BrowserConfiguration,
-        configurationPreparation: ExtensionWebViewConfigurationPreparation,
         websiteDataAdmission: ExtensionWebsiteDataMutationAdmission
     ) {
         self.admission = admission
@@ -83,7 +80,6 @@ final class ExtensionOptionsWindowCallbackComposer {
         self.profileRuntime = profileRuntime
         self.installedExtensions = installedExtensions
         self.browserConfiguration = browserConfiguration
-        self.configurationPreparation = configurationPreparation
         self.websiteDataAdmission = websiteDataAdmission
     }
 

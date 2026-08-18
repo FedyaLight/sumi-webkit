@@ -19,6 +19,10 @@ struct SidebarProjectedSplitPairGeometry: Equatable {
         return visualHorizontalInset
     }
 
+    var companionOriginY: CGFloat {
+        SplitGroupSidebarVisualLayout.verticalInset
+    }
+
     func showsTitle(_ title: String) -> Bool {
         SplitGroupSidebarVisualLayout.showsTitle(
             title: title,
@@ -68,7 +72,7 @@ struct SidebarProjectedSplitPairTarget<Icon: View>: View {
                 )
                 .offset(
                     x: geometry.companionOriginX,
-                    y: SplitGroupSidebarVisualLayout.verticalInset
+                    y: geometry.companionOriginY
                 )
             }
             .frame(

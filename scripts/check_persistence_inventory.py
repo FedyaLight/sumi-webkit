@@ -79,8 +79,8 @@ def validate_architecture(inventory: dict[str, object]) -> None:
         fail("canonicalDatabase must be an object")
     if canonical.get("fileName") != "Sumi.sqlite":
         fail("Sumi.sqlite must be the canonical database")
-    if canonical.get("schemaVersion") != 1:
-        fail("canonical database schemaVersion must match bootstrap version 1")
+    if canonical.get("schemaVersion") != 5:
+        fail("canonical database schemaVersion must match current version 5")
     if canonical.get("owner") != "SumiDatabase":
         fail("SumiDatabase must own the canonical database")
 
@@ -148,7 +148,7 @@ def validate_architecture(inventory: dict[str, object]) -> None:
         "DatabasePool(",
         "PRAGMA foreign_keys = ON",
         "PRAGMA user_version",
-        "PRAGMA user_version = 4",
+        "PRAGMA user_version = 5",
         "unsupportedSchemaVersion",
     )
     for fragment in required_database_fragments:

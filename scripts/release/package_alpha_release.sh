@@ -2,29 +2,30 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-version="$(
+configuration="${CONFIGURATION:-Release}"
+build_settings="$(
   xcodebuild -project "${repo_root}/Sumi.xcodeproj" \
-    -target Sumi -configuration "${CONFIGURATION:-Release}" \
-    -showBuildSettings \
-    | awk '$1 == "MARKETING_VERSION" && $2 == "=" { print $3; exit }'
+    -target Sumi -configuration "${configuration}" \
+    -showBuildSettings
 )"
-if [[ -z "${version}" ]]; then
-  echo "error: Could not resolve MARKETING_VERSION for Sumi." >&2
+version="$(awk '$1 == "MARKETING_VERSION" && $2 == "=" { print $3; exit }' <<<"${build_settings}")"
+build="$(awk '$1 == "CURRENT_PROJECT_VERSION" && $2 == "=" { print $3; exit }' <<<"${build_settings}")"
+if [[ -z "${version}" || -z "${build}" ]]; then
+  echo "error: Could not resolve Sumi version and build settings." >&2
   exit 1
 fi
 output_dir="${OUTPUT_DIR:-${repo_root}/release/artifacts/${version}}"
+archive_path="${output_dir}/Sumi-${version}-build${build}-macos-arm64.dmg"
 
 "${repo_root}/scripts/release/run_release_gates.sh"
 
-for architecture in arm64 x86_64 universal; do
-  ARCHITECTURE="${architecture}" \
-  CONFIGURATION="${CONFIGURATION:-Release}" \
-  DERIVED_DATA_PATH="${DERIVED_DATA_PATH_ROOT:-${repo_root}/build/ReleaseAlpha}/${architecture}" \
-  OUTPUT_DIR="${output_dir}" \
-  RELEASE_CHANNEL=alpha \
-  SKIP_ARCHITECTURE_GUARDRAILS=1 \
-    "${repo_root}/scripts/release/package_release_dmg.sh"
-done
+ARCHITECTURE=arm64 \
+CONFIGURATION="${configuration}" \
+DERIVED_DATA_PATH="${DERIVED_DATA_PATH_ROOT:-${repo_root}/build/ReleaseAlpha}/arm64" \
+OUTPUT_DIR="${output_dir}" \
+OUTPUT_PATH="${archive_path}" \
+RELEASE_CHANNEL=alpha \
+SKIP_ARCHITECTURE_GUARDRAILS=1 \
+  "${repo_root}/scripts/release/package_release_dmg.sh"
 
-printf 'Created alpha DMGs:\n'
-find "${output_dir}" -maxdepth 1 -type f -name 'Sumi-*-macos-*.dmg' -print | sort
+printf 'Created Alpha release DMG:\n%s\n' "${archive_path}"

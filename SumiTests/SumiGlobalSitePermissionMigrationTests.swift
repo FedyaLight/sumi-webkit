@@ -12,7 +12,7 @@ final class SumiGlobalSitePermissionMigrationTests: XCTestCase {
             .appendingPathComponent("SumiGlobalSitePermissionMigration-\(UUID().uuidString)")
         let databaseURL = rootURL.appendingPathComponent("Sumi.sqlite")
         try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: rootURL) }
+        defer { XCTAssertNoThrow(try FileManager.default.removeItem(at: rootURL)) }
 
         let firstProfile = UUID(uuidString: "11111111-1111-4111-8111-111111111111")!
         let secondProfile = UUID(uuidString: "22222222-2222-4222-8222-222222222222")!

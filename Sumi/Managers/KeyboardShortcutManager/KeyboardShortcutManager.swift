@@ -16,7 +16,6 @@ import SumiDomain
 class KeyboardShortcutManager {
     private let assignments: KeyboardCommandAssignments
     private let extensionAssignments: ExtensionCommandAssignments
-    private let extensionCommandProfileScopeID: (UUID) -> UUID
     private let validator: ShortcutValidator
     private let systemOwnedShortcuts = KeyboardCommandAssignments
         .nativeReservations
@@ -29,8 +28,7 @@ class KeyboardShortcutManager {
 
     init(
         userDefaults: UserDefaults = .standard,
-        database: SumiDatabase? = nil,
-        extensionCommandProfileScopeID: @escaping (UUID) -> UUID = { $0 }
+        database: SumiDatabase? = nil
     ) {
         let resolvedDatabase: SumiDatabase
         if let database {
@@ -53,7 +51,6 @@ class KeyboardShortcutManager {
         self.extensionAssignments = ExtensionCommandAssignments(
             database: resolvedDatabase
         )
-        self.extensionCommandProfileScopeID = extensionCommandProfileScopeID
         self.validator = ShortcutValidator(systemOwnedShortcuts: systemOwnedShortcuts)
         loadShortcuts()
     }
@@ -127,7 +124,7 @@ class KeyboardShortcutManager {
             do {
                 extensionOwner = try extensionAssignments.activeOwner(
                     for: keyCombination,
-                    profileID: extensionCommandProfileScopeID(profileID)
+                    profileID: profileID
                 )?.identity
             } catch {
                 return .invalid
@@ -190,7 +187,7 @@ class KeyboardShortcutManager {
         do {
             guard let extensionOwner = try extensionAssignments.activeOwner(
                 for: keyCombination,
-                profileID: extensionCommandProfileScopeID(profileID)
+                profileID: profileID
             ) else {
                 return browserValidation
             }
@@ -205,7 +202,7 @@ class KeyboardShortcutManager {
     ) -> [ExtensionCommandBindingAssignment] {
         do {
             return try extensionAssignments.assignments(
-                profileID: extensionCommandProfileScopeID(profileID)
+                profileID: profileID
             )
         } catch {
             return []

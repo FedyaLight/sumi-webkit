@@ -1,17 +1,15 @@
-<?xml version="1.0" encoding="utf-8" standalone="yes"?>
-<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/" version="2.0">
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
     <channel>
-        <title>Sumi Alpha Updates</title>
-        <link>https://fedyalight.github.io/sumi-webkit/appcast-alpha.xml</link>
-        <description>Sumi Alpha update feed.</description>
-        <language>en</language>
+        <title>Sumi</title>
         <item>
-            <title>0.0.2</title>
-            <pubDate>Mon, 03 Aug 2026 21:15:09 +0300</pubDate>
-            <sparkle:version>4</sparkle:version>
-            <sparkle:shortVersionString>0.0.2</sparkle:shortVersionString>
+            <title>0.0.5</title>
+            <pubDate>Wed, 19 Aug 2026 00:01:03 +0300</pubDate>
+            <sparkle:version>9</sparkle:version>
+            <sparkle:shortVersionString>0.0.5</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.5</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/FedyaLight/sumi-webkit/releases/download/v0.0.2/Sumi-0.0.2-build4-macos-universal.dmg" length="67917798" type="application/octet-stream" sparkle:edSignature="N79es8uRs14O80Tiw8gt4BLaSEzxRkMria/m9UNVkO2an57BZvxs7SBa4kKseNuCRmVrwJA2boPD8rhkIip7DA=="/>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://github.com/FedyaLight/sumi-webkit/releases/download/v0.0.5/Sumi-0.0.5-build9-macos-arm64.dmg" length="28260665" type="application/octet-stream" sparkle:edSignature="ystrLA6/sjMiXDYY04JHrTEzBLJrAzQ+xZhzORgfxaZQE4TCsZ3xjdC1zPmGF8n6hbCVCNkQ58axyWLo4FJSBQ=="/>
         </item>
     </channel>
 </rss>

@@ -21,13 +21,10 @@ if [[ -n "${app_path}" && "${app_path}" != /* ]]; then
   app_path="${repo_root}/${app_path}"
 fi
 
-case "${architecture}" in
-  arm64 | x86_64 | universal) ;;
-  *)
-    echo "error: ARCHITECTURE must be arm64, x86_64, or universal, got: ${architecture}" >&2
-    exit 1
-    ;;
-esac
+if [[ "${architecture}" != "arm64" ]]; then
+  echo "error: Sumi release packages are Apple-silicon only; ARCHITECTURE must be arm64, got: ${architecture}" >&2
+  exit 1
+fi
 
 if [[ "${skip_guardrails}" != "1" ]]; then
   "${repo_root}/scripts/check_architecture_guardrails.sh"
@@ -43,15 +40,7 @@ if [[ -z "${app_path}" ]]; then
       -configuration "${configuration}"
       -derivedDataPath "${derived_data_path}"
     )
-    if [[ "${architecture}" == "universal" ]]; then
-      build_arguments+=(
-        -destination "generic/platform=macOS"
-        "ARCHS=arm64 x86_64"
-        ONLY_ACTIVE_ARCH=NO
-      )
-    else
-      build_arguments+=(-destination "platform=macOS,arch=${architecture}")
-    fi
+    build_arguments+=(-destination "platform=macOS,arch=arm64")
     build_arguments+=(build)
     "${build_arguments[@]}"
   fi
@@ -113,9 +102,6 @@ trap cleanup EXIT
 executable_path="${app_path}/Contents/MacOS/Sumi"
 actual_architectures="$(lipo -archs "${executable_path}")"
 expected_architectures="${architecture}"
-if [[ "${architecture}" == "universal" ]]; then
-  expected_architectures="arm64 x86_64"
-fi
 normalized_actual_architectures="$(tr ' ' '\n' <<<"${actual_architectures}" | LC_ALL=C sort | paste -sd ' ' -)"
 if [[ "${normalized_actual_architectures}" != "${expected_architectures}" ]]; then
   echo "error: Expected ${expected_architectures} app executable, got: ${actual_architectures}" >&2

@@ -199,7 +199,6 @@ extension SafariExtensionWebViewControllerWiringTests {
             installedExtensions:
                 inspection.actionSurfaces.installedExtensions,
             browserConfiguration: browserConfiguration,
-            configurationPreparation: inspection.normalTabs.configuration,
             websiteDataAdmission: ExtensionWebsiteDataMutationAdmission(
                 isBlocked: { _ in
                     mutationAdmission.isBlocked

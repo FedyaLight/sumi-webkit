@@ -9,13 +9,13 @@ enum BrowserPostStartupMaintenance {
         history: HistoryManager,
         bookmarks: SumiBookmarkManager,
         profiles: [Profile],
-        websiteDataCleanupService: any SumiWebsiteDataCleanupServicing,
+        browsingDataCleanupService: SumiBrowsingDataCleanupService,
         database: SumiDatabase,
         foregroundProfileID: @escaping @MainActor () -> UUID?
     ) {
         startStorageMaintenanceIfNeeded(
             profiles: profiles,
-            cleanupService: websiteDataCleanupService,
+            browsingDataCleanupService: browsingDataCleanupService,
             database: database,
             foregroundProfileID: foregroundProfileID
         )
@@ -32,7 +32,7 @@ enum BrowserPostStartupMaintenance {
 
     private static func startStorageMaintenanceIfNeeded(
         profiles: [Profile],
-        cleanupService: any SumiWebsiteDataCleanupServicing,
+        browsingDataCleanupService: SumiBrowsingDataCleanupService,
         database: SumiDatabase,
         foregroundProfileID: @escaping @MainActor () -> UUID?
     ) {
@@ -47,7 +47,10 @@ enum BrowserPostStartupMaintenance {
             do {
                 _ = try await SumiHTTPDiskCacheUpgrade.runIfNeeded(
                     profiles: profiles,
-                    cleanupService: cleanupService,
+                    clearDiskCaches: { profiles in
+                        await browsingDataCleanupService
+                            .clearHTTPDiskCaches(for: profiles)
+                    },
                     database: database
                 )
                 let platformCleanupService = SumiWebsiteDataCleanupService()
@@ -111,11 +114,8 @@ enum BrowserPostStartupMaintenance {
                         )
                     },
                     clearDiskCache: { profile in
-                        await cleanupService.removeWebsiteData(
-                            ofTypes: [WKWebsiteDataTypeDiskCache],
-                            modifiedSince: .distantPast,
-                            in: profile.dataStore
-                        )
+                        await browsingDataCleanupService
+                            .clearHTTPDiskCaches(for: [profile])
                     }
                 )
             } catch {
@@ -136,7 +136,7 @@ enum SumiHTTPDiskCacheUpgrade {
     @discardableResult
     static func runIfNeeded(
         profiles: [Profile],
-        cleanupService: any SumiWebsiteDataCleanupServicing,
+        clearDiskCaches: @escaping @MainActor ([Profile]) async -> Bool,
         database: SumiDatabase
     ) async throws -> Bool {
         let completed = try database.read {
@@ -144,13 +144,7 @@ enum SumiHTTPDiskCacheUpgrade {
         }
         guard completed == false else { return false }
 
-        for profile in profiles where profile.isEphemeral == false {
-            await cleanupService.removeWebsiteData(
-                ofTypes: [WKWebsiteDataTypeDiskCache],
-                modifiedSince: .distantPast,
-                in: profile.dataStore
-            )
-        }
+        guard await clearDiskCaches(profiles) else { return false }
         try database.transaction {
             try $0.documents.save(completedMarker, forKey: documentKey)
         }

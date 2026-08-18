@@ -2,10 +2,10 @@
   "formatVersion": 2,
   "canonicalDatabase": {
     "fileName": "Sumi.sqlite",
-    "schemaVersion": 1,
+    "schemaVersion": 5,
     "engine": "SQLite via GRDB",
     "owner": "SumiDatabase",
-    "compatibilityPolicy": "Only an empty database or schema version 1 is accepted. There is no shipped conversion or migration path."
+    "compatibilityPolicy": "An empty database is created at schema version 5. Versions 1 through 4 migrate atomically to version 5; newer or unknown versions fail closed."
   },
   "families": [
     {

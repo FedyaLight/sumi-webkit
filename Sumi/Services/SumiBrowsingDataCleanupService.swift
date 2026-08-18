@@ -255,6 +255,26 @@ final class SumiBrowsingDataCleanupService {
         )
     }
 
+    /// Clears only rebuildable HTTP cache entries after live documents for the
+    /// affected regular profiles have been quiesced.
+    @discardableResult
+    func clearHTTPDiskCaches(for profiles: [Profile]) async -> Bool {
+        let regularProfiles = profiles.filter { $0.isEphemeral == false }
+        guard regularProfiles.isEmpty == false else { return true }
+
+        return await performDestructiveWebsiteDataCleanup(
+            profileIDs: Set(regularProfiles.map(\.id))
+        ) { [websiteDataCleanupService] in
+            for profile in regularProfiles {
+                await websiteDataCleanupService.removeWebsiteData(
+                    ofTypes: [WKWebsiteDataTypeDiskCache],
+                    modifiedSince: .distantPast,
+                    in: profile.dataStore
+                )
+            }
+        }
+    }
+
     func deleteBasicAuthCredentialsForProfileRetirement(
         _ profileID: UUID
     ) throws {

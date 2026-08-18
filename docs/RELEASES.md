@@ -1,23 +1,28 @@
 # Sumi Release Process
 
-Sumi releases are built on a local release Mac with the checked-in Xcode project signing settings. GitHub-hosted runners run portable guardrails, but do not produce the public DMGs because their macOS image may lag the SDK required by Sumi's WebKit runtime.
+Sumi releases are built on a local release Mac with the checked-in Xcode project signing settings. GitHub-hosted runners run portable guardrails, but do not produce the public DMG because their macOS image may lag the SDK required by Sumi's WebKit runtime.
 
-## Alpha 4 Identity
+## Alpha 5 Identity
 
-- Product version: `0.0.4`
-- Build number: `8`
-- Product stage: `Alpha 4`
+- Product version: `0.0.5`
+- Build number: `9`
+- Product stage: `Alpha 5`
 - Update channel: `alpha`
-- Tag: `v0.0.4`
+- Tag: `v0.0.5`
 - GitHub release: ordinary public Release, not draft and not GitHub prerelease
-- Apple silicon DMG: `release/artifacts/0.0.4/Sumi-0.0.4-macos-arm64.dmg`
-- Intel DMG: `release/artifacts/0.0.4/Sumi-0.0.4-macos-x86_64.dmg`
-- Sparkle archive: `Sumi-0.0.4-build8-macos-universal.dmg`
+- Release DMG: `release/artifacts/0.0.5/Sumi-0.0.5-build9-macos-arm64.dmg`
 - Alpha appcast: `https://fedyalight.github.io/sumi-webkit/appcast-alpha.xml`
+- Alpha 1 migration appcast: `https://fedyalight.github.io/sumi-webkit/appcast.xml`
 
 The `0.0.x` version line is Sumi's public Alpha line. GitHub's prerelease flag is not used: Alpha builds are ordinary Releases. Alpha status remains explicit in the release title, notes, application About panel, update channel, and repository documentation.
 
-## Build the Release DMGs
+## Architecture and Migration Boundary
+
+Alpha 5 ships one immutable Apple-silicon (`arm64`) DMG. The release scripts reject `x86_64` and Universal packaging, and verify the architecture and code signature before and after mounting the DMG.
+
+Both Sparkle feeds publish the same signed Arm64 item. Sparkle records its `arm64` hardware requirement in the appcast, so an Apple-silicon Mac can update directly even when its current Sumi bundle is an older Intel build running under Rosetta. A native Intel Mac is not eligible for that item. Alpha 4 (`0.0.4`) is the final Intel-compatible build for installations that already have it; it must never be offered an Arm-only archive.
+
+## Build the Release DMG
 
 Run:
 
@@ -25,9 +30,13 @@ Run:
 scripts/release/package_alpha_release.sh
 ```
 
-The command runs the repository release gates and independently builds `arm64`, `x86_64`, and Universal applications. Packaging verifies the executable architecture and code signature before and after mounting each DMG. It also refuses to package the app when `SumiReleaseChannel` does not match the requested channel.
+The command runs the repository release gates, builds only `arm64`, signs the app with the project's configured Apple development account, and creates this immutable asset:
 
-Each DMG has a repository-owned Finder layout:
+```text
+release/artifacts/0.0.5/Sumi-0.0.5-build9-macos-arm64.dmg
+```
+
+The DMG has a repository-owned Finder layout:
 
 - only `Sumi.app` and the Applications link are visible;
 - the two `112 pt` icons are positioned symmetrically;
@@ -35,47 +44,58 @@ Each DMG has a repository-owned Finder layout:
 - the volume uses Sumi's application icon;
 - no script or quarantine workaround is embedded in the image.
 
-The architecture-specific DMGs are direct downloads. The Universal DMG is copied to the immutable build-specific name used by Sparkle so a published appcast never points new bytes at an old signature.
+## Generate the Appcasts
 
-## Generate the Alpha Appcast
-
-After the final Universal DMG exists:
+After the final Arm64 DMG exists, run:
 
 ```sh
-DOWNLOAD_URL_PREFIX="https://github.com/FedyaLight/sumi-webkit/releases/download/v0.0.4/" \
 SPARKLE_ED_KEY_FILE="/path/to/sumi-sparkle-ed25519.key" \
 scripts/release/generate_current_alpha_appcast.sh
 ```
 
-Alpha 4 updates only `appcast-alpha.xml`. The legacy `appcast.xml` remains on Alpha 2 so installed `0.0.1` builds can cross the one-time bridge and then move to the Alpha channel.
+The script signs and validates both appcasts, uses the immutable release-asset URL by default, and refuses success unless both feeds reference the Arm64 archive and declare the `arm64` hardware requirement.
 
-## Publish Alpha 4
+## Publish Alpha 5
 
-Do not publish until the release artifacts, signatures, appcast signature, and update path have passed the checks below:
+Do not publish until the release artifacts, signatures, appcast signatures, and update path have passed the checks below:
 
 ```sh
-gh release create v0.0.4 \
-  release/artifacts/0.0.4/Sumi-0.0.4-macos-arm64.dmg \
-  release/artifacts/0.0.4/Sumi-0.0.4-macos-x86_64.dmg \
-  release/artifacts/0.0.4/Sumi-0.0.4-build8-macos-universal.dmg \
-  --title "Sumi 0.0.4 Alpha 4" \
-  --notes-file docs/releases/0.0.4.md \
+gh release create v0.0.5 \
+  release/artifacts/0.0.5/Sumi-0.0.5-build9-macos-arm64.dmg \
+  --title "Sumi 0.0.5 Alpha 5" \
+  --notes-file docs/releases/0.0.5.md \
   --latest
 ```
 
-Do not pass `--prerelease`. Alpha 4 is a normal public GitHub Release.
+Do not pass `--prerelease`. Alpha 5 is a normal public GitHub Release. Publish the signed appcast changes only after that immutable GitHub asset exists, then deploy the matching website changes.
+
+## Retire Historic Intel and Universal Assets
+
+After both public appcasts contain only the new Arm64 item, inspect the planned cleanup:
+
+```sh
+scripts/release/retire_legacy_architecture_assets.sh
+```
+
+Only after reviewing that output, run:
+
+```sh
+scripts/release/retire_legacy_architecture_assets.sh --apply
+```
+
+The script refuses deletion if a release would have no Arm64 DMG left, or if either live appcast still references a candidate Intel or Universal URL. It only targets assets whose names end in `-macos-x86_64.dmg` or `-macos-universal.dmg`; it never deletes Arm64 assets.
 
 ## Verification
 
-- Confirm version `0.0.4`, build `8`, channel `alpha`, feed URL, and executable architecture.
-- Mount every DMG and verify its Finder layout and code signature.
-- Confirm the Universal Sparkle artifact contains both `arm64` and `x86_64` executable slices.
-- Verify the Sparkle enclosure length and EdDSA signature against the published immutable asset.
-- Test the Apple-silicon artifact on Apple silicon.
-- Test the Intel artifact on physical Intel hardware when available.
-- Confirm release notes, asset names, SHA-256 values, and the `latest` release link.
-- Confirm an installed Alpha 2 or later build offers `0.0.4 build 8` from `appcast-alpha.xml`.
+- Confirm version `0.0.5`, build `9`, channel `alpha`, feed URLs, and Apple development signing identity.
+- Run the release gates and mount the Arm64 DMG to verify its Finder layout and code signature.
+- Confirm `lipo -archs` returns only `arm64` for the packaged executable.
+- Verify the Sparkle enclosure length and EdDSA signature against the immutable GitHub asset.
+- Confirm both public feeds offer the same `0.0.5 build 9` Arm64 item after publication.
+- Test an installed Apple-silicon Alpha build, including a Rosetta-installed older x86 bundle, receiving the Arm64 update.
+- Confirm a native Intel build sees no Alpha 5 offer.
+- Confirm release notes, website copy, asset name, SHA-256 value, and the `latest` release link.
 
 ## Distribution Boundary
 
-The current public artifacts are development-signed with hardened runtime enabled, but are not Developer ID signed or notarized. A wider distribution path requires Apple Developer Program access, Developer ID Application signing, notarization, and stapling.
+The current release is development-signed with hardened runtime enabled, but is not Developer ID signed or notarized. A wider distribution path requires Apple Developer Program access, Developer ID Application signing, notarization, and stapling.

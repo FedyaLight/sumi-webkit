@@ -82,7 +82,7 @@ final class SumiAutoplayBrowserConfigTests: XCTestCase {
         XCTAssertEqual(configuration.mediaTypesRequiringUserActionForPlayback, .all)
     }
 
-    func testProfileDecisionDoesNotAffectOtherProfile() async throws {
+    func testPersistentDecisionAppliesToEveryRegularProfile() async throws {
         let harness = try makeHarness()
         let profileA = makeProfile("44444444-4444-4444-4444-444444444444")
         try installTestProfile(profileA, in: harness.container)
@@ -101,7 +101,7 @@ final class SumiAutoplayBrowserConfigTests: XCTestCase {
         )
 
         XCTAssertEqual(first.mediaTypesRequiringUserActionForPlayback, .all)
-        XCTAssertEqual(second.mediaTypesRequiringUserActionForPlayback, [])
+        XCTAssertEqual(second.mediaTypesRequiringUserActionForPlayback, .all)
     }
 
     func testUnknownOriginUsesDefaultFallbackConfiguration() async throws {

@@ -12,7 +12,7 @@ loader='Sumi/Managers/ExtensionManager/ExtensionContextLoader.swift'
 transaction='Sumi/Managers/ExtensionManager/ExtensionContextControllerTransaction.swift'
 preparation='Sumi/Managers/ExtensionManager/ExtensionContextPreparation.swift'
 source_cache='Sumi/Managers/ExtensionManager/WebExtensionRuntimeSourceCache.swift'
-storage='Sumi/Managers/ExtensionManager/WebExtensionRuntimeStoragePreparation.swift'
+retired_storage_preparation='Sumi/Managers/ExtensionManager/WebExtensionRuntimeStoragePreparation.swift'
 authority='Sumi/Managers/ExtensionManager/ExtensionLoadedContextAuthority.swift'
 delegate_readiness='Sumi/Managers/ExtensionManager/ExtensionControllerDelegateReadiness.swift'
 controller_provisioning='Sumi/Managers/ExtensionManager/ExtensionControllerProvisioningOwner.swift'
@@ -25,7 +25,6 @@ required_files=(
   "$transaction"
   "$preparation"
   "$source_cache"
-  "$storage"
   "$authority"
   "$delegate_readiness"
 )
@@ -46,12 +45,23 @@ if [[ -e "$old_loader" || -L "$old_loader" || -n "$retired_loader_hits" ]]; then
   exit 1
 fi
 
+eager_storage_hits="$(
+  guard_capture_matches \
+    '\bWebExtensionRuntimeStoragePreparation\b|\bstorage\.prepare\(|\bensureStorageDirectory\b|\bWebExtensionStorageCleanupOwner\b' \
+    "$loader" "$transaction"
+)"
+if [[ -e "$retired_storage_preparation" || -L "$retired_storage_preparation" \
+    || -n "$eager_storage_hits" ]]; then
+  printf '%s\n' "$eager_storage_hits" >&2
+  printf 'error: context load regained eager WebExtension storage preparation\n' >&2
+  exit 1
+fi
+
 root_free_roles=(
   "$loader"
   "$transaction"
   "$preparation"
   "$source_cache"
-  "$storage"
 )
 root_reachthrough_hits="$(
   guard_capture_matches \
@@ -67,7 +77,7 @@ fi
 owner_storage_hits="$(
   guard_capture_matches \
     '^\s*(private\s+)?(weak\s+)?(var|let)\s+\w+\s*:\s*(any\s+)?[A-Za-z0-9_]+Owner\??\s*$' \
-    "$loader" "$transaction" "$source_cache" "$storage" -P
+    "$loader" "$transaction" "$source_cache" -P
 )"
 if [[ -n "$owner_storage_hits" ]]; then
   printf '%s\n' "$owner_storage_hits" >&2
@@ -118,7 +128,6 @@ fi
 for required_loader_call in \
   'sourceCache.resolve(' \
   'contextPreparation.prepare(' \
-  'storage.prepare()' \
   'controllerTransaction.load('; do
   required_loader_call_count="$(
     guard_count_matches "$required_loader_call" "$loader" -F
@@ -241,19 +250,12 @@ fi
 
 idle_work_hits="$(
   guard_capture_matches 'Timer|Task\.sleep|asyncAfter|DispatchSource' \
-    "$loader" "$transaction" "$source_cache" "$storage" \
+    "$loader" "$transaction" "$source_cache" \
     "$delegate_readiness" "$controller_provisioning"
 )"
 if [[ -n "$idle_work_hits" ]]; then
   printf '%s\n' "$idle_work_hits" >&2
   printf 'error: context-load path gained polling/timer idle work\n' >&2
-  exit 1
-fi
-lazy_snapshot_count="$(
-  guard_count_matches 'capabilitySnapshot: @autoclosure () ->' "$storage" -F
-)"
-if (( lazy_snapshot_count == 0 )); then
-  printf 'error: disabled storage diagnostics regained eager manifest analysis\n' >&2
   exit 1
 fi
 

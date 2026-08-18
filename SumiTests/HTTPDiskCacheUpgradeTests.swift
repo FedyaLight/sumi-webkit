@@ -29,12 +29,21 @@ final class HTTPDiskCacheUpgradeTests: XCTestCase {
         XCTAssertFalse(secondProfile.dataStore.isPersistent)
         let firstRun = try await SumiHTTPDiskCacheUpgrade.runIfNeeded(
             profiles: [firstProfile, secondProfile],
-            cleanupService: cleanupService,
+            clearDiskCaches: { profiles in
+                for profile in profiles where profile.isEphemeral == false {
+                    await cleanupService.removeWebsiteData(
+                        ofTypes: [WKWebsiteDataTypeDiskCache],
+                        modifiedSince: .distantPast,
+                        in: profile.dataStore
+                    )
+                }
+                return true
+            },
             database: database
         )
         let secondRun = try await SumiHTTPDiskCacheUpgrade.runIfNeeded(
             profiles: [firstProfile, secondProfile],
-            cleanupService: cleanupService,
+            clearDiskCaches: { _ in true },
             database: database
         )
         XCTAssertTrue(firstRun)
@@ -48,5 +57,24 @@ final class HTTPDiskCacheUpgradeTests: XCTestCase {
         )
         XCTAssertEqual(firstCookies.map(\.value), ["first"])
         XCTAssertEqual(secondCookies.map(\.value), ["second"])
+    }
+
+    func testUpgradeRetriesWhenDestructiveCleanupIsNotAdmitted() async throws {
+        let database = try SumiDatabase.inMemory()
+        let profile = Profile(name: "Regular")
+
+        let blocked = try await SumiHTTPDiskCacheUpgrade.runIfNeeded(
+            profiles: [profile],
+            clearDiskCaches: { _ in false },
+            database: database
+        )
+        let retried = try await SumiHTTPDiskCacheUpgrade.runIfNeeded(
+            profiles: [profile],
+            clearDiskCaches: { _ in true },
+            database: database
+        )
+
+        XCTAssertFalse(blocked)
+        XCTAssertTrue(retried)
     }
 }

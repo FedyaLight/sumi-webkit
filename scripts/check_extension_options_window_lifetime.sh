@@ -95,14 +95,14 @@ if (( enabled_record_checks < 2 )); then
   echo 'error: options capture and revalidation must require an enabled record' >&2
   exit 1
 fi
-require_production_pattern 'options callback lost website-data-store identity capture' \
-  'configuration\.websiteDataStore === profile\.dataStore' "$composition"
+require_production_pattern 'options callback lost the controller-bound website-data-store capture' \
+  'contextConfiguration\.webExtensionController === evidence\.controller' "$composition"
 require_production_pattern 'options callback lost controller identity capture' \
   'configuration\.webExtensionController === evidence\.controller' "$composition"
 require_production_pattern 'options callback lost website-data-store revalidation' \
   'receipt\.configuration\.websiteDataStore' "$composition"
-require_production_pattern 'options callback lost profile data-store revalidation' \
-  '=== receipt\.profile\.dataStore' "$composition"
+require_production_pattern 'options callback lost controller data-store revalidation' \
+  'evidence\.controller\.configuration\.defaultWebsiteDataStore' "$composition"
 require_production_pattern 'options callback lost controller revalidation' \
   'receipt\.configuration\.webExtensionController' "$composition"
 require_production_pattern 'options callback lost exact controller identity revalidation' \

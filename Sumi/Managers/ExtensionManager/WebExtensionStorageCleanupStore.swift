@@ -84,22 +84,31 @@ struct WebExtensionStorageCleanupStore {
                 isDirectory: true
             )
             .appendingPathComponent("WebExtensions", isDirectory: true)
-        guard let entries = try? fileManager.contentsOfDirectory(
-            at: root,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        ) else {
+        let entries: [URL]
+        do {
+            entries = try fileManager.contentsOfDirectory(
+                at: root,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            )
+        } catch {
+            Self.logger.debug(
+                "Failed to enumerate WebExtension controller storage: \(error.localizedDescription, privacy: .public)"
+            )
             return []
         }
         return entries.compactMap { entry in
-            let values = try? entry.resourceValues(
-                forKeys: [.isDirectoryKey]
-            )
-            guard values?.isDirectory == true
-            else {
+            do {
+                guard try entry.resourceValues(
+                    forKeys: [.isDirectoryKey]
+                ).isDirectory == true
+                else {
+                    return nil
+                }
+                return UUID(uuidString: entry.lastPathComponent)
+            } catch {
                 return nil
             }
-            return UUID(uuidString: entry.lastPathComponent)
         }
     }
 

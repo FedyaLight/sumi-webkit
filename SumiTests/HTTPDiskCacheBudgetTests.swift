@@ -35,7 +35,10 @@ final class HTTPDiskCacheBudgetTests: XCTestCase {
             database: database,
             now: now,
             observe: { profile in sizes[profile.id] },
-            clearDiskCache: { profile in sizes[profile.id] = 0 }
+            clearDiskCache: { profile in
+                sizes[profile.id] = 0
+                return true
+            }
         )
 
         XCTAssertEqual(cleared, [oldestInactive.id])
@@ -60,7 +63,7 @@ final class HTTPDiskCacheBudgetTests: XCTestCase {
                 observations += 1
                 return self.mebibyte
             },
-            clearDiskCache: { _ in }
+            clearDiskCache: { _ in true }
         )
         observations = 0
 
@@ -73,7 +76,7 @@ final class HTTPDiskCacheBudgetTests: XCTestCase {
                 observations += 1
                 return self.mebibyte
             },
-            clearDiskCache: { _ in }
+            clearDiskCache: { _ in true }
         )
 
         XCTAssertTrue(cleared.isEmpty)
@@ -93,7 +96,10 @@ final class HTTPDiskCacheBudgetTests: XCTestCase {
             observe: { profile in
                 profile.id == inactive.id ? nil : 2 * SumiHTTPDiskCacheBudget.targetBytes
             },
-            clearDiskCache: { profile in cleared.append(profile.id) }
+            clearDiskCache: { profile in
+                cleared.append(profile.id)
+                return true
+            }
         )
 
         XCTAssertTrue(result.isEmpty)
@@ -114,7 +120,10 @@ final class HTTPDiskCacheBudgetTests: XCTestCase {
             foregroundProfileID: { foreground.id },
             database: database,
             observe: { profile in sizes[profile.id] },
-            clearDiskCache: { profile in sizes[profile.id] = 0 }
+            clearDiskCache: { profile in
+                sizes[profile.id] = 0
+                return true
+            }
         )
 
         XCTAssertEqual(cleared, [inactive.id])

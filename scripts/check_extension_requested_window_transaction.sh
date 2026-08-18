@@ -77,7 +77,8 @@ for literal in \
   'publishedWindow(window, profileID) === adapter' \
   'preparedWindow.accept()' \
   'preparedWindow.cancel()' \
-  'profileRuntime.controllersByProfile[profileID] === controller' \
+  'profileRuntime.controller(for: profileID) === controller' \
+  'profileRuntime.owns(loadContext, in: profileID)' \
   'controller.extensionContext(for: loadURL) === loadContext'; do
   require_literal "$router" "$literal" \
     "requested-window routing invariant missing: $literal"

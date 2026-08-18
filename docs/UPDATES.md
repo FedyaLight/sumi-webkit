@@ -4,9 +4,9 @@ Sumi uses Sparkle 2 for update checks, archive verification, download, installat
 
 ## First Install
 
-For Alpha 1 (`v0.0.1`):
+For Alpha 5 (`v0.0.5`):
 
-1. Download the matching DMG from [GitHub Releases](https://github.com/FedyaLight/sumi-webkit/releases/tag/v0.0.1): `arm64` for Apple silicon or `x86_64` for Intel.
+1. Download the Apple-silicon DMG from [GitHub Releases](https://github.com/FedyaLight/sumi-webkit/releases/tag/v0.0.5).
 2. Open the DMG and drag `Sumi.app` to Applications.
 3. Launch Sumi.
 
@@ -21,15 +21,17 @@ Run this only for a Sumi bundle you intentionally downloaded. Sumi itself never 
 
 ## Update Flow
 
-- Alpha 1 reads `appcast.xml`; Alpha 2 is published there once as a migration bridge for existing installations.
-- Alpha 2 and later Alpha builds read `https://fedyalight.github.io/sumi-webkit/appcast-alpha.xml`; Alpha 4 is published there as `0.0.4 build 8`.
+- Alpha 1 reads `https://fedyalight.github.io/sumi-webkit/appcast.xml`; Alpha 2 and later Alpha builds read `https://fedyalight.github.io/sumi-webkit/appcast-alpha.xml`.
+- Alpha 5 is published to both feeds as `0.0.5 build 9`, so eligible installed builds move directly to the current Alpha channel without a staged bridge.
+- The Alpha 5 appcast item requires `arm64` hardware. Sparkle therefore offers it to Apple-silicon Macs, including an older Intel build running under Rosetta, but not to native Intel Macs.
+- Native Intel Macs receive no Alpha 5 offer. Alpha 4 (`0.0.4`) is the final Intel-compatible build for installations that already have it; no further Intel archive is distributed.
 - `Sumi/Info.plist` contains the Sparkle EdDSA public key as `SUPublicEDKey`.
 - Sparkle verifies update archives using the signature in the appcast enclosure.
 - Users explicitly start installation from Settings > About or the sidebar notice.
 - Sparkle handles download, installation, and relaunch.
 - After relaunch, the completed sidebar notice links to `https://sumi-browser.netlify.app/changelog/#<display-version>`; each public release entry must use its display version as the Changelog anchor.
 
-The appcast for Alpha 1 was intentionally empty because no older public build existed. Alpha 2 established the bridge and Alpha channel; each later Alpha advances that channel with one signed Universal update archive for both Apple silicon and Intel installations.
+Alpha 1's `appcast.xml` was initially empty. Alpha 2 established the first bridge and the Alpha channel. Alpha 5 replaces that bridge with a direct signed Arm64 update item in both feeds; no Universal update archive is used.
 
 ## Signing Boundaries
 

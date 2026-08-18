@@ -14,18 +14,39 @@ if [[ -z "${version}" || -z "${build}" ]]; then
 fi
 
 artifact_dir="${1:-${repo_root}/release/artifacts/${version}}"
-universal_archive="${artifact_dir}/Sumi-${version}-macos-universal.dmg"
-sparkle_archive_name="${SPARKLE_ARCHIVE_NAME:-Sumi-${version}-build${build}-macos-universal.dmg}"
+if [[ "${artifact_dir}" != /* ]]; then
+  artifact_dir="${repo_root}/${artifact_dir}"
+fi
+archive_name="Sumi-${version}-build${build}-macos-arm64.dmg"
+arm_archive="${artifact_dir}/${archive_name}"
+download_url_prefix="${DOWNLOAD_URL_PREFIX:-https://github.com/FedyaLight/sumi-webkit/releases/download/v${version}/}"
 
-if [[ ! -f "${universal_archive}" ]]; then
-  echo "Missing universal Sparkle update archive: ${universal_archive}" >&2
+if [[ ! -f "${arm_archive}" ]]; then
+  echo "Missing Apple-silicon Sparkle update archive: ${arm_archive}" >&2
   exit 1
 fi
 
-staging_dir="$(mktemp -d /tmp/SumiAlphaAppcast.XXXXXX)"
+staging_dir="$(mktemp -d /tmp/SumiCurrentAlphaAppcast.XXXXXX)"
 trap 'rm -rf "${staging_dir}"' EXIT
-ln -s "${universal_archive}" "${staging_dir}/${sparkle_archive_name}"
+ln -s "${arm_archive}" "${staging_dir}/${archive_name}"
 
-OUTPUT_APPCAST="${repo_root}/docs/appcast-alpha.xml" \
+fresh_appcast="${staging_dir}/appcast.xml"
+OUTPUT_APPCAST="${fresh_appcast}" \
+DOWNLOAD_URL_PREFIX="${download_url_prefix}" \
 MAXIMUM_VERSIONS=1 \
   "${repo_root}/scripts/release/generate_alpha_appcast.sh" "${staging_dir}"
+
+for appcast in "${repo_root}/docs/appcast-alpha.xml" "${repo_root}/docs/appcast.xml"; do
+  cp "${fresh_appcast}" "${appcast}"
+done
+
+for appcast in "${repo_root}/docs/appcast-alpha.xml" "${repo_root}/docs/appcast.xml"; do
+  if ! grep -Eq '<sparkle:hardwareRequirements>[[:space:]]*arm64[[:space:]]*</sparkle:hardwareRequirements>' "${appcast}"; then
+    echo "error: ${appcast} does not require arm64 hardware." >&2
+    exit 1
+  fi
+  if ! grep -Fq "${archive_name}" "${appcast}"; then
+    echo "error: ${appcast} does not reference ${archive_name}." >&2
+    exit 1
+  fi
+done

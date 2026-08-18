@@ -98,10 +98,14 @@ if [[ -z "$live_apply_line" || -z "$live_notify_line" ]] \
 fi
 
 require_production_pattern \
-  'storage cleanup no longer uses its planner directly' \
-  'storageCleanupPlanner\.storeCapabilitySnapshot\(' "$storage_cleanup"
+  'storage cleanup must delegate filesystem state to its narrow store' \
+  'WebExtensionStorageCleanupStore\(' "$storage_cleanup"
 reject_production_pattern \
-  'storage cleanup no longer uses its planner directly' \
+  'retired storage capability planner returned' \
+  'WebExtensionStorageCleanupPlanner|storageCleanupPlanner|storeCapabilitySnapshot' \
+  "$storage_cleanup"
+reject_production_pattern \
+  'storage cleanup regained the retired install-capability owner' \
   'SafariExtensionInstallCapabilityOwner|installCapabilityOwner' "$storage_cleanup"
 
 printf 'extension permission-policy boundary passed\n'

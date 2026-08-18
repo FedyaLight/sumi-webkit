@@ -22,7 +22,7 @@ final class SharedFaviconStorageTests: XCTestCase {
             "SharedFaviconStorageTests-\(UUID().uuidString)",
             isDirectory: true
         )
-        defer { try? FileManager.default.removeItem(at: root) }
+        defer { XCTAssertNoThrow(try FileManager.default.removeItem(at: root)) }
         let legacyPartition = SumiFaviconPartition(
             profileIdentifier: UUID().uuidString,
             isPrivate: false
@@ -77,7 +77,7 @@ final class SharedFaviconStorageTests: XCTestCase {
             "SharedFaviconProfileDeletionTests-\(UUID().uuidString)",
             isDirectory: true
         )
-        defer { try? FileManager.default.removeItem(at: root) }
+        defer { XCTAssertNoThrow(try FileManager.default.removeItem(at: root)) }
         let system = SumiFaviconSystem(
             database: database,
             rootDirectory: root,
