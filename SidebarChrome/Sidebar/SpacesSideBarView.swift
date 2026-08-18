@@ -271,6 +271,10 @@ struct SpacesSideBarView: View {
                 .environment(windowState)
             }
             .fixedSize(horizontal: false, vertical: true)
+            .overlayPreferenceValue(SpaceHoverLabelAnchorPreference.self) { anchor in
+                SpaceHoverLabelPresenter(anchor: anchor)
+                    .padding(.horizontal, SidebarChromeMetrics.contentHorizontalPadding)
+            }
             .zIndex(100)
             .padding(.bottom, 8)
         }

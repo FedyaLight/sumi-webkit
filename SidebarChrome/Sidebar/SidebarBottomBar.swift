@@ -47,9 +47,6 @@ struct SidebarBottomBar: View {
                 newSpaceButton
             }
         }.fixedSize(horizontal: false, vertical: true)
-        .overlayPreferenceValue(SpaceHoverLabelAnchorPreference.self) { anchor in
-            SpaceHoverLabelPresenter(anchor: anchor)
-        }
         .padding(.horizontal, SidebarChromeMetrics.contentHorizontalPadding)
     }
 
