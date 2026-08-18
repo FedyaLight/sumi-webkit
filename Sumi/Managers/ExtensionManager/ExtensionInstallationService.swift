@@ -18,14 +18,9 @@ final class ExtensionInstallationService {
     private let packageMaintenance: ExtensionPackageMaintenance
     private let packageFileExecutor: ExtensionPackageFileExecutor
     private let requestRuntimeForInstallation: @MainActor () -> Void
-    private let removeStoredData: @MainActor (
-        String, WebExtensionStorageCleanupPlanner.CleanupMode
-    ) async -> Void
+    private let removeStoredData: @MainActor (String) async -> Void
     private let hasStoredDataCandidate: @MainActor (String) -> Bool
-    private let traceStoreLifecycle: @MainActor (
-        String, String, [String: Any]?
-    ) -> Void
-    private let ensureStorageDirectory: @MainActor (String) -> Void
+    private let traceStoreLifecycle: @MainActor (String, String) -> Void
     #if DEBUG
         private var debugBeforePersist: (@MainActor ()
             -> ((InstalledExtension) throws -> Void)?)?
@@ -45,14 +40,9 @@ final class ExtensionInstallationService {
         packageMaintenance: ExtensionPackageMaintenance,
         packageFileExecutor: ExtensionPackageFileExecutor = .init(),
         requestRuntimeForInstallation: @escaping @MainActor () -> Void,
-        removeStoredData: @escaping @MainActor (
-            String, WebExtensionStorageCleanupPlanner.CleanupMode
-        ) async -> Void,
+        removeStoredData: @escaping @MainActor (String) async -> Void,
         hasStoredDataCandidate: @escaping @MainActor (String) -> Bool,
-        traceStoreLifecycle: @escaping @MainActor (
-            String, String, [String: Any]?
-        ) -> Void,
-        ensureStorageDirectory: @escaping @MainActor (String) -> Void,
+        traceStoreLifecycle: @escaping @MainActor (String, String) -> Void,
         emitTrace: @escaping @MainActor (String) -> Void
     ) {
         self.metadataStore = metadataStore
@@ -70,7 +60,6 @@ final class ExtensionInstallationService {
         self.removeStoredData = removeStoredData
         self.hasStoredDataCandidate = hasStoredDataCandidate
         self.traceStoreLifecycle = traceStoreLifecycle
-        self.ensureStorageDirectory = ensureStorageDirectory
         self.emitTrace = emitTrace
     }
 
@@ -190,7 +179,6 @@ final class ExtensionInstallationService {
             } else if package.ownership == .copiedDirectory {
                 try await prepareFreshDirectoryStorage(
                     extensionID: identity.extensionID,
-                    manifest: package.manifest,
                     mutationLease: mutationLease
                 )
             }
@@ -228,8 +216,6 @@ final class ExtensionInstallationService {
                     loaded,
                     operation: package.runtimeOperation
                 )
-            } else {
-                ensureStorageDirectory(identity.extensionID)
             }
 
             #if DEBUG
@@ -304,7 +290,6 @@ final class ExtensionInstallationService {
 
     private func prepareFreshDirectoryStorage(
         extensionID: String,
-        manifest: [String: Any],
         mutationLease: ExtensionRuntimeMutationLease
     ) async throws {
         guard hasStoredDataCandidate(extensionID) else {
@@ -317,18 +302,13 @@ final class ExtensionInstallationService {
         }
         traceStoreLifecycle(
             "before-install-cleanup",
-            extensionID,
-            manifest
+            extensionID
         )
-        await removeStoredData(
-            extensionID,
-            .preserveDirectoryForImmediateRuntimeLoad
-        )
+        await removeStoredData(extensionID)
         try validate(mutationLease)
         traceStoreLifecycle(
             "after-install-cleanup",
-            extensionID,
-            manifest
+            extensionID
         )
     }
 

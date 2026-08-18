@@ -216,24 +216,6 @@ final class AdblockGenerationArchitectureTests: XCTestCase {
         }
     }
 
-    func testArchiveRejectsSelfReferentialRollbackGeneration() async throws {
-        let fixture = try Fixture()
-        defer { fixture.remove() }
-        let manifest = makeManifest(
-            generationId: "cycle",
-            previousGenerationId: "cycle"
-        )
-
-        await XCTAssertThrowsErrorAsync {
-            try await fixture.archive.commit(
-                manifest: manifest,
-                stagedCompiledShardURLs: [:]
-            )
-        }
-        let activeManifest = try await fixture.archive.activeManifest()
-        XCTAssertNil(activeManifest)
-    }
-
     func testArchiveRejectsFutureManifestSchema() async throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
@@ -296,7 +278,7 @@ final class AdblockGenerationArchitectureTests: XCTestCase {
     }
 
     @MainActor
-    func testRecoveryLeavesDurableActivePointerUntouchedWhenWebKitPreparationFails() async throws {
+    func testRetentionRemovesInactiveGenerationsAndLegacyPreviousReference() async throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
         let previousData = Data("[]".utf8)
@@ -304,11 +286,7 @@ final class AdblockGenerationArchitectureTests: XCTestCase {
         let previousShard = makeShard(id: "previous", generationId: "previous", data: previousData)
         let activeShard = makeShard(id: "active", generationId: "active", data: activeData)
         let previous = makeManifest(generationId: "previous", shards: [previousShard])
-        let active = makeManifest(
-            generationId: "active",
-            previousGenerationId: "previous",
-            shards: [activeShard]
-        )
+        let active = makeManifest(generationId: "active", shards: [activeShard])
         try await fixture.archive.commit(
             manifest: previous,
             stagedCompiledShardURLs: [previousShard.id: try fixture.writeSource(previousData, name: "previous.json")]
@@ -317,44 +295,16 @@ final class AdblockGenerationArchitectureTests: XCTestCase {
             manifest: active,
             stagedCompiledShardURLs: [activeShard.id: try fixture.writeSource(activeData, name: "active.json")]
         )
-        let publisher = FailingAdblockPublisher()
-        let compiler = RecordingAdblockCompiler(availableIdentifiers: [previousShard.webKitIdentifier])
-        let recovery = AdblockGenerationRecovery(
-            archive: fixture.archive,
-            publisher: publisher,
-            contentRuleListStore: compiler
+        let activeManifestURL = fixture.root.appendingPathComponent("active-generation.json")
+        var legacyManifest = try XCTUnwrap(
+            try JSONSerialization.jsonObject(
+                with: Data(contentsOf: activeManifestURL)
+            ) as? [String: Any]
         )
-
-        let report = await recovery.restorePreviousGenerationIfNeeded()
-
-        XCTAssertFalse(report.rolledBack)
-        XCTAssertEqual(publisher.prepareCount, 1)
-        XCTAssertEqual(publisher.commitCount, 0)
-        let durableActiveManifest = try await fixture.archive.activeManifest()
-        XCTAssertEqual(durableActiveManifest?.activeGenerationId, "active")
-    }
-
-    @MainActor
-    func testRetentionKeepsPreviousRollbackGenerationAndItsWebKitRules() async throws {
-        let fixture = try Fixture()
-        defer { fixture.remove() }
-        let previousData = Data("[]".utf8)
-        let activeData = Data("[ ]".utf8)
-        let previousShard = makeShard(id: "previous", generationId: "previous", data: previousData)
-        let activeShard = makeShard(id: "active", generationId: "active", data: activeData)
-        let previous = makeManifest(generationId: "previous", shards: [previousShard])
-        let active = makeManifest(
-            generationId: "active",
-            previousGenerationId: "previous",
-            shards: [activeShard]
-        )
-        try await fixture.archive.commit(
-            manifest: previous,
-            stagedCompiledShardURLs: [previousShard.id: try fixture.writeSource(previousData, name: "previous.json")]
-        )
-        try await fixture.archive.commit(
-            manifest: active,
-            stagedCompiledShardURLs: [activeShard.id: try fixture.writeSource(activeData, name: "active.json")]
+        legacyManifest["previousGenerationId"] = "previous"
+        try JSONSerialization.data(withJSONObject: legacyManifest).write(
+            to: activeManifestURL,
+            options: .atomic
         )
         let staleDirectory = try fixture.archive.generationDirectoryURL(generationId: "stale")
         try FileManager.default.createDirectory(at: staleDirectory, withIntermediateDirectories: true)
@@ -371,15 +321,21 @@ final class AdblockGenerationArchitectureTests: XCTestCase {
             contentRuleListStore: compiler
         )
 
-        let report = await retention.removeUnrecoverableGenerations()
+        let report = await retention.removeInactiveGenerations()
 
         let previousDirectory = try fixture.archive.generationDirectoryURL(generationId: "previous")
-        XCTAssertTrue(FileManager.default.fileExists(atPath: previousDirectory.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: previousDirectory.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: staleDirectory.path))
-        XCTAssertEqual(compiler.removedIdentifiers, [staleIdentifier])
-        XCTAssertEqual(report.removedWebKitIdentifiers, [staleIdentifier])
-        let retainedActiveManifest = try await fixture.archive.activeManifest()
-        XCTAssertEqual(retainedActiveManifest?.previousGenerationId, "previous")
+        XCTAssertEqual(
+            compiler.removedIdentifiers,
+            [previousShard.webKitIdentifier, staleIdentifier].sorted()
+        )
+        XCTAssertEqual(
+            report.removedWebKitIdentifiers,
+            [previousShard.webKitIdentifier, staleIdentifier].sorted()
+        )
+        let activeGenerationId = try await fixture.archive.activeManifest()?.activeGenerationId
+        XCTAssertEqual(activeGenerationId, "active")
     }
 
     @MainActor
@@ -596,7 +552,6 @@ final class AdblockGenerationArchitectureTests: XCTestCase {
     private func makeManifest(
         schemaVersion: Int = AdblockCompiledGenerationManifest.currentSchemaVersion,
         generationId: String,
-        previousGenerationId: String? = nil,
         shards: [NativeContentBlockingShardDescriptor] = []
     ) -> AdblockCompiledGenerationManifest {
         AdblockCompiledGenerationManifest(
@@ -605,7 +560,6 @@ final class AdblockGenerationArchitectureTests: XCTestCase {
             selectedFilterLists: [],
             networkShards: shards,
             lastSuccessfulUpdateDate: Date(timeIntervalSince1970: 0),
-            previousGenerationId: previousGenerationId,
             bundleProfileId: SumiProtectionBundleProfile.adblock
         )
     }
@@ -647,24 +601,6 @@ private struct Fixture {
 
     func remove() {
         try? FileManager.default.removeItem(at: root)
-    }
-}
-
-@MainActor
-private final class FailingAdblockPublisher: AdblockRuleListPublishing {
-    private(set) var prepareCount = 0
-    private(set) var commitCount = 0
-
-    func preparePublication(
-        manifest _: AdblockCompiledGenerationManifest,
-        definitions _: [SumiContentRuleListDefinition]
-    ) async throws -> PreparedAdblockRuleListPublication {
-        prepareCount += 1
-        throw TestError.publicationFailed
-    }
-
-    func commitPublication(_: PreparedAdblockRuleListPublication) {
-        commitCount += 1
     }
 }
 

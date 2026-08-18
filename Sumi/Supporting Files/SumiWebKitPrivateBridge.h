@@ -1,6 +1,7 @@
 #import <Foundation/Foundation.h>
 #import <AppKit/AppKit.h>
 #import <WebKit/WebKit.h>
+#import <limits.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -137,6 +138,103 @@ static inline WKNavigation * _Nullable SumiRestoreWKSessionState(
     } @catch (NSException *exception) {
         return nil;
     }
+}
+
+typedef void (^SumiWKWebsiteDataStoreDiskCacheSizeCompletion)(
+    NSNumber * _Nullable size
+);
+
+/// Uses WebKit's optional size SPI only as an observation mechanism. Every
+/// caller must still use the public WebsiteDataStore removal API for cleanup.
+static inline BOOL SumiFetchWKWebsiteDataStoreDiskCacheSize(
+    WKWebsiteDataStore *store,
+    NSTimeInterval timeout,
+    SumiWKWebsiteDataStoreDiskCacheSizeCompletion completion
+)
+{
+    SEL fetchSelector = NSSelectorFromString(
+        @"_fetchDataRecordsOfTypes:withOptions:completionHandler:"
+    );
+    if (![store respondsToSelector:fetchSelector])
+        return NO;
+
+    __block BOOL didFinish = NO;
+    void (^finish)(NSNumber * _Nullable) = ^(NSNumber * _Nullable size) {
+        @synchronized (store) {
+            if (didFinish)
+                return;
+            didFinish = YES;
+        }
+        completion(size);
+    };
+
+    NSSet<NSString *> *dataTypes = [NSSet setWithObject:WKWebsiteDataTypeDiskCache];
+    @try {
+        typedef void (*FetchImplementation)(
+            id,
+            SEL,
+            NSSet<NSString *> *,
+            NSUInteger,
+            void (^)(NSArray *)
+        );
+        FetchImplementation fetch = (FetchImplementation)[store methodForSelector:fetchSelector];
+        fetch(store, fetchSelector, dataTypes, 1 << 0, ^(NSArray *records) {
+            @try {
+                if (records.count == 0) {
+                    finish(@0);
+                    return;
+                }
+
+                unsigned long long totalSize = 0;
+                SEL dataSizeSelector = NSSelectorFromString(@"_dataSize");
+                SEL sizeOfDataTypesSelector = NSSelectorFromString(@"sizeOfDataTypes:");
+                for (id record in records) {
+                    if (![record respondsToSelector:dataSizeSelector]) {
+                        finish(nil);
+                        return;
+                    }
+
+                    typedef id _Nullable (*ObjectGetter)(id, SEL);
+                    ObjectGetter dataSizeGetter = (ObjectGetter)[record methodForSelector:dataSizeSelector];
+                    id dataSize = dataSizeGetter(record, dataSizeSelector);
+                    if (!dataSize || ![dataSize respondsToSelector:sizeOfDataTypesSelector]) {
+                        finish(nil);
+                        return;
+                    }
+
+                    typedef unsigned long long (*SizeOfDataTypes)(id, SEL, NSSet<NSString *> *);
+                    SizeOfDataTypes sizeOfDataTypes = (SizeOfDataTypes)[dataSize methodForSelector:sizeOfDataTypesSelector];
+                    unsigned long long size = sizeOfDataTypes(
+                        dataSize,
+                        sizeOfDataTypesSelector,
+                        dataTypes
+                    );
+                    if (ULLONG_MAX - totalSize < size) {
+                        finish(nil);
+                        return;
+                    }
+                    totalSize += size;
+                }
+                finish(@(totalSize));
+            } @catch (NSException *exception) {
+                finish(nil);
+            }
+        });
+    } @catch (NSException *exception) {
+        return NO;
+    }
+
+    dispatch_after(
+        dispatch_time(
+            DISPATCH_TIME_NOW,
+            (int64_t)(MAX(timeout, 0) * NSEC_PER_SEC)
+        ),
+        dispatch_get_global_queue(QOS_CLASS_UTILITY, 0),
+        ^{
+            finish(nil);
+        }
+    );
+    return YES;
 }
 
 NS_ASSUME_NONNULL_END

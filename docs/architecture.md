@@ -515,11 +515,11 @@ surfaces such as favicon downloads, previews, and mini windows should not
 participate implicitly. An extension-created auxiliary window opts in through
 its own two-phase Tab+Window transaction. A silent Tab prepublication receipt
 first proves the exact auxiliary Tab, physical WebView, owner extension
-context, profile controller, and profile data store. The window ledger then
+context, extension controller, and profile data store. The window ledger then
 publishes `didOpenWindow` to that owner context, revalidates, commits the exact
 owner-context `didOpenTab`, revalidates again, and only then permits focus. No
 controller-wide Tab callback is used, so an unrelated extension in the same
-profile cannot observe or operate the auxiliary Tab adapter.
+extension realm cannot observe or operate the auxiliary Tab adapter.
 
 Close tombstones the ledger before entering WebKit, balances the captured Tab
 with `windowIsClosing: true`, and then balances its captured Window. A receipt

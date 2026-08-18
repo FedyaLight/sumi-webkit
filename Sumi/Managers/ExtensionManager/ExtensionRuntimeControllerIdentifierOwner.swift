@@ -29,6 +29,21 @@ final class ExtensionControllerIdentifierOwner {
 
     private var identifierStorage: UUID?
 
+    /// Returns the namespace used by older global-controller builds without
+    /// allocating one.
+    nonisolated static var legacyIdentifier: UUID? {
+        guard let raw = UserDefaults.standard.string(
+            forKey: controllerIdentifierKey
+        ) else {
+            return nil
+        }
+        return UUID(uuidString: raw)
+    }
+
+    nonisolated static func removeLegacyIdentifier() {
+        UserDefaults.standard.removeObject(forKey: controllerIdentifierKey)
+    }
+
     var identifier: UUID {
         ensureIdentifier()
     }

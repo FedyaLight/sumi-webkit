@@ -111,7 +111,7 @@ final class ShortcutPinRuntimeResolutionOwner {
               let profile = runtimeConnection.captureLease().registry?
                 .profile(with: profileId)
         else {
-            return .regular(profileId)
+            return .regular()
         }
         return faviconService.partition(profile: profile)
     }

@@ -17,17 +17,13 @@ and
 [`WebViewSessionRepositoryTests`](../../Packages/SumiWebRuntime/Tests/SumiWebRuntimeTests/WebViewSessionRepositoryTests.swift)
 exercise ownership, replacement, cleanup, and stale-command behavior.
 
-## Profile-Isolated Extensions
+## Profile-Scoped Extension Runtime
 
-**Problem.** Web extensions combine cookies, storage, background workers, popups, tabs, and native messaging. One global extension controller can leak an authenticated session between browser profiles or attach a tab to the wrong `WKWebsiteDataStore`.
+**Problem.** Regular Browser Profiles must keep distinct account-bearing Website Data Stores. A shared WebKit extension context currently cannot provide a correct `cookies.onChanged` payload across those stores.
 
-**Decision.** Extension controllers and loaded contexts are resolved per Browser Profile. Tab creation and popup/action routing carry exact profile evidence, and runtime publication is rejected when the controller, context, tab, or data store no longer matches.
+**Decision.** Keep `WKWebExtensionController`, contexts, permissions, storage, commands, and UI ordering profile-scoped. Share only installation packages and immutable, content-addressed extension resources. Private partitions use separate non-persistent contexts.
 
-**Why this is not a vendor workaround.** The boundary is generic across Safari Web Extensions. Bitwarden and Proton Pass exposed the problem because they exercise native messaging, login handoffs, dynamic scripting, and inline UI, but the solution is profile-scoped runtime ownership rather than product-specific bypasses.
-
-**Evidence.** [`SafariExtensionProfileIsolationTests`](../../SumiTests/SafariExtensionProfileIsolationTests.swift),
-[`ExtensionProfileReferenceAdmissionTests`](../../SumiTests/ExtensionProfileReferenceAdmissionTests.swift),
-and the extension publication/admission tests cover the seam. Compatibility-specific behavior is summarized in [extensions.md](../extensions.md).
+**Evidence.** The extension publication/admission tests cover profile isolation and lifecycle. Compatibility-specific behavior is summarized in [extensions.md](../extensions.md).
 
 ## Snapshot-Based Session Restoration
 

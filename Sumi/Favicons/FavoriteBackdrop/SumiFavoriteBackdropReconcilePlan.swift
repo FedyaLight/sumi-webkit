@@ -49,9 +49,7 @@ enum SumiFavoriteBackdropReconcilePlan {
                   pin.chromeTemplateSystemImageName == nil,
                   let key = SumiFavoriteBackdropKey(
                     documentURL: pin.launchURL,
-                    partition: .regular(
-                        pin.executionProfileId ?? pin.profileId
-                    )
+                    partition: .regular()
                   )
             else { return }
             if result[key] == nil {

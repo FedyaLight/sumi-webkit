@@ -272,17 +272,13 @@ struct FavoriteSplitGroupTile: View {
                 accentColor: loadedAccentColors[pinID]
                     ?? PinnedTileAccentResolver.resolve(
                     launchURL: liveTab?.url ?? pin.launchURL,
-                    partition: .regular(
-                        pin.executionProfileId ?? pin.profileId
-                    ),
+                    partition: .regular(),
                     glyphText: pin.glyphText,
                     chromeTemplateSystemImageName:
                         pin.chromeTemplateSystemImageName,
                     tokens: tokens
                 ),
-                partition: .regular(
-                    pin.executionProfileId ?? pin.profileId
-                ),
+                partition: .regular(),
                 backdrop: backdropImage(for: pin)
             )
         }
@@ -376,7 +372,7 @@ struct FavoriteSplitGroupTile: View {
     private func faviconPartition(
         for pin: ShortcutPin
     ) -> SumiFaviconPartition {
-        .regular(pin.executionProfileId ?? pin.profileId)
+        .regular()
     }
 
     @MainActor

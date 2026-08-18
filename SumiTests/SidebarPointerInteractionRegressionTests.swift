@@ -917,7 +917,7 @@ private struct ShortcutMaterializationHarnessView: View {
         ShortcutSidebarRow(
             pin: model.pin,
             liveTab: model.liveTab,
-            faviconPartition: .regular(nil),
+            faviconPartition: .regular(),
             faviconImageReader:
                 TabDependencyIsolationDefaults.faviconCapabilities.images,
             runtimeAffordance:

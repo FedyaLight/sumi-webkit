@@ -39,7 +39,7 @@ final class ExtensionNormalWindowRuntimePublicationValidator {
                   projection.runtimePublication
               ),
               preparedTabs.containsPreparedTab(selectedTab),
-              profileRuntime.controllersByProfile[projection.profileID]
+              profileRuntime.controller(for: projection.profileID)
                 === projection.controller,
               controllers.existingController(for: selectedTab)
                 === projection.controller,

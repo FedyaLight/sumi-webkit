@@ -74,7 +74,7 @@ The result is a restored browser model rather than a serialized object graph.
 | Website data | The profile's `WKWebsiteDataStore` |
 | Window session values | `BrowserWindowState` and its narrow child state owners |
 | Physical WebView placement | `WebViewSessionRepository` in `SumiWebRuntime` |
-| Extension runtime for a profile | The profile-scoped extension controller/context registry |
+| Extension runtime for regular profiles | Profile-scoped; private partitions always have separate non-persistent contexts |
 | UI projection | Feature contexts derived from the authorities above |
 
 Indexes, caches, diagnostics, and snapshots are projections. They may accelerate or explain a decision, but they do not become a second owner.

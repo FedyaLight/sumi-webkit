@@ -13,9 +13,7 @@ enum PinnedToolbarSlot: Identifiable {
     }
 }
 
-/// Owns per-profile toolbar pinning for extensions: pin/unpin state, profile
-/// switches, reconciliation against installed extensions, ordered toolbar
-/// slots, and persistence to preferences.
+/// Owns per-profile toolbar pinning for extensions.
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionToolbarPinningOwner {

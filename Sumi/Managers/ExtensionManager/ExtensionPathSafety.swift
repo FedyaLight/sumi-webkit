@@ -24,15 +24,7 @@ enum ExtensionPathSafety {
     }
 
     static func applicationSupportRoot() -> URL {
-        let root = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first!.appendingPathComponent(
-            SumiAppIdentity.runtimeBundleIdentifier,
-            isDirectory: true
-        )
-        createDirectoryIfNeeded(at: root)
-        return root
+        SumiApplicationSupportDirectory.appRootURL()
     }
 
     static func extensionsDirectory() -> URL {

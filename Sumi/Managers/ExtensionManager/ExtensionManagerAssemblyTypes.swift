@@ -37,7 +37,6 @@ struct ExtensionContextGraphFoundation {
     let requestedTabLoadResolver: ExtensionRequestedTabLoadResolver
     let runtimeMutationRegistry: ExtensionRuntimeMutationRegistry
     let contextLoadRegistry: ExtensionContextLoadRegistry
-    let storageCleanupPlanner: WebExtensionStorageCleanupPlanner
     let backgroundRuntimeState: ExtensionBackgroundRuntimeStateOwner
 }
 

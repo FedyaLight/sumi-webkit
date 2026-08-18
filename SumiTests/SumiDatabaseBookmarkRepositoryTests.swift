@@ -153,7 +153,7 @@ final class SumiURLClassifierMemoTests: XCTestCase {
             guard case .navigate(let url)? = SumiURLClassifier.classify("example.com") else {
                 return XCTFail("expected navigate for example.com")
             }
-            XCTAssertEqual(url.absoluteString, "http://example.com/")
+            XCTAssertEqual(url.absoluteString, "https://example.com/")
 
             guard case .search(let query)? = SumiURLClassifier.classify("one two three") else {
                 return XCTFail("expected search for phrase")

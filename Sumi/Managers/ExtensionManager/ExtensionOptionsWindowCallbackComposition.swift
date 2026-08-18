@@ -33,10 +33,8 @@ struct ExtensionOptionsWindowCallbackRuntime {
                 $0.id == evidence.extensionID && $0.isEnabled
             }
             && receipt.profile.id == evidence.profileID
-            && evidence.controller.configuration.defaultWebsiteDataStore
-                === receipt.profile.dataStore
             && receipt.configuration.websiteDataStore
-                === receipt.profile.dataStore
+                === evidence.controller.configuration.defaultWebsiteDataStore
             && receipt.configuration.webExtensionController
                 === evidence.controller
             && receipt.configuration.sumiVisitedLinkStoreObject
@@ -97,8 +95,6 @@ final class ExtensionOptionsWindowCallbackComposer {
               profile.id == evidence.profileID,
               profileRuntime.controller(for: evidence.profileID)
                 === evidence.controller,
-              evidence.controller.configuration.defaultWebsiteDataStore
-                === profile.dataStore,
               let installedExtension = installedExtensions
                 .records.first(where: {
                     $0.id == evidence.extensionID && $0.isEnabled
@@ -112,25 +108,17 @@ final class ExtensionOptionsWindowCallbackComposer {
             return nil
         }
 
-        guard let configuration = evidence.context.webViewConfiguration,
-              configuration.webExtensionController === evidence.controller,
-              configuration.websiteDataStore === profile.dataStore
+        guard let contextConfiguration = evidence.context.webViewConfiguration,
+              contextConfiguration.webExtensionController === evidence.controller
         else {
             return nil
         }
+        // WebKit binds extension URLs to this exact configuration; a copied or
+        // rebuilt configuration does not retain that binding.
+        let configuration = contextConfiguration
         configuration.sumiIsNormalTabWebViewConfiguration = false
-        browserConfiguration.applyVisitedLinkStore(
-            to: configuration,
-            for: profile
-        )
-        configurationPreparation
-            .prepareWebViewConfigForExtensionRuntime(
-                configuration,
-                profileId: evidence.profileID,
-                reason: "ExtensionOptionsWindowCallbackComposition"
-            )
+        browserConfiguration.applyVisitedLinkStore(to: configuration, for: profile)
         guard configuration.webExtensionController === evidence.controller,
-              configuration.websiteDataStore === profile.dataStore,
               let visitedLinkStore = configuration.sumiVisitedLinkStoreObject
         else {
             return nil

@@ -561,7 +561,7 @@ private final class FakeBookmarkFaviconService: BrowserFaviconServicing {
     private(set) var syncedBookmarkPartitions: [SumiFaviconPartition] = []
 
     func partition(profile: Profile?) -> SumiFaviconPartition {
-        .regular(profile?.id)
+        .regular()
     }
 
     func invalidateSite(domain: String, profile: Profile?) {

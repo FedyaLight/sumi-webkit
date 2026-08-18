@@ -51,10 +51,11 @@ final class ExtensionAuxiliaryTabPublicationAdmission {
               tabProfiles.profileID(for: tab) == profileID,
               let dataStore = browserProfiles.anyProfile(profileID)?.dataStore,
               webView.configuration.websiteDataStore === dataStore,
-              profileRuntime.profileId(for: ownerContext) == profileID,
-              profileRuntime.extensionId(for: ownerContext) == ownerExtensionID,
-              profileRuntime.contexts(for: profileID)[ownerExtensionID]
-                === ownerContext,
+              profileRuntime.owns(
+                ownerContext,
+                extensionID: ownerExtensionID,
+                in: profileID
+              ),
               webViews.untrackedWebView(for: tab) === webView,
               let controller = controllers.existingController(for: tab),
               controllerAdmission.admit(

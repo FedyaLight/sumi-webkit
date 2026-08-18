@@ -999,7 +999,7 @@ final class BrowserManagerFaviconServiceStub:
 
     func partition(profile: Profile?) -> SumiFaviconPartition {
         partitionProfileIds.append(profile?.id)
-        return partitionToReturn ?? .regular(profile?.id)
+        return partitionToReturn ?? .regular()
     }
 
     func invalidateSite(domain: String, profile: Profile?) {

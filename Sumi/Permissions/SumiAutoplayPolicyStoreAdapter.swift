@@ -10,7 +10,8 @@ import SumiDomain
 final class SumiAutoplayPolicyStoreAdapter {
     private let persistentStore: any SumiPermissionStore
     let profileAdmission: SumiPermissionProfileAdmission
-    /// Persistent + ephemeral policies keyed by `SumiPermissionKey.persistentIdentity`.
+    /// Persistent policies use their backing store's storage identity; private
+    /// policies keep their exact profile identity.
     private var policiesByIdentity: [String: SumiAutoplayPolicy] = [:]
     private var retiredProfileIDs: Set<String> = []
 
@@ -28,7 +29,7 @@ final class SumiAutoplayPolicyStoreAdapter {
     /// Seeds the sync cache from canonical store records (composition-root / test harness).
     func seedCache(with records: [SumiPermissionStoreRecord]) {
         for record in records where record.key.permissionType == .autoplay {
-            policiesByIdentity[record.key.persistentIdentity] =
+            policiesByIdentity[cacheIdentity(for: record.key)] =
                 SumiAutoplayDecisionMapper.policy(from: record.decision)
         }
     }
@@ -47,7 +48,7 @@ final class SumiAutoplayPolicyStoreAdapter {
         guard retiredProfileIDs.contains(key.profilePartitionId) == false else {
             return nil
         }
-        return policiesByIdentity[key.persistentIdentity]
+        return policiesByIdentity[cacheIdentity(for: key)]
     }
 
     func setPolicy(
@@ -102,7 +103,7 @@ final class SumiAutoplayPolicyStoreAdapter {
         }
 
         if key.isEphemeralProfile {
-            policiesByIdentity[key.persistentIdentity] = policy
+            policiesByIdentity[cacheIdentity(for: key)] = policy
             return
         }
 
@@ -114,7 +115,7 @@ final class SumiAutoplayPolicyStoreAdapter {
 
         try await persistentStore.setDecision(for: key, decision: decision)
         if await profileAdmission.isRetired(key.profilePartitionId) == false {
-            policiesByIdentity[key.persistentIdentity] = policy
+            policiesByIdentity[cacheIdentity(for: key)] = policy
         }
     }
 
@@ -142,7 +143,7 @@ final class SumiAutoplayPolicyStoreAdapter {
         guard key.permissionType == .autoplay else {
             throw SumiPermissionSiteDecisionError.unsupportedPermission(key.permissionType.identity)
         }
-        policiesByIdentity.removeValue(forKey: key.persistentIdentity)
+        policiesByIdentity.removeValue(forKey: cacheIdentity(for: key))
         if key.isEphemeralProfile {
             return
         }
@@ -224,6 +225,10 @@ final class SumiAutoplayPolicyStoreAdapter {
             isEphemeralProfile: true
         )
         return SumiPermissionStoreRecord(key: key, decision: decision)
+    }
+
+    private func cacheIdentity(for key: SumiPermissionKey) -> String {
+        SumiGlobalSitePermissionScope.storageKey(for: key).persistentIdentity
     }
 }
 

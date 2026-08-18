@@ -476,7 +476,7 @@ struct URLBarSiteDataFavicon: View {
         if let url = URL(string: "https://\(normalizedDomain)"),
            let image = TabFaviconStore.getCachedImage(
             forDocumentURL: url,
-            partition: .regular(nil),
+            partition: .regular(),
             context: .historyBookmarkRow,
             imageReader: imageReader
            ) {

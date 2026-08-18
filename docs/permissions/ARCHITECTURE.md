@@ -83,7 +83,7 @@ Permission UI is split by scope:
 - URL-bar dynamic indicator: current-page pending, active, blocked, system-blocked, reload-required, popup/external/file/notification/storage events.
 - URL-bar anchored authorization prompt: promptable active normal-tab queries and system-blocked explanatory states.
 - URL hub current-site Permissions submenu: current-tab/site decisions, current-page runtime controls, and current-session event summaries.
-- Privacy Settings -> Site Settings: profile-scoped persistent exceptions, recent activity, category pages, site detail pages, unsupported-content note, cleanup status/toggle, and site permission reset.
+- Privacy Settings -> Site Settings: Local-Installation-scoped persistent exceptions, profile-scoped recent activity, category pages, site detail pages, unsupported-content note, cleanup status/toggle, and site permission reset.
 
 SwiftUI views do not write `Sumi.sqlite` directly, call WebKit permission APIs, or request macOS authorization directly. URL hub reset and Privacy Site Settings reset remove permission decisions only; site data deletion remains a separate explicit data-delete action.
 

@@ -44,7 +44,6 @@ extension ExtensionManagerAssembler {
             profileRuntime: runtime.profileRuntime,
             installedExtensions: contexts.installedExtensions,
             diagnostics: runtime.diagnostics,
-            storageCleanupPlanner: contexts.storageCleanupPlanner,
             resolvedProfileID: {
                 [profileRuntime = runtime.profileRuntime] explicit in
                 explicit

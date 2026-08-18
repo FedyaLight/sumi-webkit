@@ -15,7 +15,7 @@ The README is the product-level entry point. The documents here separate user-fa
 - [Runtime architecture reference](architecture.md) — the detailed maintainer specification and invariants.
 - [Page runtime lifecycle](architecture/page-runtime-lifecycle.md) — navigation authority, materialization, recovery, restore, and teardown.
 - [Browser window lifecycle](architecture/browser-window-lifecycle.md) — native window ownership, restoration, and geometry.
-- [Architecture case studies](architecture/case-studies.md) — why physical WebView ownership, profile-scoped extension runtimes, and snapshot restoration exist.
+- [Architecture case studies](architecture/case-studies.md) — why physical WebView ownership, shared extension runtime with profile-isolated website data, and snapshot restoration exist.
 - [Persistence](persistence/README.md) and [permissions](permissions/README.md) — subsystem entry points.
 - Architecture decisions: [one browser database](adr/0001-use-one-browser-database.md) and [stable page identity](adr/0002-keep-page-identity-stable-across-residency.md).
 

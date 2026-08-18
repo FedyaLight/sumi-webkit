@@ -115,7 +115,7 @@ extension SumiWebsiteDataCleanupServiceTests {
         XCTAssertEqual(cleanupService.removedDomainSets.count, 1)
     }
 
-    func testBrowsingDataSiteDataOnlyClearInvalidatesFaviconsForAffectedDomains() async throws {
+    func testBrowsingDataSiteDataOnlyClearKeepsSharedFavicons() async throws {
         let harness = try makeHistoryHarness()
         let cleanupService = FakeCleanupService()
         let faviconCleaner = FakeFaviconCleaner()
@@ -142,17 +142,12 @@ extension SumiWebsiteDataCleanupServiceTests {
 
         XCTAssertEqual(cleanupService.removedDomainSets.count, 1)
         XCTAssertEqual(cleanupService.removedDomainSets[0].domains, ["reddit.com"])
-        XCTAssertEqual(faviconCleaner.invalidateSiteCalls.count, 1)
-        XCTAssertEqual(faviconCleaner.invalidateSiteCalls[0].domain, "reddit.com")
-        XCTAssertEqual(
-            faviconCleaner.invalidateSiteCalls[0].partition,
-            SumiFaviconPartition.regular(harness.profileID)
-        )
+        XCTAssertTrue(faviconCleaner.invalidateSiteCalls.isEmpty)
         XCTAssertTrue(faviconCleaner.burnDomainsCalls.isEmpty)
         XCTAssertTrue(faviconCleaner.burnAfterHistoryClearSavedLogins.isEmpty)
     }
 
-    func testBrowsingDataAllTimeSiteDataOnlyInvalidatesDiscoveredWebsiteDataDomains() async throws {
+    func testBrowsingDataAllTimeSiteDataOnlyKeepsSharedFavicons() async throws {
         let harness = try makeHistoryHarness()
         let cleanupService = FakeCleanupService()
         cleanupService.recordResponses = [
@@ -179,12 +174,7 @@ extension SumiWebsiteDataCleanupServiceTests {
             WKWebsiteDataStore.sumiSiteDataTypes
         )
         XCTAssertEqual(cleanupService.cookieRemovalSelections, [.all])
-        XCTAssertEqual(faviconCleaner.invalidateSiteCalls.count, 1)
-        XCTAssertEqual(faviconCleaner.invalidateSiteCalls[0].domain, "reddit.com")
-        XCTAssertEqual(
-            faviconCleaner.invalidateSiteCalls[0].partition,
-            SumiFaviconPartition.regular(harness.profileID)
-        )
+        XCTAssertTrue(faviconCleaner.invalidateSiteCalls.isEmpty)
         XCTAssertTrue(faviconCleaner.burnDomainsCalls.isEmpty)
         XCTAssertTrue(faviconCleaner.burnAfterHistoryClearSavedLogins.isEmpty)
     }

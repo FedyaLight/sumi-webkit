@@ -284,7 +284,7 @@ final class PinnedTileVisualGeometryTests: XCTestCase {
             icon: .image(icon),
             accentSource: SpaceShortcutSnapshotAccentSource(
                 launchURL: URL(string: "https://example.com")!,
-                partition: .regular(nil)
+                partition: .regular()
             ),
             favoriteBackdrop: nil,
             presentationState: presentationState,

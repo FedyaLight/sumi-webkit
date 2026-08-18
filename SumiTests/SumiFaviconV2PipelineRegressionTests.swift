@@ -1,11 +1,11 @@
 import AppKit
 import Foundation
 import ImageIO
+@testable import Sumi
 import SumiDomain
 import UniformTypeIdentifiers
 import WebKit
 import XCTest
-@testable import Sumi
 
 @MainActor
 final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
@@ -19,13 +19,13 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
         try SumiFaviconTestImages.pngData(width: 128, height: 128).write(to: iconURL, options: [.atomic])
 
         let pageURL = try XCTUnwrap(URL(string: "webkit-extension://ext-test/onboarding.html"))
-        XCTAssertNotNil(SumiFaviconLookupKey.cacheKey(for: pageURL))
+        XCTAssertNotNil(SumiFaviconLookupKey.referenceKey(for: pageURL))
 
         let runtime = SumiFaviconRuntime(
             rootDirectory: directory.appendingPathComponent("store", isDirectory: true),
             fetcher: RoutingFaviconNetworkFetcher(responses: [:])
         )
-        let partition = SumiFaviconPartition.regular(UUID())
+        let partition = SumiFaviconPartition.regular()
         let image = await runtime.payloadIngestion.ingestLocalExtensionIcon(
             fileURL: iconURL,
             documentURL: pageURL,
@@ -67,7 +67,7 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let pageURL = try XCTUnwrap(URL(string: "https://example.com/path"))
-        let partition = SumiFaviconPartition.regular(nil)
+        let partition = SumiFaviconPartition.regular()
         let imageData = try SumiFaviconTestImages.pngData(width: 64, height: 64)
 
         // Use an isolated runtime rooted in a temp directory instead of the
@@ -115,7 +115,7 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
             .appendingPathComponent("SumiFaviconV2CorruptMetadata-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        let partition = SumiFaviconPartition.regular(nil)
+        let partition = SumiFaviconPartition.regular()
         let database = try SumiDatabase.inMemory()
         let metadataKey = "favicon.metadata.\(partition.storageComponent)"
         let corruptPayload = Data("{ not valid favicon metadata".utf8)
@@ -162,7 +162,7 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
             ]
         )
         let runtime = SumiFaviconRuntime(rootDirectory: directory, fetcher: fetcher)
-        let partition = SumiFaviconPartition.regular(nil)
+        let partition = SumiFaviconPartition.regular()
 
         let visibleImage = await runtime.liveDiscovery.ingest(
             links: [
@@ -233,7 +233,7 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
             }
         )
         let runtime = SumiFaviconRuntime(rootDirectory: directory, fetcher: fetcher)
-        let partition = SumiFaviconPartition.regular(nil)
+        let partition = SumiFaviconPartition.regular()
 
         let coldMiss = await runtime.images.preparedImage(
             for: SumiPreparedFaviconRequest(
@@ -308,7 +308,7 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
             fetcher: fetcher,
             notificationCenter: notificationCenter
         )
-        let partition = SumiFaviconPartition.regular(nil)
+        let partition = SumiFaviconPartition.regular()
 
         let coldMiss = await runtime.images.preparedImage(
             for: SumiPreparedFaviconRequest(
@@ -396,7 +396,7 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
             fetcher: fetcher,
             notificationCenter: notificationCenter
         )
-        let partition = SumiFaviconPartition.regular(UUID())
+        let partition = SumiFaviconPartition.regular()
         let request = SumiPreparedFaviconRequest(
             pageURL: pageURL,
             partition: partition,
@@ -447,7 +447,7 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
             ]
         )
         let runtime = SumiFaviconRuntime(rootDirectory: directory, fetcher: fetcher)
-        let partition = SumiFaviconPartition.regular(nil)
+        let partition = SumiFaviconPartition.regular()
 
         let visibleImage = await runtime.liveDiscovery.ingest(
             links: [
@@ -488,7 +488,7 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
 
         let pageURL = try XCTUnwrap(URL(string: "https://testsafebrowsing.example/"))
         let iconURL = try XCTUnwrap(URL(string: "https://testsafebrowsing.example/favicon.svg"))
-        let partition = SumiFaviconPartition.regular(nil)
+        let partition = SumiFaviconPartition.regular()
         let runtime = SumiFaviconRuntime(
             rootDirectory: directory,
             fetcher: RoutingFaviconNetworkFetcher(responses: [:])
@@ -540,7 +540,7 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
             ]
         )
         let runtime = SumiFaviconRuntime(rootDirectory: directory, fetcher: fetcher)
-        let partition = SumiFaviconPartition.regular(UUID())
+        let partition = SumiFaviconPartition.regular()
 
         let visibleImage = await runtime.liveDiscovery.ingest(
             links: [
@@ -624,7 +624,7 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
             fetcher: fetcher,
             notificationCenter: notificationCenter
         )
-        let partition = SumiFaviconPartition.regular(nil)
+        let partition = SumiFaviconPartition.regular()
 
         let initialLauncherImage = await runtime.images.preparedImage(
             for: request(pageURL: launchURL, partition: partition, context: .pinnedLauncher),
@@ -688,7 +688,7 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
         }
 
         let launchURL = try XCTUnwrap(URL(string: "https://root-isolation.example/app"))
-        let partition = SumiFaviconPartition.regular(nil)
+        let partition = SumiFaviconPartition.regular()
         let firstRoot = SumiFaviconSystem(
             rootDirectory: firstDirectory,
             fetcher: RoutingFaviconNetworkFetcher(responses: [:])
@@ -716,14 +716,14 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
         let pageURL = try XCTUnwrap(URL(string: "https://unavailable.example/page"))
         let request = SumiPreparedFaviconRequest(
             pageURL: pageURL,
-            partition: .regular(nil),
+            partition: .regular(),
             context: .pinnedLauncher,
             backingScale: SumiFaviconPresentationMetrics.defaultBackingScale()
         )
 
         unavailable.faviconCapabilities.prefetch.scheduleColdFetch(
             for: pageURL,
-            partition: .regular(nil),
+            partition: .regular(),
             priority: .pinnedLauncher
         )
         let preparedImage = await unavailable.faviconCapabilities.images.preparedImage(
@@ -735,7 +735,7 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
         let localImage = await unavailable.faviconCapabilities.localIconIngestion.ingestLocalExtensionIcon(
             fileURL: directory.appendingPathComponent("missing.png"),
             documentURL: pageURL,
-            partition: .regular(nil),
+            partition: .regular(),
             context: .pinnedLauncher
         )
         XCTAssertNil(localImage)
@@ -743,7 +743,7 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
             links: [],
             documentURL: pageURL,
             baseURL: pageURL,
-            partition: .regular(nil),
+            partition: .regular(),
             webView: nil,
             aliasPageURLs: []
         )
@@ -752,7 +752,7 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
     }
 
-    func testLauncherFaviconAliasesRemainPartitionIsolated() async throws {
+    func testLauncherFaviconAliasesAreSharedByRegularProfiles() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("SumiFaviconV2LauncherPartitionIsolation-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -772,8 +772,8 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
             ]
         )
         let runtime = SumiFaviconRuntime(rootDirectory: directory, fetcher: fetcher)
-        let profileA = SumiFaviconPartition.regular(UUID())
-        let profileB = SumiFaviconPartition.regular(UUID())
+        let profileA = SumiFaviconPartition.regular()
+        let profileB = SumiFaviconPartition.regular()
         let privateA = SumiFaviconPartition.privateEphemeral(UUID())
 
         _ = await runtime.liveDiscovery.ingest(
@@ -793,7 +793,7 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
         )
 
         XCTAssertNotNil(runtime.images.cachedSelection(for: launchURL, partition: profileA))
-        XCTAssertNil(runtime.images.cachedSelection(for: launchURL, partition: profileB))
+        XCTAssertNotNil(runtime.images.cachedSelection(for: launchURL, partition: profileB))
         XCTAssertNil(runtime.images.cachedSelection(for: launchURL, partition: privateA))
     }
 
@@ -817,7 +817,7 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
             ]
         )
         let runtime = SumiFaviconRuntime(rootDirectory: directory, fetcher: fetcher)
-        let partition = SumiFaviconPartition.regular(UUID())
+        let partition = SumiFaviconPartition.regular()
         _ = await runtime.liveDiscovery.ingest(
             links: [
                 SumiFaviconDiscoveredLink(
@@ -855,14 +855,14 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
         XCTAssertNil(clearedTabImage)
     }
 
-    func testFaviconCleanupInvalidatesOnlyMatchingSiteAndPartitionScopes() async throws {
+    func testFaviconCleanupInvalidatesTheSharedRegularPartition() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("SumiFaviconV2Cleanup-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let runtime = SumiFaviconRuntime(rootDirectory: directory, fetcher: RoutingFaviconNetworkFetcher(responses: [:]))
-        let profileA = SumiFaviconPartition.regular(UUID())
-        let profileB = SumiFaviconPartition.regular(UUID())
+        let profileA = SumiFaviconPartition.regular()
+        let profileB = SumiFaviconPartition.regular()
         let privateA = SumiFaviconPartition.privateEphemeral(UUID())
         let clearA = try XCTUnwrap(URL(string: "https://clear.example/page"))
         let keepA = try XCTUnwrap(URL(string: "https://keep.example/page"))
@@ -895,7 +895,7 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
         let siteInvalidatedClearPrivate = await runtime.images.preparedImage(for: clearPrivateRequest, priority: .visibleSidebarOrTabStrip, scheduleFetchOnMiss: false)
         XCTAssertNil(siteInvalidatedClearA)
         XCTAssertNotNil(siteInvalidatedKeepA)
-        XCTAssertNotNil(siteInvalidatedClearB)
+        XCTAssertNil(siteInvalidatedClearB)
         XCTAssertNotNil(siteInvalidatedClearPrivate)
 
         try runtime.maintenance.clearPartition(profileB)
@@ -909,13 +909,12 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
         XCTAssertNil(clearedPrivate)
     }
 
-    func testClearPartitionRemovesRegularProfileDiskDirectory() async throws {
+    func testClearPartitionRemovesSharedRegularDiskDirectory() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("SumiFaviconV2ProfileDelete-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        let profileID = UUID()
-        let partition = SumiFaviconPartition.regular(profileID)
+        let partition = SumiFaviconPartition.regular()
         let runtime = SumiFaviconRuntime(rootDirectory: directory, fetcher: RoutingFaviconNetworkFetcher(responses: [:]))
         let pageURL = try XCTUnwrap(URL(string: "https://profile-delete.example/page"))
         let imageData = try SumiFaviconTestImages.pngData(width: 64, height: 64)
@@ -928,7 +927,7 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
         )
 
         let profileDirectory = directory
-            .appendingPathComponent("profile-\(profileID.uuidString.lowercased())", isDirectory: true)
+            .appendingPathComponent(partition.storageComponent, isDirectory: true)
         XCTAssertTrue(FileManager.default.fileExists(atPath: profileDirectory.path))
 
         try runtime.maintenance.clearPartition(partition)
@@ -990,7 +989,7 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
             ]
         )
         let runtime = SumiFaviconRuntime(rootDirectory: directory, fetcher: fetcher)
-        let partition = SumiFaviconPartition.regular(nil)
+        let partition = SumiFaviconPartition.regular()
 
         let visibleImage = await runtime.liveDiscovery.ingest(
             links: [

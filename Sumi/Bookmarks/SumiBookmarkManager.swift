@@ -9,7 +9,7 @@ final class SumiBookmarkManager: ObservableObject {
     private let repository: any SumiBookmarkRepository
     private let syncFavicons: Bool
     private let faviconService: (any BrowserFaviconServicing)?
-    private var faviconPrefetchPartition: SumiFaviconPartition = .regular(nil)
+    private var faviconPrefetchPartition: SumiFaviconPartition = .regular()
     private var bookmarkIndex = SumiBookmarkLookupIndex()
     private var foldersCache: [SumiBookmarkFolder] = []
     private var foldersCacheNeedsReload = false

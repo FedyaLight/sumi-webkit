@@ -1425,7 +1425,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             icon: .image(Image(nsImage: redIcon)),
             accentSource: SpaceShortcutSnapshotAccentSource(
                 launchURL: URL(string: "https://example.com/pinned")!,
-                partition: .regular(nil)
+                partition: .regular()
             ),
             favoriteBackdrop: nil,
             presentationState: .launcherOnly,

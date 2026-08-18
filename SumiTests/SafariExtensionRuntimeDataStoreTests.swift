@@ -7,6 +7,10 @@ import XCTest
 @available(macOS 15.5, *)
 @MainActor
 final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
+    func testTestHostUsesEphemeralPlatformStoresByDefault() {
+        XCTAssertFalse(Profile(name: "Test Host Profile").dataStore.isPersistent)
+    }
+
     func testRememberedProfileProvidesCanonicalStoreObject() throws {
         let profile = Profile(name: "Canonical Extension Store")
         let cache = ExtensionProfileWebsiteDataStoreCache()
@@ -52,14 +56,15 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
         let controller = try XCTUnwrap(
             inspection.contextState.profiles.controllerForCurrentProfile()
         )
-        XCTAssertTrue(controller.configuration.isPersistent)
+        let profileStore = profile.dataStore
+        XCTAssertEqual(
+            controller.configuration.isPersistent,
+            profileStore.isPersistent
+        )
         XCTAssertEqual(
             controller.configuration.identifier,
-            ExtensionProfileControllerIdentity.runtimeIdentifier(
-                for: profile.id
-            )
+            profileStore.identifier
         )
-        let profileStore = profile.dataStore
         let controllerDefaultStore = try XCTUnwrap(
             controller.configuration.defaultWebsiteDataStore
         )
@@ -103,7 +108,7 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
         )
         XCTAssertNotNil(configuration.webExtensionController)
         XCTAssertIdentical(configuration.websiteDataStore, profile.dataStore)
-        XCTAssertTrue(configuration.websiteDataStore.isPersistent)
+        XCTAssertFalse(configuration.websiteDataStore.isPersistent)
     }
 
     func testReadyConfigurationDemandDoesNotReenterWebViewReconciliation() throws {
@@ -357,7 +362,7 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
             activeProfile: nil,
             currentProfileId: nil
         ))
-        XCTAssertTrue(minted.isPersistent)
+        XCTAssertFalse(minted.isPersistent)
 
         cache.remember(privateProfile)
 

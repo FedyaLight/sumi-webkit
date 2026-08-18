@@ -31,9 +31,7 @@ final class ExtensionNormalWindowPublicationProjectionResolver {
         publicationStage: ExtensionRuntimePublicationStage
     ) -> ExtensionNormalWindowProjection? {
         guard publicationStage.admits(runtimeLoadStatus),
-              let controller = profileRuntime.controllersByProfile[
-                  selection.profileID
-              ],
+              let controller = profileRuntime.controller(for: selection.profileID),
               controllers.existingController(for: selection.tab) === controller,
               let tabAdapter = adapters.stableAdapter(for: selection.tab),
               let windowAdapter = adapters.windowAdapter(

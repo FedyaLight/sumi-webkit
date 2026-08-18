@@ -45,7 +45,9 @@ struct WebExtensionControllerDataCleanupOwner {
         let dataTypes = WKWebExtensionController.allExtensionDataTypes
         var matchingRecords: [WKWebExtension.DataRecord] = []
 
-        for (profileId, controller) in controllersByProfile {
+        var visitedControllers = Set<ObjectIdentifier>()
+        for (profileId, controller) in controllersByProfile
+        where visitedControllers.insert(ObjectIdentifier(controller)).inserted {
             let records = await fetchDataRecords(
                 ofTypes: dataTypes,
                 from: controller
@@ -76,7 +78,9 @@ struct WebExtensionControllerDataCleanupOwner {
     ) async {
         // Preserve ExtensionManager's legacy cleanup behavior: unscoped records are
         // offered to every profile controller, not only the controller that fetched them.
-        for (profileId, controller) in controllersByProfile {
+        var visitedControllers = Set<ObjectIdentifier>()
+        for (profileId, controller) in controllersByProfile
+        where visitedControllers.insert(ObjectIdentifier(controller)).inserted {
             let profileRecords = matchedRecords.records.filter {
                 matches(
                     $0,

@@ -3,7 +3,7 @@ set -euo pipefail
 
 MODE="${1:-run}"
 APP_NAME="Sumi"
-BUNDLE_ID="com.sumi.browser"
+BUNDLE_ID="com.sumi.browser.testhost"
 PROJECT="Sumi.xcodeproj"
 SCHEME="Sumi"
 CONFIGURATION="Debug"

@@ -26,7 +26,7 @@ final class SumiURLNormalizationTests: XCTestCase {
             "regular-domain.com",
             context: .searchBar(queryTemplate: "https://duck.test/?q=%@")
         )
-        XCTAssertEqual(normalized, "http://regular-domain.com/")
+        XCTAssertEqual(normalized, "https://regular-domain.com/")
     }
 
     func testSearchBarQueryUsesTemplate() {

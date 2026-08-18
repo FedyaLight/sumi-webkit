@@ -121,4 +121,13 @@ struct KeyboardBindingRecordStore {
     func save(_ record: ExtensionCommandBindingRecord) throws {
         try record.save(database)
     }
+
+    func deleteExtensionCommandBindings(profileIDs: Set<UUID>) throws {
+        for profileID in profileIDs {
+            try database.execute(
+                sql: "DELETE FROM extension_command_bindings WHERE profile_id = ?",
+                arguments: [profileID]
+            )
+        }
+    }
 }

@@ -50,7 +50,6 @@ extension ExtensionManagerAssembler {
             },
             sourceCache: contextLoading.sourceCache,
             contextPreparation: actionPolicy.contextPreparation,
-            storagePlanner: contexts.storageCleanupPlanner,
             runtimeMetrics: runtime.metrics,
             diagnostics: runtime.diagnostics,
             expectedControllerDelegate: controller.delegateBridge,

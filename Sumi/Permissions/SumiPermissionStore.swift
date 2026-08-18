@@ -43,7 +43,7 @@ enum SumiPermissionStoreError: Error, Equatable, LocalizedError {
         case .invalidStoredPermissionType(let identity):
             return "Stored permission type is invalid: \(identity)."
         case .invalidPersistentProfilePartition(let identity):
-            return "Persistent permission profile partition is not a profile UUID: \(identity)."
+            return "Persistent permission scope is neither a profile UUID nor the Local Installation scope: \(identity)."
         case .invalidMetadata:
             return "Permission decision metadata could not be encoded or decoded."
         }

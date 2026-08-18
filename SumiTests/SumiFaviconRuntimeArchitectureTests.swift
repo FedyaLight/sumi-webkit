@@ -19,7 +19,7 @@ final class SumiFaviconRuntimeArchitectureTests: XCTestCase {
 
         runtime?.coldFetches.schedule(
             pageURL: pageURL,
-            partition: .regular(nil),
+            partition: .regular(),
             priority: .backgroundPrefetch
         )
         await fetcher.waitUntilStarted()
@@ -51,7 +51,7 @@ final class SumiFaviconRuntimeArchitectureTests: XCTestCase {
             ]
         )
         let runtime = SumiFaviconRuntime(rootDirectory: directory, fetcher: fetcher)
-        let partition = SumiFaviconPartition.regular(nil)
+        let partition = SumiFaviconPartition.regular()
 
         runtime.coldFetches.schedule(
             pageURL: pageURL,
@@ -77,7 +77,7 @@ final class SumiFaviconRuntimeArchitectureTests: XCTestCase {
             imageData: try SumiFaviconTestImages.pngData(width: 32, height: 32)
         )
         let runtime = SumiFaviconRuntime(rootDirectory: directory, fetcher: fetcher)
-        let partition = SumiFaviconPartition.regular(UUID())
+        let partition = SumiFaviconPartition.regular()
         let pageURL = try XCTUnwrap(URL(string: "https://clear-race.example/page"))
 
         runtime.coldFetches.schedule(
@@ -106,7 +106,7 @@ final class SumiFaviconRuntimeArchitectureTests: XCTestCase {
             rootDirectory: directory,
             fetcher: RuntimeRoutingFaviconFetcher(responses: [:])
         )
-        let partition = SumiFaviconPartition.regular(UUID())
+        let partition = SumiFaviconPartition.regular()
         let oldPageURL = try XCTUnwrap(URL(string: "https://rollback.example/old"))
         let newPageURL = try XCTUnwrap(URL(string: "https://new-rollback.example/new"))
 
@@ -170,7 +170,7 @@ final class SumiFaviconRuntimeArchitectureTests: XCTestCase {
             fetcher: RuntimeRoutingFaviconFetcher(responses: [:]),
             notificationCenter: notificationCenter
         )
-        let partition = SumiFaviconPartition.regular(UUID())
+        let partition = SumiFaviconPartition.regular()
         let pageURL = try XCTUnwrap(URL(string: "https://flush.example/page"))
 
         runtime.coldFetches.schedule(

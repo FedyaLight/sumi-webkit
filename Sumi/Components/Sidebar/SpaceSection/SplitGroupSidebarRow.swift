@@ -17,13 +17,8 @@ struct SplitGroupSidebarRow: View {
     let groupEditor: SidebarSplitGroupEditorPresentationService
     var groupContextMenuActions: SplitGroupContextMenuActions = .empty
     var groupAction: SplitGroupSidebarAction?
-    var faviconPartition: (SplitGroupSidebarItem) -> SumiFaviconPartition = {
-        item in
-        .regular(
-            item.pin?.executionProfileId
-                ?? item.pin?.profileId
-                ?? item.tab?.profileId
-        )
+    var faviconPartition: (SplitGroupSidebarItem) -> SumiFaviconPartition = { _ in
+        .regular()
     }
     var memberAction: (SplitGroupSidebarItem) -> SplitGroupSidebarMemberAction? = { _ in nil }
     var dragSource: (SplitGroupSidebarItem) -> SidebarDragSourceConfiguration? = { _ in nil }

@@ -693,7 +693,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
         )
         XCTAssertNil(favoritePin.executionProfileId)
         XCTAssertEqual(tabManager.shortcutPinRuntimeResolutionOwner.resolvedExecutionProfileId(for: favoritePin), profileId)
-        XCTAssertEqual(tabManager.shortcutPinRuntimeResolutionOwner.resolvedFaviconPartition(for: favoritePin), .regular(profileId))
+        XCTAssertEqual(tabManager.shortcutPinRuntimeResolutionOwner.resolvedFaviconPartition(for: favoritePin), .regular())
 
         let spacePinnedTab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://example.com/space", in: space, activate: false)
         spacePinnedTab.profileId = profileId
@@ -708,7 +708,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
         )
         XCTAssertNil(spacePin.executionProfileId)
         XCTAssertEqual(tabManager.shortcutPinRuntimeResolutionOwner.resolvedExecutionProfileId(for: spacePin, currentSpaceId: space.id), profileId)
-        XCTAssertEqual(tabManager.shortcutPinRuntimeResolutionOwner.resolvedFaviconPartition(for: spacePin, currentSpaceId: space.id), .regular(profileId))
+        XCTAssertEqual(tabManager.shortcutPinRuntimeResolutionOwner.resolvedFaviconPartition(for: spacePin, currentSpaceId: space.id), .regular())
     }
 
     private func makeBrowser(

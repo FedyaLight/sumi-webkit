@@ -14,23 +14,13 @@ actor AdblockGenerationRetention {
         self.fileManager = fileManager
     }
 
-    func removeUnrecoverableGenerations() async -> AdblockGenerationCleanupReport {
+    func removeInactiveGenerations() async -> AdblockGenerationCleanupReport {
         var report = AdblockGenerationCleanupReport()
         do {
             try Task.checkCancellation()
             guard let activeManifest = try await archive.activeManifest() else { return report }
-            var preservedGenerationIds = Set([activeManifest.activeGenerationId])
-            var preservedIdentifiers = Set(activeManifest.webKitRuleListIdentifiers)
-            if let previousGenerationId = activeManifest.previousGenerationId {
-                preservedGenerationIds.insert(previousGenerationId)
-                if let previousManifest = try await archive.archivedManifest(generationId: previousGenerationId) {
-                    preservedIdentifiers.formUnion(previousManifest.webKitRuleListIdentifiers)
-                } else {
-                    report.diagnostics.append(
-                        "Previous Adblock generation \(previousGenerationId) is referenced but has no archived manifest"
-                    )
-                }
-            }
+            let preservedGenerationIds = Set([activeManifest.activeGenerationId])
+            let preservedIdentifiers = Set(activeManifest.webKitRuleListIdentifiers)
 
             let identifiers = await contentRuleListStore.availableContentRuleListIdentifiers()
             for identifier in identifiers

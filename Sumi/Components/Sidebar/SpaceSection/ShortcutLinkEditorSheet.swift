@@ -221,7 +221,7 @@ struct ShortcutLinkEditorIcon: View {
     }
 
     private var faviconPartition: SumiFaviconPartition {
-        .regular(pin.executionProfileId ?? pin.profileId)
+        .regular()
     }
 
     private var faviconLoadKey: String {

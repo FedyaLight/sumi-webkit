@@ -20,9 +20,11 @@ SumiAdblockBundle/
 
 Apply is transactional: download, conversion, validation, WebKit compilation,
 and archive publication must all succeed before the active generation changes.
-The previous generation remains available for recovery. Startup restores the
-cached generation without network access or conversion. Navigation only uses
-compiled WebKit lists and the lazily loaded advanced engine.
+Startup restores only the active cached generation without network access or
+bundle conversion; if its compiled WebKit lists are absent, they are rebuilt
+from that archive. Once a new generation is active, inactive archive artifacts
+and compiled WebKit lists are removed. Navigation only uses compiled WebKit
+lists and the lazily loaded advanced engine.
 
 `Off` is zero-cost: no filter downloads, conversion, advanced engine, URL
 cleaning contribution, observers, or background update work. Sumi performs no

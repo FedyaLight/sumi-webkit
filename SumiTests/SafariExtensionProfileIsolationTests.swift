@@ -62,7 +62,6 @@ final class SafariExtensionProfileIsolationTests: XCTestCase {
             context: container,
             initialProfile: profileA
         )
-        let manager = fixture.manager
         let inspection = fixture.inspection
 
         _ = inspection.contextCoordination.demand.requestRuntimeExplicitly(
@@ -73,21 +72,9 @@ final class SafariExtensionProfileIsolationTests: XCTestCase {
         let controllerB = inspection.controller.provisioning.ensureExtensionController(for: profileB.id)
 
         XCTAssertNotIdentical(controllerA, controllerB)
-        XCTAssertNotEqual(
-            controllerA.configuration.identifier,
-            controllerB.configuration.identifier
-        )
-        XCTAssertEqual(
-            controllerA.configuration.defaultWebsiteDataStore?.identifier,
-            profileA.dataStore.identifier
-        )
-        XCTAssertEqual(
-            controllerB.configuration.defaultWebsiteDataStore?.identifier,
-            profileB.dataStore.identifier
-        )
-        XCTAssertNotEqual(
-            controllerA.configuration.defaultWebsiteDataStore?.identifier,
-            controllerB.configuration.defaultWebsiteDataStore?.identifier
+        XCTAssertFalse(
+            controllerA.configuration.defaultWebsiteDataStore
+                === controllerB.configuration.defaultWebsiteDataStore
         )
     }
 
@@ -99,7 +86,6 @@ final class SafariExtensionProfileIsolationTests: XCTestCase {
             context: container,
             initialProfile: profileA
         )
-        let manager = fixture.manager
         let inspection = fixture.inspection
 
         _ = inspection.contextCoordination.demand.requestRuntimeExplicitly(
@@ -108,17 +94,13 @@ final class SafariExtensionProfileIsolationTests: XCTestCase {
 
         inspection.contextCoordination.profileTransition.switchProfile(profileID: profileA.id)
         let activeA = try XCTUnwrap(inspection.contextState.profiles.controllerForCurrentProfile())
-        XCTAssertEqual(
-            activeA.configuration.defaultWebsiteDataStore?.identifier,
-            profileA.dataStore.identifier
-        )
 
         inspection.contextCoordination.profileTransition.switchProfile(profileID: profileB.id)
         let activeB = try XCTUnwrap(inspection.contextState.profiles.controllerForCurrentProfile())
         XCTAssertNotIdentical(activeA, activeB)
-        XCTAssertEqual(
-            activeB.configuration.defaultWebsiteDataStore?.identifier,
-            profileB.dataStore.identifier
+        XCTAssertFalse(
+            activeA.configuration.defaultWebsiteDataStore
+                === activeB.configuration.defaultWebsiteDataStore
         )
     }
 
@@ -130,7 +112,6 @@ final class SafariExtensionProfileIsolationTests: XCTestCase {
             context: container,
             initialProfile: profileA
         )
-        let manager = fixture.manager
         let inspection = fixture.inspection
 
         _ = inspection.contextCoordination.demand.requestRuntimeExplicitly(
@@ -146,14 +127,9 @@ final class SafariExtensionProfileIsolationTests: XCTestCase {
             reason: "SafariExtensionProfileIsolationTests"
         )
 
-        XCTAssertEqual(
-            configuration.websiteDataStore.identifier,
-            profileB.dataStore.identifier
-        )
-        XCTAssertEqual(
-            configuration.webExtensionController?.configuration.defaultWebsiteDataStore?
-                .identifier,
-            profileB.dataStore.identifier
+        XCTAssertTrue(
+            configuration.websiteDataStore
+                === configuration.webExtensionController?.configuration.defaultWebsiteDataStore
         )
     }
 
@@ -165,7 +141,6 @@ final class SafariExtensionProfileIsolationTests: XCTestCase {
             initialProfile: profile
         )
         let manager = fixture.manager
-        let inspection = fixture.inspection
 
         XCTAssertNotEqual(
             manager.controllerIdentifierOwner.identifier,

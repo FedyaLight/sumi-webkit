@@ -61,7 +61,7 @@ final class TabDependencyStateOwnerTests: XCTestCase {
 
 @MainActor
 private final class FakeTabDependencyFaviconService: BrowserFaviconServicing {
-    func partition(profile: Profile?) -> SumiFaviconPartition { .regular(profile?.id) }
+    func partition(profile: Profile?) -> SumiFaviconPartition { .regular() }
     func invalidateSite(domain _: String, profile _: Profile?) { /* No-op. */ }
     func syncShortcutPins(_ _: [ShortcutPin]) { /* No-op. */ }
     func syncBookmarks(_ _: [SumiBookmark], partition _: SumiFaviconPartition) { /* No-op. */ }

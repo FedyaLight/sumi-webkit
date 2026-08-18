@@ -69,7 +69,7 @@ Sumi implements the browser application layer. WebKit still owns HTML/CSS render
 
 - Profile-specific `WKWebsiteDataStore` partitions and a fully ephemeral private partition.
 - Browser permission surfaces for camera, microphone, location, notifications, popups, autoplay, screen sharing, and related site settings.
-- Per-profile Adblock with user-selectable filter lists. Apply downloads the selected sources and builds verified WebKit and advanced-blocking artifacts locally.
+- Installation-wide Adblock with user-selectable filter lists. Apply downloads the selected sources and builds one verified WebKit and advanced-blocking generation locally for all regular profiles.
 - Manual cleanup for history, site data, and caches; automatic retention for old history; and Global Privacy Control.
 
 ### Extensions
@@ -148,7 +148,7 @@ Sumi uses a modular, state-driven architecture inspired by MVVM-C, with explicit
 The short [Architecture Overview](docs/architecture-overview.md) explains the module graph, UI-to-runtime flow, source-of-truth map, role vocabulary, and feature template. [Architecture Case Studies](docs/architecture/case-studies.md) explain three seams that are unusual outside browser engineering:
 
 - Durable page identity versus physical WebView residence.
-- Profile-isolated Web Extension runtimes.
+- Shared regular-profile Web Extension runtime with profile-isolated website data.
 - Snapshot-based session restoration.
 
 The exhaustive invariants remain in the [runtime architecture reference](docs/architecture.md). The [documentation index](docs/README.md) separates product, architecture, subsystem, and release material.

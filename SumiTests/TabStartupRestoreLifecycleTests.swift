@@ -895,7 +895,7 @@ private final class RestoreABAFaviconService: BrowserFaviconServicing {
     private(set) var syncCount = 0
 
     func partition(profile: Profile?) -> SumiFaviconPartition {
-        .regular(profile?.id)
+        .regular()
     }
 
     func invalidateSite(domain _: String, profile _: Profile?) {}

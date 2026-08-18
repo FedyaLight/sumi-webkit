@@ -62,10 +62,20 @@ struct SumiApp: App {
         let permissionSiteActivityStore = SumiPermissionSiteActivityStore(
             persistenceAuthority: permissionPersistenceAuthority
         )
+        let appSupportRoot = SumiApplicationSupportDirectory.appRootURL()
+        SumiFaviconSystem.discardLegacyRegularPartitions(
+            database: SumiStartupPersistenceComposition.database,
+            rootDirectory: appSupportRoot.appendingPathComponent(
+                "Favicons/v2",
+                isDirectory: true
+            )
+        )
         let faviconSystem = SumiFaviconSystem(
             database: SumiStartupPersistenceComposition.database,
-            rootDirectory: SumiApplicationSupportDirectory.appRootURL()
-                .appendingPathComponent("Favicons/v2", isDirectory: true),
+            rootDirectory: appSupportRoot.appendingPathComponent(
+                "Favicons/v3",
+                isDirectory: true
+            ),
             fetcher: SumiFaviconNetworkClient()
         )
         let browserManager = BrowserManager(

@@ -75,7 +75,7 @@ final class SumiAutoplayPermissionStoreTests: XCTestCase {
         XCTAssertEqual(harness.adapter.effectivePolicy(for: url, profile: profile), .default)
     }
 
-    func testDecisionsAreProfilePartitioned() async throws {
+    func testDecisionsAreSharedAcrossRegularProfiles() async throws {
         let harness = try makeHarness()
         let profileA = makeProfile("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee")
         try installTestProfile(profileA, in: harness.container)
@@ -86,7 +86,7 @@ final class SumiAutoplayPermissionStoreTests: XCTestCase {
         try await harness.adapter.setPolicy(.blockAll, for: url, profile: profileA)
 
         XCTAssertEqual(harness.adapter.effectivePolicy(for: url, profile: profileA), .blockAll)
-        XCTAssertEqual(harness.adapter.effectivePolicy(for: url, profile: profileB), .default)
+        XCTAssertEqual(harness.adapter.effectivePolicy(for: url, profile: profileB), .blockAll)
     }
 
     func testInjectedStoreIsUsedForPersistentAutoplayFetches() async throws {

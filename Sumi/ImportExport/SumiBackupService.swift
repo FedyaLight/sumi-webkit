@@ -70,11 +70,7 @@ final class SumiBackupService {
     }
 
     private func automaticBackupDirectory() throws -> URL {
-        guard let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
-            throw SumiImportExportError.exportFailed("Application Support is unavailable.")
-        }
-        let directory = base
-            .appendingPathComponent(SumiAppIdentity.runtimeBundleIdentifier, isDirectory: true)
+        let directory = SumiApplicationSupportDirectory.appRootURL()
             .appendingPathComponent("Backups", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory

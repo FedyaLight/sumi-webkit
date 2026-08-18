@@ -63,8 +63,16 @@ actor SumiSelectedFilterBundleBuilder {
     ) {
         self.fileManager = fileManager
         self.fetch = fetch
-        self.buildRoot = buildRoot
-            ?? fileManager.urls(
+        if let buildRoot {
+            self.buildRoot = buildRoot
+        } else {
+            let canonical = SumiApplicationSupportDirectory
+                .cachesRootURL(fileManager: fileManager)
+                .appendingPathComponent(
+                    "ContentBlocking/SelectedFilterBundles",
+                    isDirectory: true
+                )
+            let legacy = fileManager.urls(
                 for: .cachesDirectory,
                 in: .userDomainMask
             )[0]
@@ -72,6 +80,13 @@ actor SumiSelectedFilterBundleBuilder {
                 "Sumi/ContentBlocking/SelectedFilterBundles",
                 isDirectory: true
             )
+            self.buildRoot = SumiApplicationSupportDirectory
+                .migrateLegacyDirectoryIfNeeded(
+                    from: legacy,
+                    to: canonical,
+                    fileManager: fileManager
+                )
+        }
         Self.removeAbandonedTransactions(
             in: self.buildRoot,
             fileManager: fileManager
@@ -252,8 +267,7 @@ actor SumiSelectedFilterBundleBuilder {
             for child in children where
                 UUID(uuidString: child.lastPathComponent) != nil
                     && child.deletingLastPathComponent().standardizedFileURL
-                        == root
-            {
+                        == root {
                 let values = try child.resourceValues(
                     forKeys: [.isSymbolicLinkKey]
                 )

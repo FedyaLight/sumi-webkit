@@ -36,7 +36,7 @@ private final class NoOpBrowserFaviconService:
     HistoryFaviconCleaning,
     SumiBrowsingDataFaviconCleaning
 {
-    func partition(profile: Profile?) -> SumiFaviconPartition { .regular(profile?.id) }
+    func partition(profile: Profile?) -> SumiFaviconPartition { .regular() }
     func invalidateSite(domain _: String, profile _: Profile?) {}
     func syncShortcutPins(_ _: [ShortcutPin]) {}
     func syncBookmarks(_ _: [SumiBookmark], partition _: SumiFaviconPartition) {}

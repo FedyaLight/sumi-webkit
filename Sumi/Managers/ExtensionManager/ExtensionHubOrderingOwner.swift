@@ -2,7 +2,7 @@
 //  ExtensionHubOrderingOwner.swift
 //  Sumi
 //
-//  Owns the per-profile display order of *unpinned* extension action tiles in
+//  Owns the scoped display order of *unpinned* extension action tiles in the
 //  the URL hub. Pinned toolbar order lives in `ExtensionToolbarPinningOwner`;
 //  this is its sibling for the complementary set, so the hub can be reordered
 //  independently of the toolbar. Persisted to preferences as JSON.

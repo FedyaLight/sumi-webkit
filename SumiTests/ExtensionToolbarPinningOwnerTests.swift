@@ -87,4 +87,5 @@ final class ExtensionToolbarPinningOwnerTests: XCTestCase {
         makeOwner().reloadPinnedToolbarExtensionsForCurrentProfile()
         XCTAssertEqual(publishedPinnedIDs, ["extension-a", "extension-b"])
     }
+
 }

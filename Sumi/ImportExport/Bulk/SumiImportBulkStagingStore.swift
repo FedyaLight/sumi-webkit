@@ -20,10 +20,7 @@ struct SumiImportBulkStagingStore {
     }
 
     static func defaultRootDirectory() -> URL {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.temporaryDirectory
-        return support
-            .appendingPathComponent(SumiAppIdentity.runtimeBundleIdentifier, isDirectory: true)
+        SumiApplicationSupportDirectory.appRootURL()
             .appendingPathComponent("ImportStaging", isDirectory: true)
     }
 

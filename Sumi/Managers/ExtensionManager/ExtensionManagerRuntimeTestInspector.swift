@@ -103,8 +103,7 @@
                         lifecycle: services.lifecycle,
                         installer: services.installer,
                         runtimeActivation: activation.installationActivator,
-                        storageCleanup: termination.storageCleanup,
-                        storagePlanner: f.contexts.storageCleanupPlanner
+                        storageCleanup: termination.storageCleanup
                     ),
                     retirement: .init(
                         scoped: core.retirement.scoped,

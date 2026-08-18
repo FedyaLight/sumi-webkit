@@ -76,7 +76,13 @@ extension BrowserManager {
             ),
             cleanup: BrowserProfileSwitchCleanup(
                 permissionCleanup: privacy.automaticPermissionCleanup,
-                browsingDataCleanup: privacy.automaticBrowsingDataCleanup
+                browsingDataCleanup: privacy.automaticBrowsingDataCleanup,
+                profileActivated: { [database] profile in
+                    SumiHTTPDiskCacheBudget.recordActivation(
+                        profileID: profile.id,
+                        database: database
+                    )
+                }
             )
         )
 

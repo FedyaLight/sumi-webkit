@@ -531,8 +531,7 @@ final class SumiAdvancedBlockingRuntimeTests: XCTestCase {
             selectedFilterLists: [],
             networkShards: [],
             advancedBlocking: advanced,
-            lastSuccessfulUpdateDate: Date(timeIntervalSince1970: 0),
-            previousGenerationId: nil
+            lastSuccessfulUpdateDate: Date(timeIntervalSince1970: 0)
         )
     }
 }

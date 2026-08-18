@@ -7,7 +7,7 @@ final class SidebarFaviconImageStoreTests: XCTestCase {
     func testLoadKeyIncludesURLPartitionAndRefreshIdentity() throws {
         let store = SidebarFaviconImageStore()
         let launchURL = try XCTUnwrap(URL(string: "https://example.com/app"))
-        let partition = SumiFaviconPartition.regular(UUID(uuidString: "11111111-1111-1111-1111-111111111111"))
+        let partition = SumiFaviconPartition.regular()
 
         let key = store.loadKey(launchURL: launchURL, partition: partition)
 
@@ -18,7 +18,7 @@ final class SidebarFaviconImageStoreTests: XCTestCase {
     func testDisabledLoadKeyIgnoresURLAndPartitionPolicyInputs() throws {
         let store = SidebarFaviconImageStore()
         let launchURL = try XCTUnwrap(URL(string: "https://example.com/app"))
-        let partition = SumiFaviconPartition.regular(UUID(uuidString: "11111111-1111-1111-1111-111111111111"))
+        let partition = SumiFaviconPartition.regular()
 
         let key = store.loadKey(
             launchURL: launchURL,
@@ -38,7 +38,7 @@ final class SidebarFaviconImageStoreTests: XCTestCase {
             notificationCenter: notificationCenter
         )
         let launchURL = try XCTUnwrap(URL(string: "https://example.com/app"))
-        let partition = SumiFaviconPartition.regular(nil)
+        let partition = SumiFaviconPartition.regular()
         let originalKey = store.loadKey(launchURL: launchURL, partition: partition)
 
         notificationCenter.post(
@@ -64,10 +64,8 @@ final class SidebarFaviconImageStoreTests: XCTestCase {
             notificationCenter: notificationCenter
         )
         let launchURL = try XCTUnwrap(URL(string: "https://example.com/app"))
-        let matchingPartition = SumiFaviconPartition.regular(
-            try XCTUnwrap(UUID(uuidString: "11111111-1111-1111-1111-111111111111"))
-        )
-        let otherPartition = SumiFaviconPartition.regular(
+        let matchingPartition = SumiFaviconPartition.regular()
+        let otherPartition = SumiFaviconPartition.privateEphemeral(
             try XCTUnwrap(UUID(uuidString: "22222222-2222-2222-2222-222222222222"))
         )
         let matchingKey = store.loadKey(
@@ -117,7 +115,7 @@ final class SidebarFaviconImageStoreTests: XCTestCase {
         let aliasURL = try XCTUnwrap(URL(string: "https://launcher.example/mail"))
         let unrelatedURL = try XCTUnwrap(URL(string: "https://calendar.example/app"))
         let iconURL = try XCTUnwrap(URL(string: "https://mail.example/favicon.png"))
-        let partition = SumiFaviconPartition.regular(nil)
+        let partition = SumiFaviconPartition.regular()
 
         for url in [updatedURL, aliasURL, unrelatedURL] {
             await store.load(
@@ -192,7 +190,7 @@ final class SidebarFaviconImageStoreTests: XCTestCase {
             delayNanoseconds: 20_000_000
         )
         let launchURL = try XCTUnwrap(URL(string: "https://example.com/app"))
-        let partition = SumiFaviconPartition.regular(nil)
+        let partition = SumiFaviconPartition.regular()
 
         async let first: Void = store.load(
             launchURL: launchURL,
@@ -218,7 +216,7 @@ final class SidebarFaviconImageStoreTests: XCTestCase {
         )
         store.configure(imageReader: reader)
         let launchURL = try XCTUnwrap(URL(string: "https://example.com/app"))
-        let partition = SumiFaviconPartition.regular(nil)
+        let partition = SumiFaviconPartition.regular()
         let request = SidebarFaviconImageStore.Request(
             launchURL: launchURL,
             partition: partition
@@ -244,7 +242,7 @@ final class SidebarFaviconImageStoreTests: XCTestCase {
             delayNanoseconds: 20_000_000
         )
         let launchURL = try XCTUnwrap(URL(string: "https://example.com/app"))
-        let partition = SumiFaviconPartition.regular(nil)
+        let partition = SumiFaviconPartition.regular()
 
         let viewTask = Task {
             await store.load(
@@ -269,7 +267,7 @@ final class SidebarFaviconImageStoreTests: XCTestCase {
         let reader = SidebarFaviconImageReaderStub(image: solidImage())
         store.configure(imageReader: reader)
         let launchURL = try XCTUnwrap(URL(string: "https://example.com/app"))
-        let partition = SumiFaviconPartition.regular(nil)
+        let partition = SumiFaviconPartition.regular()
         let icon = SpaceSidebarSnapshotIcon.resolvable(
             launchURL: launchURL,
             partition: partition,
@@ -308,10 +306,8 @@ final class SidebarFaviconImageStoreTests: XCTestCase {
 
     func testFaviconNotificationMatcherHonorsPartitionWhenProvided() throws {
         let launchURL = try XCTUnwrap(URL(string: "https://example.com/app"))
-        let partition = SumiFaviconPartition.regular(
-            try XCTUnwrap(UUID(uuidString: "11111111-1111-1111-1111-111111111111"))
-        )
-        let otherPartition = SumiFaviconPartition.regular(
+        let partition = SumiFaviconPartition.regular()
+        let otherPartition = SumiFaviconPartition.privateEphemeral(
             try XCTUnwrap(UUID(uuidString: "22222222-2222-2222-2222-222222222222"))
         )
         let matchingNotification = Notification(

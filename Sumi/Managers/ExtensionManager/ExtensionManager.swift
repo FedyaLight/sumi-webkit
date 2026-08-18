@@ -243,7 +243,7 @@ final class ExtensionManager: NSObject {
             var beforePersistInstalledRecord:
                 ((InstalledExtension) throws -> Void)?
             var beforeControllerLoad:
-                (@MainActor (String, WebExtensionStorageSnapshot) throws -> Void)?
+                (@MainActor (String) throws -> Void)?
             var backgroundContentWake:
                 (@MainActor (String, WKWebExtensionContext) async throws -> Void)?
             var permissionPromptDecision:

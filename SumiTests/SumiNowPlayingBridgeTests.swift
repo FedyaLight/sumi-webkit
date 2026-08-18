@@ -248,7 +248,7 @@ final class SumiNativeNowPlayingControllerFeatureGateTests: XCTestCase {
 
         let faviconSource = try XCTUnwrap(controller.cardStates.first?.faviconSource)
         XCTAssertEqual(faviconSource.documentURL, tab.url)
-        XCTAssertEqual(faviconSource.partition, .regular(profile.id))
+        XCTAssertEqual(faviconSource.partition, .regular())
         XCTAssertTrue(controller.cardStates.first?.canPlayPause == true)
 
         controller.setFeatureEnabled(false)

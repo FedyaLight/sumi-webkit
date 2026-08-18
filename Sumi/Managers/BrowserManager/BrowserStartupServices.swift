@@ -25,7 +25,14 @@ final class BrowserStartupServices {
                 guard let browserManager else { return }
                 BrowserPostStartupMaintenance.start(
                     history: browserManager.historyManager,
-                    bookmarks: browserManager.bookmarkManager
+                    bookmarks: browserManager.bookmarkManager,
+                    profiles: browserManager.profileManager.profiles,
+                    websiteDataCleanupService: browserManager.dataServices
+                        .websiteDataCleanupService,
+                    database: browserManager.database,
+                    foregroundProfileID: { [weak browserManager] in
+                        browserManager?.currentProfile?.id
+                    }
                 )
                 let profileIDs = Set(
                     browserManager.tabCollectionMembershipOwner.allTabs()

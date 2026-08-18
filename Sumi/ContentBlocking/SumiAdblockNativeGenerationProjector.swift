@@ -5,7 +5,6 @@ import Foundation
 struct SumiAdblockNativeGenerationProjector {
     func compiledManifest(
         from bundleManifest: SumiAdblockNativeRuleBundleManifest,
-        previousManifest: AdblockCompiledGenerationManifest?,
         installedDate: Date
     ) -> AdblockCompiledGenerationManifest {
         let selectedFilterLists = bundleManifest.lists.map {
@@ -26,13 +25,6 @@ struct SumiAdblockNativeGenerationProjector {
                     manifest: bundleManifest
                 )
             }
-        let previousGenerationId = if previousManifest?.activeGenerationId
-            == bundleManifest.generationId {
-            previousManifest?.previousGenerationId
-        } else {
-            previousManifest?.activeGenerationId
-        }
-
         return AdblockCompiledGenerationManifest(
             schemaVersion: AdblockCompiledGenerationManifest
                 .currentSchemaVersion,
@@ -41,7 +33,6 @@ struct SumiAdblockNativeGenerationProjector {
             networkShards: networkShards,
             advancedBlocking: bundleManifest.advancedBlocking,
             lastSuccessfulUpdateDate: installedDate,
-            previousGenerationId: previousGenerationId,
             bundleProfileId: bundleManifest.profileId
         )
     }

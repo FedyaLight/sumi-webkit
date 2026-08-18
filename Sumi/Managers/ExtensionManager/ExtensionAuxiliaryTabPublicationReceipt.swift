@@ -214,11 +214,11 @@ final class ExtensionAuxiliaryTabPublicationReceipt {
             && browserProfiles.anyProfile(profileID)?.dataStore === dataStore
             && webView.configuration.websiteDataStore === dataStore
             && profileRuntime.controller(for: profileID) === controller
-            && profileRuntime.profileId(for: ownerContext) == profileID
-            && profileRuntime.extensionId(for: ownerContext)
-                == ownerExtensionID
-            && profileRuntime.contexts(for: profileID)[ownerExtensionID]
-                === ownerContext
+            && profileRuntime.owns(
+                ownerContext,
+                extensionID: ownerExtensionID,
+                in: profileID
+            )
             && profileRuntime.contextBindingGeneration(for: profileID)
                 == contextBindingGeneration
             && controllers.existingController(for: tab) === controller

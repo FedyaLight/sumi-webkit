@@ -41,10 +41,12 @@ struct ExtensionRequestedTabInvocationAuthority {
         }
         if let sourceContext {
             guard let sourceIdentity,
-                  sourceIdentity.profileId == controllerProfileID,
-                  profileRuntime.contexts(for: sourceIdentity.profileId)[
-                      sourceIdentity.extensionId
-                  ] === sourceContext
+                  let controllerProfileID,
+                  profileRuntime.owns(
+                    sourceContext,
+                    extensionID: sourceIdentity.extensionId,
+                    in: controllerProfileID
+                  )
             else {
                 throw unavailableError()
             }
@@ -54,10 +56,12 @@ struct ExtensionRequestedTabInvocationAuthority {
                   let loadIdentity = profileRuntime.exactContextIdentity(
                       for: loadContext
                   ),
-                  loadIdentity.profileId == controllerProfileID,
-                  profileRuntime.contexts(for: loadIdentity.profileId)[
-                      loadIdentity.extensionId
-                  ] === loadContext,
+                  let controllerProfileID,
+                  profileRuntime.owns(
+                    loadContext,
+                    extensionID: loadIdentity.extensionId,
+                    in: controllerProfileID
+                  ),
                   sourceContext === loadContext,
                   sourceIdentity == loadIdentity
             else {

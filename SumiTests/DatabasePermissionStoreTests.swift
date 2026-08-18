@@ -63,25 +63,28 @@ final class DatabasePermissionStoreTests: XCTestCase {
         XCTAssertNil(record)
     }
 
-    func testListByProfile() async throws {
+    func testRegularProfilesShareOnePersistentDecision() async throws {
         let harness = try makeHarness()
+        let firstKey = key(.camera, profile: profileA.uuidString)
+        let secondKey = key(.camera, profile: profileB.uuidString)
         try await harness.store.setDecision(
-            for: key(.camera, profile: profileA.uuidString),
+            for: firstKey,
             decision: decision(.allow)
         )
-        try await harness.store.setDecision(
-            for: key(.camera, profile: profileB.uuidString),
-            decision: decision(.deny)
-        )
 
-        let records = try await harness.store.listDecisions(
-            profilePartitionId: profileA.uuidString.uppercased()
-        )
-
-        XCTAssertEqual(records.count, 1)
+        let secondRecord = try await harness.store.getDecision(for: secondKey)
+        let record = try XCTUnwrap(secondRecord)
+        XCTAssertEqual(record.key, secondKey)
+        XCTAssertEqual(record.decision.state, .allow)
+        let storedRecords = try harness.container.read {
+            try $0.permissions.all(
+                profilePartitionID: SumiGlobalSitePermissionScope.profilePartitionId
+            ).map { try $0.record() }
+        }
+        XCTAssertEqual(storedRecords.count, 1)
         XCTAssertEqual(
-            records.first?.key.profilePartitionId,
-            profileA.uuidString.lowercased()
+            storedRecords.first?.key.profilePartitionId,
+            SumiGlobalSitePermissionScope.profilePartitionId
         )
     }
 
@@ -150,19 +153,20 @@ final class DatabasePermissionStoreTests: XCTestCase {
         }
     }
 
-    func testPersistentWriteRequiresExistingProfile() async throws {
+    func testDeletingProfileRetainsSharedDecision() async throws {
         let harness = try makeHarness()
-        let unknownProfileID = UUID()
-
-        do {
-            try await harness.store.setDecision(
-                for: key(.camera, profile: unknownProfileID.uuidString),
-                decision: decision(.allow)
-            )
-            XCTFail("Expected a foreign-key failure for an unknown profile")
-        } catch {
-            XCTAssertFalse(error is SumiPermissionStoreError)
+        try await harness.store.setDecision(
+            for: key(.camera, profile: profileA.uuidString),
+            decision: decision(.allow)
+        )
+        try harness.container.transaction {
+            try $0.profiles.delete(id: profileA)
         }
+
+        let record = try await harness.store.getDecision(
+            for: key(.camera, profile: profileB.uuidString)
+        )
+        XCTAssertEqual(record?.decision.state, .allow)
     }
 
     private func makeHarness() throws -> (

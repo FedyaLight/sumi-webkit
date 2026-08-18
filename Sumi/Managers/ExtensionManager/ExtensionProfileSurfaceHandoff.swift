@@ -39,7 +39,7 @@ final class ExtensionProfileSurfaceHandoff {
     func detachForeignPublishedController(for profileID: UUID) {
         guard let publishedController = browserConfiguration
             .webViewConfiguration.webExtensionController,
-              profileRuntime.profileId(for: publishedController) != profileID
+              profileRuntime.controller(for: profileID) !== publishedController
         else { return }
         browserConfiguration.webViewConfiguration.webExtensionController = nil
     }

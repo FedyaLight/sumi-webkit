@@ -32,7 +32,7 @@ struct SumiImportBulkInstaller: SumiImportBulkInstalling {
 
     func installFavicons(_ favicons: [SumiImportFaviconPayload], profileId: UUID?) async {
         guard let faviconIngestion else { return }
-        let partition = SumiFaviconPartition.regular(profileId)
+        let partition = SumiFaviconPartition.regular()
         for favicon in favicons {
             await faviconIngestion.ingestImportedIcon(
                 payload: favicon.payload,

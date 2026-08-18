@@ -68,7 +68,6 @@ enum ExtensionManagerRootAssembler {
                 attachment: browserAttachment,
                 profileRuntime: profileRuntime
             )
-        let storagePlanner = WebExtensionStorageCleanupPlanner()
         let recentTabRequests = ExtensionRecentTabRequestHistory()
         let requestedTabLoadResolver = ExtensionRequestedTabLoadResolver()
         let installedExtensions = InstalledExtensionCollection()
@@ -87,9 +86,7 @@ enum ExtensionManagerRootAssembler {
                 surface.replacePinnedToolbarExtensionIDs(ids)
             }
         )
-        let hubOrdering = ExtensionHubOrderingOwner(
-            database: database
-        )
+        let hubOrdering = ExtensionHubOrderingOwner(database: database)
         let permissionDecisions = ExtensionPermissionDecisionStore(
             database: database,
             profileRuntime: profileRuntime
@@ -152,7 +149,6 @@ enum ExtensionManagerRootAssembler {
                     requestedTabLoadResolver: requestedTabLoadResolver,
                     runtimeMutationRegistry: mutationRegistry,
                     contextLoadRegistry: loadRegistry,
-                    storageCleanupPlanner: storagePlanner,
                     backgroundRuntimeState: backgroundState
                 ),
                 actions: actionFoundation,

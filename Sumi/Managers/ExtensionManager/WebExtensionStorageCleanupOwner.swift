@@ -16,7 +16,6 @@ final class WebExtensionStorageCleanupOwner {
     private let profileRuntime: ExtensionProfileRuntime
     private let installedExtensions: InstalledExtensionCollection
     private let diagnostics: ExtensionRuntimeDiagnostics
-    private let storageCleanupPlanner: WebExtensionStorageCleanupPlanner
     private let resolvedProfileID: @MainActor (UUID?) -> UUID?
     private let controllerStorageID: @MainActor (UUID) -> UUID
     private let persistentProfileIDs: @MainActor () throws -> [UUID]
@@ -31,7 +30,6 @@ final class WebExtensionStorageCleanupOwner {
         profileRuntime: ExtensionProfileRuntime,
         installedExtensions: InstalledExtensionCollection,
         diagnostics: ExtensionRuntimeDiagnostics,
-        storageCleanupPlanner: WebExtensionStorageCleanupPlanner,
         resolvedProfileID: @escaping @MainActor (UUID?) -> UUID?,
         controllerStorageID: @escaping @MainActor (UUID) -> UUID,
         persistentProfileIDs: @escaping @MainActor () throws -> [UUID],
@@ -41,7 +39,6 @@ final class WebExtensionStorageCleanupOwner {
         self.profileRuntime = profileRuntime
         self.installedExtensions = installedExtensions
         self.diagnostics = diagnostics
-        self.storageCleanupPlanner = storageCleanupPlanner
         self.resolvedProfileID = resolvedProfileID
         self.controllerStorageID = controllerStorageID
         self.persistentProfileIDs = persistentProfileIDs
@@ -57,17 +54,14 @@ final class WebExtensionStorageCleanupOwner {
         }
     #endif
 
-    func removeStoredData(
-        for extensionId: String,
-        mode: ExtensionManager.WebExtensionStorageCleanupMode = .pruneDirectoryIfPossible
-    ) async {
+    func removeStoredData(for extensionId: String) async {
         traceLifecycle(
             phase: "cleanup-start",
             extensionId: extensionId
         )
         let hasDataCandidate = hasStoredDataCandidate(for: extensionId)
         if hasDataCandidate == false {
-            finalizeCleanup(for: extensionId, mode: mode)
+            finalizeCleanup(for: extensionId)
             traceLifecycle(
                 phase: "cleanup-finished-no-local-candidate",
                 extensionId: extensionId
@@ -83,7 +77,7 @@ final class WebExtensionStorageCleanupOwner {
         #if DEBUG
             if let webExtensionDataCleanup = debugDataCleanup?(),
                await webExtensionDataCleanup(extensionId) {
-                finalizeCleanup(for: extensionId, mode: mode)
+                finalizeCleanup(for: extensionId)
                 traceLifecycle(
                     phase: "cleanup-finished-test-hook",
                     extensionId: extensionId
@@ -99,10 +93,8 @@ final class WebExtensionStorageCleanupOwner {
             additionalUniqueIdentifiers: safariRuntimeIdentifiers(for: extensionId)
         )
 
-        let preCleanupSnapshot = storageSnapshot(for: extensionId)
-
         guard matchingRecords.isEmpty == false else {
-            finalizeCleanup(for: extensionId, mode: mode)
+            finalizeCleanup(for: extensionId)
             traceLifecycle(
                 phase: "cleanup-finished-no-controller-records",
                 extensionId: extensionId
@@ -122,31 +114,15 @@ final class WebExtensionStorageCleanupOwner {
         )
 
         let errors = matchingRecords.errors
-        finalizeCleanup(for: extensionId, mode: mode)
-        let postCleanupSnapshot = storageSnapshot(for: extensionId)
-        let classifiedErrors = classifyCleanupErrors(
-            errors,
-            for: extensionId,
-            preCleanupSnapshot: preCleanupSnapshot,
-            postCleanupSnapshot: postCleanupSnapshot
-        )
+        finalizeCleanup(for: extensionId)
         if RuntimeDiagnostics.isVerboseEnabled {
             if errors.isEmpty {
                 diagnostics.trace(
                     "Removed stored WebExtension data for \(extensionId)"
                 )
-            } else if classifiedErrors.actionableDiagnostics.isEmpty {
-                diagnostics.trace(
-                    "Removed stored WebExtension data for \(extensionId); ignored \(classifiedErrors.benignOptionalStoreDiagnostics.count) missing optional store errors"
-                )
             } else {
                 diagnostics.trace(
-                    "Removed stored WebExtension data for \(extensionId) with \(classifiedErrors.actionableDiagnostics.count) actionable record errors"
-                )
-                let diagnosticsSummary = classifiedErrors.actionableDiagnostics.map(\.logSummary)
-                    .joined(separator: " | ")
-                diagnostics.trace(
-                    "Actionable WebExtension cleanup diagnostics for \(extensionId): \(diagnosticsSummary)"
+                    "Removed stored WebExtension data for \(extensionId) with record errors: \(errors.map(\.localizedDescription).joined(separator: " | "))"
                 )
             }
         }
@@ -216,28 +192,16 @@ final class WebExtensionStorageCleanupOwner {
         return identifier == extensionId ? [] : [identifier]
     }
 
-    private func finalizeCleanup(
-        for extensionId: String,
-        mode: ExtensionManager.WebExtensionStorageCleanupMode
-    ) {
-        switch mode {
-        case .pruneDirectoryIfPossible:
-            _ = pruneEmptyOrStateOnlyStorageDirectory(for: extensionId)
-        case .preserveDirectoryForImmediateRuntimeLoad:
-            ensureStorageDirectoryExists(for: extensionId)
-        }
+    private func finalizeCleanup(for extensionId: String) {
+        _ = pruneEmptyOrStateOnlyStorageDirectory(for: extensionId)
     }
 
     private func storageCleanupStore(
         profileId: UUID? = nil
     ) -> WebExtensionStorageCleanupStore {
         let resolvedProfileId = resolvedProfileID(profileId)
-        let controllerStorageId = resolvedProfileId.map {
-            controllerStorageID($0)
-        }
         return WebExtensionStorageCleanupStore(
-            controllerStorageId: controllerStorageId,
-            planner: storageCleanupPlanner,
+            controllerStorageId: resolvedProfileId.map(controllerStorageID),
             storageDirectoryNameResolver: { [installedExtensions] extensionId in
                 guard let installed = installedExtensions.records.first(where: {
                           $0.id == extensionId
@@ -264,60 +228,20 @@ final class WebExtensionStorageCleanupOwner {
             .pruneEmptyOrStateOnlyDirectory(for: extensionId)
     }
 
-    @discardableResult
-    func ensureStorageDirectoryExists(
-        for extensionId: String,
-        profileId: UUID? = nil
-    ) -> Bool {
-        storageCleanupStore(profileId: profileId)
-            .ensureDirectoryExists(for: extensionId)
-    }
-
     func storageSnapshot(
         for extensionId: String
-    ) -> ExtensionManager.WebExtensionStorageSnapshot {
+    ) -> WebExtensionStorageCleanupStore.StorageSnapshot {
         storageCleanupStore().snapshot(for: extensionId)
-    }
-
-    func storeCapabilitySnapshot(
-        for manifest: [String: Any]
-    ) -> ExtensionManager.WebExtensionStoreCapabilitySnapshot {
-        storageCleanupPlanner.storeCapabilitySnapshot(
-            for: manifest,
-            unsupportedAPIs: WebExtensionRuntimeCompatibilityPolicy
-                .unsupportedAPIs(for: manifest)
-        )
-    }
-
-    func classifyCleanupErrors(
-        _ errors: [Error],
-        for extensionId: String,
-        preCleanupSnapshot: ExtensionManager.WebExtensionStorageSnapshot,
-        postCleanupSnapshot: ExtensionManager.WebExtensionStorageSnapshot
-    ) -> WebExtensionStorageCleanupPlanner.ErrorClassification {
-        storageCleanupPlanner.classifyCleanupErrors(
-            errors,
-            extensionId: extensionId,
-            preCleanupSnapshot: preCleanupSnapshot,
-            postCleanupSnapshot: postCleanupSnapshot
-        )
     }
 
     func traceLifecycle(
         phase: String,
-        extensionId: String,
-        manifest: [String: Any]? = nil
+        extensionId: String
     ) {
         guard ExtensionManager.isWebKitRuntimeTraceEnabled else { return }
         let snapshot = storageSnapshot(for: extensionId)
-        var message =
-            "storeLifecycle phase=\(phase) extensionId=\(extensionId) directoryExists=\(snapshot.directoryExists) entries=\(snapshot.entryNames.joined(separator: ",")) registeredContentScripts=\(snapshot.hasRegisteredContentScriptsStore) localStorage=\(snapshot.hasLocalStorageStore) syncStorage=\(snapshot.hasSyncStorageStore) onlyPrunable=\(snapshot.hasOnlyPrunableEntries)"
-
-        if let manifest {
-            let capabilities = storeCapabilitySnapshot(for: manifest)
-            message +=
-                " webKitCompat=\(capabilities.usesWebKitCompatibilityPrelude) mayTouchDynamicContentScripts=\(capabilities.mayTouchDynamicContentScriptStore) mayTouchSyncStorage=\(capabilities.mayTouchSyncStorageStore) permissions=\(capabilities.declaredPermissions.joined(separator: ",")) unsupportedAPIs=\(capabilities.unsupportedAPIs.joined(separator: ","))"
-        }
+        let message =
+            "storeLifecycle phase=\(phase) extensionId=\(extensionId) directoryExists=\(snapshot.directoryExists) entries=\(snapshot.entryNames.joined(separator: ",")) onlyPrunable=\(snapshot.hasOnlyPrunableEntries)"
 
         diagnostics.trace(message)
     }

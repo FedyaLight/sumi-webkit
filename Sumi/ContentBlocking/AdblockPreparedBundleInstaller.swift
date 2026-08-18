@@ -29,7 +29,6 @@ final class AdblockGenerationInstaller {
     func install(
         at bundleURL: URL,
         profileId: String,
-        previousManifest: AdblockCompiledGenerationManifest?,
         lease: AdblockGenerationMutationGate.Lease
     ) async throws -> AdblockCompiledGenerationManifest {
         let bundle = try loadBundle(
@@ -40,7 +39,6 @@ final class AdblockGenerationInstaller {
             bundle,
             at: bundleURL,
             profileId: profileId,
-            previousManifest: previousManifest,
             lease: lease
         )
     }
@@ -49,13 +47,11 @@ final class AdblockGenerationInstaller {
         _ bundle: SumiAdblockNativeRuleBundle,
         at bundleURL: URL,
         profileId: String,
-        previousManifest: AdblockCompiledGenerationManifest?,
         lease: AdblockGenerationMutationGate.Lease
     ) async throws -> AdblockCompiledGenerationManifest {
         guard mutationGate.owns(lease), !Task.isCancelled else { throw CancellationError() }
         let manifest = generationProjector.compiledManifest(
             from: bundle.manifest,
-            previousManifest: previousManifest,
             installedDate: Date()
         )
         let definitions = try bundleReader.contentRuleListDefinitions(
@@ -88,7 +84,7 @@ final class AdblockGenerationInstaller {
         // even if the module was disabled while the archive actor was running.
         publisher.commitPublication(publication)
         if mutationGate.owns(lease), !Task.isCancelled {
-            _ = await retention.removeUnrecoverableGenerations()
+            _ = await retention.removeInactiveGenerations()
         }
         return manifest
     }

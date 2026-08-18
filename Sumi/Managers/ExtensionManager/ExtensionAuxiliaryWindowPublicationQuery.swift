@@ -156,13 +156,11 @@ final class ExtensionAuxiliaryWindowPublicationQuery {
                 === publication.adapter
             && tabProfiles.profileID(for: session.tab)
                 == publication.profileID
-            && profileRuntime.contexts(for: publication.profileID)[
-                publication.ownerExtensionID
-            ] === publication.context
-            && profileRuntime.profileId(for: publication.context)
-                == publication.profileID
-            && profileRuntime.extensionId(for: publication.context)
-                == publication.ownerExtensionID
+            && profileRuntime.owns(
+                publication.context,
+                extensionID: publication.ownerExtensionID,
+                in: publication.profileID
+            )
             && session.ownerExtensionID == publication.ownerExtensionID
             && publication.tabReceipt.isCurrent()
             && publication.context.openWindows.contains { openWindow in

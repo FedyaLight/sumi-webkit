@@ -11,12 +11,12 @@ final class CommandPaletteSearchSessionOwnerTests: XCTestCase {
 
         owner.text = "example.com"
 
-        XCTAssertEqual(owner.visibleRows.first?.id, .url("http://example.com/"))
+        XCTAssertEqual(owner.visibleRows.first?.id, .url("https://example.com/"))
         XCTAssertEqual(owner.selectedRowID, owner.visibleRows.first?.id)
         XCTAssertGreaterThan(owner.resultListTopRequestID, initialTopRequest)
         XCTAssertEqual(
             owner.commitIntentForReturn(),
-            .browserNavigation(.input("http://example.com/"))
+            .browserNavigation(.input("https://example.com/"))
         )
     }
 

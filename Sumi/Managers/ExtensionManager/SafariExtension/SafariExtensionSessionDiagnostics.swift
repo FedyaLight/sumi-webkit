@@ -154,11 +154,11 @@ enum SafariExtensionSessionDiagnosticsBuilder {
             ?? runtime.currentProfile()?.dataStore
         let controllerDefaultStore =
             activeProfileId
-            .flatMap { profileRuntime.controllersByProfile[$0] }?
+            .flatMap { profileRuntime.controller(for: $0) }?
             .configuration.defaultWebsiteDataStore
         let pageConfigurationStore =
             activeProfileId
-            .flatMap { profileRuntime.controllersByProfile[$0] }?
+            .flatMap { profileRuntime.controller(for: $0) }?
             .configuration.webViewConfiguration?
             .websiteDataStore
         let activeTabStore: WKWebsiteDataStore? = {

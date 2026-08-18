@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import SumiDomain
 
 final class SumiDatabase: @unchecked Sendable {
     private let writer: any DatabaseWriter
@@ -39,7 +40,7 @@ final class SumiDatabase: @unchecked Sendable {
             case 0:
                 try Self.createSchema(in: database)
                 try Self.createKeyboardCommandSchema(in: database)
-                try database.execute(sql: "PRAGMA user_version = 4")
+                try database.execute(sql: "PRAGMA user_version = 5")
             case 1:
                 try database.alter(table: "folders") { table in
                     table.add(column: "is_live", .boolean)
@@ -48,15 +49,21 @@ final class SumiDatabase: @unchecked Sendable {
                 }
                 try Self.createKeyboardCommandSchema(in: database)
                 try Self.addPageKindColumn(in: database)
-                try database.execute(sql: "PRAGMA user_version = 4")
+                try Self.migratePermissionDecisionsToGlobalScope(in: database)
+                try database.execute(sql: "PRAGMA user_version = 5")
             case 2:
                 try Self.createKeyboardCommandSchema(in: database)
                 try Self.addPageKindColumn(in: database)
-                try database.execute(sql: "PRAGMA user_version = 4")
+                try Self.migratePermissionDecisionsToGlobalScope(in: database)
+                try database.execute(sql: "PRAGMA user_version = 5")
             case 3:
                 try Self.addPageKindColumn(in: database)
-                try database.execute(sql: "PRAGMA user_version = 4")
+                try Self.migratePermissionDecisionsToGlobalScope(in: database)
+                try database.execute(sql: "PRAGMA user_version = 5")
             case 4:
+                try Self.migratePermissionDecisionsToGlobalScope(in: database)
+                try database.execute(sql: "PRAGMA user_version = 5")
+            case 5:
                 break
             default:
                 throw SumiDatabaseError.unsupportedSchemaVersion(schemaVersion)
@@ -234,8 +241,6 @@ final class SumiDatabase: @unchecked Sendable {
             try database.create(table: "permission_decisions") { table in
                 table.column("identity", .text).primaryKey()
                 table.column("profile_id", .blob)
-                    .notNull()
-                    .references("profiles", onDelete: .cascade)
                 table.column("profile_partition_id", .text).notNull()
                 table.column("requesting_origin", .text).notNull()
                 table.column("top_origin", .text).notNull()
@@ -332,6 +337,91 @@ final class SumiDatabase: @unchecked Sendable {
     private static func addPageKindColumn(in database: Database) throws {
         try database.alter(table: "tabs") { table in
             table.add(column: "page_kind", .text)
+        }
+    }
+
+    private static func migratePermissionDecisionsToGlobalScope(
+        in database: Database
+    ) throws {
+        let tableExists = try Int.fetchOne(
+            database,
+            sql: "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'permission_decisions'"
+        ) == 1
+        guard tableExists else { return }
+
+        try database.inTransaction {
+            let oldRows = try PermissionDecisionRow.fetchAll(database)
+            try database.execute(sql: """
+                CREATE TABLE permission_decisions_v5 (
+                    identity TEXT PRIMARY KEY,
+                    profile_id BLOB,
+                    profile_partition_id TEXT NOT NULL,
+                    requesting_origin TEXT NOT NULL,
+                    top_origin TEXT NOT NULL,
+                    permission_type TEXT NOT NULL,
+                    display_domain TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    persistence TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    reason TEXT,
+                    created_at DATETIME NOT NULL,
+                    updated_at DATETIME NOT NULL,
+                    expires_at DATETIME,
+                    last_used_at DATETIME,
+                    system_authorization TEXT,
+                    metadata BLOB
+                )
+                """)
+            try database.execute(sql: "DROP TABLE permission_decisions")
+            try database.execute(sql: "ALTER TABLE permission_decisions_v5 RENAME TO permission_decisions")
+
+            for row in try Self.globalPermissionRows(from: oldRows) {
+                try row.insert(database)
+            }
+
+            try database.execute(sql: "CREATE INDEX permission_decisions_profile_domain ON permission_decisions(profile_partition_id, display_domain)")
+            try database.execute(sql: "CREATE INDEX permission_decisions_profile_type ON permission_decisions(profile_partition_id, permission_type)")
+            return .commit
+        }
+    }
+
+    private static func globalPermissionRows(
+        from rows: [PermissionDecisionRow]
+    ) throws -> [PermissionDecisionRow] {
+        let grouped = Dictionary(grouping: try rows.map { try $0.record() }) { record in
+            SumiGlobalSitePermissionScope.storageKey(for: record.key).persistentIdentity
+        }
+        return try grouped.values.map { records in
+            let storageKey = SumiGlobalSitePermissionScope.storageKey(for: records[0].key)
+            let state: SumiPermissionState
+            if records.contains(where: { $0.decision.state == .deny }) {
+                state = .deny
+            } else if records.contains(where: { $0.decision.state == .allow }) {
+                state = .allow
+            } else {
+                state = .ask
+            }
+            let selected = records
+                .filter { $0.decision.state == state }
+                .max { lhs, rhs in
+                    if lhs.decision.updatedAt == rhs.decision.updatedAt {
+                        return lhs.decision.createdAt < rhs.decision.createdAt
+                    }
+                    return lhs.decision.updatedAt < rhs.decision.updatedAt
+                } ?? records[0]
+            var decision = selected.decision
+            decision.state = state
+            decision.persistence = .persistent
+            decision.createdAt = records.map(\.decision.createdAt).min() ?? decision.createdAt
+            decision.updatedAt = records.map(\.decision.updatedAt).max() ?? decision.updatedAt
+            decision.lastUsedAt = records.compactMap(\.decision.lastUsedAt).max()
+            return try PermissionDecisionRow(
+                record: SumiPermissionStoreRecord(
+                    key: storageKey,
+                    decision: decision,
+                    displayDomain: selected.displayDomain
+                )
+            )
         }
     }
 

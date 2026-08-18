@@ -14,7 +14,6 @@ final class ExtensionContextLoader {
         @MainActor (UUID) async -> Bool
     private let sourceCache: WebExtensionRuntimeSourceCache
     private let contextPreparation: ExtensionContextPreparation
-    private let storagePlanner: WebExtensionStorageCleanupPlanner
     private let runtimeMetrics: ExtensionRuntimeMetricsAuthority
     private let diagnostics: ExtensionRuntimeDiagnostics
     private let expectedControllerDelegate: ExtensionControllerDelegateBridge
@@ -30,7 +29,6 @@ final class ExtensionContextLoader {
             @escaping @MainActor (UUID) async -> Bool,
         sourceCache: WebExtensionRuntimeSourceCache,
         contextPreparation: ExtensionContextPreparation,
-        storagePlanner: WebExtensionStorageCleanupPlanner,
         runtimeMetrics: ExtensionRuntimeMetricsAuthority,
         diagnostics: ExtensionRuntimeDiagnostics,
         expectedControllerDelegate: ExtensionControllerDelegateBridge,
@@ -45,7 +43,6 @@ final class ExtensionContextLoader {
             waitForWebsiteDataMutationAdmission
         self.sourceCache = sourceCache
         self.contextPreparation = contextPreparation
-        self.storagePlanner = storagePlanner
         self.runtimeMetrics = runtimeMetrics
         self.diagnostics = diagnostics
         self.expectedControllerDelegate = expectedControllerDelegate
@@ -165,38 +162,11 @@ final class ExtensionContextLoader {
             profileController: controllerBinding.controller,
             expectedControllerDelegate: expectedControllerDelegate
         )
-        let storage = WebExtensionRuntimeStoragePreparation(
-            extensionID: request.extensionId,
-            runtimeIdentifier: prepared.runtimeIdentifier,
-            controller: controller,
-            planner: storagePlanner
-        )
-        try validateController(
-            controllerBinding,
-            request: request,
-            profileAdmission: profileAdmission
-        )
-        storage.prepare()
-        storage.traceLifecycle(
-            phase: request.operation.beforeControllerLoadStorePhase,
-            capabilitySnapshot: storagePlanner.storeCapabilitySnapshot(
-                for: request.manifest,
-                unsupportedAPIs: prepared.context.unsupportedAPIs
-            ),
-            diagnostics: diagnostics
-        )
-        try validateController(
-            controllerBinding,
-            request: request,
-            profileAdmission: profileAdmission
-        )
-
         let loaded = try controllerTransaction.load(
             context: prepared.context,
             webExtension: source.webExtension,
             loadSource: source.loadSource,
             controllerBinding: controllerBinding,
-            storage: storage,
             request: request,
             profileAdmission: profileAdmission,
             bootstrapChromeScope: activationScope

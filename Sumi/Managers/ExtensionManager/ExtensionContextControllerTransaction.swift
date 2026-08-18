@@ -7,10 +7,7 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionContextControllerTransaction {
-    typealias BeforeControllerLoad = @MainActor (
-        String,
-        WebExtensionStorageCleanupPlanner.StorageSnapshot
-    ) throws -> Void
+    typealias BeforeControllerLoad = @MainActor (String) throws -> Void
 
     private let authority: ExtensionLoadedContextAuthority
     private let profileRuntime: ExtensionProfileRuntime
@@ -60,7 +57,6 @@ final class ExtensionContextControllerTransaction {
         webExtension: WKWebExtension,
         loadSource: SafariAppExtensionRuntimeLoadSource,
         controllerBinding: ExtensionControllerBindingSnapshot,
-        storage: WebExtensionRuntimeStoragePreparation,
         request: ExtensionContextLoadRequest,
         profileAdmission: ProfileReferenceAdmissionReceipt,
         bootstrapChromeScope: ExtensionBootstrapChromeAdmission.Scope? = nil
@@ -100,10 +96,7 @@ final class ExtensionContextControllerTransaction {
                 expectedControllerDelegate: expectedControllerDelegate
             )
             #if DEBUG
-                try debugBeforeControllerLoad?()?(
-                    request.extensionId,
-                    storage.snapshot()
-                )
+                try debugBeforeControllerLoad?()?(request.extensionId)
             #endif
             try validateBoundContext(
                 receipt,

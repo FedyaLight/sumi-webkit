@@ -162,7 +162,7 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
             relTokens: ["shortcut", "icon"],
             declaredSizes: [SumiFaviconDeclaredSize(width: 16, height: 16)],
             declaredType: "image/x-icon",
-            partition: .regular(nil)
+            partition: .regular()
         )
         let sharp = SumiFaviconCandidate(
             pageURL: documentURL,
@@ -171,7 +171,7 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
             relTokens: ["icon"],
             declaredSizes: [SumiFaviconDeclaredSize(width: 48, height: 48)],
             declaredType: "image/png",
-            partition: .regular(nil)
+            partition: .regular()
         )
 
         let selected = SumiFaviconCandidateSelector.bestCandidate(

@@ -52,7 +52,6 @@ struct AdblockCompiledGenerationManifest: Codable, Equatable, Sendable {
     let networkShards: [NativeContentBlockingShardDescriptor]
     let advancedBlocking: AdvancedBlockingGenerationDescriptor?
     let lastSuccessfulUpdateDate: Date
-    let previousGenerationId: String?
     let bundleProfileId: String?
 
     var webKitRuleListIdentifiers: [String] {
@@ -66,7 +65,6 @@ struct AdblockCompiledGenerationManifest: Codable, Equatable, Sendable {
         networkShards: [NativeContentBlockingShardDescriptor],
         advancedBlocking: AdvancedBlockingGenerationDescriptor? = nil,
         lastSuccessfulUpdateDate: Date,
-        previousGenerationId: String?,
         bundleProfileId: String? = nil
     ) {
         self.schemaVersion = schemaVersion
@@ -75,7 +73,6 @@ struct AdblockCompiledGenerationManifest: Codable, Equatable, Sendable {
         self.networkShards = networkShards
         self.advancedBlocking = advancedBlocking
         self.lastSuccessfulUpdateDate = lastSuccessfulUpdateDate
-        self.previousGenerationId = previousGenerationId
         self.bundleProfileId = bundleProfileId
     }
 }
@@ -84,13 +81,6 @@ struct AdblockGenerationCleanupReport: Equatable, Sendable {
     var removedWebKitIdentifiers: [String] = []
     var removedFilePaths: [String] = []
     var diagnostics: [String] = []
-}
-
-struct AdblockGenerationRollbackReport: Equatable, Sendable {
-    let rolledBack: Bool
-    let activeGenerationId: String?
-    let restoredGenerationId: String?
-    let diagnostics: [String]
 }
 
 struct AdblockUpdateDiagnostics: Error, LocalizedError, Equatable, Sendable {

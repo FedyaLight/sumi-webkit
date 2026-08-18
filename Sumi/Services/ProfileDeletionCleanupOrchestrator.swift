@@ -99,7 +99,7 @@ final class FaviconProfileCleanupParticipant: ProfileCleanupParticipant {
     }
 }
 
-/// Removes persisted permission decisions for the deleted profile partition.
+/// Removes profile-local permission activity for the deleted profile partition.
 @MainActor
 final class PermissionProfileCleanupParticipant: ProfileCleanupParticipant {
     let step = ProfileRetirementCleanupStep.permissions

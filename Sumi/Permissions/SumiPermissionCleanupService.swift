@@ -67,13 +67,10 @@ final class SumiPermissionCleanupService {
         return await run(profile: profile, settings: settings, force: true)
     }
 
-    /// Removes every stored decision for a deleted profile partition.
-    func deleteAllDecisions(profilePartitionId: String) async throws {
+    /// Removes profile-local permission activity. Saved site decisions are
+    /// Local-Installation-owned and survive deletion of one Browser Profile.
+    func deleteProfileData(profilePartitionId: String) async throws {
         let profileId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
-        let records = try await store.listDecisions(profilePartitionId: profileId)
-        for record in records {
-            try await store.resetDecision(for: record.key)
-        }
         recentActivityStore.deleteProfileData(profilePartitionId: profileId)
         guard let siteActivityStore else {
             throw SumiPermissionCleanupError.missingProfileDataAuthority

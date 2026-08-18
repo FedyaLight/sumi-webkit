@@ -26,7 +26,7 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
             pageURL: pageURL,
             iconURL: iconURL,
             sourceKind: .rootFavicon,
-            partition: .regular(nil)
+            partition: .regular()
         )
 
         let first = await scheduler.request(
@@ -94,7 +94,7 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
             pageURL: pageURL,
             iconURL: iconURL,
             sourceKind: .rootFavicon,
-            partition: .regular(nil)
+            partition: .regular()
         )
 
         let firstRequest = await scheduler.request(
@@ -167,7 +167,7 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
             pageURL: try XCTUnwrap(URL(string: "https://example.test/")),
             iconURL: try XCTUnwrap(URL(string: "https://example.test/favicon.ico")),
             sourceKind: .rootFavicon,
-            partition: .regular(nil)
+            partition: .regular()
         )
 
         let first = await scheduler.request(
@@ -209,7 +209,7 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
                 pageURL: pageURL,
                 iconURL: try XCTUnwrap(URL(string: "https://example.test/icon-\(index).ico")),
                 sourceKind: .documentLink,
-                partition: .regular(nil)
+                partition: .regular()
             )
             let request = await scheduler.request(
                 candidate: candidate,
@@ -227,19 +227,19 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
         let cache = SumiPreparedFaviconCache(totalCostLimit: 1024 * 1024)
         let request = SumiPreparedFaviconRequest(
             pageURL: try XCTUnwrap(URL(string: "https://example.com/")),
-            partition: .regular(nil),
+            partition: .regular(),
             context: .tabSidebar,
             backingScale: 2
         )
         let first = SumiPreparedFaviconIdentity(
-            partition: .regular(nil),
+            partition: .regular(),
             blobID: "a",
             revision: "ra",
             sourceURL: try XCTUnwrap(URL(string: "https://example.com/a.png")),
             request: request
         )
         let second = SumiPreparedFaviconIdentity(
-            partition: .regular(nil),
+            partition: .regular(),
             blobID: "b",
             revision: "rb",
             sourceURL: try XCTUnwrap(URL(string: "https://example.com/b.png")),
@@ -248,7 +248,7 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
         cache.setImage(NSImage(size: NSSize(width: 18, height: 18)), for: first)
         cache.setImage(NSImage(size: NSSize(width: 18, height: 18)), for: second)
 
-        cache.invalidate(partition: .regular(nil), blobID: "a", revision: "ra")
+        cache.invalidate(partition: .regular(), blobID: "a", revision: "ra")
 
         XCTAssertNil(cache.image(for: first))
         XCTAssertNotNil(cache.image(for: second))
@@ -258,7 +258,7 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
         let cache = SumiPreparedFaviconCache(totalCostLimit: 1024 * 1024)
         let request = SumiPreparedFaviconRequest(
             pageURL: try XCTUnwrap(URL(string: "https://example.com/")),
-            partition: .regular(nil),
+            partition: .regular(),
             context: .tabSidebar,
             backingScale: 2
         )
@@ -267,7 +267,7 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
 
         for index in 0..<513 {
             let identity = SumiPreparedFaviconIdentity(
-                partition: .regular(nil),
+                partition: .regular(),
                 blobID: "blob-\(index)",
                 revision: "revision-\(index)",
                 sourceURL: try XCTUnwrap(URL(string: "https://example.com/icon-\(index).png")),
@@ -282,7 +282,7 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
         XCTAssertNotNil(cache.image(for: identities[1]))
         XCTAssertNotNil(cache.image(for: lastIdentity))
 
-        cache.invalidate(partition: .regular(nil), blobID: "blob-1", revision: "revision-1")
+        cache.invalidate(partition: .regular(), blobID: "blob-1", revision: "revision-1")
 
         XCTAssertNil(cache.image(for: identities[1]))
         XCTAssertNotNil(cache.image(for: lastIdentity))
@@ -294,38 +294,38 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
         let sourceURL = try XCTUnwrap(URL(string: "https://example.com/icon.png"))
         let sidebarRequest = SumiPreparedFaviconRequest(
             pageURL: pageURL,
-            partition: .regular(nil),
+            partition: .regular(),
             context: .tabSidebar,
             backingScale: 2
         )
         let launcherRequest = SumiPreparedFaviconRequest(
             pageURL: pageURL,
-            partition: .regular(nil),
+            partition: .regular(),
             context: .pinnedLauncher,
             backingScale: 2
         )
         let retinaRequest = SumiPreparedFaviconRequest(
             pageURL: pageURL,
-            partition: .regular(nil),
+            partition: .regular(),
             context: .tabSidebar,
             backingScale: 3
         )
         let sidebarIdentity = SumiPreparedFaviconIdentity(
-            partition: .regular(nil),
+            partition: .regular(),
             blobID: "a",
             revision: "ra",
             sourceURL: sourceURL,
             request: sidebarRequest
         )
         let launcherIdentity = SumiPreparedFaviconIdentity(
-            partition: .regular(nil),
+            partition: .regular(),
             blobID: "a",
             revision: "ra",
             sourceURL: sourceURL,
             request: launcherRequest
         )
         let retinaIdentity = SumiPreparedFaviconIdentity(
-            partition: .regular(nil),
+            partition: .regular(),
             blobID: "a",
             revision: "ra",
             sourceURL: sourceURL,
@@ -339,7 +339,7 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
         XCTAssertNil(cache.image(for: retinaIdentity))
     }
 
-    func testBlobStoreSeparatesRegularProfilesAndPrivatePartitions() throws {
+    func testBlobStoreSharesRegularProfilesButKeepsPrivatePartitionsSeparate() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("SumiFaviconV2Isolation-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -347,8 +347,8 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
         let storage = SumiFaviconBlobStorage(rootDirectory: directory)
         let pageURL = try XCTUnwrap(URL(string: "https://example.com/private"))
         let iconURL = try XCTUnwrap(URL(string: "https://example.com/icon.png"))
-        let profileA = SumiFaviconPartition.regular(UUID())
-        let profileB = SumiFaviconPartition.regular(UUID())
+        let profileA = SumiFaviconPartition.regular()
+        let profileB = SumiFaviconPartition.regular()
         let privateA = SumiFaviconPartition.privateEphemeral(UUID())
         let imageData = try SumiFaviconTestImages.pngData(width: 32, height: 32)
         let payload = SumiFaviconValidatedPayload(
@@ -371,7 +371,7 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
         )
 
         XCTAssertNotNil(storage.reader.cachedSelection(for: pageURL, partition: profileA))
-        XCTAssertNil(storage.reader.cachedSelection(for: pageURL, partition: profileB))
+        XCTAssertNotNil(storage.reader.cachedSelection(for: pageURL, partition: profileB))
         XCTAssertNil(storage.reader.cachedSelection(for: pageURL, partition: privateA))
     }
 
@@ -383,7 +383,7 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
         let storage = SumiFaviconBlobStorage(rootDirectory: directory)
         let pageURL = try XCTUnwrap(URL(string: "https://shield.turtlecute.org/"))
         let iconURL = try XCTUnwrap(URL(string: "https://shield.turtlecute.org/assets/styled/icon.svg"))
-        let partition = SumiFaviconPartition.regular(nil)
+        let partition = SumiFaviconPartition.regular()
         let payload = SumiFaviconValidatedPayload(
             data: SumiFaviconTestImages.styledSVGData(),
             payloadKind: .svg,
@@ -427,7 +427,7 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
             rootDirectory: directory,
             persistCoalesceInterval: 60
         )
-        let partition = SumiFaviconPartition.regular(UUID())
+        let partition = SumiFaviconPartition.regular()
         let partitionDirectory = directory.appendingPathComponent(
             partition.storageComponent,
             isDirectory: true
@@ -460,7 +460,7 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
             fileManager: fileManager,
             persistCoalesceInterval: 0
         )
-        let partition = SumiFaviconPartition.regular(UUID())
+        let partition = SumiFaviconPartition.regular()
         let pageURL = try XCTUnwrap(URL(string: "https://failed-clear.example/"))
 
         storage.writer.recordNoIconFound(for: pageURL, partition: partition)

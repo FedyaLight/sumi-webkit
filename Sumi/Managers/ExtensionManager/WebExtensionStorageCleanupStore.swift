@@ -17,14 +17,30 @@ enum WebExtensionStorageCleanupError: Error, Equatable {
 }
 
 struct WebExtensionStorageCleanupStore {
-    typealias StorageSnapshot = WebExtensionStorageCleanupPlanner.StorageSnapshot
+    struct StorageSnapshot: Equatable {
+        let directoryExists: Bool
+        let entryNames: [String]
+
+        private static let stateFileName = "State.plist"
+
+        var hasOnlyPrunableEntries: Bool {
+            entryNames.allSatisfy(Self.isPrunableEntryName)
+        }
+
+        var hasStoredDataCandidate: Bool {
+            !hasOnlyPrunableEntries
+        }
+
+        fileprivate static func isPrunableEntryName(_ entryName: String) -> Bool {
+            entryName == stateFileName
+        }
+    }
 
     private static let logger = Logger.sumi(category: "Extensions")
 
     private let controllerStorageId: UUID?
     private let libraryDirectoryProvider: () -> URL?
     private let fileManager: FileManager
-    private let planner: WebExtensionStorageCleanupPlanner
     /// Maps the internal extension id to the directory name WebKit actually
     /// uses (the composed "<bundleId> (<teamId>)" identifier for Safari app
     /// extensions). Defaults to identity for directory-source extensions.
@@ -39,14 +55,52 @@ struct WebExtensionStorageCleanupStore {
             ).first
         },
         fileManager: FileManager = .default,
-        planner: WebExtensionStorageCleanupPlanner,
         storageDirectoryNameResolver: @escaping (String) -> String = { $0 }
     ) {
         self.controllerStorageId = controllerStorageId
         self.libraryDirectoryProvider = libraryDirectoryProvider
         self.fileManager = fileManager
-        self.planner = planner
         self.storageDirectoryNameResolver = storageDirectoryNameResolver
+    }
+
+    /// Enumerates only controller namespace directories in Sumi's WebKit
+    /// root. This is intentionally separate from WebsiteDataStore inventory:
+    /// the latter can contain hundreds of thousands of files and must not be
+    /// walked during ordinary maintenance.
+    static func controllerStorageIdentifiers(
+        libraryDirectoryProvider: () -> URL? = {
+            FileManager.default.urls(
+                for: .libraryDirectory,
+                in: .userDomainMask
+            ).first
+        },
+        fileManager: FileManager = .default
+    ) -> [UUID] {
+        guard let libraryDirectory = libraryDirectoryProvider() else { return [] }
+        let root = libraryDirectory
+            .appendingPathComponent("WebKit", isDirectory: true)
+            .appendingPathComponent(
+                SumiAppIdentity.runtimeBundleIdentifier,
+                isDirectory: true
+            )
+            .appendingPathComponent("WebExtensions", isDirectory: true)
+        guard let entries = try? fileManager.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+        return entries.compactMap { entry in
+            let values = try? entry.resourceValues(
+                forKeys: [.isDirectoryKey]
+            )
+            guard values?.isDirectory == true
+            else {
+                return nil
+            }
+            return UUID(uuidString: entry.lastPathComponent)
+        }
     }
 
     func directory(for extensionId: String) -> URL? {
@@ -124,7 +178,7 @@ struct WebExtensionStorageCleanupStore {
     }
 
     func hasStoredDataCandidate(for extensionId: String) -> Bool {
-        planner.hasStoredDataCandidate(in: snapshot(for: extensionId))
+        snapshot(for: extensionId).hasStoredDataCandidate
     }
 
     @discardableResult
@@ -151,7 +205,9 @@ struct WebExtensionStorageCleanupStore {
             return false
         }
 
-        guard contents.allSatisfy(planner.isPrunableStorageEntry) else {
+        guard contents.allSatisfy({
+            StorageSnapshot.isPrunableEntryName($0.lastPathComponent)
+        }) else {
             return false
         }
 
@@ -161,26 +217,6 @@ struct WebExtensionStorageCleanupStore {
         } catch {
             Self.logger.debug(
                 "Failed to prune empty WebExtension storage directory for \(extensionId, privacy: .public): \(error.localizedDescription, privacy: .public)"
-            )
-            return false
-        }
-    }
-
-    @discardableResult
-    func ensureDirectoryExists(for extensionId: String) -> Bool {
-        guard let storageDirectory = directory(for: extensionId) else {
-            return false
-        }
-
-        do {
-            try fileManager.createDirectory(
-                at: storageDirectory,
-                withIntermediateDirectories: true
-            )
-            return true
-        } catch {
-            Self.logger.debug(
-                "Failed to create WebExtension storage directory for \(extensionId, privacy: .public): \(error.localizedDescription, privacy: .public)"
             )
             return false
         }
@@ -212,10 +248,7 @@ struct WebExtensionStorageCleanupStore {
             )
             return StorageSnapshot(
                 directoryExists: true,
-                entryNames: [],
-                hasRegisteredContentScriptsStore: false,
-                hasLocalStorageStore: false,
-                hasSyncStorageStore: false
+                entryNames: []
             )
         }
 
@@ -223,20 +256,14 @@ struct WebExtensionStorageCleanupStore {
 
         return StorageSnapshot(
             directoryExists: true,
-            entryNames: entryNames,
-            hasRegisteredContentScriptsStore: entryNames.contains("RegisteredContentScripts.db"),
-            hasLocalStorageStore: entryNames.contains("LocalStorage.db"),
-            hasSyncStorageStore: entryNames.contains("SyncStorage.db")
+            entryNames: entryNames
         )
     }
 
     private static var emptySnapshot: StorageSnapshot {
         StorageSnapshot(
             directoryExists: false,
-            entryNames: [],
-            hasRegisteredContentScriptsStore: false,
-            hasLocalStorageStore: false,
-            hasSyncStorageStore: false
+            entryNames: []
         )
     }
 }

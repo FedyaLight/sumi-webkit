@@ -18,7 +18,7 @@
         "tabs and split state",
         "bookmarks",
         "history entries and visits",
-        "permissions and permission activity",
+        "Local-Installation-scoped site-permission decisions and profile-scoped permission activity",
         "profile retirement state",
         "extension and content-blocker metadata",
         "window and last-session snapshots",
@@ -54,7 +54,7 @@
       "classification": "authoritative",
       "contents": [
         "cookies and website data owned by WKWebsiteDataStore",
-        "persistent WebExtension website storage for durable profiles",
+        "persistent WebExtension storage for each regular Browser Profile",
         "credentials owned by Keychain"
       ],
       "location": "Locations selected and managed by macOS and WebKit",

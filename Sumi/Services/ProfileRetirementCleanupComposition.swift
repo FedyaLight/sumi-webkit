@@ -46,7 +46,7 @@ enum ProfileRetirementCleanupComposition {
                 try dependencies.faviconService.clearFaviconPartition(for: profile)
             },
             PermissionProfileCleanupParticipant { profileID in
-                try await dependencies.permissionCleanupService.deleteAllDecisions(
+                try await dependencies.permissionCleanupService.deleteProfileData(
                     profilePartitionId: profileID.uuidString
                 )
             },

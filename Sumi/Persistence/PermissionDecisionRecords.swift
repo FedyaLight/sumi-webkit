@@ -6,7 +6,7 @@ struct PermissionDecisionRow: Codable, Equatable, FetchableRecord, PersistableRe
     static let databaseTableName = "permission_decisions"
 
     let persistentIdentity: String
-    let profileID: UUID
+    let profileID: UUID?
     var requestingOriginIdentity: String
     var topOriginIdentity: String
     var permissionTypeIdentity: String
@@ -24,13 +24,16 @@ struct PermissionDecisionRow: Codable, Equatable, FetchableRecord, PersistableRe
     var metadata: Data?
 
     init(record: SumiPermissionStoreRecord) throws {
-        guard let profileID = UUID(uuidString: record.key.profilePartitionId) else {
+        persistentIdentity = record.key.persistentIdentity
+        if SumiGlobalSitePermissionScope.isGlobal(record.key) {
+            self.profileID = nil
+        } else if let profileID = UUID(uuidString: record.key.profilePartitionId) {
+            self.profileID = profileID
+        } else {
             throw SumiPermissionStoreError.invalidPersistentProfilePartition(
                 record.key.profilePartitionId
             )
         }
-        persistentIdentity = record.key.persistentIdentity
-        self.profileID = profileID
         requestingOriginIdentity = record.key.requestingOrigin.identity
         topOriginIdentity = record.key.topOrigin.identity
         permissionTypeIdentity = record.key.permissionType.identity
@@ -49,11 +52,23 @@ struct PermissionDecisionRow: Codable, Equatable, FetchableRecord, PersistableRe
     }
 
     func record() throws -> SumiPermissionStoreRecord {
-        let canonicalProfileID = profileID.uuidString.lowercased()
-        guard UUID(uuidString: profilePartitionID) == profileID else {
-            throw SumiPermissionStoreError.invalidPersistentProfilePartition(
+        let canonicalProfileID: String
+        if let profileID {
+            canonicalProfileID = profileID.uuidString.lowercased()
+            guard UUID(uuidString: profilePartitionID) == profileID else {
+                throw SumiPermissionStoreError.invalidPersistentProfilePartition(
+                    profilePartitionID
+                )
+            }
+        } else {
+            canonicalProfileID = SumiPermissionKey.normalizedProfilePartitionId(
                 profilePartitionID
             )
+            guard canonicalProfileID == SumiGlobalSitePermissionScope.profilePartitionId else {
+                throw SumiPermissionStoreError.invalidPersistentProfilePartition(
+                    profilePartitionID
+                )
+            }
         }
         guard let permissionType = SumiPermissionType(identity: permissionTypeIdentity) else {
             throw SumiPermissionStoreError.invalidStoredPermissionType(

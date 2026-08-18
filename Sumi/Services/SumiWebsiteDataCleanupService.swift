@@ -317,7 +317,7 @@ final class SumiWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
 
     @discardableResult
     func prunePersistentDataStores(keeping identifiersToKeep: Set<UUID>) async -> [UUID] {
-        let existingIdentifiers = await fetchPersistentDataStoreIdentifiers()
+        let existingIdentifiers = await Self.fetchPersistentDataStoreIdentifiers()
         var removedIdentifiers: [UUID] = []
 
         for identifier in existingIdentifiers where !identifiersToKeep.contains(identifier) {
@@ -335,7 +335,7 @@ final class SumiWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
         return removedIdentifiers
     }
 
-    private func fetchPersistentDataStoreIdentifiers() async -> [UUID] {
+    static func fetchPersistentDataStoreIdentifiers() async -> [UUID] {
         await withCheckedContinuation { continuation in
             WKWebsiteDataStore.fetchAllDataStoreIdentifiers { identifiers in
                 continuation.resume(returning: identifiers)

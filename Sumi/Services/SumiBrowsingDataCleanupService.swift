@@ -237,7 +237,6 @@ final class SumiBrowsingDataCleanupService {
         self.manualWebsiteDataCleanupService = SumiManualWebsiteDataCleanupService(
             websiteDataCleanupService: websiteDataCleanupService,
             appResidueCleaner: appResidueCleaner,
-            domainInventory: domainInventory,
             destructiveCleanupPreparer: destructiveCleanupPreparer,
             sharedWebsiteDataStoreProvider: sharedWebsiteDataStoreProvider,
             referenceDateProvider: referenceDateProvider
@@ -415,18 +414,12 @@ final class SumiBrowsingDataCleanupService {
                     )
                     let includesCookies = categories.contains(.siteData)
                     for profile in targetProfiles {
-                        let siteDataFaviconDomains = await manualWebsiteDataCleanupService
-                            .clearProfileWebsiteData(
-                                range: range,
-                                categories: categories,
-                                domains: domains,
-                                dataTypes: dataTypes,
-                                includesCookies: includesCookies,
-                                dataStore: profile.dataStore
-                            )
-                        localCleanupOwner.invalidateSiteDataFavicons(
-                            domains: siteDataFaviconDomains,
-                            partition: SumiFaviconPartition.regular(profile.id)
+                        await manualWebsiteDataCleanupService.clearProfileWebsiteData(
+                            range: range,
+                            domains: domains,
+                            dataTypes: dataTypes,
+                            includesCookies: includesCookies,
+                            dataStore: profile.dataStore
                         )
                     }
 

@@ -34,18 +34,18 @@ final class SumiFavoriteBackdropStoreTests: XCTestCase {
 
         let result = await store.loadBackdrop(
             for: regular.launchURL,
-            partition: .regular(profileID)
+            partition: .regular()
         )
         XCTAssertNil(result)
         let builtInResult = await store.loadBackdrop(
             for: builtInFavorite.launchURL,
-            partition: .regular(profileID)
+            partition: .regular()
         )
         XCTAssertNil(builtInResult)
         XCTAssertEqual(reader.requestCount, 0)
     }
 
-    func testDuplicateSiteSharesArtifactButProfilesDoNot() async throws {
+    func testDuplicateSiteSharesArtifactAcrossRegularProfiles() async throws {
         let root = temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         let reader = CountingBackdropFaviconReader(image: testImage())
@@ -71,18 +71,18 @@ final class SumiFavoriteBackdropStoreTests: XCTestCase {
         store.syncFavorite([first, duplicate, separateProfile])
         _ = await store.loadBackdrop(
             for: first.launchURL,
-            partition: .regular(firstProfile)
+            partition: .regular()
         )
         _ = await store.loadBackdrop(
             for: duplicate.launchURL,
-            partition: .regular(firstProfile)
+            partition: .regular()
         )
         _ = await store.loadBackdrop(
             for: separateProfile.launchURL,
-            partition: .regular(secondProfile)
+            partition: .regular()
         )
 
-        XCTAssertEqual(reader.requestCount, 2)
+        XCTAssertEqual(reader.requestCount, 1)
     }
 
     func testRemovingLastOwnerCancelsStaleBakeWithoutResurrection() async throws {
@@ -115,7 +115,7 @@ final class SumiFavoriteBackdropStoreTests: XCTestCase {
 
         XCTAssertNil(store.cachedBackdrop(
             for: favorite.launchURL,
-            partition: .regular(profileID)
+            partition: .regular()
         ))
         let keys = try await SumiFavoriteBackdropDiskStorage(
             rootDirectory: root

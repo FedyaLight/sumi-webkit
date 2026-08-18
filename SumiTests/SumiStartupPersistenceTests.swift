@@ -6,6 +6,37 @@ import XCTest
 
 @MainActor
 final class SumiStartupPersistenceTests: XCTestCase {
+    func testLegacyDirectoryMigrationIsReleaseGatedAndAtomic() throws {
+        let fixture = try Fixture()
+        let legacy = fixture.rootURL.appendingPathComponent("legacy")
+        let canonical = fixture.rootURL.appendingPathComponent("canonical")
+        try FileManager.default.createDirectory(
+            at: legacy,
+            withIntermediateDirectories: true
+        )
+
+        XCTAssertEqual(
+            SumiApplicationSupportDirectory.migrateLegacyDirectoryIfNeeded(
+                from: legacy,
+                to: canonical
+            ),
+            canonical
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: legacy.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: canonical.path))
+
+        XCTAssertEqual(
+            SumiApplicationSupportDirectory.migrateLegacyDirectoryIfNeeded(
+                from: legacy,
+                to: canonical,
+                allowsMigration: true
+            ),
+            canonical
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacy.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: canonical.path))
+    }
+
     func testKnownDatabaseFailuresHaveExactClassification() {
         XCTAssertEqual(
             SumiStartupPersistence.classifyStoreOpenFailure(

@@ -82,9 +82,12 @@ final class Profile: NSObject, Identifiable {
     }
 
     // MARK: - Data Store Creation
-    /// Create a persistent, profile-specific WKWebsiteDataStore for the given profile ID.
-    /// Uses a deterministic identifier so stores remain stable across launches.
-    private static func createDataStore(for profileId: UUID) -> WKWebsiteDataStore {
+    /// Create the profile's Website Data Store. Tests and previews stay in memory;
+    /// production uses a deterministic identifier that remains stable across launches.
+    static func createDataStore(for profileId: UUID) -> WKWebsiteDataStore {
+        if RuntimeDiagnostics.usesEphemeralPlatformStores {
+            return .nonPersistent()
+        }
         let store = WKWebsiteDataStore(forIdentifier: profileId)
         if !store.isPersistent {
             RuntimeDiagnostics.emit("⚠️ [Profile] Created data store is not persistent for profile: \(profileId.uuidString)")

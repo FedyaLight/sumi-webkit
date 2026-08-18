@@ -28,7 +28,7 @@ extension SafariExtensionWebViewControllerRuntimeWarmupTests {
         try inspection.installation.metadata.save(entity)
         let controller = inspection.controller.provisioning.ensureExtensionController(for: profile.id)
 
-        manager.testHooks.beforeControllerLoad = { _, _ in
+        manager.testHooks.beforeControllerLoad = { _ in
             _ = manager.shutDownExtensionRuntime(
                 reason: "SafariExtensionWebViewControllerWiringTests"
             )

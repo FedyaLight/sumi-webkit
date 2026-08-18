@@ -9,7 +9,10 @@ actor AdblockGenerationArchive {
         rootDirectory: URL? = nil
     ) {
         self.fileManager = fileManager
-        paths = AdblockGenerationPaths(rootDirectory: rootDirectory ?? Self.defaultRootDirectory())
+        paths = AdblockGenerationPaths(
+            rootDirectory: rootDirectory
+                ?? Self.defaultRootDirectory(fileManager: fileManager)
+        )
     }
 
     nonisolated var storageRoot: URL { paths.rootDirectory }
@@ -222,14 +225,6 @@ actor AdblockGenerationArchive {
             )
         }
         try AdblockGenerationPaths.validatePathComponent(manifest.activeGenerationId, kind: "generation")
-        if let previousGenerationId = manifest.previousGenerationId {
-            try AdblockGenerationPaths.validatePathComponent(previousGenerationId, kind: "previous generation")
-            guard previousGenerationId != manifest.activeGenerationId else {
-                throw AdblockUpdateDiagnostics(
-                    summary: "Adblock generation \(manifest.activeGenerationId) cannot reference itself as previous"
-                )
-            }
-        }
         guard manifest.networkShards.allSatisfy({ $0.kind == .network }) else {
             throw AdblockUpdateDiagnostics(
                 summary: "Persisted Adblock shard collection contains a mismatched rule kind"
@@ -378,9 +373,22 @@ actor AdblockGenerationArchive {
         lhs.kind == rhs.kind ? lhs.id < rhs.id : lhs.kind.rawValue < rhs.kind.rawValue
     }
 
-    private static func defaultRootDirectory() -> URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.temporaryDirectory
-        return base.appendingPathComponent("Sumi/Adblock", isDirectory: true)
+    private static func defaultRootDirectory(fileManager: FileManager) -> URL {
+        let canonical = SumiApplicationSupportDirectory
+            .appRootURL(fileManager: fileManager)
+            .appendingPathComponent("Adblock", isDirectory: true)
+        let legacyBase = fileManager.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first ?? fileManager.temporaryDirectory
+        let legacy = legacyBase.appendingPathComponent(
+            "Sumi/Adblock",
+            isDirectory: true
+        )
+        return SumiApplicationSupportDirectory.migrateLegacyDirectoryIfNeeded(
+            from: legacy,
+            to: canonical,
+            fileManager: fileManager
+        )
     }
 }

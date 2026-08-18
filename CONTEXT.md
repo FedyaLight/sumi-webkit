@@ -9,8 +9,30 @@ The complete set of Sumi-owned data for one installed copy of the app on one mac
 _Avoid_: Local profile, old-user store
 
 **Browser Profile**:
-A durable browsing persona inside a Local Installation. Its browser-owned records are identified by one profile UUID, while its website data remains owned by WebKit under the same UUID.
+A durable browsing persona inside a Local Installation. It guarantees a separate Sumi history and a separate WebKit website-data partition, allowing the same site to hold different signed-in sessions in different profiles. Data without that isolation requirement may be shared across profiles.
 _Avoid_: Account, installation profile
+
+**Profile Website Partition**:
+The one stable identified `WKWebsiteDataStore` owned by a regular Browser Profile and reused by all of its tabs, windows, and Spaces. It is the indivisible account boundary for cookies, local storage, IndexedDB, service workers, and HTTP cache; its physical NetworkCache is never shared with another profile.
+_Avoid_: Window data store, Space cache, shared profile cache
+
+**Profile HTTP Cache**:
+The rebuildable HTTP disk cache inside one Profile Website Partition. Sumi clears it only as a whole through the supported Website Data Store operation; it never deletes WebKit cache files directly.
+The first storage upgrade clears regular-profile HTTP DiskCache once after first paint. Thereafter Sumi uses an optional, runtime-checked WebKit size observation to maintain a 1 GiB aggregate soft target (with 5% hysteresis) at most once per 24 hours. It clears only remeasured inactive profile caches, oldest activation first; the foreground profile and every account-bearing website datum remain untouched. Missing SPI, a timeout, or an invalid size suppresses automatic eviction rather than becoming zero.
+_Avoid_: Shared NetworkCache, exact cache quota, cache-file GC
+
+**Shared Browser Asset**:
+Local-Installation-owned data reused across Browser Profiles because it carries no profile identity or site session. Favicons are Shared Browser Assets and have one canonical stored representation regardless of how many profiles reference them.
+Regular favicon URL mappings, candidate state, negative cache, blob metadata, and SHA-256 payloads live in one Local-Installation-wide shared regular partition. Private Partition favicon state remains memory-only.
+_Avoid_: Profile favicon, copied profile asset
+
+**Extension Runtime**:
+Each regular Browser Profile owns its persistent `WKWebExtensionController` and one context per enabled extension. Extension packages and installation metadata are Local-Installation-owned; runtime storage, permissions, site access, commands, and UI ordering remain profile-scoped. Private Partitions use separate non-persistent contexts.
+_Avoid_: Cross-profile extension context, copied extension package
+
+**Global Site Permission**:
+A Local-Installation-owned durable decision for one site capability, shared by every regular Browser Profile. Camera, microphone, location, notification, screen-capture, popup, external-app, autoplay, and storage-access decisions do not partition website accounts or history. Private and one-time permissions remain partition-local.
+_Avoid_: Profile site permission, website-data permission
 
 **Browser Database**:
 The single transactional SQLite database containing Sumi-owned structured browser data for a Local Installation.
@@ -19,6 +41,10 @@ _Avoid_: Startup store, bookmark database, profile database
 **Platform Store**:
 A specialized store whose lifecycle is owned by macOS or WebKit, such as Keychain or `WKWebsiteDataStore`, and which is referenced but never reimplemented by the Browser Database.
 _Avoid_: Legacy store, auxiliary database
+
+**Local Installation Storage Module**:
+The post-startup storage policy seam that performs one-time cache migration, bounded Platform Store and abandoned WebExtension-controller namespace reclamation, optional event-driven cache observation, and explicit regular-profile HTTP cache cleanup. It keeps Browser Database and Platform Stores as their existing authorities and never uses recursive WebsiteDataStore inventories or a second persistence store.
+_Avoid_: Storage service registry, filesystem manager, cache wrapper
 
 **Private Partition**:
 A non-durable browsing partition shared only by explicitly related incognito windows. It pairs one non-persistent `WKWebsiteDataStore` with memory-only Sumi state keyed by the same UUID and is destroyed after its final window lease closes.
@@ -294,7 +320,7 @@ The exclusive assignment of one Key Binding to one command domain before event d
 _Avoid_: Runtime fallback chain, first handler wins
 
 **Extension Command**:
-A manifest-declared extension behavior identified by one extension identity and command name. Its manifest key is only a Suggested Binding; its active binding and ownership belong to the Browser Profile.
+A manifest-declared extension behavior identified by one extension identity and command name. Its manifest key is only a Suggested Binding; its active binding and ownership belong to the current Browser Profile's extension runtime.
 _Avoid_: Extension shortcut, manifest accelerator
 
 **Unsupported Extension Command**:
@@ -318,7 +344,7 @@ A default Browser Action or extension-manifest Key Binding candidate that become
 _Avoid_: Default active binding, fallback binding
 
 **Binding Assignment Projection**:
-The window-and-profile-specific view that gives one authoritative owner or inactive reason for every Key Binding across Browser Actions, extensions, and Native Reservations.
+The window-and-extension-runtime-scope-specific view that gives one authoritative owner or inactive reason for every Key Binding across Browser Actions, extensions, and Native Reservations.
 _Avoid_: Shortcut lookup table, merged shortcut cache
 
 **Inactive Binding**:

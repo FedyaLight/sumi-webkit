@@ -143,9 +143,9 @@ final class ExtensionWindowRequestRouter {
         }
         guard authority?.isCurrent() ?? true,
               let profileID = profileRuntime.profileId(for: controller),
-              profileRuntime.controllersByProfile[profileID] === controller,
+              profileRuntime.controller(for: profileID) === controller,
               extensionContext.map({
-                  profileRuntime.profileId(for: $0) == profileID
+                  profileRuntime.owns($0, in: profileID)
               }) ?? true
         else {
             completion(
@@ -454,16 +454,13 @@ final class ExtensionWindowRequestRouter {
         guard load.hasUnresolvedExtensionOwnership == false,
               authority?.isCurrent() ?? true,
               space.profileId == profileID,
-              profileRuntime.profileId(for: controller) == profileID,
-              profileRuntime.controllersByProfile[profileID] === controller
+              profileRuntime.controller(for: profileID) === controller
         else {
             return false
         }
 
         if let extensionContext {
-            guard profileRuntime.exactContextIdentity(
-                for: extensionContext
-            )?.profileId == profileID
+            guard profileRuntime.owns(extensionContext, in: profileID)
             else {
                 return false
             }
@@ -471,9 +468,7 @@ final class ExtensionWindowRequestRouter {
 
         if let loadContext = load.extensionContext {
             guard let loadURL = load.url,
-                  profileRuntime.exactContextIdentity(
-                    for: loadContext
-                  )?.profileId == profileID,
+                  profileRuntime.owns(loadContext, in: profileID),
                   extensionContext.map({ $0 === loadContext }) ?? true,
                   controller.extensionContext(for: loadURL) === loadContext
             else {

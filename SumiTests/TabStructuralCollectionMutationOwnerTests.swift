@@ -688,7 +688,7 @@ private final class StructuralMutationFaviconOracle: BrowserFaviconServicing {
     private(set) var syncedPinIDs: [[UUID]] = []
 
     func partition(profile: Profile?) -> SumiFaviconPartition {
-        .regular(profile?.id)
+        .regular()
     }
 
     func invalidateSite(domain _: String, profile _: Profile?) {}

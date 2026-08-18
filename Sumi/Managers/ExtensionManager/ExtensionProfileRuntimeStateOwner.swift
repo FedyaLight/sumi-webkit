@@ -124,7 +124,7 @@ struct ExtensionProfileRuntimeStateOwner {
         ExtensionSnapshot(
             extensionId: extensionId,
             profileId: profileId,
-            controller: profileRuntime.controllersByProfile[profileId],
+            controller: profileRuntime.controller(for: profileId),
             context: context(for: extensionId, profileId: profileId),
             readiness: readinessContext(for: profileId)
         )

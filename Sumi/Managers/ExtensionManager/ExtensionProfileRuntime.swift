@@ -230,6 +230,18 @@ final class ExtensionProfileRuntime {
         state.contexts(for: profileId)
     }
 
+    func owns(
+        _ context: WKWebExtensionContext,
+        extensionID: String,
+        in profileID: UUID
+    ) -> Bool {
+        contexts(for: profileID)[extensionID] === context
+    }
+
+    func owns(_ context: WKWebExtensionContext, in profileID: UUID) -> Bool {
+        contexts(for: profileID).values.contains { $0 === context }
+    }
+
     @discardableResult
     func publishContextIfAdmitted(
         _ context: WKWebExtensionContext,

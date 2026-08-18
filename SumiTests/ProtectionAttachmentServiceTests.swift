@@ -150,7 +150,6 @@ final class ProtectionAttachmentServiceTests: XCTestCase {
             selectedFilterLists: [],
             networkShards: shards,
             lastSuccessfulUpdateDate: Date(timeIntervalSince1970: 1),
-            previousGenerationId: nil,
             bundleProfileId: SumiProtectionBundleProfile.adblock
         )
     }

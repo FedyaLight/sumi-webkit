@@ -2,7 +2,7 @@ import Foundation
 import SumiDomain
 
 /// Live WebKit rule-list runtime. It owns publication state and the lifetime of
-/// its serialized generation work; archive/install/recovery algorithms remain
+/// its serialized generation work; archive and installation algorithms remain
 /// separate transaction components.
 @MainActor
 final class AdblockRuleListRuntime {
@@ -13,7 +13,6 @@ final class AdblockRuleListRuntime {
     private let ruleListProvider: AdblockManifestRuleListProvider
     private let generationInstaller: AdblockGenerationInstaller
     private let persistedGenerationActivation: AdblockPersistedGenerationActivation
-    private let generationRecovery: AdblockGenerationRecovery
     private let generationRetention: AdblockGenerationRetention
     private let mutationGate = AdblockGenerationMutationGate()
     private let isRuntimeEnabled: @Sendable () async -> Bool
@@ -58,11 +57,6 @@ final class AdblockRuleListRuntime {
             archive: archive,
             contentRuleListStore: compiler
         )
-        let recovery = AdblockGenerationRecovery(
-            archive: archive,
-            publisher: publisher,
-            contentRuleListStore: compiler
-        )
         generationInstaller = AdblockGenerationInstaller(
             archive: archive,
             publisher: publisher,
@@ -75,7 +69,6 @@ final class AdblockRuleListRuntime {
             publisher: publisher,
             mutationGate: mutationGate
         )
-        generationRecovery = recovery
         generationRetention = retention
     }
 
@@ -147,14 +140,13 @@ final class AdblockRuleListRuntime {
         guard mutationGate.owns(lease), !Task.isCancelled else {
             throw CancellationError()
         }
-        _ = await generationRecovery.restorePreviousGenerationIfNeeded()
         guard let manifest = try await generationArchive.activeManifest(),
               manifest.bundleProfileId == profileId
         else {
             return nil
         }
         try await persistedGenerationActivation.activate(manifest, lease: lease)
-        _ = await generationRetention.removeUnrecoverableGenerations()
+        _ = await generationRetention.removeInactiveGenerations()
         await advancedBlockingRuntime.prepare(for: manifest)
         activeManifestDidChange?()
         return manifest
@@ -175,7 +167,6 @@ final class AdblockRuleListRuntime {
         let manifest = try await generationInstaller.install(
             at: bundleURL,
             profileId: profileId,
-            previousManifest: try await generationArchive.activeManifest(),
             lease: lease
         )
         await advancedBlockingRuntime.deactivate()

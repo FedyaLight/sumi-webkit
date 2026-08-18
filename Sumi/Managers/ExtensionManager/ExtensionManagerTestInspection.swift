@@ -119,7 +119,6 @@ struct ExtensionManagerTestInspection {
             let installer: ExtensionInstallationService
             let runtimeActivation: ExtensionInstallRuntimeActivator
             let storageCleanup: WebExtensionStorageCleanupOwner
-            let storagePlanner: WebExtensionStorageCleanupPlanner
         }
 
         struct RetirementRoles {

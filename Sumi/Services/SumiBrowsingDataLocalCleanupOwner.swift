@@ -138,15 +138,6 @@ final class SumiBrowsingDataLocalCleanupOwner {
         }
     }
 
-    func invalidateSiteDataFavicons(
-        domains: Set<String>,
-        partition: SumiFaviconPartition
-    ) {
-        for domain in domains {
-            faviconCacheCleaner.invalidateSite(domain: domain, partition: partition)
-        }
-    }
-
     private func countVisits(
         matching query: HistoryQuery,
         profileId: UUID?,

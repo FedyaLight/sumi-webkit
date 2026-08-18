@@ -32,19 +32,21 @@ final class InternalWebExtensionContributionOwner {
         _ contribution: SumiURLCleaningContribution?,
         profileID: UUID
     ) {
-        let revision = (revisionsByProfile[profileID] ?? 0) &+ 1
-        revisionsByProfile[profileID] = revision
-        tasksByProfile.removeValue(forKey: profileID)?.cancel()
+        let scopeID = profileID
+        let revision = (revisionsByProfile[scopeID] ?? 0) &+ 1
+        revisionsByProfile[scopeID] = revision
+        tasksByProfile.removeValue(forKey: scopeID)?.cancel()
 
         guard let contribution else {
-            desiredByProfile.removeValue(forKey: profileID)
-            unload(profileID: profileID)
+            desiredByProfile.removeValue(forKey: scopeID)
+            unload(scopeID: scopeID)
+            let fingerprints = activeFingerprints()
             Task {
-                await resourceBuilder.removeResources(for: profileID, keeping: nil)
+                await resourceBuilder.removeResources(keeping: fingerprints)
             }
             return
         }
-        desiredByProfile[profileID] = contribution
+        desiredByProfile[scopeID] = contribution
         guard let controller = controllerProvisioning.controllerIfAdmitted(
             for: profileID,
             mutationLease: nil
@@ -53,21 +55,20 @@ final class InternalWebExtensionContributionOwner {
         }
 
         let fingerprint = Self.fingerprint(for: contribution)
-        if loadedByProfile[profileID]?.fingerprint == fingerprint {
+        if loadedByProfile[scopeID]?.fingerprint == fingerprint {
             return
         }
-        unload(profileID: profileID)
-        tasksByProfile[profileID] = Task { @MainActor [weak self] in
+        unload(scopeID: scopeID)
+        tasksByProfile[scopeID] = Task { @MainActor [weak self] in
             guard let self else { return }
             defer {
-                if revisionsByProfile[profileID] == revision {
-                    tasksByProfile.removeValue(forKey: profileID)
+                if revisionsByProfile[scopeID] == revision {
+                    tasksByProfile.removeValue(forKey: scopeID)
                 }
             }
             do {
                 let resourceURL = try await resourceBuilder.resources(
                     for: contribution,
-                    profileID: profileID,
                     fingerprint: fingerprint
                 )
                 try Task.checkCancellation()
@@ -86,8 +87,8 @@ final class InternalWebExtensionContributionOwner {
                     fingerprint: fingerprint
                 )
                 try controller.load(context)
-                guard revisionsByProfile[profileID] == revision,
-                      desiredByProfile[profileID] == contribution
+                guard revisionsByProfile[scopeID] == revision,
+                      desiredByProfile[scopeID] == contribution
                 else {
                     try? controller.unload(context)
                     return
@@ -97,27 +98,18 @@ final class InternalWebExtensionContributionOwner {
                         fingerprint: fingerprint,
                         context: context
                     ),
-                    forKey: profileID
+                    forKey: scopeID
                 )
                 if let previous, previous.context !== context {
                     try? controller.unload(previous.context)
                 }
                 await resourceBuilder.removeResources(
-                    for: profileID,
-                    keeping: fingerprint
+                    keeping: activeFingerprints()
                 )
             } catch is CancellationError {
-                if let current = desiredByProfile[profileID] {
-                    await resourceBuilder.removeResources(
-                        for: profileID,
-                        keeping: Self.fingerprint(for: current)
-                    )
-                } else {
-                    await resourceBuilder.removeResources(
-                        for: profileID,
-                        keeping: nil
-                    )
-                }
+                await resourceBuilder.removeResources(
+                    keeping: activeFingerprints()
+                )
                 return
             } catch {
                 RuntimeDiagnostics.debug(category: "ContentBlocking") {
@@ -128,38 +120,33 @@ final class InternalWebExtensionContributionOwner {
     }
 
     func removeAll() {
-        let profileIDs = Set(desiredByProfile.keys).union(loadedByProfile.keys)
         for task in tasksByProfile.values {
             task.cancel()
         }
         tasksByProfile.removeAll()
         desiredByProfile.removeAll()
         revisionsByProfile.removeAll()
-        for profileID in Array(loadedByProfile.keys) {
-            unload(profileID: profileID)
+        for scopeID in Array(loadedByProfile.keys) {
+            unload(scopeID: scopeID)
         }
         Task {
-            for profileID in profileIDs {
-                await resourceBuilder.removeResources(
-                    for: profileID,
-                    keeping: nil
-                )
-            }
+            await resourceBuilder.removeResources(keeping: [])
         }
     }
 
     func waitUntilReady(profileID: UUID) async
         -> PageNavigationPrerequisiteResult {
-        guard let desired = desiredByProfile[profileID] else { return .ready }
+        let scopeID = profileID
+        guard let desired = desiredByProfile[scopeID] else { return .ready }
         let fingerprint = Self.fingerprint(for: desired)
-        if loadedByProfile[profileID]?.fingerprint == fingerprint {
+        if loadedByProfile[scopeID]?.fingerprint == fingerprint {
             return .ready
         }
-        if let task = tasksByProfile[profileID] {
+        if let task = tasksByProfile[scopeID] {
             await task.value
         }
         if Task.isCancelled { return .cancelled }
-        return loadedByProfile[profileID]?.fingerprint == fingerprint
+        return loadedByProfile[scopeID]?.fingerprint == fingerprint
             ? .ready
             : .degraded
     }
@@ -177,8 +164,8 @@ final class InternalWebExtensionContributionOwner {
         }
     #endif
 
-    private func unload(profileID: UUID) {
-        guard let loaded = loadedByProfile.removeValue(forKey: profileID),
+    private func unload(scopeID: UUID) {
+        guard let loaded = loadedByProfile.removeValue(forKey: scopeID),
               let controller = loaded.context.webExtensionController
         else {
             return
@@ -192,7 +179,7 @@ final class InternalWebExtensionContributionOwner {
         let value = ([
             resourceSchemaVersion,
             contribution.generationID,
-        ] + contribution.disabledDomains).joined(separator: "\n")
+        ] + contribution.disabledDomains.sorted()).joined(separator: "\n")
         return SHA256.hash(data: Data(value.utf8))
             .map { String(format: "%02x", $0) }
             .joined()
@@ -223,6 +210,10 @@ final class InternalWebExtensionContributionOwner {
         context.hasAccessToPrivateData = true
         context.isInspectable = RuntimeDiagnostics.isDeveloperInspectionEnabled
     }
+
+    private func activeFingerprints() -> Set<String> {
+        Set(desiredByProfile.values.map(Self.fingerprint(for:)))
+    }
 }
 
 actor InternalURLCleaningExtensionResourceBuilder {
@@ -237,24 +228,39 @@ actor InternalURLCleaningExtensionResourceBuilder {
         rootDirectory: URL? = nil
     ) {
         self.fileManager = fileManager
-        self.rootDirectory = rootDirectory
-            ?? FileManager.default.urls(
+        if let rootDirectory {
+            self.rootDirectory = rootDirectory
+        } else {
+            let canonical = SumiApplicationSupportDirectory
+                .cachesRootURL(fileManager: fileManager)
+                .appendingPathComponent(
+                    "InternalWebExtensions/URLCleaning",
+                    isDirectory: true
+                )
+            let legacy = fileManager.urls(
                 for: .cachesDirectory,
                 in: .userDomainMask
             )[0].appendingPathComponent(
                 "Sumi/InternalWebExtensions/URLCleaning",
                 isDirectory: true
             )
+            self.rootDirectory = SumiApplicationSupportDirectory
+                .migrateLegacyDirectoryIfNeeded(
+                    from: legacy,
+                    to: canonical,
+                    fileManager: fileManager
+                )
+        }
     }
 
     func resources(
         for contribution: SumiURLCleaningContribution,
-        profileID: UUID,
         fingerprint: String
     ) throws -> URL {
-        let directory = rootDirectory
-            .appendingPathComponent(profileID.uuidString, isDirectory: true)
-            .appendingPathComponent(fingerprint, isDirectory: true)
+        let directory = rootDirectory.appendingPathComponent(
+            fingerprint,
+            isDirectory: true
+        )
         let manifestURL = directory.appendingPathComponent("manifest.json")
         let rulesURL = directory.appendingPathComponent("rules.json")
         if fileManager.fileExists(atPath: manifestURL.path),
@@ -315,22 +321,15 @@ actor InternalURLCleaningExtensionResourceBuilder {
         return directory
     }
 
-    func removeResources(
-        for profileID: UUID,
-        keeping fingerprint: String?
-    ) {
-        let profileDirectory = rootDirectory.appendingPathComponent(
-            profileID.uuidString,
-            isDirectory: true
-        )
+    func removeResources(keeping fingerprints: Set<String>) {
         guard let entries = try? fileManager.contentsOfDirectory(
-            at: profileDirectory,
+            at: rootDirectory,
             includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
-            options: [.skipsHiddenFiles]
+            options: []
         ) else {
             return
         }
-        for entry in entries where entry.lastPathComponent != fingerprint {
+        for entry in entries where fingerprints.contains(entry.lastPathComponent) == false {
             guard let values = try? entry.resourceValues(
                 forKeys: [.isDirectoryKey, .isSymbolicLinkKey]
             ),
@@ -340,9 +339,6 @@ actor InternalURLCleaningExtensionResourceBuilder {
                 continue
             }
             try? fileManager.removeItem(at: entry)
-        }
-        if fingerprint == nil {
-            try? fileManager.removeItem(at: profileDirectory)
         }
     }
 
@@ -399,5 +395,4 @@ actor InternalURLCleaningExtensionResourceBuilder {
         }
         return rules
     }
-
 }

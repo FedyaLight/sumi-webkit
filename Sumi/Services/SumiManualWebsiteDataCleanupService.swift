@@ -5,7 +5,6 @@ import WebKit
 final class SumiManualWebsiteDataCleanupService {
     private let websiteDataCleanupService: any SumiWebsiteDataCleanupServicing
     private let appResidueCleaner: any SumiBrowsingDataAppResidueCleaning
-    private let domainInventory: SumiBrowsingDataDomainInventory
     private let sharedWebsiteDataStoreProvider: @MainActor () -> WKWebsiteDataStore
     private let referenceDateProvider: @MainActor () -> Date
     /// Website-data mutation is unsafe without this boundary. The cleanup
@@ -16,14 +15,12 @@ final class SumiManualWebsiteDataCleanupService {
     init(
         websiteDataCleanupService: any SumiWebsiteDataCleanupServicing,
         appResidueCleaner: any SumiBrowsingDataAppResidueCleaning,
-        domainInventory: SumiBrowsingDataDomainInventory,
         destructiveCleanupPreparer: (any SumiDestructiveBrowsingDataCleanupPreparing)?,
         sharedWebsiteDataStoreProvider: @escaping @MainActor () -> WKWebsiteDataStore,
         referenceDateProvider: @escaping @MainActor () -> Date
     ) {
         self.websiteDataCleanupService = websiteDataCleanupService
         self.appResidueCleaner = appResidueCleaner
-        self.domainInventory = domainInventory
         self.destructiveCleanupPreparer = destructiveCleanupPreparer
         self.sharedWebsiteDataStoreProvider = sharedWebsiteDataStoreProvider
         self.referenceDateProvider = referenceDateProvider
@@ -89,20 +86,11 @@ final class SumiManualWebsiteDataCleanupService {
 
     func clearProfileWebsiteData(
         range: SumiBrowsingDataTimeRange,
-        categories: Set<SumiBrowsingDataCategory>,
         domains: Set<String>,
         dataTypes: Set<String>,
         includesCookies: Bool,
         dataStore: WKWebsiteDataStore
-    ) async -> Set<String> {
-        let siteDataFaviconDomains = await siteDataFaviconDomainsToInvalidate(
-            range: range,
-            categories: categories,
-            domains: domains,
-            dataTypes: dataTypes,
-            includesCookies: includesCookies,
-            dataStore: dataStore
-        )
+    ) async {
         await clearWebsiteData(
             range: range,
             dataTypes: dataTypes,
@@ -110,7 +98,6 @@ final class SumiManualWebsiteDataCleanupService {
             domains: domains,
             dataStore: dataStore
         )
-        return siteDataFaviconDomains
     }
 
     func clearAppLevelWebsiteResidueIfNeeded(
@@ -205,26 +192,4 @@ final class SumiManualWebsiteDataCleanupService {
         }
     }
 
-    private func siteDataFaviconDomainsToInvalidate(
-        range: SumiBrowsingDataTimeRange,
-        categories: Set<SumiBrowsingDataCategory>,
-        domains: Set<String>,
-        dataTypes: Set<String>,
-        includesCookies: Bool,
-        dataStore: WKWebsiteDataStore
-    ) async -> Set<String> {
-        guard categories.contains(.siteData) else { return [] }
-        guard !categories.contains(.history) else { return [] }
-
-        if range == .allTime {
-            return domainInventory.normalizeDomains(
-                await domainInventory.websiteDataDomains(
-                    ofTypes: dataTypes,
-                    includeCookies: includesCookies,
-                    in: dataStore
-                )
-            )
-        }
-        return domains
-    }
 }

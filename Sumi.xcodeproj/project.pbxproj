@@ -664,7 +664,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 0.0.4;
-				PRODUCT_BUNDLE_IDENTIFIER = com.sumi.browser;
+				PRODUCT_BUNDLE_IDENTIFIER = com.sumi.browser.testhost;
 				PRODUCT_NAME = Sumi;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				REGISTER_APP_GROUPS = YES;

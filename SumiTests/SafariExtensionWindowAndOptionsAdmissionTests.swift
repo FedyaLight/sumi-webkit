@@ -438,6 +438,7 @@ extension SafariExtensionWebViewControllerWiringTests {
         XCTAssertFalse(orderFrontWindow.isVisible)
         reentrantService.closeWindow(for: installed.id)
     }
+
 }
 
 @MainActor

@@ -43,7 +43,6 @@ final class InternalURLCleaningExtensionResourceBuilderTests: XCTestCase {
                 rulesURL: fixture.rulesURL,
                 disabledDomains: ["example.com"]
             ),
-            profileID: fixture.profileID,
             fingerprint: "fingerprint-a"
         )
 
@@ -96,17 +95,16 @@ final class InternalURLCleaningExtensionResourceBuilderTests: XCTestCase {
 
         let first = try await builder.resources(
             for: contribution,
-            profileID: fixture.profileID,
             fingerprint: "stable"
         )
         let rulesURL = first.appendingPathComponent("rules.json")
+        XCTAssertEqual(first.deletingLastPathComponent(), fixture.outputRoot)
         let firstModificationDate = try XCTUnwrap(
             try rulesURL.resourceValues(forKeys: [.contentModificationDateKey])
                 .contentModificationDate
         )
         let second = try await builder.resources(
             for: contribution,
-            profileID: fixture.profileID,
             fingerprint: "stable"
         )
 
@@ -116,6 +114,33 @@ final class InternalURLCleaningExtensionResourceBuilderTests: XCTestCase {
                 .contentModificationDate,
             firstModificationDate
         )
+    }
+
+    func testRemovesOnlyUnreferencedContentAddressedPackages() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        try Data("[]".utf8).write(to: fixture.rulesURL, options: .atomic)
+        let builder = InternalURLCleaningExtensionResourceBuilder(
+            rootDirectory: fixture.outputRoot
+        )
+        let contribution = SumiURLCleaningContribution(
+            generationID: "generation-a",
+            rulesURL: fixture.rulesURL,
+            disabledDomains: []
+        )
+        let kept = try await builder.resources(
+            for: contribution,
+            fingerprint: "kept"
+        )
+        let discarded = try await builder.resources(
+            for: contribution,
+            fingerprint: "discarded"
+        )
+
+        await builder.removeResources(keeping: ["kept"])
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: kept.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: discarded.path))
     }
 
     func testContributionLoadsIntoProvisionedSharedControllerAndUnloadsCleanly() async throws {
@@ -169,6 +194,7 @@ final class InternalURLCleaningExtensionResourceBuilderTests: XCTestCase {
         XCTAssertNil(replacement.webExtensionController)
         XCTAssertNil(owner.loadedContextForTests(profileID: fixture.profileID))
     }
+
 }
 
 @MainActor

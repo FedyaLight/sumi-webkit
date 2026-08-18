@@ -493,7 +493,6 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
                 let cleanupStore = WebExtensionStorageCleanupStore(
                     controllerStorageId: ExtensionProfileControllerIdentity
                         .runtimeIdentifier(for: profileID),
-                    planner: WebExtensionStorageCleanupPlanner(),
                     storageDirectoryNameResolver: { _ in runtimeIdentifier }
                 )
                 let directory = try XCTUnwrap(

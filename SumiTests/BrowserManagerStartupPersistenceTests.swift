@@ -89,9 +89,14 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
         )
 
         let records = try await DatabasePermissionStore(database: container)
-            .listDecisions(profilePartitionId: key.profilePartitionId)
+            .listDecisions(
+                profilePartitionId: SumiGlobalSitePermissionScope.profilePartitionId
+            )
         XCTAssertEqual(records.count, 1)
-        XCTAssertEqual(records.first?.key, key)
+        XCTAssertEqual(
+            records.first?.key,
+            SumiGlobalSitePermissionScope.storageKey(for: key)
+        )
         XCTAssertEqual(records.first?.decision.state, .deny)
         XCTAssertEqual(records.first?.decision.reason, "startup-persistence-test")
     }
@@ -130,7 +135,9 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
         )
 
         let records = try await DatabasePermissionStore(database: container)
-            .listDecisions(profilePartitionId: profile.id.uuidString)
+            .listDecisions(
+                profilePartitionId: SumiGlobalSitePermissionScope.profilePartitionId
+            )
         XCTAssertEqual(records.count, 1)
         XCTAssertEqual(records.first?.key.permissionType, .autoplay)
         XCTAssertEqual(

@@ -139,7 +139,7 @@ final class PhysicalWebViewSourceResolverTests: XCTestCase {
 
         XCTAssertNil(fixture.resolver.resolve(fixture.webView))
 
-        XCTAssertTrue(profile.dataStore.isPersistent)
+        XCTAssertFalse(profile.isEphemeral)
         XCTAssertEqual(window.ephemeralTabs.map(\.id), tabSnapshot.map(\.id))
         XCTAssertEqual(window.currentTabId, currentTabID)
         XCTAssertIdentical(

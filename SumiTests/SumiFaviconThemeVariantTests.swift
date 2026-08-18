@@ -29,7 +29,7 @@ final class SumiFaviconThemeVariantTests: XCTestCase {
     private func makeFixture() throws -> FaviconThemeVariantFixture {
         let pageURL = try XCTUnwrap(URL(string: "https://example.com/"))
         let cachedSourceURL = try XCTUnwrap(URL(string: "https://assets.example/favicon-dark.svg"))
-        let partition = SumiFaviconPartition.regular(nil)
+        let partition = SumiFaviconPartition.regular()
         let selection = SumiStoredFaviconSelection(
             partition: partition,
             pageURL: pageURL,

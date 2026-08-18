@@ -260,7 +260,7 @@ private final class FakeCommandBookmarkRouting: SumiCommandBookmarkRouting {
 @MainActor
 private final class FakeCommandFaviconService: BrowserFaviconServicing {
     func partition(profile: Profile?) -> SumiFaviconPartition {
-        .regular(profile?.id)
+        .regular()
     }
 
     func invalidateSite(domain: String, profile: Profile?) {

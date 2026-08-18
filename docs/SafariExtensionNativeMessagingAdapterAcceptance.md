@@ -68,7 +68,8 @@ and DuckDuckGo [`apple-browsers`](https://github.com/duckduckgo/apple-browsers).
 2. Open a normal, non-private tab on an `https://` page; confirm the URL-hub
    action appears and the popup loads non-empty.
 3. Log in using Raindrop's normal web flow, save the current page, close and
-   reopen the popup, and confirm the saved/logged-in state is profile-scoped.
+   reopen the popup. Confirm that extension state is shared by regular profiles
+   while the tab's website session remains profile-isolated.
 
 ### 1Password / Proton Pass manual readiness steps
 
@@ -154,7 +155,7 @@ Routing fields on `adapterCompatibility` rows (password managers):
 - No JS shim files in adapter layer or `ExtensionRuntimeResources/*.js`
 - No `patchManifestForWebKit` in Safari import/runtime path
 - Clean `.appex` load via `WKWebExtension(appExtensionBundle:)`
-- Lazy profile runtime (no eager `ensureEnabledExtensionsLoaded` on profile switch)
+- Lazy extension runtime (no eager `ensureEnabledExtensionsLoaded` on profile switch)
 - Popup anchor wiring generic (no per-vendor branches in loop guard / coalescer)
 - Native messaging loop guard suppresses repeated launches for unsupported protocols; Bitwarden uses supported-relay path (no cooldown suppression)
 

@@ -12,6 +12,7 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
         profile: Profile,
         browserConfiguration: BrowserConfiguration = BrowserConfiguration(),
         moduleRegistry: SumiModuleRegistry = .unavailable(),
+        profileWebExtensionRuntime: SumiProfileWebExtensionRuntime? = nil,
         assemblyOverrides: ExtensionManagerTestAssemblyOverrides? = nil
     ) -> (
         manager: ExtensionManager,
@@ -24,6 +25,7 @@ class SafariExtensionWebViewControllerWiringTestCase: XCTestCase {
             initialProfile: profile,
             browserConfiguration: browserConfiguration,
             moduleRegistry: moduleRegistry,
+            profileWebExtensionRuntime: profileWebExtensionRuntime,
             assemblyOverrides: assemblyOverrides
         )
         return (

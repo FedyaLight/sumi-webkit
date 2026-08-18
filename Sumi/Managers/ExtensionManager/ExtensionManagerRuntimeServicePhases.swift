@@ -218,25 +218,16 @@ extension ExtensionManagerAssembler {
                     [demand = coordination.demandCoordinator] in
                     _ = demand.requestRuntimeExplicitly(reason: .install)
                 },
-                removeStoredData: { extensionID, mode in
-                    await storageCleanup.removeStoredData(
-                        for: extensionID,
-                        mode: mode
-                    )
+                removeStoredData: { extensionID in
+                    await storageCleanup.removeStoredData(for: extensionID)
                 },
                 hasStoredDataCandidate: {
                     storageCleanup.hasStoredDataCandidate(for: $0)
                 },
-                traceStoreLifecycle: { phase, extensionID, manifest in
+                traceStoreLifecycle: { phase, extensionID in
                     storageCleanup.traceLifecycle(
                         phase: phase,
-                        extensionId: extensionID,
-                        manifest: manifest
-                    )
-                },
-                ensureStorageDirectory: { extensionID in
-                    _ = storageCleanup.ensureStorageDirectoryExists(
-                        for: extensionID
+                        extensionId: extensionID
                     )
                 },
                 emitTrace: { [diagnostics = runtime.diagnostics] message in

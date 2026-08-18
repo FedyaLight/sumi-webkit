@@ -30,8 +30,8 @@ final class ExtensionProfileWebsiteDataStoreCache {
         rememberPrivateRuntimeProfileIfNeeded(profile)
     }
 
-    /// Resolves the one store object that represents this profile, minting a
-    /// persistent store only for a profile that can own one.
+    /// Resolves the one store object that represents this profile, creating a
+    /// profile store only for a profile that can own one.
     /// A private partition's store is non-persistent and therefore not
     /// reconstructible from a UUID, so resolution fails closed rather than
     /// minting persistent storage for a private browsing session.
@@ -67,7 +67,7 @@ final class ExtensionProfileWebsiteDataStoreCache {
             )
         }
 
-        let store = WKWebsiteDataStore(forIdentifier: profileId)
+        let store = Profile.createDataStore(for: profileId)
         storesByProfile[profileId] = store
         touch(profileId)
         evictIfNeeded(currentProfileId: currentProfileId)

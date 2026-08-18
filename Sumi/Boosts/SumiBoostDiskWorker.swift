@@ -160,13 +160,21 @@ final class SumiBoostDiskWorker: @unchecked Sendable {
     }
 
     static func defaultRootDirectory(fileManager: FileManager) -> URL {
+        let canonical = SumiApplicationSupportDirectory
+            .appRootURL(fileManager: fileManager)
+            .appendingPathComponent("Boosts", isDirectory: true)
         let applicationSupport = fileManager.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
         ).first ?? fileManager.homeDirectoryForCurrentUser
-        return applicationSupport
+        let legacy = applicationSupport
             .appendingPathComponent("Sumi", isDirectory: true)
             .appendingPathComponent("Boosts", isDirectory: true)
+        return SumiApplicationSupportDirectory.migrateLegacyDirectoryIfNeeded(
+            from: legacy,
+            to: canonical,
+            fileManager: fileManager
+        )
     }
 
     private func perform<T: Sendable>(

@@ -51,6 +51,13 @@ struct SumiSiteSettingsSiteDetailView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            Text(
+                SumiSiteSettingsStrings.permissionScope(
+                    isEphemeralProfile: profile?.isEphemeral == true
+                )
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
         }
     }
 
@@ -110,7 +117,9 @@ struct SumiSiteSettingsSiteDetailView: View {
         SettingsSection(title: "Reset") {
             SettingsActionRow(
                 title: SumiSiteSettingsStrings.resetPermissions,
-                subtitle: SumiSiteSettingsStrings.resetPermissionsSubtitle,
+                subtitle: SumiSiteSettingsStrings.resetPermissionsSubtitle(
+                    isEphemeralProfile: profile?.isEphemeral == true
+                ),
                 systemImage: "arrow.counterclockwise",
                 buttonTitle: viewModel.isResetting ? "Resetting..." : SumiSiteSettingsStrings.resetPermissions,
                 role: .destructive

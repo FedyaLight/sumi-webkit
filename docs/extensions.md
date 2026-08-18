@@ -8,9 +8,9 @@ Status reflects maintainer manual testing on 2026-07-30 plus automated coverage 
 
 | Extension or provider | Current status | Verified workflow / boundary |
 | --- | --- | --- |
-| Bitwarden | Works for the tested release workflow | Import and enable, action popup, sign-in, inline autofill, and local biometric/native-messaging paths. Profile-isolation retest remains part of the release checklist. |
-| Proton Pass | Works for the tested release workflow | Import and enable, popup sign-in, site permission flow, worker-driven scripting, and inline autofill. Profile-isolation retest remains part of the release checklist. |
-| Raindrop.io | Works | Import and enable, popup sign-in, save current page, persistence, and profile isolation. |
+| Bitwarden | Works for the tested release workflow | Import and enable, action popup, sign-in, inline autofill, and local biometric/native-messaging paths. Shared extension state and profile-isolated website-session retest remain part of the release checklist. |
+| Proton Pass | Works for the tested release workflow | Import and enable, popup sign-in, site permission flow, worker-driven scripting, and inline autofill. Shared extension state and profile-isolated website-session retest remain part of the release checklist. |
+| Raindrop.io | Works | Import and enable, popup sign-in, save current page, shared extension persistence, and profile-isolated website sessions. |
 | Userscripts | Works through the Userscripts Safari extension | The companion library bridge supports the tested Userscripts workflow. Sumi does not expose a separate built-in arbitrary-script installer. |
 | 1Password for Safari | Partial; not a release-supported workflow | Web extension pages and WebKit APIs can load, but 1Password 8 depends on a native Safari App Extension handler that macOS does not allow Sumi to host with public entitlements. Native unlock and end-to-end vault use are therefore not claimed. |
 | Apple Passwords / iCloud Keychain | System WebKit behavior; not release-verified | Sumi uses `WKWebView`, for which Apple documents system handling of web authentication and credential requests. The repo has no Sumi-specific Apple Passwords extension integration or completed manual E2E, so full AutoFill support is not claimed yet. |
@@ -20,7 +20,7 @@ Apple's platform boundary is documented in [Password use in web browsers](https:
 ## What Sumi Implements
 
 - Discovery and import of installed Safari Web Extension app-extension bundles.
-- Per-profile `WKWebExtensionController`, context, website-data, action, popup, tab, and window routing.
+- Each regular Browser Profile uses its own `WKWebExtensionController` and extension contexts. Installation packages are shared globally; runtime storage, site access, permissions, commands, and UI ordering remain profile-scoped. Private contexts remain non-persistent and separate.
 - Site-access and private-browsing policy surfaces.
 - Extension toolbar actions, keyboard commands, and page context menus.
 - Native-messaging adapters where the companion protocol is understood and can be implemented through public APIs.

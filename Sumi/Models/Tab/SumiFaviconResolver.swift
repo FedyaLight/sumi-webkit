@@ -6,14 +6,10 @@ import WebKit
 enum SumiFaviconResolver {
     @MainActor private static var menuSystemImageCache: [String: NSImage] = [:]
 
-    static func cacheKey(for url: URL) -> String? {
-        SumiFaviconLookupKey.cacheKey(for: url)
-    }
-
     @MainActor
     static func menuImage(
         for url: URL?,
-        partition: SumiFaviconPartition = .regular(nil),
+        partition: SumiFaviconPartition = .regular(),
         imageReader: any BrowserFaviconImageReading
     ) -> NSImage {
         guard let url else {
@@ -51,7 +47,7 @@ enum SumiFaviconResolver {
     @MainActor
     static func image(
         for url: URL,
-        partition: SumiFaviconPartition = .regular(nil),
+        partition: SumiFaviconPartition = .regular(),
         webView: WKWebView? = nil,
         imageReader: any BrowserFaviconImageReading,
         prefetch: any BrowserFaviconPrefetchScheduling

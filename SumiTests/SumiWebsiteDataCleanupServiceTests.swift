@@ -1232,7 +1232,7 @@ final class WebsiteDataCleanupBrowserFaviconServiceStub: BrowserFaviconServicing
     private(set) var invalidatedSites: [(domain: String, profileId: UUID?)] = []
 
     func partition(profile: Profile?) -> SumiFaviconPartition {
-        .regular(profile?.id)
+        .regular()
     }
 
     func invalidateSite(domain: String, profile: Profile?) {

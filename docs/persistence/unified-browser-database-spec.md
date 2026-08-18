@@ -4,12 +4,14 @@
 
 Replace Sumi's SwiftData startup store, Core Data bookmark store, structured JSON state, and browser-state `UserDefaults` payloads with one canonical SQLite persistence module. Keep only storage that belongs to macOS/WebKit, user-selected files, extension packages, or rebuildable caches outside the database.
 
-There is no compatibility path for other installations or historical app versions. The only conversion input is the current local `com.sumi.browser` installation on the development Mac.
+Versioned in-place migrations preserve supported local installations. The only
+conversion input from outside the database is the current local
+`com.sumi.browser` installation on the development Mac.
 
 ## Required behavior
 
 - `Sumi.sqlite` is the sole runtime authority for profiles, spaces, tabs, folders, split state, history, bookmarks, permission decisions and activity, extension metadata, content-blocker site overrides, zapper rules and compiled-identifier metadata, window/session snapshots, and import recovery state.
-- Browser Profile records use explicit profile UUIDs. Foreign keys prevent dangling profile, space, folder, history, bookmark, and permission references.
+- Browser Profile records use explicit profile UUIDs. Foreign keys prevent dangling profile, space, folder, history, and bookmark references. Durable browser site-permission decisions belong to the Local Installation, so they deliberately have no profile foreign key; permission activity remains profile-scoped.
 - Writes spanning related browser data use one SQLite transaction.
 - The database uses WAL for the persistent installation, enables foreign keys, bounds busy waits, and exposes no GRDB or raw SQL types to browser UI and managers.
 - Incognito state remains memory-only and WebKit continues to own cookies, local storage, IndexedDB, service workers, and other website data.
@@ -21,7 +23,7 @@ There is no compatibility path for other installations or historical app version
   transaction and delegates its Platform Store cleanup to the existing
   WebKit/Keychain/file owners. Deleting the final profile first provisions a
   new empty `Default` profile and Space; scalar preferences and global browser
-  data are not reset.
+  data, including saved site permissions, are not reset.
 - Startup fails closed on permission, disk, schema, or unclassified database errors. Confirmed SQLite corruption is preserved before replacement.
 
 ## Local conversion

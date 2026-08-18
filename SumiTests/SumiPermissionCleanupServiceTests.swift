@@ -31,7 +31,7 @@ final class SumiPermissionCleanupServiceTests: XCTestCase {
         XCTAssertTrue(errorDescription.contains("listFailed"))
     }
 
-    func testProfileRetirementDeletesEveryPermissionDomainAndRetainsOtherProfile() async throws {
+    func testProfileRetirementClearsProfileActivityAndRetainsSavedPermissions() async throws {
         let targetProfileID = "target-profile"
         let retainedProfileID = "retained-profile"
         let defaultsSuite = "SumiPermissionCleanupProfileTests-\(UUID().uuidString)"
@@ -98,10 +98,10 @@ final class SumiPermissionCleanupServiceTests: XCTestCase {
             siteActivityStore: siteActivityStore,
             userDefaults: defaults
         )
-        try await service.deleteAllDecisions(
+        try await service.deleteProfileData(
             profilePartitionId: targetProfileID
         )
-        try await service.deleteAllDecisions(
+        try await service.deleteProfileData(
             profilePartitionId: targetProfileID
         )
 
@@ -119,7 +119,7 @@ final class SumiPermissionCleanupServiceTests: XCTestCase {
             for: retainedKey,
             now: Date()
         )
-        XCTAssertTrue(targetDecisions.isEmpty)
+        XCTAssertEqual(targetDecisions.count, 1)
         XCTAssertEqual(retainedDecisions.count, 1)
         XCTAssertTrue(
             recentStore.records(

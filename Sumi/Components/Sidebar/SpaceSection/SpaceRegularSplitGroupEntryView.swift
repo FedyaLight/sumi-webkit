@@ -117,9 +117,7 @@ struct SpaceRegularSplitGroupEntryView: View {
         guard let pin = item.pin else { return nil }
         return faviconImageStore.image(
             for: pin.launchURL,
-            partition: .regular(
-                pin.executionProfileId ?? pin.profileId ?? item.tab?.profileId
-            )
+            partition: .regular()
         )
     }
 
@@ -130,9 +128,7 @@ struct SpaceRegularSplitGroupEntryView: View {
     private func accentColor(for item: SplitGroupSidebarItem) -> Color {
         PinnedTileAccentResolver.resolve(
             launchURL: item.tab?.url ?? item.pin?.launchURL,
-            partition: item.pin.map {
-                .regular($0.executionProfileId ?? $0.profileId)
-            },
+            partition: item.pin.map { _ in .regular() },
             glyphText: item.pin?.glyphText,
             chromeTemplateSystemImageName:
                 item.pin?.chromeTemplateSystemImageName,

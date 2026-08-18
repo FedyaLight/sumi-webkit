@@ -50,7 +50,7 @@ final class SidebarPinFolderProjection {
         for pin: ShortcutPin,
         currentSpaceID: UUID?
     ) -> SumiFaviconPartition {
-        guard runtimeIsAlive() else { return .regular(nil) }
+        guard runtimeIsAlive() else { return .regular() }
         return resolution.resolvedFaviconPartition(
             for: pin,
             currentSpaceId: currentSpaceID

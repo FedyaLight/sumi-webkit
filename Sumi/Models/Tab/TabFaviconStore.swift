@@ -69,7 +69,7 @@ enum TabFaviconStore {
     @MainActor
     static func loadCachedLauncherImage(
         forDocumentURL url: URL,
-        partition: SumiFaviconPartition = .regular(nil),
+        partition: SumiFaviconPartition = .regular(),
         imageReader: any BrowserFaviconImageReading
     ) async -> NSImage? {
         await loadCachedDisplayImage(
@@ -136,7 +136,7 @@ enum TabFaviconStore {
     ) -> NSImage? {
         getCachedImage(
             forReferenceKey: referenceKey,
-            partition: .regular(nil),
+            partition: .regular(),
             context: .tabSidebar,
             imageReader: imageReader
         )

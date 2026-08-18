@@ -3,6 +3,8 @@ import Foundation
 import SumiDomain
 
 struct SumiFaviconPartition: Hashable, Codable, Sendable {
+    private static let sharedRegularIdentifier = "shared-regular"
+
     let profileIdentifier: String
     let isPrivate: Bool
 
@@ -18,8 +20,11 @@ struct SumiFaviconPartition: Hashable, Codable, Sendable {
         self.isPrivate = isPrivate
     }
 
-    static func regular(_ profileID: UUID?) -> SumiFaviconPartition {
-        SumiFaviconPartition(profileIdentifier: profileID?.uuidString, isPrivate: false)
+    static func regular() -> SumiFaviconPartition {
+        SumiFaviconPartition(
+            profileIdentifier: sharedRegularIdentifier,
+            isPrivate: false
+        )
     }
 
     static func privateEphemeral(_ profileID: UUID?) -> SumiFaviconPartition {

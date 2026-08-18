@@ -67,7 +67,7 @@ struct ShortcutHostedSplitGroupRow: View {
             ),
             faviconPartition: { item in
                 item.pin.map(faviconPartition)
-                    ?? .regular(item.tab?.profileId)
+                    ?? .regular()
             },
             dragSource: shortcutHostedSplitSegmentDragSource,
             contextMenuEntries: { _ in [] },

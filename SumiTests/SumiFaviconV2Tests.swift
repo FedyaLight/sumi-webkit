@@ -52,7 +52,7 @@ final class SumiFaviconV2DiscoveryTests: XCTestCase {
             ],
             pageURL: pageURL,
             baseURL: pageURL,
-            partition: .regular(nil)
+            partition: .regular()
         )
 
         XCTAssertEqual(candidates.count, 1)
@@ -91,7 +91,7 @@ final class SumiFaviconV2DiscoveryTests: XCTestCase {
             from: data,
             manifestURL: manifestURL,
             pageURL: pageURL,
-            partition: .regular(nil)
+            partition: .regular()
         )
 
         XCTAssertEqual(candidates.count, 2)
@@ -111,7 +111,7 @@ final class SumiFaviconV2DiscoveryTests: XCTestCase {
             from: data,
             manifestURL: manifestURL,
             pageURL: pageURL,
-            partition: .regular(nil)
+            partition: .regular()
         )
 
         XCTAssertTrue(candidates.isEmpty)
@@ -131,7 +131,7 @@ final class SumiFaviconV2DiscoveryTests: XCTestCase {
             ],
             pageURL: pageURL,
             baseURL: baseURL,
-            partition: .regular(nil)
+            partition: .regular()
         )
 
         XCTAssertEqual(candidates.count, 1)
@@ -148,11 +148,11 @@ final class SumiFaviconV2DiscoveryTests: XCTestCase {
             ],
             pageURL: pageURL,
             baseURL: pageURL,
-            partition: .regular(nil)
+            partition: .regular()
         )
         let rootCandidates = SumiFaviconDiscovery.rootFallbackCandidates(
             for: pageURL,
-            partition: .regular(nil)
+            partition: .regular()
         )
 
         XCTAssertEqual(documentCandidates.first?.iconURL.absoluteString, "https://browserbench.org/Speedometer3.1/resources/favicon.png")
@@ -176,12 +176,12 @@ final class SumiFaviconV2DiscoveryTests: XCTestCase {
             ],
             pageURL: pageURL,
             baseURL: pageURL,
-            partition: .regular(nil)
+            partition: .regular()
         )
 
         XCTAssertEqual(Set(candidates.compactMap(\.iconURL.scheme)), ["data", "blob"])
         XCTAssertTrue(
-            SumiFaviconDiscovery.rootFallbackCandidates(for: pageURL, partition: .regular(nil))
+            SumiFaviconDiscovery.rootFallbackCandidates(for: pageURL, partition: .regular())
                 .allSatisfy { $0.iconURL.scheme == "https" }
         )
     }
@@ -192,7 +192,7 @@ final class SumiFaviconV2SelectorTests: XCTestCase {
         let pageURL = try XCTUnwrap(URL(string: "https://example.com/"))
         let tinyURL = try XCTUnwrap(URL(string: "https://example.com/favicon.ico"))
         let manifestURL = try XCTUnwrap(URL(string: "https://example.com/icon-192.png"))
-        let partition = SumiFaviconPartition.regular(nil)
+        let partition = SumiFaviconPartition.regular()
         let tiny = SumiFaviconCandidate(
             pageURL: pageURL,
             iconURL: tinyURL,
@@ -224,7 +224,7 @@ final class SumiFaviconV2SelectorTests: XCTestCase {
 
     func testSelectorDoesNotPreferMaskableOverAnyForNormalUI() throws {
         let pageURL = try XCTUnwrap(URL(string: "https://example.com/"))
-        let partition = SumiFaviconPartition.regular(nil)
+        let partition = SumiFaviconPartition.regular()
         let anyURL = try XCTUnwrap(URL(string: "https://example.com/any.png"))
         let maskableURL = try XCTUnwrap(URL(string: "https://example.com/maskable.png"))
         let any = SumiFaviconCandidate(
@@ -286,7 +286,7 @@ final class SumiFaviconV2SelectorTests: XCTestCase {
             ],
             pageURL: pageURL,
             baseURL: pageURL,
-            partition: .regular(nil)
+            partition: .regular()
         )
 
         XCTAssertEqual(
@@ -393,7 +393,7 @@ final class SumiFaviconV2PayloadTests: XCTestCase {
             iconURL: iconURL,
             sourceKind: .documentLink,
             declaredType: type,
-            partition: .regular(nil)
+            partition: .regular()
         )
     }
 

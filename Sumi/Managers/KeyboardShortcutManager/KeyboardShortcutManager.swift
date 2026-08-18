@@ -16,6 +16,7 @@ import SumiDomain
 class KeyboardShortcutManager {
     private let assignments: KeyboardCommandAssignments
     private let extensionAssignments: ExtensionCommandAssignments
+    private let extensionCommandProfileScopeID: (UUID) -> UUID
     private let validator: ShortcutValidator
     private let systemOwnedShortcuts = KeyboardCommandAssignments
         .nativeReservations
@@ -28,7 +29,8 @@ class KeyboardShortcutManager {
 
     init(
         userDefaults: UserDefaults = .standard,
-        database: SumiDatabase? = nil
+        database: SumiDatabase? = nil,
+        extensionCommandProfileScopeID: @escaping (UUID) -> UUID = { $0 }
     ) {
         let resolvedDatabase: SumiDatabase
         if let database {
@@ -51,6 +53,7 @@ class KeyboardShortcutManager {
         self.extensionAssignments = ExtensionCommandAssignments(
             database: resolvedDatabase
         )
+        self.extensionCommandProfileScopeID = extensionCommandProfileScopeID
         self.validator = ShortcutValidator(systemOwnedShortcuts: systemOwnedShortcuts)
         loadShortcuts()
     }
@@ -124,7 +127,7 @@ class KeyboardShortcutManager {
             do {
                 extensionOwner = try extensionAssignments.activeOwner(
                     for: keyCombination,
-                    profileID: profileID
+                    profileID: extensionCommandProfileScopeID(profileID)
                 )?.identity
             } catch {
                 return .invalid
@@ -187,7 +190,7 @@ class KeyboardShortcutManager {
         do {
             guard let extensionOwner = try extensionAssignments.activeOwner(
                 for: keyCombination,
-                profileID: profileID
+                profileID: extensionCommandProfileScopeID(profileID)
             ) else {
                 return browserValidation
             }
@@ -201,7 +204,9 @@ class KeyboardShortcutManager {
         profileID: UUID
     ) -> [ExtensionCommandBindingAssignment] {
         do {
-            return try extensionAssignments.assignments(profileID: profileID)
+            return try extensionAssignments.assignments(
+                profileID: extensionCommandProfileScopeID(profileID)
+            )
         } catch {
             return []
         }
