@@ -79,8 +79,9 @@ final class SumiDownloadsNavigationResponder: SumiNavigationActionSourceWebViewR
         let explicitUserSave = (response.mainFrameNavigation?.redirectHistory.last
             ?? response.mainFrameNavigation?.navigationAction)?.navigationType == .custom(.userRequestedPageDownload)
         guard response.isHTTPStatusSuccessful != false,
-              !response.url.hasDirectoryPath,
-              !response.canShowMIMEType || response.shouldDownload || explicitUserSave
+              response.shouldDownload
+                || explicitUserSave
+                || (!response.url.hasDirectoryPath && !response.canShowMIMEType)
         else {
             return .next
         }

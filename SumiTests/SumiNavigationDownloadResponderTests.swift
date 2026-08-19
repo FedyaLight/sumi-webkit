@@ -372,6 +372,33 @@ final class SumiNavigationDownloadResponderTests: SumiNavigationResponderTestCas
         XCTAssertEqual(policy, .download)
     }
 
+    func testDownloadResponderRequestsDownloadForAttachmentAtDirectoryURL() async throws {
+        let managerHarness = DownloadTestHarness()
+        let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
+        managerHarness.manager.settings = settings
+        let responder = SumiDownloadsNavigationResponder(
+            tab: Tab(url: URL(string: "https://mail.google.com")!),
+            downloadManager: managerHarness.manager,
+            transportFactory: SumiWebKitDownloadTransportFactory()
+        )
+        let response = try XCTUnwrap(HTTPURLResponse(
+            url: URL(string: "https://mail.google.com/mail/u/0/?ui=2&view=att&disp=attd&realattid=fake")!,
+            statusCode: 200,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Disposition": "attachment; filename=report.pdf"]
+        ))
+
+        let policy = await SumiNavigationResponderAdapter(target: responder)
+            .decidePolicy(for: NavigationResponse(
+                response: response,
+                isForMainFrame: true,
+                canShowMIMEType: true,
+                mainFrameNavigation: nil
+            ))
+
+        XCTAssertEqual(policy, .download)
+    }
+
     func testDownloadResponderFailsClosedWhenCompositionIsUnavailable() async {
         let tab = Tab(url: URL(string: "https://example.com")!)
         let responder = SumiDownloadsNavigationResponder(
