@@ -134,6 +134,82 @@ final class PagePresentationStateTests: XCTestCase {
         XCTAssertNil(tab.certificateTrustWarningSession)
     }
 
+    func testBrowserOwnedPageSurfacesInheritTheSpaceBackground() throws {
+        let destination = try XCTUnwrap(
+            URL(string: "https://example.com/loading")
+        )
+        let loadingSurface = PagePresentationSurfaceView(
+            presentation: .loading(pageID: UUID(), destination: destination)
+        )
+        let warningSurface = PagePresentationSurfaceView(
+            presentation: .certificateTrustWarning(
+                pageID: UUID(),
+                host: "untrusted.example"
+            ),
+            certificateTrustWarningSession: CertificateTrustWarningSession(
+                host: "untrusted.example",
+                onVisitSite: {},
+                onClosePage: {},
+                onCancel: {}
+            )
+        )
+
+        let warning = try XCTUnwrap(allSubviews(of: warningSurface).first {
+            $0 is CertificateTrustWarningView
+        } as? CertificateTrustWarningView)
+
+        XCTAssertNil(loadingSurface.layer)
+        XCTAssertNil(warningSurface.layer)
+        XCTAssertFalse(warning.wantsLayer)
+        XCTAssertNil(warning.layer)
+    }
+
+    func testCertificateWarningBackgroundFollowsEffectiveAppearance() throws {
+        let darkAppearance = try XCTUnwrap(NSAppearance(named: .darkAqua))
+        let lightAppearance = try XCTUnwrap(NSAppearance(named: .aqua))
+        var warning: CertificateTrustWarningView?
+        darkAppearance.performAsCurrentDrawingAppearance {
+            warning = CertificateTrustWarningView(
+                session: CertificateTrustWarningSession(
+                    host: "untrusted.example",
+                    onVisitSite: {},
+                    onClosePage: {},
+                    onCancel: {}
+                ),
+                onFinish: { _ in }
+            )
+        }
+        let warningView = try XCTUnwrap(warning)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.appearance = lightAppearance
+        let root = NSView(frame: window.contentView?.bounds ?? .zero)
+        window.contentView = root
+        root.addSubview(warningView)
+        warningView.frame = root.bounds
+        defer {
+            window.contentView = nil
+            window.close()
+        }
+
+        func expectedBackgroundColor() -> CGColor? {
+            var color: CGColor?
+            warningView.effectiveAppearance.performAsCurrentDrawingAppearance {
+                color = NSColor.windowBackgroundColor.cgColor
+            }
+            return color
+        }
+
+        XCTAssertEqual(warningView.layer?.backgroundColor, expectedBackgroundColor())
+        window.appearance = darkAppearance
+        XCTAssertEqual(warningView.layer?.backgroundColor, expectedBackgroundColor())
+    }
+
     func testCertificateWarningSurfaceRoutesClicksToBothActions() throws {
         var actions: [String] = []
 

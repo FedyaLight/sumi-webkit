@@ -44,6 +44,7 @@ final class CertificateTrustWarningSession {
 final class CertificateTrustWarningView: NSView {
     let session: CertificateTrustWarningSession
     private let onFinish: (CertificateTrustWarningView) -> Void
+    private let usesSystemBackground: Bool
     private let iconView = NSImageView()
     private let titleLabel: NSTextField
     private let hostLabel: NSTextField
@@ -53,10 +54,12 @@ final class CertificateTrustWarningView: NSView {
 
     init(
         session: CertificateTrustWarningSession,
+        usesSystemBackground: Bool = true,
         onFinish: @escaping (CertificateTrustWarningView) -> Void
     ) {
         self.session = session
         self.onFinish = onFinish
+        self.usesSystemBackground = usesSystemBackground
         titleLabel = NSTextField(labelWithString: String(localized: "This Connection Is Not Secure"))
         hostLabel = NSTextField(labelWithString: session.host)
         detailLabel = NSTextField(
@@ -84,8 +87,7 @@ final class CertificateTrustWarningView: NSView {
     }
 
     private func configure() {
-        wantsLayer = true
-        layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        wantsLayer = usesSystemBackground
 
         iconView.translatesAutoresizingMaskIntoConstraints = false
         iconView.image = NSImage(
@@ -136,6 +138,23 @@ final class CertificateTrustWarningView: NSView {
         ])
 
         setAccessibilityLabel(String(localized: "This Connection Is Not Secure"))
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        applyBackgroundColor()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyBackgroundColor()
+    }
+
+    private func applyBackgroundColor() {
+        guard usesSystemBackground else { return }
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        }
     }
 
     private func configure(label: NSTextField, font: NSFont) {

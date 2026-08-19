@@ -187,10 +187,6 @@ struct WebsiteView: View {
         self.webViewProtectionRuntime = webViewProtectionRuntime
     }
 
-    private var chromeGeometry: BrowserChromeGeometry {
-        BrowserChromeGeometry(settings: sumiSettings)
-    }
-
     private var tabThemeContext: ResolvedThemeContext {
         guard let currentTab = browserContext.currentTab(windowState) else {
             return themeContext
@@ -209,18 +205,6 @@ struct WebsiteView: View {
         )
     }
 
-    private func browserContentSurfaceStyle(
-        for themeContext: ResolvedThemeContext
-    ) -> BrowserContentSurfaceStyle {
-        let background = themeContext.nativeSurfaceThemeContext
-            .tokens(settings: sumiSettings)
-            .windowBackground
-        return BrowserContentSurfaceStyle(
-            geometry: chromeGeometry,
-            backgroundColor: NSColor(background)
-        )
-    }
-
     var body: some View {
         let _ = splitUpdateRevision
         let splitResolution = splitQuery.resolution(in: windowState.id)
@@ -229,7 +213,10 @@ struct WebsiteView: View {
         )
         let previewState = splitPreviews.state(for: windowState.id)
         let currentTabThemeContext = tabThemeContext
-        let surfaceStyle = browserContentSurfaceStyle(for: currentTabThemeContext)
+        let surfaceStyle = BrowserContentSurfaceStyle(
+            themeContext: currentTabThemeContext,
+            settings: sumiSettings
+        )
 
         ZStack {
             tabCompositor(
@@ -331,10 +318,28 @@ struct WebsiteView: View {
                     ? baseStyle.backgroundColor.withAlphaComponent(0.2)
                     : baseStyle.backgroundColor
             )
+            let radii = style.geometry.contentCornerRadii
             nativeSurfaceContent(kind: kind)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .sumiChromeThemeScope(context: themeContext, settings: sumiSettings)
-                .browserContentSurface(style: style)
+                .background(Color(nsColor: style.backgroundColor))
+                .clipShape(
+                    UnevenRoundedRectangle(
+                        cornerRadii: RectangleCornerRadii(
+                            topLeading: radii.topLeading,
+                            bottomLeading: radii.bottomLeading,
+                            bottomTrailing: radii.bottomTrailing,
+                            topTrailing: radii.topTrailing
+                        ),
+                        style: .continuous
+                    )
+                )
+                .shadow(
+                    color: Color.black.opacity(BrowserContentViewportVisuals.shadowOpacity),
+                    radius: BrowserContentViewportVisuals.shadowRadius,
+                    x: BrowserContentViewportVisuals.shadowX,
+                    y: BrowserContentViewportVisuals.shadowY
+                )
                 .allowsHitTesting(true)
         }
     }

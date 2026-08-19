@@ -45,7 +45,6 @@ final class GlanceOverlayViewHierarchyOwner {
 
     func installViewsIfNeeded() {
         guard let rootView else { return }
-        rootView.wantsLayer = true
 
         if webContentShieldAnchorView.superview == nil {
             rootView.addSubview(webContentShieldAnchorView)

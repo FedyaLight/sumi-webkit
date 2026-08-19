@@ -14,13 +14,12 @@ final class PagePresentationSurfaceView: NSView {
         self.presentation = presentation
         self.repairAction = repairAction
         super.init(frame: .zero)
-        wantsLayer = true
-        layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
 
         if case .certificateTrustWarning = presentation,
            let certificateTrustWarningSession {
             let warning = CertificateTrustWarningView(
                 session: certificateTrustWarningSession,
+                usesSystemBackground: false,
                 onFinish: { _ in }
             )
             warning.frame = bounds
