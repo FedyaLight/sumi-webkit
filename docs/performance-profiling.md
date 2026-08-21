@@ -21,8 +21,7 @@ Lessons from the adblock-overhead investigation (2026-08):
 - The XCTest harness (`SumiTests/ContentBlockingOverheadBenchmarkTests`,
   `SUMI_RUN_SPEEDOMETER=1`) reports an upper bound (~35–41): a bare window,
   dedicated processes, no chrome compositing. Real-browser numbers come from
-  `SumiUITests/SumiSpeedometerRealBrowserUITests` (`SUMI_RUN_REAL_SPEEDO=1`)
-  or manual runs.
+  manual runs in the built app.
 - Reference points, Mac Studio M2 Max, single tab, Release: Sumi full stack
   ≈ 33 first run; Safari ≈ 26 first run.
 

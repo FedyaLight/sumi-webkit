@@ -62,11 +62,16 @@ actor AdblockCosmeticShardMigration {
 
         for shard in manifest.networkShards.sorted(by: { $0.id < $1.id }) {
             let originalData = try reader.validatedData(for: shard)
-            let (networkRules, cosmetics) = try Self.splitCosmeticRules(
-                from: originalData
-            )
-            extractedCosmetics.append(contentsOf: cosmetics)
-            let networkData = try JSONSerialization.data(withJSONObject: networkRules)
+            guard let rules = try JSONSerialization.jsonObject(with: originalData)
+                as? [[String: Any]]
+            else {
+                throw AdblockUpdateDiagnostics(
+                    summary: "Migrated shard payload is not a rule array"
+                )
+            }
+            let split = AdblockCosmeticDomainIndex.splitRules(rules)
+            extractedCosmetics.append(contentsOf: split.cosmetics)
+            let networkData = try JSONSerialization.data(withJSONObject: split.network)
             let stagedURL = transactionRoot.appendingPathComponent(
                 "\(shard.id).json"
             )
@@ -128,39 +133,6 @@ actor AdblockCosmeticShardMigration {
             migratedManifest = committed
         }
         return migratedManifest
-    }
-
-    private static func splitCosmeticRules(
-        from data: Data
-    ) throws -> (
-        network: [[String: Any]],
-        cosmetics: [[String: Any]]
-    ) {
-        guard let rules = try JSONSerialization.jsonObject(with: data)
-            as? [[String: Any]]
-        else {
-            throw AdblockUpdateDiagnostics(
-                summary: "Migrated shard payload is not a rule array"
-            )
-        }
-        var network = [[String: Any]]()
-        var cosmetics = [[String: Any]]()
-        for rule in rules {
-            guard let action = rule["action"] as? [String: Any],
-                  action["type"] as? String == "css-display-none",
-                  let selector = action["selector"] as? String,
-                  selector.isEmpty == false,
-                  let trigger = rule["trigger"] as? [String: Any],
-                  let domains = trigger["if-domain"] as? [String],
-                  domains.isEmpty == false,
-                  trigger["unless-domain"] == nil
-            else {
-                network.append(rule)
-                continue
-            }
-            cosmetics.append(["s": selector, "d": domains])
-        }
-        return (network, cosmetics)
     }
 
     private static func migratedDescriptor(

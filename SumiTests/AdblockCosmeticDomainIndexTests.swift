@@ -52,4 +52,36 @@ final class AdblockCosmeticDomainIndexTests: XCTestCase {
             try AdblockCosmeticDomainIndex(json: [["s": ".a", "d": []]])
         )
     }
+
+    func testSplitRulesExtractsOnlyPortableCosmetics() throws {
+        let rules: [[String: Any]] = [
+            [
+                "action": ["type": "block"],
+                "trigger": ["url-filter": "||ads.example^"],
+            ],
+            [
+                "action": ["type": "css-display-none", "selector": ".generic"],
+                "trigger": ["url-filter": ".*"],
+            ],
+            [
+                "action": ["type": "css-display-none", "selector": ".domain"],
+                "trigger": ["url-filter": ".*", "if-domain": ["*news.example"]],
+            ],
+            [
+                "action": ["type": "css-display-none", "selector": ".unless"],
+                "trigger": ["url-filter": ".*", "unless-domain": ["keep.example"]],
+            ],
+        ]
+        let split = AdblockCosmeticDomainIndex.splitRules(rules)
+        XCTAssertEqual(split.network.count, 3)
+        XCTAssertEqual(split.cosmetics.count, 1)
+        XCTAssertEqual(split.cosmetics.first?["s"] as? String, ".domain")
+        XCTAssertEqual(split.cosmetics.first?["d"] as? [String], ["*news.example"])
+
+        // The extracted payload must round-trip through the index.
+        let index = try AdblockCosmeticDomainIndex(
+            json: split.cosmetics
+        )
+        XCTAssertEqual(index.selectors(forHost: "www.news.example"), [".domain"])
+    }
 }

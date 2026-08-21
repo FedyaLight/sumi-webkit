@@ -36,8 +36,9 @@ final class SumiSelectedFilterBundleBuilderPartitionTests: XCTestCase {
         let (partitioned, cosmetics) = try SumiSelectedFilterBundleBuilder
             .partitionDomainCosmetics(conversion)
 
-        XCTAssertEqual(cosmetics.map(\.selector), [".domain-ad"])
-        XCTAssertEqual(cosmetics.first?.domains, ["*news.example"])
+        XCTAssertEqual(cosmetics.count, 1)
+        XCTAssertEqual(cosmetics.first?["s"] as? String, ".domain-ad")
+        XCTAssertEqual(cosmetics.first?["d"] as? [String], ["*news.example"])
 
         let kept = try JSONSerialization.jsonObject(with: partitioned.json)
             as? [[String: Any]]

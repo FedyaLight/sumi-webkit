@@ -36,10 +36,6 @@ actor SumiSelectedFilterBundleBuilder {
         let advancedRules: String
         let discardedRuleCount: Int
     }
-    struct DomainCosmetic: Sendable {
-        let selector: String
-        let domains: [String]
-    }
     private static var slotTypes: [[ContentBlockerType]] {
         [
             [.general],
@@ -156,7 +152,7 @@ actor SumiSelectedFilterBundleBuilder {
         // Safari applies every css-display-none selector to every document,
         // while the advanced pipeline can match them by document host.
         var conversions: [Conversion] = []
-        var extractedCosmetics = [DomainCosmetic]()
+        var extractedCosmetics = [[String: Any]]()
         for conversion in rawConversions {
             let partitioned = try Self.partitionDomainCosmetics(conversion)
             extractedCosmetics.append(contentsOf: partitioned.cosmetics)
@@ -200,11 +196,8 @@ actor SumiSelectedFilterBundleBuilder {
             .joined(separator: "\n")
         var domainCosmeticsData: Data?
         if extractedCosmetics.isEmpty == false {
-            let payload: [[String: Any]] = extractedCosmetics.map { cosmetic in
-                ["s": cosmetic.selector, "d": cosmetic.domains]
-            }
             domainCosmeticsData = try JSONSerialization.data(
-                withJSONObject: payload,
+                withJSONObject: extractedCosmetics,
                 options: [.sortedKeys]
             )
         }
@@ -403,38 +396,21 @@ actor SumiSelectedFilterBundleBuilder {
     /// benefit from WebKit's first-paint timing.
     static func partitionDomainCosmetics(
         _ conversion: Conversion
-    ) throws -> (conversion: Conversion, cosmetics: [DomainCosmetic]) {
-        var extracted = [DomainCosmetic]()
+    ) throws -> (conversion: Conversion, cosmetics: [[String: Any]]) {
         guard let rules = try JSONSerialization.jsonObject(with: conversion.json)
             as? [[String: Any]]
         else {
             return (conversion, [])
         }
-        var kept = [[String: Any]]()
-        for rule in rules {
-            guard let action = rule["action"] as? [String: Any],
-                  action["type"] as? String == "css-display-none",
-                  let selector = action["selector"] as? String,
-                  selector.isEmpty == false,
-                  let trigger = rule["trigger"] as? [String: Any],
-                  let domains = trigger["if-domain"] as? [String],
-                  domains.isEmpty == false,
-                  trigger["unless-domain"] == nil
-            else {
-                kept.append(rule)
-                continue
-            }
-            extracted.append(DomainCosmetic(selector: selector, domains: domains))
-        }
-        guard extracted.isEmpty == false else { return (conversion, []) }
-        let networkData = try JSONSerialization.data(withJSONObject: kept)
+        let split = AdblockCosmeticDomainIndex.splitRules(rules)
+        guard split.cosmetics.isEmpty == false else { return (conversion, []) }
         let partitioned = Conversion(
-            json: networkData,
-            safariRuleCount: kept.count,
+            json: try JSONSerialization.data(withJSONObject: split.network),
+            safariRuleCount: split.network.count,
             advancedRules: conversion.advancedRules,
-            discardedRuleCount: conversion.discardedRuleCount,
+            discardedRuleCount: conversion.discardedRuleCount
         )
-        return (partitioned, extracted)
+        return (partitioned, split.cosmetics)
     }
 
     private static func advancedDescriptor(

@@ -67,6 +67,33 @@ struct AdblockCosmeticDomainIndex: Sendable {
         return matched
     }
 
+    /// Splits a Safari content-blocker rule array into network rules and
+    /// `"s"`/`"d"` payloads for this index. A rule is portable when it hides
+    /// via `css-display-none`, is scoped by `if-domain`, and carries no
+    /// `unless-domain` escape; everything else stays in the WebKit list.
+    static func splitRules(
+        _ rules: [[String: Any]]
+    ) -> (network: [[String: Any]], cosmetics: [[String: Any]]) {
+        var network = [[String: Any]]()
+        var cosmetics = [[String: Any]]()
+        for rule in rules {
+            guard let action = rule["action"] as? [String: Any],
+                  action["type"] as? String == "css-display-none",
+                  let selector = action["selector"] as? String,
+                  selector.isEmpty == false,
+                  let trigger = rule["trigger"] as? [String: Any],
+                  let domains = trigger["if-domain"] as? [String],
+                  domains.isEmpty == false,
+                  trigger["unless-domain"] == nil
+            else {
+                network.append(rule)
+                continue
+            }
+            cosmetics.append(["s": selector, "d": domains])
+        }
+        return (network, cosmetics)
+    }
+
     private static func pattern(
         _ pattern: String,
         matchesHost host: String
