@@ -62,6 +62,9 @@ final class GlanceOverlayRootView: NSView {
 
     override func resetCursorRects() {
         super.resetCursorRects()
+        // A hidden or torn-down overlay owns no cursor: WebKit declines to set
+        // the page cursor while any AppKit cursor rect is active under it.
+        guard acceptsBackgroundMouseEvents else { return }
         for rect in backgroundCursorRects {
             addCursorRect(rect, cursor: .arrow)
         }

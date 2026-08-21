@@ -61,11 +61,13 @@ final class FocusableWKWebView: WKWebView {
     override init(frame: CGRect, configuration: WKWebViewConfiguration) {
         _ = Self.swizzleImmediateActionAnimationControllerOnce
         super.init(frame: frame, configuration: configuration)
+        SumiCursorDiagnostics.startIfNeeded()
     }
 
     required init?(coder: NSCoder) {
         _ = Self.swizzleImmediateActionAnimationControllerOnce
         super.init(coder: coder)
+        SumiCursorDiagnostics.startIfNeeded()
     }
 
     override func addTrackingArea(_ trackingArea: NSTrackingArea) {
@@ -188,6 +190,34 @@ final class FocusableWKWebView: WKWebView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         WebContentMouseTrackingShield.applyCurrentShieldState(to: self)
+        rearmWebKitMouseTrackingIfMouseInside()
+    }
+
+    /// Re-parenting inside a window re-registers WebKit's tracking areas
+    /// without delivering mouseEntered when the pointer already sits inside
+    /// them (WebKit creates its areas with assumeInside), so the observer
+    /// stays in its exited state: the page stops seeing hover and the cursor
+    /// stays arrow until the pointer really leaves and re-enters the view.
+    /// Replacing each observer area with an identical one minus assumeInside
+    /// makes AppKit deliver the missing enter event on registration.
+    private func rearmWebKitMouseTrackingIfMouseInside() {
+        guard let window else { return }
+        let mouseInWindow = window.mouseLocationOutsideOfEventStream
+        guard bounds.contains(convert(mouseInWindow, from: nil)) else { return }
+
+        for area in trackingAreas where WebKitMouseTrackingLoadSheddingOwner.canHandle(area) {
+            guard let owner = area.owner else { continue }
+            var options = area.options
+            options.remove(.assumeInside)
+            let replacement = NSTrackingArea(
+                rect: area.rect,
+                options: options,
+                owner: owner,
+                userInfo: nil
+            )
+            removeTrackingArea(area)
+            addTrackingArea(replacement)
+        }
     }
 
     func setTransientChromeMouseTrackingSuppressed(
