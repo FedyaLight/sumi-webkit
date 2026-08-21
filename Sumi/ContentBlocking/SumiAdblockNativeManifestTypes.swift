@@ -14,6 +14,9 @@ enum AdvancedBlockingArtifactRole: String, Codable, CaseIterable, Sendable {
     case engineMetadata
     case sourceRules
     case urlCleaningRules
+    /// Domain-scoped cosmetic selectors served through the advanced blocking
+    /// pipeline instead of blanket WebKit `css-display-none` rules.
+    case domainCosmeticRules
 }
 
 /// The complete prepared advanced-filtering half of one blocker generation.

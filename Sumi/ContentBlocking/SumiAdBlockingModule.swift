@@ -77,9 +77,16 @@ final class SumiAdBlockingModule {
     /// The only tab-facing interface of the advanced blocker. Callers receive
     /// an inert page-script adapter and do not participate in engine or
     /// generation lifecycle.
+    ///
+    /// The bootstrap page script is withheld when the loaded generation has no
+    /// advanced-blocking capability: the lookup below would return nil for
+    /// every document, so injecting a document-start script into every frame
+    /// of every page would be pure overhead. A not-yet-loaded manifest keeps
+    /// today's conservative behavior.
     func normalTabUserScripts(for url: URL?) -> [SumiPageScript] {
         guard isEnabled,
               effectivePolicy(for: url).isEnabled,
+              activeManifestHasAdvancedBlockingCapability,
               let source = advancedPageRuntimeSource()
         else {
             return []
@@ -96,6 +103,15 @@ final class SumiAdBlockingModule {
                           let runtime = self.cachedRuleListRuntime
                     else {
                         return nil
+                    }
+                    let signpostState = PerformanceTrace.beginInterval(
+                        "Adblock.advancedConfigurationLookup"
+                    )
+                    defer {
+                        PerformanceTrace.endInterval(
+                            "Adblock.advancedConfigurationLookup",
+                            signpostState
+                        )
                     }
                     do {
                         return try await runtime.advancedConfiguration(
@@ -114,6 +130,13 @@ final class SumiAdBlockingModule {
         return runtime.urlCleaningContribution(
             disabledDomains: sitePolicyStore()?.disabledHosts ?? []
         )
+    }
+
+    /// Whether the loaded generation can ever answer an advanced lookup.
+    /// `nil` means the manifest is not loaded yet and the answer is unknown.
+    private var activeManifestHasAdvancedBlockingCapability: Bool {
+        guard let manifest = activeManifestIfLoaded() else { return true }
+        return manifest.advancedBlocking != nil
     }
 
     func reconcileURLCleaning(

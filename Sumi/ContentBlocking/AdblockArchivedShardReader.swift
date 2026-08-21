@@ -26,6 +26,14 @@ struct AdblockArchivedShardReader {
         _ = try validatedData(for: shard)
     }
 
+    /// Validated shard payload bytes for callers that need the original JSON
+    /// (for example, generation migrations).
+    func rawValidatedData(
+        for shard: NativeContentBlockingShardDescriptor
+    ) throws -> Data {
+        try validatedData(for: shard)
+    }
+
     private func validatedData(for shard: NativeContentBlockingShardDescriptor) throws -> Data {
         let paths = AdblockGenerationPaths(rootDirectory: storageRoot)
         let url = try paths.shardURL(generationId: shard.generationId, shardId: shard.id)

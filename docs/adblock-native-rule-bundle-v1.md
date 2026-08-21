@@ -15,8 +15,16 @@ repository. The blocker does not use DuckDuckGo Tracker Radar.
 SumiAdblockBundle/
   manifest.json
   network/*.json
-  .webext/{rules.bin,engine.bin,meta.bin,rules.txt,removeparam.json}
+  .webext/{rules.bin,engine.bin,meta.bin,rules.txt,removeparam.json,cosmetic-domains.json}
 ```
+
+Domain-scoped cosmetic rules (`css-display-none` with an `if-domain`
+trigger) are stored in `cosmetic-domains.json` and served through the
+advanced blocking pipeline instead of the WebKit rule lists: WebKit applies
+every cosmetic selector to every document, while the advanced pipeline
+matches them against the document host. Generic and `unless-domain`
+cosmetics stay in the WebKit lists for first-paint timing. Startup migration
+rewrites installed generations that still carry these rules in their shards.
 
 Apply is transactional: download, conversion, validation, WebKit compilation,
 and archive publication must all succeed before the active generation changes.

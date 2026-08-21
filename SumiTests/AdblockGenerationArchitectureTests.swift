@@ -549,16 +549,123 @@ final class AdblockGenerationArchitectureTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: archiveRoot.path))
     }
 
+    @MainActor
+    func testAdvancedBlockingBootstrapWithheldForGenerationWithoutAdvancedCapability() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let manifest = makeManifest(generationId: "plain")
+        try await fixture.archive.commit(manifest: manifest, stagedCompiledShardURLs: [:])
+
+        let module = makeEnabledModule(archive: fixture.archive)
+        module.setRuntimeLevel(.adblock)
+        let url = try XCTUnwrap(URL(string: "https://example.com"))
+
+        // Manifest not loaded yet: keep the conservative bootstrap injection.
+        XCTAssertEqual(module.normalTabUserScripts(for: url).count, 1)
+
+        _ = try await module.restoreLocalGenerationForStartup()
+        XCTAssertNotNil(module.activeManifestIfLoaded())
+
+        // The loaded generation has no advanced-blocking capability, so the
+        // lookup could never return a configuration; the per-frame bootstrap
+        // must be withheld instead of running in every frame of every page.
+        XCTAssertTrue(module.normalTabUserScripts(for: url).isEmpty)
+    }
+
+    @MainActor
+    func testAdvancedBlockingBootstrapKeptForGenerationWithAdvancedCapability() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let artifacts = try makeAdvancedBlockingArtifacts()
+        let manifest = makeManifest(
+            generationId: "advanced",
+            advancedBlocking: artifacts.descriptor
+        )
+        try await fixture.archive.commit(
+            manifest: manifest,
+            stagedCompiledShardURLs: [:],
+            stagedAdvancedArtifactURLs: artifacts.sources
+        )
+
+        let module = makeEnabledModule(archive: fixture.archive)
+        module.setRuntimeLevel(.adblock)
+        _ = try await module.restoreLocalGenerationForStartup()
+        let url = try XCTUnwrap(URL(string: "https://example.com"))
+
+        XCTAssertEqual(module.normalTabUserScripts(for: url).count, 1)
+    }
+
+    @MainActor
+    private func makeEnabledModule(archive: AdblockGenerationArchive) -> SumiAdBlockingModule {
+        SumiAdBlockingModule(
+            sitePolicyFactory: { AdblockSitePolicyStore() },
+            filterListCatalog: nil,
+            compiledRuleListCatalog: SumiCompiledContentRuleListCatalog(),
+            ruleListRuntimeFactory: { isEnabled in
+                AdblockRuleListRuntime(
+                    isRuntimeEnabled: isEnabled,
+                    generationArchive: archive,
+                    compiler: RecordingAdblockCompiler(availableIdentifiers: []),
+                    compiledRuleListCatalog: SumiCompiledContentRuleListCatalog()
+                )
+            }
+        )
+    }
+
+    private func makeAdvancedBlockingArtifacts() throws -> (
+        descriptor: AdvancedBlockingGenerationDescriptor,
+        sources: [String: URL]
+    ) {
+        let fixtureRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "AdblockAdvancedArtifacts-\(UUID().uuidString)",
+                isDirectory: true
+            )
+        let values: [(AdvancedBlockingArtifactRole, String, Data)] = [
+            (.ruleStorage, ".webext/rules.bin", Data("rules".utf8)),
+            (.engineIndex, ".webext/engine.bin", Data("engine".utf8)),
+            (.engineMetadata, ".webext/meta.bin", Data("meta".utf8)),
+        ]
+        var sources: [String: URL] = [:]
+        let artifacts = try values.map { role, relativePath, data in
+            let source = fixtureRoot.appendingPathComponent(relativePath)
+            try FileManager.default.createDirectory(
+                at: source.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try data.write(to: source)
+            sources[relativePath] = source
+            return AdvancedBlockingGenerationDescriptor.Artifact(
+                role: role,
+                relativePath: relativePath,
+                hash: SHA256.hash(data: data)
+                    .map { String(format: "%02x", $0) }
+                    .joined(),
+                byteSize: data.count
+            )
+        }
+        let descriptor = AdvancedBlockingGenerationDescriptor(
+            format: AdvancedBlockingGenerationDescriptor.safariConverterFormat,
+            schemaVersion: 1,
+            runtimeVersion: "4.3.0",
+            ruleCount: values.count,
+            artifacts: artifacts
+        )
+        return (descriptor, sources)
+    }
+
     private func makeManifest(
         schemaVersion: Int = AdblockCompiledGenerationManifest.currentSchemaVersion,
         generationId: String,
-        shards: [NativeContentBlockingShardDescriptor] = []
+        shards: [NativeContentBlockingShardDescriptor] = [],
+        advancedBlocking: AdvancedBlockingGenerationDescriptor? = nil
     ) -> AdblockCompiledGenerationManifest {
         AdblockCompiledGenerationManifest(
             schemaVersion: schemaVersion,
             activeGenerationId: generationId,
             selectedFilterLists: [],
             networkShards: shards,
+            advancedBlocking: advancedBlocking,
             lastSuccessfulUpdateDate: Date(timeIntervalSince1970: 0),
             bundleProfileId: SumiProtectionBundleProfile.adblock
         )

@@ -35,11 +35,20 @@ actor SumiSelectedFilterBundleBuilder {
         let ruleCount: Int
     }
 
-    private struct Conversion: Sendable {
+    struct Conversion: Sendable {
         let json: Data
         let safariRuleCount: Int
         let advancedRules: String
         let discardedRuleCount: Int
+        /// Domain-scoped cosmetic rules extracted from the Safari JSON so the
+        /// advanced pipeline can serve them selectively instead of WebKit
+        /// applying every selector to every document.
+        let domainCosmetics: [DomainCosmetic]
+    }
+
+    struct DomainCosmetic: Sendable {
+        let selector: String
+        let domains: [String]
     }
 
     private static var slotTypes: [[ContentBlockerType]] {
@@ -159,7 +168,18 @@ actor SumiSelectedFilterBundleBuilder {
             rawConversions.append(conversion)
         }
 
-        let nativeShards = rawConversions
+        // Route domain-scoped cosmetic rules away from the WebKit rule lists:
+        // Safari applies every css-display-none selector to every document,
+        // while the advanced pipeline can match them by document host.
+        var conversions: [Conversion] = []
+        var extractedCosmetics = [DomainCosmetic]()
+        for conversion in rawConversions {
+            let partitioned = try Self.partitionDomainCosmetics(conversion)
+            extractedCosmetics.append(contentsOf: partitioned.cosmetics)
+            conversions.append(partitioned.conversion)
+        }
+
+        let nativeShards = conversions
             .filter { $0.safariRuleCount > 0 }
             .map { (data: $0.json, ruleCount: $0.safariRuleCount) }
         var shardPayloads: [(relativePath: String, data: Data, ruleCount: Int)] = []
@@ -192,12 +212,24 @@ actor SumiSelectedFilterBundleBuilder {
             shardPayloads.append((relativePath, data, 0))
         }
 
-        let advancedRules = rawConversions
+        let advancedRules = conversions
             .map(\.advancedRules)
             .filter { $0.isEmpty == false }
             .joined(separator: "\n")
+        var domainCosmeticsData: Data?
+        if extractedCosmetics.isEmpty == false {
+            let payload: [[String: Any]] = extractedCosmetics.map { cosmetic in
+                ["s": cosmetic.selector, "d": cosmetic.domains]
+            }
+            domainCosmeticsData = try JSONSerialization.data(
+                withJSONObject: payload,
+                options: [.sortedKeys]
+            )
+        }
         let advanced: AdvancedBlockingGenerationDescriptor?
         if advancedRules.isEmpty {
+            // The engine artifacts only exist for converted advanced rules;
+            // without them the extracted cosmetics stay in the Safari lists.
             advanced = nil
         } else {
             let safariVersion = SafariVersion.autodetect()
@@ -217,10 +249,27 @@ actor SumiSelectedFilterBundleBuilder {
                         "removeparam.json"
                     )
                 )
+            var domainCosmeticsArtifact: AdvancedBlockingGenerationDescriptor
+                .Artifact?
+            if let domainCosmeticsData {
+                let path = webExtensionDirectory.appendingPathComponent(
+                    "cosmetic-domains.json"
+                )
+                try domainCosmeticsData.write(to: path, options: .atomic)
+                domainCosmeticsArtifact = AdvancedBlockingGenerationDescriptor
+                    .Artifact(
+                        role: .domainCosmeticRules,
+                        relativePath: AdblockCosmeticDomainIndex
+                            .artifactRelativePath,
+                        hash: Self.hash(domainCosmeticsData),
+                        byteSize: domainCosmeticsData.count
+                    )
+            }
             advanced = try Self.advancedDescriptor(
                 in: bundleURL,
                 ruleCount: advancedRules.split(separator: "\n").count,
-                urlCleaningArtifact: urlCleaningArtifact
+                urlCleaningArtifact: urlCleaningArtifact,
+                domainCosmeticsArtifact: domainCosmeticsArtifact
             )
         }
         let manifest = Self.manifest(
@@ -369,14 +418,57 @@ actor SumiSelectedFilterBundleBuilder {
             json: Data((result.safariRulesJSON + "\n").utf8),
             safariRuleCount: result.safariRulesCount,
             advancedRules: result.advancedRulesText ?? "",
-            discardedRuleCount: result.discardedSafariRules
+            discardedRuleCount: result.discardedSafariRules,
+            domainCosmetics: []
         )
+    }
+
+    /// Splits `css-display-none` rules with an `if-domain` trigger out of a
+    /// converted Safari JSON array. Generic and `unless-domain` cosmetics stay
+    /// in the WebKit list because they apply to (almost) every document and
+    /// benefit from WebKit's first-paint timing.
+    static func partitionDomainCosmetics(
+        _ conversion: Conversion
+    ) throws -> (conversion: Conversion, cosmetics: [DomainCosmetic]) {
+        var extracted = [DomainCosmetic]()
+        guard let rules = try JSONSerialization.jsonObject(with: conversion.json)
+            as? [[String: Any]]
+        else {
+            return (conversion, [])
+        }
+        var kept = [[String: Any]]()
+        for rule in rules {
+            guard let action = rule["action"] as? [String: Any],
+                  action["type"] as? String == "css-display-none",
+                  let selector = action["selector"] as? String,
+                  selector.isEmpty == false,
+                  let trigger = rule["trigger"] as? [String: Any],
+                  let domains = trigger["if-domain"] as? [String],
+                  domains.isEmpty == false,
+                  trigger["unless-domain"] == nil
+            else {
+                kept.append(rule)
+                continue
+            }
+            extracted.append(DomainCosmetic(selector: selector, domains: domains))
+        }
+        guard extracted.isEmpty == false else { return (conversion, []) }
+        let networkData = try JSONSerialization.data(withJSONObject: kept)
+        let partitioned = Conversion(
+            json: networkData,
+            safariRuleCount: kept.count,
+            advancedRules: conversion.advancedRules,
+            discardedRuleCount: conversion.discardedRuleCount,
+            domainCosmetics: extracted
+        )
+        return (partitioned, extracted)
     }
 
     private static func advancedDescriptor(
         in bundleURL: URL,
         ruleCount: Int,
-        urlCleaningArtifact: SumiRemoveParamRuleBuilder.Artifact
+        urlCleaningArtifact: SumiRemoveParamRuleBuilder.Artifact,
+        domainCosmeticsArtifact: AdvancedBlockingGenerationDescriptor.Artifact?
     ) throws -> AdvancedBlockingGenerationDescriptor {
         let paths: [(AdvancedBlockingArtifactRole, String)] = [
             (.ruleStorage, ".webext/rules.bin"),
@@ -401,6 +493,9 @@ actor SumiSelectedFilterBundleBuilder {
             hash: urlCleaningArtifact.hash,
             byteSize: urlCleaningArtifact.byteCount
         ))
+        if let domainCosmeticsArtifact {
+            artifacts.append(domainCosmeticsArtifact)
+        }
         return AdvancedBlockingGenerationDescriptor(
             format: AdvancedBlockingGenerationDescriptor
                 .safariConverterFormat,

@@ -14,6 +14,7 @@ final class AdblockRuleListRuntime {
     private let generationInstaller: AdblockGenerationInstaller
     private let persistedGenerationActivation: AdblockPersistedGenerationActivation
     private let generationRetention: AdblockGenerationRetention
+    private let cosmeticShardMigration: AdblockCosmeticShardMigration
     private let mutationGate = AdblockGenerationMutationGate()
     private let isRuntimeEnabled: @Sendable () async -> Bool
     private var activeManifestDidChange: (@MainActor () -> Void)?
@@ -69,6 +70,7 @@ final class AdblockRuleListRuntime {
             publisher: publisher,
             mutationGate: mutationGate
         )
+        cosmeticShardMigration = AdblockCosmeticShardMigration(archive: archive)
         generationRetention = retention
     }
 
@@ -145,11 +147,16 @@ final class AdblockRuleListRuntime {
         else {
             return nil
         }
-        try await persistedGenerationActivation.activate(manifest, lease: lease)
+        let effectiveManifest = await cosmeticShardMigration
+            .migratedManifestIfPossible(for: manifest)
+        try await persistedGenerationActivation.activate(
+            effectiveManifest,
+            lease: lease
+        )
         _ = await generationRetention.removeInactiveGenerations()
-        await advancedBlockingRuntime.prepare(for: manifest)
+        await advancedBlockingRuntime.prepare(for: effectiveManifest)
         activeManifestDidChange?()
-        return manifest
+        return effectiveManifest
     }
 
     func installGeneratedBundle(

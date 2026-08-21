@@ -188,6 +188,7 @@ struct SumiAdblockNativeBundleReader: @unchecked Sendable {
             .engineMetadata: ".webext/meta.bin",
             .sourceRules: ".webext/rules.txt",
             .urlCleaningRules: ".webext/removeparam.json",
+            .domainCosmeticRules: ".webext/cosmetic-domains.json",
         ]
         for artifact in descriptor.artifacts {
             guard artifact.byteSize > 0,

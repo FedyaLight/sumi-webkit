@@ -78,6 +78,7 @@ actor SumiAdvancedBlockingRuntime {
     private let scriptletCompilerSourceProvider: ScriptletCompilerSourceProvider
     private var loadedGeneration: LoadedGeneration?
     private var scriptletCompiler: SumiAdvancedBlockingScriptletCompiler?
+    private var cosmeticDomainIndex: AdblockCosmeticDomainIndex?
     private var configurationCache: [
         SumiAdvancedBlockingDocumentContext: CachedConfiguration
     ] = [:]
@@ -105,6 +106,8 @@ actor SumiAdvancedBlockingRuntime {
         }
 
         let engine = try engine(for: manifest)
+        let domainCosmeticSelectors = cosmeticDomainIndex?
+            .selectors(forHost: document.pageURL.host) ?? []
         if let cached = configurationCache[document] {
             refreshCachePosition(for: document)
             switch cached {
@@ -118,8 +121,17 @@ actor SumiAdvancedBlockingRuntime {
             pageUrl: document.pageURL,
             topUrl: document.topURL
         ) else {
-            cache(.empty, for: document)
-            return nil
+            if domainCosmeticSelectors.isEmpty {
+                cache(.empty, for: document)
+                return nil
+            }
+            let configuration = SumiAdvancedBlockingConfiguration(
+                css: domainCosmeticSelectors,
+                extendedCSS: [],
+                pageWorldScripts: []
+            )
+            cache(.value(configuration), for: document)
+            return configuration
         }
         let scriptletCompiler = try? compiler()
         let compiledScriptlets: [String] = result.scriptlets.compactMap { scriptlet in
@@ -134,6 +146,7 @@ actor SumiAdvancedBlockingRuntime {
             return code
         }
         guard result.css.isEmpty == false
+                || domainCosmeticSelectors.isEmpty == false
                 || result.extendedCss.isEmpty == false
                 || result.js.isEmpty == false
                 || compiledScriptlets.isEmpty == false
@@ -142,7 +155,7 @@ actor SumiAdvancedBlockingRuntime {
             return nil
         }
         let configuration = SumiAdvancedBlockingConfiguration(
-            css: result.css,
+            css: result.css + domainCosmeticSelectors,
             extendedCSS: result.extendedCss,
             pageWorldScripts: compiledScriptlets + result.js
         )
@@ -163,6 +176,7 @@ actor SumiAdvancedBlockingRuntime {
     func deactivate() {
         loadedGeneration = nil
         scriptletCompiler = nil
+        cosmeticDomainIndex = nil
         configurationCache.removeAll(keepingCapacity: false)
         configurationCacheOrder.removeAll(keepingCapacity: false)
     }
@@ -183,11 +197,33 @@ actor SumiAdvancedBlockingRuntime {
             containerURL: generationDirectory,
             version: SafariVersion.autodetect()
         )
+        cosmeticDomainIndex = Self.loadCosmeticDomainIndex(
+            manifest: manifest,
+            archive: archive
+        )
         loadedGeneration = LoadedGeneration(
             id: manifest.activeGenerationId,
             engine: engine
         )
         return engine
+    }
+
+    private static func loadCosmeticDomainIndex(
+        manifest: AdblockCompiledGenerationManifest,
+        archive: AdblockGenerationArchive
+    ) -> AdblockCosmeticDomainIndex? {
+        guard let artifact = manifest.advancedBlocking?.artifacts.first(where: {
+            $0.role == .domainCosmeticRules
+        }) else {
+            return nil
+        }
+        guard let url = try? archive.advancedArtifactURL(
+            generationID: manifest.activeGenerationId,
+            relativePath: artifact.relativePath
+        ), let data = try? Data(contentsOf: url) else {
+            return nil
+        }
+        return try? AdblockCosmeticDomainIndex(data: data)
     }
 
     private func cache(
