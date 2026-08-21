@@ -2,6 +2,30 @@
 
 Use this workflow for final optimization verification and for future regression checks. It keeps automation lightweight: a repeatable build/test harness plus human-driven Instruments traces anchored by coarse signposts.
 
+## Speedometer 3.1 measurement protocol
+
+Lessons from the adblock-overhead investigation (2026-08):
+
+- Measure on **Release** builds. Debug Swift code slows every app-side hot
+  path (navigation responders, script message handlers, Combine plumbing)
+  several-fold; WebKit itself is identical, so only app-owned work differs.
+- Judge by the **first run after a fresh launch**. Consecutive benchmark runs
+  degrade strongly on this machine in *every* browser — Safari dropped
+  26 → 13 → 11 across three back-to-back runs while Sumi Release went
+  33 → 27 → 27. The effect is platform-level (sustained-load power
+  management), not browser code.
+- Quiet the background first: Xcode/T3 source-control indexing of this repo
+  was observed burning ~440% CPU mid-measurement.
+- Keep one tab open. All normal tabs share a single WebKit process pool, so
+  background tabs compete for the same WebContent process.
+- The XCTest harness (`SumiTests/ContentBlockingOverheadBenchmarkTests`,
+  `SUMI_RUN_SPEEDOMETER=1`) reports an upper bound (~35–41): a bare window,
+  dedicated processes, no chrome compositing. Real-browser numbers come from
+  `SumiUITests/SumiSpeedometerRealBrowserUITests` (`SUMI_RUN_REAL_SPEEDO=1`)
+  or manual runs.
+- Reference points, Mac Studio M2 Max, single tab, Release: Sumi full stack
+  ≈ 33 first run; Safari ≈ 26 first run.
+
 ## Fast regression harness
 
 Run the optimized-stack smoke from the repository root:

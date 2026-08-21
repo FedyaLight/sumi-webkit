@@ -433,6 +433,35 @@ final class ContentBlockingOverheadBenchmarkTests: XCTestCase {
         let requestedConfigs = ProcessInfo.processInfo.environment[
             "SUMI_SPEEDO_CONFIGS"
         ] ?? "clean,stack"
+        let wantsCoreScripts =
+            ProcessInfo.processInfo.environment["SUMI_SPEEDO_CORESCRIPTS"] == "1"
+
+        // Real advanced lookup against a migrated copy of the installed
+        // generation, so the bootstrap exercises the actual engine path.
+        var realLookupClosure: SumiAdvancedBlockingPageScript.Lookup?
+        if ProcessInfo.processInfo.environment["SUMI_SPEEDO_REALLOOKUP"] == "1" {
+            let sourceRoot = URL(fileURLWithPath: NSHomeDirectory())
+                .appendingPathComponent("Library/Application Support")
+                .appendingPathComponent("com.sumi.browser.testhost/Adblock")
+            let copyRoot = FileManager.default.temporaryDirectory
+                .appendingPathComponent(
+                    "RealAdblockLookup-\(UUID().uuidString)",
+                    isDirectory: true
+                )
+            try FileManager.default.copyItem(at: sourceRoot, to: copyRoot)
+            let copyArchive = AdblockGenerationArchive(rootDirectory: copyRoot)
+            if let activeManifest = try await copyArchive.activeManifest() {
+                let migration = AdblockCosmeticShardMigration(archive: copyArchive)
+                let migrated = await migration.migratedManifestIfPossible(
+                    for: activeManifest
+                )
+                let runtime = SumiAdvancedBlockingRuntime(archive: copyArchive)
+                _ = try? await runtime.prepare(for: migrated)
+                realLookupClosure = { @MainActor [runtime, migrated] document in
+                    try? await runtime.configuration(for: document, in: migrated)
+                }
+            }
+        }
         var scores: [(String, String)] = []
         for name in requestedConfigs.split(separator: ",").map(String.init) {
             let score = try await Self.runSpeedometer31 { includeStack in
@@ -482,15 +511,41 @@ final class ContentBlockingOverheadBenchmarkTests: XCTestCase {
                     configuration.webExtensionController = urlCleaningController.0
                 }
                 if wantsBootstrap {
+                    let effectiveBootstrap: SumiAdvancedBlockingPageScript
+                    if ProcessInfo.processInfo.environment[
+                        "SUMI_SPEEDO_REALLOOKUP"
+                    ] == "1", let realLookup = realLookupClosure {
+                        effectiveBootstrap = SumiAdvancedBlockingPageScript(
+                            runtimeSource: "",
+                            lookup: realLookup
+                        )
+                    } else {
+                        effectiveBootstrap = bootstrapScript
+                    }
                     let userScript = SumiPageScriptBuilder.makeWKUserScript(
-                        from: bootstrapScript
+                        from: effectiveBootstrap
                     )
                     configuration.userContentController.addUserScript(userScript)
                     configuration.userContentController.add(
-                        bootstrapScript,
+                        effectiveBootstrap,
                         contentWorld: .defaultClient,
                         name: SumiAdvancedBlockingPageScript.messageName
                     )
+                }
+                if wantsCoreScripts {
+                    for script in Self.coreScriptStandIns() {
+                        let userScript = SumiPageScriptBuilder.makeWKUserScript(
+                            from: script
+                        )
+                        configuration.userContentController.addUserScript(userScript)
+                        for messageName in script.messageNames {
+                            configuration.userContentController.add(
+                                script,
+                                contentWorld: .defaultClient,
+                                name: messageName
+                            )
+                        }
+                    }
                 }
                 return configuration
             }
@@ -504,8 +559,11 @@ final class ContentBlockingOverheadBenchmarkTests: XCTestCase {
     private static func runSpeedometer31(
         makeConfiguration: @MainActor (_ includeStack: Bool) -> WKWebViewConfiguration
     ) async throws -> String {
+        let bigView = ProcessInfo.processInfo.environment["SUMI_SPEEDO_VIEW"] == "big"
+        let width: CGFloat = bigView ? 1920 : 1100
+        let height: CGFloat = bigView ? 1040 : 850
         let window = NSWindow(
-            contentRect: NSRect(x: 100, y: 100, width: 1100, height: 850),
+            contentRect: NSRect(x: 60, y: 60, width: width, height: height),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -513,7 +571,7 @@ final class ContentBlockingOverheadBenchmarkTests: XCTestCase {
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.level = .modalPanel
         let webView = WKWebView(
-            frame: NSRect(x: 0, y: 0, width: 1100, height: 850),
+            frame: NSRect(x: 0, y: 0, width: width, height: height),
             configuration: makeConfiguration(false)
         )
         window.contentView?.addSubview(webView)
@@ -604,6 +662,39 @@ final class ContentBlockingOverheadBenchmarkTests: XCTestCase {
         let packagePath: String
         let enabled: Bool
     }
+
+    /// Real tab core scripts. `SumiWebNotificationUserScript` needs a live
+    /// Tab, so an inert source of the same size stands in for it.
+    @MainActor
+    static func coreScriptStandIns() -> [SumiPageScript] {
+        let contextID = UUID()
+        var scripts: [SumiPageScript] = [
+            SumiLinkInteractionUserScript(contextID: contextID),
+            SumiWebPageContextMenuUserScript(contextID: contextID),
+            SumiPageScrollbarOverlayUserScript(),
+        ]
+        scripts.append(StandInNotificationScript())
+        return scripts
+    }
+
+    private final class StandInNotificationScript: NSObject, SumiPageScript {
+        let source: String
+        let injectionTime: WKUserScriptInjectionTime = .atDocumentStart
+        let forMainFrameOnly = false
+        let messageNames: [String] = []
+        let requiresRunInPageContentWorld = false
+
+        override init() {
+            source = String(repeating: "/* filler */\n", count: 1800)
+            super.init()
+        }
+
+        func userContentController(
+            _: WKUserContentController,
+            didReceive _: WKScriptMessage
+        ) {}
+    }
+
 
     /// Reads enabled extensions from the app container database.
     static func installedExtensionRows() async throws -> [InstalledExtensionRow] {

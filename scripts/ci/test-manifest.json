@@ -873,6 +873,7 @@
         "SumiUITests/SumiPermissionPromptUITests/testExternalSchemePermissionPromptCanDenyWithoutLeavingPage",
         "SumiUITests/SumiSessionRestoreUITests/testRestoresExactWindowSpaceTabAndLocalDocument",
         "SumiUITests/SumiSidebarContextMenuOracleUITests/testVisibleSidebarContextMenuCanBeDismissedAndReopened",
+        "SumiUITests/SumiSpeedometerRealBrowserUITests/testSpeedometer31InRealBrowser",
         "SumiUITests/SumiURLHubCommitUITests/testURLHubCommitNavigatesActiveTabToLocalFixturePage"
       ]
     }
