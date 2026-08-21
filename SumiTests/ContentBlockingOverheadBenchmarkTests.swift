@@ -389,6 +389,42 @@ final class ContentBlockingOverheadBenchmarkTests: XCTestCase {
             urlCleaningController = nil
         }
 
+        // Real user extensions currently installed in the app container,
+        // hosted in the SAME controller as the internal contribution exactly
+        // like production does.
+        var userExtensionContexts = [(String, WKWebExtensionContext)]()
+        if #available(macOS 15.5, *) {
+        let rows = try await Self.installedExtensionRows()
+        let extensionFilter = ProcessInfo.processInfo.environment[
+            "SUMI_SPEEDO_EXT_FILTER"
+        ]
+        for row in rows where row.enabled {
+            if let extensionFilter,
+               row.name.lowercased().contains(extensionFilter.lowercased())
+                   == false {
+                continue
+            }
+                if let context = try? await Self.makeUserExtensionContext(
+                    resourcesURL: URL(fileURLWithPath: row.packagePath)
+                ) {
+                    userExtensionContexts.append((row.name, context))
+                }
+            }
+        }
+        print(
+            "BENCH speedo: loaded \(userExtensionContexts.count) user extensions: \(userExtensionContexts.map(\.0))"
+        )
+        if !userExtensionContexts.isEmpty, let base = urlCleaningController {
+            for (_, context) in userExtensionContexts {
+                do {
+                    try base.0.load(context)
+                    print("BENCH speedo: loaded extension into shared controller: ok")
+                } catch {
+                    print("BENCH speedo: extension load failed: \(error.localizedDescription)")
+                }
+            }
+        }
+
         let bootstrapScript = SumiAdvancedBlockingPageScript(
             runtimeSource: "",
             lookup: { _ in nil }
@@ -415,12 +451,27 @@ final class ContentBlockingOverheadBenchmarkTests: XCTestCase {
                         configuration.userContentController.add(list)
                     }
                 }
-                if name == "newstack" {
+                if name == "newstack" || name == "newstack+ext"
+                    || (includeStack && name == "fullprod") {
                     for list in migratedRuleLists {
                         configuration.userContentController.add(list)
                     }
                     wantsDNR = true
                     wantsBootstrap = true
+                }
+                let wantsUserExtensions = name == "extensions"
+                    || name.hasSuffix("+ext")
+                    || (includeStack && name == "fullprod")
+                if wantsUserExtensions, wantsDNR == false {
+                    // Extensions need a controller; host them alone when the
+                    // internal DNR contribution is not part of this config.
+                    if #available(macOS 15.5, *), !userExtensionContexts.isEmpty {
+                        let controller = WKWebExtensionController()
+                        for (_, context) in userExtensionContexts {
+                            try? controller.load(context)
+                        }
+                        configuration.webExtensionController = controller
+                    }
                 }
                 if wantsShards {
                     for list in stackRuleLists {
@@ -544,6 +595,82 @@ final class ContentBlockingOverheadBenchmarkTests: XCTestCase {
             try await Task.sleep(nanoseconds: 500_000_000)
         }
         XCTFail("Condition not met within \(timeout)s: \(probe)")
+    }
+
+    @available(macOS 15.5, *)
+    @MainActor
+    struct InstalledExtensionRow {
+        let name: String
+        let packagePath: String
+        let enabled: Bool
+    }
+
+    /// Reads enabled extensions from the app container database.
+    static func installedExtensionRows() async throws -> [InstalledExtensionRow] {
+        let container = URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent("Library/Application Support")
+            .appendingPathComponent("com.sumi.browser.testhost")
+            .appendingPathComponent("Sumi.sqlite")
+        guard FileManager.default.fileExists(atPath: container.path) else {
+            return []
+        }
+        let output = try await Self.runProcess(
+            "/usr/bin/sqlite3",
+            arguments: [
+                container.path,
+                "SELECT name, package_path, is_enabled FROM extensions;",
+            ]
+        )
+        return output.split(separator: "\n").compactMap { line in
+            let parts = line.components(separatedBy: "|")
+            guard parts.count >= 3 else { return nil }
+            return InstalledExtensionRow(
+                name: parts[0],
+                packagePath: parts[1],
+                enabled: parts[2] == "1"
+            )
+        }
+    }
+
+    private static func runProcess(
+        _ launchPath: String,
+        arguments: [String]
+    ) async throws -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: launchPath)
+        process.arguments = arguments
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else { return "" }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    @available(macOS 15.5, *)
+    @MainActor
+    private static func makeUserExtensionContext(
+        resourcesURL: URL
+    ) async throws -> WKWebExtensionContext? {
+        guard FileManager.default.fileExists(
+            atPath: resourcesURL.appendingPathComponent("manifest.json").path
+        ) else {
+            return nil
+        }
+        let webExtension = try await WKWebExtension(resourceBaseURL: resourcesURL)
+        guard webExtension.errors.isEmpty else { return nil }
+        let context = WKWebExtensionContext(for: webExtension)
+        for permission in webExtension.requestedPermissions {
+            context.setPermissionStatus(.grantedExplicitly, for: permission)
+        }
+        for pattern in webExtension.requestedPermissionMatchPatterns
+            .union(webExtension.allRequestedMatchPatterns) {
+            context.setPermissionStatus(.grantedExplicitly, for: pattern)
+        }
+        context.hasAccessToPrivateData = true
+        return context
     }
 
     @available(macOS 15.5, *)
@@ -859,8 +986,6 @@ final class ContentBlockingOverheadBenchmarkTests: XCTestCase {
         for pattern in patterns {
             context.setPermissionStatus(.grantedExplicitly, for: pattern)
         }
-        context.hasRequestedOptionalAccessToAllHosts = true
-        context.hasAccessToPrivateData = true
 
         let controller = WKWebExtensionController()
         try controller.load(context)
