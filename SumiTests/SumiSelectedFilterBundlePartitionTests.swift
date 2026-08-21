@@ -30,8 +30,7 @@ final class SumiSelectedFilterBundleBuilderPartitionTests: XCTestCase {
             ]),
             safariRuleCount: 4,
             advancedRules: "",
-            discardedRuleCount: 0,
-            domainCosmetics: []
+            discardedRuleCount: 0
         )
 
         let (partitioned, cosmetics) = try SumiSelectedFilterBundleBuilder
@@ -58,8 +57,7 @@ final class SumiSelectedFilterBundleBuilderPartitionTests: XCTestCase {
             json: try JSONSerialization.data(withJSONObject: [blockRule]),
             safariRuleCount: 1,
             advancedRules: "",
-            discardedRuleCount: 0,
-            domainCosmetics: []
+            discardedRuleCount: 0
         )
         let (partitioned, cosmetics) = try SumiSelectedFilterBundleBuilder
             .partitionDomainCosmetics(original)

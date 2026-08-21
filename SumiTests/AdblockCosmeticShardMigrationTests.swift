@@ -35,7 +35,7 @@ final class AdblockCosmeticShardMigrationTests: XCTestCase {
         let selectorSets: [[String?]] = try migrated.networkShards
             .sorted(by: { $0.id < $1.id })
             .map { shard in
-                let data = try reader.rawValidatedData(for: shard)
+                let data = try reader.validatedData(for: shard)
                 let rules = try JSONSerialization.jsonObject(with: data) as? [[String: Any]]
                 return (rules ?? []).map {
                     ($0["action"] as? [String: Any])?["selector"] as? String

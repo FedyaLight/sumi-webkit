@@ -46,7 +46,8 @@ actor AdblockCosmeticShardMigration {
     private func performMigration(
         for manifest: AdblockCompiledGenerationManifest
     ) async throws -> AdblockCompiledGenerationManifest {
-        let reader = makeShardReader()
+        let reader = AdblockArchivedShardReader(storageRoot: archive.storageRoot)
+        let migratedId = "\(manifest.activeGenerationId)-c1"
         var stagedShards = [String: URL]()
         var migratedShards = [NativeContentBlockingShardDescriptor]()
         var extractedCosmetics = [[String: Any]]()
@@ -60,7 +61,7 @@ actor AdblockCosmeticShardMigration {
         defer { try? FileManager.default.removeItem(at: transactionRoot) }
 
         for shard in manifest.networkShards.sorted(by: { $0.id < $1.id }) {
-            let originalData = try reader.rawValidatedData(for: shard)
+            let originalData = try reader.validatedData(for: shard)
             let (networkRules, cosmetics) = try Self.splitCosmeticRules(
                 from: originalData
             )
@@ -73,6 +74,7 @@ actor AdblockCosmeticShardMigration {
             stagedShards[shard.id] = stagedURL
             migratedShards.append(Self.migratedDescriptor(
                 shard,
+                generationId: migratedId,
                 payload: networkData
             ))
         }
@@ -83,23 +85,11 @@ actor AdblockCosmeticShardMigration {
             return manifest
         }
 
-        let migratedId = "\(manifest.activeGenerationId)-c1"
         var migratedManifest = AdblockCompiledGenerationManifest(
             schemaVersion: manifest.schemaVersion,
             activeGenerationId: migratedId,
             selectedFilterLists: manifest.selectedFilterLists,
-            networkShards: migratedShards.map { shard in
-                NativeContentBlockingShardDescriptor(
-                    id: shard.id,
-                    generationId: migratedId,
-                    kind: shard.kind,
-                    protectionGroup: shard.protectionGroup,
-                    webKitIdentifier: shard.webKitIdentifier,
-                    contentHash: shard.contentHash,
-                    approximateRuleCount: shard.approximateRuleCount,
-                    jsonByteCount: shard.jsonByteCount
-                )
-            },
+            networkShards: migratedShards,
             advancedBlocking: Self.migratedAdvancedDescriptor(
                 manifest.advancedBlocking,
                 cosmetics: extractedCosmetics
@@ -110,19 +100,14 @@ actor AdblockCosmeticShardMigration {
 
         var stagedAdvancedArtifacts = [String: URL]()
         for artifact in manifest.advancedBlocking?.artifacts ?? [] {
-            let url = try archive.advancedArtifactURL(
-                generationID: manifest.activeGenerationId,
-                relativePath: artifact.relativePath
-            )
-            stagedAdvancedArtifacts[artifact.relativePath] = url
+            stagedAdvancedArtifacts[artifact.relativePath] = try archive
+                .advancedArtifactURL(
+                    generationID: manifest.activeGenerationId,
+                    relativePath: artifact.relativePath
+                )
         }
         let cosmeticData = try JSONSerialization.data(
-            withJSONObject: extractedCosmetics.map { cosmetic in
-                [
-                    "s": cosmetic["s"] ?? "",
-                    "d": cosmetic["d"] ?? [],
-                ]
-            },
+            withJSONObject: extractedCosmetics,
             options: [.sortedKeys]
         )
         let cosmeticStagingURL = transactionRoot.appendingPathComponent(
@@ -138,16 +123,11 @@ actor AdblockCosmeticShardMigration {
             stagedAdvancedArtifactURLs: stagedAdvancedArtifacts
         )
 
-        let committed = try await archive.activeManifest()
-        if let committed,
+        if let committed = try await archive.activeManifest(),
            committed.activeGenerationId == migratedId {
             migratedManifest = committed
         }
         return migratedManifest
-    }
-
-    private func makeShardReader() -> AdblockArchivedShardReader {
-        AdblockArchivedShardReader(storageRoot: archive.storageRoot)
     }
 
     private static func splitCosmeticRules(
@@ -185,6 +165,7 @@ actor AdblockCosmeticShardMigration {
 
     private static func migratedDescriptor(
         _ shard: NativeContentBlockingShardDescriptor,
+        generationId: String,
         payload: Data
     ) -> NativeContentBlockingShardDescriptor {
         let digest = SHA256.hash(data: payload)
@@ -192,7 +173,7 @@ actor AdblockCosmeticShardMigration {
             .joined()
         return NativeContentBlockingShardDescriptor(
             id: shard.id,
-            generationId: shard.generationId,
+            generationId: generationId,
             kind: shard.kind,
             protectionGroup: shard.protectionGroup,
             webKitIdentifier: "\(shard.webKitIdentifier).c1",

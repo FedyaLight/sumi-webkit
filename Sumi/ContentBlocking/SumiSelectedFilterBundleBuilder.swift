@@ -3,12 +3,10 @@ import CryptoKit
 import FilterEngine
 import Foundation
 import SumiDomain
-
 enum SumiSelectedFilterBundleBuilderError: Error, LocalizedError {
     case invalidResponse(URL)
     case emptyList(String)
     case ruleLimitExceeded(slot: Int, discarded: Int)
-
     var errorDescription: String? {
         switch self {
         case .invalidResponse(let url):
@@ -20,13 +18,11 @@ enum SumiSelectedFilterBundleBuilderError: Error, LocalizedError {
         }
     }
 }
-
 /// Builds one combined prepared generation for an exact filter selection.
 /// Download/cache layout, slot distribution, affinity handling,
 /// conversion and FilterEngine serialization remain behind this one method.
 actor SumiSelectedFilterBundleBuilder {
     typealias Fetch = @Sendable (URL) async throws -> Data
-
     private struct Source: Sendable {
         let list: SumiFilterListCatalog.List
         let fileURL: URL
@@ -34,23 +30,16 @@ actor SumiSelectedFilterBundleBuilder {
         let byteCount: Int
         let ruleCount: Int
     }
-
     struct Conversion: Sendable {
         let json: Data
         let safariRuleCount: Int
         let advancedRules: String
         let discardedRuleCount: Int
-        /// Domain-scoped cosmetic rules extracted from the Safari JSON so the
-        /// advanced pipeline can serve them selectively instead of WebKit
-        /// applying every selector to every document.
-        let domainCosmetics: [DomainCosmetic]
     }
-
     struct DomainCosmetic: Sendable {
         let selector: String
         let domains: [String]
     }
-
     private static var slotTypes: [[ContentBlockerType]] {
         [
             [.general],
@@ -60,11 +49,9 @@ actor SumiSelectedFilterBundleBuilder {
             [.custom],
         ]
     }
-
     private let fileManager: FileManager
     private let fetch: Fetch
     private let buildRoot: URL
-
     init(
         fileManager: FileManager = .default,
         buildRoot: URL? = nil,
@@ -101,7 +88,6 @@ actor SumiSelectedFilterBundleBuilder {
             fileManager: fileManager
         )
     }
-
     func build(
         selectedLists: [SumiFilterListCatalog.List]
     ) async throws -> URL {
@@ -131,7 +117,6 @@ actor SumiSelectedFilterBundleBuilder {
             at: bundleURL,
             withIntermediateDirectories: true
         )
-
         let sources = try await download(
             selectedLists.sorted { $0.id < $1.id },
             to: sourcesRoot
@@ -167,7 +152,6 @@ actor SumiSelectedFilterBundleBuilder {
             }
             rawConversions.append(conversion)
         }
-
         // Route domain-scoped cosmetic rules away from the WebKit rule lists:
         // Safari applies every css-display-none selector to every document,
         // while the advanced pipeline can match them by document host.
@@ -178,7 +162,6 @@ actor SumiSelectedFilterBundleBuilder {
             extractedCosmetics.append(contentsOf: partitioned.cosmetics)
             conversions.append(partitioned.conversion)
         }
-
         let nativeShards = conversions
             .filter { $0.safariRuleCount > 0 }
             .map { (data: $0.json, ruleCount: $0.safariRuleCount) }
@@ -211,7 +194,6 @@ actor SumiSelectedFilterBundleBuilder {
             )
             shardPayloads.append((relativePath, data, 0))
         }
-
         let advancedRules = conversions
             .map(\.advancedRules)
             .filter { $0.isEmpty == false }
@@ -289,7 +271,6 @@ actor SumiSelectedFilterBundleBuilder {
         retainTransaction = true
         return bundleURL
     }
-
     func discard(_ bundleURL: URL) {
         let transactionRoot = bundleURL.deletingLastPathComponent()
             .standardizedFileURL
@@ -302,7 +283,6 @@ actor SumiSelectedFilterBundleBuilder {
         }
         try? fileManager.removeItem(at: transactionRoot)
     }
-
     private static func removeAbandonedTransactions(
         in buildRoot: URL,
         fileManager: FileManager
@@ -325,7 +305,6 @@ actor SumiSelectedFilterBundleBuilder {
             }
         } catch {}
     }
-
     private func download(
         _ lists: [SumiFilterListCatalog.List],
         to directory: URL
@@ -351,7 +330,6 @@ actor SumiSelectedFilterBundleBuilder {
         }
         return sources
     }
-
     private static func fetchList(_ url: URL) async throws -> Data {
         let (data, response) = try await URLSession.shared.data(from: url)
         guard let response = response as? HTTPURLResponse,
@@ -362,7 +340,6 @@ actor SumiSelectedFilterBundleBuilder {
         }
         return data
     }
-
     private static func distribute(_ sources: [Source]) -> [[Source]] {
         var slots = Array(repeating: [Source](), count: slotTypes.count)
         var totals = Array(repeating: 0, count: slotTypes.count)
@@ -380,7 +357,6 @@ actor SumiSelectedFilterBundleBuilder {
         }
         return slots
     }
-
     private static func groupedRules(
         from sources: [Source],
         assignments: [[Source]]
@@ -404,7 +380,6 @@ actor SumiSelectedFilterBundleBuilder {
                 .filter { seen.insert($0).inserted }
         }
     }
-
     private static func convert(
         rules: [String],
         safariVersion: SafariVersion
@@ -419,7 +394,6 @@ actor SumiSelectedFilterBundleBuilder {
             safariRuleCount: result.safariRulesCount,
             advancedRules: result.advancedRulesText ?? "",
             discardedRuleCount: result.discardedSafariRules,
-            domainCosmetics: []
         )
     }
 
@@ -459,7 +433,6 @@ actor SumiSelectedFilterBundleBuilder {
             safariRuleCount: kept.count,
             advancedRules: conversion.advancedRules,
             discardedRuleCount: conversion.discardedRuleCount,
-            domainCosmetics: extracted
         )
         return (partitioned, extracted)
     }
@@ -505,7 +478,6 @@ actor SumiSelectedFilterBundleBuilder {
             artifacts: artifacts
         )
     }
-
     private static func manifest(
         sources: [Source],
         shardPayloads: [(relativePath: String, data: Data, ruleCount: Int)],
@@ -554,7 +526,6 @@ actor SumiSelectedFilterBundleBuilder {
             advancedBlocking: advanced
         )
     }
-
     private static func manifestCategory(
         _ category: SumiFilterListCatalog.List.Category
     ) -> AdblockFilterListCategory {
@@ -569,7 +540,6 @@ actor SumiSelectedFilterBundleBuilder {
             .regional
         }
     }
-
     private static func ruleCount(_ data: Data) -> Int {
         String(decoding: data, as: UTF8.self)
             .components(separatedBy: .newlines)
@@ -582,7 +552,6 @@ actor SumiSelectedFilterBundleBuilder {
             }
             .count
     }
-
     static func hash(_ data: Data) -> String {
         SHA256.hash(data: data)
             .map { String(format: "%02x", $0) }
