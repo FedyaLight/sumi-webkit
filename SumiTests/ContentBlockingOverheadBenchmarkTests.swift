@@ -29,7 +29,7 @@ final class ContentBlockingOverheadBenchmarkTests: XCTestCase {
             return
         }
 
-        let generation = try Self.installedGenerationDirectory()
+        let generation = try await Self.installedGenerationDirectory()
         let stackRuleLists = try await Self.compileShardLists(
             from: generation,
             store: store,
@@ -37,52 +37,84 @@ final class ContentBlockingOverheadBenchmarkTests: XCTestCase {
         )
         print("BENCH speedo: attached \(stackRuleLists.count) production shards")
 
-        let urlCleaningController: (WKWebExtensionController, WKWebExtensionContext)?
+        let urlCleaningController: (
+            WKWebExtensionController,
+            WKWebExtensionContext,
+            URL
+        )?
+        let combinedController: (
+            WKWebExtensionController,
+            WKWebExtensionContext,
+            URL
+        )?
+        var userExtensionController: WKWebExtensionController?
+        var loadedExtensionNames = [String]()
         if #available(macOS 15.5, *) {
             urlCleaningController = try await Self.makeRealURLCleaningExtension(
                 generationDirectory: generation
             )
+            combinedController = try await Self.makeRealURLCleaningExtension(
+                generationDirectory: generation
+            )
+            let rows = try await Self.installedExtensionRows().filter(\.enabled)
+            let extensionOnly = WKWebExtensionController()
+            loadedExtensionNames = await Self.loadUserExtensions(
+                rows,
+                into: extensionOnly
+            )
+            userExtensionController = loadedExtensionNames.isEmpty
+                ? nil
+                : extensionOnly
+            if let combinedController {
+                _ = await Self.loadUserExtensions(
+                    rows,
+                    into: combinedController.0
+                )
+            }
         } else {
             urlCleaningController = nil
+            combinedController = nil
+            userExtensionController = nil
         }
-
-        var userExtensionContexts = [(String, WKWebExtensionContext)]()
-        if #available(macOS 15.5, *) {
-            for row in try await Self.installedExtensionRows() where row.enabled {
-                if let context = try? await Self.makeUserExtensionContext(
-                    resourcesURL: URL(fileURLWithPath: row.packagePath)
-                ) {
-                    userExtensionContexts.append((row.name, context))
+        defer {
+            if let urlCleaningController {
+                do {
+                    try FileManager.default.removeItem(at: urlCleaningController.2)
+                } catch {
+                    XCTFail("Could not remove URL-cleaning fixture: \(error)")
+                }
+            }
+            if let combinedController {
+                do {
+                    try FileManager.default.removeItem(at: combinedController.2)
+                } catch {
+                    XCTFail("Could not remove combined extension fixture: \(error)")
                 }
             }
         }
         print(
-            "BENCH speedo: loaded \(userExtensionContexts.count) user extensions: \(userExtensionContexts.map(\.0))"
+            "BENCH speedo: loaded \(loadedExtensionNames.count) user extensions: \(loadedExtensionNames)"
         )
-        if !userExtensionContexts.isEmpty, let base = urlCleaningController {
-            for (_, context) in userExtensionContexts {
-                do {
-                    try base.0.load(context)
-                } catch {
-                    print("BENCH speedo: extension load failed: \(error.localizedDescription)")
-                }
-            }
-        }
 
         // Production shape: the cosmetic-shard migration runs on a copy of
         // the installed generation and its stripped shards are compiled.
         // NOTE: WebKit rejects single lists with >150_000 rules, which is why
         // generations shard their network rules in the first place.
         var migratedRuleLists = [WKContentRuleList]()
-        let sourceRoot = URL(fileURLWithPath: NSHomeDirectory())
-            .appendingPathComponent("Library/Application Support")
-            .appendingPathComponent("com.sumi.browser/Adblock")
+        let sourceRoot = Self.installedAdblockRoot()
         let copyRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent(
                 "RealAdblockBench-\(UUID().uuidString)",
                 isDirectory: true
             )
         try FileManager.default.copyItem(at: sourceRoot, to: copyRoot)
+        defer {
+            do {
+                try FileManager.default.removeItem(at: copyRoot)
+            } catch {
+                XCTFail("Could not remove copied generation: \(error)")
+            }
+        }
         let copyArchive = AdblockGenerationArchive(rootDirectory: copyRoot)
         if let activeManifest = try await copyArchive.activeManifest() {
             let migration = AdblockCosmeticShardMigration(archive: copyArchive)
@@ -111,7 +143,7 @@ final class ContentBlockingOverheadBenchmarkTests: XCTestCase {
 
         let requestedConfigs = ProcessInfo.processInfo.environment[
             "SUMI_SPEEDO_CONFIGS"
-        ] ?? "clean,newstack+ext"
+        ] ?? "clean"
         var scores: [(String, String)] = []
         for name in requestedConfigs.split(separator: ",").map(String.init) {
             let score = try await Self.runSpeedometer31 {
@@ -126,7 +158,9 @@ final class ContentBlockingOverheadBenchmarkTests: XCTestCase {
                     for list in migratedRuleLists {
                         configuration.userContentController.add(list)
                     }
-                    if let urlCleaningController {
+                    if name == "newstack+ext", let combinedController {
+                        configuration.webExtensionController = combinedController.0
+                    } else if let urlCleaningController {
                         configuration.webExtensionController = urlCleaningController.0
                     }
                     let userScript = SumiPageScriptBuilder.makeWKUserScript(
@@ -153,13 +187,7 @@ final class ContentBlockingOverheadBenchmarkTests: XCTestCase {
                         name: SumiAdvancedBlockingPageScript.messageName
                     )
                 case "extensions":
-                    if #available(macOS 15.5, *), !userExtensionContexts.isEmpty {
-                        let controller = WKWebExtensionController()
-                        for (_, context) in userExtensionContexts {
-                            try? controller.load(context)
-                        }
-                        configuration.webExtensionController = controller
-                    }
+                    configuration.webExtensionController = userExtensionController
                 default:
                     break
                 }
@@ -169,55 +197,6 @@ final class ContentBlockingOverheadBenchmarkTests: XCTestCase {
             print("BENCH speedo [\(name)]: \(score)")
         }
         print("BENCH speedo summary: \(scores.map { "\($0.0)=\($0.1)" }.joined(separator: " "))")
-    }
-
-    /// End-to-end sanity check of the cosmetic-shard migration against a
-    /// COPY of the really installed generation. Gated behind
-    /// `SUMI_MIGRATE_REAL_COPY=1`.
-    @MainActor
-    func testRealGenerationMigrationProducesLightStack() async throws {
-        guard ProcessInfo.processInfo.environment["SUMI_MIGRATE_REAL_COPY"] == "1" else {
-            throw XCTSkip("Set SUMI_MIGRATE_REAL_COPY=1 to validate the real generation")
-        }
-        let sourceRoot = URL(fileURLWithPath: NSHomeDirectory())
-            .appendingPathComponent("Library/Application Support")
-            .appendingPathComponent("com.sumi.browser.testhost/Adblock")
-        let copyRoot = FileManager.default.temporaryDirectory
-            .appendingPathComponent(
-                "RealAdblockCopy-\(UUID().uuidString)",
-                isDirectory: true
-            )
-        try FileManager.default.copyItem(at: sourceRoot, to: copyRoot)
-        let archive = AdblockGenerationArchive(rootDirectory: copyRoot)
-        guard let manifest = try await archive.activeManifest() else {
-            XCTFail("No active manifest in copied generation")
-            return
-        }
-        let originalShardBytes = manifest.networkShards
-            .map(\.jsonByteCount)
-            .reduce(0, +)
-
-        let migration = AdblockCosmeticShardMigration(archive: archive)
-        let migrated = await migration.migratedManifestIfPossible(for: manifest)
-        let migratedShardBytes = migrated.networkShards
-            .map(\.jsonByteCount)
-            .reduce(0, +)
-        print(
-            "BENCH migrate-real: id=\(migrated.activeGenerationId) shardBytes \(originalShardBytes) -> \(migratedShardBytes)"
-        )
-
-        let runtime = SumiAdvancedBlockingRuntime(archive: archive)
-        let document = SumiAdvancedBlockingDocumentContext(
-            pageURL: URL(string: "https://www.news.example/article")!,
-            topURL: nil
-        )
-        let configuration = try await runtime.configuration(
-            for: document,
-            in: migrated
-        )
-        print(
-            "BENCH migrate-real: sample configuration css count=\(configuration?.css.count ?? -1)"
-        )
     }
 
     // MARK: - Measurement
@@ -257,7 +236,7 @@ final class ContentBlockingOverheadBenchmarkTests: XCTestCase {
         var visibilityDeadline = Date().addingTimeInterval(120)
         var visibilityState = ""
         while Date() < visibilityDeadline {
-            visibilityState = (try? await webView.evaluateJavaScript(
+            visibilityState = (try await webView.evaluateJavaScript(
                 "document.visibilityState"
             )) as? String ?? "unknown"
             if visibilityState == "visible" { break }
@@ -266,7 +245,7 @@ final class ContentBlockingOverheadBenchmarkTests: XCTestCase {
             try await Task.sleep(nanoseconds: 1_000_000_000)
         }
         print("BENCH speedo visibility: \(visibilityState)")
-        _ = try? await webView.evaluateJavaScript(
+        _ = try await webView.evaluateJavaScript(
             "window.benchmarkClient.start()"
         )
 
@@ -276,21 +255,21 @@ final class ContentBlockingOverheadBenchmarkTests: XCTestCase {
         var finished = false
         while Date() < deadline, !finished {
             try await Task.sleep(nanoseconds: 15_000_000_000)
-            let state = (try? await webView.evaluateJavaScript(
+            let state = (try await webView.evaluateJavaScript(
                 "JSON.stringify({running: !!(window.benchmarkClient && window.benchmarkClient._isRunning), progress: (document.getElementById('info-progress')||{}).textContent || '', done: !!((document.getElementById('result-number')||{}).textContent)})"
             )) as? String ?? "eval-failed"
             if state != lastProgress {
                 print("BENCH speedo state[\(Int(-started.timeIntervalSinceNow))s]: \(state)")
                 lastProgress = state
             }
-            if let data = try? JSONSerialization.jsonObject(
+            if let data = try JSONSerialization.jsonObject(
                 with: Data(state.utf8)
             ) as? [String: Any] {
                 finished = (data["done"] as? Bool) == true
             }
         }
         guard finished else {
-            let finalState = (try? await webView.evaluateJavaScript(
+            let finalState = (try await webView.evaluateJavaScript(
                 "JSON.stringify({running: !!(window.benchmarkClient && window.benchmarkClient._isRunning), progress: (document.getElementById('info-progress')||{}).textContent || ''})"
             )) as? String ?? "eval-failed"
             XCTFail("Speedometer did not finish: \(finalState)")
@@ -321,18 +300,20 @@ final class ContentBlockingOverheadBenchmarkTests: XCTestCase {
 
     // MARK: - Installed artifacts
 
-    private static func installedGenerationDirectory() throws -> URL {
-        let generatedRoot = URL(fileURLWithPath: NSHomeDirectory())
-            .appendingPathComponent("Library/Application Support")
-            .appendingPathComponent("com.sumi.browser.testhost/Adblock/Generated")
-        let generations = try FileManager.default.contentsOfDirectory(
-            at: generatedRoot,
-            includingPropertiesForKeys: nil
-        )
-        guard let generation = generations.first else {
+    private static func installedGenerationDirectory() async throws -> URL {
+        let archive = AdblockGenerationArchive(rootDirectory: installedAdblockRoot())
+        guard let manifest = try await archive.activeManifest() else {
             throw NSError(domain: "bench", code: 1)
         }
-        return generation
+        return try archive.generationDirectoryURL(
+            generationId: manifest.activeGenerationId
+        )
+    }
+
+    private static func installedAdblockRoot() -> URL {
+        URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent("Library/Application Support")
+            .appendingPathComponent("com.sumi.browser/Adblock")
     }
 
     @MainActor
@@ -369,7 +350,7 @@ final class ContentBlockingOverheadBenchmarkTests: XCTestCase {
     static func installedExtensionRows() async throws -> [InstalledExtensionRow] {
         let container = URL(fileURLWithPath: NSHomeDirectory())
             .appendingPathComponent("Library/Application Support")
-            .appendingPathComponent("com.sumi.browser.testhost")
+            .appendingPathComponent("com.sumi.browser")
             .appendingPathComponent("Sumi.sqlite")
         guard FileManager.default.fileExists(atPath: container.path) else {
             return []
@@ -411,6 +392,29 @@ final class ContentBlockingOverheadBenchmarkTests: XCTestCase {
 
     @available(macOS 15.5, *)
     @MainActor
+    private static func loadUserExtensions(
+        _ rows: [InstalledExtensionRow],
+        into controller: WKWebExtensionController
+    ) async -> [String] {
+        var names = [String]()
+        for row in rows {
+            do {
+                guard let context = try await makeUserExtensionContext(
+                    resourcesURL: URL(fileURLWithPath: row.packagePath)
+                ) else { continue }
+                try controller.load(context)
+                names.append(row.name)
+            } catch {
+                print(
+                    "BENCH speedo: extension \(row.name) load failed: \(error.localizedDescription)"
+                )
+            }
+        }
+        return names
+    }
+
+    @available(macOS 15.5, *)
+    @MainActor
     private static func makeUserExtensionContext(
         resourcesURL: URL
     ) async throws -> WKWebExtensionContext? {
@@ -437,7 +441,11 @@ final class ContentBlockingOverheadBenchmarkTests: XCTestCase {
     @MainActor
     private static func makeRealURLCleaningExtension(
         generationDirectory: URL
-    ) async throws -> (WKWebExtensionController, WKWebExtensionContext)? {
+    ) async throws -> (
+        WKWebExtensionController,
+        WKWebExtensionContext,
+        URL
+    )? {
         let removeparamURL = generationDirectory
             .appendingPathComponent(".webext/removeparam.json")
         guard FileManager.default.fileExists(atPath: removeparamURL.path) else {
@@ -450,7 +458,11 @@ final class ContentBlockingOverheadBenchmarkTests: XCTestCase {
     @MainActor
     private static func makeURLCleaningExtension(
         rulesFileURL: URL
-    ) async throws -> (WKWebExtensionController, WKWebExtensionContext)? {
+    ) async throws -> (
+        WKWebExtensionController,
+        WKWebExtensionContext,
+        URL
+    )? {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(
                 "SumiBenchDNRExt-\(UUID().uuidString)",
@@ -460,6 +472,16 @@ final class ContentBlockingOverheadBenchmarkTests: XCTestCase {
             at: directory,
             withIntermediateDirectories: true
         )
+        var retainDirectory = false
+        defer {
+            if retainDirectory == false {
+                do {
+                    try FileManager.default.removeItem(at: directory)
+                } catch {
+                    XCTFail("Could not remove incomplete DNR fixture: \(error)")
+                }
+            }
+        }
         try FileManager.default.copyItem(
             at: rulesFileURL,
             to: directory.appendingPathComponent("rules.json")
@@ -502,6 +524,7 @@ final class ContentBlockingOverheadBenchmarkTests: XCTestCase {
 
         let controller = WKWebExtensionController()
         try controller.load(context)
-        return (controller, context)
+        retainDirectory = true
+        return (controller, context, directory)
     }
 }

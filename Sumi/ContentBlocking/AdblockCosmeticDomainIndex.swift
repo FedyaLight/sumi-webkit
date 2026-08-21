@@ -6,65 +6,91 @@ import Foundation
 /// document, so thousands of domain-scoped rules tax DOM-heavy pages that
 /// they were never written for. This index serves the same rules through the
 /// advanced blocking pipeline, where only selectors whose `if-domain`
-/// pattern matches the current document host are returned.
+/// pattern matches the top document host are returned.
 ///
-/// Matching mirrors WebKit's content-blocker semantics: a leading `*`
-/// matches any character sequence at the start of the host (so
-/// `*example.com` also matches `badexample.com`), and a pattern without one
+/// Matching mirrors WebKit's content-blocker semantics: `*example.com`
+/// matches `example.com` and its subdomains, while a pattern without `*`
 /// must equal the host exactly.
 struct AdblockCosmeticDomainIndex: Sendable {
-    private struct Entry: Sendable {
+    struct Entry: Codable, Equatable, Sendable {
         let selector: String
-        let patterns: [String]
+        let domains: [String]
+
+        enum CodingKeys: String, CodingKey {
+            case selector = "s"
+            case domains = "d"
+        }
     }
 
-    private let entries: [Entry]
+    private struct IndexedSelector: Sendable {
+        let order: Int
+        let selector: String
+    }
+
+    private let exactMatches: [String: [IndexedSelector]]
+    private let wildcardMatches: [String: [IndexedSelector]]
 
     static let artifactRelativePath = ".webext/cosmetic-domains.json"
 
     init() {
-        entries = []
+        exactMatches = [:]
+        wildcardMatches = [:]
     }
 
     init(data: Data) throws {
-        try self.init(json: try JSONSerialization.jsonObject(with: data))
+        try self.init(entries: JSONDecoder().decode([Entry].self, from: data))
     }
 
-    init(json: Any) throws {
-        guard let decoded = json as? [[String: Any]] else {
-            throw AdblockCosmeticDomainIndexError.invalidPayload
-        }
-        var parsed = [Entry]()
-        parsed.reserveCapacity(decoded.count)
-        for object in decoded {
-            guard let selector = object["s"] as? String,
-                  selector.isEmpty == false,
-                  let patterns = object["d"] as? [String],
-                  patterns.isEmpty == false,
-                  patterns.allSatisfy({ $0.isEmpty == false })
+    init(entries: [Entry]) throws {
+        var exactMatches = [String: [IndexedSelector]]()
+        var wildcardMatches = [String: [IndexedSelector]]()
+        for (order, entry) in entries.enumerated() {
+            guard entry.selector.isEmpty == false,
+                  entry.domains.isEmpty == false
             else {
                 throw AdblockCosmeticDomainIndexError.invalidPayload
             }
-            parsed.append(
-                Entry(selector: selector, patterns: patterns.map { $0.lowercased() })
-            )
+            let indexed = IndexedSelector(order: order, selector: entry.selector)
+            for domain in entry.domains {
+                let normalized = domain.lowercased()
+                guard normalized.isEmpty == false else {
+                    throw AdblockCosmeticDomainIndexError.invalidPayload
+                }
+                if normalized.hasPrefix("*") {
+                    let suffix = String(normalized.dropFirst())
+                    guard suffix.isEmpty == false else {
+                        throw AdblockCosmeticDomainIndexError.invalidPayload
+                    }
+                    wildcardMatches[suffix, default: []].append(indexed)
+                } else {
+                    exactMatches[normalized, default: []].append(indexed)
+                }
+            }
         }
-        entries = parsed
+        self.exactMatches = exactMatches
+        self.wildcardMatches = wildcardMatches
     }
 
-    var isEmpty: Bool { entries.isEmpty }
+    var isEmpty: Bool { exactMatches.isEmpty && wildcardMatches.isEmpty }
 
     /// Selectors whose `if-domain` patterns match `host`, in rule order.
     func selectors(forHost host: String?) -> [String] {
         guard let host, isEmpty == false else { return [] }
         let normalizedHost = host.lowercased()
         guard normalizedHost.isEmpty == false else { return [] }
-        var matched = [String]()
-        for entry in entries
-        where entry.patterns.contains(where: { Self.pattern($0, matchesHost: normalizedHost) }) {
-            matched.append(entry.selector)
+
+        var matches = exactMatches[normalizedHost] ?? []
+        let labels = normalizedHost.split(separator: ".", omittingEmptySubsequences: false)
+        for index in labels.indices {
+            let suffix = labels[index...].joined(separator: ".")
+            matches.append(contentsOf: wildcardMatches[suffix] ?? [])
         }
-        return matched
+        matches.sort { $0.order < $1.order }
+
+        var seen = Set<Int>()
+        return matches.compactMap { match in
+            seen.insert(match.order).inserted ? match.selector : nil
+        }
     }
 
     /// Splits a Safari content-blocker rule array into network rules and
@@ -73,9 +99,9 @@ struct AdblockCosmeticDomainIndex: Sendable {
     /// `unless-domain` escape; everything else stays in the WebKit list.
     static func splitRules(
         _ rules: [[String: Any]]
-    ) -> (network: [[String: Any]], cosmetics: [[String: Any]]) {
+    ) -> (network: [[String: Any]], cosmetics: [Entry]) {
         var network = [[String: Any]]()
-        var cosmetics = [[String: Any]]()
+        var cosmetics = [Entry]()
         for rule in rules {
             guard let action = rule["action"] as? [String: Any],
                   action["type"] as? String == "css-display-none",
@@ -89,18 +115,15 @@ struct AdblockCosmeticDomainIndex: Sendable {
                 network.append(rule)
                 continue
             }
-            cosmetics.append(["s": selector, "d": domains])
+            cosmetics.append(Entry(selector: selector, domains: domains))
         }
         return (network, cosmetics)
     }
 
-    private static func pattern(
-        _ pattern: String,
-        matchesHost host: String
-    ) -> Bool {
-        guard pattern.hasPrefix("*") else { return host == pattern }
-        let suffix = String(pattern.dropFirst())
-        return host == suffix || host.hasSuffix(suffix)
+    static func artifactData(for entries: [Entry]) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try encoder.encode(entries)
     }
 }
 

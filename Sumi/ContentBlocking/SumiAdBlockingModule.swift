@@ -136,7 +136,7 @@ final class SumiAdBlockingModule {
     /// `nil` means the manifest is not loaded yet and the answer is unknown.
     private var activeManifestHasAdvancedBlockingCapability: Bool {
         guard let manifest = activeManifestIfLoaded() else { return true }
-        return manifest.advancedBlocking != nil
+        return SumiAdvancedBlockingRuntime.supports(manifest.advancedBlocking)
     }
 
     func reconcileURLCleaning(

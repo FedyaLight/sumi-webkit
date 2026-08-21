@@ -1,4 +1,5 @@
 import CryptoKit
+import WebKit
 import XCTest
 
 @testable import Sumi
@@ -41,7 +42,20 @@ final class AdblockCosmeticShardMigrationTests: XCTestCase {
                     ($0["action"] as? [String: Any])?["selector"] as? String
                 }
             }
-        XCTAssertEqual(selectorSets, [[nil], [], [".generic-ad"]])
+        XCTAssertEqual(selectorSets, [[nil], [".generic-ad"]])
+        XCTAssertEqual(migrated.networkShards.map(\.approximateRuleCount), [1, 1])
+        for shard in migrated.networkShards {
+            let data = try reader.validatedData(for: shard)
+            let identifier = "AdblockCosmeticShardMigrationTests-\(UUID().uuidString)"
+            let compiled = try await WKContentRuleListStore.default()?
+                .compileContentRuleList(
+                    forIdentifier: identifier,
+                    encodedContentRuleList: String(decoding: data, as: UTF8.self)
+                )
+            XCTAssertNotNil(compiled)
+            try await WKContentRuleListStore.default()?
+                .removeContentRuleList(forIdentifier: identifier)
+        }
 
         // The artifact payload carries the extracted selector.
         let artifactURL = try fixture.archive.advancedArtifactURL(
@@ -71,13 +85,56 @@ final class AdblockCosmeticShardMigrationTests: XCTestCase {
         )
         XCTAssertEqual(migrated, originalManifest)
     }
+
+    func testGenerationsWithUnsupportedAdvancedRuntimeAreLeftUntouched() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        try await fixture.commitOriginalGeneration(
+            advancedRuntimeVersion: "unsupported"
+        )
+
+        let migration = AdblockCosmeticShardMigration(archive: fixture.archive)
+        let originalManifest = try await fixture.archive.activeManifest()
+        let migrated = await migration.migratedManifestIfPossible(
+            for: try XCTUnwrap(originalManifest)
+        )
+
+        XCTAssertEqual(migrated, originalManifest)
+    }
+
+    func testGenerationWithoutDomainCosmeticsGetsAnIdempotencyMarker() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        try await fixture.commitOriginalGeneration(includeDomainCosmetic: false)
+
+        let migration = AdblockCosmeticShardMigration(archive: fixture.archive)
+        let activeManifest = try await fixture.archive.activeManifest()
+        let original = try XCTUnwrap(activeManifest)
+        let migrated = await migration.migratedManifestIfPossible(for: original)
+
+        XCTAssertEqual(migrated.activeGenerationId, original.activeGenerationId)
+        XCTAssertEqual(migrated.networkShards, original.networkShards)
+        let artifact = try XCTUnwrap(migrated.advancedBlocking?.artifacts.first {
+            $0.role == .domainCosmeticRules
+        })
+        let artifactURL = try fixture.archive.advancedArtifactURL(
+            generationID: migrated.activeGenerationId,
+            relativePath: artifact.relativePath
+        )
+        let index = try AdblockCosmeticDomainIndex(
+            data: Data(contentsOf: artifactURL)
+        )
+        XCTAssertEqual(index.selectors(forHost: "news.example"), [])
+
+        let secondPass = await migration.migratedManifestIfPossible(for: migrated)
+        XCTAssertEqual(secondPass, migrated)
+    }
 }
 
 @MainActor
 private final class Fixture {
     let root: URL
     let archive: AdblockGenerationArchive
-    private let sources: [String: URL]
 
     init() throws {
         root = FileManager.default.temporaryDirectory
@@ -90,25 +147,28 @@ private final class Fixture {
             withIntermediateDirectories: true
         )
         archive = AdblockGenerationArchive(rootDirectory: root)
-        sources = [:]
     }
 
     var storageRoot: URL { archive.storageRoot }
 
-    func commitOriginalGeneration(includeAdvanced: Bool = true) async throws {
+    func commitOriginalGeneration(
+        includeAdvanced: Bool = true,
+        advancedRuntimeVersion: String = "4.3.0",
+        includeDomainCosmetic: Bool = true
+    ) async throws {
         let networkRuleSets: [[[String: Any]]] = [
             [
                 [
                     "action": ["type": "block"],
-                    "trigger": ["url-filter": "||ads.example^"],
+                    "trigger": ["url-filter": ".*ads\\.example.*"],
                 ],
             ],
-            [
+            includeDomainCosmetic ? [
                 [
                     "action": ["type": "css-display-none", "selector": ".domain-ad"],
                     "trigger": ["url-filter": ".*", "if-domain": ["*news.example"]],
                 ],
-            ],
+            ] : [],
             [
                 [
                     "action": ["type": "css-display-none", "selector": ".generic-ad"],
@@ -175,7 +235,7 @@ private final class Fixture {
             advanced = AdvancedBlockingGenerationDescriptor(
                 format: AdvancedBlockingGenerationDescriptor.safariConverterFormat,
                 schemaVersion: 1,
-                runtimeVersion: "4.3.0",
+                runtimeVersion: advancedRuntimeVersion,
                 ruleCount: 1,
                 artifacts: artifacts
             )
@@ -190,7 +250,6 @@ private final class Fixture {
             lastSuccessfulUpdateDate: Date(timeIntervalSince1970: 0),
             bundleProfileId: SumiProtectionBundleProfile.adblock
         )
-        _ = sources
         try await archive.commit(
             manifest: manifest,
             stagedCompiledShardURLs: stagedShards,
@@ -220,6 +279,10 @@ private final class Fixture {
     }
 
     func remove() {
-        try? FileManager.default.removeItem(at: root)
+        do {
+            try FileManager.default.removeItem(at: root)
+        } catch {
+            assertionFailure("Could not remove migration fixture: \(error)")
+        }
     }
 }

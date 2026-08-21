@@ -4,16 +4,20 @@ import XCTest
 
 final class AdblockCosmeticDomainIndexTests: XCTestCase {
     func testParsesSelectorDomainEntries() throws {
-        let json: [[String: Any]] = [
-            ["s": ".banner", "d": ["*example.com"]],
-            ["s": "#promo", "d": ["specific.org", "*other.org"]],
+        let entries = [
+            AdblockCosmeticDomainIndex.Entry(
+                selector: ".banner",
+                domains: ["*example.com"]
+            ),
+            AdblockCosmeticDomainIndex.Entry(
+                selector: "#promo",
+                domains: ["specific.org", "*other.org"]
+            ),
         ]
-        let index = try AdblockCosmeticDomainIndex(
-            json: json
-        )
+        let index = try AdblockCosmeticDomainIndex(entries: entries)
         XCTAssertEqual(index.selectors(forHost: "www.example.com"), [".banner"])
         XCTAssertEqual(index.selectors(forHost: "example.com"), [".banner"])
-        XCTAssertEqual(index.selectors(forHost: "badexample.com"), [".banner"])
+        XCTAssertEqual(index.selectors(forHost: "badexample.com"), [])
         XCTAssertEqual(index.selectors(forHost: "specific.org"), ["#promo"])
         XCTAssertEqual(index.selectors(forHost: "a.other.org"), ["#promo"])
         XCTAssertEqual(index.selectors(forHost: "other.org.evil.io"), [])
@@ -21,14 +25,14 @@ final class AdblockCosmeticDomainIndexTests: XCTestCase {
 
     func testCaseInsensitiveHostMatching() throws {
         let index = try AdblockCosmeticDomainIndex(
-            json: [["s": ".ad", "d": ["*Example.COM"]]]
+            entries: [.init(selector: ".ad", domains: ["*Example.COM"])]
         )
         XCTAssertEqual(index.selectors(forHost: "WWW.EXAMPLE.com"), [".ad"])
     }
 
     func testPatternWithoutWildcardRequiresExactHost() throws {
         let index = try AdblockCosmeticDomainIndex(
-            json: [["s": ".x", "d": ["exact.org"]]]
+            entries: [.init(selector: ".x", domains: ["exact.org"])]
         )
         XCTAssertEqual(index.selectors(forHost: "exact.org"), [".x"])
         XCTAssertEqual(index.selectors(forHost: "sub.exact.org"), [])
@@ -36,7 +40,7 @@ final class AdblockCosmeticDomainIndexTests: XCTestCase {
 
     func testEmptyAndMissingHostsReturnNothing() throws {
         let index = try AdblockCosmeticDomainIndex(
-            json: [["s": ".ad", "d": ["*example.com"]]]
+            entries: [.init(selector: ".ad", domains: ["*example.com"])]
         )
         XCTAssertTrue(index.selectors(forHost: nil).isEmpty)
         XCTAssertTrue(index.selectors(forHost: "").isEmpty)
@@ -44,12 +48,31 @@ final class AdblockCosmeticDomainIndexTests: XCTestCase {
     }
 
     func testInvalidPayloadThrows() {
-        XCTAssertThrowsError(try AdblockCosmeticDomainIndex(json: "nope"))
         XCTAssertThrowsError(
-            try AdblockCosmeticDomainIndex(json: [["s": "", "d": ["*a.com"]]])
+            try AdblockCosmeticDomainIndex(
+                entries: [.init(selector: "", domains: ["*a.com"])]
+            )
         )
         XCTAssertThrowsError(
-            try AdblockCosmeticDomainIndex(json: [["s": ".a", "d": []]])
+            try AdblockCosmeticDomainIndex(
+                entries: [.init(selector: ".a", domains: [])]
+            )
+        )
+        XCTAssertThrowsError(try AdblockCosmeticDomainIndex(data: Data("{}".utf8)))
+    }
+
+    func testPreservesRuleOrderAndDeduplicatesMultiPatternMatches() throws {
+        let index = try AdblockCosmeticDomainIndex(entries: [
+            .init(
+                selector: ".first",
+                domains: ["*example.com", "www.example.com"]
+            ),
+            .init(selector: ".second", domains: ["*example.com"]),
+        ])
+
+        XCTAssertEqual(
+            index.selectors(forHost: "www.example.com"),
+            [".first", ".second"]
         )
     }
 
@@ -75,12 +98,12 @@ final class AdblockCosmeticDomainIndexTests: XCTestCase {
         let split = AdblockCosmeticDomainIndex.splitRules(rules)
         XCTAssertEqual(split.network.count, 3)
         XCTAssertEqual(split.cosmetics.count, 1)
-        XCTAssertEqual(split.cosmetics.first?["s"] as? String, ".domain")
-        XCTAssertEqual(split.cosmetics.first?["d"] as? [String], ["*news.example"])
+        XCTAssertEqual(split.cosmetics.first?.selector, ".domain")
+        XCTAssertEqual(split.cosmetics.first?.domains, ["*news.example"])
 
         // The extracted payload must round-trip through the index.
         let index = try AdblockCosmeticDomainIndex(
-            json: split.cosmetics
+            entries: split.cosmetics
         )
         XCTAssertEqual(index.selectors(forHost: "www.news.example"), [".domain"])
     }

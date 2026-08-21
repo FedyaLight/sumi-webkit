@@ -9,11 +9,9 @@ Lessons from the adblock-overhead investigation (2026-08):
 - Measure on **Release** builds. Debug Swift code slows every app-side hot
   path (navigation responders, script message handlers, Combine plumbing)
   several-fold; WebKit itself is identical, so only app-owned work differs.
-- Judge by the **first run after a fresh launch**. Consecutive benchmark runs
-  degrade strongly on this machine in *every* browser — Safari dropped
-  26 → 13 → 11 across three back-to-back runs while Sumi Release went
-  33 → 27 → 27. The effect is platform-level (sustained-load power
-  management), not browser code.
+- Judge by the **first run after a fresh launch**. Back-to-back results varied
+  enough during the investigation to invalidate comparisons between later
+  runs.
 - Quiet the background first: Xcode/T3 source-control indexing of this repo
   was observed burning ~440% CPU mid-measurement.
 - Keep one tab open. All normal tabs share a single WebKit process pool, so
@@ -22,8 +20,26 @@ Lessons from the adblock-overhead investigation (2026-08):
   `SUMI_RUN_SPEEDOMETER=1`) reports an upper bound (~35–41): a bare window,
   dedicated processes, no chrome compositing. Real-browser numbers come from
   manual runs in the built app.
-- Reference points, Mac Studio M2 Max, single tab, Release: Sumi full stack
-  ≈ 33 first run; Safari ≈ 26 first run.
+
+Run one configuration per fresh test process. The harness reads the active
+generation and enabled extensions from the real `com.sumi.browser` profile:
+
+```sh
+SUMI_RUN_SPEEDOMETER=1 SUMI_SPEEDO_CONFIGS=clean \
+  xcodebuild test -project Sumi.xcodeproj -scheme Sumi \
+  -configuration Release -destination 'platform=macOS' \
+  -only-testing:SumiTests/ContentBlockingOverheadBenchmarkTests/testSpeedometer31WithAndWithoutBlockingStack \
+  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
+
+SUMI_RUN_SPEEDOMETER=1 SUMI_SPEEDO_CONFIGS=newstack+ext \
+  xcodebuild test -project Sumi.xcodeproj -scheme Sumi \
+  -configuration Release -destination 'platform=macOS' \
+  -only-testing:SumiTests/ContentBlockingOverheadBenchmarkTests/testSpeedometer31WithAndWithoutBlockingStack \
+  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
+```
+
+Record the macOS build, Xcode build, hardware, selected filter generation,
+enabled extensions, configuration name, and first-run score with every result.
 
 ## Fast regression harness
 

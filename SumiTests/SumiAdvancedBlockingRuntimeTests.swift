@@ -92,9 +92,19 @@ final class SumiAdvancedBlockingRuntimeTests: XCTestCase {
             "other.example#%#//scriptlet('log', 'not-matched')",
         ].joined(separator: "\n")
         _ = try builder.buildFilterEngine(rules: rules)
+        let cosmeticData = try AdblockCosmeticDomainIndex.artifactData(for: [
+            .init(selector: ".domain-ad", domains: ["*example.org"]),
+        ])
+        try cosmeticData.write(
+            to: generation.appendingPathComponent(
+                AdblockCosmeticDomainIndex.artifactRelativePath
+            ),
+            options: .atomic
+        )
         let descriptor = try fixture.descriptorForBuiltEngine(
             in: generation,
-            ruleCount: 6
+            ruleCount: 6,
+            domainCosmeticsData: cosmeticData
         )
         let runtime = SumiAdvancedBlockingRuntime(
             archive: fixture.archive,
@@ -118,7 +128,7 @@ final class SumiAdvancedBlockingRuntimeTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(configuration?.css, ["#banner"])
+        XCTAssertEqual(configuration?.css, ["#banner", ".domain-ad"])
         XCTAssertEqual(
             configuration?.extendedCSS,
             ["#card:has(.promotion)"]
@@ -141,6 +151,22 @@ final class SumiAdvancedBlockingRuntimeTests: XCTestCase {
             )
         )
         XCTAssertNil(nonmatching)
+
+        let matchingTopDocument = try await runtime.configuration(
+            for: SumiAdvancedBlockingDocumentContext(
+                pageURL: try XCTUnwrap(
+                    URL(string: "https://cross-origin-frame.invalid/content")
+                ),
+                topURL: try XCTUnwrap(
+                    URL(string: "https://example.org/article")
+                )
+            ),
+            in: makeManifest(
+                generationID: generationID,
+                advanced: descriptor
+            )
+        )
+        XCTAssertTrue(matchingTopDocument?.css.contains(".domain-ad") == true)
     }
 
     func testRuntimeCachesCompiledConfigurationForRepeatedDocumentLookup() async throws {
@@ -607,7 +633,8 @@ private struct Fixture {
 
     func descriptorForBuiltEngine(
         in generation: URL,
-        ruleCount: Int
+        ruleCount: Int,
+        domainCosmeticsData: Data? = nil
     ) throws -> AdvancedBlockingGenerationDescriptor {
         let removeParamData = Data(
             """
@@ -618,13 +645,19 @@ private struct Fixture {
             ".webext/removeparam.json"
         )
         try removeParamData.write(to: removeParamURL)
-        let values: [(AdvancedBlockingArtifactRole, String)] = [
+        var values: [(AdvancedBlockingArtifactRole, String)] = [
             (.ruleStorage, ".webext/rules.bin"),
             (.engineIndex, ".webext/engine.bin"),
             (.engineMetadata, ".webext/meta.bin"),
             (.sourceRules, ".webext/rules.txt"),
             (.urlCleaningRules, ".webext/removeparam.json"),
         ]
+        if domainCosmeticsData != nil {
+            values.append((
+                .domainCosmeticRules,
+                AdblockCosmeticDomainIndex.artifactRelativePath
+            ))
+        }
         let artifacts = try values.map { role, relativePath in
             let data = try Data(
                 contentsOf: generation.appendingPathComponent(relativePath)

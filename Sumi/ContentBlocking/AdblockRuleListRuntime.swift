@@ -147,12 +147,22 @@ final class AdblockRuleListRuntime {
         else {
             return nil
         }
-        let effectiveManifest = await cosmeticShardMigration
+        var effectiveManifest = await cosmeticShardMigration
             .migratedManifestIfPossible(for: manifest)
-        try await persistedGenerationActivation.activate(
-            effectiveManifest,
-            lease: lease
-        )
+        do {
+            try await persistedGenerationActivation.activate(
+                effectiveManifest,
+                lease: lease
+            )
+        } catch where effectiveManifest.activeGenerationId
+            != manifest.activeGenerationId {
+            try await generationArchive.replaceActiveManifest(manifest)
+            try await persistedGenerationActivation.activate(
+                manifest,
+                lease: lease
+            )
+            effectiveManifest = manifest
+        }
         _ = await generationRetention.removeInactiveGenerations()
         await advancedBlockingRuntime.prepare(for: effectiveManifest)
         activeManifestDidChange?()

@@ -576,7 +576,7 @@ final class AdblockGenerationArchitectureTests: XCTestCase {
     func testAdvancedBlockingBootstrapKeptForGenerationWithAdvancedCapability() async throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
-        let artifacts = try makeAdvancedBlockingArtifacts()
+        let artifacts = try makeAdvancedBlockingArtifacts(root: fixture.root)
         let manifest = makeManifest(
             generationId: "advanced",
             advancedBlocking: artifacts.descriptor
@@ -596,6 +596,35 @@ final class AdblockGenerationArchitectureTests: XCTestCase {
     }
 
     @MainActor
+    func testAdvancedBlockingBootstrapWithheldForUnsupportedRuntime() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let artifacts = try makeAdvancedBlockingArtifacts(
+            root: fixture.root,
+            runtimeVersion: "unsupported"
+        )
+        let manifest = makeManifest(
+            generationId: "unsupported",
+            advancedBlocking: artifacts.descriptor
+        )
+        try await fixture.archive.commit(
+            manifest: manifest,
+            stagedCompiledShardURLs: [:],
+            stagedAdvancedArtifactURLs: artifacts.sources
+        )
+
+        let module = makeEnabledModule(archive: fixture.archive)
+        module.setRuntimeLevel(.adblock)
+        _ = try await module.restoreLocalGenerationForStartup()
+
+        XCTAssertTrue(
+            module.normalTabUserScripts(
+                for: URL(string: "https://example.com")
+            ).isEmpty
+        )
+    }
+
+    @MainActor
     private func makeEnabledModule(archive: AdblockGenerationArchive) -> SumiAdBlockingModule {
         SumiAdBlockingModule(
             sitePolicyFactory: { AdblockSitePolicyStore() },
@@ -612,15 +641,17 @@ final class AdblockGenerationArchitectureTests: XCTestCase {
         )
     }
 
-    private func makeAdvancedBlockingArtifacts() throws -> (
+    private func makeAdvancedBlockingArtifacts(
+        root: URL,
+        runtimeVersion: String = "4.3.0"
+    ) throws -> (
         descriptor: AdvancedBlockingGenerationDescriptor,
         sources: [String: URL]
     ) {
-        let fixtureRoot = FileManager.default.temporaryDirectory
-            .appendingPathComponent(
-                "AdblockAdvancedArtifacts-\(UUID().uuidString)",
-                isDirectory: true
-            )
+        let fixtureRoot = root.appendingPathComponent(
+            "AdvancedArtifacts",
+            isDirectory: true
+        )
         let values: [(AdvancedBlockingArtifactRole, String, Data)] = [
             (.ruleStorage, ".webext/rules.bin", Data("rules".utf8)),
             (.engineIndex, ".webext/engine.bin", Data("engine".utf8)),
@@ -647,7 +678,7 @@ final class AdblockGenerationArchitectureTests: XCTestCase {
         let descriptor = AdvancedBlockingGenerationDescriptor(
             format: AdvancedBlockingGenerationDescriptor.safariConverterFormat,
             schemaVersion: 1,
-            runtimeVersion: "4.3.0",
+            runtimeVersion: runtimeVersion,
             ruleCount: values.count,
             artifacts: artifacts
         )

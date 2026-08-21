@@ -74,6 +74,12 @@ actor SumiAdvancedBlockingRuntime {
         topURL: nil
     )
 
+    nonisolated static func supports(
+        _ descriptor: AdvancedBlockingGenerationDescriptor?
+    ) -> Bool {
+        descriptor?.runtimeVersion == supportedRuntimeVersion
+    }
+
     private let archive: AdblockGenerationArchive
     private let scriptletCompilerSourceProvider: ScriptletCompilerSourceProvider
     private var loadedGeneration: LoadedGeneration?
@@ -99,15 +105,13 @@ actor SumiAdvancedBlockingRuntime {
         in manifest: AdblockCompiledGenerationManifest
     ) async throws -> SumiAdvancedBlockingConfiguration? {
         guard let descriptor = manifest.advancedBlocking else { return nil }
-        guard descriptor.runtimeVersion == Self.supportedRuntimeVersion else {
+        guard Self.supports(descriptor) else {
             throw SumiAdvancedBlockingRuntimeError.incompatibleRuntimeVersion(
                 descriptor.runtimeVersion
             )
         }
 
         let engine = try engine(for: manifest)
-        let domainCosmeticSelectors = cosmeticDomainIndex?
-            .selectors(forHost: document.pageURL.host) ?? []
         if let cached = configurationCache[document] {
             refreshCachePosition(for: document)
             switch cached {
@@ -117,6 +121,8 @@ actor SumiAdvancedBlockingRuntime {
                 return configuration
             }
         }
+        let domainCosmeticSelectors = cosmeticDomainIndex?
+            .selectors(forHost: (document.topURL ?? document.pageURL).host) ?? []
         guard let result = engine.lookup(
             pageUrl: document.pageURL,
             topUrl: document.topURL
@@ -197,7 +203,7 @@ actor SumiAdvancedBlockingRuntime {
             containerURL: generationDirectory,
             version: SafariVersion.autodetect()
         )
-        cosmeticDomainIndex = Self.loadCosmeticDomainIndex(
+        cosmeticDomainIndex = try Self.loadCosmeticDomainIndex(
             manifest: manifest,
             archive: archive
         )
@@ -211,19 +217,19 @@ actor SumiAdvancedBlockingRuntime {
     private static func loadCosmeticDomainIndex(
         manifest: AdblockCompiledGenerationManifest,
         archive: AdblockGenerationArchive
-    ) -> AdblockCosmeticDomainIndex? {
+    ) throws -> AdblockCosmeticDomainIndex? {
         guard let artifact = manifest.advancedBlocking?.artifacts.first(where: {
             $0.role == .domainCosmeticRules
         }) else {
             return nil
         }
-        guard let url = try? archive.advancedArtifactURL(
+        let url = try archive.advancedArtifactURL(
             generationID: manifest.activeGenerationId,
             relativePath: artifact.relativePath
-        ), let data = try? Data(contentsOf: url) else {
-            return nil
-        }
-        return try? AdblockCosmeticDomainIndex(data: data)
+        )
+        return try AdblockCosmeticDomainIndex(
+            data: Data(contentsOf: url)
+        )
     }
 
     private func cache(

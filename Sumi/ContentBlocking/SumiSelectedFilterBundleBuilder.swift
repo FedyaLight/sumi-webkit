@@ -30,7 +30,7 @@ actor SumiSelectedFilterBundleBuilder {
         let byteCount: Int
         let ruleCount: Int
     }
-    struct Conversion: Sendable {
+    private struct Conversion: Sendable {
         let json: Data
         let safariRuleCount: Int
         let advancedRules: String
@@ -148,15 +148,21 @@ actor SumiSelectedFilterBundleBuilder {
             }
             rawConversions.append(conversion)
         }
-        // Route domain-scoped cosmetic rules away from the WebKit rule lists:
-        // Safari applies every css-display-none selector to every document,
-        // while the advanced pipeline can match them by document host.
-        var conversions: [Conversion] = []
-        var extractedCosmetics = [[String: Any]]()
-        for conversion in rawConversions {
-            let partitioned = try Self.partitionDomainCosmetics(conversion)
-            extractedCosmetics.append(contentsOf: partitioned.cosmetics)
-            conversions.append(partitioned.conversion)
+        let advancedRules = rawConversions
+            .map(\.advancedRules)
+            .filter { $0.isEmpty == false }
+            .joined(separator: "\n")
+        var conversions = rawConversions
+        var extractedCosmetics = [AdblockCosmeticDomainIndex.Entry]()
+        if advancedRules.isEmpty == false {
+            // The extracted selectors need the advanced engine as their
+            // delivery channel. Without it, keep every rule in WebKit.
+            conversions = []
+            for conversion in rawConversions {
+                let partitioned = try Self.partitionDomainCosmetics(conversion)
+                extractedCosmetics.append(contentsOf: partitioned.cosmetics)
+                conversions.append(partitioned.conversion)
+            }
         }
         let nativeShards = conversions
             .filter { $0.safariRuleCount > 0 }
@@ -190,21 +196,16 @@ actor SumiSelectedFilterBundleBuilder {
             )
             shardPayloads.append((relativePath, data, 0))
         }
-        let advancedRules = conversions
-            .map(\.advancedRules)
-            .filter { $0.isEmpty == false }
-            .joined(separator: "\n")
         var domainCosmeticsData: Data?
-        if extractedCosmetics.isEmpty == false {
-            domainCosmeticsData = try JSONSerialization.data(
-                withJSONObject: extractedCosmetics,
-                options: [.sortedKeys]
+        if advancedRules.isEmpty == false {
+            // The artifact also acts as the migration marker. Keep it even
+            // when this generation has no domain-scoped cosmetic selectors.
+            domainCosmeticsData = try AdblockCosmeticDomainIndex.artifactData(
+                for: extractedCosmetics
             )
         }
         let advanced: AdvancedBlockingGenerationDescriptor?
         if advancedRules.isEmpty {
-            // The engine artifacts only exist for converted advanced rules;
-            // without them the extracted cosmetics stay in the Safari lists.
             advanced = nil
         } else {
             let safariVersion = SafariVersion.autodetect()
@@ -394,9 +395,12 @@ actor SumiSelectedFilterBundleBuilder {
     /// converted Safari JSON array. Generic and `unless-domain` cosmetics stay
     /// in the WebKit list because they apply to (almost) every document and
     /// benefit from WebKit's first-paint timing.
-    static func partitionDomainCosmetics(
+    private static func partitionDomainCosmetics(
         _ conversion: Conversion
-    ) throws -> (conversion: Conversion, cosmetics: [[String: Any]]) {
+    ) throws -> (
+        conversion: Conversion,
+        cosmetics: [AdblockCosmeticDomainIndex.Entry]
+    ) {
         guard let rules = try JSONSerialization.jsonObject(with: conversion.json)
             as? [[String: Any]]
         else {

@@ -790,7 +790,6 @@
         "SumiTests/SumiProfileMaintenanceServiceTests",
         "SumiTests/SumiProfileWebExtensionRuntimeTests",
         "SumiTests/SumiReaderPresentationTests",
-        "SumiTests/SumiSelectedFilterBundleBuilderPartitionTests",
         "SumiTests/SumiSelectedFilterBundleBuilderTests",
         "SumiTests/SumiStorageAccessPermissionBridgeTests",
         "SumiTests/SumiTabLifecycleReentrancyTests",
