@@ -29,9 +29,13 @@ enum SumiCursorDiagnostics {
             FileManager.default.createFile(atPath: path, contents: nil)
         }
         guard let handle = FileHandle(forWritingAtPath: path) else { return }
-        _ = try? handle.seekToEnd()
-        try? handle.write(contentsOf: Data((line + "\n").utf8))
-        try? handle.close()
+        do {
+            _ = try handle.seekToEnd()
+            try handle.write(contentsOf: Data((line + "\n").utf8))
+            try handle.close()
+        } catch {
+            assertionFailure("Cursor diagnostics write failed: \(error)")
+        }
     }
 
     private static func dumpState() {
@@ -47,12 +51,22 @@ enum SumiCursorDiagnostics {
         var queue: [NSView] = [contentView]
         while let view = queue.popLast() {
             if let webView = view as? FocusableWKWebView {
-                webView.evaluateJavaScript(
-                    "JSON.stringify({hoverLink: !!document.querySelector('a:hover')})"
-                ) { result, _ in
+                webView.callAsyncJavaScript(
+                    "return !!document.querySelector('a:hover');",
+                    arguments: [:],
+                    in: nil,
+                    in: .defaultClient
+                ) { result in
                     MainActor.assumeIsolated {
+                        let hoverLink: Bool
+                        switch result {
+                        case .success(let value):
+                            hoverLink = value as? Bool == true
+                        case .failure:
+                            hoverLink = false
+                        }
                         log(
-                            "url=\(webView.url?.lastPathComponent ?? "-") page=\(result as? String ?? "nil") cursor=\(identity)"
+                            "url=\(webView.url?.lastPathComponent ?? "-") hoverLink=\(hoverLink) cursor=\(identity)"
                         )
                     }
                 }

@@ -61,13 +61,17 @@ final class FocusableWKWebView: WKWebView {
     override init(frame: CGRect, configuration: WKWebViewConfiguration) {
         _ = Self.swizzleImmediateActionAnimationControllerOnce
         super.init(frame: frame, configuration: configuration)
+#if DEBUG
         SumiCursorDiagnostics.startIfNeeded()
+#endif
     }
 
     required init?(coder: NSCoder) {
         _ = Self.swizzleImmediateActionAnimationControllerOnce
         super.init(coder: coder)
+#if DEBUG
         SumiCursorDiagnostics.startIfNeeded()
+#endif
     }
 
     override func addTrackingArea(_ trackingArea: NSTrackingArea) {

@@ -7,7 +7,7 @@ import XCTest
 /// Runs the real Speedometer 3.1 in a visible window against configurable
 /// blocking-stack shapes so regressions can be measured, not guessed.
 ///
-/// Configurations via `SUMI_SPEEDO_CONFIGS` (comma-separated):
+/// One configuration per process via `SUMI_SPEEDO_CONFIGS`:
 /// - `clean` — bare WebKit
 /// - `shards` — the installed generation's WebKit lists as-is
 /// - `dnr` — the internal URL-cleaning DNR extension only
@@ -28,99 +28,121 @@ final class ContentBlockingOverheadBenchmarkTests: XCTestCase {
             XCTFail("No default rule list store")
             return
         }
+        let requested = ProcessInfo.processInfo.environment[
+            "SUMI_SPEEDO_CONFIGS"
+        ] ?? "clean"
+        let names = requested.split(separator: ",").map(String.init)
+        let supported = Set([
+            "clean", "shards", "dnr", "bootstrap", "extensions",
+            "newstack", "newstack+ext",
+        ])
+        guard names.count == 1, let name = names.first,
+              supported.contains(name)
+        else {
+            throw Self.benchmarkError(
+                "Choose exactly one supported SUMI_SPEEDO_CONFIGS value; got '\(requested)'"
+            )
+        }
 
-        let generation = try await Self.installedGenerationDirectory()
-        let stackRuleLists = try await Self.compileShardLists(
-            from: generation,
-            store: store,
-            identifierPrefix: "speedo.shard"
-        )
-        print("BENCH speedo: attached \(stackRuleLists.count) production shards")
+        var generation: URL?
+        if ["shards", "dnr", "newstack", "newstack+ext"].contains(name) {
+            generation = try await Self.installedGenerationDirectory()
+        }
 
-        let urlCleaningController: (
+        var stackRuleLists = [WKContentRuleList]()
+        if name == "shards", let generation {
+            stackRuleLists = try await Self.compileShardLists(
+                from: generation,
+                store: store,
+                identifierPrefix: "speedo.shard"
+            )
+            print("BENCH speedo: attached \(stackRuleLists.count) production shards")
+        }
+
+        var extensionController: WKWebExtensionController?
+        var dnrFixture: (
             WKWebExtensionController,
             WKWebExtensionContext,
             URL
         )?
-        let combinedController: (
-            WKWebExtensionController,
-            WKWebExtensionContext,
-            URL
-        )?
-        var userExtensionController: WKWebExtensionController?
         var loadedExtensionNames = [String]()
         if #available(macOS 15.5, *) {
-            urlCleaningController = try await Self.makeRealURLCleaningExtension(
-                generationDirectory: generation
-            )
-            combinedController = try await Self.makeRealURLCleaningExtension(
-                generationDirectory: generation
-            )
-            let rows = try await Self.installedExtensionRows().filter(\.enabled)
-            let extensionOnly = WKWebExtensionController()
-            loadedExtensionNames = await Self.loadUserExtensions(
-                rows,
-                into: extensionOnly
-            )
-            userExtensionController = loadedExtensionNames.isEmpty
-                ? nil
-                : extensionOnly
-            if let combinedController {
-                _ = await Self.loadUserExtensions(
-                    rows,
-                    into: combinedController.0
-                )
+            if ["dnr", "newstack", "newstack+ext"].contains(name) {
+                guard let generation,
+                      let fixture = try await Self.makeRealURLCleaningExtension(
+                          generationDirectory: generation
+                      )
+                else {
+                    throw Self.benchmarkError(
+                        "The active generation has no usable URL-cleaning artifact"
+                    )
+                }
+                dnrFixture = fixture
+                extensionController = fixture.0
             }
-        } else {
-            urlCleaningController = nil
-            combinedController = nil
-            userExtensionController = nil
+            if name == "extensions" || name == "newstack+ext" {
+                let rows = try await Self.installedExtensionRows().filter(\.enabled)
+                let controller = extensionController ?? WKWebExtensionController()
+                loadedExtensionNames = try await Self.loadUserExtensions(
+                    rows,
+                    into: controller
+                )
+                extensionController = controller
+            }
+        } else if ["dnr", "extensions", "newstack", "newstack+ext"].contains(name) {
+            throw XCTSkip("Web-extension benchmark configurations require macOS 15.5+")
         }
         defer {
-            if let urlCleaningController {
+            if let dnrFixture {
                 do {
-                    try FileManager.default.removeItem(at: urlCleaningController.2)
+                    try FileManager.default.removeItem(at: dnrFixture.2)
                 } catch {
                     XCTFail("Could not remove URL-cleaning fixture: \(error)")
                 }
             }
-            if let combinedController {
-                do {
-                    try FileManager.default.removeItem(at: combinedController.2)
-                } catch {
-                    XCTFail("Could not remove combined extension fixture: \(error)")
-                }
-            }
         }
-        print(
-            "BENCH speedo: loaded \(loadedExtensionNames.count) user extensions: \(loadedExtensionNames)"
-        )
+        if name == "extensions" || name == "newstack+ext" {
+            print(
+                "BENCH speedo: loaded \(loadedExtensionNames.count) user extensions: \(loadedExtensionNames)"
+            )
+        }
 
         // Production shape: the cosmetic-shard migration runs on a copy of
         // the installed generation and its stripped shards are compiled.
         // NOTE: WebKit rejects single lists with >150_000 rules, which is why
         // generations shard their network rules in the first place.
         var migratedRuleLists = [WKContentRuleList]()
-        let sourceRoot = Self.installedAdblockRoot()
-        let copyRoot = FileManager.default.temporaryDirectory
-            .appendingPathComponent(
-                "RealAdblockBench-\(UUID().uuidString)",
-                isDirectory: true
-            )
-        try FileManager.default.copyItem(at: sourceRoot, to: copyRoot)
+        var copyRoot: URL?
         defer {
-            do {
-                try FileManager.default.removeItem(at: copyRoot)
-            } catch {
-                XCTFail("Could not remove copied generation: \(error)")
+            if let copyRoot {
+                do {
+                    try FileManager.default.removeItem(at: copyRoot)
+                } catch {
+                    XCTFail("Could not remove copied generation: \(error)")
+                }
             }
         }
-        let copyArchive = AdblockGenerationArchive(rootDirectory: copyRoot)
-        if let activeManifest = try await copyArchive.activeManifest() {
+        if name == "newstack" || name == "newstack+ext" {
+            let root = FileManager.default.temporaryDirectory
+                .appendingPathComponent(
+                    "RealAdblockBench-\(UUID().uuidString)",
+                    isDirectory: true
+                )
+            try FileManager.default.copyItem(at: Self.installedAdblockRoot(), to: root)
+            copyRoot = root
+            let copyArchive = AdblockGenerationArchive(rootDirectory: root)
+            guard let activeManifest = try await copyArchive.activeManifest() else {
+                throw Self.benchmarkError("The copied profile has no active Adblock generation")
+            }
             let migration = AdblockCosmeticShardMigration(archive: copyArchive)
             let migrated = await migration.migratedManifestIfPossible(
                 for: activeManifest
             )
+            guard migrated.advancedBlocking?.artifacts.contains(where: {
+                $0.role == .domainCosmeticRules
+            }) == true else {
+                throw Self.benchmarkError("Cosmetic-shard migration did not complete")
+            }
             let reader = AdblockArchivedShardReader(
                 storageRoot: copyArchive.storageRoot
             )
@@ -141,62 +163,46 @@ final class ContentBlockingOverheadBenchmarkTests: XCTestCase {
             lookup: { _ in nil }
         )
 
-        let requestedConfigs = ProcessInfo.processInfo.environment[
-            "SUMI_SPEEDO_CONFIGS"
-        ] ?? "clean"
-        var scores: [(String, String)] = []
-        for name in requestedConfigs.split(separator: ",").map(String.init) {
-            let score = try await Self.runSpeedometer31 {
-                let configuration = WKWebViewConfiguration()
-                configuration.websiteDataStore = .nonPersistent()
-                switch name {
-                case "shards":
-                    for list in stackRuleLists {
-                        configuration.userContentController.add(list)
-                    }
-                case "newstack", "newstack+ext":
-                    for list in migratedRuleLists {
-                        configuration.userContentController.add(list)
-                    }
-                    if name == "newstack+ext", let combinedController {
-                        configuration.webExtensionController = combinedController.0
-                    } else if let urlCleaningController {
-                        configuration.webExtensionController = urlCleaningController.0
-                    }
-                    let userScript = SumiPageScriptBuilder.makeWKUserScript(
-                        from: bootstrapScript
-                    )
-                    configuration.userContentController.addUserScript(userScript)
-                    configuration.userContentController.add(
-                        bootstrapScript,
-                        contentWorld: .defaultClient,
-                        name: SumiAdvancedBlockingPageScript.messageName
-                    )
-                case "dnr":
-                    if let urlCleaningController {
-                        configuration.webExtensionController = urlCleaningController.0
-                    }
-                case "bootstrap":
-                    let userScript = SumiPageScriptBuilder.makeWKUserScript(
-                        from: bootstrapScript
-                    )
-                    configuration.userContentController.addUserScript(userScript)
-                    configuration.userContentController.add(
-                        bootstrapScript,
-                        contentWorld: .defaultClient,
-                        name: SumiAdvancedBlockingPageScript.messageName
-                    )
-                case "extensions":
-                    configuration.webExtensionController = userExtensionController
-                default:
-                    break
+        let score = try await Self.runSpeedometer31 {
+            let configuration = WKWebViewConfiguration()
+            configuration.websiteDataStore = .nonPersistent()
+            switch name {
+            case "shards":
+                for list in stackRuleLists {
+                    configuration.userContentController.add(list)
                 }
-                return configuration
+            case "newstack", "newstack+ext":
+                for list in migratedRuleLists {
+                    configuration.userContentController.add(list)
+                }
+                configuration.webExtensionController = extensionController
+                let userScript = SumiPageScriptBuilder.makeWKUserScript(
+                    from: bootstrapScript
+                )
+                configuration.userContentController.addUserScript(userScript)
+                configuration.userContentController.add(
+                    bootstrapScript,
+                    contentWorld: .defaultClient,
+                    name: SumiAdvancedBlockingPageScript.messageName
+                )
+            case "dnr", "extensions":
+                configuration.webExtensionController = extensionController
+            case "bootstrap":
+                let userScript = SumiPageScriptBuilder.makeWKUserScript(
+                    from: bootstrapScript
+                )
+                configuration.userContentController.addUserScript(userScript)
+                configuration.userContentController.add(
+                    bootstrapScript,
+                    contentWorld: .defaultClient,
+                    name: SumiAdvancedBlockingPageScript.messageName
+                )
+            default:
+                break
             }
-            scores.append((name, score))
-            print("BENCH speedo [\(name)]: \(score)")
+            return configuration
         }
-        print("BENCH speedo summary: \(scores.map { "\($0.0)=\($0.1)" }.joined(separator: " "))")
+        print("BENCH speedo [\(name)]: \(score)")
     }
 
     // MARK: - Measurement
@@ -386,8 +392,20 @@ final class ContentBlockingOverheadBenchmarkTests: XCTestCase {
         try process.run()
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
-        guard process.terminationStatus == 0 else { return "" }
+        guard process.terminationStatus == 0 else {
+            throw benchmarkError(
+                "\(launchPath) exited with status \(process.terminationStatus)"
+            )
+        }
         return String(decoding: data, as: UTF8.self)
+    }
+
+    private static func benchmarkError(_ description: String) -> NSError {
+        NSError(
+            domain: "ContentBlockingOverheadBenchmark",
+            code: 1,
+            userInfo: [NSLocalizedDescriptionKey: description]
+        )
     }
 
     @available(macOS 15.5, *)
@@ -395,20 +413,18 @@ final class ContentBlockingOverheadBenchmarkTests: XCTestCase {
     private static func loadUserExtensions(
         _ rows: [InstalledExtensionRow],
         into controller: WKWebExtensionController
-    ) async -> [String] {
+    ) async throws -> [String] {
         var names = [String]()
         for row in rows {
-            do {
-                guard let context = try await makeUserExtensionContext(
-                    resourcesURL: URL(fileURLWithPath: row.packagePath)
-                ) else { continue }
-                try controller.load(context)
-                names.append(row.name)
-            } catch {
-                print(
-                    "BENCH speedo: extension \(row.name) load failed: \(error.localizedDescription)"
+            guard let context = try await makeUserExtensionContext(
+                resourcesURL: URL(fileURLWithPath: row.packagePath)
+            ) else {
+                throw benchmarkError(
+                    "Enabled extension '\(row.name)' is not a usable WebExtension"
                 )
             }
+            try controller.load(context)
+            names.append(row.name)
         }
         return names
     }
