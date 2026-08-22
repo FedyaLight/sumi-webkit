@@ -126,11 +126,14 @@ enum SumiWebPageMenuCommand: String, CaseIterable {
     case openLinkInNewWindow = "SumiWebPageMenu.OpenLinkInNewWindow"
     case openLinkInSplitView = "SumiWebPageMenu.OpenLinkInSplitView"
     case addLinkToBookmarks = "SumiWebPageMenu.AddLinkToBookmarks"
+    case downloadLinkedFile = "SumiWebPageMenu.DownloadLinkedFile"
     case copyLink = "SumiWebPageMenu.CopyLink"
     case copyEmailAddress = "SumiWebPageMenu.CopyEmailAddress"
     case openImageInNewTab = "SumiWebPageMenu.OpenImageInNewTab"
     case openImageInNewWindow = "SumiWebPageMenu.OpenImageInNewWindow"
+    case saveImageAs = "SumiWebPageMenu.SaveImageAs"
     case copyImageAddress = "SumiWebPageMenu.CopyImageAddress"
+    case copyImage = "SumiWebPageMenu.CopyImage"
     case downloadMedia = "SumiWebPageMenu.DownloadMedia"
 
     init?(_ identifier: NSUserInterfaceItemIdentifier?) {
@@ -177,7 +180,7 @@ enum SumiWebPageMenuCommand: String, CaseIterable {
             return "link"
         case .printPage:
             return "printer"
-        case .copySelection:
+        case .copySelection, .copyImage:
             return "doc.on.doc"
         case .copyLinkToSelectedText:
             return "quote.bubble"
@@ -191,7 +194,7 @@ enum SumiWebPageMenuCommand: String, CaseIterable {
             return "rectangle.split.2x1"
         case .copyEmailAddress:
             return "envelope"
-        case .downloadMedia:
+        case .downloadLinkedFile, .saveImageAs, .downloadMedia:
             return "arrow.down.circle"
         }
     }

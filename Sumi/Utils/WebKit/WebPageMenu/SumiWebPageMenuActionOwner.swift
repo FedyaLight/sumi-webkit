@@ -46,6 +46,8 @@ final class SumiWebPageMenuActionOwner: NSObject, NSMenuItemValidation {
             return #selector(SumiWebPageMenuActionOwner.openLinkInNewWindow(_:))
         case .addLinkToBookmarks:
             return #selector(SumiWebPageMenuActionOwner.addLinkToBookmarks(_:))
+        case .downloadLinkedFile:
+            return #selector(SumiWebPageMenuActionOwner.downloadLinkedFile(_:))
         case .copyLink:
             return #selector(SumiWebPageMenuActionOwner.copyLink(_:))
         case .copyEmailAddress:
@@ -54,8 +56,12 @@ final class SumiWebPageMenuActionOwner: NSObject, NSMenuItemValidation {
             return #selector(SumiWebPageMenuActionOwner.openImageInNewTab(_:))
         case .openImageInNewWindow:
             return #selector(SumiWebPageMenuActionOwner.openImageInNewWindow(_:))
+        case .saveImageAs:
+            return #selector(SumiWebPageMenuActionOwner.saveImageAs(_:))
         case .copyImageAddress:
             return #selector(SumiWebPageMenuActionOwner.copyImageAddress(_:))
+        case .copyImage:
+            return #selector(SumiWebPageMenuActionOwner.copyImage(_:))
         case .downloadMedia:
             return #selector(SumiWebPageMenuActionOwner.downloadMedia(_:))
         }
@@ -93,13 +99,17 @@ final class SumiWebPageMenuActionOwner: NSObject, NSMenuItemValidation {
         case .openLinkInNewTab, .openLinkInNewWindow, .openLinkInSplitView,
              .addLinkToBookmarks:
             return routableLinkURL != nil && webView.owningTab != nil
+        case .downloadLinkedFile:
+            return context?.isWebSchemeLink == true && webView.owningTab != nil
         case .copyLink:
             return context?.linkURL != nil
         case .copyEmailAddress:
             return context?.mailtoAddresses.isEmpty == false
         case .openImageInNewTab, .openImageInNewWindow:
             return routableImageURL != nil && webView.owningTab != nil
-        case .copyImageAddress:
+        case .saveImageAs:
+            return context?.imageURL != nil && webView.owningTab != nil
+        case .copyImageAddress, .copyImage:
             return context?.imageURL != nil
         case .downloadMedia:
             return context?.isWebSchemeMedia == true && webView.owningTab != nil
@@ -222,6 +232,14 @@ final class SumiWebPageMenuActionOwner: NSObject, NSMenuItemValidation {
         )
     }
 
+    @objc func downloadLinkedFile(_: Any?) {
+        guard let webView, let url = context?.linkURL else { return }
+        _ = webView.owningTab?.webPageMenuCommands.download(
+            from: webView,
+            url: url
+        )
+    }
+
     @objc func copyLink(_: Any?) {
         copyString(context?.linkURL?.absoluteString)
     }
@@ -245,8 +263,21 @@ final class SumiWebPageMenuActionOwner: NSObject, NSMenuItemValidation {
         open(url, disposition: .newWindow(selected: true))
     }
 
+    @objc func saveImageAs(_: Any?) {
+        guard let webView, let url = context?.imageURL else { return }
+        _ = webView.owningTab?.webPageMenuCommands.download(
+            from: webView,
+            url: url
+        )
+    }
+
     @objc func copyImageAddress(_: Any?) {
         copyString(context?.imageURL?.absoluteString)
+    }
+
+    @objc func copyImage(_: Any?) {
+        guard let webView, let url = context?.imageURL else { return }
+        SumiWebPageImagePasteboard.copyImage(at: url, from: webView)
     }
 
     @objc func downloadMedia(_: Any?) {
@@ -287,7 +318,7 @@ final class SumiWebPageMenuActionOwner: NSObject, NSMenuItemValidation {
               ["http", "https"].contains(components.scheme?.lowercased())
         else { return nil }
 
-        components.fragment = ":~:text=\(SumiWebPageMenuTextFormatter.textFragmentComponent(for: text))"
+        components.percentEncodedFragment = ":~:text=\(SumiWebPageMenuTextFormatter.textFragmentComponent(for: text))"
         return components.url
     }
 

@@ -116,7 +116,7 @@ struct SumiWebPageMenuBlueprint {
         ))
         rules.append(Rule(
             anchor: .downloadLinkedFile,
-            operations: [.retitle(SumiWebPageMenuStrings.downloadLinkedFileAs)]
+            operations: [.replace([.command(.downloadLinkedFile)])]
         ))
         rules.append(Rule(
             anchor: .copyLink,
@@ -143,12 +143,20 @@ struct SumiWebPageMenuBlueprint {
     // MARK: - Image
 
     private func appendImageRules(to rules: inout [Rule]) {
-        guard context.hasImageContext else { return }
+        guard context.hasImageContext, context.imageURL != nil else { return }
 
         rules.append(Rule(
             anchor: .downloadImage,
-            operations: [.retitle(SumiWebPageMenuStrings.saveImageAs)]
+            operations: [.replace([.command(.saveImageAs)])]
         ))
+
+        let copyImageOperations: [Rule.Operation] = context.isWebSchemeImage
+            ? [
+                .insertBefore([.separator, .command(.copyImageAddress)]),
+                .replace([.command(.copyImage)]),
+            ]
+            : [.replace([.command(.copyImage)])]
+        rules.append(Rule(anchor: .copyImage, operations: copyImageOperations))
 
         guard context.isWebSchemeImage else { return }
         rules.append(Rule(
@@ -157,10 +165,6 @@ struct SumiWebPageMenuBlueprint {
                 .insertBefore([.command(.openImageInNewTab)]),
                 .replace([.command(.openImageInNewWindow)]),
             ]
-        ))
-        rules.append(Rule(
-            anchor: .copyImage,
-            operations: [.insertBefore([.separator, .command(.copyImageAddress)])]
         ))
     }
 

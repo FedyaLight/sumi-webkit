@@ -1,8 +1,8 @@
 import Foundation
 import Network
 
-/// Minimal loopback transport for UI oracles that need a real WebKit page.
-/// It has no app-side hooks and serves one immutable HTML response for every
+/// Minimal loopback transport for UI oracles that need a real WebKit resource.
+/// It has no app-side hooks and serves one immutable response for every
 /// request, keeping navigation deterministic and independent of runner/app
 /// sandbox file access.
 final class SumiUIOracleHTTPServer: @unchecked Sendable {
@@ -18,16 +18,18 @@ final class SumiUIOracleHTTPServer: @unchecked Sendable {
     init(
         path: String = "oracle.html",
         html: String,
+        contentType: String = "text/html; charset=utf-8",
         requiredRequestHeader: RequiredRequestHeader? = nil
     ) throws {
         let body = Data(html.utf8)
         let listener = try NWListener(using: .tcp, on: .any)
         let readiness = ListenerReadiness()
 
-        listener.newConnectionHandler = { [queue, body, requiredRequestHeader] connection in
+        listener.newConnectionHandler = { [queue, body, contentType, requiredRequestHeader] connection in
             Self.serve(
                 connection,
                 body: body,
+                contentType: contentType,
                 requiredRequestHeader: requiredRequestHeader,
                 queue: queue
             )
@@ -86,6 +88,7 @@ final class SumiUIOracleHTTPServer: @unchecked Sendable {
     private static func serve(
         _ connection: NWConnection,
         body: Data,
+        contentType: String,
         requiredRequestHeader: RequiredRequestHeader?,
         queue: DispatchQueue
     ) {
@@ -111,7 +114,7 @@ final class SumiUIOracleHTTPServer: @unchecked Sendable {
                 : "HTTP/1.1 428 Precondition Required"
             let header = Data([
                 status,
-                "Content-Type: text/html; charset=utf-8",
+                "Content-Type: \(contentType)",
                 "Content-Length: \(responseBody.count)",
                 "Cache-Control: no-store",
                 "Connection: close",

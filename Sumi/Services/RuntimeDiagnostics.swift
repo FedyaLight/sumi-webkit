@@ -17,6 +17,7 @@ enum SumiAppIdentity {
 enum RuntimeDiagnostics {
     static let subsystem = SumiAppIdentity.runtimeBundleIdentifier
     private static let debugRuntimeDefaultsOptInKey = "SUMI_ALLOW_DEBUG_DEFAULTS"
+    static let isDeveloperInspectionEnabled = true
     static let isRunningTests =
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
     static let usesEphemeralPlatformStores = isRunningTests
@@ -39,8 +40,6 @@ enum RuntimeDiagnostics {
                 && UserDefaults.standard.bool(forKey: "debug.runtime.logging.enabled")
             )
 
-        static let isDeveloperInspectionEnabled = isVerboseEnabled
-
         static let isSwipeTraceEnabled =
             ProcessInfo.processInfo.arguments.contains("--sumi-debug-swipe")
             || ProcessInfo.processInfo.environment["SUMI_DEBUG_SWIPE"] == "1"
@@ -49,7 +48,6 @@ enum RuntimeDiagnostics {
         static let hasExplicitDebugLaunchIntent = false
         static let allowsPersistedDebugDefaults = false
         static let isVerboseEnabled = false
-        static let isDeveloperInspectionEnabled = false
         static let isSwipeTraceEnabled = false
     #endif
 

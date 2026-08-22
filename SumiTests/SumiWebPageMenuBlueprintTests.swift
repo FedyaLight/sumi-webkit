@@ -11,7 +11,7 @@ final class SumiWebPageMenuBlueprintTests: XCTestCase {
 
     // MARK: - Link
 
-    func testWebLinkRulesReplaceOpenAndCopyAndRetitleDownload() {
+    func testWebLinkRulesReplaceOpenDownloadAndCopy() {
         let blueprint = makeBlueprint(
             identifiers: [.openLink, .openLinkInNewWindow, .downloadLinkedFile, .copyLink],
             kind: .link,
@@ -35,7 +35,7 @@ final class SumiWebPageMenuBlueprintTests: XCTestCase {
         ))
         XCTAssertEqual(rules[2], Rule(
             anchor: .downloadLinkedFile,
-            operations: [.retitle(SumiWebPageMenuStrings.downloadLinkedFileAs)]
+            operations: [.replace([.command(.downloadLinkedFile)])]
         ))
         XCTAssertEqual(rules[3], Rule(
             anchor: .copyLink,
@@ -135,18 +135,19 @@ final class SumiWebPageMenuBlueprintTests: XCTestCase {
         )
 
         XCTAssertEqual(blueprint.rules(), [
-            Rule(anchor: .downloadImage, operations: [.retitle(SumiWebPageMenuStrings.saveImageAs)]),
+            Rule(anchor: .downloadImage, operations: [.replace([.command(.saveImageAs)])]),
+            Rule(anchor: .copyImage, operations: [
+                .insertBefore([.separator, .command(.copyImageAddress)]),
+                .replace([.command(.copyImage)]),
+            ]),
             Rule(anchor: .openImageInNewWindow, operations: [
                 .insertBefore([.command(.openImageInNewTab)]),
                 .replace([.command(.openImageInNewWindow)]),
             ]),
-            Rule(anchor: .copyImage, operations: [
-                .insertBefore([.separator, .command(.copyImageAddress)]),
-            ]),
         ])
     }
 
-    func testNonWebImageSourceOnlyRetitlesDownload() {
+    func testNonWebImageSourceReplacesDownloadAndCopyImage() {
         let blueprint = makeBlueprint(
             identifiers: [.openImageInNewWindow, .downloadImage, .copyImage],
             kind: .image,
@@ -154,8 +155,17 @@ final class SumiWebPageMenuBlueprintTests: XCTestCase {
         )
 
         XCTAssertEqual(blueprint.rules(), [
-            Rule(anchor: .downloadImage, operations: [.retitle(SumiWebPageMenuStrings.saveImageAs)]),
+            Rule(anchor: .downloadImage, operations: [.replace([.command(.saveImageAs)])]),
+            Rule(anchor: .copyImage, operations: [.replace([.command(.copyImage)])]),
         ])
+    }
+
+    func testImageWithoutSnapshotKeepsNativeActions() {
+        let blueprint = makeBlueprint(
+            identifiers: [.openImageInNewWindow, .downloadImage, .copyImage]
+        )
+
+        XCTAssertEqual(blueprint.rules(), [])
     }
 
     // MARK: - Selection

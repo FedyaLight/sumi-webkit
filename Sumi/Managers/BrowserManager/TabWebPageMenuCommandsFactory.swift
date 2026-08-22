@@ -57,11 +57,16 @@ enum TabWebPageMenuCommandsFactory {
                 else {
                     return false
                 }
-                return browserManager.bookmarkBundle.bookmarkCommandOwner
+                let requested = browserManager.bookmarkBundle.bookmarkCommandOwner
                     .requestBookmarkEditor(
                         for: source.tab,
                         in: source.window
                     )
+                if requested {
+                    browserManager.urlBarBundle.contextOwner.urlBarContext
+                        .presentURLBarHubPopover(source.window)
+                }
+                return requested
             },
             bookmarkLink: { [weak browserManager] webView, url, title in
                 guard let browserManager,

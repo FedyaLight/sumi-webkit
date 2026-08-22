@@ -25,6 +25,7 @@ enum SumiWebPageMenuStrings {
     static var openImageInNewWindow: String { String(localized: "Open Image in New Window") }
     static var saveImageAs: String { String(localized: "Save Image As…") }
     static var copyImageAddress: String { String(localized: "Copy Image Address") }
+    static var copyImage: String { String(localized: "Copy Image") }
     static var downloadMedia: String { String(localized: "Download Media") }
 
     static var copySelection: String { String(localized: "Copy") }

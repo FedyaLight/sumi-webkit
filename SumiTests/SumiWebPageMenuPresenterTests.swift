@@ -1,5 +1,6 @@
 import AppKit
 @testable import Sumi
+import SumiWebRuntime
 import WebKit
 import XCTest
 
@@ -27,7 +28,12 @@ final class SumiWebPageMenuPresenterTests: XCTestCase {
         XCTAssertNotNil(menu.item(identifier: SumiWebPageMenuCommand.bookmarkPage.rawValue))
         XCTAssertNotNil(menu.item(identifier: SumiWebPageMenuCommand.copyPageAddress.rawValue))
         XCTAssertNotNil(menu.item(identifier: SumiWebPageMenuCommand.printPage.rawValue))
-        XCTAssertNil(menu.item(identifier: SumiWebKitMenuItemIdentifier.inspectElement.rawValue))
+        let survivingInspect = menu.item(
+            identifier: SumiWebKitMenuItemIdentifier.inspectElement.rawValue
+        )
+        XCTAssertIdentical(survivingInspect, inspectElement)
+        XCTAssertIdentical(survivingInspect?.target as AnyObject?, self)
+        XCTAssertEqual(survivingInspect?.action, #selector(noop(_:)))
     }
 
     func testInteractiveElementMenuKeepsNativePageItemsWithoutOwnedSection() {
@@ -93,11 +99,9 @@ final class SumiWebPageMenuPresenterTests: XCTestCase {
         XCTAssertEqual(openInNewWindow.title, "Open Link in New Window")
 
         let download = try XCTUnwrap(
-            menu.item(identifier: SumiWebKitMenuItemIdentifier.downloadLinkedFile.rawValue)
+            menu.item(identifier: SumiWebPageMenuCommand.downloadLinkedFile.rawValue)
         )
-        XCTAssertIdentical(download, nativeDownload)
-        XCTAssertIdentical(download.target as AnyObject?, self)
-        XCTAssertEqual(download.action, #selector(noop(_:)))
+        XCTAssertFalse(download === nativeDownload)
         XCTAssertEqual(download.title, "Download Linked File As…")
 
         let addToBookmarks = try XCTUnwrap(
@@ -211,7 +215,15 @@ final class SumiWebPageMenuPresenterTests: XCTestCase {
         menu.addItem(nativeDownload)
         menu.addItem(webKitItem(title: "Copy Image", identifier: .copyImage))
 
-        prepare(menu, kind: .image, imageSrc: "https://example.com/cat.png")
+        let webView = makeWebView()
+        webView.contextMenu.record(
+            SumiWebPageContextMenuTargetSnapshot(
+                kind: .image,
+                imageSrc: "https://example.com/cat.png"
+            )
+        )
+        let presenter = SumiWebPageMenuPresenter()
+        presenter.menuWillOpen(menu, for: webView)
 
         let openInNewTab = try XCTUnwrap(
             menu.item(identifier: SumiWebPageMenuCommand.openImageInNewTab.rawValue)
@@ -221,19 +233,18 @@ final class SumiWebPageMenuPresenterTests: XCTestCase {
         XCTAssertNil(menu.item(identifier: SumiWebKitMenuItemIdentifier.openImageInNewWindow.rawValue))
 
         let download = try XCTUnwrap(
-            menu.item(identifier: SumiWebKitMenuItemIdentifier.downloadImage.rawValue)
+            menu.items.first { $0.title == "Save Image As…" }
         )
-        XCTAssertIdentical(download, nativeDownload)
-        XCTAssertIdentical(download.target as AnyObject?, self)
+        XCTAssertFalse(download === nativeDownload)
+        XCTAssertTrue(download.target is SumiWebPageMenuActionOwner)
         XCTAssertEqual(download.title, "Save Image As…")
 
         let copyAddress = try XCTUnwrap(
             menu.item(identifier: SumiWebPageMenuCommand.copyImageAddress.rawValue)
         )
-        let copyImageIndex = menu.indexOfItem(
-            identifier: SumiWebKitMenuItemIdentifier.copyImage.rawValue
-        )
+        let copyImageIndex = menu.indexOfItem(identifier: SumiWebPageMenuCommand.copyImage.rawValue)
         XCTAssertEqual(menu.index(of: copyAddress), copyImageIndex - 1)
+        withExtendedLifetime(presenter) {}
     }
 
     func testLinkedImageMenuKeepsBothDownloadItems() {
@@ -254,11 +265,37 @@ final class SumiWebPageMenuPresenterTests: XCTestCase {
             imageSrc: "https://example.com/cat.png"
         )
 
-        XCTAssertNotNil(menu.item(identifier: SumiWebKitMenuItemIdentifier.downloadLinkedFile.rawValue))
-        XCTAssertNotNil(menu.item(identifier: SumiWebKitMenuItemIdentifier.downloadImage.rawValue))
+        XCTAssertNotNil(menu.item(identifier: SumiWebPageMenuCommand.downloadLinkedFile.rawValue))
+        XCTAssertNotNil(menu.item(identifier: SumiWebPageMenuCommand.saveImageAs.rawValue))
         XCTAssertNotNil(menu.item(identifier: SumiWebPageMenuCommand.openLinkInNewTab.rawValue))
         XCTAssertNotNil(menu.item(identifier: SumiWebPageMenuCommand.openImageInNewTab.rawValue))
         XCTAssertNotNil(menu.item(identifier: SumiWebPageMenuCommand.copyImageAddress.rawValue))
+    }
+
+    func testImageMenuWithoutSnapshotKeepsNativeDownload() {
+        let menu = NSMenu()
+        let nativeDownload = webKitItem(title: "Save Image As…", identifier: .downloadImage)
+        nativeDownload.target = self
+        nativeDownload.action = #selector(noop(_:))
+        menu.addItem(nativeDownload)
+        let webView = makeWebView()
+        let presenter = SumiWebPageMenuPresenter()
+
+        presenter.menuWillOpen(menu, for: webView)
+
+        let timeout = expectation(description: "fallback rewrite")
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + SumiWebPageMenuPresenter.deferredSnapshotTimeout + 0.2
+        ) { timeout.fulfill() }
+        wait(for: [timeout], timeout: 2)
+
+        XCTAssertIdentical(
+            menu.item(identifier: SumiWebKitMenuItemIdentifier.downloadImage.rawValue),
+            nativeDownload
+        )
+        XCTAssertIdentical(nativeDownload.target as AnyObject?, self)
+        XCTAssertEqual(nativeDownload.action, #selector(noop(_:)))
+        withExtendedLifetime((presenter, webView)) {}
     }
 
     // MARK: - Media
@@ -487,6 +524,31 @@ final class SumiWebPageMenuPresenterTests: XCTestCase {
         XCTAssertTrue(menu.items.contains { $0 === webKitHostedItem })
     }
 
+    func testEveryUnownedWebKitCommandPreservesNativeTargetAndAction() {
+        let menu = NSMenu()
+        var nativeItems: [SumiWebKitMenuItemIdentifier: NSMenuItem] = [:]
+        for identifier in SumiWebKitMenuItemIdentifier.allCases {
+            let item = webKitItem(title: identifier.rawValue, identifier: identifier)
+            item.target = self
+            item.action = #selector(noop(_:))
+            menu.addItem(item)
+            nativeItems[identifier] = item
+        }
+
+        prepare(menu, kind: .editable)
+
+        for (identifier, originalItem) in nativeItems {
+            if identifier == .openLink {
+                XCTAssertNil(menu.item(identifier: identifier.rawValue), "\(identifier) should be removed")
+                continue
+            }
+            let survivingItem = menu.item(identifier: identifier.rawValue)
+            XCTAssertIdentical(survivingItem, originalItem, "\(identifier) was replaced")
+            XCTAssertIdentical(survivingItem?.target as AnyObject?, self, "\(identifier) lost its target")
+            XCTAssertEqual(survivingItem?.action, #selector(noop(_:)), "\(identifier) lost its action")
+        }
+    }
+
     // MARK: - Validation and commands
 
     func testLinkCommandsDisabledWithoutOwningTab() throws {
@@ -549,6 +611,44 @@ final class SumiWebPageMenuPresenterTests: XCTestCase {
 
     func testMediaDownloadActionDispatchesSnapshotURL() {
         let url = URL(string: "https://example.com/video.mp4")!
+        assertDownloadAction(
+            url: url,
+            snapshot: SumiWebPageContextMenuTargetSnapshot(
+                kind: .media,
+                mediaSrc: url.absoluteString
+            )
+        ) { $0.downloadMedia(nil) }
+    }
+
+    func testLinkedFileDownloadActionDispatchesSnapshotURL() {
+        let url = URL(string: "https://example.com/archive.zip")!
+        assertDownloadAction(
+            url: url,
+            snapshot: SumiWebPageContextMenuTargetSnapshot(
+                kind: .link,
+                linkHref: url.absoluteString
+            )
+        ) { $0.downloadLinkedFile(nil) }
+    }
+
+    func testImageDownloadActionDispatchesSnapshotURL() {
+        let url = URL(string: "https://example.com/cat.png")!
+        assertDownloadAction(
+            url: url,
+            snapshot: SumiWebPageContextMenuTargetSnapshot(
+                kind: .image,
+                imageSrc: url.absoluteString
+            )
+        ) { $0.saveImageAs(nil) }
+    }
+
+    private func assertDownloadAction(
+        url: URL,
+        snapshot: SumiWebPageContextMenuTargetSnapshot,
+        perform: (SumiWebPageMenuActionOwner) -> Void,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
         let webView = makeWebView()
         let tab = Tab(url: URL(string: "https://example.com")!)
         var receivedURL: URL?
@@ -567,10 +667,7 @@ final class SumiWebPageMenuPresenterTests: XCTestCase {
         webView.owningTab = tab
         let context = SumiWebPageMenuContext(
             menu: NSMenu(),
-            snapshot: SumiWebPageContextMenuTargetSnapshot(
-                kind: .media,
-                mediaSrc: url.absoluteString
-            ),
+            snapshot: snapshot,
             searchProviderName: "DuckDuckGo",
             isLoading: false,
             isDeveloperInspectionEnabled: false
@@ -578,9 +675,9 @@ final class SumiWebPageMenuPresenterTests: XCTestCase {
         let owner = SumiWebPageMenuActionOwner()
         owner.prepare(webView: webView, context: context)
 
-        owner.downloadMedia(nil)
+        perform(owner)
 
-        XCTAssertEqual(receivedURL, url)
+        XCTAssertEqual(receivedURL, url, file: file, line: line)
     }
 
     func testFactoryProducesNonEmptyTitleAndIconForEveryCommand() {
@@ -595,9 +692,8 @@ final class SumiWebPageMenuPresenterTests: XCTestCase {
             isLoading: false,
             isDeveloperInspectionEnabled: false
         )
-        let factory = SumiWebPageMenuItemFactory(
-            actionTarget: SumiWebPageMenuActionOwner()
-        )
+        let actionTarget = SumiWebPageMenuActionOwner()
+        let factory = SumiWebPageMenuItemFactory(actionTarget: actionTarget)
 
         for command in SumiWebPageMenuCommand.allCases {
             let item = factory.makeItem(for: command, context: context)
@@ -605,7 +701,156 @@ final class SumiWebPageMenuPresenterTests: XCTestCase {
             XCTAssertNotNil(item.image, "\(command) has no icon")
             XCTAssertEqual(item.identifier, command.itemIdentifier)
             XCTAssertNotNil(item.action, "\(command) has no action")
+            if let action = item.action {
+                XCTAssertTrue(
+                    actionTarget.responds(to: action),
+                    "\(command) points to an unavailable action"
+                )
+            }
         }
+    }
+
+    func testOpenActionsRouteExactURLsAndDispositions() {
+        let pageURL = URL(string: "https://source.example/article")!
+        let linkURL = URL(string: "https://target.example/page")!
+        let imageURL = URL(string: "https://target.example/image.png")!
+        let webView = makeWebView()
+        let tab = Tab(url: pageURL)
+        let window = BrowserWindowState()
+        let profile = Profile(
+            name: "Menu Actions",
+            dataStore: webView.configuration.websiteDataStore
+        )
+        let space = Space(name: "Menu Actions", profileId: profile.id)
+        let receipt = PhysicalWebViewSourceReceipt(
+            webView: webView,
+            trackedWebView: TrackedWebViewOwner(tabID: tab.id, windowID: window.id),
+            tab: tab,
+            window: window,
+            residence: .regularSpaceMember,
+            presentationSpace: space,
+            presentationProfile: profile,
+            executionProfile: profile,
+            dataStore: profile.dataStore,
+            appKitWindow: nil
+        )
+        var routes: [(URL, TabLinkDisposition)] = []
+        var runtime = TabBrowserRuntime.inactive
+        runtime.linkPresentationCommands = TabLinkPresentationCommands(
+            resolveSource: { $0 === webView ? receipt : nil },
+            openTab: { url, _, selected in
+                routes.append((url, .newTab(selected: selected)))
+                return true
+            },
+            openWindow: { url, _, selected in
+                routes.append((url, .newWindow(selected: selected)))
+                return true
+            },
+            openSplit: { url, _ in
+                routes.append((url, .splitView))
+                return true
+            },
+            activateSource: { _ in true },
+            presentGlance: { _, _, _ in true }
+        )
+        tab.attachBrowserRuntime(runtime)
+        webView.owningTab = tab
+        let owner = makeActionOwner(
+            webView: webView,
+            snapshot: SumiWebPageContextMenuTargetSnapshot(
+                kind: .link,
+                selectedText: "context search",
+                linkHref: linkURL.absoluteString,
+                imageSrc: imageURL.absoluteString
+            )
+        )
+
+        owner.openLinkInNewTab(nil)
+        owner.openLinkInNewWindow(nil)
+        owner.openLinkInSplitView(nil)
+        owner.openImageInNewTab(nil)
+        owner.openImageInNewWindow(nil)
+        owner.searchSelection(nil)
+
+        XCTAssertEqual(routes.map(\.0), [
+            linkURL,
+            linkURL,
+            linkURL,
+            imageURL,
+            imageURL,
+            URL(string: "https://duckduckgo.com/?q=context+search")!,
+        ])
+        XCTAssertEqual(routes.map(\.1), [
+            .newTab(selected: true),
+            .newWindow(selected: true),
+            .splitView,
+            .newTab(selected: true),
+            .newWindow(selected: true),
+            .newTab(selected: true),
+        ])
+    }
+
+    func testCopyAndBookmarkActionsUseExactContextValues() {
+        let pageURL = URL(string: "https://source.example/article")!
+        let linkURL = URL(string: "https://target.example/page")!
+        let imageURL = URL(string: "https://target.example/image.png")!
+        let webView = makeWebView()
+        let tab = Tab(url: pageURL)
+        var bookmarkPageRequests = 0
+        var bookmarkedLink: (URL, String?)?
+        var runtime = TabBrowserRuntime.inactive
+        runtime.webPageMenuCommands = TabWebPageMenuCommands(
+            appearance: { _, fallback in fallback },
+            canBookmark: { _ in true },
+            requestBookmarkEditor: { _ in
+                bookmarkPageRequests += 1
+                return true
+            },
+            bookmarkLink: { _, url, title in
+                bookmarkedLink = (url, title)
+                return true
+            },
+            download: { _, _ in true }
+        )
+        tab.attachBrowserRuntime(runtime)
+        webView.owningTab = tab
+        let owner = makeActionOwner(
+            webView: webView,
+            snapshot: SumiWebPageContextMenuTargetSnapshot(
+                kind: .link,
+                selectedText: "selected words",
+                linkHref: linkURL.absoluteString,
+                linkText: "Target title",
+                imageSrc: imageURL.absoluteString
+            )
+        )
+
+        owner.bookmarkPage(nil)
+        owner.addLinkToBookmarks(nil)
+        XCTAssertEqual(bookmarkPageRequests, 1)
+        XCTAssertEqual(bookmarkedLink?.0, linkURL)
+        XCTAssertEqual(bookmarkedLink?.1, "Target title")
+
+        assertPasteboard(after: { owner.copyPageAddress(nil) }, equals: pageURL.absoluteString)
+        assertPasteboard(after: { owner.copySelection(nil) }, equals: "selected words")
+        assertPasteboard(after: { owner.copyLink(nil) }, equals: linkURL.absoluteString)
+        assertPasteboard(after: { owner.copyImageAddress(nil) }, equals: imageURL.absoluteString)
+        assertPasteboard(
+            after: { owner.copyLinkToSelectedText(nil) },
+            equals: "https://source.example/article#:~:text=selected%20words"
+        )
+
+        let mailOwner = makeActionOwner(
+            webView: webView,
+            snapshot: SumiWebPageContextMenuTargetSnapshot(
+                kind: .link,
+                linkHref: "mailto:a@example.com,b@example.com"
+            )
+        )
+        assertPasteboard(
+            after: { mailOwner.copyEmailAddress(nil) },
+            equals: "a@example.com, b@example.com"
+        )
     }
 
     @objc private func noop(_: Any?) { /* no-op */ }
@@ -614,6 +859,38 @@ final class SumiWebPageMenuPresenterTests: XCTestCase {
 
     private func makeWebView() -> FocusableWKWebView {
         FocusableWKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+    }
+
+    private func makeActionOwner(
+        webView: FocusableWKWebView,
+        snapshot: SumiWebPageContextMenuTargetSnapshot
+    ) -> SumiWebPageMenuActionOwner {
+        let context = SumiWebPageMenuContext(
+            menu: NSMenu(),
+            snapshot: snapshot,
+            searchProviderName: "DuckDuckGo",
+            isLoading: false,
+            isDeveloperInspectionEnabled: false
+        )
+        let owner = SumiWebPageMenuActionOwner()
+        owner.prepare(webView: webView, context: context)
+        return owner
+    }
+
+    private func assertPasteboard(
+        after action: () -> Void,
+        equals expectedValue: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        NSPasteboard.general.clearContents()
+        action()
+        XCTAssertEqual(
+            NSPasteboard.general.string(forType: .string),
+            expectedValue,
+            file: file,
+            line: line
+        )
     }
 
     private func prepare(

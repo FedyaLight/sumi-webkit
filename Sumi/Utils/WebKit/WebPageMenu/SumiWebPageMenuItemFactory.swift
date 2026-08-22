@@ -60,6 +60,8 @@ struct SumiWebPageMenuItemFactory {
             return SumiWebPageMenuStrings.openLinkInNewWindow
         case .addLinkToBookmarks:
             return SumiWebPageMenuStrings.addLinkToBookmarks
+        case .downloadLinkedFile:
+            return SumiWebPageMenuStrings.downloadLinkedFileAs
         case .copyLink:
             return SumiWebPageMenuStrings.copyLink
         case .copyEmailAddress:
@@ -70,8 +72,12 @@ struct SumiWebPageMenuItemFactory {
             return SumiWebPageMenuStrings.openImageInNewTab
         case .openImageInNewWindow:
             return SumiWebPageMenuStrings.openImageInNewWindow
+        case .saveImageAs:
+            return SumiWebPageMenuStrings.saveImageAs
         case .copyImageAddress:
             return SumiWebPageMenuStrings.copyImageAddress
+        case .copyImage:
+            return SumiWebPageMenuStrings.copyImage
         case .downloadMedia:
             return context.mediaDownloadTitle
                 ?? SumiWebPageMenuStrings.downloadMedia
