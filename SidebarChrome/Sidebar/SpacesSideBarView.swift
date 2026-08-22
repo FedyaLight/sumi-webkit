@@ -181,7 +181,8 @@ struct SpacesSideBarView: View {
         VStack(spacing: SidebarChromeMetrics.urlBarToSpaceTitleSpacing) {
             SidebarHeader(
                 browserContext: browserContext.headerContextOwner
-                    .sidebarHeaderContext(for: windowState)
+                    .sidebarHeaderContext(for: windowState),
+                sidebarDragState: dragState
             )
                 .environment(windowState)
 

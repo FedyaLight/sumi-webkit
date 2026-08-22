@@ -41,7 +41,11 @@ enum SumiBrowserWindowShellConfiguration {
     static let backgroundColor = NSColor.clear
     static let isOpaque = false
     static let isReleasedWhenClosed = false
-    static let isMovable = true
+    /// Windows move only through Sumi's explicit drag affordances (performDrag):
+    /// the system titlebar/toolbar drag band overlays the page viewport in the
+    /// frameless layout and would otherwise hijack clicks and text selection at
+    /// the top of web content. `performDrag(with:)` still works with this off.
+    static let isMovable = false
 
     @MainActor
     static func minimumFrameSize(for window: NSWindow) -> NSSize {

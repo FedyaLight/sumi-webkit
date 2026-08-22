@@ -89,3 +89,10 @@ native shell authority.
 - `NSHostingView` already supplies a transparent backing layer. Sumi keeps the
   required nonopaque `NSWindow` for behind-window material but does not repeat
   transparency mutations on the hosting content layer.
+
+## Manual verification
+
+AppKit's titlebar drag paths require physical mouse input and do not run for
+synthetic UI-test events. In a foreground build, drag from the top of a web
+page and confirm that the window stays in place, then drag the sidebar control
+strip and confirm that the window moves.

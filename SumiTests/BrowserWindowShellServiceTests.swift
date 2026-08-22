@@ -687,6 +687,66 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         XCTAssertEqual(residueCleanup.profileIDs, [profile.id])
     }
 
+    func testDisplayReflowKeepsPartiallyVisibleWindowInPlace() throws {
+        let screen = try XCTUnwrap(NSScreen.screens.first)
+        let window = makeWindow(frame: NSRect(x: 0, y: 0, width: 320, height: 240))
+        defer { window.close() }
+        let hangingOff = NSRect(
+            x: screen.visibleFrame.maxX - 40,
+            y: screen.visibleFrame.midY - 120,
+            width: 320,
+            height: 240
+        )
+        window.setFrame(hangingOff, display: false)
+
+        BrowserWindowGeometryPolicy.reflowOntoVisibleScreen(window)
+
+        XCTAssertEqual(window.frame, hangingOff)
+    }
+
+    func testDisplayReflowReturnsInvisibleWindowToFirstScreen() throws {
+        let screen = try XCTUnwrap(NSScreen.screens.first)
+        let maxX = NSScreen.screens.map(\.visibleFrame.maxX).max() ?? 0
+        let maxY = NSScreen.screens.map(\.visibleFrame.maxY).max() ?? 0
+        let window = makeWindow(frame: NSRect(x: 0, y: 0, width: 320, height: 240))
+        defer { window.close() }
+        window.setFrame(
+            NSRect(
+                x: maxX + 1000,
+                y: maxY + 1000,
+                width: 320,
+                height: 240
+            ),
+            display: false
+        )
+
+        BrowserWindowGeometryPolicy.reflowOntoVisibleScreen(window)
+
+        XCTAssertTrue(screen.visibleFrame.contains(window.frame))
+    }
+
+    func testDisplayReflowKeepsOversizedWindowControlsReachable() throws {
+        let screen = try XCTUnwrap(NSScreen.screens.first)
+        let maxX = NSScreen.screens.map(\.visibleFrame.maxX).max() ?? 0
+        let maxY = NSScreen.screens.map(\.visibleFrame.maxY).max() ?? 0
+        let window = makeWindow(frame: NSRect(x: 0, y: 0, width: 320, height: 240))
+        defer { window.close() }
+        window.setFrame(
+            NSRect(
+                x: maxX + 1000,
+                y: maxY + 1000,
+                width: screen.visibleFrame.width + 600,
+                height: screen.visibleFrame.height + 400
+            ),
+            display: false
+        )
+
+        BrowserWindowGeometryPolicy.reflowOntoVisibleScreen(window)
+
+        XCTAssertTrue(screen.visibleFrame.contains(window.frame))
+        XCTAssertEqual(window.frame.maxY, screen.visibleFrame.maxY, accuracy: 1)
+    }
+
     private struct Harness {
         let windowRegistry: WindowRegistry
         let permissionCoordinator: RecordingPermissionCoordinator

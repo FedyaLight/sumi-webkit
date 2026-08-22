@@ -298,7 +298,7 @@ final class BrowserWindowChromeTests: XCTestCase {
         XCTAssertFalse(window.isOpaque)
         assertMinimumWindowConstraints(window)
         XCTAssertFalse(window.isReleasedWhenClosed)
-        XCTAssertTrue(window.isMovable)
+        XCTAssertFalse(window.isMovable)
         XCTAssertTrue(window.collectionBehavior.contains(.fullScreenPrimary))
         assertNativeBrowserControlsHidden(window)
     }
@@ -325,7 +325,7 @@ final class BrowserWindowChromeTests: XCTestCase {
         XCTAssertFalse(window.isOpaque)
         assertMinimumWindowConstraints(window)
         XCTAssertFalse(window.isReleasedWhenClosed)
-        XCTAssertTrue(window.isMovable)
+        XCTAssertFalse(window.isMovable)
         XCTAssertTrue(window.collectionBehavior.contains(.fullScreenPrimary))
         XCTAssertEqual(window.contentRect(forFrameRect: window.frame).size, SumiBrowserWindowShellConfiguration.defaultContentSize)
         assertNativeBrowserControlsHidden(window)
@@ -352,6 +352,36 @@ final class BrowserWindowChromeTests: XCTestCase {
         )
 
         XCTAssertTrue(resolvedOptions?.contains(.autoHideToolbar) == true)
+    }
+
+    func testBrowserWindowBridgeReflowsAfterLeavingHiddenDisplayModes() throws {
+        let screen = try XCTUnwrap(NSScreen.screens.first)
+        let maxX = NSScreen.screens.map(\.visibleFrame.maxX).max() ?? 0
+        let maxY = NSScreen.screens.map(\.visibleFrame.maxY).max() ?? 0
+        let window = WindowChromeTestSupport.makePlainWindow()
+        let coordinator = BrowserWindowBridge.Coordinator(
+            windowState: BrowserWindowState(),
+            windowRegistry: WindowRegistry()
+        )
+        coordinator.attach(to: window)
+        WindowChromeTestSupport.retain(window)
+
+        for name in [
+            NSWindow.didDeminiaturizeNotification,
+            NSWindow.didExitFullScreenNotification,
+        ] {
+            window.setFrame(
+                NSRect(x: maxX + 1000, y: maxY + 1000, width: 320, height: 240),
+                display: false
+            )
+
+            NotificationCenter.default.post(name: name, object: window)
+
+            XCTAssertTrue(
+                screen.visibleFrame.contains(window.frame),
+                "Window remained off-screen after \(name.rawValue)."
+            )
+        }
     }
 
     func testBrowserWindowBridgeCoordinatorDetachClearsWindowState() {

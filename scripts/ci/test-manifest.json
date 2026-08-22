@@ -869,6 +869,8 @@
         "SumiUITests/SumiLaunchSmokeUIFixtureTests/testScratchSeedingLeavesBundledSourceImmutable",
         "SumiUITests/SumiLaunchSmokeUITests/testClosingNewWindowKeepsOriginalBrowserWindowAlive",
         "SumiUITests/SumiLaunchSmokeUITests/testLaunchesMainWindow",
+        "SumiUITests/SumiPageTopWindowDragUITests/testDraggingAtPageTopDoesNotMoveWindow",
+        "SumiUITests/SumiPageTopWindowDragUITests/testSidebarControlStripKeepsWindowGestureAffordances",
         "SumiUITests/SumiPermissionPromptUITests/testExternalSchemePermissionPromptCanDenyWithoutLeavingPage",
         "SumiUITests/SumiSessionRestoreUITests/testRestoresExactWindowSpaceTabAndLocalDocument",
         "SumiUITests/SumiSidebarContextMenuOracleUITests/testVisibleSidebarContextMenuCanBeDismissedAndReopened",

@@ -17,6 +17,7 @@ struct SidebarHeaderBrowserContext {
 /// Header section of the sidebar (window controls, navigation buttons, URL bar)
 struct SidebarHeader: View {
     let browserContext: SidebarHeaderBrowserContext
+    let sidebarDragState: SidebarDragState
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) var sumiSettings
 
@@ -44,6 +45,14 @@ struct SidebarHeader: View {
         .padding(.trailing, SidebarChromeMetrics.contentHorizontalPadding)
         .frame(maxWidth: .infinity)
         .frame(height: SidebarChromeMetrics.controlStripHeight)
+        // Browser windows opt out of system titlebar dragging (see
+        // SumiBrowserWindowShellConfiguration.isMovable), so the control strip
+        // has to offer the window drag the transparent titlebar band used to.
+        .background {
+            Color.clear
+                .contentShape(Rectangle())
+                .backgroundDraggable(sidebarDragState: sidebarDragState)
+        }
     }
 
     private var sidebarURLBar: some View {

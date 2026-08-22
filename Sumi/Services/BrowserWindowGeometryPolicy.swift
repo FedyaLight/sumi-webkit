@@ -46,6 +46,23 @@ enum BrowserWindowGeometryPolicy {
         )
     }
 
+    /// Nonmovable browser windows are skipped by AppKit's display-
+    /// reconfiguration reflow, so each window has to pull itself back onto a
+    /// visible screen after the screen layout changes.
+    static func reflowOntoVisibleScreen(_ window: NSWindow) {
+        guard window.isMiniaturized == false,
+              window.styleMask.contains(.fullScreen) == false
+        else { return }
+        let screens = NSScreen.screens
+        guard screens.contains(where: { $0.visibleFrame.intersects(window.frame) }) == false,
+              let targetScreen = screens.first
+        else { return }
+        let reflowed = window.constrainFrameRect(window.frame, to: targetScreen)
+        if reflowed != window.frame {
+            window.setFrame(reflowed, display: false)
+        }
+    }
+
     static func placeNewWindow(
         _ window: NSWindow,
         relativeTo source: NSWindow?

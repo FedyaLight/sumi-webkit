@@ -88,13 +88,16 @@ struct BrowserWindowBridge: NSViewRepresentable {
                 }
             }
 
-            addObserver(
-                center: .default,
-                forName: NSWindow.didDeminiaturizeNotification,
-                object: window
-            ) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    self?.refreshNativeWindowState()
+            for name in [
+                NSWindow.didDeminiaturizeNotification,
+                NSWindow.didExitFullScreenNotification,
+            ] {
+                addObserver(center: .default, forName: name, object: window) {
+                    [weak self] _ in
+                    MainActor.assumeIsolated {
+                        BrowserWindowGeometryPolicy.reflowOntoVisibleScreen(window)
+                        self?.refreshNativeWindowState()
+                    }
                 }
             }
 
@@ -102,7 +105,6 @@ struct BrowserWindowBridge: NSViewRepresentable {
                 NSWindow.didResizeNotification,
                 NSWindow.didEndLiveResizeNotification,
                 NSWindow.didEnterFullScreenNotification,
-                NSWindow.didExitFullScreenNotification,
             ] {
                 addObserver(center: .default, forName: name, object: window) {
                     [weak self] _ in
@@ -133,6 +135,18 @@ struct BrowserWindowBridge: NSViewRepresentable {
                     BrowserWindowGeometryPolicy.captureRestorableFrame(
                         of: window
                     )
+                }
+            }
+
+            addObserver(
+                center: .default,
+                forName: NSApplication.didChangeScreenParametersNotification,
+                object: nil
+            ) { [weak self] _ in
+                guard let self else { return }
+                MainActor.assumeIsolated {
+                    guard let window = self.window else { return }
+                    BrowserWindowGeometryPolicy.reflowOntoVisibleScreen(window)
                 }
             }
 

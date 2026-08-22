@@ -2,6 +2,12 @@
 
 Sumi follows semantic product versions. This changelog records public release scope, not every internal refactor.
 
+## Unreleased
+
+### Window Management
+
+- Dragging from the top of a web page no longer moves the browser window, so page interactions such as text selection work there. Browser windows move from the sidebar control strip instead. Windows that end up fully off-screen after a display change return to a visible screen.
+
 ## 0.0.4 Alpha 4 — 2026-08-15
 
 Alpha 4 improves redirect and external-app handoffs, keeps navigation feedback continuous, makes Sidebar Mini Player sessions more predictable, and prevents automatic history retention from signing users out of websites.
