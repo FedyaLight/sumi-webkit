@@ -29,7 +29,6 @@ struct SidebarAutofocusLayout: Equatable {
     }
 
     let targets: [SidebarScrollTargetID: Target]
-    let contentHeight: CGFloat
 }
 
 struct SidebarSelectedItemSurfaceGeometry: Equatable {
@@ -54,13 +53,22 @@ struct SidebarSelectedItemSurfaceGeometry: Equatable {
     }
 }
 
-private extension SidebarAutofocusLayout.Target {
+extension SidebarAutofocusLayout.Target {
+    /// Why one reveal evaluation produced no scroll command. The distinction
+    /// decides whether pending reveal intent may be discarded: unusable facts
+    /// keep the intent alive, a genuinely visible target consumes it.
+    enum Disposition: Equatable {
+        case unusableGeometry
+        case alreadyVisible
+        case reveal(destinationY: CGFloat)
+    }
+
     /// Uses the nearest edge and preserves one full row gap beside it, keeping
     /// the selected row shadow clear of the viewport clip.
-    func revealOffset(
+    func revealDisposition(
         in geometry: SidebarSelectedItemSurfaceGeometry
-    ) -> CGFloat? {
-        guard geometry.hasUsableLayout else { return nil }
+    ) -> Disposition {
+        guard geometry.hasUsableLayout else { return .unusableGeometry }
 
         let tolerance: CGFloat = 0.5
         let currentOffset = min(
@@ -70,22 +78,30 @@ private extension SidebarAutofocusLayout.Target {
         let revealInset = SidebarRowLayout.rowGap
         let preferredTop = max(minY - revealInset, 0)
         if preferredTop < currentOffset - tolerance {
-            return min(preferredTop, geometry.maximumOffset)
+            return .reveal(
+                destinationY: min(preferredTop, geometry.maximumOffset)
+            )
         }
 
         let visibleMaxY = currentOffset + geometry.viewportHeight
+        let targetFitsDocument = maxY <= geometry.contentHeight + tolerance
         let preferredBottom = min(
             maxY + revealInset,
             geometry.contentHeight
         )
         if preferredBottom > visibleMaxY + tolerance {
-            return min(
-                max(preferredBottom - geometry.viewportHeight, 0),
-                geometry.maximumOffset
+            return .reveal(
+                destinationY: min(
+                    max(preferredBottom - geometry.viewportHeight, 0),
+                    geometry.maximumOffset
+                )
             )
         }
 
-        return nil
+        // Reaching the temporary native document edge does not prove that a
+        // farther lazy row is visible. Keep the intent live for later growth.
+        guard targetFitsDocument else { return .unusableGeometry }
+        return .alreadyVisible
     }
 }
 
@@ -104,6 +120,12 @@ final class SidebarSelectedItemRevealOwner {
         enum Purpose: Equatable {
             case materializePath
             case revealSelection
+            /// Re-anchoring after an explicit relayout signal; always instant.
+            case relayoutAdjustment
+
+            var usesSelectionAnimation: Bool {
+                self == .revealSelection
+            }
         }
 
         let targetID: SidebarScrollTargetID
@@ -118,12 +140,41 @@ final class SidebarSelectedItemRevealOwner {
     private(set) var isSurfaceReady = false
     @ObservationIgnored private var mountedTargets: Set<SidebarScrollTargetID> = []
     @ObservationIgnored private var pendingTargets: [SidebarScrollTargetID] = []
+    @ObservationIgnored private var pendingPurpose: Request.Purpose =
+        .revealSelection
     @ObservationIgnored private var autofocusLayout: SidebarAutofocusLayout?
     @ObservationIgnored private var surfaceGeometry:
         SidebarSelectedItemSurfaceGeometry?
+    private struct IssuedReveal {
+        let targetID: SidebarScrollTargetID
+        let purpose: Request.Purpose
+        let contentHeight: CGFloat
+        let maximumOffset: CGFloat
+        let remainingReachabilityCorrections: Int
+    }
 
+    /// The command most recently issued against native geometry. It remains
+    /// live until fresh geometry confirms that the target is visible.
+    @ObservationIgnored private var issuedReveal: IssuedReveal?
+    /// Prevents a resize animation from publishing a command on every frame.
+    /// Real document growth replenishes the budget because it represents new
+    /// lazy content rather than repeated work against the same document.
+    private static let maximumReachabilityCorrections = 3
+    /// Returns the freshest native scroll geometry without waiting for the
+    /// coalesced delivery hop, mirroring Zen's read-layout-right-before-scroll.
+    @ObservationIgnored private var geometryProvider:
+        (@MainActor () -> SidebarSelectedItemSurfaceGeometry?)?
+    /// Retained so viewport resize and fullscreen changes can re-run the last
+    /// selection reveal without a new activation.
+    @ObservationIgnored private var lastRevealPath: SidebarSelectedItemRevealPath?
     init(targetResolution: TargetResolution = .lazyIdentity) {
         self.targetResolution = targetResolution
+    }
+
+    func setGeometryProvider(
+        _ provider: (@MainActor () -> SidebarSelectedItemSurfaceGeometry?)?
+    ) {
+        geometryProvider = provider
     }
 
     func reveal(_ targetID: SidebarScrollTargetID) {
@@ -132,11 +183,29 @@ final class SidebarSelectedItemRevealOwner {
 
     func reveal(_ path: SidebarSelectedItemRevealPath) {
         pendingTargets = path.targets
+        pendingPurpose = .revealSelection
+        issuedReveal = nil
+        lastRevealPath = path
+        advanceReveal()
+    }
+
+    /// Re-runs the most recent selection reveal without animation, for signals
+    /// that change geometry without changing selection (Zen's instant variants).
+    func revealLastSelectionWithoutAnimation() {
+        guard isSurfaceReady,
+              targetResolution == .presentedLayout,
+              let lastRevealPath else { return }
+        pendingTargets = lastRevealPath.targets
+        pendingPurpose = .relayoutAdjustment
+        issuedReveal = nil
         advanceReveal()
     }
 
     func cancelReveal() {
         pendingTargets.removeAll()
+        issuedReveal = nil
+        lastRevealPath = nil
+        pendingPurpose = .revealSelection
     }
 
     func surfaceDidBecomeReady() {
@@ -156,8 +225,11 @@ final class SidebarSelectedItemRevealOwner {
         _ geometry: SidebarSelectedItemSurfaceGeometry
     ) {
         surfaceGeometry = geometry
-        guard !pendingTargets.isEmpty else { return }
-        advanceReveal()
+        if !pendingTargets.isEmpty {
+            advanceReveal()
+            return
+        }
+        verifyIssuedReveal()
     }
 
     func targetDidAppear(_ targetID: SidebarScrollTargetID) {
@@ -208,30 +280,113 @@ final class SidebarSelectedItemRevealOwner {
         )
     }
 
+    /// Freshest known native geometry: the synchronous provider wins over the
+    /// coalesced delivery, which can trail the live scroll position by a hop.
+    @discardableResult
+    private func refreshSurfaceGeometry() -> SidebarSelectedItemSurfaceGeometry? {
+        if let fresh = geometryProvider?() {
+            surfaceGeometry = fresh
+        }
+        return surfaceGeometry
+    }
+
     private func advancePresentedLayoutReveal() {
-        guard let autofocusLayout,
-              let targetID = pendingTargets.last,
+        guard let targetID = pendingTargets.last,
+              let autofocusLayout,
               let target = autofocusLayout.targets[targetID],
-              let surfaceGeometry,
-              surfaceGeometry.contentHeight + 1
-                >= autofocusLayout.contentHeight else {
+              let surfaceGeometry = refreshSurfaceGeometry() else {
+            // Facts are missing; the intent stays pending for the next layout
+            // or geometry delivery.
             return
         }
 
-        pendingTargets.removeAll()
-        guard let destinationY = target.revealOffset(
-            in: surfaceGeometry
-        ) else {
+        switch target.revealDisposition(in: surfaceGeometry) {
+        case .unusableGeometry:
+            // Stale or collapsed geometry must not consume the intent.
             return
+        case .alreadyVisible:
+            pendingTargets.removeAll()
+            issuedReveal = nil
+            return
+        case .reveal(let destinationY):
+            pendingTargets.removeAll()
+            issuePresentedReveal(
+                targetID: targetID,
+                purpose: pendingPurpose,
+                destinationY: destinationY,
+                geometry: surfaceGeometry,
+                remainingReachabilityCorrections:
+                    Self.maximumReachabilityCorrections
+            )
         }
+    }
 
+    private func issuePresentedReveal(
+        targetID: SidebarScrollTargetID,
+        purpose: Request.Purpose,
+        destinationY: CGFloat,
+        geometry: SidebarSelectedItemSurfaceGeometry,
+        remainingReachabilityCorrections: Int
+    ) {
+        issuedReveal = IssuedReveal(
+            targetID: targetID,
+            purpose: purpose,
+            contentHeight: geometry.contentHeight,
+            maximumOffset: geometry.maximumOffset,
+            remainingReachabilityCorrections:
+                remainingReachabilityCorrections
+        )
         nextGeneration &+= 1
         request = Request(
             targetID: targetID,
-            purpose: .revealSelection,
+            purpose: purpose,
             destinationY: destinationY,
             generation: nextGeneration
         )
+    }
+
+    /// Confirms an issued command actually satisfied its target. A command
+    /// that landed short while lazy content was growing is re-issued against
+    /// fresher geometry instead of being silently lost (the old one-shot rule).
+    private func verifyIssuedReveal() {
+        guard let issuedReveal,
+              let autofocusLayout,
+              let target = autofocusLayout.targets[issuedReveal.targetID],
+              let surfaceGeometry = refreshSurfaceGeometry() else {
+            return
+        }
+
+        switch target.revealDisposition(in: surfaceGeometry) {
+        case .alreadyVisible:
+            self.issuedReveal = nil
+        case .unusableGeometry:
+            break
+        case .reveal(let destinationY):
+            // Only re-issue when the scroll surface itself became more
+            // capable since issuance (lazy growth or a viewport change that
+            // raised the reachable offset); otherwise the issued command may
+            // simply still be in flight.
+            let contentHeightGrew = surfaceGeometry.contentHeight
+                > issuedReveal.contentHeight + 0.5
+            let maximumOffsetGrew = surfaceGeometry.maximumOffset
+                > issuedReveal.maximumOffset + 0.5
+            guard contentHeightGrew || maximumOffsetGrew else {
+                return
+            }
+
+            let availableCorrections = contentHeightGrew
+                ? Self.maximumReachabilityCorrections
+                : issuedReveal.remainingReachabilityCorrections
+            guard availableCorrections > 0 else { return }
+
+            issuePresentedReveal(
+                targetID: issuedReveal.targetID,
+                purpose: issuedReveal.purpose,
+                destinationY: destinationY,
+                geometry: surfaceGeometry,
+                remainingReachabilityCorrections: availableCorrections - 1
+            )
+        }
     }
 }
 

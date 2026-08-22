@@ -95,6 +95,222 @@ final class SidebarSelectedItemVisibilityTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(owner.request).targetID, itemID)
     }
 
+    // MARK: Presented-layout reveal decisions
+
+    func testRevealDecisionUsesFreshProviderGeometryOverDeliveredGeometry() throws {
+        let owner = SidebarSelectedItemRevealOwner(
+            targetResolution: .presentedLayout
+        )
+        let itemID = SidebarScrollTargetID.regularTab(UUID())
+        owner.updateAutofocusLayout(
+            SidebarAutofocusLayout(
+                targets: [itemID: .init(minY: 760, maxY: 800)]
+            )
+        )
+        owner.surfaceDidBecomeReady()
+
+        // Native truth sits at the top of the document; the delivered
+        // geometry trails it claiming the bottom region is on screen. The old
+        // decision path consumed the intent as "already visible" and the
+        // downward reveal was lost.
+        let fresh = SidebarSelectedItemSurfaceGeometry(
+            contentOffsetY: 0,
+            viewportHeight: 100,
+            contentHeight: 800
+        )
+        owner.setGeometryProvider { fresh }
+        owner.reveal(itemID)
+
+        let request = try XCTUnwrap(owner.request)
+        XCTAssertEqual(request.targetID, itemID)
+        XCTAssertEqual(request.destinationY ?? -1, 700, accuracy: 1)
+
+        // The stale delivery must not corrupt or supersede the issued command.
+        owner.updateSurfaceGeometry(
+            SidebarSelectedItemSurfaceGeometry(
+                contentOffsetY: 700,
+                viewportHeight: 100,
+                contentHeight: 800
+            )
+        )
+        XCTAssertEqual(owner.request?.generation, request.generation)
+    }
+
+    func testIssuedCommandAdvancesThroughGrowingContentTowardTarget() throws {
+        let owner = SidebarSelectedItemRevealOwner(
+            targetResolution: .presentedLayout
+        )
+        let itemID = SidebarScrollTargetID.regularTab(UUID())
+        owner.updateAutofocusLayout(
+            SidebarAutofocusLayout(
+                targets: [itemID: .init(minY: 1760, maxY: 1800)]
+            )
+        )
+        owner.surfaceDidBecomeReady()
+
+        // The scroll document still lags the settled presentation extents.
+        // Scroll to its reachable bottom so LazyVStack can materialize more
+        // content instead of waiting for growth that may require this scroll.
+        var native = SidebarSelectedItemSurfaceGeometry(
+            contentOffsetY: 0,
+            viewportHeight: 100,
+            contentHeight: 500
+        )
+        owner.updateSurfaceGeometry(native)
+        owner.reveal(itemID)
+        let initial = try XCTUnwrap(owner.request)
+        XCTAssertEqual(initial.destinationY ?? -1, 400, accuracy: 1)
+
+        // Landing at the temporary document bottom is not proof that the
+        // farther settled target is visible. The issued intent must survive.
+        native = SidebarSelectedItemSurfaceGeometry(
+            contentOffsetY: 400,
+            viewportHeight: 100,
+            contentHeight: 500
+        )
+        owner.updateSurfaceGeometry(native)
+        XCTAssertEqual(owner.request?.generation, initial.generation)
+
+        native = SidebarSelectedItemSurfaceGeometry(
+            contentOffsetY: 400,
+            viewportHeight: 100,
+            contentHeight: 1900
+        )
+        owner.updateSurfaceGeometry(native)
+        let correction = try XCTUnwrap(owner.request)
+        XCTAssertGreaterThan(correction.generation, initial.generation)
+        XCTAssertEqual(correction.destinationY ?? -1, 1704, accuracy: 1)
+    }
+
+    func testReachabilityCorrectionsAreBoundedUntilContentGrows() throws {
+        let owner = SidebarSelectedItemRevealOwner(
+            targetResolution: .presentedLayout
+        )
+        let itemID = SidebarScrollTargetID.regularTab(UUID())
+        owner.updateAutofocusLayout(
+            SidebarAutofocusLayout(
+                targets: [itemID: .init(minY: 1900, maxY: 1940)]
+            )
+        )
+        owner.updateSurfaceGeometry(
+            SidebarSelectedItemSurfaceGeometry(
+                contentOffsetY: 0,
+                viewportHeight: 500,
+                contentHeight: 2000
+            )
+        )
+        owner.surfaceDidBecomeReady()
+        owner.reveal(itemID)
+        let initialGeneration = try XCTUnwrap(owner.request).generation
+
+        for viewportHeight in [450, 400, 350, 300] {
+            owner.updateSurfaceGeometry(
+                SidebarSelectedItemSurfaceGeometry(
+                    contentOffsetY: 1000,
+                    viewportHeight: CGFloat(viewportHeight),
+                    contentHeight: 2000
+                )
+            )
+        }
+
+        let boundedGeneration = try XCTUnwrap(owner.request).generation
+        XCTAssertEqual(boundedGeneration, initialGeneration + 3)
+
+        owner.updateSurfaceGeometry(
+            SidebarSelectedItemSurfaceGeometry(
+                contentOffsetY: 1000,
+                viewportHeight: 250,
+                contentHeight: 2100
+            )
+        )
+
+        XCTAssertEqual(
+            try XCTUnwrap(owner.request).generation,
+            boundedGeneration + 1,
+            "Content growth must replenish the correction budget"
+        )
+    }
+
+    func testVerifiedVisibilityClearsTheIssuedCommand() throws {
+        let owner = SidebarSelectedItemRevealOwner(
+            targetResolution: .presentedLayout
+        )
+        let itemID = SidebarScrollTargetID.regularTab(UUID())
+        owner.updateAutofocusLayout(
+            SidebarAutofocusLayout(
+                targets: [itemID: .init(minY: 1760, maxY: 1800)]
+            )
+        )
+        let nativeGeometry = SidebarSurfaceGeometryBox()
+        nativeGeometry.latest = SidebarSelectedItemSurfaceGeometry(
+            contentOffsetY: 0,
+            viewportHeight: 100,
+            contentHeight: 1900
+        )
+        owner.setGeometryProvider { nativeGeometry.latest }
+        owner.surfaceDidBecomeReady()
+        owner.reveal(itemID)
+        let issued = try XCTUnwrap(owner.request)
+
+        nativeGeometry.latest = SidebarSelectedItemSurfaceGeometry(
+            contentOffsetY: 1720,
+            viewportHeight: 100,
+            contentHeight: 1900
+        )
+        owner.updateSurfaceGeometry(try XCTUnwrap(nativeGeometry.latest))
+
+        // Later growth after confirmed visibility must not yank the user back.
+        nativeGeometry.latest = SidebarSelectedItemSurfaceGeometry(
+            contentOffsetY: 0,
+            viewportHeight: 100,
+            contentHeight: 2200
+        )
+        owner.updateSurfaceGeometry(try XCTUnwrap(nativeGeometry.latest))
+
+        XCTAssertEqual(owner.request?.generation, issued.generation)
+    }
+
+    func testRelayoutAdjustmentIssuesInstantPurposeAndThenResets() throws {
+        let owner = SidebarSelectedItemRevealOwner(
+            targetResolution: .presentedLayout
+        )
+        let firstItemID = SidebarScrollTargetID.regularTab(UUID())
+        let secondItemID = SidebarScrollTargetID.regularTab(UUID())
+        owner.updateAutofocusLayout(
+            SidebarAutofocusLayout(
+                targets: [
+                    firstItemID: .init(minY: 760, maxY: 800),
+                    secondItemID: .init(minY: 360, maxY: 400),
+                ]
+            )
+        )
+        let native = SidebarSelectedItemSurfaceGeometry(
+            contentOffsetY: 0,
+            viewportHeight: 100,
+            contentHeight: 900
+        )
+        owner.setGeometryProvider { native }
+        owner.surfaceDidBecomeReady()
+
+        owner.reveal(firstItemID)
+        XCTAssertEqual(
+            try XCTUnwrap(owner.request).purpose,
+            .revealSelection
+        )
+
+        owner.revealLastSelectionWithoutAnimation()
+        let relayout = try XCTUnwrap(owner.request)
+        XCTAssertEqual(relayout.targetID, firstItemID)
+        XCTAssertEqual(relayout.purpose, .relayoutAdjustment)
+
+        // A new selection returns to animated reveal semantics.
+        owner.reveal(secondItemID)
+        XCTAssertEqual(
+            try XCTUnwrap(owner.request).purpose,
+            .revealSelection
+        )
+    }
+
     func testInitialSavedViewportIsAppliedToScrollSurface() throws {
         let state = SidebarSelectedItemLazyHarnessState()
         let hostingView = NSHostingView(
@@ -157,6 +373,21 @@ final class SidebarSelectedItemVisibilityTests: XCTestCase {
         XCTAssertNotNil(SidebarMotionPolicy.selectedItemRevealAnimation(for: .standard))
         XCTAssertNil(
             SidebarMotionPolicy.selectedItemRevealAnimation(for: .reducedMotion)
+        )
+    }
+
+    func testOnlyFinalSelectionRevealUsesSelectionAnimation() {
+        XCTAssertTrue(
+            SidebarSelectedItemRevealOwner.Request.Purpose
+                .revealSelection.usesSelectionAnimation
+        )
+        XCTAssertFalse(
+            SidebarSelectedItemRevealOwner.Request.Purpose
+                .materializePath.usesSelectionAnimation
+        )
+        XCTAssertFalse(
+            SidebarSelectedItemRevealOwner.Request.Purpose
+                .relayoutAdjustment.usesSelectionAnimation
         )
     }
 
@@ -601,7 +832,7 @@ final class SidebarSelectedItemVisibilityTests: XCTestCase {
         XCTAssertEqual(scrollView.documentVisibleRect.minY, 0, accuracy: 1)
     }
 
-    func testPresentedLayoutUpwardRevealWaitsForFinalContentHeight() throws {
+    func testPresentedLayoutUpwardRevealDoesNotWaitForFinalContentHeight() throws {
         let state = SidebarSelectedItemLazyHarnessState(
             itemCount: 20,
             visibleItemCount: 10
@@ -634,16 +865,19 @@ final class SidebarSelectedItemVisibilityTests: XCTestCase {
         hostingView.layoutSubtreeIfNeeded()
         runMainLoop(for: 0.1)
 
-        XCTAssertTrue(
-            requestRecorder.generations.isEmpty,
-            "Upward autofocus must wait while the scroll document is still materializing"
+        let scrollView = try XCTUnwrap(findScrollView(in: hostingView))
+        XCTAssertEqual(requestRecorder.generations.count, 1)
+        XCTAssertEqual(
+            scrollView.documentVisibleRect.minY,
+            0,
+            accuracy: 1,
+            "A reachable upward target must reveal without waiting for unrelated content"
         )
 
         state.visibleItemCount = 20
         hostingView.layoutSubtreeIfNeeded()
         runMainLoop()
 
-        let scrollView = try XCTUnwrap(findScrollView(in: hostingView))
         XCTAssertEqual(requestRecorder.generations.count, 1)
         XCTAssertEqual(scrollView.documentVisibleRect.minY, 0, accuracy: 1)
     }
@@ -908,6 +1142,111 @@ final class SidebarSelectedItemVisibilityTests: XCTestCase {
         XCTAssertLessThan(scrollView.documentVisibleRect.minY, 44)
     }
 
+    func testReportedGeometryClampsElasticOverscroll() throws {
+        let scrollView = NSScrollView()
+        scrollView.frame = NSRect(x: 0, y: 0, width: 200, height: 100)
+        scrollView.hasVerticalScroller = false
+        let document = SidebarTestFlippedDocumentView(
+            frame: NSRect(x: 0, y: 0, width: 200, height: 1600)
+        )
+        scrollView.documentView = document
+        scrollView.contentView.postsBoundsChangedNotifications = true
+
+        let window = NSWindow(
+            contentRect: scrollView.frame,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = scrollView
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+
+        let registration = SidebarTabListScrollRegistrationView(frame: .zero)
+        document.addSubview(registration)
+        registration.isRegistrationEnabled = true
+        let geometryBox = SidebarSurfaceGeometryBox()
+        registration.updateSurfaceObservation(
+            SidebarScrollSurfaceObservation(
+                surfaceID: ObjectIdentifier(registration),
+                capturesLiveViewport: false,
+                onLiveViewportChange: { _ in },
+                onGeometryChange: { _ in },
+                geometryBox: geometryBox
+            )
+        )
+
+        runMainLoop()
+
+        // Elastic overscroll above the document top.
+        scrollView.contentView.scroll(to: NSPoint(x: 0, y: -60))
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+        runMainLoop(for: 0.1)
+        XCTAssertEqual(
+            geometryBox.latest?.contentOffsetY ?? -1,
+            0,
+            accuracy: 0.5,
+            "Elastic offsets must not leak into reveal decisions"
+        )
+
+        // Elastic overscroll past the document bottom.
+        scrollView.contentView.scroll(to: NSPoint(x: 0, y: 1700))
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+        runMainLoop(for: 0.1)
+        XCTAssertEqual(
+            geometryBox.latest?.contentOffsetY ?? -1,
+            1500,
+            accuracy: 0.5
+        )
+    }
+
+    func testViewportResizeReRevealsSelectionInstantly() throws {
+        let state = SidebarSelectedItemLazyHarnessState(
+            itemCount: 20,
+            initiallySelectedItemIndex: 19
+        )
+        let requestRecorder = SidebarRevealRequestRecorder()
+        let hostingView = NSHostingView(
+            rootView: SidebarSelectedItemPresentedLayoutHarness(
+                state: state,
+                motionMode: .standard,
+                restoredViewport: SpaceSidebarSnapshotViewport(
+                    contentOffsetY: 0,
+                    contentHeight: 800,
+                    viewportHeight: 100
+                ),
+                requestRecorder: requestRecorder
+            )
+        )
+        hostingView.frame = NSRect(x: 0, y: 0, width: 200, height: 100)
+        let window = NSWindow(
+            contentRect: hostingView.frame,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = hostingView
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+
+        runMainLoop()
+        let initialCount = requestRecorder.generations.count
+        XCTAssertGreaterThan(initialCount, 0)
+
+        // Shrinking the viewport leaves the selected row below the fold;
+        // Zen snaps back instantly on resizes.
+        hostingView.setFrameSize(NSSize(width: 200, height: 40))
+        hostingView.layoutSubtreeIfNeeded()
+        runMainLoop(for: 0.5)
+
+        XCTAssertEqual(requestRecorder.purposes.last, .relayoutAdjustment)
+        XCTAssertGreaterThan(requestRecorder.generations.count, initialCount)
+
+        let scrollView = try XCTUnwrap(findScrollView(in: hostingView))
+        let visibleRect = scrollView.documentVisibleRect
+        XCTAssertLessThanOrEqual(800, visibleRect.maxY + 1)
+    }
+
     private func findScrollView(in view: NSView) -> NSScrollView? {
         if let scrollView = view as? NSScrollView {
             return scrollView
@@ -938,9 +1277,14 @@ private final class SidebarScrollOffsetRecorder {
     }
 }
 
+private final class SidebarTestFlippedDocumentView: NSView {
+    override var isFlipped: Bool { true }
+}
+
 @MainActor
 private final class SidebarRevealRequestRecorder {
     private(set) var generations: [Int] = []
+    private(set) var purposes: [SidebarSelectedItemRevealOwner.Request.Purpose] = []
 
     func record(_ request: SidebarSelectedItemRevealOwner.Request?) {
         guard let request,
@@ -948,6 +1292,7 @@ private final class SidebarRevealRequestRecorder {
             return
         }
         generations.append(request.generation)
+        purposes.append(request.purpose)
     }
 }
 
@@ -1145,8 +1490,7 @@ private struct SidebarPresentedLayoutHarnessPublisher: View {
         }
         revealOwner?.updateAutofocusLayout(
             SidebarAutofocusLayout(
-                targets: targets,
-                contentHeight: CGFloat(itemIDs.count) * 40
+                targets: targets
             )
         )
     }

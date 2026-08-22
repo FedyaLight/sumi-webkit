@@ -41,6 +41,15 @@ not represented by a `Tab`, `SumiSurface`, WebView residence, or session URL.
 Restore admission removes legacy `sumi://settings` tab records so an upgrade
 cannot materialize the retired surface as a web page.
 
+## Sidebar selection visibility
+
+Sidebar selection autofocus keeps semantic selection separate from AppKit
+scroll geometry. The owner retains selection intent until native geometry can
+execute it, then verifies the landing while lazy content grows. Resize and
+fullscreen corrections reuse the same intent with instant motion. See
+[sidebar selection autofocus](architecture/sidebar-selection-autofocus.md) for
+the state-machine contract and scenario matrix.
+
 ## A UI Action Through the System
 
 Opening a page illustrates the normal direction of dependencies:

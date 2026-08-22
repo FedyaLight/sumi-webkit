@@ -181,14 +181,20 @@ final class SidebarTabListScrollRegistrationView: NSView {
         let documentHeight = documentView.bounds.height
         let maximumOffset = max(documentHeight - visibleHeight, 0)
         let rawY = scrollView.contentView.bounds.origin.y
-        let offset = documentView.isFlipped
+        let unclampedOffset = documentView.isFlipped
             ? rawY
             : maximumOffset - rawY
+        // Elastic overscroll reports offsets outside the reachable range;
+        // comparisons downstream treat them as truth, so clamp here.
+        let offset = min(max(unclampedOffset, 0), maximumOffset)
         let geometry = SidebarSelectedItemSurfaceGeometry(
             contentOffsetY: offset,
             viewportHeight: visibleHeight,
             contentHeight: documentHeight
         )
+        // Synchronous capture: reveal decisions read the live scroll position
+        // without waiting for the coalesced delivery hop.
+        surfaceObservation.geometryBox.latest = geometry
 
         if surfaceObservation.capturesLiveViewport {
             surfaceObservation.onLiveViewportChange(geometry.scrollViewport)

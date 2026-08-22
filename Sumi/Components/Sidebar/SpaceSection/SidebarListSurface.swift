@@ -132,8 +132,7 @@ struct SidebarListSurface<ID: Hashable, Payload, Content: View>: View {
 
         revealOwner.updateAutofocusLayout(
             SidebarAutofocusLayout(
-                targets: targets,
-                contentHeight: minY
+                targets: targets
             )
         )
     }

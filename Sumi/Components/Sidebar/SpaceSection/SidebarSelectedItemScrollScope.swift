@@ -1,5 +1,12 @@
 import SwiftUI
 
+/// Reference cell carrying the freshest native scroll geometry from the
+/// AppKit observer to synchronous reveal decisions.
+@MainActor
+final class SidebarSurfaceGeometryBox {
+    var latest: SidebarSelectedItemSurfaceGeometry?
+}
+
 struct SidebarScrollSurfaceObservation {
     let surfaceID: ObjectIdentifier?
     let capturesLiveViewport: Bool
@@ -9,18 +16,43 @@ struct SidebarScrollSurfaceObservation {
     let onGeometryChange: @MainActor (
         SidebarSelectedItemSurfaceGeometry
     ) -> Void
+    let geometryBox: SidebarSurfaceGeometryBox
 
     static let disabled = SidebarScrollSurfaceObservation(
         surfaceID: nil,
         capturesLiveViewport: false,
         onLiveViewportChange: { _ in },
-        onGeometryChange: { _ in }
+        onGeometryChange: { _ in },
+        geometryBox: SidebarSurfaceGeometryBox()
     )
 }
 
 private struct SidebarSelectedItemSelectionRequest: Equatable {
     let revealPath: SidebarSelectedItemRevealPath?
     let isEnabled: Bool
+}
+
+private struct SidebarViewportResizeObserver: View {
+    let onResize: @MainActor () -> Void
+
+    @State private var observedSize: CGSize?
+
+    var body: some View {
+        GeometryReader { proxy in
+            Color.clear
+                .task(id: proxy.size) {
+                    guard let observedSize else {
+                        self.observedSize = proxy.size
+                        return
+                    }
+                    guard observedSize != proxy.size else { return }
+                    self.observedSize = proxy.size
+                    onResize()
+                }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
 }
 
 /// Owns programmatic scrolling for one sidebar surface. The same native scroll
@@ -38,6 +70,7 @@ struct SidebarSelectedItemVisibilityScope<Content: View>: View {
     @State private var revealOwner: SidebarSelectedItemRevealOwner
     @State private var scrollPosition: ScrollPosition
     @State private var restorationState: SidebarScrollRestorationState
+    @State private var geometryBox = SidebarSurfaceGeometryBox()
 
     init(
         revealPath: SidebarSelectedItemRevealPath?,
@@ -99,7 +132,8 @@ struct SidebarSelectedItemVisibilityScope<Content: View>: View {
                 capturesLiveViewport: isEnabled
                     && revealOwner.isSurfaceReady,
                 onLiveViewportChange: onViewportChange,
-                onGeometryChange: handleSurfaceGeometry
+                onGeometryChange: handleSurfaceGeometry,
+                geometryBox: geometryBox
             )
         )
         .scrollPosition($scrollPosition)
@@ -114,6 +148,9 @@ struct SidebarSelectedItemVisibilityScope<Content: View>: View {
             )
         )
         .task(id: selectionRequest) {
+            revealOwner.setGeometryProvider { [geometryBox] in
+                geometryBox.latest
+            }
             guard isEnabled, let revealPath else {
                 revealOwner.cancelReveal()
                 return
@@ -123,6 +160,13 @@ struct SidebarSelectedItemVisibilityScope<Content: View>: View {
         .onChange(of: revealOwner.request) { _, request in
             guard isEnabled, let request else { return }
             reveal(request, with: proxy)
+        }
+        .background {
+            if isEnabled {
+                SidebarViewportResizeObserver(
+                    onResize: handleViewportResize
+                )
+            }
         }
     }
 
@@ -138,6 +182,11 @@ struct SidebarSelectedItemVisibilityScope<Content: View>: View {
 
         guard isEnabled, revealOwner.isSurfaceReady else { return }
         onViewportChange(geometry.scrollViewport)
+    }
+
+    private func handleViewportResize() {
+        guard isEnabled, revealOwner.isSurfaceReady else { return }
+        revealOwner.revealLastSelectionWithoutAnimation()
     }
 
     private func acknowledgePresentedSurface(
@@ -160,11 +209,12 @@ struct SidebarSelectedItemVisibilityScope<Content: View>: View {
         _ request: SidebarSelectedItemRevealOwner.Request,
         with proxy: ScrollViewProxy?
     ) {
+        let selectionAnimation = request.purpose.usesSelectionAnimation
+            ? SidebarMotionPolicy.selectedItemRevealAnimation(for: motionMode)
+            : nil
+
         if let destinationY = request.destinationY {
-            let animation = SidebarMotionPolicy.selectedItemRevealAnimation(
-                for: motionMode
-            )
-            if let animation {
+            if let animation = selectionAnimation {
                 withAnimation(animation) {
                     scrollPosition.scrollTo(y: destinationY)
                 }
@@ -177,10 +227,7 @@ struct SidebarSelectedItemVisibilityScope<Content: View>: View {
         }
 
         guard let proxy else { return }
-        let animation = request.purpose == .revealSelection
-            ? SidebarMotionPolicy.selectedItemRevealAnimation(for: motionMode)
-            : nil
-        if let animation {
+        if let animation = selectionAnimation {
             withAnimation(animation) {
                 proxy.scrollTo(request.targetID)
             }
