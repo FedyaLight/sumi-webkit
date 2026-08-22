@@ -6,44 +6,6 @@ import XCTest
 
 @MainActor
 final class SidebarSpacePinnedCollapseStateTests: XCTestCase {
-    func testExpandedDisclosurePresentsEveryPinnedIdentityInOrder() {
-        let first = UUID()
-        let second = UUID()
-        let items: [SpacePinnedListItem] = [
-            .shortcut(first),
-            .folder(second),
-        ]
-
-        XCTAssertEqual(
-            SpacePinnedDisclosureProjection.items(
-                isCollapsed: false,
-                pinnedItems: items,
-                stickyItemIDs: [second],
-                knownNestedItemIDs: []
-            ),
-            items.map(SpacePinnedDisclosureItem.pinned)
-        )
-    }
-
-    func testCollapsedDisclosureHasNestedStickyDestinationOnFirstFrame() {
-        let topLevel = UUID()
-        let nested = UUID()
-        let unknown = UUID()
-
-        XCTAssertEqual(
-            SpacePinnedDisclosureProjection.items(
-                isCollapsed: true,
-                pinnedItems: [.shortcut(topLevel)],
-                stickyItemIDs: [nested, topLevel, unknown],
-                knownNestedItemIDs: [nested]
-            ),
-            [
-                .nestedSticky(nested),
-                .pinned(.shortcut(topLevel)),
-            ]
-        )
-    }
-
     func testCollapsedSpacesAreWindowLocalAndCanonicallySorted() {
         let firstID = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
         let secondID = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!

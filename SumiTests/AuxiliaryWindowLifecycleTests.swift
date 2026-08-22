@@ -100,42 +100,6 @@ final class AuxiliaryWindowLifecycleTests: XCTestCase {
         harness.browserManager.auxiliaryWindows.teardown.closeAll(reason: .bulkCleanup)
     }
 
-    func testWeakExtensionEventsFailClosedAfterEventRootDeallocation() throws {
-        let harness = makeHarness()
-        let popupWebView = try XCTUnwrap(
-            harness.browserManager.auxiliaryWindows.popups.presentWebPopup(
-                configuration: WKWebViewConfiguration(),
-                request: URLRequest(
-                    url: URL(string: "https://example.com/popup")!
-                ),
-                windowFeatures: WKWindowFeatures(),
-                openerTab: harness.sourceTab
-            )
-        )
-        defer {
-            harness.browserManager.auxiliaryWindows.teardownAuxiliaryWindowForTesting(
-                popupWebView,
-                reason: .bulkCleanup
-            )
-        }
-        let session = try XCTUnwrap(
-            harness.browserManager.auxiliaryWindows.sessions.session(
-                for: popupWebView
-            )
-        )
-        var eventRoot: AuxiliaryWindowExtensionEventProbe? =
-            AuxiliaryWindowExtensionEventProbe()
-        weak let weakEventRoot = eventRoot
-        let events = WeakAuxiliaryWindowExtensionEvents(
-            target: try XCTUnwrap(eventRoot)
-        )
-
-        eventRoot = nil
-
-        XCTAssertNil(weakEventRoot)
-        XCTAssertFalse(events.notifyAuxiliaryWindowOpened(session))
-    }
-
     func testCloseAllForExtensionIdRemovesRegisteredMiniWindowAdapter()
         async throws {
         let harness = try await makeExtensionHarness(

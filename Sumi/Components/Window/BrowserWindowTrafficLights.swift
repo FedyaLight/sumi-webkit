@@ -7,22 +7,6 @@ enum BrowserWindowControlsAccessibilityIdentifiers {
     static let zoomButton = "browser-window-zoom-button"
 }
 
-/// Pure validation helpers for geometry measured from AppKit's live standard buttons.
-enum BrowserWindowTrafficLightGeometry {
-    static func measuredClusterWidth(fromNativeFrames frames: [CGRect]) -> CGFloat? {
-        guard frames.count == BrowserWindowTrafficLightAction.allCases.count,
-              frames.allSatisfy({ $0.width > 0 && $0.height > 0 })
-        else { return nil }
-
-        let sortedFrames = frames.sorted { $0.midX < $1.midX }
-        guard zip(sortedFrames, sortedFrames.dropFirst()).allSatisfy({ $1.midX > $0.midX })
-        else { return nil }
-
-        let bounds = sortedFrames.reduce(CGRect.null) { $0.union($1) }
-        return bounds.isNull ? nil : bounds.width
-    }
-}
-
 enum BrowserWindowTrafficLightMetrics {
     static let clusterHeight: CGFloat = 30
     static let clusterTrailingInset: CGFloat = 4

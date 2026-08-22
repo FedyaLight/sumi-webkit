@@ -323,15 +323,3 @@ enum SumiImportTransactionJournalError: LocalizedError {
         }
     }
 }
-
-struct SumiImportTransactionJournalFileFailure: LocalizedError {
-    let operationError: Error
-    let cleanupErrors: [Error]
-
-    var errorDescription: String? {
-        let cleanupDescription = cleanupErrors
-            .map(\.localizedDescription)
-            .joined(separator: "; ")
-        return "Import journal operation failed: \(operationError.localizedDescription) Cleanup also reported \(cleanupErrors.count) error(s): \(cleanupDescription)"
-    }
-}

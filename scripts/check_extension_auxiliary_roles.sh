@@ -71,7 +71,6 @@ loading='Sumi/Managers/ExtensionManager/ExtensionContextLoadingOwner.swift'
 settlement='Sumi/Managers/ExtensionManager/ExtensionContextSettlementOwner.swift'
 deferred='Sumi/Managers/ExtensionManager/ExtensionDeferredRuntimeOwnerStore.swift'
 
-weak_events='Sumi/AuxiliaryWindows/WeakAuxiliaryWindowExtensionEvents.swift'
 browser_aux='Sumi/AuxiliaryWindows/BrowserAuxiliaryWindowComposition.swift'
 session_registry='Sumi/AuxiliaryWindows/AuxiliaryWindowSessionRegistry.swift'
 teardown='Sumi/AuxiliaryWindows/AuxiliaryWindowTeardownService.swift'
@@ -94,7 +93,7 @@ compact_window='Sumi/Components/Window/AuxiliaryCompactWindow.swift'
 window_router='Sumi/Managers/ExtensionManager/ExtensionWindowRequestRouter.swift'
 for file in "$bridge" "$opening" "$opening_runtime" "$initial" "$content" "$profile_tasks" "$native" \
   "$residency" "$retention" "$loading" "$settlement" "$deferred" \
-  "$weak_events" "$browser_aux" "$session_registry" "$teardown" \
+  "$browser_aux" "$session_registry" "$teardown" \
   "$ui_delegate" "$extension_opening" "$popup_opening" "$extension_bridge" \
   "$extension_window_adapter" "$extension_mini_window_adapter" \
   "$state_coordinator" "$manager_support" \
@@ -322,7 +321,6 @@ if scan_has_matches 'presentExtensionExternalWebPopup' \
   echo 'error: dead external popup forwarding capability returned to extension presentation' >&2
   exit 1
 fi
-require_matches 'private weak var target' "$weak_events"
 require_matches 'events: auxiliaryEvents' \
   Sumi/Managers/ExtensionManager/ExtensionRequestedTabCallbackSurfaceFactory.swift
 require_matches -F 'let extensionEvents: (any AuxiliaryWindowExtensionEventHandling)?' \
@@ -341,8 +339,6 @@ require_matches 'private struct ScheduledTask' "$profile_tasks"
 require_matches 'tasksByProfile\[profileID\]\?\.token == token' "$profile_tasks"
 require_matches 'retiredTokens' "$profile_tasks"
 require_matches 'ExtensionProfileRuntimeTaskOwner' "$content" "$native"
-require_matches -F 'target?.notifyAuxiliaryWindowOpened(session) ?? false' "$weak_events"
-
 if scan_has_matches 'private (weak|unowned) var manager|private unowned let manager' \
   "$initial" "$native" "$retention" "$loading" "$settlement" "$deferred"; then
   echo 'error: auxiliary role regained an ExtensionManager backreference' >&2

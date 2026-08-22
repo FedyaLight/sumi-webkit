@@ -169,56 +169,6 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         }
     }
 
-    // MARK: - Native geometry
-
-    func testTrafficLightGeometryMeasuresNativeClusterWidth() {
-        // Frames as macOS 26 lays the cluster out in NSTitlebarView.
-        let clusterWidth = BrowserWindowTrafficLightGeometry.measuredClusterWidth(
-            fromNativeFrames: [
-            NSRect(x: 9, y: 9, width: 14, height: 14),
-            NSRect(x: 32, y: 9, width: 14, height: 14),
-            NSRect(x: 55, y: 9, width: 14, height: 14),
-            ]
-        )
-
-        XCTAssertEqual(clusterWidth, 60)
-    }
-
-    func testTrafficLightGeometryToleratesAClusterAppKitLaysOutUnevenly() {
-        // The zoom button carries a compact menu and is not always sized or pitched like its
-        // neighbours. Nothing computes button positions from this measurement any more — it only
-        // reserves room — so an uneven cluster has to measure rather than fall back.
-        let clusterWidth = BrowserWindowTrafficLightGeometry.measuredClusterWidth(
-            fromNativeFrames: [
-                NSRect(x: 9, y: 9, width: 14, height: 14),
-                NSRect(x: 32, y: 9, width: 14, height: 14),
-                NSRect(x: 55, y: 8, width: 18, height: 16),
-            ]
-        )
-
-        XCTAssertEqual(clusterWidth, 64)
-    }
-
-    func testTrafficLightGeometryRejectsFramesThatCannotDescribeACluster() {
-        let square = NSRect(x: 0, y: 0, width: 14, height: 14)
-
-        XCTAssertNil(BrowserWindowTrafficLightGeometry.measuredClusterWidth(fromNativeFrames: []))
-        XCTAssertNil(BrowserWindowTrafficLightGeometry.measuredClusterWidth(fromNativeFrames: [square, square]))
-        XCTAssertNil(BrowserWindowTrafficLightGeometry.measuredClusterWidth(fromNativeFrames: [
-            .zero, .zero, .zero,
-        ]))
-        // Buttons still collapsed to a zero-height frame before their first layout.
-        XCTAssertNil(BrowserWindowTrafficLightGeometry.measuredClusterWidth(fromNativeFrames: [
-            NSRect(x: 9, y: 9, width: 14, height: 0),
-            NSRect(x: 32, y: 9, width: 14, height: 0),
-            NSRect(x: 55, y: 9, width: 14, height: 0),
-        ]))
-        // Buttons stacked rather than laid out left to right.
-        XCTAssertNil(BrowserWindowTrafficLightGeometry.measuredClusterWidth(fromNativeFrames: [
-            square, square, square,
-        ]))
-    }
-
     func testSystemPlaceholderGeometryComesFromAppKit() throws {
         let snapshot = try XCTUnwrap(
             BrowserWindowTrafficLightSnapshotStore.snapshot()
