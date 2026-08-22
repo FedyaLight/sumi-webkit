@@ -2257,4 +2257,18 @@ extension SumiLaunchSmokeUITestCase {
             markerURL: sidebarDragMarkerFileURL()
         ).flatMap { markerField(named: "view", in: $0) }
     }
+
+    /// Fails the test unless `element` satisfies `predicate` within `timeout`.
+    func wait(
+        for predicate: NSPredicate,
+        on element: XCUIElement,
+        timeout: TimeInterval,
+        message: @autoclosure () -> String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
+        let result = XCTWaiter().wait(for: [expectation], timeout: timeout)
+        XCTAssertEqual(result, .completed, message(), file: file, line: line)
+    }
 }

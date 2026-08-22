@@ -294,18 +294,4 @@ final class SumiExtensionPopupOptionsUITests: SumiLaunchSmokeUITestCase {
     private func sha256(_ data: Data) -> String {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
-
-    private func wait(
-        for predicate: NSPredicate,
-        on element: XCUIElement,
-        timeout: TimeInterval,
-        message: @autoclosure () -> String
-    ) {
-        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
-        XCTAssertEqual(
-            XCTWaiter().wait(for: [expectation], timeout: timeout),
-            .completed,
-            message()
-        )
-    }
 }

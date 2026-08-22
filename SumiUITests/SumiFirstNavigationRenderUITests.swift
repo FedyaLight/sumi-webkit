@@ -172,15 +172,4 @@ final class SumiFirstNavigationRenderUITests: SumiLaunchSmokeUITestCase {
         }
         throw FixtureError.missingValue("Input source \(id) did not become current")
     }
-
-    private func wait(
-        for predicate: NSPredicate,
-        on element: XCUIElement,
-        timeout: TimeInterval,
-        message: @autoclosure () -> String
-    ) {
-        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
-        let result = XCTWaiter().wait(for: [expectation], timeout: timeout)
-        XCTAssertEqual(result, .completed, message())
-    }
 }

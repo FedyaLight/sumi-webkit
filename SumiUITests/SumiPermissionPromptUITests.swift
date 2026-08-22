@@ -146,18 +146,4 @@ final class SumiPermissionPromptUITests: SumiLaunchSmokeUITestCase {
             NSPredicate(format: "value == %@ OR label == %@", label, label)
         ).firstMatch
     }
-
-    private func wait(
-        for predicate: NSPredicate,
-        on element: XCUIElement,
-        timeout: TimeInterval,
-        message: @autoclosure () -> String
-    ) {
-        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
-        XCTAssertEqual(
-            XCTWaiter().wait(for: [expectation], timeout: timeout),
-            .completed,
-            message()
-        )
-    }
 }

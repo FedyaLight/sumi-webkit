@@ -63,14 +63,4 @@ final class PrivateWindowUITests: SumiLaunchSmokeUITestCase {
         let rendered = renderedDocument.waitForExistence(timeout: 25)
         XCTAssertTrue(rendered, "The private window never rendered the fixture page")
     }
-
-    private func wait(
-        for predicate: NSPredicate,
-        on element: XCUIElement,
-        timeout: TimeInterval,
-        message: @autoclosure () -> String
-    ) {
-        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: element)
-        XCTAssertEqual(XCTWaiter().wait(for: [expectation], timeout: timeout), .completed, message())
-    }
 }
