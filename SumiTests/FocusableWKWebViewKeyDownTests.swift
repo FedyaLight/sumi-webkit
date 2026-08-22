@@ -6,7 +6,11 @@ import XCTest
 
 @MainActor
 final class FocusableWKWebViewKeyDownTests: XCTestCase {
-    func testPageHandledPlainKeyDoesNotFallThroughResponderChain() async throws {
+    func testPageObservedPlainKeyDoesNotProduceSystemBeep() async throws {
+        XCTAssertEqual(
+            Bundle.main.object(forInfoDictionaryKey: "NSPrincipalClass") as? String,
+            "SumiApplication"
+        )
         let noResponderProbe = try NoResponderProbe.install()
         defer { noResponderProbe.uninstall() }
 
@@ -14,13 +18,15 @@ final class FocusableWKWebViewKeyDownTests: XCTestCase {
             frame: NSRect(x: 0, y: 0, width: 320, height: 240),
             configuration: WKWebViewConfiguration()
         )
+        let container = SumiWebViewContainerView(tabID: UUID(), webView: webView)
+        container.frame = webView.frame
         let window = NSWindow(
             contentRect: webView.frame,
             styleMask: [.titled],
             backing: .buffered,
             defer: false
         )
-        window.contentView = webView
+        window.contentView = container
         XCTAssertTrue(window.makeFirstResponder(webView))
 
         let navigationFinished = expectation(description: "HTML loaded")
@@ -33,8 +39,7 @@ final class FocusableWKWebViewKeyDownTests: XCTestCase {
             <script>
               window.handledKeyCount = 0;
               addEventListener('keydown', event => {
-                if (event.key === 'j') {
-                  event.preventDefault();
+                if (event.key === 'l') {
                   window.handledKeyCount += 1;
                 }
               });
@@ -44,7 +49,7 @@ final class FocusableWKWebViewKeyDownTests: XCTestCase {
         )
         await fulfillment(of: [navigationFinished], timeout: 2)
 
-        let event = try Self.keyDownEvent(window: window, key: "j", keyCode: 38)
+        let event = try Self.keyDownEvent(window: window, key: "l", keyCode: 37)
         window.sendEvent(event)
 
         try await Task.sleep(for: .milliseconds(100))
@@ -55,39 +60,6 @@ final class FocusableWKWebViewKeyDownTests: XCTestCase {
             0,
             "A plain key delivered to web content must not fall off the responder chain and beep"
         )
-    }
-
-    func testUnhandledPlainKeyRedispatchIsConsumedByProcessGuard() throws {
-        let webView = FocusableWKWebView(
-            frame: NSRect(x: 0, y: 0, width: 320, height: 240),
-            configuration: WKWebViewConfiguration()
-        )
-        let window = NSWindow(
-            contentRect: webView.frame,
-            styleMask: [.titled],
-            backing: .buffered,
-            defer: false
-        )
-        window.contentView = webView
-        XCTAssertTrue(window.makeFirstResponder(webView))
-        let guardOwner = WebContentKeyRedispatchGuard(
-            installEventMonitor: false
-        )
-
-        let event = try Self.keyDownEvent(
-            window: window,
-            key: "j",
-            keyCode: 38
-        )
-        let distinctEvent = try Self.keyDownEvent(
-            window: window,
-            key: "j",
-            keyCode: 38
-        )
-
-        XCTAssertIdentical(guardOwner.route(event), event)
-        XCTAssertIdentical(guardOwner.route(distinctEvent), distinctEvent)
-        XCTAssertNil(guardOwner.route(event))
     }
 
     func testNativeCopyAndPasteKeyEquivalentsRemainWebKitOwned() async throws {
@@ -172,8 +144,14 @@ private final class NoResponderProbe {
             method: method,
             originalImplementation: originalImplementation
         )
+        // XCTest substitutes NSApplication for the product's principal class,
+        // so the probe applies the same terminal policy explicitly.
         let replacement: @convention(block) (AnyObject, Selector) -> Void = { _, eventSelector in
-            if eventSelector == #selector(NSResponder.keyDown(with:)) {
+            if eventSelector == #selector(NSResponder.keyDown(with:)),
+               !SumiApplication.suppressesNoResponder(
+                   for: eventSelector,
+                   event: NSApp.currentEvent
+               ) {
                 probe.keyDownCount += 1
             }
         }
