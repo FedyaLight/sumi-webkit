@@ -47,14 +47,4 @@ final class ShortcutSplitLauncherMoveTransaction {
             folderOpenState: folderOpenState
         )
     }
-
-    func stageForComposedResidenceAggregate(
-        _ preparedMoves: [PreparedShortcutSplitLauncherMove],
-        bindingMode: ShortcutSplitLauncherComposedBindingMode
-    ) -> (any ShortcutSplitLauncherComposedMoveBatchParticipant)? {
-        batches.prepareForComposedResidenceAggregate(
-            preparedMoves,
-            bindingMode: bindingMode
-        )
-    }
 }

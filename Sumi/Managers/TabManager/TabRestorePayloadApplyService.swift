@@ -22,20 +22,17 @@ final class TabRestorePayloadApplyService {
     private let tabFactory: TabFactory
     private let structuralInstaller: TabStructuralInstallOwner
     private let runtimePreparation: TabRuntimePreparationOwner
-    private let lazyRestore: TabLazyRestoreCoordinator
     private let persistence: TabStructuralPersistenceService
 
     init(
         tabFactory: TabFactory,
         structuralInstaller: TabStructuralInstallOwner,
         runtimePreparation: TabRuntimePreparationOwner,
-        lazyRestore: TabLazyRestoreCoordinator,
         persistence: TabStructuralPersistenceService
     ) {
         self.tabFactory = tabFactory
         self.structuralInstaller = structuralInstaller
         self.runtimePreparation = runtimePreparation
-        self.lazyRestore = lazyRestore
         self.persistence = persistence
     }
 
@@ -76,7 +73,6 @@ final class TabRestorePayloadApplyService {
             currentTab: currentTab,
             admitted: admitted,
             onInstalled: {
-                self.lazyRestore.reset(restoredTabIDs: Set(tabs.map(\.id)))
                 self.persistence.settleAfterRestoredStateInstallation()
                 let payload = InstalledPayload(
                     repair: self.makeRepair(

@@ -5,27 +5,11 @@ extension ShortcutSplitLauncherMoveBatchStaging {
     func preflightBindingContribution(
         _ preparedMoves: [PreparedShortcutSplitLauncherMove]
     ) -> ShortcutSplitLauncherBindingPreflight? {
-        preflightBindingContribution(
-            preparedMoves,
-            bindingMode: .preservingLiveBindings
-        )
-    }
-
-    func preflightBindingContribution(
-        _ preparedMoves: [PreparedShortcutSplitLauncherMove],
-        bindingMode: ShortcutSplitLauncherComposedBindingMode
-    ) -> ShortcutSplitLauncherBindingPreflight? {
         guard Set(preparedMoves.map { $0.pin.id }).count == preparedMoves.count,
               preparedMoves.allSatisfy({ catalog.isCurrent($0.pin) }) else {
             return nil
         }
         let bindingBatch = bindingStaging.beginBatch()
-        let exclusion: ShortcutLiveRetirementBindingExclusion?
-        switch bindingMode {
-        case .preservingLiveBindings: exclusion = nil
-        case .consumingExactRetirement(let value): exclusion = value
-        }
-        var didConsumeExclusion = exclusion == nil
         let entries = preparedMoves.compactMap { preparedMove in
             guard let preview = catalog.preview(
                 preparedMove.pin,
@@ -36,23 +20,9 @@ extension ShortcutSplitLauncherMoveBatchStaging {
             guard let admitted = bindingBatch.admission(for: preview) else {
                 return nil as ShortcutSplitLauncherBindingPreflight.Entry?
             }
-            let admission: LiveShortcutPresentationRefreshAdmission
-            if let exclusion, exclusion.belongs(to: preview) {
-                guard didConsumeExclusion == false,
-                      let filtered = admitted.consuming(
-                          exclusion,
-                          for: preview
-                      ) else {
-                    return nil as ShortcutSplitLauncherBindingPreflight.Entry?
-                }
-                admission = filtered
-                didConsumeExclusion = true
-            } else {
-                admission = admitted
-            }
             guard let binding = bindingBatch.prepare(
                    pin: preview,
-                   admission: admission
+                   admission: admitted
                ) else {
                 return nil as ShortcutSplitLauncherBindingPreflight.Entry?
             }
@@ -61,8 +31,7 @@ extension ShortcutSplitLauncherMoveBatchStaging {
                 binding: binding
             )
         }
-        guard entries.count == preparedMoves.count,
-              didConsumeExclusion else { return nil }
+        guard entries.count == preparedMoves.count else { return nil }
         return ShortcutSplitLauncherBindingPreflight(
             catalog: catalog,
             bindingBatch: bindingBatch,

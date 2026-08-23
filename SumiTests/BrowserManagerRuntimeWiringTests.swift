@@ -143,89 +143,14 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         let suspensionRuntime = BrowserTabSuspensionRuntimeFactory.ports(
             windowRegistry: { windowRegistry },
             regularTabs: browserManager.tabCollectionMembershipOwner,
-            lazyRestore: browserManager.lazyRestoreCoordinator,
             windowTabs: browserManager.shellRuntime.windowTabs,
             splitQuery: browserManager.splitWindowContext.query,
-            canStartLazyRestore: { true },
             webView: .inactive
         )
         let selectedTabIDs = suspensionRuntime.context.selectedTabIDs()
 
         XCTAssertEqual(selectedTabIDs, [selectedTab.id])
         XCTAssertFalse(selectedTabIDs.contains(staleGlobalTab.id))
-    }
-
-    func testLazyRestoreWaitsForStartupProtectionReadiness() throws {
-        let windowRegistry = WindowRegistry()
-        let browserManager = BrowserManager(
-            windowRegistry: windowRegistry,
-            startupPersistence: BrowserManagerStartupPersistence(
-                database: try makeInMemoryStartupContainer()
-            )
-        )
-        let space = browserManager.spaceStateOwner.currentSpace
-            ?? installTestSpace(
-                in: browserManager.spaceStateOwner,
-                name: "Protected startup"
-            )
-        let selectedTab = browserManager.regularTabLifecycleOwner.createNewTab(
-            url: "https://selected.example",
-            in: space,
-            activate: false
-        )
-        let adjacentTab = browserManager.regularTabLifecycleOwner.createNewTab(
-            url: "https://adjacent.example",
-            in: space,
-            activate: false
-        )
-        var canStartLazyRestore = false
-        var startedTabIDs: [UUID] = []
-        let lazyRestore = TabLazyRestoreCoordinator(
-            spaces: browserManager.spaceStateOwner,
-            regularTabs: browserManager.tabStateStore.regularTabs,
-            membership: browserManager.tabCollectionMembershipOwner,
-            policy: TabLazyRestorePolicy(
-                maxTotalOpportunisticTabs: 1,
-                maxAdjacentTabsPerAnchor: 1,
-                maxConcurrentLoads: 1
-            ),
-            loadWebView: { tab, _ in
-                startedTabIDs.append(tab.id)
-            }
-        )
-        lazyRestore.reset(restoredTabIDs: [selectedTab.id, adjacentTab.id])
-
-        let windowState = BrowserWindowState()
-        browserManager.tabResidenceAuthority.establishResidenceSession(
-            on: windowState
-        )
-        windowState.currentSpaceId = space.id
-        windowState.currentTabId = selectedTab.id
-        windowRegistry.register(windowState)
-        windowRegistry.setActive(windowState)
-        defer { windowRegistry.unregister(windowState.id) }
-
-        let suspensionRuntime = BrowserTabSuspensionRuntimeFactory.ports(
-            windowRegistry: { windowRegistry },
-            regularTabs: browserManager.tabCollectionMembershipOwner,
-            lazyRestore: lazyRestore,
-            windowTabs: browserManager.shellRuntime.windowTabs,
-            splitQuery: browserManager.splitWindowContext.query,
-            canStartLazyRestore: { canStartLazyRestore },
-            webView: .inactive
-        )
-        let context = TabSuspensionEvaluationContext(
-            visibleTabIDs: [selectedTab.id],
-            selectedTabIDs: [selectedTab.id],
-            policy: TabSuspensionPolicy(memoryMode: .balanced)
-        )
-
-        suspensionRuntime.catalog.refreshLazyRestoreQueue(context)
-        XCTAssertTrue(startedTabIDs.isEmpty)
-
-        canStartLazyRestore = true
-        suspensionRuntime.catalog.refreshLazyRestoreQueue(context)
-        XCTAssertEqual(startedTabIDs, [adjacentTab.id])
     }
 
     func compositorManagerCanUseAttachedRuntime(_ browserManager: BrowserManager) -> Bool {

@@ -77,8 +77,10 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
         let selectedTab = makeTab(in: harness.space, manager: harness.manager)
         installSelection(previousTab, in: harness.window)
         let identity = harness.window.windowThemeState.beginInteractive(
-            sourceSpaceId: harness.space.id,
-            destinationSpaceId: destination.id,
+            identity: SpaceTransitionIdentity(
+                sourceSpaceId: harness.space.id,
+                destinationSpaceId: destination.id
+            ),
             from: harness.space.workspaceTheme,
             to: destination.workspaceTheme,
             initialProgress: 0.2
@@ -136,8 +138,10 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
         )
         installSelection(previousTab, in: harness.window)
         harness.window.windowThemeState.beginInteractive(
-            sourceSpaceId: harness.space.id,
-            destinationSpaceId: transitionDestination.id,
+            identity: SpaceTransitionIdentity(
+                sourceSpaceId: harness.space.id,
+                destinationSpaceId: transitionDestination.id
+            ),
             from: harness.space.workspaceTheme,
             to: transitionDestination.workspaceTheme,
             initialProgress: 0.2

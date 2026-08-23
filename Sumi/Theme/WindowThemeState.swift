@@ -86,25 +86,6 @@ struct WindowThemeState: Equatable {
 
     @discardableResult
     mutating func beginInteractive(
-        sourceSpaceId: UUID,
-        destinationSpaceId: UUID,
-        from sourceTheme: WorkspaceTheme,
-        to destinationTheme: WorkspaceTheme,
-        initialProgress: Double
-    ) -> SpaceTransitionIdentity {
-        beginInteractive(
-            identity: SpaceTransitionIdentity(
-                sourceSpaceId: sourceSpaceId,
-                destinationSpaceId: destinationSpaceId
-            ),
-            from: sourceTheme,
-            to: destinationTheme,
-            initialProgress: initialProgress
-        )
-    }
-
-    @discardableResult
-    mutating func beginInteractive(
         identity: SpaceTransitionIdentity,
         from sourceTheme: WorkspaceTheme,
         to destinationTheme: WorkspaceTheme,

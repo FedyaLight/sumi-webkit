@@ -11,8 +11,7 @@ extension WindowSplitPresentationSynchronizer {
         preferredSelections: [UUID: WindowSplitSelection],
         insertionPreview: ShortcutPresentationCatalogInsertionPreview,
         residenceContribution: DisplayedShortcutResidenceContribution,
-        requiredWindows: [UUID: BrowserWindowState],
-        terminalParticipants: WindowSplitPresentationTerminalParticipants
+        requiredWindows: [UUID: BrowserWindowState]
     ) -> PreparedWindowSplitPresentationSettlement? {
         prepareSettlement(
             previousGroups: previousGroups,
@@ -27,7 +26,6 @@ extension WindowSplitPresentationSynchronizer {
                 residenceContribution
             ),
             requiredWindows: requiredWindows,
-            terminalParticipants: terminalParticipants,
             sessionWriteUrgency: .scheduled
         )
     }
@@ -71,7 +69,6 @@ final class WindowSplitPresentationSynchronizer {
         unavailableMembers: [UUID: Set<SplitMemberID>] = [:],
         preferredSelections: [UUID: WindowSplitSelection] = [:],
         requiredWindows: [UUID: BrowserWindowState] = [:],
-        terminalParticipants: WindowSplitPresentationTerminalParticipants,
         sessionWriteUrgency: WindowSplitSessionWriteUrgency = .scheduled
     ) -> PreparedWindowSplitPresentationSettlement? {
         prepareSettlement(
@@ -84,7 +81,6 @@ final class WindowSplitPresentationSynchronizer {
             preferredSelections: preferredSelections,
             activationSource: .canonical,
             requiredWindows: requiredWindows,
-            terminalParticipants: terminalParticipants,
             sessionWriteUrgency: sessionWriteUrgency
         )
     }
@@ -98,7 +94,6 @@ final class WindowSplitPresentationSynchronizer {
         unavailableMembers: [UUID: Set<SplitMemberID>] = [:],
         preferredSelections: [UUID: WindowSplitSelection] = [:],
         requiredWindows: [UUID: BrowserWindowState] = [:],
-        terminalParticipants: WindowSplitPresentationTerminalParticipants,
         sessionWriteUrgency: WindowSplitSessionWriteUrgency = .scheduled
     ) -> PreparedWindowSplitPresentationSettlement? {
         prepareSettlement(
@@ -111,7 +106,6 @@ final class WindowSplitPresentationSynchronizer {
             preferredSelections: preferredSelections,
             activationSource: .canonical,
             requiredWindows: requiredWindows,
-            terminalParticipants: terminalParticipants,
             sessionWriteUrgency: sessionWriteUrgency
         )
     }
@@ -126,7 +120,6 @@ final class WindowSplitPresentationSynchronizer {
         preferredSelections: [UUID: WindowSplitSelection],
         activationSource: WindowSplitPresentationActivationSource,
         requiredWindows: [UUID: BrowserWindowState],
-        terminalParticipants: WindowSplitPresentationTerminalParticipants,
         sessionWriteUrgency: WindowSplitSessionWriteUrgency
     ) -> PreparedWindowSplitPresentationSettlement? {
         preparation.prepare(
@@ -142,8 +135,7 @@ final class WindowSplitPresentationSynchronizer {
             ),
             currentGroups: currentGroups,
             activationSource: activationSource,
-            terminalEffects: terminalEffects,
-            terminalParticipants: terminalParticipants
+            terminalEffects: terminalEffects
         )
     }
 

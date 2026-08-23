@@ -43,7 +43,6 @@ struct SumiGitHubLiveFolderProvider: Sendable {
         } catch let providerFailure as ProviderFailure {
             return failure(
                 providerFailure.kind,
-                retryAfter: providerFailure.retryAfter,
                 response: providerFailure.response,
                 githubDashboardMode: providerFailure.dashboardMode
             )
@@ -160,7 +159,6 @@ struct SumiGitHubLiveFolderProvider: Sendable {
         if response.statusCode == 429 {
             throw ProviderFailure(
                 kind: .rateLimited,
-                retryAfter: response.retryAfter,
                 response: response,
                 dashboardMode: dashboardMode
             )
@@ -168,7 +166,6 @@ struct SumiGitHubLiveFolderProvider: Sendable {
         guard (200..<300).contains(response.statusCode) else {
             throw ProviderFailure(
                 kind: .network,
-                retryAfter: response.retryAfter,
                 response: response,
                 dashboardMode: dashboardMode
             )
@@ -177,18 +174,15 @@ struct SumiGitHubLiveFolderProvider: Sendable {
 
     private struct ProviderFailure: Error {
         let kind: SumiLiveFolderErrorKind
-        let retryAfter: Date?
         let response: SumiLiveFolderHTTPResponse?
         let dashboardMode: SumiGitHubDashboardMode?
 
         init(
             kind: SumiLiveFolderErrorKind,
-            retryAfter: Date? = nil,
             response: SumiLiveFolderHTTPResponse? = nil,
             dashboardMode: SumiGitHubDashboardMode?
         ) {
             self.kind = kind
-            self.retryAfter = retryAfter
             self.response = response
             self.dashboardMode = dashboardMode
         }
@@ -512,12 +506,11 @@ struct SumiGitHubLiveFolderProvider: Sendable {
 
     private func failure(
         _ kind: SumiLiveFolderErrorKind,
-        retryAfter: Date? = nil,
         response: SumiLiveFolderHTTPResponse? = nil,
         githubDashboardMode: SumiGitHubDashboardMode? = nil
     ) -> SumiLiveFolderProviderResponse {
         SumiLiveFolderProviderResponse(
-            outcome: .failure(kind, retryAfter: retryAfter),
+            outcome: .failure(kind),
             etag: response?.etag,
             lastModified: response?.lastModified,
             githubDashboardMode: githubDashboardMode

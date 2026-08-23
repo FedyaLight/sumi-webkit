@@ -6,7 +6,32 @@ struct SumiLiveFolderHTTPResponse: Sendable {
     var mimeType: String?
     var etag: String?
     var lastModified: String?
-    var retryAfter: Date?
+}
+
+enum HTTPDateParser {
+    static func parse(_ string: String) -> Date? {
+        for formatter in formatters {
+            if let date = formatter.date(from: string) {
+                return date
+            }
+        }
+        return nil
+    }
+
+    private static let formatters: [DateFormatter] = {
+        let formats = [
+            "EEE',' dd MMM yyyy HH':'mm':'ss zzz",
+            "EEEE',' dd-MMM-yy HH':'mm':'ss zzz",
+            "EEE MMM d HH':'mm':'ss yyyy",
+        ]
+        return formats.map { format in
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = TimeZone(secondsFromGMT: 0)
+            formatter.dateFormat = format
+            return formatter
+        }
+    }()
 }
 
 final class SumiLiveFolderNetworkClient: @unchecked Sendable {
@@ -71,8 +96,7 @@ final class SumiLiveFolderNetworkClient: @unchecked Sendable {
                 statusCode: httpResponse.statusCode,
                 mimeType: httpResponse.mimeType,
                 etag: httpResponse.value(forHTTPHeaderField: "ETag"),
-                lastModified: httpResponse.value(forHTTPHeaderField: "Last-Modified"),
-                retryAfter: Self.retryAfterDate(from: httpResponse)
+                lastModified: httpResponse.value(forHTTPHeaderField: "Last-Modified")
             )
         } catch let error as FetchError {
             throw error
@@ -99,45 +123,4 @@ final class SumiLiveFolderNetworkClient: @unchecked Sendable {
             || mimeType == "application/rss+xml"
             || mimeType == "application/atom+xml"
     }
-
-    private static func retryAfterDate(from response: HTTPURLResponse) -> Date? {
-        guard let retryAfter = response.value(forHTTPHeaderField: "Retry-After") else {
-            if let reset = response.value(forHTTPHeaderField: "X-RateLimit-Reset"),
-               let interval = TimeInterval(reset) {
-                return Date(timeIntervalSince1970: interval)
-            }
-            return nil
-        }
-
-        if let seconds = TimeInterval(retryAfter) {
-            return Date().addingTimeInterval(seconds)
-        }
-        return HTTPDateParser.parse(retryAfter)
-    }
-}
-
-enum HTTPDateParser {
-    static func parse(_ string: String) -> Date? {
-        for formatter in formatters {
-            if let date = formatter.date(from: string) {
-                return date
-            }
-        }
-        return nil
-    }
-
-    private static let formatters: [DateFormatter] = {
-        let formats = [
-            "EEE',' dd MMM yyyy HH':'mm':'ss zzz",
-            "EEEE',' dd-MMM-yy HH':'mm':'ss zzz",
-            "EEE MMM d HH':'mm':'ss yyyy",
-        ]
-        return formats.map { format in
-            let formatter = DateFormatter()
-            formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.timeZone = TimeZone(secondsFromGMT: 0)
-            formatter.dateFormat = format
-            return formatter
-        }
-    }()
 }

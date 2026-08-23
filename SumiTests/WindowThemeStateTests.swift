@@ -44,8 +44,10 @@ final class WindowThemeStateTests: XCTestCase {
         var state = WindowThemeState()
 
         state.beginInteractive(
-            sourceSpaceId: sourceSpaceId,
-            destinationSpaceId: destinationSpaceId,
+            identity: SpaceTransitionIdentity(
+                sourceSpaceId: sourceSpaceId,
+                destinationSpaceId: destinationSpaceId
+            ),
             from: sourceTheme,
             to: targetTheme,
             initialProgress: 0.4
@@ -64,8 +66,10 @@ final class WindowThemeStateTests: XCTestCase {
         var state = WindowThemeState()
 
         state.beginInteractive(
-            sourceSpaceId: UUID(),
-            destinationSpaceId: UUID(),
+            identity: SpaceTransitionIdentity(
+                sourceSpaceId: UUID(),
+                destinationSpaceId: UUID()
+            ),
             from: sourceTheme,
             to: targetTheme,
             initialProgress: 0.25
@@ -351,8 +355,10 @@ final class WindowThemeStateTests: XCTestCase {
         var state = WindowThemeState()
 
         state.beginInteractive(
-            sourceSpaceId: UUID(),
-            destinationSpaceId: UUID(),
+            identity: SpaceTransitionIdentity(
+                sourceSpaceId: UUID(),
+                destinationSpaceId: UUID()
+            ),
             from: sourceTheme,
             to: targetTheme,
             initialProgress: 0.6
@@ -430,16 +436,20 @@ final class WindowThemeStateTests: XCTestCase {
         var state = WindowThemeState()
 
         state.beginInteractive(
-            sourceSpaceId: sourceSpaceId,
-            destinationSpaceId: UUID(),
+            identity: SpaceTransitionIdentity(
+                sourceSpaceId: sourceSpaceId,
+                destinationSpaceId: UUID()
+            ),
             from: sourceTheme,
             to: firstTargetTheme,
             initialProgress: 0.62
         )
 
         state.beginInteractive(
-            sourceSpaceId: sourceSpaceId,
-            destinationSpaceId: UUID(),
+            identity: SpaceTransitionIdentity(
+                sourceSpaceId: sourceSpaceId,
+                destinationSpaceId: UUID()
+            ),
             from: sourceTheme,
             to: secondTargetTheme,
             initialProgress: 0.18

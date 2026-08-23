@@ -6,10 +6,8 @@ enum BrowserTabSuspensionRuntimeFactory {
     static func ports(
         windowRegistry: @escaping @MainActor () -> WindowRegistry?,
         regularTabs: TabCollectionMembershipOwner,
-        lazyRestore: TabLazyRestoreCoordinator,
         windowTabs: BrowserWindowTabContext,
         splitQuery: WindowSplitQuery,
-        canStartLazyRestore: @escaping @MainActor () -> Bool,
         webView: TabSuspensionWebViewRuntime
     ) -> TabSuspensionRuntimePorts {
         TabSuspensionRuntimePorts(
@@ -34,15 +32,6 @@ enum BrowserTabSuspensionRuntimeFactory {
                     allRuntimeTabs(
                         regularTabs: regularTabs,
                         windowRegistry: windowRegistry()
-                    )
-                },
-                refreshLazyRestoreQueue: { context in
-                    guard canStartLazyRestore() else { return }
-                    refreshLazyRestoreQueue(
-                        context,
-                        windowRegistry: windowRegistry(),
-                        windowTabs: windowTabs,
-                        lazyRestore: lazyRestore
                     )
                 }
             )
@@ -80,38 +69,6 @@ enum BrowserTabSuspensionRuntimeFactory {
             visible[windowState.id] = Set(tabIDs)
         }
         return visible
-    }
-
-    private static func refreshLazyRestoreQueue(
-        _ context: TabSuspensionEvaluationContext,
-        windowRegistry: WindowRegistry?,
-        windowTabs: BrowserWindowTabContext,
-        lazyRestore: TabLazyRestoreCoordinator
-    ) {
-        guard let windowRegistry else { return }
-
-        let activeWindowID = windowRegistry.activeWindow?.id
-        let anchors = windowRegistry.allWindows
-            .sorted { lhs, rhs in
-                let lhsPriority = lhs.id == activeWindowID ? 0 : 1
-                let rhsPriority = rhs.id == activeWindowID ? 0 : 1
-                if lhsPriority != rhsPriority {
-                    return lhsPriority < rhsPriority
-                }
-                return lhs.id.uuidString < rhs.id.uuidString
-            }
-            .compactMap { windowState in
-                lazyRestore.opportunisticRestoreAnchor(
-                    in: windowState,
-                    currentTab: windowTabs.currentTab(for: windowState)
-                )
-            }
-
-        lazyRestore.refresh(
-            anchors: anchors,
-            selectedTabIDs: context.selectedTabIDs,
-            visibleTabIDs: context.visibleTabIDs
-        )
     }
 
     private static func allRuntimeTabs(

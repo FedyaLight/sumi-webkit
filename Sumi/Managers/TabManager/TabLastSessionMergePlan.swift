@@ -124,5 +124,4 @@ struct TabLastSessionMergePlan {
     let regularTabsBySpace: [UUID: [TabLastSessionRegularTabPlacement]]
     let spaceSelection: TabLastSessionSpaceSelection
     let requestedCurrentTabId: UUID?
-    let lazyRestoredTabIds: Set<UUID>
 }

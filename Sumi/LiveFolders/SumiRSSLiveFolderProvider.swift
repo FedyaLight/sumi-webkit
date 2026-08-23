@@ -56,7 +56,7 @@ struct SumiRSSLiveFolderProvider: Sendable {
                 )
             }
             guard (200..<300).contains(response.statusCode) else {
-                return failure(.network, retryAfter: response.retryAfter, response: response)
+                return failure(.network, response: response)
             }
 
             let parser = SumiRSSFeedParser(data: response.data, sourceId: source.id)
@@ -102,11 +102,10 @@ struct SumiRSSLiveFolderProvider: Sendable {
 
     private func failure(
         _ kind: SumiLiveFolderErrorKind,
-        retryAfter: Date? = nil,
         response: SumiLiveFolderHTTPResponse? = nil
     ) -> SumiLiveFolderProviderResponse {
         SumiLiveFolderProviderResponse(
-            outcome: .failure(kind, retryAfter: retryAfter),
+            outcome: .failure(kind),
             etag: response?.etag,
             lastModified: response?.lastModified,
             githubDashboardMode: nil

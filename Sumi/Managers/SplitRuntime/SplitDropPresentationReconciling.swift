@@ -34,8 +34,7 @@ extension WindowSplitPresentationSynchronizer: SplitDropPresentationReconciling 
             preferredSelections: projection.preferredSelections,
             insertionPreview: insertionPreview,
             residenceContribution: residenceContribution,
-            requiredWindows: projection.requiredWindows,
-            terminalParticipants: []
+            requiredWindows: projection.requiredWindows
         )
     }
 

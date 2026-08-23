@@ -7,17 +7,7 @@ struct PreparedAdblockRuleListPublication {
 }
 
 @MainActor
-protocol AdblockRuleListPublishing: AnyObject, Sendable {
-    func preparePublication(
-        manifest: AdblockCompiledGenerationManifest,
-        definitions: [SumiContentRuleListDefinition]
-    ) async throws -> PreparedAdblockRuleListPublication
-
-    func commitPublication(_ publication: PreparedAdblockRuleListPublication)
-}
-
-@MainActor
-final class AdblockRuleListPublisher: AdblockRuleListPublishing {
+final class AdblockRuleListPublisher {
     private let ruleListProvider: AdblockManifestRuleListProvider
     private let contentBlockingService: SumiContentBlockingService
 

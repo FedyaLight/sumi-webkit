@@ -226,16 +226,16 @@ enum SumiSystemPermissionAuthorizationMapper {
     ) -> SumiSystemPermissionAuthorizationState {
         guard locationServicesEnabled else { return .systemDisabled }
 
-        switch Int(status.rawValue) {
-        case 0:
+        switch status {
+        case .notDetermined:
             return .notDetermined
-        case 1:
+        case .restricted:
             return .restricted
-        case 2:
+        case .denied:
             return .denied
-        case 3, 4:
+        case .authorizedAlways, .authorizedWhenInUse:
             return .authorized
-        default:
+        @unknown default:
             return .unavailable
         }
     }
@@ -243,14 +243,14 @@ enum SumiSystemPermissionAuthorizationMapper {
     static func notifications(
         _ status: UNAuthorizationStatus
     ) -> SumiSystemPermissionAuthorizationState {
-        switch Int(status.rawValue) {
-        case 0:
+        switch status {
+        case .notDetermined:
             return .notDetermined
-        case 1:
+        case .denied:
             return .denied
-        case 2, 3, 4:
+        case .authorized, .provisional, .ephemeral:
             return .authorized
-        default:
+        @unknown default:
             return .unavailable
         }
     }
@@ -334,7 +334,7 @@ private final class SumiLocationAuthorizationRequester: NSObject, @preconcurrenc
 
     func requestAuthorization() async -> CLAuthorizationStatus {
         let currentStatus = manager.authorizationStatus
-        guard Int(currentStatus.rawValue) == 0 else {
+        guard currentStatus == .notDetermined else {
             return currentStatus
         }
 
@@ -356,7 +356,7 @@ private final class SumiLocationAuthorizationRequester: NSObject, @preconcurrenc
     }
 
     private func completeIfDetermined(_ status: CLAuthorizationStatus) {
-        guard Int(status.rawValue) != 0,
+        guard status != .notDetermined,
               let continuation
         else {
             return

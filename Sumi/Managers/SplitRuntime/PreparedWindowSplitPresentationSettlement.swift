@@ -18,8 +18,6 @@ final class PreparedWindowSplitPresentationSettlement:
     private let validator: WindowSplitPresentationSettlementValidator
     private let terminalEffects:
         WindowSplitPresentationEffectExecutor
-    private let terminalParticipants:
-        WindowSplitPresentationTerminalParticipants
     private var aggregateWindowStates: [
         UUID: BrowserWindowShortcutMutationState
     ]?
@@ -29,14 +27,12 @@ final class PreparedWindowSplitPresentationSettlement:
         plan: WindowSplitPresentationSettlementPlan,
         residences: WindowSplitPresentationResidenceTransaction,
         validator: WindowSplitPresentationSettlementValidator,
-        terminalEffects: WindowSplitPresentationEffectExecutor,
-        terminalParticipants: WindowSplitPresentationTerminalParticipants
+        terminalEffects: WindowSplitPresentationEffectExecutor
     ) {
         self.plan = plan
         self.residences = residences
         self.validator = validator
         self.terminalEffects = terminalEffects
-        self.terminalParticipants = terminalParticipants
     }
 
     func stage() -> Bool {
@@ -199,8 +195,7 @@ final class PreparedWindowSplitPresentationSettlement:
                     ?? Dictionary(uniqueKeysWithValues: plan.windows.map {
                         ($0.window.id, $0.targetWindowState)
                     })
-            ),
-            participants: terminalParticipants
+            )
         )
     }
 }

@@ -22,16 +22,6 @@ final class PreparedShortcutSplitLauncherMoveBatch {
         return true
     }
 
-    func applyForComposedResidenceAggregate(
-        bindingMode: ShortcutSplitLauncherComposedBindingMode
-    )
-        -> (any ShortcutSplitLauncherComposedMoveBatchParticipant)? {
-        moves.stageForComposedResidenceAggregate(
-            preparedMoves,
-            bindingMode: bindingMode
-        )
-    }
-
     func preflightBindingContribution()
         -> ShortcutSplitLauncherBindingPreflight? {
         moves.preflightBindingContribution(preparedMoves)

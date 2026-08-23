@@ -485,14 +485,3 @@ final class GlanceOverlayController: NSObject {
         actionChrome.closeRequiresSecondPress = false
     }
 }
-
-private extension NSView {
-    func isDescendant(of ancestor: NSView) -> Bool {
-        var current: NSView? = self
-        while let view = current {
-            if view === ancestor { return true }
-            current = view.superview
-        }
-        return false
-    }
-}

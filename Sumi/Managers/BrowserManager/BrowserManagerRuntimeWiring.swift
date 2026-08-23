@@ -173,13 +173,8 @@ enum BrowserManagerRuntimeWiring {
                 shellRuntime?.windowRegistry
             },
             regularTabs: browserManager.tabCollectionMembershipOwner,
-            lazyRestore: browserManager.lazyRestoreCoordinator,
             windowTabs: shellRuntime.windowTabs,
             splitQuery: splitQuery,
-            canStartLazyRestore: { [weak browserManager] in
-                browserManager?.startupProtectionRuntime
-                    .shouldDeferNormalTabMaterializationDuringStartup == false
-            },
             webView: TabSuspensionWebViewRuntime(
                 liveWebViews: { [ownership = webViewRuntime.ownershipQuery] tab in
                     ownership.suspensionLiveWebViews(for: tab)

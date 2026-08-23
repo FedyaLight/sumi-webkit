@@ -62,8 +62,7 @@ struct TabLastSessionMergePlanner {
             spacePinnedShortcuts: shortcutsAndTabs.spacePinnedShortcuts,
             regularTabsBySpace: shortcutsAndTabs.regularTabsBySpace,
             spaceSelection: selectedSpace,
-            requestedCurrentTabId: snapshot.state.currentTabID,
-            lazyRestoredTabIds: shortcutsAndTabs.lazyRestoredTabIds
+            requestedCurrentTabId: snapshot.state.currentTabID
         )
     }
 }
@@ -73,7 +72,6 @@ private extension TabLastSessionMergePlanner {
         let favoritePinsByProfile: [UUID: [TabLastSessionShortcutDescriptor]]
         let spacePinnedShortcuts: [UUID: [TabLastSessionShortcutDescriptor]]
         let regularTabsBySpace: [UUID: [TabLastSessionRegularTabPlacement]]
-        let lazyRestoredTabIds: Set<UUID>
     }
 
     func mergeFolders(
@@ -152,7 +150,6 @@ private extension TabLastSessionMergePlanner {
             }
         }
         var knownIds = live.allPersistedItemIds.union(reservedIds)
-        var restoredTabIds = Set<UUID>()
 
         for tab in uniqueById(
             stableSorted(snapshotTabs, index: \.index, id: \.id),
@@ -223,7 +220,6 @@ private extension TabLastSessionMergePlanner {
                     ? candidate : nil
             )
             regularTabs[spaceId, default: []].append(.restored(restored))
-            restoredTabIds.insert(tab.id)
         }
 
         favoritePins = favoritePins.mapValues { descriptors in
@@ -241,8 +237,7 @@ private extension TabLastSessionMergePlanner {
         return MergedTabs(
             favoritePinsByProfile: favoritePins,
             spacePinnedShortcuts: spacePins,
-            regularTabsBySpace: regularTabs,
-            lazyRestoredTabIds: restoredTabIds
+            regularTabsBySpace: regularTabs
         )
     }
 

@@ -1,32 +1,5 @@
 import Foundation
 
-/// Unforgeable outside the terminal executor. A downstream prepared effect may
-/// publish only when its exact window completed every base presentation effect.
-@MainActor
-struct WindowSplitPresentationTerminalWindowReceipt {
-    fileprivate let window: BrowserWindowState
-
-    fileprivate init(window: BrowserWindowState) {
-        self.window = window
-    }
-
-    func matches(_ candidate: BrowserWindowState) -> Bool {
-        window === candidate
-    }
-}
-
-/// Prepared, exact-window terminal effect. The settlement owns participants
-/// from admission through publication; callers cannot inject a late callback.
-@MainActor
-protocol WindowSplitPresentationTerminalParticipant: AnyObject {
-    var targetWindow: BrowserWindowState { get }
-    func publish(after receipt: WindowSplitPresentationTerminalWindowReceipt)
-}
-
-typealias WindowSplitPresentationTerminalParticipants = [
-    any WindowSplitPresentationTerminalParticipant
-]
-
 /// Executes complete outward window effects in their required order. Every reentrant
 /// callback is followed by a fresh exact-witness check before the next effect.
 @MainActor
@@ -81,8 +54,7 @@ final class WindowSplitPresentationEffectExecutor {
     }
 
     func publishTerminalEffects(
-        witness: WindowSplitPresentationTerminalWitness,
-        participants: WindowSplitPresentationTerminalParticipants
+        witness: WindowSplitPresentationTerminalWitness
     ) {
         let plan = witness.plan
         for windowPlan in plan.windows {
@@ -114,19 +86,6 @@ final class WindowSplitPresentationEffectExecutor {
                     for: windowPlan.window,
                     urgency: plan.sessionWriteUrgency
                 )
-            }
-            guard witness.isCurrent(windowPlan) else {
-                continue
-            }
-            let receipt = WindowSplitPresentationTerminalWindowReceipt(
-                window: windowPlan.window
-            )
-            for participant in participants
-                where participant.targetWindow === windowPlan.window {
-                guard witness.isCurrent(windowPlan) else {
-                    break
-                }
-                participant.publish(after: receipt)
             }
         }
     }

@@ -37,7 +37,6 @@ struct BrowserKernelGraph {
     let regularTabLifecycleOwner: TabRegularLifecycleOwner
     let tabClosureService: TabClosureService
     let activeSelectionOwner: TabActiveSelectionOwner
-    let lazyRestoreCoordinator: TabLazyRestoreCoordinator
     let spacePinnedStructureOwner: SpacePinnedStructureOwner
     let tabProfileTransitions: TabProfileTransitionService
     let spaceProfileTransitions: SpaceProfileTransitionService

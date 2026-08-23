@@ -79,7 +79,6 @@ final class ProactiveTabSuspensionLifecycle {
                 noteHidden(tab, context: context)
             }
         }
-        catalogRuntime.refreshLazyRestoreQueue(context)
 
         RuntimeDiagnostics.debug(category: "TabSuspension") {
             "reconciled proactive timers reason=\(reason) active=\(activeTimerCount)"
@@ -280,5 +279,4 @@ final class ProactiveTabSuspensionLifecycle {
         reconcileScheduler = scheduler
         return scheduler
     }
-
 }

@@ -1,30 +1,6 @@
 import Foundation
 
 @MainActor
-struct ShortcutLiveRetirementBindingExclusion {
-    private let tab: Tab
-    private let pinID: UUID
-    private let windowID: UUID
-
-    fileprivate init(tab: Tab, pinID: UUID, windowID: UUID) {
-        self.tab = tab
-        self.pinID = pinID
-        self.windowID = windowID
-    }
-
-    func belongs(to pin: ShortcutPin) -> Bool { pin.id == pinID }
-
-    func matches(
-        pin: ShortcutPin,
-        change: LiveShortcutPresentationRefreshAdmission.Change
-    ) -> Bool {
-        belongs(to: pin)
-            && change.tab === tab
-            && change.windowID == windowID
-    }
-}
-
-@MainActor
 struct ShortcutLiveTabRetirementPlan {
     let pinID: UUID
     let windowID: UUID
@@ -34,7 +10,6 @@ struct ShortcutLiveTabRetirementPlan {
     let runtimeLease: TabRuntimePortLease
     let windowState: BrowserWindowState?
     let sourceWindowState: BrowserWindowShortcutMutationState?
-    let retirementWindowState: BrowserWindowShortcutMutationState?
     let residencePlan: LiveShortcutResidenceMutationStaging.Plan?
     let result: ShortcutLiveTabRetirementResult
 
@@ -69,7 +44,6 @@ struct ShortcutLiveTabRetirementPlan {
                 target.currentShortcutPinId = nil
                 target.currentShortcutPinRole = nil
             }
-            retirementWindowState = target
             result = ShortcutLiveTabRetirementResult(
                 retiredTabIds: [entry.tab.id],
                 didClearCurrentSelection: didClear,
@@ -77,7 +51,6 @@ struct ShortcutLiveTabRetirementPlan {
                     ? [] : [windowState]
             )
         } else {
-            retirementWindowState = sourceWindowState
             result = ShortcutLiveTabRetirementResult(
                 retiredTabIds: entry.map { [$0.tab.id] } ?? []
             )
@@ -86,56 +59,9 @@ struct ShortcutLiveTabRetirementPlan {
 
     var tabs: [Tab] { entry.map { [$0.tab] } ?? [] }
 
-    var bindingExclusion: ShortcutLiveRetirementBindingExclusion? {
-        entry.map {
-            ShortcutLiveRetirementBindingExclusion(
-                tab: $0.tab,
-                pinID: pinID,
-                windowID: windowID
-            )
-        }
-    }
-
-    func sourceResidenceIsCurrent() -> Bool {
-        guard runtimeConnection.accepts(runtimeLease) else { return false }
-        guard let entry else {
-            return registry.tab(for: pinID, in: windowID) == nil
-        }
-        return residencePlan != nil
-            && registry.entry(containing: entry.tab)?.isIdentical(to: entry)
-                == true
-    }
-
     func windowIsCurrent(_ expected: BrowserWindowShortcutMutationState?) -> Bool {
         guard let entry else { return true }
         return runtimeLease.windowState(for: entry.windowId) === windowState
             && windowState?.unpublishedShortcutMutationState == expected
-    }
-
-    func windowContribution(
-        reconcilingWith presentation: ShortcutTabBindingWindowContribution
-    ) -> (ShortcutTabBindingWindowContribution, BrowserWindowShortcutMutationState?)? {
-        guard let windowState, let sourceWindowState,
-              let retirementWindowState else { return (.empty, nil) }
-        let overlap = presentation.entries.filter { $0.window.id == windowState.id }
-        guard overlap.count <= 1 else { return nil }
-        let target: BrowserWindowShortcutMutationState
-        if let presentation = overlap.first {
-            guard presentation.window === windowState,
-                  presentation.source == sourceWindowState,
-                  presentation.target.currentTabId != entry?.tab.id,
-                  presentation.target.currentTabId != pinID,
-                  presentation.target.currentShortcutPinId != pinID
-            else { return nil }
-            target = presentation.target
-        } else {
-            target = retirementWindowState
-        }
-        return (ShortcutTabBindingWindowContribution(entries: [.init(
-            window: windowState,
-            source: sourceWindowState,
-            target: target,
-            requiresPersistence: false
-        )]), target)
     }
 }

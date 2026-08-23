@@ -413,8 +413,8 @@ final class SumiLiveFolderManager: ObservableObject {
                     etag: response.etag,
                     lastModified: response.lastModified
                 )
-            case .failure(let errorKind, let retryAfter):
-                latestSource.markFailure(errorKind, retryAfter: retryAfter, at: now)
+            case .failure(let errorKind):
+                latestSource.markFailure(errorKind, at: now)
             }
 
             sourcesByFolderId[latestSource.folderId] = latestSource

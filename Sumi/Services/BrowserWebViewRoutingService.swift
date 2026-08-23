@@ -58,11 +58,6 @@ final class BrowserWebViewRoutingService {
         ownershipQuery.webView(for: tabId, in: windowId)
     }
 
-    /// Soft lookup for Tab session-delegating accessors (no precondition).
-    func webViewIfAvailable(for tabId: UUID, in windowId: UUID) -> WKWebView? {
-        webViewSessions.webView(for: tabId, in: windowId)
-    }
-
     func windowOwnedWebView(for tab: Tab, in windowId: UUID) -> WKWebView? {
         webView(for: tab.id, in: windowId)
     }
@@ -78,21 +73,12 @@ final class BrowserWebViewRoutingService {
         ownershipQuery.anyLiveWebView(for: tab)
     }
 
-    /// Soft lookup for Tab session-delegating accessors (no precondition).
-    func anyLiveWebViewIfAvailable(for tab: Tab) -> WKWebView? {
-        tab.webViewSession.currentWebView
-    }
-
     func ownsLiveWebView(_ webView: WKWebView, for tab: Tab) -> Bool {
         ownershipQuery.owns(webView, for: tab)
     }
 
     func hasLiveWebView(for tab: Tab) -> Bool {
         ownershipQuery.hasLiveWebView(for: tab)
-    }
-
-    func hasLiveWebViewIfAvailable(for tab: Tab) -> Bool {
-        tab.webViewSession.currentWebView != nil
     }
 
     func hasUntrackedOwnedWebView(for tab: Tab) -> Bool {
@@ -105,11 +91,6 @@ final class BrowserWebViewRoutingService {
 
     func primaryTrackedWindowId(for tabId: UUID) -> UUID? {
         ownershipQuery.primaryWindowID(for: tabId)
-    }
-
-    /// Soft lookup for Tab session-delegating accessors (no precondition).
-    func primaryTrackedWindowIdIfAvailable(for tabId: UUID) -> UUID? {
-        webViewSessions.primaryWindowID(for: tabId)
     }
 
     func windowIDs(for tabId: UUID) -> [UUID] {

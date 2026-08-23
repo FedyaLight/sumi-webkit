@@ -142,14 +142,12 @@ final class SumiGeolocationService: NSObject, SumiGeolocationServicing, @preconc
         locationServicesEnabled: Bool
     ) -> SumiGeolocationProviderError? {
         guard locationServicesEnabled else { return .systemDisabled }
-        switch Int(status.rawValue) {
-        case 0:
+        switch status {
+        case .notDetermined, .restricted, .denied:
             return .permissionDenied
-        case 1, 2:
-            return .permissionDenied
-        case 3, 4:
+        case .authorizedAlways, .authorizedWhenInUse:
             return nil
-        default:
+        @unknown default:
             return .unavailable
         }
     }

@@ -1,5 +1,7 @@
 import Foundation
 
+typealias ShortcutLiveTerminalDrainEffect = @MainActor () -> Void
+
 enum ShortcutLiveRuntimeRetirementStage {
     case none
     case empty(PreparedTabRuntimeTeardown)

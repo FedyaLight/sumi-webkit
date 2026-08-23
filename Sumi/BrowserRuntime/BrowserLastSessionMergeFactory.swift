@@ -12,7 +12,6 @@ enum BrowserLastSessionMergeFactory {
         membership: TabCollectionMembershipOwner,
         tabFactory: TabFactory,
         persistence: TabStructuralPersistenceService,
-        lazyRestore: TabLazyRestoreCoordinator,
         changes: ObservableObjectPublisher
     ) -> TabLastSessionMergeMaterializer {
         TabLastSessionMergeMaterializer(
@@ -52,10 +51,7 @@ enum BrowserLastSessionMergeFactory {
                     selection: state.selection
                 )
             ),
-            settlement: TabLastSessionMergeSettlement(
-                lazyRestore: lazyRestore,
-                persistence: persistence
-            )
+            settlement: TabLastSessionMergeSettlement(persistence: persistence)
         )
     }
 }

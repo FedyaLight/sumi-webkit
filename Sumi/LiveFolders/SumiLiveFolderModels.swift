@@ -150,7 +150,6 @@ struct SumiLiveFolderSource: Identifiable, Codable, Equatable, Sendable {
 
     mutating func markFailure(
         _ errorKind: SumiLiveFolderErrorKind,
-        retryAfter _: Date? = nil,
         at date: Date = Date()
     ) {
         lastErrorKind = errorKind
@@ -223,7 +222,7 @@ struct SumiLiveFolderProviderResponse: Sendable {
     enum Outcome: Sendable {
         case success(items: [SumiLiveFolderItem], title: String?, activeRepositories: Set<String>)
         case notModified
-        case failure(SumiLiveFolderErrorKind, retryAfter: Date?)
+        case failure(SumiLiveFolderErrorKind)
     }
 
     var outcome: Outcome

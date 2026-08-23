@@ -28,12 +28,8 @@ struct TabSuspensionWebViewRuntime {
 @MainActor
 struct TabSuspensionCatalogRuntime {
     let allKnownTabs: @MainActor () -> [Tab]
-    let refreshLazyRestoreQueue: @MainActor (TabSuspensionEvaluationContext) -> Void
 
-    static let inactive = Self(
-        allKnownTabs: { [] },
-        refreshLazyRestoreQueue: { _ in /* No-op. */ }
-    )
+    static let inactive = Self(allKnownTabs: { [] })
 }
 
 @MainActor

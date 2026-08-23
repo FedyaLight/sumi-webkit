@@ -68,7 +68,6 @@ extension BrowserCompositionRoot {
         let structuralCollectionMutationOwner = structuralGraph.mutations
         let structuralInstallOwner = structuralGraph.installer
         let tabCollectionMembershipOwner = structuralGraph.membership
-        let lazyRestoreCoordinator = structuralGraph.lazyRestore
         let spacePinnedOrderTransaction = structuralGraph.spacePinnedOrder
         let spacePinnedStructureOwner = structuralGraph.spacePinnedStructure
         let runtimeTeardown = structuralGraph.runtimeTeardown
@@ -929,7 +928,6 @@ extension BrowserCompositionRoot {
             structuralLookup: structuralLookupCoordinator,
             structuralInstaller: structuralInstallOwner,
             runtimePreparation: runtimePreparationOwner,
-            lazyRestore: lazyRestoreCoordinator,
             persistence: structuralPersistence
         )
         let startupStateReset = BrowserTabStartupStateResetFactory.make(
@@ -941,7 +939,6 @@ extension BrowserCompositionRoot {
             splitGroupMutations: splitGroupMutations,
             structuralMutations: structuralCollectionMutationOwner,
             persistence: structuralPersistence,
-            lazyRestore: lazyRestoreCoordinator,
             shortcutRetirement: liveShortcutTabBatchRetirement
         )
         let lastSessionMergeMaterializer = BrowserLastSessionMergeFactory.make(
@@ -953,7 +950,6 @@ extension BrowserCompositionRoot {
             membership: tabCollectionMembershipOwner,
             tabFactory: tabManager.tabFactory,
             persistence: structuralPersistence,
-            lazyRestore: lazyRestoreCoordinator,
             changes: tabManager.objectWillChange
         )
         let tabRuntimeLifecycle = BrowserTabRuntimeLifecycleFactory.make(
@@ -1020,7 +1016,6 @@ extension BrowserCompositionRoot {
             regularTabLifecycleOwner: regularTabLifecycleOwner,
             tabClosureService: tabClosureService,
             activeSelectionOwner: activeSelectionOwner,
-            lazyRestoreCoordinator: lazyRestoreCoordinator,
             spacePinnedStructureOwner: spacePinnedStructureOwner,
             tabProfileTransitions: tabProfileTransitions,
             spaceProfileTransitions: spaceProfileGraph.service,

@@ -19,12 +19,6 @@ final class TabStartupRestoreLifecycleTests: XCTestCase {
         XCTAssertTrue(repairReasons.contains("repaired invalid restored url"))
     }
 
-    func testDefaultLazyRestoreDoesNoBackgroundMaterialization() {
-        XCTAssertEqual(TabLazyRestorePolicy.default.maxTotalOpportunisticTabs, 0)
-        XCTAssertEqual(TabLazyRestorePolicy.default.maxAdjacentTabsPerAnchor, 0)
-        XCTAssertEqual(TabLazyRestorePolicy.default.maxConcurrentLoads, 0)
-    }
-
     func testCrossLaunchRestoreDoesNotPublishPersistedHistoryHintsAsNativeCapability() {
         let spaceID = UUID()
         let tabID = UUID()
@@ -697,11 +691,6 @@ private func makeRestoreABAHarness(
         runtimePreparation: runtimePreparation,
         runtimeConnection: connection
     )
-    let lazyRestore = TabLazyRestoreCoordinator(
-        spaces: manager.stateStore.spaces,
-        regularTabs: manager.stateStore.regularTabs,
-        membership: membership
-    )
     let structuralInstall = TabStructuralInstallOwner(
         state: manager.stateStore,
         structuralLookup: structuralLookup,
@@ -722,7 +711,6 @@ private func makeRestoreABAHarness(
             tabFactory: manager.tabFactory,
             structuralInstaller: structuralInstall,
             runtimePreparation: runtimePreparation,
-            lazyRestore: lazyRestore,
             persistence: manager.structuralPersistence
         )
     )

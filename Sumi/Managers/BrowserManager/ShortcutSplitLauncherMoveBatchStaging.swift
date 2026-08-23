@@ -44,48 +44,6 @@ final class ShortcutSplitLauncherMoveBatchStaging:
         return makeParticipant(from: contribution)
     }
 
-    func prepareForComposedResidenceAggregate(
-        _ preparedMoves: [PreparedShortcutSplitLauncherMove],
-        bindingMode: ShortcutSplitLauncherComposedBindingMode
-    ) -> (any ShortcutSplitLauncherComposedMoveBatchParticipant)? {
-        guard let contribution =
-            prepareBindingContributionForComposedResidenceAggregate(
-                preparedMoves,
-                bindingMode: bindingMode
-            ) else { return nil }
-        return ShortcutSplitLauncherComposedMoveBatchReceipt(
-            contribution: contribution,
-            structuralMutations: structuralMutations,
-            structuralLookup: structuralLookup
-        )
-    }
-
-    func prepareBindingContributionForComposedResidenceAggregate(
-        _ preparedMoves: [PreparedShortcutSplitLauncherMove]
-    ) -> ShortcutSplitLauncherBindingContribution? {
-        prepareBindingContributionForComposedResidenceAggregate(
-            preparedMoves,
-            bindingMode: .preservingLiveBindings
-        )
-    }
-
-    private func prepareBindingContributionForComposedResidenceAggregate(
-        _ preparedMoves: [PreparedShortcutSplitLauncherMove],
-        bindingMode: ShortcutSplitLauncherComposedBindingMode
-    ) -> ShortcutSplitLauncherBindingContribution? {
-        guard let preflight = preflightBindingContribution(
-            preparedMoves,
-            bindingMode: bindingMode
-        ) else {
-            return nil
-        }
-        let contribution = prepareContribution(
-            preflight,
-            terminalMoves: preparedMoves
-        )
-        return contribution
-    }
-
     private func makeParticipant(
         from contribution: ShortcutSplitLauncherBindingContribution
     ) -> (any ShortcutSplitLauncherMoveBatchParticipant)? {

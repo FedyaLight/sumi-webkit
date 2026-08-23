@@ -5,7 +5,6 @@ final class ShortcutLiveTabRetirementService {
     private let registry: LiveShortcutTabRegistry
     private let structuralLookup: TabStructuralLookupCoordinator
     private let batch: ShortcutLiveRetirementBatchTransaction
-    private let reversible: ShortcutLiveReversibleRetirementFactory
 
     init(
         registry: LiveShortcutTabRegistry,
@@ -18,11 +17,6 @@ final class ShortcutLiveTabRetirementService {
     ) {
         self.registry = registry
         self.structuralLookup = structuralLookup
-        reversible = ShortcutLiveReversibleRetirementFactory(
-            registry: registry,
-            runtimeConnection: runtimeConnection,
-            runtimeTeardown: runtimeTeardown
-        )
         batch = ShortcutLiveRetirementBatchTransaction(
             registry: registry,
             structuralLookup: structuralLookup,
@@ -101,13 +95,6 @@ final class ShortcutLiveTabRetirementService {
                 pinIds, targetWindowStates: targetWindowStates
             ))
         }
-    }
-
-    func prepareReversibleRetirement(
-        pinId: UUID,
-        in windowId: UUID
-    ) -> ReversibleShortcutLiveTabRetirement? {
-        reversible.prepare(pinID: pinId, windowID: windowId)
     }
 
     func prepareTerminalEffect(

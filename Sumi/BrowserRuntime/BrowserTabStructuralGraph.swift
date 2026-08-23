@@ -9,7 +9,6 @@ struct BrowserTabStructuralGraph {
     let mutations: TabStructuralCollectionMutationOwner
     let installer: TabStructuralInstallOwner
     let membership: TabCollectionMembershipOwner
-    let lazyRestore: TabLazyRestoreCoordinator
     let spacePinnedOrder: SpacePinnedOrderTransaction
     let spacePinnedStructure: SpacePinnedStructureOwner
     let runtimeTeardown: TabRuntimeTeardownService
@@ -68,11 +67,6 @@ struct BrowserTabStructuralGraph {
             runtimePreparation: runtimePreparation,
             runtimeConnection: runtimeConnection
         )
-        let lazyRestore = TabLazyRestoreCoordinator(
-            spaces: state.spaces,
-            regularTabs: state.regularTabs,
-            membership: membership
-        )
         let spacePinnedOrder = SpacePinnedOrderTransaction(
             folders: state.folders,
             pins: state.shortcutPins,
@@ -96,7 +90,6 @@ struct BrowserTabStructuralGraph {
             mutations: mutations,
             installer: installer,
             membership: membership,
-            lazyRestore: lazyRestore,
             spacePinnedOrder: spacePinnedOrder,
             spacePinnedStructure: spacePinnedStructure,
             runtimeTeardown: runtimeTeardown

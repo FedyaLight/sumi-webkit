@@ -15,14 +15,6 @@ final class ShortcutSplitLauncherMoveTransactionTests: XCTestCase {
                 receivedIDs = $0.map { $0.pin.id }
                 return nil
             },
-            prepareForComposedResidenceAggregate: { _, _ in
-                XCTFail("Unexpected composed-residence preparation")
-                return nil
-            },
-            prepareBindingContributionForComposedResidenceAggregate: { _ in
-                XCTFail("Unexpected composed binding contribution")
-                return nil
-            },
             preflightBindingContribution: { _ in
                 XCTFail("Unexpected binding preflight")
                 return nil
@@ -59,14 +51,6 @@ final class ShortcutSplitLauncherMoveTransactionTests: XCTestCase {
             batches: TestShortcutSplitLauncherMoveBatchPreparer(
                 accepts: { _, _ in true },
                 prepare: { _ in batch },
-                prepareForComposedResidenceAggregate: { _, _ in
-                    XCTFail("Unexpected composed-residence preparation")
-                    return nil
-                },
-                prepareBindingContributionForComposedResidenceAggregate: { _ in
-                    XCTFail("Unexpected composed binding contribution")
-                    return nil
-                },
                 preflightBindingContribution: { _ in
                     XCTFail("Unexpected binding preflight")
                     return nil
@@ -88,54 +72,6 @@ final class ShortcutSplitLauncherMoveTransactionTests: XCTestCase {
 
         sideEffect.commit()
         XCTAssertEqual(effects, ["settle", "publish"])
-    }
-
-    func testComposedResidenceStageUsesItsDedicatedBatchPreparation() throws {
-        let folderOpenState = try makeFolderOpenState()
-        let pin = makePin()
-        var ordinaryPreparationCount = 0
-        var composedPreparationCount = 0
-        let batch = TestShortcutSplitLauncherMoveBatchParticipant(
-            isCurrent: { true },
-            rollback: { true },
-            settle: {},
-            publish: {}
-        )
-        let transaction = ShortcutSplitLauncherMoveTransaction(
-            batches: TestShortcutSplitLauncherMoveBatchPreparer(
-                accepts: { _, _ in true },
-                prepare: { _ in
-                    ordinaryPreparationCount += 1
-                    return nil
-                },
-                prepareForComposedResidenceAggregate: { _, _ in
-                    composedPreparationCount += 1
-                    return batch
-                },
-                prepareBindingContributionForComposedResidenceAggregate: { _ in
-                    XCTFail("Unexpected composed binding contribution")
-                    return nil
-                },
-                preflightBindingContribution: { _ in
-                    XCTFail("Unexpected binding preflight")
-                    return nil
-                },
-                prepareBindingContributionPlan: { _, _ in
-                    XCTFail("Unexpected insertion-plan contribution")
-                    return nil
-                }
-            ),
-            windowMutations: BrowserWindowShortcutMutationOwner(),
-            folderOpenState: folderOpenState
-        )
-
-        XCTAssertNotNil(
-            transaction.stageForComposedResidenceAggregate([
-                preparedMove(for: pin),
-            ], bindingMode: .preservingLiveBindings)
-        )
-        XCTAssertEqual(ordinaryPreparationCount, 0)
-        XCTAssertEqual(composedPreparationCount, 1)
     }
 
     private func makePin() -> ShortcutPin {

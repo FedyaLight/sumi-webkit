@@ -67,32 +67,6 @@ final class TabSuspensionArchitectureTests: XCTestCase {
         XCTAssertNil(evaluator.tabIneligibility(for: tab, context: context))
     }
 
-    func testInstallPublishesCompletePolicyAndVisibilityContextToCatalog() {
-        let harness = TabSuspensionHarness(installImmediately: false)
-        let windowID = UUID()
-        let visibleTabID = UUID()
-        let splitTabID = UUID()
-        let selectedTabID = UUID()
-        harness.memoryMode = .custom
-        harness.customDeactivationDelay = 90 * 60
-        harness.energySaverActive = true
-        harness.visibleTabIDsByWindow = [windowID: [visibleTabID, splitTabID]]
-        harness.selectedTabIDs = [selectedTabID]
-
-        harness.install()
-
-        XCTAssertEqual(harness.refreshedLazyRestoreContexts.count, 1)
-        let context = harness.refreshedLazyRestoreContexts[0]
-        XCTAssertEqual(context.visibleTabIDs, [visibleTabID, splitTabID])
-        XCTAssertEqual(context.selectedTabIDs, [selectedTabID])
-        XCTAssertEqual(context.policy.memoryMode, .custom)
-        XCTAssertEqual(context.policy.proactiveDeactivationDelay, 60 * 60)
-        XCTAssertEqual(
-            context.policy.revisitProtectionLimit,
-            TabSuspensionPolicy.customRevisitProtectionLimit
-        )
-    }
-
     func testGlobalVisibilityQueryDoesNotReadPolicySelectionOrCatalog() {
         let harness = TabSuspensionHarness()
         let visibleTabID = UUID()
@@ -119,7 +93,6 @@ final class TabSuspensionArchitectureTests: XCTestCase {
         XCTAssertEqual(harness.selectedTabIDsReadCount, 1)
         XCTAssertEqual(harness.visibleTabIDsByWindowReadCount, 1)
         XCTAssertFalse(tab.suspensionState.isSuspended)
-        XCTAssertEqual(harness.refreshedLazyRestoreContexts.count, 0)
     }
 
     func testControllerStartsAndStopsMemoryMonitorOnlyAroundInstalledRuntime() {
@@ -190,8 +163,7 @@ final class TabSuspensionArchitectureTests: XCTestCase {
                     isProtectedFromCompositorMutation: { _ in false }
                 ),
                 catalog: TabSuspensionCatalogRuntime(
-                    allKnownTabs: { [tab] },
-                    refreshLazyRestoreQueue: { _ in }
+                    allKnownTabs: { [tab] }
                 )
             )
         )
@@ -272,8 +244,7 @@ final class TabSuspensionArchitectureTests: XCTestCase {
                     isProtectedFromCompositorMutation: { _ in false }
                 ),
                 catalog: TabSuspensionCatalogRuntime(
-                    allKnownTabs: { [tab] },
-                    refreshLazyRestoreQueue: { _ in }
+                    allKnownTabs: { [tab] }
                 )
             )
         )
@@ -470,8 +441,7 @@ final class TabSuspensionArchitectureTests: XCTestCase {
                 isProtectedFromCompositorMutation: { _ in false }
             ),
             catalog: TabSuspensionCatalogRuntime(
-                allKnownTabs: { fixtures.map(\.0) },
-                refreshLazyRestoreQueue: { _ in }
+                allKnownTabs: { fixtures.map(\.0) }
             )
         ))
 
@@ -548,7 +518,6 @@ private final class TabSuspensionHarness {
     var tabs: [Tab] = []
     var selectedTabIDs: Set<UUID> = []
     var visibleTabIDsByWindow: [UUID: Set<UUID>] = [:]
-    private(set) var refreshedLazyRestoreContexts: [TabSuspensionEvaluationContext] = []
     private(set) var policyReadCount = 0
     private(set) var allKnownTabsReadCount = 0
     private(set) var selectedTabIDsReadCount = 0
@@ -598,9 +567,6 @@ private final class TabSuspensionHarness {
                     allKnownTabs: { [weak self] in
                         self?.allKnownTabsReadCount += 1
                         return self?.tabs ?? []
-                    },
-                    refreshLazyRestoreQueue: { [weak self] context in
-                        self?.refreshedLazyRestoreContexts.append(context)
                     }
                 )
             )
@@ -608,7 +574,6 @@ private final class TabSuspensionHarness {
     }
 
     func resetReadCounts() {
-        refreshedLazyRestoreContexts.removeAll()
         policyReadCount = 0
         allKnownTabsReadCount = 0
         selectedTabIDsReadCount = 0

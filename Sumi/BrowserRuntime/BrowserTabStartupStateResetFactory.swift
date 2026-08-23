@@ -11,7 +11,6 @@ enum BrowserTabStartupStateResetFactory {
         splitGroupMutations: SplitGroupMutationService,
         structuralMutations: TabStructuralCollectionMutationOwner,
         persistence: TabStructuralPersistenceService,
-        lazyRestore: TabLazyRestoreCoordinator,
         shortcutRetirement: LiveShortcutTabBatchRetirement
     ) -> TabStartupStateReset {
         TabStartupStateReset(
@@ -33,7 +32,6 @@ enum BrowserTabStartupStateResetFactory {
                     persistence: persistence
                 ),
             transientStateReset: TabStartupTransientStateResetTransaction(
-                lazyRestore: lazyRestore,
                 liveShortcutRetirement: shortcutRetirement
             )
         )

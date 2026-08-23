@@ -12,7 +12,6 @@ enum BrowserTabStoreRestoreFactory {
         structuralLookup: TabStructuralLookupCoordinator,
         structuralInstaller: TabStructuralInstallOwner,
         runtimePreparation: TabRuntimePreparationOwner,
-        lazyRestore: TabLazyRestoreCoordinator,
         persistence: TabStructuralPersistenceService
     ) -> TabStoreRestoreService {
         TabStoreRestoreService(
@@ -31,7 +30,6 @@ enum BrowserTabStoreRestoreFactory {
                     tabFactory: tabFactory,
                     structuralInstaller: structuralInstaller,
                     runtimePreparation: runtimePreparation,
-                    lazyRestore: lazyRestore,
                     persistence: persistence
                 )
             )

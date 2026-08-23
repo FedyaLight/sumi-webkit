@@ -10,13 +10,6 @@ final class TestShortcutSplitLauncherMoveBatchPreparer:
     private let prepareAction: @MainActor (
         [PreparedShortcutSplitLauncherMove]
     ) -> (any ShortcutSplitLauncherMoveBatchParticipant)?
-    private let prepareComposedAction: @MainActor (
-        [PreparedShortcutSplitLauncherMove],
-        ShortcutSplitLauncherComposedBindingMode
-    ) -> (any ShortcutSplitLauncherComposedMoveBatchParticipant)?
-    private let prepareContributionAction: @MainActor (
-        [PreparedShortcutSplitLauncherMove]
-    ) -> ShortcutSplitLauncherBindingContribution?
     private let preflightContributionAction: @MainActor (
         [PreparedShortcutSplitLauncherMove]
     ) -> ShortcutSplitLauncherBindingPreflight?
@@ -33,14 +26,6 @@ final class TestShortcutSplitLauncherMoveBatchPreparer:
         prepare: @escaping @MainActor (
             [PreparedShortcutSplitLauncherMove]
         ) -> (any ShortcutSplitLauncherMoveBatchParticipant)?,
-        prepareForComposedResidenceAggregate: @escaping @MainActor (
-            [PreparedShortcutSplitLauncherMove],
-            ShortcutSplitLauncherComposedBindingMode
-        ) -> (any ShortcutSplitLauncherComposedMoveBatchParticipant)?,
-        prepareBindingContributionForComposedResidenceAggregate:
-            @escaping @MainActor (
-                [PreparedShortcutSplitLauncherMove]
-            ) -> ShortcutSplitLauncherBindingContribution?,
         preflightBindingContribution: @escaping @MainActor (
             [PreparedShortcutSplitLauncherMove]
         ) -> ShortcutSplitLauncherBindingPreflight?,
@@ -51,9 +36,6 @@ final class TestShortcutSplitLauncherMoveBatchPreparer:
     ) {
         acceptsAction = accepts
         prepareAction = prepare
-        prepareComposedAction = prepareForComposedResidenceAggregate
-        prepareContributionAction =
-            prepareBindingContributionForComposedResidenceAggregate
         preflightContributionAction = preflightBindingContribution
         prepareContributionAfterInsertionPlanAction =
             prepareBindingContributionPlan
@@ -72,19 +54,6 @@ final class TestShortcutSplitLauncherMoveBatchPreparer:
         prepareAction(preparedMoves)
     }
 
-    func prepareForComposedResidenceAggregate(
-        _ preparedMoves: [PreparedShortcutSplitLauncherMove],
-        bindingMode: ShortcutSplitLauncherComposedBindingMode
-    ) -> (any ShortcutSplitLauncherComposedMoveBatchParticipant)? {
-        prepareComposedAction(preparedMoves, bindingMode)
-    }
-
-    func prepareBindingContributionForComposedResidenceAggregate(
-        _ preparedMoves: [PreparedShortcutSplitLauncherMove]
-    ) -> ShortcutSplitLauncherBindingContribution? {
-        prepareContributionAction(preparedMoves)
-    }
-
     func preflightBindingContribution(
         _ preparedMoves: [PreparedShortcutSplitLauncherMove]
     ) -> ShortcutSplitLauncherBindingPreflight? {
@@ -101,8 +70,7 @@ final class TestShortcutSplitLauncherMoveBatchPreparer:
 
 @MainActor
 final class TestShortcutSplitLauncherMoveBatchParticipant:
-    ShortcutSplitLauncherMoveBatchParticipant,
-    ShortcutSplitLauncherComposedMoveBatchParticipant {
+    ShortcutSplitLauncherMoveBatchParticipant {
     private let current: () -> Bool
     private let rollbackAction: () -> Bool
     private let settleAction: () -> Void
@@ -132,20 +100,4 @@ final class TestShortcutSplitLauncherMoveBatchParticipant:
     ) {
         publishAction()
     }
-
-    func executeRestore(
-        presentation _: PreparedWindowSplitPresentationSettlement,
-        retirement _: ReversibleShortcutLiveTabRetirement?,
-        topology _: SplitGroupReplacementReceipt,
-        retirementService _: ShortcutLiveTabRetirementService,
-        folderOpenState _: TabFolderOpenStateService
-    ) -> PreparedProfileAssignmentBatchTransitionOutcome? {
-        nil
-    }
-
-    func admitPresentationIdentity(
-        to _: PreparedWindowSplitPresentationSettlement
-    ) -> Bool { true }
-
-    func cancelPrepared() -> Bool { rollbackAction() }
 }

@@ -9,9 +9,4 @@ protocol ShortcutSplitLauncherMoveBatchPreparing:
     func prepare(
         _ preparedMoves: [PreparedShortcutSplitLauncherMove]
     ) -> (any ShortcutSplitLauncherMoveBatchParticipant)?
-
-    func prepareForComposedResidenceAggregate(
-        _ preparedMoves: [PreparedShortcutSplitLauncherMove],
-        bindingMode: ShortcutSplitLauncherComposedBindingMode
-    ) -> (any ShortcutSplitLauncherComposedMoveBatchParticipant)?
 }

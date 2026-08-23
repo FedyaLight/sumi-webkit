@@ -63,7 +63,6 @@ final class TabLastSessionMergeTests: XCTestCase {
             return XCTFail("Expected a newly restored regular tab")
         }
         XCTAssertEqual(restored.profileId, restoredProfileId)
-        XCTAssertEqual(plan.lazyRestoredTabIds, [restoredTabId])
         XCTAssertEqual(plan.requestedCurrentTabId, restoredTabId)
         guard case .select(let selectedSpaceId) = plan.spaceSelection else {
             return XCTFail("Expected restored space selection")
@@ -110,7 +109,6 @@ final class TabLastSessionMergeTests: XCTestCase {
 
         XCTAssertEqual(plan.foldersBySpace[spaceId]?.map(\.id), [folderAndTabId])
         XCTAssertEqual(plan.regularTabsBySpace[spaceId]?.map(\.id), [lowerId, higherId])
-        XCTAssertFalse(plan.lazyRestoredTabIds.contains(folderAndTabId))
     }
 
     func testMaterializerCommitsOneStructuralTransactionWithCanonicalTabOrder() throws {
@@ -392,11 +390,6 @@ private final class LastSessionFixture {
             ),
             publisher: mutationPublisher
         )
-        let lazyRestore = TabLazyRestoreCoordinator(
-            spaces: state.spaces,
-            regularTabs: state.regularTabs,
-            membership: membership
-        )
         let spacePinnedOrder = SpacePinnedOrderTransaction(
             folders: state.folders,
             pins: state.shortcutPins,
@@ -464,7 +457,6 @@ private final class LastSessionFixture {
                 )
             ),
             settlement: TabLastSessionMergeSettlement(
-                lazyRestore: lazyRestore,
                 persistence: manager.structuralPersistence
             )
         )
@@ -487,7 +479,6 @@ private final class LastSessionFixture {
                 persistence: manager.structuralPersistence
             ),
             transientStateReset: TabStartupTransientStateResetTransaction(
-                lazyRestore: lazyRestore,
                 liveShortcutRetirement: liveShortcutRetirement
             )
         )

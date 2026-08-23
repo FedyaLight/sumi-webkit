@@ -27,8 +27,7 @@ final class WindowSplitPresentationPreparationService {
         input: WindowSplitPresentationSettlementInput,
         currentGroups: [SumiDomain.SplitGroup],
         activationSource: WindowSplitPresentationActivationSource,
-        terminalEffects: WindowSplitPresentationEffectExecutor,
-        terminalParticipants: WindowSplitPresentationTerminalParticipants
+        terminalEffects: WindowSplitPresentationEffectExecutor
     ) -> PreparedWindowSplitPresentationSettlement? {
         guard let draft = drafts.prepare(
             input,
@@ -43,19 +42,11 @@ final class WindowSplitPresentationPreparationService {
             shortcutWitnesses: residences.shortcutWitnesses,
             regularTabs: regularTabs
         ) else { return nil }
-        let participantIDs = terminalParticipants.map(ObjectIdentifier.init)
-        guard Set(participantIDs).count == participantIDs.count,
-              terminalParticipants.allSatisfy({ participant in
-                  plan.windows.contains {
-                      $0.window === participant.targetWindow
-                  }
-              }) else { return nil }
         return PreparedWindowSplitPresentationSettlement(
             plan: plan,
             residences: residences,
             validator: validator,
-            terminalEffects: terminalEffects,
-            terminalParticipants: terminalParticipants
+            terminalEffects: terminalEffects
         )
     }
 

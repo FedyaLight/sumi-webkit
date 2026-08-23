@@ -50,7 +50,6 @@ class BrowserManager: ObservableObject {
     let regularTabLifecycleOwner: TabRegularLifecycleOwner
     let tabClosureService: TabClosureService
     let activeSelectionOwner: TabActiveSelectionOwner
-    let lazyRestoreCoordinator: TabLazyRestoreCoordinator
     let spacePinnedStructureOwner: SpacePinnedStructureOwner
     let tabProfileTransitions: TabProfileTransitionService
     let spaceProfileTransitions: SpaceProfileTransitionService
@@ -485,7 +484,6 @@ class BrowserManager: ObservableObject {
         self.regularTabLifecycleOwner = graph.regularTabLifecycleOwner
         self.tabClosureService = graph.tabClosureService
         self.activeSelectionOwner = graph.activeSelectionOwner
-        self.lazyRestoreCoordinator = graph.lazyRestoreCoordinator
         self.spacePinnedStructureOwner = graph.spacePinnedStructureOwner
         self.tabProfileTransitions = graph.tabProfileTransitions
         self.spaceProfileTransitions = graph.spaceProfileTransitions
