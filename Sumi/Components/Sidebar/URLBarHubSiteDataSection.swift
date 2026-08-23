@@ -477,7 +477,7 @@ struct URLBarSiteDataFavicon: View {
            let image = TabFaviconStore.getCachedImage(
             forDocumentURL: url,
             partition: .regular(),
-            context: .historyBookmarkRow,
+            context: .siteDataRow,
             imageReader: imageReader
            ) {
             return Image(nsImage: image)

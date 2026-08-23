@@ -97,7 +97,7 @@ final class SumiFaviconLiveDiscoveryPipeline: @unchecked Sendable {
             if case .success(let response) = result,
                response.data.count <= SumiFaviconConstants.maxPayloadBytes {
                 candidates.append(
-                    contentsOf: SumiWebAppManifestIconDiscovery.candidates(
+                    contentsOf: SumiFaviconDiscovery.manifestCandidates(
                         from: response.data,
                         manifestURL: manifestURL,
                         pageURL: documentURL,

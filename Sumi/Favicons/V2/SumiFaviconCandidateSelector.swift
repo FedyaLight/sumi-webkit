@@ -47,13 +47,16 @@ enum SumiFaviconCandidateSelector {
     }
 
     private static func sourceScore(_ candidate: SumiFaviconCandidate, targetPixels: Int) -> Int {
-        let hasGoodDeclaredSize = candidate.declaredSizes.isEmpty
-            || candidate.declaredSizes.contains { $0.longestSide >= targetPixels }
+        let hasGoodDeclaredSize = candidate.declaredSizes.contains {
+            $0.longestSide >= targetPixels
+        }
+        let isScalable = candidate.declaredType == "image/svg+xml"
+            || candidate.iconURL.pathExtension.lowercased() == "svg"
         var sourceRank = candidate.sourcePriority
 
         if !hasGoodDeclaredSize,
-           candidate.sourceKind == .documentLink,
-           candidate.declaredSizes.contains(where: { $0.longestSide <= 16 }) {
+           !isScalable,
+           candidate.sourceKind == .documentLink {
             sourceRank += 2
         }
 

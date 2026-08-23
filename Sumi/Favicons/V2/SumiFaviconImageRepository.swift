@@ -57,11 +57,4 @@ final class SumiFaviconImageRepository: @unchecked Sendable {
         }
         return nil
     }
-
-    func hasFavicon(
-        for pageURL: URL,
-        partition: SumiFaviconPartition
-    ) -> Bool {
-        blobReader.cachedSelection(for: pageURL, partition: partition) != nil
-    }
 }

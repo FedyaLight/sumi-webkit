@@ -307,7 +307,8 @@ private struct SidebarFolderPreviewRowIcon: View {
                     liveTab: liveTab,
                     loadedStoredFavicon: faviconImageStore.image(
                         for: pin.launchURL,
-                        partition: partition
+                        partition: partition,
+                        context: .menu
                     )
                 )
             )
@@ -361,6 +362,7 @@ private struct SidebarFolderPreviewRowIcon: View {
         return faviconImageStore.loadKey(
             launchURL: pin.launchURL,
             partition: partition,
+            context: .menu,
             isEnabled: pin.iconAsset == nil,
             disabledID: pin.id.uuidString
         )
@@ -373,7 +375,8 @@ private struct SidebarFolderPreviewRowIcon: View {
 
         await faviconImageStore.load(
             launchURL: pin.launchURL,
-            partition: partition
+            partition: partition,
+            context: .menu
         )
     }
 }

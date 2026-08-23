@@ -193,14 +193,21 @@ final class SumiPreparedFaviconPipeline: @unchecked Sendable {
         let sourceHeight = CGFloat(cgImage.height)
         guard sourceWidth > 0, sourceHeight > 0 else { return }
 
-        let drawRect = Self.aspectFitRect(
+        var drawRect = Self.aspectFitRect(
             sourceSize: CGSize(width: sourceWidth, height: sourceHeight),
-            targetRect: targetRect
+            targetRect: targetRect,
+            allowsFractionalUpscaling: false
         )
+        drawRect.origin.x.round()
+        drawRect.origin.y.round()
         context.draw(cgImage, in: drawRect)
     }
 
-    private static func aspectFitRect(sourceSize: CGSize, targetRect: CGRect) -> CGRect {
+    private static func aspectFitRect(
+        sourceSize: CGSize,
+        targetRect: CGRect,
+        allowsFractionalUpscaling: Bool = true
+    ) -> CGRect {
         guard sourceSize.width.isFinite,
               sourceSize.height.isFinite,
               sourceSize.width > 0,
@@ -211,7 +218,10 @@ final class SumiPreparedFaviconPipeline: @unchecked Sendable {
             return targetRect
         }
 
-        let scale = min(targetRect.width / sourceSize.width, targetRect.height / sourceSize.height)
+        var scale = min(targetRect.width / sourceSize.width, targetRect.height / sourceSize.height)
+        if scale > 1, !allowsFractionalUpscaling {
+            scale.round(.down)
+        }
         let drawSize = CGSize(
             width: max(1, sourceSize.width * scale),
             height: max(1, sourceSize.height * scale)

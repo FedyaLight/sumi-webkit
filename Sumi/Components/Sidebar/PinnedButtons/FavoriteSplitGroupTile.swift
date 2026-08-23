@@ -258,7 +258,8 @@ struct FavoriteSplitGroupTile: View {
                 item: item,
                 loadedStoredFavicon: faviconImageStore.image(
                     for: pin.launchURL,
-                    partition: faviconPartition(for: pin)
+                    partition: faviconPartition(for: pin),
+                    context: .menu
                 )
             )
             return FavoriteSplitMemberVisual(
@@ -304,6 +305,7 @@ struct FavoriteSplitGroupTile: View {
             faviconImageStore.loadKey(
                 launchURL: pin.launchURL,
                 partition: faviconPartition(for: pin),
+                context: .menu,
                 isEnabled: pin.iconAsset == nil,
                 disabledID: pin.id.uuidString
             )
@@ -329,6 +331,7 @@ struct FavoriteSplitGroupTile: View {
             await faviconImageStore.load(
                 launchURL: pin.launchURL,
                 partition: faviconPartition(for: pin),
+                context: .menu,
                 imageReader: faviconImageReader
             )
             guard !Task.isCancelled else { return }
@@ -390,12 +393,14 @@ struct FavoriteSplitGroupTile: View {
             await faviconImageStore.load(
                 launchURL: member.url,
                 partition: member.partition,
+                context: .menu,
                 imageReader: faviconImageReader
             )
             guard !Task.isCancelled else { return }
             guard let image = faviconImageStore.nsImage(
                 for: member.url,
-                partition: member.partition
+                partition: member.partition,
+                context: .menu
             ),
                   let accent = SumiFaviconAccentColor.extract(from: image)
             else { continue }

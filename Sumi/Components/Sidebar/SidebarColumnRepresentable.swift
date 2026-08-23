@@ -238,7 +238,8 @@ enum SidebarColumnHostedRoot {
                 partition: pinProjection.faviconPartition(
                     for: pin,
                     currentSpaceID: spaceID
-                )
+                ),
+                context: pin.role == .favorite ? .pinnedLauncher : .tabSidebar
             )
             if seen.insert(request).inserted {
                 requests.append(request)

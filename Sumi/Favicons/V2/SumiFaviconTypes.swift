@@ -196,6 +196,7 @@ enum SumiFaviconDisplayContext: String, Codable, Sendable {
     case menu
     case tabSidebar
     case historyBookmarkRow
+    case siteDataRow
     case pinnedLauncher
     case largePreview
 
@@ -206,6 +207,8 @@ enum SumiFaviconDisplayContext: String, Codable, Sendable {
         case .tabSidebar:
             return 18
         case .historyBookmarkRow:
+            return 14
+        case .siteDataRow:
             return 22
         case .pinnedLauncher:
             return 20
@@ -221,6 +224,8 @@ enum SumiFaviconDisplayContext: String, Codable, Sendable {
         case .tabSidebar:
             return 6
         case .historyBookmarkRow:
+            return 4
+        case .siteDataRow:
             return 6
         case .pinnedLauncher:
             return 6

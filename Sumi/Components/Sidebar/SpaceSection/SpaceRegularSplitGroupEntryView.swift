@@ -117,7 +117,8 @@ struct SpaceRegularSplitGroupEntryView: View {
         guard let pin = item.pin else { return nil }
         return faviconImageStore.image(
             for: pin.launchURL,
-            partition: .regular()
+            partition: .regular(),
+            context: .tabSidebar
         )
     }
 

@@ -189,6 +189,7 @@ struct ShortcutLinkEditorIcon: View {
                 await faviconImageStore.load(
                     launchURL: pin.launchURL,
                     partition: faviconPartition,
+                    context: .tabSidebar,
                     imageReader: faviconImageReader
                 )
             }
@@ -206,7 +207,8 @@ struct ShortcutLinkEditorIcon: View {
                 .symbolRenderingMode(.monochrome)
         } else if let favicon = faviconImageStore.image(
             for: pin.launchURL,
-            partition: faviconPartition
+            partition: faviconPartition,
+            context: .tabSidebar
         ) {
             favicon
                 .resizable()
@@ -228,6 +230,7 @@ struct ShortcutLinkEditorIcon: View {
         faviconImageStore.loadKey(
             launchURL: pin.launchURL,
             partition: faviconPartition,
+            context: .tabSidebar,
             isEnabled: iconAsset == nil,
             disabledID: pin.id.uuidString
         )

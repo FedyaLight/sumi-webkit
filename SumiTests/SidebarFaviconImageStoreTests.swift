@@ -10,9 +10,15 @@ final class SidebarFaviconImageStoreTests: XCTestCase {
         let partition = SumiFaviconPartition.regular()
 
         let key = store.loadKey(launchURL: launchURL, partition: partition)
+        let rowKey = store.loadKey(
+            launchURL: launchURL,
+            partition: partition,
+            context: .tabSidebar
+        )
 
         XCTAssertTrue(key.contains(launchURL.absoluteString))
         XCTAssertTrue(key.contains(partition.storageComponent))
+        XCTAssertNotEqual(key, rowKey)
     }
 
     func testDisabledLoadKeyIgnoresURLAndPartitionPolicyInputs() throws {
@@ -219,7 +225,8 @@ final class SidebarFaviconImageStoreTests: XCTestCase {
         let partition = SumiFaviconPartition.regular()
         let request = SidebarFaviconImageStore.Request(
             launchURL: launchURL,
-            partition: partition
+            partition: partition,
+            context: .pinnedLauncher
         )
 
         store.prewarm([request, request])
@@ -419,6 +426,7 @@ private final class SidebarFaviconImageReaderStub:
     private let delayNanoseconds: UInt64
     private let lock = NSLock()
     private var callCount = 0
+    private var preparedRequests = Set<SumiPreparedFaviconRequest>()
 
     init(image: NSImage, delayNanoseconds: UInt64 = 0) {
         self.image = image
@@ -429,8 +437,8 @@ private final class SidebarFaviconImageReaderStub:
         lock.withLock { callCount }
     }
 
-    func cachedPreparedImage(for _: SumiPreparedFaviconRequest) -> NSImage? {
-        nil
+    func cachedPreparedImage(for request: SumiPreparedFaviconRequest) -> NSImage? {
+        lock.withLock { preparedRequests.contains(request) ? image : nil }
     }
 
     func cachedSelection(
@@ -441,7 +449,7 @@ private final class SidebarFaviconImageReaderStub:
     }
 
     func preparedImage(
-        for _: SumiPreparedFaviconRequest,
+        for request: SumiPreparedFaviconRequest,
         priority _: SumiFaviconFetchPriority,
         scheduleFetchOnMiss _: Bool
     ) async -> NSImage? {
@@ -449,6 +457,7 @@ private final class SidebarFaviconImageReaderStub:
         if delayNanoseconds > 0 {
             try? await Task.sleep(nanoseconds: delayNanoseconds)
         }
+        lock.withLock { _ = preparedRequests.insert(request) }
         return image
     }
 }

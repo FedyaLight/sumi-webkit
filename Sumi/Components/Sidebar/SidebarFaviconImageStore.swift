@@ -8,12 +8,12 @@ final class SidebarFaviconImageStore {
     struct Request: Hashable {
         let launchURL: URL
         let partition: SumiFaviconPartition
+        let context: SumiFaviconDisplayContext
     }
 
     @MainActor
     @Observable
     final class Entry {
-        var image: NSImage?
         var revision: UInt64 = 0
     }
 
@@ -84,9 +84,9 @@ final class SidebarFaviconImageStore {
     /// Starts durable window-scoped loads before SwiftUI rows mount. Repeated
     /// root updates are free once a request is loaded or already in flight.
     func prewarm(_ requests: [Request]) {
-        guard configuredImageReader != nil else { return }
+        guard let configuredImageReader else { return }
         for request in requests {
-            guard entry(for: request).image == nil,
+            guard cachedImage(for: request, imageReader: configuredImageReader) == nil,
                   inFlightLoads[request] == nil,
                   queuedPrewarmRequests.insert(request).inserted
             else { continue }
@@ -100,21 +100,32 @@ final class SidebarFaviconImageStore {
 
     func image(
         for launchURL: URL,
-        partition: SumiFaviconPartition
+        partition: SumiFaviconPartition,
+        context: SumiFaviconDisplayContext = .pinnedLauncher
     ) -> Image? {
-        nsImage(for: launchURL, partition: partition).map(Image.init(nsImage:))
+        nsImage(
+            for: launchURL,
+            partition: partition,
+            context: context
+        ).map(Image.init(nsImage:))
     }
 
     func nsImage(
         for launchURL: URL,
-        partition: SumiFaviconPartition
+        partition: SumiFaviconPartition,
+        context: SumiFaviconDisplayContext = .pinnedLauncher
     ) -> NSImage? {
-        entry(for: cacheKey(launchURL, partition)).image
+        guard let configuredImageReader else { return nil }
+        return cachedImage(
+            for: cacheKey(launchURL, partition, context),
+            imageReader: configuredImageReader
+        )
     }
 
     func loadKey(
         launchURL: URL,
         partition: SumiFaviconPartition,
+        context: SumiFaviconDisplayContext = .pinnedLauncher,
         isEnabled: Bool = true,
         disabledID: String? = nil
     ) -> String {
@@ -122,10 +133,11 @@ final class SidebarFaviconImageStore {
             return "disabled|\(disabledID ?? launchURL.absoluteString)"
         }
 
-        let revision = entry(for: cacheKey(launchURL, partition)).revision
+        let revision = entry(for: cacheKey(launchURL, partition, context)).revision
         return [
             launchURL.absoluteString,
             partition.storageComponent,
+            context.rawValue,
             String(revision),
         ].joined(separator: "|")
     }
@@ -133,11 +145,13 @@ final class SidebarFaviconImageStore {
     func load(
         launchURL: URL,
         partition: SumiFaviconPartition,
+        context: SumiFaviconDisplayContext = .pinnedLauncher,
         imageReader: (any BrowserFaviconImageReading)? = nil
     ) async {
         let reader = imageReader ?? configuredImageReader
         guard let reader else { return }
-        let request = cacheKey(launchURL, partition)
+        configuredImageReader = reader
+        let request = cacheKey(launchURL, partition, context)
         guard let load = startLoadIfNeeded(
             request: request,
             imageReader: reader
@@ -149,25 +163,30 @@ final class SidebarFaviconImageStore {
         request: Request,
         imageReader: any BrowserFaviconImageReading
     ) -> InFlightLoad? {
-        let entry = entry(for: request)
-        guard entry.image == nil else { return nil }
+        guard cachedImage(for: request, imageReader: imageReader) == nil else {
+            return nil
+        }
         if let existing = inFlightLoads[request] {
             return existing
         }
 
         let id = UUID()
         let task = Task { @MainActor [weak self] in
-            let loadedImage = await TabFaviconStore.loadCachedLauncherImage(
+            let loadedImage = await TabFaviconStore.loadCachedDisplayImage(
                 forDocumentURL: request.launchURL,
                 partition: request.partition,
+                context: request.context,
+                priority: request.context == .pinnedLauncher
+                    ? .pinnedLauncher
+                    : .visibleSidebarOrTabStrip,
                 imageReader: imageReader
             )
             guard let self, self.inFlightLoads[request]?.id == id else {
                 return
             }
             self.inFlightLoads[request] = nil
-            if let loadedImage {
-                entry.image = loadedImage
+            if loadedImage != nil {
+                self.entry(for: request).revision &+= 1
             }
         }
         let load = InFlightLoad(id: id, task: task)
@@ -182,7 +201,8 @@ final class SidebarFaviconImageStore {
             queuedPrewarmRequests.remove(request)
             await load(
                 launchURL: request.launchURL,
-                partition: request.partition
+                partition: request.partition,
+                context: request.context
             )
         }
         prewarmQueue.removeAll(keepingCapacity: true)
@@ -210,7 +230,6 @@ final class SidebarFaviconImageStore {
         ) {
             inFlightLoads[key]?.task.cancel()
             inFlightLoads[key] = nil
-            entry.image = nil
             entry.revision &+= 1
         }
     }
@@ -234,8 +253,25 @@ final class SidebarFaviconImageStore {
 
     private func cacheKey(
         _ launchURL: URL,
-        _ partition: SumiFaviconPartition
+        _ partition: SumiFaviconPartition,
+        _ context: SumiFaviconDisplayContext
     ) -> Request {
-        Request(launchURL: launchURL, partition: partition)
+        Request(
+            launchURL: launchURL,
+            partition: partition,
+            context: context
+        )
+    }
+
+    private func cachedImage(
+        for request: Request,
+        imageReader: any BrowserFaviconImageReading
+    ) -> NSImage? {
+        TabFaviconStore.getCachedImage(
+            forDocumentURL: request.launchURL,
+            partition: request.partition,
+            context: request.context,
+            imageReader: imageReader
+        )
     }
 }

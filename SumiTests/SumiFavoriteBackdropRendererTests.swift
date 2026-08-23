@@ -6,15 +6,13 @@ import XCTest
 
 @MainActor
 final class SumiFavoriteBackdropRendererTests: XCTestCase {
-    func testBakeIsDeterministicOpaqueSixteenPixelPNG() throws {
+    func testBakeIsDeterministicOpaqueSixteenPixelPNG() async throws {
         let favicon = makeSplitColorImage()
 
-        let first = try XCTUnwrap(
-            SumiFavoriteBackdropRenderer.bake(favicon: favicon)
-        )
-        let second = try XCTUnwrap(
-            SumiFavoriteBackdropRenderer.bake(favicon: favicon)
-        )
+        let firstData = await SumiFavoriteBackdropRenderer.bake(favicon: favicon)
+        let first = try XCTUnwrap(firstData)
+        let secondData = await SumiFavoriteBackdropRenderer.bake(favicon: favicon)
+        let second = try XCTUnwrap(secondData)
 
         XCTAssertEqual(first, second)
         let image = try decodedCGImage(first)
@@ -25,22 +23,20 @@ final class SumiFavoriteBackdropRendererTests: XCTestCase {
         })
     }
 
-    func testTransparentFaviconDoesNotProduceArtifact() {
-        XCTAssertNil(
-            SumiFavoriteBackdropRenderer.bake(
-                favicon: makeImage { context, rect in
-                    context.clear(rect)
-                }
-            )
+    func testTransparentFaviconDoesNotProduceArtifact() async {
+        let data = await SumiFavoriteBackdropRenderer.bake(
+            favicon: makeImage { context, rect in
+                context.clear(rect)
+            }
         )
+        XCTAssertNil(data)
     }
 
-    func testBakedColorRegionsPreserveFaviconOrientation() throws {
-        let data = try XCTUnwrap(
-            SumiFavoriteBackdropRenderer.bake(
-                favicon: makeSplitColorImage()
-            )
+    func testBakedColorRegionsPreserveFaviconOrientation() async throws {
+        let bakedData = await SumiFavoriteBackdropRenderer.bake(
+            favicon: makeSplitColorImage()
         )
+        let data = try XCTUnwrap(bakedData)
         let bytes = pixelBytes(try decodedCGImage(data))
         let left = averageRGB(bytes, xRange: 0..<4)
         let right = averageRGB(bytes, xRange: 12..<16)
@@ -49,14 +45,13 @@ final class SumiFavoriteBackdropRendererTests: XCTestCase {
         XCTAssertGreaterThan(right.blue, right.red)
     }
 
-    func testNearWhiteFaviconKeepsVisibleClampedBaseAtEdges() throws {
+    func testNearWhiteFaviconKeepsVisibleClampedBaseAtEdges() async throws {
         let favicon = makeImage { context, rect in
             context.setFillColor(NSColor.white.cgColor)
             context.fill(rect.insetBy(dx: 2, dy: 2))
         }
-        let data = try XCTUnwrap(
-            SumiFavoriteBackdropRenderer.bake(favicon: favicon)
-        )
+        let bakedData = await SumiFavoriteBackdropRenderer.bake(favicon: favicon)
+        let data = try XCTUnwrap(bakedData)
         let bytes = pixelBytes(try decodedCGImage(data))
         let cornerOffset = 0
 

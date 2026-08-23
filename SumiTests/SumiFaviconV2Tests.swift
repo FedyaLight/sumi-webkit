@@ -87,7 +87,7 @@ final class SumiFaviconV2DiscoveryTests: XCTestCase {
         }
         """.data(using: .utf8)!
 
-        let candidates = SumiWebAppManifestIconDiscovery.candidates(
+        let candidates = SumiFaviconDiscovery.manifestCandidates(
             from: data,
             manifestURL: manifestURL,
             pageURL: pageURL,
@@ -107,7 +107,7 @@ final class SumiFaviconV2DiscoveryTests: XCTestCase {
         let pageURL = try XCTUnwrap(URL(string: "https://example.com/"))
         let data = Data(#"{ "icons": ["#.utf8)
 
-        let candidates = SumiWebAppManifestIconDiscovery.candidates(
+        let candidates = SumiFaviconDiscovery.manifestCandidates(
             from: data,
             manifestURL: manifestURL,
             pageURL: pageURL,
@@ -188,6 +188,37 @@ final class SumiFaviconV2DiscoveryTests: XCTestCase {
 }
 
 final class SumiFaviconV2SelectorTests: XCTestCase {
+    func testSelectorPrefersDeclaredRetinaTouchIconOverUnknownICO() throws {
+        let pageURL = try XCTUnwrap(URL(string: "https://x.example/"))
+        let candidates = SumiFaviconDiscovery.documentCandidates(
+            from: [
+                SumiFaviconDiscoveredLink(
+                    href: "/favicon.ico",
+                    rel: "icon",
+                    type: "image/x-icon"
+                ),
+                SumiFaviconDiscoveredLink(
+                    href: "/apple-touch-icon.png",
+                    rel: "apple-touch-icon",
+                    type: "image/png",
+                    sizes: "192x192"
+                ),
+            ],
+            pageURL: pageURL,
+            baseURL: pageURL,
+            partition: .regular()
+        )
+
+        XCTAssertEqual(
+            SumiFaviconCandidateSelector.bestCandidate(
+                candidates,
+                for: .tabSidebar,
+                backingScale: 2
+            )?.iconURL.absoluteString,
+            "https://x.example/apple-touch-icon.png"
+        )
+    }
+
     func testSelectorPrefersSharpManifestCandidateOverTinyDocumentIcon() throws {
         let pageURL = try XCTUnwrap(URL(string: "https://example.com/"))
         let tinyURL = try XCTUnwrap(URL(string: "https://example.com/favicon.ico"))
@@ -542,6 +573,30 @@ enum SumiFaviconTestImages {
             pixels[index + 2] = 32
             pixels[index + 3] = 255
         }
+        return try pngData(width: width, height: height, pixels: &pixels)
+    }
+
+    static func diagonalPNGData(size: Int) throws -> Data {
+        let bytesPerRow = size * 4
+        var pixels = [UInt8](repeating: 0, count: bytesPerRow * size)
+        for offset in stride(from: 0, to: pixels.count, by: 4) {
+            pixels[offset + 3] = 255
+        }
+        for coordinate in 4..<(size - 4) {
+            let offset = coordinate * bytesPerRow + coordinate * 4
+            pixels[offset] = 255
+            pixels[offset + 1] = 255
+            pixels[offset + 2] = 255
+        }
+        return try pngData(width: size, height: size, pixels: &pixels)
+    }
+
+    private static func pngData(
+        width: Int,
+        height: Int,
+        pixels: inout [UInt8]
+    ) throws -> Data {
+        let bytesPerRow = width * 4
         let context = try XCTUnwrap(
             CGContext(
                 data: &pixels,

@@ -1,17 +1,24 @@
+import Accelerate
 import AppKit
 import ImageIO
 import UniformTypeIdentifiers
 
-@MainActor
 enum SumiFavoriteBackdropRenderer {
     static let pixelDimension = 16
     private static let blurRadius = 3
     private static let blurPassCount = 3
     private static let sourceOverscan: CGFloat = 1.45
 
-    static func bake(favicon: NSImage) -> Data? {
-        guard let source = cgImage(from: favicon),
-              let context = bitmapContext(),
+    @MainActor
+    static func bake(favicon: NSImage) async -> Data? {
+        guard let source = cgImage(from: favicon) else { return nil }
+        return await Task.detached(priority: .utility) {
+            bake(source: source)
+        }.value
+    }
+
+    private static func bake(source: CGImage) -> Data? {
+        guard let context = bitmapContext(),
               let pixels = context.data?.assumingMemoryBound(to: UInt8.self)
         else { return nil }
 
@@ -24,7 +31,7 @@ enum SumiFavoriteBackdropRenderer {
         draw(source, in: context)
         guard containsVisiblePixel(pixels) else { return nil }
 
-        let baseColor = SumiFaviconAccentColor.extract(from: favicon)
+        let baseColor = SumiFaviconAccentColor.extract(from: source)
             .map(NSColor.init)
             ?? NSColor(calibratedWhite: 0.32, alpha: 1)
         guard let rgb = baseColor.usingColorSpace(.sRGB) else { return nil }
@@ -99,82 +106,42 @@ enum SumiFavoriteBackdropRenderer {
         let byteCount = pixelDimension * pixelDimension * 4
         var source = Array(UnsafeBufferPointer(start: pixels, count: byteCount))
         var destination = source
+        let kernelSize = UInt32(blurRadius * 2 + 1)
 
         for _ in 0..<blurPassCount {
-            boxBlurHorizontal(source: source, destination: &destination)
-            swap(&source, &destination)
-            boxBlurVertical(source: source, destination: &destination)
+            source.withUnsafeMutableBytes { sourceBytes in
+                destination.withUnsafeMutableBytes { destinationBytes in
+                    var sourceBuffer = vImage_Buffer(
+                        data: sourceBytes.baseAddress,
+                        height: vImagePixelCount(pixelDimension),
+                        width: vImagePixelCount(pixelDimension),
+                        rowBytes: pixelDimension * 4
+                    )
+                    var destinationBuffer = vImage_Buffer(
+                        data: destinationBytes.baseAddress,
+                        height: vImagePixelCount(pixelDimension),
+                        width: vImagePixelCount(pixelDimension),
+                        rowBytes: pixelDimension * 4
+                    )
+                    vImageBoxConvolve_ARGB8888(
+                        &sourceBuffer,
+                        &destinationBuffer,
+                        nil,
+                        0,
+                        0,
+                        kernelSize,
+                        kernelSize,
+                        nil,
+                        vImage_Flags(kvImageEdgeExtend)
+                    )
+                }
+            }
             swap(&source, &destination)
         }
 
         for index in 0..<byteCount {
             pixels[index] = source[index]
         }
-    }
-
-    private static func boxBlurHorizontal(
-        source: [UInt8],
-        destination: inout [UInt8]
-    ) {
-        let width = pixelDimension
-        for y in 0..<pixelDimension {
-            for x in 0..<width {
-                averagePixel(
-                    source: source,
-                    destination: &destination,
-                    x: x,
-                    y: y,
-                    varying: max(0, x - blurRadius)...min(width - 1, x + blurRadius),
-                    isHorizontal: true
-                )
-            }
-        }
-    }
-
-    private static func boxBlurVertical(
-        source: [UInt8],
-        destination: inout [UInt8]
-    ) {
-        let height = pixelDimension
-        for y in 0..<height {
-            for x in 0..<pixelDimension {
-                averagePixel(
-                    source: source,
-                    destination: &destination,
-                    x: x,
-                    y: y,
-                    varying: max(0, y - blurRadius)...min(height - 1, y + blurRadius),
-                    isHorizontal: false
-                )
-            }
-        }
-    }
-
-    private static func averagePixel(
-        source: [UInt8],
-        destination: inout [UInt8],
-        x: Int,
-        y: Int,
-        varying: ClosedRange<Int>,
-        isHorizontal: Bool
-    ) {
-        var red = 0
-        var green = 0
-        var blue = 0
-        for value in varying {
-            let sampleX = isHorizontal ? value : x
-            let sampleY = isHorizontal ? y : value
-            let offset = (sampleY * pixelDimension + sampleX) * 4
-            red += Int(source[offset])
-            green += Int(source[offset + 1])
-            blue += Int(source[offset + 2])
-        }
-        let count = varying.count
-        let offset = (y * pixelDimension + x) * 4
-        destination[offset] = UInt8(red / count)
-        destination[offset + 1] = UInt8(green / count)
-        destination[offset + 2] = UInt8(blue / count)
-        destination[offset + 3] = 255
     }
 
     private static func pngData(from image: CGImage) -> Data? {

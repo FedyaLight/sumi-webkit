@@ -149,7 +149,8 @@ extension ShortcutSidebarRowChrome {
     var currentLoadedStoredFavicon: Image? {
         faviconImageStore.image(
             for: pin.launchURL,
-            partition: faviconPartition
+            partition: faviconPartition,
+            context: .tabSidebar
         )
     }
 
@@ -157,6 +158,7 @@ extension ShortcutSidebarRowChrome {
         faviconImageStore.loadKey(
             launchURL: pin.launchURL,
             partition: faviconPartition,
+            context: .tabSidebar,
             isEnabled: pin.iconAsset == nil,
             disabledID: pin.id.uuidString
         )
@@ -169,6 +171,7 @@ extension ShortcutSidebarRowChrome {
         await faviconImageStore.load(
             launchURL: pin.launchURL,
             partition: faviconPartition,
+            context: .tabSidebar,
             imageReader: faviconImageReader
         )
     }

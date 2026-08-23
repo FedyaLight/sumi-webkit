@@ -118,7 +118,8 @@ struct SumiLiveFolderItemRow: View {
         guard let shortcutPin, let faviconPartition else { return nil }
         return faviconImageStore.image(
             for: shortcutPin.launchURL,
-            partition: faviconPartition
+            partition: faviconPartition,
+            context: .tabSidebar
         )
     }
 
@@ -130,7 +131,8 @@ struct SumiLiveFolderItemRow: View {
         }
         return faviconImageStore.loadKey(
             launchURL: shortcutPin.launchURL,
-            partition: faviconPartition
+            partition: faviconPartition,
+            context: .tabSidebar
         )
     }
 
@@ -142,6 +144,7 @@ struct SumiLiveFolderItemRow: View {
         await faviconImageStore.load(
             launchURL: shortcutPin.launchURL,
             partition: faviconPartition,
+            context: .tabSidebar,
             imageReader: faviconImageReader
         )
     }

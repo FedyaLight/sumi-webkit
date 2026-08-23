@@ -325,8 +325,8 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
         await fulfillment(of: [cacheUpdated], timeout: 1)
 
         var requestedURLs = await fetcher.requestedURLs.map(\.absoluteString)
-        XCTAssertTrue(
-            runtime.images.hasFavicon(for: pageURL, partition: partition),
+        XCTAssertNotNil(
+            runtime.images.cachedSelection(for: pageURL, partition: partition),
             "Expected cold root fallback to be cached before live discovery. Requests: \(requestedURLs)"
         )
         XCTAssertTrue(
@@ -465,7 +465,14 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
         )
         XCTAssertNotNil(visibleImage)
 
-        for context in [SumiFaviconDisplayContext.tabSidebar, .pinnedLauncher] {
+        for context in [
+            SumiFaviconDisplayContext.menu,
+            .historyBookmarkRow,
+            .tabSidebar,
+            .pinnedLauncher,
+            .siteDataRow,
+            .largePreview,
+        ] {
             let request = SumiPreparedFaviconRequest(
                 pageURL: pageURL,
                 partition: partition,
@@ -518,6 +525,40 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
 
         XCTAssertGreaterThan(centerAlpha, 200)
         XCTAssertLessThan(leftEdgeAlpha, 10)
+    }
+
+    func testNearTargetRasterDiagonalIsNotUnevenlyUpscaled() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SumiFaviconV2RasterDiagonal-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let partition = SumiFaviconPartition.regular()
+        let runtime = SumiFaviconRuntime(
+            rootDirectory: directory,
+            fetcher: RoutingFaviconNetworkFetcher(responses: [:])
+        )
+        for sourceSize in [32, 33] {
+            let pageURL = try XCTUnwrap(URL(string: "https://diagonal-\(sourceSize).example/"))
+            try runtime.payloadIngestion.storeExternalPayload(
+                SumiFaviconTestImages.diagonalPNGData(size: sourceSize),
+                faviconURL: pageURL.appendingPathComponent("favicon.png"),
+                documentURL: pageURL,
+                partition: partition
+            )
+
+            let image = await runtime.images.preparedImage(
+                for: request(pageURL: pageURL, partition: partition),
+                priority: .visibleSidebarOrTabStrip,
+                scheduleFetchOnMiss: false
+            )
+            let cgImage = try preparedCGImage(from: image)
+
+            XCTAssertEqual(
+                try intermediateGrayscalePixelCount(in: cgImage),
+                0,
+                "Unexpected raster interpolation for \(sourceSize) px source"
+            )
+        }
     }
 
     func testLiveDiscoveredHighQualityFaviconIsSharedWithMatchingPinnedLauncherAlias() async throws {
@@ -636,8 +677,8 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
         await fulfillment(of: [cacheUpdated], timeout: 1)
 
         let requestedURLs = await fetcher.requestedURLs.map(\.absoluteString)
-        XCTAssertTrue(
-            runtime.images.hasFavicon(for: launchURL, partition: partition),
+        XCTAssertNotNil(
+            runtime.images.cachedSelection(for: launchURL, partition: partition),
             "Expected cold root fallback to be cached for launcher before live discovery. Requests: \(requestedURLs)"
         )
         let rootSelection = try XCTUnwrap(runtime.images.cachedSelection(for: launchURL, partition: partition))
@@ -959,11 +1000,11 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
             documentURL: pageURL,
             partition: partition
         )
-        XCTAssertTrue(runtime.images.hasFavicon(for: pageURL, partition: partition))
+        XCTAssertNotNil(runtime.images.cachedSelection(for: pageURL, partition: partition))
 
         try runtime.maintenance.clearPartition(partition)
 
-        XCTAssertFalse(runtime.images.hasFavicon(for: pageURL, partition: partition))
+        XCTAssertNil(runtime.images.cachedSelection(for: pageURL, partition: partition))
         let privateEntries = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
             .map(\.lastPathComponent)
             .filter { $0.hasPrefix("private-") }
@@ -1101,5 +1142,26 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
         let offset = safeY * image.bytesPerRow + safeX * 4 + 3
         XCTAssertLessThan(offset, CFDataGetLength(data), file: file, line: line)
         return bytes[offset]
+    }
+
+    private func intermediateGrayscalePixelCount(
+        in image: CGImage,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws -> Int {
+        XCTAssertGreaterThanOrEqual(image.bitsPerPixel, 32, file: file, line: line)
+        let data = try XCTUnwrap(image.dataProvider?.data, file: file, line: line)
+        let bytes = try XCTUnwrap(CFDataGetBytePtr(data), file: file, line: line)
+        return (0..<image.height).reduce(into: 0) { count, y in
+            for x in 0..<image.width {
+                let offset = y * image.bytesPerRow + x * 4
+                let red = bytes[offset]
+                let green = bytes[offset + 1]
+                let blue = bytes[offset + 2]
+                if red == green, green == blue, red > 0, red < 255 {
+                    count += 1
+                }
+            }
+        }
     }
 }

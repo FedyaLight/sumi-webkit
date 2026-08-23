@@ -197,15 +197,17 @@ final class SumiFavoriteBackdropStore: BrowserFavoriteBackdropReading {
         let favicon = if let cachedFavicon {
             cachedFavicon
         } else {
-            await TabFaviconStore.loadCachedLauncherImage(
+            await TabFaviconStore.loadCachedDisplayImage(
                 forDocumentURL: documentURL,
                 partition: key.partition,
+                context: .pinnedLauncher,
+                priority: .pinnedLauncher,
                 imageReader: imageReader
             )
         }
         guard isCurrent(key, generation: generation),
               let favicon,
-              let data = SumiFavoriteBackdropRenderer.bake(favicon: favicon),
+              let data = await SumiFavoriteBackdropRenderer.bake(favicon: favicon),
               let image = decodedImage(data)
         else { return nil }
 

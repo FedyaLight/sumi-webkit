@@ -67,21 +67,6 @@ enum TabFaviconStore {
     }
 
     @MainActor
-    static func loadCachedLauncherImage(
-        forDocumentURL url: URL,
-        partition: SumiFaviconPartition = .regular(),
-        imageReader: any BrowserFaviconImageReading
-    ) async -> NSImage? {
-        await loadCachedDisplayImage(
-            forDocumentURL: url,
-            partition: partition,
-            context: .pinnedLauncher,
-            priority: .pinnedLauncher,
-            imageReader: imageReader
-        )
-    }
-
-    @MainActor
     static func loadCachedDisplayImage(
         forDocumentURL url: URL,
         partition: SumiFaviconPartition,
@@ -107,14 +92,6 @@ enum TabFaviconStore {
 
     @MainActor
     static func getCachedImage(
-        for key: String,
-        imageReader: any BrowserFaviconImageReading
-    ) -> NSImage? {
-        getCachedImage(forReferenceKey: key, imageReader: imageReader)
-    }
-
-    @MainActor
-    static func getCachedImage(
         forReferenceKey referenceKey: String,
         partition: SumiFaviconPartition,
         context: SumiFaviconDisplayContext = .tabSidebar,
@@ -125,19 +102,6 @@ enum TabFaviconStore {
             forDocumentURL: documentURL,
             partition: partition,
             context: context,
-            imageReader: imageReader
-        )
-    }
-
-    @MainActor
-    static func getCachedImage(
-        forReferenceKey referenceKey: String,
-        imageReader: any BrowserFaviconImageReading
-    ) -> NSImage? {
-        getCachedImage(
-            forReferenceKey: referenceKey,
-            partition: .regular(),
-            context: .tabSidebar,
             imageReader: imageReader
         )
     }

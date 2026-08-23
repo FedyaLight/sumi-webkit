@@ -298,22 +298,6 @@ enum SumiFaviconDiscovery {
     }
 }
 
-enum SumiWebAppManifestIconDiscovery {
-    static func candidates(
-        from data: Data,
-        manifestURL: URL,
-        pageURL: URL,
-        partition: SumiFaviconPartition
-    ) -> [SumiFaviconCandidate] {
-        SumiFaviconDiscovery.manifestCandidates(
-            from: data,
-            manifestURL: manifestURL,
-            pageURL: pageURL,
-            partition: partition
-        )
-    }
-}
-
 extension Sequence where Element: Hashable {
     func uniquedPreservingOrder() -> [Element] {
         var seen = Set<Element>()
