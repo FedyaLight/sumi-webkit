@@ -220,7 +220,7 @@ enum SumiTransientChromeInteractionShieldUserScript {
             }
 
             function stopPageEvent(event) {
-                if (!eventIsInsideShield(event)) { return; }
+                if (!event.isTrusted || !eventIsInsideShield(event)) { return; }
 
                 event.stopImmediatePropagation();
                 event.stopPropagation();
@@ -284,7 +284,7 @@ enum SumiTransientChromeInteractionShieldUserScript {
                         return;
                     }
 
-                    if (!active && clampedPoint && pointIsInsideActiveRect(clampedPoint.clientX, clampedPoint.clientY)) {
+                    if (clampedPoint && pointIsInsideActiveRect(clampedPoint.clientX, clampedPoint.clientY)) {
                         dispatchExitEvents(previousTarget, shieldElements[0] || null, clampedPoint);
                     }
                     if (!active) {

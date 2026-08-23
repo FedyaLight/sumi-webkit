@@ -230,7 +230,7 @@ final class HoverSidebarManager: ObservableObject {
         monitorsInstalled = true
         // Local monitor for responsive updates while the app is active
         localMonitor = eventMonitors.addLocalMonitor(
-            [.mouseMoved, .leftMouseDragged, .rightMouseDragged]
+            [.mouseMoved]
         ) { [weak self] event in
             self?.scheduleHandleMouseMovement()
             return event

@@ -1,9 +1,64 @@
 import AppKit
 @testable import Sumi
+import WebKit
 import XCTest
 
 @MainActor
 final class WebKitTransientChromeInteractionShieldOwnerTests: XCTestCase {
+    func testExpandingActiveShieldOverPointerDispatchesPageHoverExit() async throws {
+        let webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 200, height: 200))
+        let navigation = NavigationWaiter()
+        webView.navigationDelegate = navigation
+        webView.loadHTMLString(
+            """
+            <!doctype html>
+            <style>html, body, #target { margin: 0; width: 100%; height: 100%; }</style>
+            <div id="target"></div>
+            <script>
+                window.hoverExitCount = 0;
+                document.getElementById("target").addEventListener("mouseout", function() {
+                    window.hoverExitCount += 1;
+                });
+            </script>
+            """,
+            baseURL: nil
+        )
+        await fulfillment(of: [navigation.finished], timeout: 3)
+
+        _ = try await webView.evaluateJavaScript(
+            SumiTransientChromeInteractionShieldUserScript.makeSetActiveSource(
+                true,
+                clientPoint: CGPoint(x: 10, y: 10),
+                rects: [
+                    SumiTransientChromeInteractionShieldRect(
+                        x: 150,
+                        y: 0,
+                        width: 40,
+                        height: 40
+                    ),
+                ]
+            )
+        )
+        _ = try await webView.evaluateJavaScript(
+            SumiTransientChromeInteractionShieldUserScript.makeSetActiveSource(
+                true,
+                clientPoint: CGPoint(x: 10, y: 10),
+                rects: [
+                    SumiTransientChromeInteractionShieldRect(
+                        x: 0,
+                        y: 0,
+                        width: 100,
+                        height: 100
+                    ),
+                ]
+            )
+        )
+
+        let hoverExitValue = try await webView.evaluateJavaScript("window.hoverExitCount")
+        let hoverExitCount = try XCTUnwrap(hoverExitValue as? Int)
+        XCTAssertEqual(hoverExitCount, 1)
+    }
+
     func testSuppressingAppliesScriptRefreshesTrackingAndClearsHoveredLink() {
         var scripts: [String] = []
         var refreshCount = 0
@@ -86,5 +141,14 @@ final class WebKitTransientChromeInteractionShieldOwnerTests: XCTestCase {
             refreshPointerPresentation: refreshPointerPresentation,
             clearHoveredLink: clearHoveredLink
         )
+    }
+}
+
+@MainActor
+private final class NavigationWaiter: NSObject, WKNavigationDelegate {
+    let finished = XCTestExpectation(description: "Web content loaded")
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        finished.fulfill()
     }
 }

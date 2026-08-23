@@ -546,7 +546,7 @@ final class HoverSidebarManagerTests: XCTestCase {
         XCTAssertTrue(harness.manager.isOverlayHostPrewarmed)
     }
 
-    func testRefreshMonitoringInstallsAndRemovesMonitorsForActiveCollapsedWindow() async {
+    func testRefreshMonitoringListensOnlyToHoverForActiveCollapsedWindow() async {
         let recorder = EventMonitorRecorder()
         let manager = HoverSidebarManager(
             eventMonitors: recorder.client,
@@ -580,7 +580,7 @@ final class HoverSidebarManagerTests: XCTestCase {
 
         XCTAssertEqual(
             recorder.localMasks,
-            [[.mouseMoved, .leftMouseDragged, .rightMouseDragged]]
+            [[.mouseMoved]]
         )
         XCTAssertTrue(manager.isOverlayHostPrewarmed)
 
