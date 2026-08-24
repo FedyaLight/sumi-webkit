@@ -4,9 +4,9 @@ Sumi uses Sparkle 2 for update checks, archive verification, download, installat
 
 ## First Install
 
-For Alpha 5 (`v0.0.5`):
+For the current Alpha (`v0.0.6`):
 
-1. Download the Apple-silicon DMG from [GitHub Releases](https://github.com/FedyaLight/sumi-webkit/releases/tag/v0.0.5).
+1. Download the Apple-silicon DMG from [GitHub Releases](https://github.com/FedyaLight/sumi-webkit/releases/tag/v0.0.6).
 2. Open the DMG and drag `Sumi.app` to Applications.
 3. Launch Sumi.
 
@@ -22,16 +22,16 @@ Run this only for a Sumi bundle you intentionally downloaded. Sumi itself never 
 ## Update Flow
 
 - Alpha 1 reads `https://fedyalight.github.io/sumi-webkit/appcast.xml`; Alpha 2 and later Alpha builds read `https://fedyalight.github.io/sumi-webkit/appcast-alpha.xml`.
-- Alpha 5 is published to both feeds as `0.0.5 build 9`, so eligible installed builds move directly to the current Alpha channel without a staged bridge.
-- The Alpha 5 appcast item requires `arm64` hardware. Sparkle therefore offers it to Apple-silicon Macs, including an older Intel build running under Rosetta, but not to native Intel Macs.
-- Native Intel Macs receive no Alpha 5 offer. Alpha 4 (`0.0.4`) is the final Intel-compatible build for installations that already have it; no further Intel archive is distributed.
+- Version `0.0.6 build 10` is published to both feeds, so eligible installed builds move directly to the current Alpha channel without a staged bridge.
+- The current appcast item requires `arm64` hardware. Sparkle therefore offers it to Apple-silicon Macs, including an older Intel build running under Rosetta, but not to native Intel Macs.
+- Native Intel Macs receive no Arm-only offer. Version `0.0.4` is the final Intel-compatible build for installations that already have it; historic Intel and Universal assets remain published.
 - `Sumi/Info.plist` contains the Sparkle EdDSA public key as `SUPublicEDKey`.
 - Sparkle verifies update archives using the signature in the appcast enclosure.
 - Users explicitly start installation from Settings > About or the sidebar notice.
 - Sparkle handles download, installation, and relaunch.
 - After relaunch, the completed sidebar notice links to `https://sumi-browser.netlify.app/changelog/#<display-version>`; each public release entry must use its display version as the Changelog anchor.
 
-Alpha 1's `appcast.xml` was initially empty. Alpha 2 established the first bridge and the Alpha channel. Alpha 5 replaces that bridge with a direct signed Arm64 update item in both feeds; no Universal update archive is used.
+The original `appcast.xml` was initially empty. Version `0.0.2` established the first bridge and the Alpha channel. Both feeds now carry the same direct signed Arm64 update item; no Universal update archive is used for the current release.
 
 ## Signing Boundaries
 

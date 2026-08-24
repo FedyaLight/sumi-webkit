@@ -79,6 +79,24 @@ for framework_path in "${package_frameworks[@]}"; do
   ditto "${framework_path}" "${embedded_framework_path}"
 done
 
+while IFS= read -r -d '' binary_path; do
+  if ! file -b "${binary_path}" | grep -q '^Mach-O universal binary'; then
+    continue
+  fi
+
+  binary_architectures="$(lipo -archs "${binary_path}")"
+  if [[ " ${binary_architectures} " != *" ${architecture} "* ]]; then
+    echo "error: Universal binary lacks ${architecture} slice: ${binary_path}" >&2
+    exit 1
+  fi
+
+  thinned_binary="${binary_path}.sumi-thin"
+  binary_mode="$(stat -f '%Lp' "${binary_path}")"
+  lipo "${binary_path}" -thin "${architecture}" -output "${thinned_binary}"
+  chmod "${binary_mode}" "${thinned_binary}"
+  mv -f "${thinned_binary}" "${binary_path}"
+done < <(find "${app_path}" -type f -print0)
+
 temporary_root="$(mktemp -d /tmp/SumiReleaseDmg.XXXXXX)"
 verification_mount="$(mktemp -d /tmp/SumiReleaseDmgMount.XXXXXX)"
 volume_name="Sumi"

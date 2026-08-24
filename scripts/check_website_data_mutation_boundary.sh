@@ -26,6 +26,10 @@ cleanup_transaction_source="Sumi/Managers/WebViewRuntime/WebsiteDataCleanupTrans
 # Constructive cookie writes have exactly one owner, so importing sessions
 # cannot become the one website-data mutation nobody polices.
 cookie_installation_source="Sumi/Services/SumiProfileCookieInstallationService.swift"
+# Copy Image mirrors the current WebKit session into an isolated request-only
+# cookie jar. This is not a profile-store mutation, and URLSession must retain
+# domain/path/secure filtering instead of constructing a Cookie header by hand.
+transient_request_cookie_source="Sumi/Utils/WebKit/WebPageMenu/SumiWebPageImagePasteboard.swift"
 
 for source in \
   "$canonical_cleanup_source" \
@@ -38,7 +42,8 @@ for source in \
   "$terminal_receipt_source" \
   "$navigation_barrier_source" \
   "$cleanup_transaction_source" \
-  "$cookie_installation_source"; do
+  "$cookie_installation_source" \
+  "$transient_request_cookie_source"; do
   guard_require_file "$source"
 done
 
@@ -53,6 +58,13 @@ while IFS= read -r match; do
     "$canonical_cleanup_source") ;;
     "$canonical_cleanup_support_source") ;;
     "$cookie_installation_source") ;;
+    "$transient_request_cookie_source")
+      if [[ "$match" != *'configuration.httpCookieStorage?.setCookie(cookie)'* ]] \
+          || ! grep -q 'URLSessionConfiguration.ephemeral' "$transient_request_cookie_source"; then
+        guard_record_failure \
+          "transient request cookies escaped the isolated URLSession jar: $match"
+      fi
+      ;;
     *) guard_record_failure "cookies are written outside the profile cookie installation service: $match" ;;
   esac
 done <<<"$set_cookie_hits"

@@ -12,7 +12,7 @@
   <a href="https://www.apple.com/macos/"><img src="https://img.shields.io/badge/macOS-15.5+-blue" alt="macOS 15.5+"></a>
   <a href="https://swift.org/"><img src="https://img.shields.io/badge/Swift-6-orange" alt="Swift 6"></a>
   <a href="https://www.gnu.org/licenses/gpl-3.0.html"><img src="https://img.shields.io/badge/License-GPL--3.0-green" alt="GPL-3.0"></a>
-  <a href="https://github.com/FedyaLight/sumi-webkit/releases/tag/v0.0.5"><img src="https://img.shields.io/badge/Alpha-v0.0.5-blue" alt="Alpha v0.0.5"></a>
+  <a href="https://github.com/FedyaLight/sumi-webkit/releases/tag/v0.0.6"><img src="https://img.shields.io/badge/Alpha-v0.0.6-blue" alt="Alpha v0.0.6"></a>
 </p>
 
 <p align="center">
@@ -21,17 +21,17 @@
 
 ## Status
 
-`v0.0.5` is Sumi's fifth public Alpha release. The app builds and runs as a working browser, but it is still early software and is not yet recommended as a primary browser. Download the Apple-silicon `arm64` build from [GitHub Releases](https://github.com/FedyaLight/sumi-webkit/releases/tag/v0.0.5). Alpha 4 (`v0.0.4`) is the final Intel-compatible build; native Intel Macs are never offered the incompatible Alpha 5 update.
+`v0.0.6` is Sumi's current public Alpha release. The app builds and runs as a working browser, but it is still early software and is not yet recommended as a primary browser. Download the Apple-silicon `arm64` build from [GitHub Releases](https://github.com/FedyaLight/sumi-webkit/releases/tag/v0.0.6). Version `0.0.4` is the final Intel-compatible build; native Intel Macs are never offered an incompatible Arm update.
 
 This Alpha release is intentionally narrow about its guarantees:
 
 - Releases are Apple-silicon (`arm64`) only and are build- and package-verified on macOS 15.5+ with Xcode 27 preview. The release tooling rejects Intel and Universal output.
 - The current distribution path is outside the Mac App Store and is not yet Developer ID signed or notarized.
 - Safari Web Extension support is experimental and verified per extension/workflow, not as blanket Safari compatibility.
-- Sparkle updates are delivered through Sumi's Alpha channel and check automatically every six hours while Sumi is running. Both historic feeds migrate eligible Apple-silicon installations directly to Alpha 5; native Intel installations receive no Alpha 5 offer.
+- Sparkle updates are delivered through Sumi's Alpha channel and check automatically every six hours while Sumi is running. Both historic feeds migrate eligible Apple-silicon installations directly to `0.0.6`; native Intel installations receive no Arm-only offer.
 - Apple Passwords/iCloud Keychain AutoFill validation remains follow-up release work.
 
-See the [Alpha 5 release notes](docs/releases/0.0.5.md), [roadmap](docs/roadmap.md), [update behavior](docs/UPDATES.md), and [maintainer release process](docs/RELEASES.md).
+See the [0.0.6 release notes](docs/releases/0.0.6.md), [roadmap](docs/roadmap.md), [update behavior](docs/UPDATES.md), and [maintainer release process](docs/RELEASES.md).
 
 ## What Makes Sumi Different
 
@@ -45,7 +45,7 @@ Sumi is an independent open-source browser application around system WebKit. It 
 
 Sumi implements the browser application layer. WebKit still owns HTML/CSS rendering, JavaScript execution, networking, web processes, and the underlying `WKWebExtension` runtime.
 
-## Included in Alpha 5
+## Included in the current Alpha
 
 ### Browsing and organization
 
@@ -103,7 +103,7 @@ Backup v1 intentionally excludes passwords, cookies, WebKit website data, histor
 
 ### Install Sumi
 
-Download the Apple-silicon DMG from [v0.0.5 Alpha 5](https://github.com/FedyaLight/sumi-webkit/releases/tag/v0.0.5), open it, and drag Sumi to Applications. The same immutable `arm64` DMG is used for direct downloads and Sparkle updates. Alpha 4 (`v0.0.4`) is the final Intel-compatible build; Sumi does not offer native Intel Macs an incompatible update.
+Download the Apple-silicon DMG from [v0.0.6](https://github.com/FedyaLight/sumi-webkit/releases/tag/v0.0.6), open it, and drag Sumi to Applications. The same immutable `arm64` DMG is used for direct downloads and Sparkle updates. Version `0.0.4` is the final Intel-compatible build; Sumi does not offer native Intel Macs an incompatible update.
 
 Current release builds are development-signed rather than Developer ID signed or notarized. If macOS says the app is damaged, move it to `/Applications` and remove the quarantine flag:
 

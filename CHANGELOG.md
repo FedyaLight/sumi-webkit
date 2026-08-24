@@ -2,11 +2,50 @@
 
 Sumi follows semantic product versions. This changelog records public release scope, not every internal refactor.
 
-## Unreleased
+## 0.0.6 Alpha, 2026-08-24
 
-### Window Management
+### Downloads and Webpage Actions
 
+- Gmail attachments served from directory-style URLs now download instead of opening as a page.
+- Webpage context menus now route linked-file downloads, image saving, and image copying through working browser commands. Copy Link to Selected Text also produces a correctly encoded text-fragment URL.
+
+### Sidebar, Glance, and Window Interaction
+
+- Selected sidebar items reliably scroll into view with the smallest necessary movement. Items already visible stay in place, and background opens do not steal the viewport.
+- Promoting a Glance preview into a tab preserves webpage hover state and the correct pointing-hand cursor.
+- Collapsed-sidebar hover no longer leaves stale webpage hover underneath transient browser chrome.
 - Dragging from the top of a web page no longer moves the browser window, so page interactions such as text selection work there. Browser windows move from the sidebar control strip instead. Windows that end up fully off-screen after a display change return to a visible screen.
+- Terminal WebKit key events no longer produce a system beep after the browser has handled them.
+
+### Adblock and Rendering
+
+- Domain-scoped cosmetic Adblock rules now run only on matching hosts through the advanced pipeline. Existing compiled generations migrate locally; generic and exclusion-based cosmetic rules remain in WebKit for first-paint blocking.
+- Favicons prefer appropriately sized sources, avoid uneven fractional raster scaling, and reuse the canonical favicon cache across sidebar surfaces. Favorite backdrop rendering no longer performs its blur work on the main thread.
+- Browser-owned loading and certificate-warning surfaces follow the active Space and effective light or dark appearance.
+
+## 0.0.5 Alpha — 2026-08-18
+
+This release moves Sumi to one signed immutable DMG for direct installs and Sparkle updates, replaces prepared blocking bundles with locally built Adblock generations, and makes browser-owned storage cleanup safer and more bounded.
+
+### Adblock
+
+- Selected filter lists now download and compile locally into one atomic native WebKit and advanced-blocking generation. Existing site-specific exceptions remain intact.
+- Inactive generations are reclaimed without disturbing the current selection or user site exceptions.
+
+### Browser Storage and Permissions
+
+- Regular-profile HTTP caches have a bounded disk budget, and stale persistent website-data and extension-controller namespaces are reclaimed in bounded batches without touching live profile state.
+- Older per-profile regular favicon caches migrate to one shared regular-profile store while private favicon state remains isolated.
+- Site permission decisions migrate to regular install-wide scope so a browser-level decision stays consistent across regular profiles.
+
+### Browser Polish
+
+- Settings reliably comes to the front, and certificate warnings route through the active browser surface.
+- Sidebar hover actions respond immediately, unloaded regular tabs no longer show an extra indicator dot, Space title chevrons no longer overshoot, and URL Hub popovers use the corrected presentation surface.
+
+### Distribution
+
+- Direct installs and Sparkle updates use the same signed Arm64 DMG. Native Intel Macs are not offered the incompatible update, and historic Intel and Universal assets remain available.
 
 ## 0.0.4 Alpha 4 — 2026-08-15
 

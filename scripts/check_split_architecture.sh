@@ -39,6 +39,8 @@ retired_files=(
   Sumi/Managers/BrowserManager/SplitShortcutMemberRestoreHandoffReceipt.swift
   Sumi/Managers/BrowserManager/ShortcutSplitLauncherRestoration.swift
   Sumi/Managers/BrowserManager/SplitShortcutMemberRestoreService.swift
+  Sumi/Managers/BrowserManager/PreparedShortcutSplitLauncherMoveSettlement.swift
+  Sumi/Managers/BrowserManager/ShortcutSplitLauncherMoveAggregateTransaction.swift
   SumiTests/SplitGroupCollectionStateOwnerTests.swift
   SumiTests/SplitMembershipResolutionOwnerTests.swift
   SumiTests/SplitEmptyPlaceholderOwnerTests.swift
@@ -88,8 +90,6 @@ required_runtime_components=(
   Sumi/Managers/BrowserManager/ShortcutSplitLauncherReleasePlanner.swift
   Sumi/Managers/BrowserManager/ShortcutSplitLauncherReleaseReceipt.swift
   Sumi/Managers/BrowserManager/PreparedShortcutSplitLauncherMoveBatch.swift
-  Sumi/Managers/BrowserManager/PreparedShortcutSplitLauncherMoveSettlement.swift
-  Sumi/Managers/BrowserManager/ShortcutSplitLauncherMoveAggregateTransaction.swift
   Sumi/Managers/SplitRuntime/WindowSplitQuery.swift
   Sumi/Managers/SplitRuntime/WindowSplitPresentationSynchronizer.swift
   Sumi/Managers/SplitRuntime/WindowSplitPresentationEffectExecutor.swift

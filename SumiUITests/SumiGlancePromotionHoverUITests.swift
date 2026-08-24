@@ -105,7 +105,7 @@ final class SumiGlancePromotionHoverUITests: SumiLaunchSmokeUITestCase {
         // from chrome hover (e.g. the expand button) at a different moment.
         XCTAssertTrue(
             targetLines.contains {
-                $0.contains("\"hoverLink\":true") && $0.contains("cursor=pointingHand")
+                $0.contains("hoverLink=true") && $0.contains("cursor=pointingHand")
             },
             "Promoted page never reported live hover with a pointing hand after expand; cursor pipeline is dead.\nLast target lines:\n\(targetLines.suffix(6).joined(separator: "\n"))"
         )

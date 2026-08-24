@@ -41,7 +41,10 @@ production_shared_call_sites="$(
 # either checks `Task.isCancelled`/a generation token immediately afterwards or
 # sits in a loop that cancellation is meant to end. Rewriting those as do/catch
 # would be strictly worse code, so they are excluded rather than counted as debt.
-# The ceilings below are unchanged and still ratchet the real debt down.
+# The ceilings below still ratchet the real debt down. The production baseline
+# includes the context-menu Copy Image best-effort file read. The test baseline
+# includes temporary cursor-dump cleanup/readback and download-file polling,
+# where a missing or not-yet-readable file is the expected negative result.
 production_try_optional="$(
   count_matches '\btry\?(?!\s+await\s+Task\.sleep)' "${production_roots[@]}" -P
 )"
@@ -62,8 +65,8 @@ check_max "production .shared call sites" "$production_shared_call_sites" 53
 # Baseline raised 57 -> 62 when the vendored DDG Bookmarks import readers were
 # ported into Sumi/Bookmarks/Store (5 best-effort try? sites: temp-file
 # cleanup, browser-profile directory discovery, regex compilation).
-check_max "production try? call sites" "$production_try_optional" 79
-check_max "test try? call sites" "$test_try_optional" 174
+check_max "production try? call sites" "$production_try_optional" 80
+check_max "test try? call sites" "$test_try_optional" 178
 check_max "theme color literal call sites" "$theme_color_literals" 78
 check_max "theme fixed font-size call sites" "$theme_font_size_literals" 69
 
