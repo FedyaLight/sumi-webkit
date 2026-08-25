@@ -161,7 +161,7 @@ final class AuthenticationManagerTests: XCTestCase {
         XCTAssertEqual(removedTabID, tab.id)
     }
 
-    func testCertificateTrustApprovalDoesNotCoverAnotherHost() async throws {
+    func testCertificateTrustApprovalCoversBackgroundHostInSameTab() async throws {
         let manager = AuthenticationManager(
             credentialStore: BasicAuthCredentialStore(
                 service: "com.sumi.authentication.tests.\(UUID().uuidString)"
@@ -169,7 +169,8 @@ final class AuthenticationManagerTests: XCTestCase {
         )
         let tab = Tab(url: URL(string: "https://untrusted.com")!)
         let firstWarningPresented = expectation(description: "First certificate warning presented")
-        let secondWarningPresented = expectation(description: "Second certificate warning presented")
+        let secondWarningPresented = expectation(description: "Second certificate warning is not presented")
+        secondWarningPresented.isInverted = true
         var capturedSession: CertificateTrustWarningSession?
         var presentedCount = 0
         var firstResult: URLSession.AuthChallengeDisposition?
@@ -204,15 +205,16 @@ final class AuthenticationManagerTests: XCTestCase {
         _ = manager.handleAuthenticationChallenge(
             try makeUntrustedServerTrustChallenge(host: "cdn.untrusted.com"),
             for: tab,
-            mainFrameURL: URL(string: "https://cdn.untrusted.com")!
+            mainFrameURL: URL(string: "https://untrusted.com")!
         ) { disposition, _ in
             secondResult = disposition
         }
-        await fulfillment(of: [secondWarningPresented], timeout: 1)
+        await fulfillment(of: [secondWarningPresented], timeout: 0.1)
 
-        XCTAssertEqual(presentedCount, 2)
+        XCTAssertEqual(presentedCount, 1)
         XCTAssertEqual(firstResult, .useCredential)
-        XCTAssertNil(secondResult)
+        XCTAssertEqual(secondResult, .useCredential)
+        XCTAssertTrue(tab.hasApprovedInvalidCertificate)
     }
 
     func testUntrustedSubresourceTrustCancelsWithoutPresentingWarning() async throws {

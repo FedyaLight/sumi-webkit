@@ -17,7 +17,8 @@ final class BrowserSiteControlsContextOwner {
         url: URL?,
         profile: Profile?,
         protectionReloadRequired: Bool,
-        contentBlockerReloadRequired: Bool
+        contentBlockerReloadRequired: Bool,
+        hasApprovedInvalidCertificate: Bool
     ) -> SiteControlsSnapshot {
         SiteControlsSnapshot.resolve(
             url: url,
@@ -25,7 +26,8 @@ final class BrowserSiteControlsContextOwner {
             protectionCoordinator: protection,
             protectionReloadRequired: protectionReloadRequired,
             extensionsModule: extensions,
-            safariContentBlockerReloadRequired: contentBlockerReloadRequired
+            safariContentBlockerReloadRequired: contentBlockerReloadRequired,
+            hasApprovedInvalidCertificate: hasApprovedInvalidCertificate
         )
     }
 }

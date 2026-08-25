@@ -59,7 +59,6 @@ final class AuthenticationManager: NSObject {
 
     private var runtime: AuthenticationManagerRuntime?
     private let credentialStore: BasicAuthCredentialStore
-    private var approvedCertificateTrustKeys: Set<CertificateTrustPendingKey> = []
     private var pendingCertificateTrustRequests: [
         CertificateTrustPendingKey: CertificateTrustPendingRequest
     ] = [:]
@@ -233,6 +232,11 @@ final class AuthenticationManager: NSObject {
             return
         }
 
+        if tab.hasApprovedInvalidCertificate {
+            completionHandler(.useCredential, URLCredential(trust: trust))
+            return
+        }
+
         let host = challenge.protectionSpace.host.isEmpty
             ? (tab.url.host ?? "this site")
             : challenge.protectionSpace.host
@@ -249,11 +253,6 @@ final class AuthenticationManager: NSObject {
             host: normalizedHost,
             certificateFingerprint: Self.certificateFingerprint(for: trust)
         )
-
-        if approvedCertificateTrustKeys.contains(pendingKey) {
-            completionHandler(.useCredential, URLCredential(trust: trust))
-            return
-        }
 
         if let pending = pendingCertificateTrustRequests[pendingKey] {
             pending.challenges.append(
@@ -321,7 +320,7 @@ final class AuthenticationManager: NSObject {
         }
 
         if allowing {
-            approvedCertificateTrustKeys.insert(pending.key)
+            pending.tab?.approveInvalidCertificateForTab()
         }
 
         let disposition: URLSession.AuthChallengeDisposition = allowing

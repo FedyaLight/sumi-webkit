@@ -196,6 +196,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     )?
     private(set) var certificateTrustWarningSession:
         CertificateTrustWarningSession?
+    @Published private(set) var hasApprovedInvalidCertificate = false
 
     var isUnloaded: Bool {
         resolvedCurrentWebView() == nil
@@ -237,6 +238,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         guard certificateTrustWarningSession === session else { return }
         certificateTrustWarningSession = nil
         publishPagePresentationChangeForOwnedWebViews()
+    }
+
+    func approveInvalidCertificateForTab() {
+        hasApprovedInvalidCertificate = true
     }
 
     private func publishPagePresentationChangeForOwnedWebViews() {

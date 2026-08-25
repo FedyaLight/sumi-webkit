@@ -213,7 +213,8 @@ struct URLBarView: View {
             activePageURL,
             effectiveProfile,
             currentTab?.isProtectionReloadRequired == true,
-            currentTab?.isSafariContentBlockerReloadRequired == true
+            currentTab?.isSafariContentBlockerReloadRequired == true,
+            currentTab?.hasApprovedInvalidCertificate == true
         )
     }
 }

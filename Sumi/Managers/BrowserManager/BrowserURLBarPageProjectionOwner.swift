@@ -44,13 +44,15 @@ final class BrowserURLBarPageProjectionOwner {
         url: URL?,
         profile: Profile?,
         protectionReloadRequired: Bool,
-        contentBlockerReloadRequired: Bool
+        contentBlockerReloadRequired: Bool,
+        hasApprovedInvalidCertificate: Bool
     ) -> SiteControlsSnapshot {
         siteControls.snapshot(
             url: url,
             profile: profile,
             protectionReloadRequired: protectionReloadRequired,
-            contentBlockerReloadRequired: contentBlockerReloadRequired
+            contentBlockerReloadRequired: contentBlockerReloadRequired,
+            hasApprovedInvalidCertificate: hasApprovedInvalidCertificate
         )
     }
 }

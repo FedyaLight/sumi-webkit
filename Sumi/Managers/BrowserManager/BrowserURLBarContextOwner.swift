@@ -50,12 +50,13 @@ final class BrowserURLBarContextOwner {
             },
             profiles: { [hub] in hub.profiles },
             currentProfile: { [hub] in hub.currentProfile },
-            siteControlsSnapshot: { [hub] url, profile, protectionReload, blockerReload in
+            siteControlsSnapshot: { [hub] url, profile, protectionReload, blockerReload, invalidCertificate in
                 hub.siteControlsSnapshot(
                     url: url,
                     profile: profile,
                     protectionReloadRequired: protectionReload,
-                    contentBlockerReloadRequired: blockerReload
+                    contentBlockerReloadRequired: blockerReload,
+                    hasApprovedInvalidCertificate: invalidCertificate
                 )
             },
             focusCommandPalette: { [pageCommands] windowState, prefill, navigateCurrentTab in

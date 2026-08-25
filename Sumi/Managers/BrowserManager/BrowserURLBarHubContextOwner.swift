@@ -56,13 +56,15 @@ final class BrowserURLBarHubContextOwner {
         url: URL?,
         profile: Profile?,
         protectionReloadRequired: Bool,
-        contentBlockerReloadRequired: Bool
+        contentBlockerReloadRequired: Bool,
+        hasApprovedInvalidCertificate: Bool
     ) -> SiteControlsSnapshot {
         pages.siteControlsSnapshot(
             url: url,
             profile: profile,
             protectionReloadRequired: protectionReloadRequired,
-            contentBlockerReloadRequired: contentBlockerReloadRequired
+            contentBlockerReloadRequired: contentBlockerReloadRequired,
+            hasApprovedInvalidCertificate: hasApprovedInvalidCertificate
         )
     }
 
@@ -98,12 +100,13 @@ final class BrowserURLBarHubContextOwner {
             webView: { [pages] tab, windowState in
                 pages.webView(for: tab, in: windowState)
             },
-            siteControlsSnapshot: { [pages] url, profile, protectionReload, blockerReload in
+            siteControlsSnapshot: { [pages] url, profile, protectionReload, blockerReload, invalidCertificate in
                 pages.siteControlsSnapshot(
                     url: url,
                     profile: profile,
                     protectionReloadRequired: protectionReload,
-                    contentBlockerReloadRequired: blockerReload
+                    contentBlockerReloadRequired: blockerReload,
+                    hasApprovedInvalidCertificate: invalidCertificate
                 )
             },
             openExtensionSettings: { [commands] windowState in

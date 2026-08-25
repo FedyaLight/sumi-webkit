@@ -70,7 +70,7 @@ struct URLBarHubBrowserContext {
     let profiles: () -> [Profile]
     let currentProfile: () -> Profile?
     let webView: (Tab, BrowserWindowState) -> WKWebView?
-    let siteControlsSnapshot: (URL?, Profile?, Bool, Bool) -> SiteControlsSnapshot
+    let siteControlsSnapshot: (URL?, Profile?, Bool, Bool, Bool) -> SiteControlsSnapshot
     let openExtensionSettings: (BrowserWindowState) -> Void
     let openSiteSettings: (Tab?, BrowserWindowState) -> Void
     let reloadAfterProtectionPolicyChange: (Tab, BrowserWindowState) -> Bool
@@ -96,7 +96,7 @@ struct URLBarBrowserContext {
     let webView: (Tab, BrowserWindowState) -> WKWebView?
     let profiles: () -> [Profile]
     let currentProfile: () -> Profile?
-    let siteControlsSnapshot: (URL?, Profile?, Bool, Bool) -> SiteControlsSnapshot
+    let siteControlsSnapshot: (URL?, Profile?, Bool, Bool, Bool) -> SiteControlsSnapshot
     let focusCommandPalette: (BrowserWindowState, String, Bool) -> Void
     let reloadPage: (ActivePageResolution, String) -> Bool
     let closeURLBarHubPopover: (BrowserWindowState) -> Void

@@ -25,6 +25,18 @@ final class BrowserURLBarHubContextOwnerTests: XCTestCase {
         XCTAssertTrue(insecureState.isFooterStruckThrough)
     }
 
+    func testHTTPSWithApprovedInvalidCertificateIsNotSecure() throws {
+        let url = try XCTUnwrap(URL(string: "https://untrusted.example/path"))
+
+        let state = SiteControlsSnapshot.resolve(
+            url: url,
+            profile: nil,
+            hasApprovedInvalidCertificate: true
+        ).securityState
+
+        XCTAssertEqual(state, .notSecure)
+    }
+
     func testLiveContextUsesComposedBrowserRoles() {
         let browserManager = BrowserManager()
         let context = browserManager.urlBarBundle.contextOwner.urlBarHubContext
@@ -44,7 +56,7 @@ final class BrowserURLBarHubContextOwnerTests: XCTestCase {
             context.extensionActions.toolbarPresentationSnapshot(nil),
             .empty
         )
-        XCTAssertEqual(context.siteControlsSnapshot(nil, nil, false, false), resolvedSnapshot)
+        XCTAssertEqual(context.siteControlsSnapshot(nil, nil, false, false, false), resolvedSnapshot)
     }
 
     func testLiveContextWithBoostsDisabledDoesNotLoadBoostStore() throws {

@@ -116,7 +116,8 @@ struct SiteControlsSnapshot: Equatable {
         protectionCoordinator: SumiProtectionCoordinator? = nil,
         protectionReloadRequired: Bool = false,
         extensionsModule: SumiExtensionsModule? = nil,
-        safariContentBlockerReloadRequired: Bool = false
+        safariContentBlockerReloadRequired: Bool = false,
+        hasApprovedInvalidCertificate: Bool = false
     ) -> SiteControlsSnapshot {
         guard let url else {
             return SiteControlsSnapshot(
@@ -136,7 +137,7 @@ struct SiteControlsSnapshot: Equatable {
         let securityState: SecurityState
         switch scheme {
         case "https":
-            securityState = .secure
+            securityState = hasApprovedInvalidCertificate ? .notSecure : .secure
         case "file":
             securityState = .localPage
         case "about", "data", "blob", "javascript", "sumi":

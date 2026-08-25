@@ -98,7 +98,8 @@ struct URLBarHubPopover: View {
             currentTab?.url,
             activeProfile,
             currentTab?.isProtectionReloadRequired == true,
-            currentTab?.isSafariContentBlockerReloadRequired == true
+            currentTab?.isSafariContentBlockerReloadRequired == true,
+            currentTab?.hasApprovedInvalidCertificate == true
         )
     }
 
