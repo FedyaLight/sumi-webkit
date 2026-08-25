@@ -2,6 +2,23 @@
 
 Sumi follows semantic product versions. This changelog records public release scope, not every internal refactor.
 
+## 0.0.7 Alpha, 2026-08-25
+
+### Extensions and Permissions
+
+- Extension content scripts now run on the first page loaded in a newly opened tab instead of requiring a reload.
+- Dismissing a site permission prompt settles the request and releases the sidebar. When a page queues another prompt, Sumi presents it after the current decision.
+
+### Browser Interaction
+
+- Command-W closes Settings when Settings is focused instead of closing a browser tab behind it.
+- The Command Palette no longer repeats the typed search query as a suggestion. Pressing Return searches the entered text unless another result is selected.
+- Certificate trust approval now stays with the tab for its related page resources, while the URL Hub continues to mark the page as not secure.
+
+### Favicons
+
+- Initial favicon selection and later page updates now use the same source ordering. High-quality raster resampling improves diagonal edges, and repeated sidebar reads no longer repeat the same repository lookup.
+
 ## 0.0.6 Alpha, 2026-08-24
 
 ### Downloads and Webpage Actions

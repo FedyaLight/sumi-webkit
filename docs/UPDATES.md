@@ -4,9 +4,9 @@ Sumi uses Sparkle 2 for update checks, archive verification, download, installat
 
 ## First Install
 
-For the current Alpha (`v0.0.6`):
+For the prepared Alpha (`v0.0.7`):
 
-1. Download the Apple-silicon DMG from [GitHub Releases](https://github.com/FedyaLight/sumi-webkit/releases/tag/v0.0.6).
+1. After publication, download the DMG from [GitHub Releases](https://github.com/FedyaLight/sumi-webkit/releases/tag/v0.0.7).
 2. Open the DMG and drag `Sumi.app` to Applications.
 3. Launch Sumi.
 
@@ -22,7 +22,7 @@ Run this only for a Sumi bundle you intentionally downloaded. Sumi itself never 
 ## Update Flow
 
 - Alpha 1 reads `https://fedyalight.github.io/sumi-webkit/appcast.xml`; Alpha 2 and later Alpha builds read `https://fedyalight.github.io/sumi-webkit/appcast-alpha.xml`.
-- Version `0.0.6 build 10` is published to both feeds, so eligible installed builds move directly to the current Alpha channel without a staged bridge.
+- Version `0.0.7 build 11` is prepared for both feeds, so eligible installed builds move directly to the current Alpha channel without a staged bridge after publication.
 - The current appcast item requires `arm64` hardware. Sparkle therefore offers it to Apple-silicon Macs, including an older Intel build running under Rosetta, but not to native Intel Macs.
 - Native Intel Macs receive no Arm-only offer. Version `0.0.4` is the final Intel-compatible build for installations that already have it; historic Intel and Universal assets remain published.
 - `Sumi/Info.plist` contains the Sparkle EdDSA public key as `SUPublicEDKey`.

@@ -4,14 +4,14 @@ Sumi releases are built on a local release Mac with the checked-in Xcode project
 
 ## Current Alpha Identity
 
-- Product version: `0.0.6`
-- Build number: `10`
+- Product version: `0.0.7`
+- Build number: `11`
 - Product stage: `Alpha`
 - Update channel: `alpha`
-- Tag: `v0.0.6`
-- GitHub release title: `Sumi 0.0.6`
+- Tag: `v0.0.7`
+- GitHub release title: `Sumi 0.0.7`
 - GitHub release state: ordinary public Release, not draft and not GitHub prerelease
-- Release DMG: `release/artifacts/0.0.6/Sumi-0.0.6-build10-macos-arm64.dmg`
+- Release DMG: `release/artifacts/0.0.7/Sumi-0.0.7-build11-macos-arm64.dmg`
 - Alpha appcast: `https://fedyalight.github.io/sumi-webkit/appcast-alpha.xml`
 - Alpha 1 migration appcast: `https://fedyalight.github.io/sumi-webkit/appcast.xml`
 
@@ -34,7 +34,7 @@ scripts/release/package_alpha_release.sh
 The command runs the repository release gates, builds only `arm64`, signs the app with the project's configured Apple development account, and creates this immutable asset:
 
 ```text
-release/artifacts/0.0.6/Sumi-0.0.6-build10-macos-arm64.dmg
+release/artifacts/0.0.7/Sumi-0.0.7-build11-macos-arm64.dmg
 ```
 
 The DMG has a repository-owned Finder layout:
@@ -61,10 +61,10 @@ The script signs and validates both appcasts, uses the immutable release-asset U
 Do not publish until the release artifacts, signatures, appcast signatures, and update path have passed the checks below:
 
 ```sh
-gh release create v0.0.6 \
-  release/artifacts/0.0.6/Sumi-0.0.6-build10-macos-arm64.dmg \
-  --title "Sumi 0.0.6" \
-  --notes-file docs/releases/0.0.6.md \
+gh release create v0.0.7 \
+  release/artifacts/0.0.7/Sumi-0.0.7-build11-macos-arm64.dmg \
+  --title "Sumi 0.0.7" \
+  --notes-file docs/releases/0.0.7.md \
   --latest
 ```
 
@@ -88,11 +88,11 @@ The script refuses deletion if a release would have no Arm64 DMG left, or if eit
 
 ## Verification
 
-- Confirm version `0.0.6`, build `10`, channel `alpha`, feed URLs, and Apple development signing identity.
+- Confirm version `0.0.7`, build `11`, channel `alpha`, feed URLs, and Apple development signing identity.
 - Run the release gates and mount the Arm64 DMG to verify its Finder layout and code signature.
 - Confirm `lipo -archs` returns only `arm64` for the packaged executable.
 - Verify the Sparkle enclosure length and EdDSA signature against the immutable GitHub asset.
-- Confirm both public feeds offer the same `0.0.6 build 10` Arm64 item after publication.
+- Confirm both public feeds offer the same `0.0.7 build 11` Arm64 item after publication.
 - Test an installed Apple-silicon Alpha build, including an older x86 bundle running under Rosetta, receiving the Arm64 update.
 - Confirm a native Intel build sees no Arm-only offer.
 - Confirm release notes, website copy, asset name, SHA-256 value, and the `latest` release link.
