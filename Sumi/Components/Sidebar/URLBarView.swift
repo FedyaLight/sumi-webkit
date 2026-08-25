@@ -153,6 +153,9 @@ struct URLBarView: View {
             }
         }
         .onChange(of: permissionPromptPresenter.isPresented) { _, isPresented in
+            permissionPromptPresenter.handlePresentationChange(
+                isPresented: isPresented
+            )
             if isPresented {
                 closePermissionIndicatorPopover()
                 browserContext.closeURLBarHubPopover(windowState)

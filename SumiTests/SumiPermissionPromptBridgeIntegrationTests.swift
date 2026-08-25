@@ -9,6 +9,124 @@ private let promptBridgeFixedDate = Date(timeIntervalSince1970: 1_800_000_400)
 @available(macOS 13.0, *)
 @MainActor
 final class SumiPermissionPromptBridgeIntegrationTests: XCTestCase {
+    func testPopoverDismissalSettlesActiveQueryAndReleasesSidebarPin() async {
+        let store = PromptBridgePermissionStore()
+        let coordinator = makeCoordinator(
+            systemStates: [.camera: .authorized],
+            store: store
+        )
+        let presenter = SumiPermissionPromptPresenter()
+        let tab = permissionPromptTab()
+        let windowState = BrowserWindowState()
+        presenter.configure(
+            coordinator: coordinator,
+            systemPermissionService: FakeSumiSystemPermissionService(
+                states: [.camera: .authorized]
+            )
+        )
+        presenter.update(tab: tab, windowState: windowState)
+
+        let request = Task {
+            await coordinator.requestPermission(
+                presenterContext(tab: tab, permissionType: .camera, id: "camera-dismissed")
+            )
+        }
+        let query = await waitForActiveQuery(
+            coordinator,
+            pageId: tab.currentPermissionPageId()
+        )
+        let presenterDisplayedQuery = await waitForPresenter(
+            presenter,
+            queryId: query.id
+        )
+        XCTAssertTrue(presenterDisplayedQuery)
+        XCTAssertTrue(
+            windowState.sidebarTransientSessionCoordinator.hasPinnedTransientUI(
+                for: windowState.id
+            )
+        )
+
+        presenter.isPresented = false
+        presenter.handlePresentationChange(isPresented: false)
+
+        let decision = await request.value
+        XCTAssertEqual(decision.outcome, .dismissed)
+        let activeQuery = await coordinator.activeQuery(
+            forPageId: tab.currentPermissionPageId()
+        )
+        let storedDecisions = await store.listDecisions(profilePartitionId: "profile-a")
+        XCTAssertNil(activeQuery)
+        XCTAssertTrue(storedDecisions.isEmpty)
+        XCTAssertFalse(
+            windowState.sidebarTransientSessionCoordinator.hasPinnedTransientUI(
+                for: windowState.id
+            )
+        )
+    }
+
+    func testPresenterAdvancesFromCameraToMicrophone() async {
+        let coordinator = makeCoordinator(
+            systemStates: [.camera: .authorized, .microphone: .authorized],
+            store: PromptBridgePermissionStore()
+        )
+        let presenter = SumiPermissionPromptPresenter()
+        let tab = permissionPromptTab()
+        let windowState = BrowserWindowState()
+        presenter.configure(
+            coordinator: coordinator,
+            systemPermissionService: FakeSumiSystemPermissionService(
+                states: [.camera: .authorized, .microphone: .authorized]
+            )
+        )
+        presenter.update(tab: tab, windowState: windowState)
+
+        let cameraRequest = Task {
+            await coordinator.requestPermission(
+                presenterContext(tab: tab, permissionType: .camera, id: "camera-first")
+            )
+        }
+        let cameraQuery = await waitForActiveQuery(
+            coordinator,
+            pageId: tab.currentPermissionPageId()
+        )
+        let presenterDisplayedCamera = await waitForPresenter(
+            presenter,
+            queryId: cameraQuery.id
+        )
+        XCTAssertTrue(presenterDisplayedCamera)
+
+        let microphoneRequest = Task {
+            await coordinator.requestPermission(
+                presenterContext(tab: tab, permissionType: .microphone, id: "microphone-second")
+            )
+        }
+        let queuedMicrophone = await waitForQueuedQuery(
+            coordinator,
+            pageId: tab.currentPermissionPageId()
+        )
+        XCTAssertTrue(queuedMicrophone)
+
+        await presenter.viewModel?.performAction(.allowThisTime)
+        let cameraDecision = await cameraRequest.value
+        XCTAssertEqual(cameraDecision.outcome, .granted)
+        let microphoneQuery = await waitForDifferentActiveQuery(
+            coordinator,
+            pageId: tab.currentPermissionPageId(),
+            excluding: cameraQuery.id
+        )
+        let presenterDisplayedMicrophone = await waitForPresenter(
+            presenter,
+            queryId: microphoneQuery.id
+        )
+        XCTAssertTrue(presenterDisplayedMicrophone)
+        XCTAssertTrue(presenter.isPresented)
+        XCTAssertEqual(presenter.viewModel?.permissionTypes, [.microphone])
+
+        await presenter.viewModel?.performAction(.dismiss)
+        let microphoneDecision = await microphoneRequest.value
+        XCTAssertEqual(microphoneDecision.outcome, .dismissed)
+    }
+
     func testMediaPromptRequiredWaitsForUserSettlementAndGrants() async {
         let coordinator = makeCoordinator(
             systemStates: [.camera: .authorized],
@@ -256,6 +374,71 @@ final class SumiPermissionPromptBridgeIntegrationTests: XCTestCase {
             pageId: pageId,
             file: file,
             line: line
+        )
+    }
+
+    private func waitForDifferentActiveQuery(
+        _ coordinator: SumiPermissionCoordinator,
+        pageId: String,
+        excluding queryId: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async -> SumiPermissionAuthorizationQuery {
+        for _ in 0..<200 {
+            if let query = await coordinator.activeQuery(forPageId: pageId),
+               query.id != queryId {
+                return query
+            }
+            await Task.yield()
+        }
+        XCTFail("Permission queue did not promote the next query", file: file, line: line)
+        fatalError("Permission queue did not promote the next query")
+    }
+
+    private func waitForQueuedQuery(
+        _ coordinator: SumiPermissionCoordinator,
+        pageId: String
+    ) async -> Bool {
+        for _ in 0..<200 {
+            if await coordinator.stateSnapshot().queueCountByPageId[pageId] == 1 {
+                return true
+            }
+            await Task.yield()
+        }
+        return false
+    }
+
+    private func waitForPresenter(
+        _ presenter: SumiPermissionPromptPresenter,
+        queryId: String
+    ) async -> Bool {
+        for _ in 0..<200 {
+            if presenter.isPresented, presenter.viewModel?.queryId == queryId {
+                return true
+            }
+            await Task.yield()
+        }
+        return false
+    }
+
+    private func permissionPromptTab() -> Tab {
+        Tab(
+            url: URL(string: "https://example.com/page")!,
+            name: "Permission prompt",
+            loadsCachedFaviconOnInit: false
+        )
+    }
+
+    private func presenterContext(
+        tab: Tab,
+        permissionType: SumiPermissionType,
+        id: String
+    ) -> SumiPermissionSecurityContext {
+        sumiPermissionIntegrationContext(
+            [permissionType],
+            id: id,
+            tabId: tab.id.uuidString.lowercased(),
+            pageId: tab.currentPermissionPageId()
         )
     }
 

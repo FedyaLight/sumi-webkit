@@ -23,6 +23,7 @@ extension URLBarView {
         .popover(isPresented: $permissionPromptPresenter.isPresented, arrowEdge: .bottom) {
             if let viewModel = permissionPromptPresenter.viewModel {
                 SumiPermissionPromptView(viewModel: viewModel)
+                    .id(viewModel.queryId)
                     .environment(windowState)
                     .sumiNativeSurfaceColorScheme()
             } else {

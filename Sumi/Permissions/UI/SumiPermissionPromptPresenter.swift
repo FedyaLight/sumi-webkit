@@ -160,6 +160,12 @@ final class SumiPermissionPromptPresenter: ObservableObject {
         return true
     }
 
+    func handlePresentationChange(isPresented: Bool) {
+        guard !isPresented, let viewModel else { return }
+        finishSidebarPin(reason: "popover-dismissed")
+        viewModel.perform(.dismiss)
+    }
+
     func refresh(autoPresent: Bool) async {
         guard let coordinator,
               let systemPermissionService,
