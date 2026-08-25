@@ -19,6 +19,7 @@ extension InitialDocumentRuntimeHandoffTests {
             true
         } register: {
             events.append("register")
+            return .ready
         } load: {
             events.append("load")
         }
@@ -48,6 +49,7 @@ extension InitialDocumentRuntimeHandoffTests {
             false
         } register: {
             events.append("register")
+            return .ready
         } load: {
             events.append("load")
         }
@@ -76,6 +78,7 @@ extension InitialDocumentRuntimeHandoffTests {
             isValid
         } register: {
             events.append("register")
+            return .ready
         } load: {
             events.append("load")
         }
@@ -103,6 +106,7 @@ extension InitialDocumentRuntimeHandoffTests {
             true
         } register: {
             events.append("register")
+            return .ready
         } load: {
             events.append("load")
         }
@@ -121,12 +125,38 @@ extension InitialDocumentRuntimeHandoffTests {
         } isStillValid: {
             true
         } register: {
+            .ready
         } load: {
             didLoad = true
         }
 
         XCTAssertEqual(result, .degraded)
         XCTAssertTrue(didLoad)
+    }
+
+    func testPerformStopsWhenInitialTabPublicationFails() async {
+        var events: [String] = []
+
+        let result = await NormalTabInitialDocumentRuntimeHandoff.perform {
+            events.append("waitUserContent")
+            return .ready
+        } warmInitialDocumentContexts: {
+            events.append("warmInitialDocumentContexts")
+            return .ready
+        } isStillValid: {
+            true
+        } register: {
+            events.append("publishTab")
+            return .cancelled
+        } load: {
+            events.append("load")
+        }
+
+        XCTAssertEqual(result, .cancelled)
+        XCTAssertEqual(
+            events,
+            ["waitUserContent", "warmInitialDocumentContexts", "publishTab"]
+        )
     }
 
     func testTabSetupInitialLoadWaitsForInitialUserContent() async {
@@ -385,6 +415,7 @@ extension InitialDocumentRuntimeHandoffTests {
         var warmedProfileIds: [UUID] = []
         tab.navigationRuntime.normalWebViewExtensionRuntime = TabNormalWebViewExtensionRuntime(
             registerTabWithExtensionRuntimeIfNeeded: { _, _ in /* No-op. */ },
+            ensureInitialDocumentTabPublication: { _, _ in .ready },
             prepareWebViewForExtensionRuntime: { _, _, _ in /* No-op. */ },
             ensureInitialExtensionContextsIfNeeded: { warmedProfileId in
                 warmedProfileIds.append(warmedProfileId)

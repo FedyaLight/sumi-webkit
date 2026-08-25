@@ -52,6 +52,7 @@ struct ExtensionModuleBrowserRuntimeFactory {
         )
         initialDocument = ExtensionInitialDocumentRuntime(
             owners: deferredRuntimeOwners,
+            lifecycle: lifecycle,
             nativeMessaging: nativeMessaging,
             requestedTabs: requestedTabs
         )

@@ -38,11 +38,14 @@ extension ExtensionBrowserAttachmentAuthority {
                 )
         }
 
-        func register(_ tab: Tab, reason: String) {
-            attachedEnvironment()?.tabRegistration.register(
+        @discardableResult
+        func register(_ tab: Tab, reason: String) -> Bool {
+            guard let environment = attachedEnvironment() else { return false }
+            environment.tabRegistration.register(
                 tab,
                 reason: reason
             )
+            return true
         }
 
         func markEligibleAfterCommittedNavigation(

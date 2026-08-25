@@ -166,6 +166,8 @@ struct TabExtensionDocumentBindingSnapshot: Equatable {
 @MainActor
 final class TabExtensionPageRuntimeOwner {
     private let state = TabExtensionRuntimeState()
+    private var settledOpenPublicationWaiters:
+        [UUID: CheckedContinuation<Bool, Never>] = [:]
 
     var didNotifyOpenToExtensions: Bool {
         get { state.didReportOpenForGeneration != nil }
@@ -179,7 +181,11 @@ final class TabExtensionPageRuntimeOwner {
         get { state.documentSequence }
         set {
             invalidatePreparedWindowPrepublication()
+            let documentChanged = state.documentSequence != newValue
             state.documentSequence = newValue
+            if documentChanged {
+                settleAllOpenPublicationWaiters(with: false)
+            }
         }
     }
 
@@ -545,6 +551,8 @@ final class TabExtensionPageRuntimeOwner {
     private func restoreWindowPrepublicationSnapshot(
         _ snapshot: TabExtensionPrepublicationSnapshot
     ) {
+        let documentChanged = state.documentSequence
+            != snapshot.documentSequence
         state.controllerGeneration = snapshot.controllerGeneration
         state.documentSequence = snapshot.documentSequence
         state.committedMainDocumentURL = snapshot.committedMainDocumentURL
@@ -568,6 +576,9 @@ final class TabExtensionPageRuntimeOwner {
         state.openPublicationClaim = snapshot.openPublicationClaim
         state.settledOpenPublicationClaimIdentity =
             snapshot.settledOpenPublicationClaimIdentity
+        if documentChanged {
+            settleAllOpenPublicationWaiters(with: false)
+        }
     }
 
     func isEligible(for generation: ExtensionTabPublicationRevision) -> Bool {
@@ -589,6 +600,7 @@ final class TabExtensionPageRuntimeOwner {
     /// WebView callback cannot reopen the doomed Tab in a newer generation.
     func retireFutureOpenPublications() {
         state.acceptsFutureOpenPublications = false
+        settleAllOpenPublicationWaiters(with: false)
     }
 
     /// A raw open claim is reserved before crossing WebKit so teardown can
@@ -620,7 +632,41 @@ final class TabExtensionPageRuntimeOwner {
             return false
         }
         state.settledOpenPublicationClaimIdentity = ObjectIdentifier(claim)
+        if hasSettledOpenPublicationForCurrentDocument() {
+            settleAllOpenPublicationWaiters(with: true)
+        }
         return true
+    }
+
+    func waitForSettledOpenPublicationForCurrentDocument() async -> Bool {
+        let expectedDocumentSequence = state.documentSequence
+        guard state.acceptsFutureOpenPublications else { return false }
+        if hasSettledOpenPublicationForCurrentDocument() { return true }
+
+        let waiterID = UUID()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard Task.isCancelled == false,
+                      state.acceptsFutureOpenPublications,
+                      state.documentSequence == expectedDocumentSequence
+                else {
+                    continuation.resume(returning: false)
+                    return
+                }
+                if hasSettledOpenPublicationForCurrentDocument() {
+                    continuation.resume(returning: true)
+                    return
+                }
+                settledOpenPublicationWaiters[waiterID] = continuation
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                self?.settleOpenPublicationWaiter(
+                    waiterID,
+                    with: false
+                )
+            }
+        }
     }
 
     func isCommittedWindowPrepublicationCurrent(
@@ -776,18 +822,24 @@ final class TabExtensionPageRuntimeOwner {
         invalidatePreparedWindowPrepublication()
         state.documentSequence &+= 1
         state.committedMainDocumentURL = url
+        settleAllOpenPublicationWaiters(with: false)
     }
 
     func resetDocumentBindingForContentScriptRebind() {
         invalidatePreparedWindowPrepublication()
+        let documentChanged = state.documentSequence != 0
         state.documentSequence = 0
         state.committedMainDocumentURL = nil
         clearOpenNotificationDocumentBinding()
+        if documentChanged {
+            settleAllOpenPublicationWaiters(with: false)
+        }
     }
 
     func invalidatePageForWebViewReplacement() {
         invalidatePreparedWindowPrepublication()
         state.documentSequence &+= 1
+        settleAllOpenPublicationWaiters(with: false)
     }
 
     func noteOpenNotification(
@@ -945,6 +997,34 @@ final class TabExtensionPageRuntimeOwner {
         state.openNotifiedDocumentSequence = nil
         state.openNotifiedContextBindingGeneration = nil
         state.openNotifiedContextReadiness = .notNotified
+    }
+
+    private func hasSettledOpenPublicationForCurrentDocument() -> Bool {
+        guard state.openNotifiedDocumentSequence == state.documentSequence,
+              state.openNotifiedContextReadiness == .loaded,
+              let generation = state.didReportOpenForGeneration,
+              let claim = state.openPublicationClaim,
+              claim.generation == generation
+        else {
+            return false
+        }
+        return state.settledOpenPublicationClaimIdentity
+            == ObjectIdentifier(claim)
+    }
+
+    private func settleAllOpenPublicationWaiters(with result: Bool) {
+        let waiterIDs = Array(settledOpenPublicationWaiters.keys)
+        for waiterID in waiterIDs {
+            settleOpenPublicationWaiter(waiterID, with: result)
+        }
+    }
+
+    private func settleOpenPublicationWaiter(
+        _ waiterID: UUID,
+        with result: Bool
+    ) {
+        settledOpenPublicationWaiters.removeValue(forKey: waiterID)?
+            .resume(returning: result)
     }
 
     private func invalidatePreparedWindowPrepublication() {

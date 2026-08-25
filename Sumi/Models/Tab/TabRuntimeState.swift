@@ -371,6 +371,8 @@ struct TabWebViewCleanupRuntime {
 @MainActor
 struct TabNormalWebViewExtensionRuntime {
     var registerTabWithExtensionRuntimeIfNeeded: (Tab, String) -> Void
+    var ensureInitialDocumentTabPublication: (Tab, String) async
+        -> PageNavigationPrerequisiteResult
     var prepareWebViewForExtensionRuntime: (WKWebView, URL?, String) -> Void
     var ensureInitialExtensionContextsIfNeeded: (UUID) async
         -> PageNavigationPrerequisiteResult
@@ -378,6 +380,7 @@ struct TabNormalWebViewExtensionRuntime {
 
     static let inactive = Self(
         registerTabWithExtensionRuntimeIfNeeded: { _, _ in /* No-op. */ },
+        ensureInitialDocumentTabPublication: { _, _ in .ready },
         prepareWebViewForExtensionRuntime: { _, _, _ in /* No-op. */ },
         ensureInitialExtensionContextsIfNeeded: { _ in .ready },
         reconcileOnUserGesture: { _, _ in /* No-op. */ }

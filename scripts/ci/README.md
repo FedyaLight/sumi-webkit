@@ -33,9 +33,10 @@ method selector, extension-contributed test method, synchronized Xcode target
 membership, and helper exclusion.
 
 The UI lane intentionally remains the existing launch smoke. The other 35 UI
-methods remain the explicit item 48 coverage gap. The known item 49 failure,
+methods remain the explicit item 48 coverage gap. The former item 49 failure,
 `SafariExtensionScriptingRuntimeTests.testWorkerDrivenScriptingInjectionMirrorsProtonBootstrap`,
-is not skipped; its class is attributable to the WebKit-heavy shard.
+now has deterministic late-window-publication coverage; its class remains in
+the WebKit-heavy shard.
 
 ## Process topology
 

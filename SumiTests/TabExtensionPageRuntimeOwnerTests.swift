@@ -195,6 +195,63 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
         XCTAssertTrue(owner.hasSettledDidOpenTabNotification(for: revision(13)))
     }
 
+    func testInitialDocumentPublicationWaitResumesAfterExactOpenSettles() async throws {
+        let owner = TabExtensionPageRuntimeOwner()
+        owner.prepareGeneration(revision(14))
+        owner.markEligible(for: revision(14))
+        owner.noteOpenNotification(
+            extensionContextBindingGeneration: 2,
+            contextReadiness: .loaded
+        )
+        XCTAssertTrue(owner.markDidOpenTab(generation: revision(14)))
+        let claim = try XCTUnwrap(
+            owner.currentOpenPublicationClaim(generation: revision(14))
+        )
+
+        let wait = Task { @MainActor in
+            await owner.waitForSettledOpenPublicationForCurrentDocument()
+        }
+        await Task.yield()
+        XCTAssertTrue(
+            owner.settleDidOpenTabNotification(claim, generation: revision(14))
+        )
+
+        let didSettle = await wait.value
+        XCTAssertTrue(didSettle)
+    }
+
+    func testInitialDocumentPublicationWaitCancelsWhenDocumentChanges() async {
+        let owner = TabExtensionPageRuntimeOwner()
+        let started = expectation(description: "publication wait started")
+        let wait = Task { @MainActor in
+            started.fulfill()
+            return await owner
+                .waitForSettledOpenPublicationForCurrentDocument()
+        }
+        await fulfillment(of: [started], timeout: 1)
+
+        owner.invalidatePageForWebViewReplacement()
+
+        let didSettle = await wait.value
+        XCTAssertFalse(didSettle)
+    }
+
+    func testInitialDocumentPublicationWaitHonorsTaskCancellation() async {
+        let owner = TabExtensionPageRuntimeOwner()
+        let started = expectation(description: "publication wait started")
+        let wait = Task { @MainActor in
+            started.fulfill()
+            return await owner
+                .waitForSettledOpenPublicationForCurrentDocument()
+        }
+        await fulfillment(of: [started], timeout: 1)
+
+        wait.cancel()
+
+        let didSettle = await wait.value
+        XCTAssertFalse(didSettle)
+    }
+
     func testStaleOpenSettlementCannotSettleReplacement() throws {
         let owner = TabExtensionPageRuntimeOwner()
         owner.prepareGeneration(revision(17))

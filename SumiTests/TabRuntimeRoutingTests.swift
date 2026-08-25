@@ -442,6 +442,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
                 registeredTabIds.append(registeredTab.id)
                 registrationReasons.append(reason)
             },
+            ensureInitialDocumentTabPublication: { _, _ in .ready },
             prepareWebViewForExtensionRuntime: { _, _, _ in /* No-op. */ },
             ensureInitialExtensionContextsIfNeeded: { _ in .ready }
         )
@@ -463,6 +464,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
         var preparedReasons: [String] = []
         tab.navigationRuntime.normalWebViewExtensionRuntime = TabNormalWebViewExtensionRuntime(
             registerTabWithExtensionRuntimeIfNeeded: { _, _ in /* No-op. */ },
+            ensureInitialDocumentTabPublication: { _, _ in .ready },
             prepareWebViewForExtensionRuntime: { webView, currentURL, reason in
                 preparedWebViews.append(webView)
                 preparedURLs.append(currentURL)

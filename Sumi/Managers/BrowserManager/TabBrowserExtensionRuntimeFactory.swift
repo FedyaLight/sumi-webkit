@@ -76,6 +76,13 @@ extension TabNormalWebViewExtensionRuntime {
                     previous: nil
                 )
             },
+            ensureInitialDocumentTabPublication: { tab, reason in
+                await extensionsModule()?
+                    .ensureInitialTabPublicationIfNeeded(
+                        tab,
+                        reason: reason
+                    ) ?? .ready
+            },
             prepareWebViewForExtensionRuntime: { webView, currentURL, reason in
                 extensionsModule()?.prepareWebViewForExtensionRuntime(
                     webView,

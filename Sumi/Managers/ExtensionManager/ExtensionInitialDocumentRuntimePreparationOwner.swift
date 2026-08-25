@@ -20,6 +20,10 @@ final class ExtensionInitialDocumentRuntimePreparationOwner:
         contentScripts.profileHasLoadedContexts(profileID: profileId)
     }
 
+    func participatesInInitialDocumentRuntime() -> Bool {
+        contentScripts.participatesInInitialDocumentRuntime()
+    }
+
     func profileHasLoadedExtensionContext(profileId: UUID) -> Bool {
         contentScripts.profileHasLoadedExtensionContext(profileID: profileId)
     }

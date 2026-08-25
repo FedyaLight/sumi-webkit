@@ -39,6 +39,10 @@ final class ExtensionContentScriptContextPreparationOwner {
         }
     }
 
+    func participatesInInitialDocumentRuntime() -> Bool {
+        runtimeIsEnabled() && contentScriptExtensions().isEmpty == false
+    }
+
     func profileHasLoadedExtensionContext(profileID: UUID) -> Bool {
         // A normal tab only needs the content-script contexts that can
         // actually inject into its document. Popup/options-only extensions do

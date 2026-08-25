@@ -13,6 +13,191 @@ import XCTest
 @MainActor
 final class SafariExtensionScriptingRuntimeTests: XCTestCase {
     func testWorkerDrivenScriptingInjectionMirrorsProtonBootstrap() async throws {
+        let fixture = try await makeScriptingRuntimeFixture()
+        publishWindow(fixture)
+        XCTAssertTrue(
+            fixture.attachedRuntime.runtime.normalTabs.publishedTabs
+                .containsPublishedTab(fixture.tab),
+            "The scripting target must cross the exact window and tab publication boundaries before the worker resolves sender.tab"
+        )
+
+        let probe = try await loadAndReadProbe(fixture)
+        assertSuccessfulScriptingProbe(probe)
+    }
+
+    func testInitialDocumentWaitsForLateWindowPublicationBeforeLoading() async throws {
+        let fixture = try await makeScriptingRuntimeFixture()
+        let deferredOpen = expectation(
+            description: "initial extension Tab publication deferred"
+        )
+        fixture.manager.testHooks.didDeferOpenTab = { tabID, reason in
+            guard tabID == fixture.tab.id,
+                  reason == "windowProjectionUnavailable"
+            else { return }
+            deferredOpen.fulfill()
+        }
+        defer {
+            fixture.manager.testHooks.didDeferOpenTab = nil
+        }
+
+        let didFinish = expectation(description: "page loaded after publication")
+        let loadObservation = fixture.webView.observe(
+            \.isLoading,
+            options: [.new]
+        ) { _, change in
+            guard change.newValue == false else { return }
+            didFinish.fulfill()
+        }
+
+        let initialTarget = fixture.tab.mainFrameLoads.currentIntent.targetURL
+        XCTAssertEqual(initialTarget, fixture.targetURL)
+        XCTAssertEqual(
+            fixture.tab.webViewSession.residence(of: fixture.webView),
+            .untracked(tabID: fixture.tab.id)
+        )
+        XCTAssertTrue(
+            fixture.webView.configuration.userContentController
+                .sumiNormalTabUserContentController?
+                .hasInstalledInitialUserContent == true
+        )
+
+        NormalTabInitialDocumentRuntimeHandoff.scheduleTabSetupInitialLoad(
+            tab: fixture.tab,
+            webView: fixture.webView,
+            targetURL: initialTarget,
+            profileId: fixture.profile.id,
+            registrationReason:
+                "SafariExtensionScriptingRuntimeTests.lateWindowPublication"
+        )
+
+        await fulfillment(of: [deferredOpen], timeout: 3)
+
+        XCTAssertFalse(
+            fixture.webView.isLoading,
+            "Initial navigation must wait until the extension tab is published"
+        )
+        XCTAssertNil(
+            fixture.webView.url,
+            "No document may start before the extension tab publication settles"
+        )
+
+        publishWindow(fixture)
+        let windowPublication = fixture.browserManager
+            .windowExtensionPublication.initialPublicationResult(
+                for: fixture.windowState
+            )
+        XCTAssertTrue(
+            fixture.attachedRuntime.runtime.normalTabs.publishedTabs
+                .containsPublishedTab(fixture.tab),
+            "Initial window publication did not publish its exact Tab: \(String(describing: windowPublication))"
+        )
+
+        await fulfillment(of: [didFinish], timeout: 10)
+        loadObservation.invalidate()
+
+        let probe = try await waitForScriptingProbeResult(in: fixture.webView)
+        assertSuccessfulScriptingProbe(probe)
+    }
+
+    private func assertSuccessfulScriptingProbe(
+        _ probe: [String: Any],
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard let worker = probe["worker"] as? [String: Any] else {
+            return XCTFail(
+                "worker response missing: \(probe)",
+                file: file,
+                line: line
+            )
+        }
+        XCTAssertEqual(
+            worker["scriptingAvailable"] as? Bool,
+            true,
+            "browser.scripting must be exposed to the background worker",
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            worker["files"] as? String,
+            "ok",
+            "executeScript({files:['client.js']}) failed: \(worker)",
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            worker["mainFiles"] as? String,
+            "ok",
+            "MAIN-world executeScript({files:['elements.js']}) failed: \(worker)",
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            worker["funcArgs"] as? String,
+            "ok",
+            "MAIN-world executeScript({func, args}) failed: \(worker)",
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            worker["css"] as? String,
+            "ok",
+            "insertCSS({files:['client.css']}) failed: \(worker)",
+            file: file,
+            line: line
+        )
+
+        XCTAssertEqual(
+            probe["clientInjected"] as? String,
+            "true",
+            "client.js (isolated world) did not run in the page: \(probe)",
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            probe["mainWorldMarker"] as? String,
+            "true",
+            "elements.js (MAIN world) did not run in the page: \(probe)",
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            probe["elementsRegistered"] as? String,
+            "probe-hash:true",
+            "MAIN-world func/args registration did not reach elements.js: \(probe)",
+            file: file,
+            line: line
+        )
+        XCTAssertEqual(
+            probe["cssValue"] as? String,
+            "injected",
+            "insertCSS stylesheet not applied to the page: \(probe)",
+            file: file,
+            line: line
+        )
+    }
+
+    private func loadAndReadProbe(
+        _ fixture: ScriptingRuntimeFixture
+    ) async throws -> [String: Any] {
+        let didFinish = expectation(description: "page loaded")
+        let delegate = NavigationDelegateBox {
+            didFinish.fulfill()
+        }
+        fixture.webView.navigationDelegate = delegate
+        fixture.webView.load(
+            URLRequest(
+                url: fixture.targetURL,
+                cachePolicy: .reloadIgnoringLocalCacheData
+            )
+        )
+        await fulfillment(of: [didFinish], timeout: 10)
+        fixture.webView.navigationDelegate = nil
+        return try await waitForScriptingProbeResult(in: fixture.webView)
+    }
+
+    private func makeScriptingRuntimeFixture() async throws
+        -> ScriptingRuntimeFixture {
         let server = try await AutofillPagesHTTPServer.start()
         addTeardownBlock {
             server.stop()
@@ -20,22 +205,45 @@ final class SafariExtensionScriptingRuntimeTests: XCTestCase {
 
         let container = try makeTestContainer()
         let profile = Profile(name: "Scripting Runtime Profile")
+        let targetURL = server.loginBasicURL
         let browserConfiguration = BrowserConfiguration()
+        let moduleRegistry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(
+                userDefaults: UserDefaults(suiteName: UUID().uuidString)!
+            )
+        )
+        moduleRegistry.enable(.extensions)
         let attachedRuntime = ExtensionAttachedRuntimeCapture()
         let inspection = ExtensionManagerInspectionCapture()
         let manager = makeSafariExtensionTestExtensionManager(
             database: container,
             initialProfile: profile,
             browserConfiguration: browserConfiguration,
+            moduleRegistry: moduleRegistry,
             attachedRuntimeCapture: attachedRuntime,
             inspectionCapture: inspection
         )
+        let extensionsModule = SumiExtensionsModule(
+            moduleRegistry: moduleRegistry,
+            database: container,
+            browserConfiguration: browserConfiguration,
+            initialProfileProvider: { profile },
+            managerFactory: { _, _, _, _ in manager }
+        )
         let windowRegistry = WindowRegistry()
         let browserManager = makeSafariExtensionTestBrowserManager(
+            moduleRegistry: moduleRegistry,
+            extensionsModule: extensionsModule,
             profile: profile,
-            windowRegistry: windowRegistry
+            windowRegistry: windowRegistry,
+            browserConfiguration: browserConfiguration
         )
         browserManager.startupRestoreLifecycle.markLoadFinished()
+        extensionsModule.attach(
+            runtime: BrowserExtensionsModuleRuntimeFactory.runtime(
+                for: browserManager
+            )
+        )
         manager.attach(browserManager: browserManager)
 
         let installed = try await installScriptingProbeExtension(
@@ -65,118 +273,89 @@ final class SafariExtensionScriptingRuntimeTests: XCTestCase {
 
         _ = try await inspection.inspection.nativeMessaging.backgroundWakes
             .ensureBackgroundAvailableIfRequired(
-            for: extensionContext.webExtension,
-            context: extensionContext,
-            reason: .enable
-        )
+                for: extensionContext.webExtension,
+                context: extensionContext,
+                reason: .enable
+            )
 
-        let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
-            surface: .extensionOptions
+        let configuration = browserConfiguration.normalTabWebViewConfiguration(
+            for: profile,
+            url: targetURL
         )
         inspection.inspection.normalTabs.configuration
             .prepareWebViewConfigForExtensionRuntime(
-            configuration,
-            profileId: profile.id,
-            reason: "SafariExtensionScriptingRuntimeTests"
-        )
+                configuration,
+                profileId: profile.id,
+                reason: "SafariExtensionScriptingRuntimeTests"
+            )
 
         let tab = browserManager.regularTabLifecycleOwner.createNewTab(
-            url: server.loginBasicURL.absoluteString,
+            url: targetURL.absoluteString,
             in: browserManager.spaceStateOwner.currentSpace,
             activate: false,
             webViewConfigurationOverride: configuration
         )
         tab.profileId = profile.id
-        tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
+        tab.attachBrowserRuntime(
+            TabBrowserRuntimeFactory.make(for: browserManager)
+        )
 
         let windowState = BrowserWindowState()
-        browserManager.tabResidenceAuthority.establishResidenceSession(on: windowState)
+        browserManager.tabResidenceAuthority.establishResidenceSession(
+            on: windowState
+        )
         windowState.currentProfileId = profile.id
         windowState.currentSpaceId = tab.spaceId
         windowState.currentTabId = tab.id
-        windowRegistry.register(windowState)
-        windowRegistry.setActive(windowState)
 
-        let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
+        let webView = FocusableWKWebView(
+            frame: .zero,
+            configuration: configuration
+        )
         webView.owningTab = tab
+        tab.configureNormalTabWebView(
+            webView,
+            reason: "SafariExtensionScriptingRuntimeTests.fixture"
+        )
         tab.replaceUntrackedWebView(webView)
+        _ = tab.beginMainFrameNavigationIntent(to: targetURL)
 
-        attachedRuntime.runtime.normalTabs.tabRegistration.register(
-            tab,
-            reason: "SafariExtensionScriptingRuntimeTests"
+        return ScriptingRuntimeFixture(
+            targetURL: targetURL,
+            profile: profile,
+            manager: manager,
+            browserManager: browserManager,
+            attachedRuntime: attachedRuntime,
+            windowRegistry: windowRegistry,
+            windowState: windowState,
+            tab: tab,
+            webView: webView
         )
-        XCTAssertTrue(
-            attachedRuntime.runtime.normalTabs.publishedTabs
-                .containsPublishedTab(tab),
-            "The scripting target must cross the exact window and tab publication boundaries before the worker resolves sender.tab"
-        )
+    }
 
-        let didFinish = expectation(description: "page loaded")
-        let delegate = NavigationDelegateBox {
-            didFinish.fulfill()
-        }
-        webView.navigationDelegate = delegate
-        webView.load(
-            URLRequest(
-                url: server.loginBasicURL,
-                cachePolicy: .reloadIgnoringLocalCacheData
+    private func publishWindow(_ fixture: ScriptingRuntimeFixture) {
+        fixture.browserManager.windowExtensionPublication
+            .prepareRegistration(fixture.windowState)
+        XCTAssertEqual(
+            fixture.windowRegistry.beginRegistration(fixture.windowState),
+            .registered
+        )
+        let admission = fixture.browserManager.webViewRuntime
+            .trackedWebViewAdmission.attemptAssignment(
+                fixture.webView,
+                to: fixture.tab,
+                in: fixture.windowState.id,
+                replaySemanticOperation: {
+                    XCTFail("Unexpected WebView placement deferral")
+                }
             )
+        XCTAssertTrue(admission.isAccepted)
+        XCTAssertTrue(
+            fixture.windowRegistry.commitRegistration(fixture.windowState)
         )
-        await fulfillment(of: [didFinish], timeout: 10)
-        webView.navigationDelegate = nil
-
-        let probe = try await waitForScriptingProbeResult(in: webView)
-
-        let worker = try XCTUnwrap(
-            probe["worker"] as? [String: Any],
-            "worker response missing: \(probe)"
-        )
-        XCTAssertEqual(
-            worker["scriptingAvailable"] as? Bool,
-            true,
-            "browser.scripting must be exposed to the background worker"
-        )
-        XCTAssertEqual(
-            worker["files"] as? String,
-            "ok",
-            "executeScript({files:['client.js']}) failed: \(worker)"
-        )
-        XCTAssertEqual(
-            worker["mainFiles"] as? String,
-            "ok",
-            "MAIN-world executeScript({files:['elements.js']}) failed: \(worker)"
-        )
-        XCTAssertEqual(
-            worker["funcArgs"] as? String,
-            "ok",
-            "MAIN-world executeScript({func, args}) failed: \(worker)"
-        )
-        XCTAssertEqual(
-            worker["css"] as? String,
-            "ok",
-            "insertCSS({files:['client.css']}) failed: \(worker)"
-        )
-
-        XCTAssertEqual(
-            probe["clientInjected"] as? String,
-            "true",
-            "client.js (isolated world) did not run in the page: \(probe)"
-        )
-        XCTAssertEqual(
-            probe["mainWorldMarker"] as? String,
-            "true",
-            "elements.js (MAIN world) did not run in the page: \(probe)"
-        )
-        XCTAssertEqual(
-            probe["elementsRegistered"] as? String,
-            "probe-hash:true",
-            "MAIN-world func/args registration did not reach elements.js: \(probe)"
-        )
-        XCTAssertEqual(
-            probe["cssValue"] as? String,
-            "injected",
-            "insertCSS stylesheet not applied to the page: \(probe)"
-        )
+        fixture.browserManager.windowExtensionPublication
+            .commitRegistration(fixture.windowState)
+        fixture.windowRegistry.setActive(fixture.windowState)
     }
 
     private func waitForScriptingProbeResult(
@@ -460,6 +639,18 @@ final class SafariExtensionScriptingRuntimeTests: XCTestCase {
             try? FileManager.default.removeItem(at: directory)
         }
         return directory
+    }
+
+    private struct ScriptingRuntimeFixture {
+        let targetURL: URL
+        let profile: Profile
+        let manager: ExtensionManager
+        let browserManager: BrowserManager
+        let attachedRuntime: ExtensionAttachedRuntimeCapture
+        let windowRegistry: WindowRegistry
+        let windowState: BrowserWindowState
+        let tab: Tab
+        let webView: FocusableWKWebView
     }
 
     private final class NavigationDelegateBox: NSObject, WKNavigationDelegate {

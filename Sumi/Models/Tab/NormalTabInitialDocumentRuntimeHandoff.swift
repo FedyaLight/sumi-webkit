@@ -22,7 +22,7 @@ enum NormalTabInitialDocumentRuntimeHandoff {
         warmInitialDocumentContexts: @MainActor () async
             -> PageNavigationPrerequisiteResult,
         isStillValid: @MainActor () -> Bool,
-        register: @MainActor () -> Void,
+        register: @MainActor () async -> PageNavigationPrerequisiteResult,
         load: @MainActor () -> Void
     ) async -> PageNavigationPrerequisiteResult {
         let userContentResult = await waitForInitialUserContent()
@@ -35,10 +35,15 @@ enum NormalTabInitialDocumentRuntimeHandoff {
             return contextResult
         }
         guard isStillValid() else { return .cancelled }
-        register()
+        let registrationResult = await register()
+        guard registrationResult.maySubmitNavigation else {
+            return registrationResult
+        }
         guard isStillValid() else { return .cancelled }
         load()
-        return userContentResult == .degraded || contextResult == .degraded
+        return userContentResult == .degraded
+            || contextResult == .degraded
+            || registrationResult == .degraded
             ? .degraded
             : .ready
     }
@@ -154,9 +159,13 @@ enum NormalTabInitialDocumentRuntimeHandoff {
                     expectedResidence: expectedResidence
                 )
             } register: {
-                tab?.registerTabWithExtensionRuntimeIfNeeded(
-                    reason: registrationReason
-                )
+                guard let tab else { return .cancelled }
+                return await tab.navigationRuntime
+                    .normalWebViewExtensionRuntime
+                    .ensureInitialDocumentTabPublication(
+                        tab,
+                        registrationReason
+                    )
             } load: {
                 guard let tab,
                       let webView,

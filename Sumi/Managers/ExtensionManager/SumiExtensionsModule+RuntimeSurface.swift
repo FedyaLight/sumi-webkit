@@ -130,6 +130,13 @@ extension SumiExtensionsModule {
         )
     }
 
+    func ensureInitialTabPublicationIfNeeded(
+        _ tab: Tab,
+        reason: String
+    ) async -> PageNavigationPrerequisiteResult {
+        await runtimeSurface.ensureInitialTabPublication(tab, reason: reason)
+    }
+
     func warmInitialDocumentNativeMessagingIfNeeded(profileId: UUID) async {
         await runtimeSurface.warmInitialDocumentNativeMessaging(
             profileID: profileId
