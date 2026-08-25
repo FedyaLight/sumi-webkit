@@ -1079,7 +1079,11 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
     func testStyledDocumentSVGIconPersistsForColdCacheBackedLookup() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("SumiFaviconV2StyledSVG-\(UUID().uuidString)", isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
+        addTeardownBlock {
+            if FileManager.default.fileExists(atPath: directory.path) {
+                try FileManager.default.removeItem(at: directory)
+            }
+        }
 
         let pageURL = try XCTUnwrap(URL(string: "https://shield.turtlecute.org/"))
         let iconURL = try XCTUnwrap(URL(string: "https://shield.turtlecute.org/assets/styled/icon.svg"))

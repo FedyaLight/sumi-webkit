@@ -92,10 +92,12 @@ enum SumiApplicationSupportDirectory {
 
         for url in contents {
             let name = url.lastPathComponent
+            var isDirectory: ObjCBool = false
             guard name.hasPrefix("schema-"),
                   let version = Int(name.dropFirst("schema-".count)),
                   version < keepingSchemaVersion,
-                  (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+                  fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory),
+                  isDirectory.boolValue
             else {
                 continue
             }

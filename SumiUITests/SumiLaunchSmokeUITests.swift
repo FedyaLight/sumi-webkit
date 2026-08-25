@@ -184,7 +184,8 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
         let commandPalette = element(withIdentifier: "command-palette", in: app)
         XCTAssertTrue(commandPalette.waitForExistence(timeout: 5))
 
-        browserWindow.typeKey(",", modifierFlags: .command)
+        app.menuBars.menuBarItems["Sumi"].click()
+        app.menuItems.matching(identifier: "Settings…").firstMatch.click()
         let settingsWindow = app.windows["General"]
         XCTAssertTrue(settingsWindow.waitForExistence(timeout: 5))
 

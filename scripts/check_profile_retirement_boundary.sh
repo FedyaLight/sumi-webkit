@@ -88,12 +88,26 @@ guard_expect_no_matches \
   '\bBrowserProfileSwitchTransitionHost\b|host:[[:space:]]*browserManager' \
   --glob '*.swift' "${production_roots[@]}"
 
-schema_version_write_count="$({
+schema_version_constant_count="$({
   guard_count_matches \
-    'PRAGMA user_version = 5' \
+    'static let currentSchemaVersion = 5' \
     "$database_schema"
 })"
-guard_exact 'unified database schema version writes' "$schema_version_write_count" 5
+guard_exact 'single unified database schema version' "$schema_version_constant_count" 1
+
+schema_version_write_count="$({
+  guard_count_matches \
+    'PRAGMA user_version = .*currentSchemaVersion' \
+    "$database_schema"
+})"
+guard_exact 'single unified database schema version write' "$schema_version_write_count" 1
+
+schema_version_mark_count="$({
+  guard_count_matches \
+    'try Self\.markSchemaCurrent\(in: database\)' \
+    "$database_schema"
+})"
+guard_exact 'all database migrations mark the unified schema current' "$schema_version_mark_count" 5
 
 retirement_table_count="$({
   guard_count_matches \
