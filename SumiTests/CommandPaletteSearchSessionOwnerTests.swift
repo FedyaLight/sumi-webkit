@@ -20,6 +20,30 @@ final class CommandPaletteSearchSessionOwnerTests: XCTestCase {
         )
     }
 
+    func testTypedSearchQueryIsNotRepeatedAsSuggestion() async {
+        let manager = SearchManager(
+            suggestionDataProvider: QuerySearchSuggestionDataProvider(
+                payloads: [
+                    "swift": #"[{"phrase":" Swift ","is_nav":false},{"phrase":"swift language","is_nav":false}]"#,
+                ]
+            )
+        )
+        let owner = CommandPaletteSearchSessionOwner(searchManager: manager)
+
+        owner.text = "swift"
+        manager.searchSuggestions(for: "swift")
+        await waitUntil {
+            owner.visibleRows.contains { $0.title == "swift language" }
+        }
+
+        XCTAssertEqual(owner.visibleRows.map(\.title), ["swift language"])
+        XCTAssertNil(owner.selectedRowID)
+        XCTAssertEqual(
+            owner.commitIntentForReturn(),
+            .browserNavigation(.input("swift"))
+        )
+    }
+
     func testPreviousResultsRemainUntilReplacementBatchArrives() async {
         let manager = SearchManager(
             suggestionDataProvider: QuerySearchSuggestionDataProvider(
@@ -40,7 +64,7 @@ final class CommandPaletteSearchSessionOwnerTests: XCTestCase {
         owner.text = "new"
 
         XCTAssertTrue(owner.visibleRows.contains { $0.title == "old result" })
-        XCTAssertEqual(owner.selectedRowID, owner.visibleRows.first?.id)
+        XCTAssertNil(owner.selectedRowID)
 
         manager.searchSuggestions(for: "new")
         await waitUntil {

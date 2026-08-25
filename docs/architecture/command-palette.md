@@ -84,9 +84,12 @@ separate Compact or Top Links palette mode.
 
 For a typed query the session builds results in this order:
 
-1. direct navigation or search;
+1. direct URL navigation;
 2. matching local actions, Spaces, extensions, and durable navigation targets;
 3. tabs, history, bookmarks, and remote suggestions from `SearchManager`.
+
+The current search query is not repeated as a suggestion. Return commits the
+input unless the user explicitly selects another row.
 
 Local work is synchronous. Remote work is debounced and cancellable.
 

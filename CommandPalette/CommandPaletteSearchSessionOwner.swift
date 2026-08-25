@@ -17,7 +17,7 @@ final class CommandPaletteSearchSessionOwner {
             resultListTopRequestID &+= 1
             retainPublishedSuggestionsForQueryTransition()
             rebuildSuggestionSnapshot()
-            selectedRowID = visibleRows.first?.id
+            resetSelectionForCurrentQuery()
         }
     }
     private(set) var resultListTopRequestID: UInt64 = 0
@@ -57,7 +57,7 @@ final class CommandPaletteSearchSessionOwner {
             return searchManager.suggestions.filter {
                 if case .search = $0.type { return true }
                 return false
-            }
+            }.filter(isNotCurrentQuery)
         }
         let actionSuggestions = commandProvider.suggestions(
             for: text,
@@ -78,15 +78,11 @@ final class CommandPaletteSearchSessionOwner {
         let trimmedQuery = text.trimmingCharacters(
             in: .whitespacesAndNewlines
         )
-        if !trimmedQuery.isEmpty {
-            candidates.append(
-                SuggestionDeduplicationPolicy.directURLSuggestion(
-                    for: trimmedQuery
-                ) ?? SearchManager.SearchSuggestion(
-                    text: trimmedQuery,
-                    type: .search
-                )
-            )
+        if let directURLSuggestion =
+            SuggestionDeduplicationPolicy.directURLSuggestion(
+                for: trimmedQuery
+            ) {
+            candidates.append(directURLSuggestion)
         }
         candidates += actionSuggestions
         candidates += spaceSuggestions
@@ -101,7 +97,9 @@ final class CommandPaletteSearchSessionOwner {
         }
 
         var seenIDs = Set<SearchManager.SearchSuggestion.ID>()
-        return candidates.filter { seenIDs.insert($0.id).inserted }
+        return candidates.filter(isNotCurrentQuery).filter {
+            seenIDs.insert($0.id).inserted
+        }
     }
 
     var visibleSuggestionLayoutCount: Int {
@@ -181,7 +179,7 @@ final class CommandPaletteSearchSessionOwner {
             presentationReason: presentationReason,
             windowState: windowState
         )
-        selectedRowID = visibleRows.first?.id
+        resetSelectionForCurrentQuery()
     }
 
     func scheduleSearchSuggestions(
@@ -349,10 +347,13 @@ final class CommandPaletteSearchSessionOwner {
         let count = visibleRows.count
         if count == 0 {
             selectedRowID = nil
-        } else if selectedRowID == nil
-                    || !visibleRows.contains(where: {
+        } else if selectedRowID != nil
+                    && !visibleRows.contains(where: {
                         $0.id == selectedRowID
                     }) {
+            selectedRowID = visibleRows.first?.id
+        } else if selectedRowID == nil,
+                  normalizedCurrentQuery.isEmpty || mode == .actions {
             selectedRowID = visibleRows.first?.id
         }
         if visibleRows.map(\.id) != previousVisibleIDs,
@@ -770,6 +771,27 @@ final class CommandPaletteSearchSessionOwner {
 
     private var searchSuggestionsMatchCurrentQuery: Bool {
         searchSuggestionSourceQuery == normalizedCurrentQuery
+    }
+
+    private func isNotCurrentQuery(
+        _ suggestion: SearchManager.SearchSuggestion
+    ) -> Bool {
+        guard case .search = suggestion.type else { return true }
+        return suggestion.text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .localizedCaseInsensitiveCompare(normalizedCurrentQuery)
+            != .orderedSame
+    }
+
+    private func resetSelectionForCurrentQuery() {
+        if normalizedCurrentQuery.isEmpty || mode == .actions {
+            selectedRowID = visibleRows.first?.id
+        } else if let firstRow = visibleRows.first,
+                  case .url = firstRow.id {
+            selectedRowID = firstRow.id
+        } else {
+            selectedRowID = nil
+        }
     }
 
     private func matchingExtensionSuggestions(
