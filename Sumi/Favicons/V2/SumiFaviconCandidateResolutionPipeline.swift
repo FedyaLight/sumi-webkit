@@ -184,9 +184,16 @@ enum SumiFaviconSelectionPolicy {
 
         switch selection.sourceKind {
         case .documentLink, .extensionManifest, .webAppManifest:
-            return !hasBetterExplicitCandidate(
-                over: selection,
-                candidates: explicitCandidates
+            guard let preferred = SumiFaviconCandidateSelector.bestCandidate(
+                explicitCandidates,
+                for: .tabSidebar,
+                backingScale: SumiFaviconPresentationMetrics.defaultBackingScale()
+            ) else {
+                return true
+            }
+            return sameFaviconURL(
+                selection.sourceURL,
+                preferred.iconURL
             )
         case .rootFavicon, .appleTouchRoot, .browserFallback:
             return false
@@ -201,52 +208,5 @@ enum SumiFaviconSelectionPolicy {
 
     static func sameFaviconURL(_ lhs: URL, _ rhs: URL) -> Bool {
         lhs.absoluteString.caseInsensitiveCompare(rhs.absoluteString) == .orderedSame
-    }
-
-    private static func hasBetterExplicitCandidate(
-        over selection: SumiStoredFaviconSelection,
-        candidates: [SumiFaviconCandidate]
-    ) -> Bool {
-        if selection.payloadKind == .svg {
-            // SVG quality is resolution-independent, so document membership is
-            // the only upgrade signal. A removed source may be a theme variant.
-            return !containsSourceURL(selection.sourceURL, in: candidates)
-        }
-
-        let currentPixels = max(selection.pixelWidth ?? 0, selection.pixelHeight ?? 0)
-        let targetPixels = max(
-            1,
-            Int(
-                (
-                    SumiFaviconDisplayContext.tabSidebar.canonicalPointSize
-                        * max(1, SumiFaviconPresentationMetrics.defaultBackingScale())
-                ).rounded(.up)
-            )
-        )
-        return candidates.contains { candidate in
-            guard !sameFaviconURL(candidate.iconURL, selection.sourceURL) else {
-                return false
-            }
-            if candidate.declaredType == "image/svg+xml"
-                || candidate.iconURL.pathExtension.lowercased() == "svg" {
-                return true
-            }
-            if let bestDeclaredPixels = candidate.declaredSizes.map(\.longestSide).max() {
-                return bestDeclaredPixels > currentPixels && bestDeclaredPixels >= targetPixels
-            }
-            guard currentPixels < targetPixels else { return false }
-            let type = candidate.declaredType ?? ""
-            let ext = candidate.iconURL.pathExtension.lowercased()
-            return type != "image/x-icon"
-                && type != "image/vnd.microsoft.icon"
-                && ext != "ico"
-        }
-    }
-
-    private static func containsSourceURL(
-        _ sourceURL: URL,
-        in candidates: [SumiFaviconCandidate]
-    ) -> Bool {
-        candidates.contains { sameFaviconURL($0.iconURL, sourceURL) }
     }
 }

@@ -30,16 +30,83 @@ enum SumiApplicationSupportDirectory {
             )
         }
 
-        let appURL = baseURL.appendingPathComponent(
-            SumiAppIdentity.runtimeBundleIdentifier,
-            isDirectory: true
+        let appURL = resolvedAppRootURL(
+            baseURL: baseURL,
+            bundleIdentifier: SumiAppIdentity.runtimeBundleIdentifier,
+            databaseSchemaVersion: SumiDatabase.currentSchemaVersion
         )
+        if SumiAppIdentity.runtimeBundleIdentifier != SumiAppIdentity.bundleIdentifier,
+           !fileManager.fileExists(atPath: appURL.path) {
+            removeObsoleteDeveloperSchemaDirectories(
+                in: appURL.deletingLastPathComponent(),
+                keepingSchemaVersion: SumiDatabase.currentSchemaVersion,
+                fileManager: fileManager
+            )
+        }
         createDirectory(
             appURL,
             description: "Application Support directory",
             fileManager: fileManager
         )
         return appURL
+    }
+
+    static func resolvedAppRootURL(
+        baseURL: URL,
+        bundleIdentifier: String,
+        databaseSchemaVersion: Int
+    ) -> URL {
+        let identityURL = baseURL.appendingPathComponent(
+            bundleIdentifier,
+            isDirectory: true
+        )
+        guard bundleIdentifier != SumiAppIdentity.bundleIdentifier else {
+            return identityURL
+        }
+        return identityURL.appendingPathComponent(
+            "schema-\(databaseSchemaVersion)",
+            isDirectory: true
+        )
+    }
+
+    static func removeObsoleteDeveloperSchemaDirectories(
+        in identityURL: URL,
+        keepingSchemaVersion: Int,
+        fileManager: FileManager = .default
+    ) {
+        let contents: [URL]
+        do {
+            contents = try fileManager.contentsOfDirectory(
+                at: identityURL,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            )
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            return
+        } catch {
+            log.error(
+                "Failed to inspect developer schema directories at \(identityURL.path, privacy: .public): \(String(describing: error), privacy: .public)"
+            )
+            return
+        }
+
+        for url in contents {
+            let name = url.lastPathComponent
+            guard name.hasPrefix("schema-"),
+                  let version = Int(name.dropFirst("schema-".count)),
+                  version < keepingSchemaVersion,
+                  (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+            else {
+                continue
+            }
+            do {
+                try fileManager.removeItem(at: url)
+            } catch {
+                log.error(
+                    "Failed to remove obsolete developer schema directory \(url.path, privacy: .public): \(String(describing: error), privacy: .public)"
+                )
+            }
+        }
     }
 
     static func cachesRootURL(fileManager: FileManager = .default) -> URL {

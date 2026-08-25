@@ -1,3 +1,4 @@
+import Accelerate
 import AppKit
 import Foundation
 import ImageIO
@@ -193,21 +194,117 @@ final class SumiPreparedFaviconPipeline: @unchecked Sendable {
         let sourceHeight = CGFloat(cgImage.height)
         guard sourceWidth > 0, sourceHeight > 0 else { return }
 
-        var drawRect = Self.aspectFitRect(
+        let drawRect = Self.aspectFitRect(
             sourceSize: CGSize(width: sourceWidth, height: sourceHeight),
-            targetRect: targetRect,
-            allowsFractionalUpscaling: false
+            targetRect: targetRect
         )
-        drawRect.origin.x.round()
-        drawRect.origin.y.round()
+        if drawRect.width > sourceWidth || drawRect.height > sourceHeight,
+           let upscaledImage = Self.upscaledImage(
+               cgImage,
+               width: Int(drawRect.width.rounded()),
+               height: Int(drawRect.height.rounded())
+           ) {
+            let upscaledWidth = CGFloat(upscaledImage.width)
+            let upscaledHeight = CGFloat(upscaledImage.height)
+            let originX = CGFloat(Int(targetRect.midX - upscaledWidth / 2))
+            let originY = CGFloat(Int(targetRect.midY - upscaledHeight / 2))
+            let upscaledRect = CGRect(
+                x: originX,
+                y: originY,
+                width: upscaledWidth,
+                height: upscaledHeight
+            )
+            context.saveGState()
+            context.interpolationQuality = .none
+            context.draw(upscaledImage, in: upscaledRect)
+            context.restoreGState()
+            return
+        }
         context.draw(cgImage, in: drawRect)
     }
 
-    private static func aspectFitRect(
-        sourceSize: CGSize,
-        targetRect: CGRect,
-        allowsFractionalUpscaling: Bool = true
-    ) -> CGRect {
+    private static func upscaledImage(
+        _ image: CGImage,
+        width: Int,
+        height: Int
+    ) -> CGImage? {
+        let sourceWidth = image.width
+        let sourceHeight = image.height
+        guard sourceWidth > 0,
+              sourceHeight > 0,
+              width > 0,
+              height > 0,
+              width > sourceWidth || height > sourceHeight
+        else {
+            return nil
+        }
+
+        let sourceBytesPerRow = sourceWidth * 4
+        var sourcePixels = [UInt8](
+            repeating: 0,
+            count: sourceBytesPerRow * sourceHeight
+        )
+        guard let sourceContext = CGContext(
+            data: &sourcePixels,
+            width: sourceWidth,
+            height: sourceHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: sourceBytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return nil
+        }
+        sourceContext.interpolationQuality = .none
+        sourceContext.draw(
+            image,
+            in: CGRect(x: 0, y: 0, width: sourceWidth, height: sourceHeight)
+        )
+
+        let destinationBytesPerRow = width * 4
+        var destinationPixels = [UInt8](
+            repeating: 0,
+            count: destinationBytesPerRow * height
+        )
+        let scaleError = sourcePixels.withUnsafeMutableBytes { sourceBytes in
+            destinationPixels.withUnsafeMutableBytes { destinationBytes in
+                var sourceBuffer = vImage_Buffer(
+                    data: sourceBytes.baseAddress,
+                    height: vImagePixelCount(sourceHeight),
+                    width: vImagePixelCount(sourceWidth),
+                    rowBytes: sourceBytesPerRow
+                )
+                var destinationBuffer = vImage_Buffer(
+                    data: destinationBytes.baseAddress,
+                    height: vImagePixelCount(height),
+                    width: vImagePixelCount(width),
+                    rowBytes: destinationBytesPerRow
+                )
+                return vImageScale_ARGB8888(
+                    &sourceBuffer,
+                    &destinationBuffer,
+                    nil,
+                    vImage_Flags(kvImageHighQualityResampling | kvImageDoNotTile)
+                )
+            }
+        }
+        guard scaleError == kvImageNoError,
+              let destinationContext = CGContext(
+                  data: &destinationPixels,
+                  width: width,
+                  height: height,
+                  bitsPerComponent: 8,
+                  bytesPerRow: destinationBytesPerRow,
+                  space: CGColorSpaceCreateDeviceRGB(),
+                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+              )
+        else {
+            return nil
+        }
+        return destinationContext.makeImage()
+    }
+
+    private static func aspectFitRect(sourceSize: CGSize, targetRect: CGRect) -> CGRect {
         guard sourceSize.width.isFinite,
               sourceSize.height.isFinite,
               sourceSize.width > 0,
@@ -218,10 +315,7 @@ final class SumiPreparedFaviconPipeline: @unchecked Sendable {
             return targetRect
         }
 
-        var scale = min(targetRect.width / sourceSize.width, targetRect.height / sourceSize.height)
-        if scale > 1, !allowsFractionalUpscaling {
-            scale.round(.down)
-        }
+        let scale = min(targetRect.width / sourceSize.width, targetRect.height / sourceSize.height)
         let drawSize = CGSize(
             width: max(1, sourceSize.width * scale),
             height: max(1, sourceSize.height * scale)

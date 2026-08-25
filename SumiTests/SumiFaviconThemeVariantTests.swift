@@ -26,6 +26,56 @@ final class SumiFaviconThemeVariantTests: XCTestCase {
         )
     }
 
+    func testCachedTouchIconIsReplacedWhenDocumentFaviconIsPreferred() throws {
+        let pageURL = try XCTUnwrap(URL(string: "https://x.example/"))
+        let faviconURL = try XCTUnwrap(URL(string: "https://x.example/favicon.ico"))
+        let touchIconURL = try XCTUnwrap(URL(string: "https://x.example/apple-touch-icon.png"))
+        let partition = SumiFaviconPartition.regular()
+        let cachedTouchIcon = SumiStoredFaviconSelection(
+            partition: partition,
+            pageURL: pageURL,
+            sourceURL: touchIconURL,
+            blobID: "touch-icon",
+            revision: "touch-icon",
+            payloadKind: .png,
+            mimeType: "image/png",
+            pixelWidth: 192,
+            pixelHeight: 192,
+            sourceKind: .documentLink,
+            declaredSizes: [SumiFaviconDeclaredSize(width: 192, height: 192)],
+            declaredType: "image/png",
+            purposes: [.any],
+            updatedAt: Date()
+        )
+        let candidates = [
+            SumiFaviconCandidate(
+                pageURL: pageURL,
+                iconURL: faviconURL,
+                sourceKind: .documentLink,
+                relTokens: ["icon"],
+                declaredType: "image/x-icon",
+                partition: partition
+            ),
+            SumiFaviconCandidate(
+                pageURL: pageURL,
+                iconURL: touchIconURL,
+                sourceKind: .documentLink,
+                relTokens: ["apple-touch-icon"],
+                declaredSizes: [SumiFaviconDeclaredSize(width: 192, height: 192)],
+                declaredType: "image/png",
+                sourcePriority: 1,
+                partition: partition
+            ),
+        ]
+
+        XCTAssertFalse(
+            SumiFaviconSelectionPolicy.shouldUseCachedSelection(
+                cachedTouchIcon,
+                over: candidates
+            )
+        )
+    }
+
     private func makeFixture() throws -> FaviconThemeVariantFixture {
         let pageURL = try XCTUnwrap(URL(string: "https://example.com/"))
         let cachedSourceURL = try XCTUnwrap(URL(string: "https://assets.example/favicon-dark.svg"))

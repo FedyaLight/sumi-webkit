@@ -30,6 +30,7 @@ final class SumiFaviconBlobWriter: @unchecked Sendable {
         )
 
         var newlyWrittenBlobFileName: String?
+        var unreferencedBlobs = [SumiFaviconBlobRecord]()
         return try transaction.mutateImmediately(
             partition: candidate.partition,
             rollbackPhysicalMutation: { cache, diskStorage in
@@ -50,6 +51,14 @@ final class SumiFaviconBlobWriter: @unchecked Sendable {
                         )
                     }
                 }
+            },
+            commitPhysicalMutation: { cache, diskStorage in
+                self.removePhysicalBlobs(
+                    unreferencedBlobs,
+                    partition: candidate.partition,
+                    cache: cache,
+                    diskStorage: diskStorage
+                )
             }
         ) { metadata, cache, diskStorage in
             if candidate.partition.isPrivate {
@@ -77,10 +86,9 @@ final class SumiFaviconBlobWriter: @unchecked Sendable {
                 metadata: &metadata,
                 now: now
             )
-            cleanupDiskBudgetIfNeeded(
+            unreferencedBlobs = removeUnreferencedBlobRecords(
                 metadata: &metadata,
-                partition: candidate.partition,
-                diskStorage: diskStorage
+                excluding: Set(metadata.pageMappings.values.map(\.blobID))
             )
             return selection
         }
@@ -148,33 +156,47 @@ final class SumiFaviconBlobWriter: @unchecked Sendable {
         }
     }
 
-    private func cleanupDiskBudgetIfNeeded(
+    private func removeUnreferencedBlobRecords(
         metadata: inout SumiFaviconBlobMetadata,
+        excluding usedBlobIDs: Set<String>
+    ) -> [SumiFaviconBlobRecord] {
+        let removable = metadata.blobs.values.filter {
+            !usedBlobIDs.contains($0.blobID)
+        }
+        for blob in removable {
+            metadata.blobs[blob.blobID] = nil
+        }
+
+        let removedBlobIDs = Set(removable.map(\.blobID))
+        metadata.candidateMappings = metadata.candidateMappings.filter { _, record in
+            guard let blobID = record.blobID else { return true }
+            return !removedBlobIDs.contains(blobID)
+        }
+        return removable
+    }
+
+    private func removePhysicalBlobs(
+        _ blobs: [SumiFaviconBlobRecord],
         partition: SumiFaviconPartition,
+        cache: SumiFaviconBlobCache,
         diskStorage: SumiFaviconBlobDiskStorage
     ) {
-        guard !partition.isPrivate else { return }
-        var total = metadata.blobs.values.reduce(0) { $0 + $1.byteCount }
-        guard total > SumiFaviconConstants.diskBudgetBytes else { return }
-
-        let usedBlobIDs = Set(metadata.pageMappings.values.map(\.blobID))
-        let removable = metadata.blobs.values
-            .filter { !usedBlobIDs.contains($0.blobID) }
-            .sorted { $0.lastAccessedAt < $1.lastAccessedAt }
-
-        for blob in removable where total > SumiFaviconConstants.diskBudgetBytes {
+        for blob in blobs {
+            if partition.isPrivate {
+                cache.removePrivatePayload(
+                    blobID: blob.blobID,
+                    partition: partition
+                )
+                continue
+            }
             do {
-                guard try diskStorage.removeBlob(
+                _ = try diskStorage.removeBlob(
                     fileName: blob.fileName,
                     partition: partition
-                ) else {
-                    continue
-                }
-                metadata.blobs[blob.blobID] = nil
-                total -= blob.byteCount
+                )
             } catch {
                 Self.log.error(
-                    "Failed to remove favicon blob during disk budget cleanup for \(partition.storageComponent, privacy: .public): \(String(describing: error), privacy: .public)"
+                    "Failed to remove unreferenced favicon blob for \(partition.storageComponent, privacy: .public): \(String(describing: error), privacy: .public)"
                 )
             }
         }

@@ -3,6 +3,8 @@ import GRDB
 import SumiDomain
 
 final class SumiDatabase: @unchecked Sendable {
+    static let currentSchemaVersion = 5
+
     private let writer: any DatabaseWriter
 
     static func open(at url: URL) throws -> SumiDatabase {
@@ -40,7 +42,7 @@ final class SumiDatabase: @unchecked Sendable {
             case 0:
                 try Self.createSchema(in: database)
                 try Self.createKeyboardCommandSchema(in: database)
-                try database.execute(sql: "PRAGMA user_version = 5")
+                try Self.markSchemaCurrent(in: database)
             case 1:
                 try database.alter(table: "folders") { table in
                     table.add(column: "is_live", .boolean)
@@ -50,25 +52,31 @@ final class SumiDatabase: @unchecked Sendable {
                 try Self.createKeyboardCommandSchema(in: database)
                 try Self.addPageKindColumn(in: database)
                 try Self.migratePermissionDecisionsToGlobalScope(in: database)
-                try database.execute(sql: "PRAGMA user_version = 5")
+                try Self.markSchemaCurrent(in: database)
             case 2:
                 try Self.createKeyboardCommandSchema(in: database)
                 try Self.addPageKindColumn(in: database)
                 try Self.migratePermissionDecisionsToGlobalScope(in: database)
-                try database.execute(sql: "PRAGMA user_version = 5")
+                try Self.markSchemaCurrent(in: database)
             case 3:
                 try Self.addPageKindColumn(in: database)
                 try Self.migratePermissionDecisionsToGlobalScope(in: database)
-                try database.execute(sql: "PRAGMA user_version = 5")
+                try Self.markSchemaCurrent(in: database)
             case 4:
                 try Self.migratePermissionDecisionsToGlobalScope(in: database)
-                try database.execute(sql: "PRAGMA user_version = 5")
-            case 5:
+                try Self.markSchemaCurrent(in: database)
+            case let version where version == Self.currentSchemaVersion:
                 break
             default:
                 throw SumiDatabaseError.unsupportedSchemaVersion(schemaVersion)
             }
         }
+    }
+
+    private static func markSchemaCurrent(in database: Database) throws {
+        try database.execute(
+            sql: "PRAGMA user_version = \(currentSchemaVersion)"
+        )
     }
 
     func read<Value>(

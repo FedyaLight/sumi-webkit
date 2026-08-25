@@ -14,6 +14,8 @@ final class SidebarFaviconImageStore {
     @MainActor
     @Observable
     final class Entry {
+        weak var image: NSImage?
+        var didLookupImage = false
         var revision: UInt64 = 0
     }
 
@@ -86,7 +88,7 @@ final class SidebarFaviconImageStore {
     func prewarm(_ requests: [Request]) {
         guard let configuredImageReader else { return }
         for request in requests {
-            guard cachedImage(for: request, imageReader: configuredImageReader) == nil,
+            guard entryImage(for: request, imageReader: configuredImageReader) == nil,
                   inFlightLoads[request] == nil,
                   queuedPrewarmRequests.insert(request).inserted
             else { continue }
@@ -116,7 +118,7 @@ final class SidebarFaviconImageStore {
         context: SumiFaviconDisplayContext = .pinnedLauncher
     ) -> NSImage? {
         guard let configuredImageReader else { return nil }
-        return cachedImage(
+        return entryImage(
             for: cacheKey(launchURL, partition, context),
             imageReader: configuredImageReader
         )
@@ -163,7 +165,7 @@ final class SidebarFaviconImageStore {
         request: Request,
         imageReader: any BrowserFaviconImageReading
     ) -> InFlightLoad? {
-        guard cachedImage(for: request, imageReader: imageReader) == nil else {
+        guard entryImage(for: request, imageReader: imageReader) == nil else {
             return nil
         }
         if let existing = inFlightLoads[request] {
@@ -185,8 +187,11 @@ final class SidebarFaviconImageStore {
                 return
             }
             self.inFlightLoads[request] = nil
-            if loadedImage != nil {
-                self.entry(for: request).revision &+= 1
+            if let loadedImage {
+                let entry = self.entry(for: request)
+                entry.image = loadedImage
+                entry.didLookupImage = true
+                entry.revision &+= 1
             }
         }
         let load = InFlightLoad(id: id, task: task)
@@ -230,6 +235,8 @@ final class SidebarFaviconImageStore {
         ) {
             inFlightLoads[key]?.task.cancel()
             inFlightLoads[key] = nil
+            entry.image = nil
+            entry.didLookupImage = false
             entry.revision &+= 1
         }
     }
@@ -273,5 +280,20 @@ final class SidebarFaviconImageStore {
             context: request.context,
             imageReader: imageReader
         )
+    }
+
+    private func entryImage(
+        for request: Request,
+        imageReader: any BrowserFaviconImageReading
+    ) -> NSImage? {
+        let entry = entry(for: request)
+        if let image = entry.image {
+            return image
+        }
+        guard !entry.didLookupImage else { return nil }
+        entry.didLookupImage = true
+        let image = cachedImage(for: request, imageReader: imageReader)
+        entry.image = image
+        return image
     }
 }

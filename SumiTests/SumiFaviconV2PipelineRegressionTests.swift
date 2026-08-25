@@ -527,7 +527,7 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
         XCTAssertLessThan(leftEdgeAlpha, 10)
     }
 
-    func testNearTargetRasterDiagonalIsNotUnevenlyUpscaled() async throws {
+    func testNearTargetRasterDiagonalStaysCrispAtRequestedDisplaySize() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("SumiFaviconV2RasterDiagonal-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -546,18 +546,39 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
                 partition: partition
             )
 
-            let image = await runtime.images.preparedImage(
-                for: request(pageURL: pageURL, partition: partition),
-                priority: .visibleSidebarOrTabStrip,
-                scheduleFetchOnMiss: false
-            )
-            let cgImage = try preparedCGImage(from: image)
+            for context in [
+                SumiFaviconDisplayContext.tabSidebar,
+                .pinnedLauncher,
+            ] {
+                let image = await runtime.images.preparedImage(
+                    for: SumiPreparedFaviconRequest(
+                        pageURL: pageURL,
+                        partition: partition,
+                        context: context,
+                        backingScale: 2
+                    ),
+                    priority: .visibleSidebarOrTabStrip,
+                    scheduleFetchOnMiss: false
+                )
+                let cgImage = try preparedCGImage(from: image)
+                let centerY = cgImage.height / 2
 
-            XCTAssertEqual(
-                try intermediateGrayscalePixelCount(in: cgImage),
-                0,
-                "Unexpected raster interpolation for \(sourceSize) px source"
-            )
+                XCTAssertGreaterThan(
+                    try alpha(in: cgImage, x: 0, y: centerY),
+                    200,
+                    "The \(sourceSize) px source must fill \(context.rawValue)"
+                )
+                XCTAssertGreaterThan(
+                    try alpha(in: cgImage, x: cgImage.width - 1, y: centerY),
+                    200,
+                    "The \(sourceSize) px source must fill \(context.rawValue)"
+                )
+                XCTAssertGreaterThanOrEqual(
+                    try brightGrayscalePixelCount(in: cgImage),
+                    8,
+                    "The \(sourceSize) px diagonal must keep a crisp core in \(context.rawValue)"
+                )
+            }
         }
     }
 
@@ -984,6 +1005,50 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
         ))
     }
 
+    func testReplacingSelectionRemovesUnreferencedBlobImmediately() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "SumiFaviconV2ReplacementCleanup-\(UUID().uuidString)",
+                isDirectory: true
+            )
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let partition = SumiFaviconPartition.regular()
+        let runtime = SumiFaviconRuntime(
+            rootDirectory: directory,
+            fetcher: RoutingFaviconNetworkFetcher(responses: [:])
+        )
+        let pageURL = try XCTUnwrap(URL(string: "https://replacement.example/page"))
+        try runtime.payloadIngestion.storeExternalPayload(
+            SumiFaviconTestImages.pngData(width: 32, height: 32),
+            faviconURL: pageURL.appendingPathComponent("first.png"),
+            documentURL: pageURL,
+            partition: partition
+        )
+        try runtime.payloadIngestion.storeExternalPayload(
+            SumiFaviconTestImages.pngData(width: 64, height: 64),
+            faviconURL: pageURL.appendingPathComponent("second.png"),
+            documentURL: pageURL,
+            partition: partition
+        )
+
+        let blobDirectory = directory
+            .appendingPathComponent(partition.storageComponent, isDirectory: true)
+            .appendingPathComponent("blobs", isDirectory: true)
+        let blobs = try FileManager.default.contentsOfDirectory(
+            at: blobDirectory,
+            includingPropertiesForKeys: nil
+        )
+        XCTAssertEqual(blobs.count, 1)
+        XCTAssertEqual(
+            runtime.images.cachedSelection(
+                for: pageURL,
+                partition: partition
+            )?.sourceURL,
+            pageURL.appendingPathComponent("second.png")
+        )
+    }
+
     func testClearPrivatePartitionDoesNotPersistFaviconDataToDisk() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("SumiFaviconV2PrivateLifecycle-\(UUID().uuidString)", isDirectory: true)
@@ -1144,7 +1209,7 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
         return bytes[offset]
     }
 
-    private func intermediateGrayscalePixelCount(
+    private func brightGrayscalePixelCount(
         in image: CGImage,
         file: StaticString = #filePath,
         line: UInt = #line
@@ -1155,10 +1220,9 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
         return (0..<image.height).reduce(into: 0) { count, y in
             for x in 0..<image.width {
                 let offset = y * image.bytesPerRow + x * 4
-                let red = bytes[offset]
-                let green = bytes[offset + 1]
-                let blue = bytes[offset + 2]
-                if red == green, green == blue, red > 0, red < 255 {
+                if bytes[offset] >= 240,
+                   bytes[offset + 1] >= 240,
+                   bytes[offset + 2] >= 240 {
                     count += 1
                 }
             }

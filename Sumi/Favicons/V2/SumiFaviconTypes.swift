@@ -364,5 +364,4 @@ enum SumiFaviconConstants {
     static let maxRasterPixels = 1024 * 1024
     static let maxDecodedMasterPixelSize = 256
     static let preparedMemoryBudgetBytes = 12 * 1024 * 1024
-    static let diskBudgetBytes = 64 * 1024 * 1024
 }

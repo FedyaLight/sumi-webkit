@@ -8,16 +8,13 @@ enum SumiFaviconCandidateSelector {
         preferMaskable: Bool = false
     ) -> [SumiFaviconCandidate] {
         let targetPixels = max(1, Int((context.canonicalPointSize * max(1, backingScale)).rounded(.up)))
-        return candidates.sorted { lhs, rhs in
-            let lhsScore = score(lhs, targetPixels: targetPixels, preferMaskable: preferMaskable)
-            let rhsScore = score(rhs, targetPixels: targetPixels, preferMaskable: preferMaskable)
-            if lhsScore != rhsScore {
-                return lhsScore < rhsScore
-            }
-            if lhs.iconURL.absoluteString != rhs.iconURL.absoluteString {
-                return lhs.iconURL.absoluteString < rhs.iconURL.absoluteString
-            }
-            return lhs.discoveredAt < rhs.discoveredAt
+        return candidates.sorted {
+            isOrderedBefore(
+                $0,
+                $1,
+                targetPixels: targetPixels,
+                preferMaskable: preferMaskable
+            )
         }
     }
 
@@ -27,12 +24,32 @@ enum SumiFaviconCandidateSelector {
         backingScale: CGFloat,
         preferMaskable: Bool = false
     ) -> SumiFaviconCandidate? {
-        orderedCandidates(
-            candidates,
-            for: context,
-            backingScale: backingScale,
-            preferMaskable: preferMaskable
-        ).first
+        let targetPixels = max(1, Int((context.canonicalPointSize * max(1, backingScale)).rounded(.up)))
+        return candidates.min {
+            isOrderedBefore(
+                $0,
+                $1,
+                targetPixels: targetPixels,
+                preferMaskable: preferMaskable
+            )
+        }
+    }
+
+    private static func isOrderedBefore(
+        _ lhs: SumiFaviconCandidate,
+        _ rhs: SumiFaviconCandidate,
+        targetPixels: Int,
+        preferMaskable: Bool
+    ) -> Bool {
+        let lhsScore = score(lhs, targetPixels: targetPixels, preferMaskable: preferMaskable)
+        let rhsScore = score(rhs, targetPixels: targetPixels, preferMaskable: preferMaskable)
+        if lhsScore != rhsScore {
+            return lhsScore < rhsScore
+        }
+        if lhs.iconURL.absoluteString != rhs.iconURL.absoluteString {
+            return lhs.iconURL.absoluteString < rhs.iconURL.absoluteString
+        }
+        return lhs.discoveredAt < rhs.discoveredAt
     }
 
     private static func score(
@@ -47,16 +64,13 @@ enum SumiFaviconCandidateSelector {
     }
 
     private static func sourceScore(_ candidate: SumiFaviconCandidate, targetPixels: Int) -> Int {
-        let hasGoodDeclaredSize = candidate.declaredSizes.contains {
-            $0.longestSide >= targetPixels
-        }
-        let isScalable = candidate.declaredType == "image/svg+xml"
-            || candidate.iconURL.pathExtension.lowercased() == "svg"
+        let hasGoodDeclaredSize = candidate.declaredSizes.isEmpty
+            || candidate.declaredSizes.contains { $0.longestSide >= targetPixels }
         var sourceRank = candidate.sourcePriority
 
         if !hasGoodDeclaredSize,
-           !isScalable,
-           candidate.sourceKind == .documentLink {
+           candidate.sourceKind == .documentLink,
+           candidate.declaredSizes.contains(where: { $0.longestSide <= 16 }) {
             sourceRank += 2
         }
 

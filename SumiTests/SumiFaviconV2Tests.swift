@@ -188,7 +188,7 @@ final class SumiFaviconV2DiscoveryTests: XCTestCase {
 }
 
 final class SumiFaviconV2SelectorTests: XCTestCase {
-    func testSelectorPrefersDeclaredRetinaTouchIconOverUnknownICO() throws {
+    func testSelectorKeepsDocumentFaviconAheadOfTouchIconWhenSizeIsUnknown() throws {
         let pageURL = try XCTUnwrap(URL(string: "https://x.example/"))
         let candidates = SumiFaviconDiscovery.documentCandidates(
             from: [
@@ -215,7 +215,7 @@ final class SumiFaviconV2SelectorTests: XCTestCase {
                 for: .tabSidebar,
                 backingScale: 2
             )?.iconURL.absoluteString,
-            "https://x.example/apple-touch-icon.png"
+            "https://x.example/favicon.ico"
         )
     }
 

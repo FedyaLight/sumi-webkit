@@ -214,6 +214,41 @@ final class SidebarFaviconImageStoreTests: XCTestCase {
         XCTAssertNotNil(store.image(for: launchURL, partition: partition))
     }
 
+    func testRepeatedReadsUseWeakEntryWithoutRepeatingRepositoryLookup() async throws {
+        let store = SidebarFaviconImageStore()
+        let reader = SidebarFaviconImageReaderStub(image: solidImage())
+        let launchURL = try XCTUnwrap(URL(string: "https://example.com/app"))
+        let partition = SumiFaviconPartition.regular()
+
+        await store.load(
+            launchURL: launchURL,
+            partition: partition,
+            imageReader: reader
+        )
+        let lookupCountAfterLoad = reader.cachedPreparedImageCallCount
+
+        XCTAssertNotNil(store.image(for: launchURL, partition: partition))
+        XCTAssertNotNil(store.image(for: launchURL, partition: partition))
+        XCTAssertNotNil(store.nsImage(for: launchURL, partition: partition))
+        XCTAssertEqual(
+            reader.cachedPreparedImageCallCount,
+            lookupCountAfterLoad
+        )
+    }
+
+    func testRepeatedColdReadsDoNotRepeatRepositoryLookup() throws {
+        let store = SidebarFaviconImageStore()
+        let reader = SidebarFaviconImageReaderStub(image: solidImage())
+        store.configure(imageReader: reader)
+        let launchURL = try XCTUnwrap(URL(string: "https://example.com/cold"))
+        let partition = SumiFaviconPartition.regular()
+
+        XCTAssertNil(store.image(for: launchURL, partition: partition))
+        XCTAssertNil(store.image(for: launchURL, partition: partition))
+        XCTAssertNil(store.nsImage(for: launchURL, partition: partition))
+        XCTAssertEqual(reader.cachedPreparedImageCallCount, 1)
+    }
+
     func testPrewarmPublishesImageWithoutMountedViewTask() async throws {
         let store = SidebarFaviconImageStore()
         let reader = SidebarFaviconImageReaderStub(
@@ -426,6 +461,7 @@ private final class SidebarFaviconImageReaderStub:
     private let delayNanoseconds: UInt64
     private let lock = NSLock()
     private var callCount = 0
+    private var cachedCallCount = 0
     private var preparedRequests = Set<SumiPreparedFaviconRequest>()
 
     init(image: NSImage, delayNanoseconds: UInt64 = 0) {
@@ -437,8 +473,15 @@ private final class SidebarFaviconImageReaderStub:
         lock.withLock { callCount }
     }
 
+    var cachedPreparedImageCallCount: Int {
+        lock.withLock { cachedCallCount }
+    }
+
     func cachedPreparedImage(for request: SumiPreparedFaviconRequest) -> NSImage? {
-        lock.withLock { preparedRequests.contains(request) ? image : nil }
+        lock.withLock {
+            cachedCallCount += 1
+            return preparedRequests.contains(request) ? image : nil
+        }
     }
 
     func cachedSelection(

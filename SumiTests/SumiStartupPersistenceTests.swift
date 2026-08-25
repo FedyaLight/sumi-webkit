@@ -110,6 +110,60 @@ final class SumiStartupPersistenceTests: XCTestCase {
         )
     }
 
+    func testDeveloperStorageIsIsolatedByDatabaseSchemaVersion() {
+        let baseURL = URL(fileURLWithPath: "/Application Support")
+
+        XCTAssertEqual(
+            SumiApplicationSupportDirectory.resolvedAppRootURL(
+                baseURL: baseURL,
+                bundleIdentifier: "com.sumi.browser.testhost",
+                databaseSchemaVersion: 5
+            ),
+            baseURL.appendingPathComponent(
+                "com.sumi.browser.testhost/schema-5",
+                isDirectory: true
+            )
+        )
+        XCTAssertEqual(
+            SumiApplicationSupportDirectory.resolvedAppRootURL(
+                baseURL: baseURL,
+                bundleIdentifier: SumiAppIdentity.bundleIdentifier,
+                databaseSchemaVersion: 5
+            ),
+            baseURL.appendingPathComponent(
+                SumiAppIdentity.bundleIdentifier,
+                isDirectory: true
+            )
+        )
+    }
+
+    func testDeveloperStorageRemovesOnlyObsoleteSchemaDirectories() throws {
+        let fixture = try Fixture()
+        let current = fixture.rootURL.appendingPathComponent("schema-5", isDirectory: true)
+        let obsolete = fixture.rootURL.appendingPathComponent("schema-4", isDirectory: true)
+        let future = fixture.rootURL.appendingPathComponent("schema-6", isDirectory: true)
+        let unrelated = fixture.rootURL.appendingPathComponent("Favicons", isDirectory: true)
+        let similarFile = fixture.rootURL.appendingPathComponent("schema-not-a-version")
+        for directory in [current, obsolete, future, unrelated] {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+        }
+        try Data().write(to: similarFile)
+
+        SumiApplicationSupportDirectory.removeObsoleteDeveloperSchemaDirectories(
+            in: fixture.rootURL,
+            keepingSchemaVersion: 5
+        )
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: current.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: obsolete.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: future.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: unrelated.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: similarFile.path))
+    }
+
     func testCorruptUnifiedDatabaseIsPreservedBeforeFreshCreation() throws {
         let fixture = try Fixture()
         let original = Data("not a sqlite database".utf8)

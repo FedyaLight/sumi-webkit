@@ -65,6 +65,9 @@ final class SumiFaviconBlobTransaction: @unchecked Sendable {
         rollbackPhysicalMutation: (
             (SumiFaviconBlobCache, SumiFaviconBlobDiskStorage) -> Void
         )? = nil,
+        commitPhysicalMutation: (
+            (SumiFaviconBlobCache, SumiFaviconBlobDiskStorage) -> Void
+        )? = nil,
         _ mutation: (
             inout SumiFaviconBlobMetadata,
             SumiFaviconBlobCache,
@@ -77,6 +80,7 @@ final class SumiFaviconBlobTransaction: @unchecked Sendable {
                 let result = try mutation(&metadata, cache, diskStorage)
                 guard !partition.isPrivate else {
                     cache.storeMetadata(metadata, for: partition)
+                    commitPhysicalMutation?(cache, diskStorage)
                     return result
                 }
 
@@ -86,6 +90,7 @@ final class SumiFaviconBlobTransaction: @unchecked Sendable {
                 try persist(metadata: metadata, partition: partition)
                 cache.storeMetadata(metadata, for: partition)
                 pendingPersistPartitions.remove(partition)
+                commitPhysicalMutation?(cache, diskStorage)
                 return result
             } catch {
                 rollbackPhysicalMutation?(cache, diskStorage)
