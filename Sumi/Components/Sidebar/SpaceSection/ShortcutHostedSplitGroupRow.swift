@@ -157,8 +157,7 @@ struct ShortcutHostedSplitGroupRow: View {
             loadedStoredFavicon: item.pin.flatMap { pin in
                 faviconImageStore.image(
                     for: pin.launchURL,
-                    partition: faviconPartition(pin),
-                    context: .tabSidebar
+                    partition: faviconPartition(pin)
                 )
             }
         )

@@ -239,7 +239,7 @@ enum SidebarColumnHostedRoot {
                     for: pin,
                     currentSpaceID: spaceID
                 ),
-                context: pin.role == .favorite ? .pinnedLauncher : .tabSidebar
+                context: .pinnedLauncher
             )
             if seen.insert(request).inserted {
                 requests.append(request)

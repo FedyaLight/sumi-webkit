@@ -181,8 +181,7 @@ struct SplitGroupSegment: View {
         item.pin.flatMap {
             faviconImageStore.image(
                 for: $0.launchURL,
-                partition: faviconPartition,
-                context: .tabSidebar
+                partition: faviconPartition
             )
         }
     }
@@ -192,7 +191,6 @@ struct SplitGroupSegment: View {
         return faviconImageStore.loadKey(
             launchURL: pin.launchURL,
             partition: faviconPartition,
-            context: .tabSidebar,
             isEnabled: pin.iconAsset == nil,
             disabledID: pin.id.uuidString
         )
@@ -204,7 +202,6 @@ struct SplitGroupSegment: View {
         await faviconImageStore.load(
             launchURL: pin.launchURL,
             partition: faviconPartition,
-            context: .tabSidebar,
             imageReader: faviconImageReader
         )
     }
