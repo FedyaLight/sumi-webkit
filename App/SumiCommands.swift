@@ -9,6 +9,10 @@ import AppKit
 import SumiDomain
 import SwiftUI
 
+extension FocusedValues {
+    @Entry var sumiSettingsWindowIsFocused: Bool?
+}
+
 struct SumiCommands: Commands {
     let browserContext: SumiCommandsBrowserContext
     let windowRegistry: WindowRegistry
@@ -16,6 +20,7 @@ struct SumiCommands: Commands {
     let settingsNavigation: SettingsNavigationOwner
     private let updaterService: SumiUpdaterService
     @ObservedObject private var menuFaviconInvalidator: SumiMenuFaviconInvalidator
+    @FocusedValue(\.sumiSettingsWindowIsFocused) private var settingsWindowIsFocused
 
     init(
         browserContext: SumiCommandsBrowserContext,
@@ -36,7 +41,7 @@ struct SumiCommands: Commands {
     // MARK: - Dynamic Keyboard Shortcuts
 
     /// View extension to apply dynamic keyboard shortcut if enabled
-    private func dynamicShortcut(_ action: ShortcutAction) -> some ViewModifier {
+    private func dynamicShortcut(_ action: ShortcutAction) -> DynamicShortcutModifier {
         let shortcut = shortcutManager.shortcut(for: action)
         let keyCombination = shortcut?.keyCombination
         return DynamicShortcutModifier(
@@ -58,6 +63,28 @@ struct SumiCommands: Commands {
         }
         .modifier(dynamicShortcut(action))
         .disabled(!shortcutManager.canPerform(action, keyWindow: NSApp.keyWindow))
+    }
+
+    private var closeFocusedWindowOrTabButton: some View {
+        Button(settingsWindowIsFocused == true ? "Close Window" : "Close Tab") {
+            if settingsWindowIsFocused == true {
+                NSApp.keyWindow?.performClose(nil)
+            } else {
+                performShortcut(.closeTab)
+            }
+        }
+        .modifier(
+            settingsWindowIsFocused == true
+                ? DynamicShortcutModifier(
+                    keyEquivalent: KeyEquivalent("w"),
+                    modifiers: [.command]
+                )
+                : dynamicShortcut(.closeTab)
+        )
+        .disabled(
+            settingsWindowIsFocused != true
+                && !shortcutManager.canPerform(.closeTab, keyWindow: NSApp.keyWindow)
+        )
     }
 
     @CommandsBuilder
@@ -219,7 +246,7 @@ struct SumiCommands: Commands {
 
             Divider()
 
-            browserActionButton(.closeTab)
+            closeFocusedWindowOrTabButton
 
             browserActionButton(.closeWindow)
         }

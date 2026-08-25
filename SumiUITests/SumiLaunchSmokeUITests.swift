@@ -175,6 +175,32 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
         )
     }
 
+    func testCommandWClosesSettingsWithoutClosingBrowserTab() throws {
+        let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
+        let browserWindow = app.windows.element(boundBy: 0)
+
+        XCTAssertTrue(browserWindow.waitForExistence(timeout: 5))
+        openNewTabCommandPalette(in: app)
+        let commandPalette = element(withIdentifier: "command-palette", in: app)
+        XCTAssertTrue(commandPalette.waitForExistence(timeout: 5))
+
+        browserWindow.typeKey(",", modifierFlags: .command)
+        let settingsWindow = app.windows["General"]
+        XCTAssertTrue(settingsWindow.waitForExistence(timeout: 5))
+
+        settingsWindow.typeKey("w", modifierFlags: .command)
+
+        XCTAssertTrue(
+            waitForNonExistence(settingsWindow, timeout: 5),
+            "Command-W should close the Settings window."
+        )
+        XCTAssertTrue(browserWindow.exists)
+        XCTAssertTrue(
+            commandPalette.exists,
+            "Closing Settings must not close the active browser tab."
+        )
+    }
+
     func testCompletedRetirementHistoryLaunchesBrowserWithoutPlaceholder()
         throws {
         let preferencesHome = try prepareCompletedRetirementTombstonePreferencesHome()

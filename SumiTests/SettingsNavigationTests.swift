@@ -11,9 +11,12 @@ final class SettingsNavigationTests: XCTestCase {
 
         XCTAssertTrue(appSource.contains("Settings {"))
         XCTAssertTrue(appSource.contains(".commandsRemoved()"))
+        XCTAssertTrue(appSource.contains(".focusedSceneValue(\\.sumiSettingsWindowIsFocused, true)"))
         XCTAssertTrue(commandsSource.contains("CommandGroup(replacing: .appSettings)"))
         XCTAssertTrue(commandsSource.contains("settingsNavigation.openSettings"))
         XCTAssertTrue(commandsSource.contains(".keyboardShortcut(\",\", modifiers: [.command])"))
+        XCTAssertTrue(commandsSource.contains("closeFocusedWindowOrTabButton"))
+        XCTAssertTrue(commandsSource.contains("NSApp.keyWindow?.performClose(nil)"))
     }
 
     func testSettingsNativeSurfaceStructureAvoidsDuplicateChromeAndNestedScrolling() throws {

@@ -224,6 +224,7 @@ struct SumiApp: App {
                 updaterService: updaterService,
                 defaultBrowserService: defaultBrowserService
             )
+            .focusedSceneValue(\.sumiSettingsWindowIsFocused, true)
         }
         .defaultSize(width: 940, height: 680)
         .windowResizability(.contentMinSize)
