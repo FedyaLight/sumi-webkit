@@ -3,13 +3,13 @@
     <channel>
         <title>Sumi</title>
         <item>
-            <title>0.0.6</title>
-            <pubDate>Mon, 24 Aug 2026 13:33:49 +0300</pubDate>
-            <sparkle:version>10</sparkle:version>
-            <sparkle:shortVersionString>0.0.6</sparkle:shortVersionString>
+            <title>0.0.7</title>
+            <pubDate>Tue, 25 Aug 2026 21:46:36 +0300</pubDate>
+            <sparkle:version>11</sparkle:version>
+            <sparkle:shortVersionString>0.0.7</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.5</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/FedyaLight/sumi-webkit/releases/download/v0.0.6/Sumi-0.0.6-build10-macos-arm64.dmg" length="27735177" type="application/octet-stream" sparkle:edSignature="qBefz+hMvAxXT50BSsVe+LzytgyuwL+oswgAKFUtmCdyTeT6m5uH6Fb0IuFG02IVg3XJTM4RSXCZLcaxtiihDg=="/>
+            <enclosure url="https://github.com/FedyaLight/sumi-webkit/releases/download/v0.0.7/Sumi-0.0.7-build11-macos-arm64.dmg" length="27762571" type="application/octet-stream" sparkle:edSignature="P9aaMWxmqUb9ggzpbvgPJYp4D1WuaEc5nozDcQ89BSLCeAu7XWqOtQPGSq88JkrGkksVL6rKBvHPlT75++cKAw=="/>
         </item>
     </channel>
 </rss>
