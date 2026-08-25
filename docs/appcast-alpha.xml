@@ -4,12 +4,12 @@
         <title>Sumi</title>
         <item>
             <title>0.0.7</title>
-            <pubDate>Tue, 25 Aug 2026 21:46:36 +0300</pubDate>
-            <sparkle:version>11</sparkle:version>
+            <pubDate>Tue, 25 Aug 2026 23:46:56 +0300</pubDate>
+            <sparkle:version>12</sparkle:version>
             <sparkle:shortVersionString>0.0.7</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>15.5</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/FedyaLight/sumi-webkit/releases/download/v0.0.7/Sumi-0.0.7-build11-macos-arm64.dmg" length="27762571" type="application/octet-stream" sparkle:edSignature="P9aaMWxmqUb9ggzpbvgPJYp4D1WuaEc5nozDcQ89BSLCeAu7XWqOtQPGSq88JkrGkksVL6rKBvHPlT75++cKAw=="/>
+            <enclosure url="https://github.com/FedyaLight/sumi-webkit/releases/download/v0.0.7/Sumi-0.0.7-build12-macos-arm64.dmg" length="27767809" type="application/octet-stream" sparkle:edSignature="ia6vFbDg5MwS8Zbt3ML//rjgKgT7dEgDItymimKF0I6Df58d49DmIDo2BBIMMf9HpHrxr9y3Fyb8wz/XrogOAQ=="/>
         </item>
     </channel>
 </rss>
