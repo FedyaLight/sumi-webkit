@@ -53,6 +53,7 @@ final class BrowserTabSelectionMaterializationOwner {
             }
             page.beginLoadingPresentationIfNeeded()
             guard startupProtection.canMaterializeWebViewDuringStartup(page) else {
+                startupProtection.deferBackgroundTabUntilStartupReady(page)
                 continue
             }
             page.resolveProfile()?.prepareWebKitRuntime()
