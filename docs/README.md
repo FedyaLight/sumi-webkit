@@ -34,6 +34,7 @@ Focused subsystem contracts cover [browser chrome](architecture/browser-chrome-p
 - [v0.0.5 Alpha 5 release notes](releases/0.0.5.md)
 - [v0.0.6 release notes](releases/0.0.6.md)
 - [v0.0.7 release notes](releases/0.0.7.md)
+- [v0.0.8 release notes](releases/0.0.8.md)
 - [CI and test ownership](../scripts/ci/README.md)
 
 Documents describe the current source tree unless a version or proposal status is named explicitly. Research notes and task trackers are temporary working material and do not belong in this index.

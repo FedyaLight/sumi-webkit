@@ -2,6 +2,18 @@
 
 Sumi follows semantic product versions. This changelog records public release scope, not every internal refactor.
 
+## 0.0.8 Alpha, 2026-08-26
+
+### History and Bookmarks
+
+- Opening a History or Bookmarks link in the current tab now replaces the library page immediately instead of leaving it visible while the destination loads.
+- A new General setting can open History and Bookmarks links in a new tab by default. Command-click continues to open a new tab regardless of the setting.
+
+### Session Restore
+
+- Closing the active tab while a restored session is still starting now loads the selected fallback tab automatically instead of leaving it cold until another click.
+- Restored sidebar visibility now snaps into place at launch instead of animating after the window appears, so the loading indicator no longer slides with it.
+
 ## 0.0.7 Alpha, 2026-08-25
 
 ### Extensions and Permissions
