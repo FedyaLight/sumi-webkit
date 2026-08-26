@@ -105,16 +105,22 @@ final class ActivePageCommandServiceTests: XCTestCase {
         let selectedTab = makeTab("https://selected.example")
         let previewTab = makeTab("https://preview.example")
         let previewWebView = WKWebView()
+        var inspectedWebView: WKWebView?
         let service = makeService(
             window: window,
             selectedTab: selectedTab,
             glance: {
                 .init(tab: previewTab, url: previewTab.url, webView: previewWebView)
+            },
+            openInspector: {
+                inspectedWebView = $0
+                return true
             }
         )
 
         XCTAssertTrue(service.inspectActivePage())
         XCTAssertTrue(previewWebView.isInspectable)
+        XCTAssertIdentical(inspectedWebView, previewWebView)
     }
 
     private func makeService(
@@ -134,7 +140,8 @@ final class ActivePageCommandServiceTests: XCTestCase {
         ) -> PageReloadCommandOutcome = { tab in
             ActivePageCommandServiceTests.acceptedOutcome(for: tab)
         },
-        notifications: NotificationPresentingSpy = NotificationPresentingSpy()
+        notifications: NotificationPresentingSpy = NotificationPresentingSpy(),
+        openInspector: @escaping @MainActor (WKWebView) -> Bool = { _ in true }
     ) -> ActivePageCommandService {
         let resolver = ActivePageResolver(
             activeWindow: { window },
@@ -149,7 +156,7 @@ final class ActivePageCommandServiceTests: XCTestCase {
             clipboard: BrowserURLClipboardService(notifications: { notifications }),
             inspector: WebInspectorService(
                 isEnabled: { true },
-                presentInstructions: {}
+                openInspector: openInspector
             )
         )
     }

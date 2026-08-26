@@ -1,28 +1,20 @@
-import AppKit
 import WebKit
 
 @MainActor
 final class WebInspectorService {
     private let isEnabled: @MainActor () -> Bool
-    private let presentInstructions: @MainActor () -> Void
+    private let openInspector: @MainActor (WKWebView) -> Bool
 
     init(
         isEnabled: @escaping @MainActor () -> Bool = {
             RuntimeDiagnostics.isDeveloperInspectionEnabled
         },
-        presentInstructions: @escaping @MainActor () -> Void = {
-            let alert = NSAlert()
-            alert.messageText = "Open Web Inspector"
-            alert.informativeText = "To open the Web Inspector:\n\n"
-                + "1. Right-click on the page and select 'Inspect Element'\n\n"
-                + "Or enable the Develop menu in Safari Settings → Advanced, then use Develop → [Your App]"
-            alert.alertStyle = .informational
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
+        openInspector: @escaping @MainActor (WKWebView) -> Bool = {
+            WebInspectorService.openInspector($0)
         }
     ) {
         self.isEnabled = isEnabled
-        self.presentInstructions = presentInstructions
+        self.openInspector = openInspector
     }
 
     var canInspect: Bool {
@@ -36,7 +28,20 @@ final class WebInspectorService {
             return false
         }
         webView.isInspectable = true
-        presentInstructions()
+        return openInspector(webView)
+    }
+
+    private static func openInspector(_ webView: WKWebView) -> Bool {
+        let inspectorSelector = NSSelectorFromString("_inspector")
+        let showSelector = NSSelectorFromString("show")
+        guard
+            let inspector = webView.perform(inspectorSelector)?.takeUnretainedValue() as? NSObject,
+            inspector.responds(to: showSelector)
+        else {
+            RuntimeDiagnostics.emit("Web Inspector is unavailable for this WebKit runtime.")
+            return false
+        }
+        inspector.perform(showSelector)
         return true
     }
 }

@@ -268,6 +268,105 @@ final class SumiWebPageContextMenuUITests: SumiLaunchSmokeUITestCase {
         )
     }
 
+    func testDeveloperToolsShortcutAndCommandPaletteOpenWebInspector() throws {
+        let backgroundLabel = "Developer Tools shortcut target"
+        let server = try SumiUIOracleHTTPServer(
+            path: "developer-tools-shortcut.html",
+            html: """
+            <!DOCTYPE html>
+            <html><body>
+              <div role="img" aria-label="\(backgroundLabel)"
+                   style="position:fixed;left:20px;bottom:0;width:240px;height:100px;background:#eee"></div>
+            </body></html>
+            """
+        )
+        defer { server.stop() }
+
+        let preferencesHomeURL = try prepareSelectedRegularTabPreferencesHome(
+            tabURLString: server.pageURL.absoluteString,
+            tabName: "Developer Tools Shortcut"
+        )
+        let app = try launchApp(
+            preferencesHomeURL: preferencesHomeURL,
+            additionalEnvironment: [
+                "AppleLanguages": "(en)",
+                "AppleLocale": "en_US",
+            ]
+        )
+        let window = app.windows.element(boundBy: 0)
+        XCTAssertTrue(window.waitForExistence(timeout: 10))
+        let background = window.images[backgroundLabel]
+        wait(
+            for: NSPredicate(format: "exists == true AND hittable == true"),
+            on: background,
+            timeout: 20,
+            message: "The Developer Tools shortcut target did not render"
+        )
+
+        let initialBottomEdge = background.frame.maxY
+        window.typeKey("i", modifierFlags: [.command, .option])
+
+        let deadline = Date().addingTimeInterval(10)
+        var didOpenInspector = false
+        while Date() < deadline {
+            if background.exists, background.frame.maxY < initialBottomEdge - 100 {
+                didOpenInspector = true
+                break
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+        XCTAssertTrue(
+            didOpenInspector,
+            "Command-Option-I did not open the docked Web Inspector"
+        )
+
+        app.terminate()
+        let paletteApp = try launchApp(
+            preferencesHomeURL: preferencesHomeURL,
+            additionalEnvironment: [
+                "AppleLanguages": "(en)",
+                "AppleLocale": "en_US",
+            ]
+        )
+        let paletteWindow = paletteApp.windows.element(boundBy: 0)
+        XCTAssertTrue(paletteWindow.waitForExistence(timeout: 10))
+        let paletteBackground = paletteWindow.images[backgroundLabel]
+        wait(
+            for: NSPredicate(format: "exists == true AND hittable == true"),
+            on: paletteBackground,
+            timeout: 20,
+            message: "The Command Palette Developer Tools target did not render"
+        )
+        let paletteInitialBottomEdge = paletteBackground.frame.maxY
+
+        paletteWindow.typeKey("l", modifierFlags: [.command])
+        XCTAssertTrue(waitForCommandPalette(in: paletteApp, timeout: 5))
+        let input = element(
+            withIdentifier: "command-palette-input",
+            in: paletteApp
+        )
+        input.typeKey("a", modifierFlags: [.command])
+        input.typeText("Developer Tools")
+        let developerTools = paletteApp.buttons["Run command, Developer Tools"]
+        XCTAssertTrue(developerTools.waitForExistence(timeout: 5))
+        developerTools.click()
+
+        let paletteDeadline = Date().addingTimeInterval(10)
+        var paletteDidOpenInspector = false
+        while Date() < paletteDeadline {
+            if paletteBackground.exists,
+               paletteBackground.frame.maxY < paletteInitialBottomEdge - 100 {
+                paletteDidOpenInspector = true
+                break
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+        XCTAssertTrue(
+            paletteDidOpenInspector,
+            "Developer Tools from the Command Palette did not open Web Inspector"
+        )
+    }
+
     func testContextMenuDownloadsExactImageAndLinkedFile() throws {
         let imageContents = """
         <svg xmlns="http://www.w3.org/2000/svg" width="160" height="100">
