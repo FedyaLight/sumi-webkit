@@ -81,7 +81,8 @@ private struct SettingsGeneralOverview: View {
 
             GeneralNewTabsSettingsSection(
                 mode: $chrome.newTabMode,
-                pageURLString: $chrome.newTabPageURLString
+                pageURLString: $chrome.newTabPageURLString,
+                openBookmarksAndHistoryInNewTab: $chrome.openBookmarksAndHistoryInNewTab
             )
 
             GeneralSearchSettingsSection(

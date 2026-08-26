@@ -2,10 +2,20 @@ import AppKit
 import SumiDomain
 import WebKit
 
-enum HistoryOpenMode {
+enum HistoryOpenMode: Equatable {
     case currentTab
     case newTab
     case newWindow
+
+    static func libraryDefault(
+        modifiers: NSEvent.ModifierFlags = [],
+        openInNewTab: Bool
+    ) -> HistoryOpenMode {
+        if modifiers.contains(.command) || openInNewTab {
+            return .newTab
+        }
+        return .currentTab
+    }
 }
 
 /// Open-history-URL / tab / window batching collaborator for `BrowserHistoryNavigationOwner`.
@@ -30,6 +40,7 @@ final class BrowserHistoryOpenOwner {
     private let scheduleRuntimeStatePersistence: @MainActor @Sendable (Tab) -> Void
     private let schedulePrepareVisibleWebViews: @MainActor @Sendable (BrowserWindowState) -> Void
     private let refreshCompositor: @MainActor @Sendable (BrowserWindowState) -> Void
+    private let opensLibraryLinksInNewTab: @MainActor @Sendable () -> Bool
 
     init(
         activeWindow: @escaping @MainActor @Sendable () -> BrowserWindowState?,
@@ -47,7 +58,8 @@ final class BrowserHistoryOpenOwner {
         awaitNextRegisteredWindow: @escaping @MainActor @Sendable (Set<UUID>) async -> BrowserWindowState?,
         scheduleRuntimeStatePersistence: @escaping @MainActor @Sendable (Tab) -> Void,
         schedulePrepareVisibleWebViews: @escaping @MainActor @Sendable (BrowserWindowState) -> Void,
-        refreshCompositor: @escaping @MainActor @Sendable (BrowserWindowState) -> Void
+        refreshCompositor: @escaping @MainActor @Sendable (BrowserWindowState) -> Void,
+        opensLibraryLinksInNewTab: @escaping @MainActor @Sendable () -> Bool = { false }
     ) {
         self.activeWindow = activeWindow
         self.activePage = activePage
@@ -60,6 +72,7 @@ final class BrowserHistoryOpenOwner {
         self.scheduleRuntimeStatePersistence = scheduleRuntimeStatePersistence
         self.schedulePrepareVisibleWebViews = schedulePrepareVisibleWebViews
         self.refreshCompositor = refreshCompositor
+        self.opensLibraryLinksInNewTab = opensLibraryLinksInNewTab
     }
 
     func openHistoryTab(
@@ -84,7 +97,13 @@ final class BrowserHistoryOpenOwner {
 
     func openHistoryURLFromMenuItem(_ url: URL) {
         if let window = activeWindow() {
-            openHistoryURL(url, in: window, preferredOpenMode: .currentTab)
+            openHistoryURL(
+                url,
+                in: window,
+                preferredOpenMode: .libraryDefault(
+                    openInNewTab: opensLibraryLinksInNewTab()
+                )
+            )
         } else {
             openHistoryURLsInNewWindow([url])
         }
@@ -99,8 +118,8 @@ final class BrowserHistoryOpenOwner {
         case .currentTab:
             if let currentTab = activePage(windowState)?.tab,
                !currentTab.representsSumiEmptySurface {
-                if currentTab.representsSumiHistorySurface {
-                    replaceNativeHistoryTab(currentTab, with: url, in: windowState)
+                if currentTab.representsSumiNativeSurface {
+                    replaceNativeSurfaceTab(currentTab, with: url, in: windowState)
                 } else {
                     loadCurrentPageURL(currentTab, windowState, url)
                 }
@@ -178,11 +197,12 @@ final class BrowserHistoryOpenOwner {
         newTab.name = displayName(for: url)
     }
 
-    private func replaceNativeHistoryTab(
+    private func replaceNativeSurfaceTab(
         _ tab: Tab,
         with url: URL,
         in windowState: BrowserWindowState
     ) {
+        tab.url = url
         tab.name = displayName(for: url)
         tab.faviconPresentation = .systemSymbol("globe")
         tab.faviconIsTemplateGlobePlaceholder = true

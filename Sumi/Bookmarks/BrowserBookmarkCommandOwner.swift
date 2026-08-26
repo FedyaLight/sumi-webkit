@@ -63,6 +63,7 @@ final class BrowserBookmarkCommandOwner {
     private let presenter: any BrowserBookmarkCommandPresenting
     private let importExportOwner: BrowserBookmarkImportExportOwner
     private let date: @MainActor @Sendable () -> Date
+    private let opensLibraryLinksInNewTab: @MainActor @Sendable () -> Bool
 
     init(
         activeWindow: @escaping @MainActor @Sendable () -> BrowserWindowState?,
@@ -95,7 +96,8 @@ final class BrowserBookmarkCommandOwner {
         detectedImportSources: @escaping @MainActor @Sendable () -> [SumiBookmarkImportSource],
         readBookmarks: @escaping @MainActor @Sendable (SumiBookmarkImportSource) throws -> [SumiBookmarkImportNode],
         date: @escaping @MainActor @Sendable () -> Date,
-        presenter: any BrowserBookmarkCommandPresenting
+        presenter: any BrowserBookmarkCommandPresenting,
+        opensLibraryLinksInNewTab: @escaping @MainActor @Sendable () -> Bool = { false }
     ) {
         self.activeWindow = activeWindow
         self.activePageTab = activePageTab
@@ -114,6 +116,7 @@ final class BrowserBookmarkCommandOwner {
         self.allTabs = allTabs
         self.date = date
         self.presenter = presenter
+        self.opensLibraryLinksInNewTab = opensLibraryLinksInNewTab
         self.importExportOwner = BrowserBookmarkImportExportOwner(
             bookmarkManager: bookmarkManager,
             detectedImportSources: detectedImportSources,
@@ -176,7 +179,13 @@ final class BrowserBookmarkCommandOwner {
     @MainActor
     func openBookmarkURLFromMenuItem(_ url: URL) {
         if let activeWindow = activeWindow() {
-            openBookmarkURL(url, in: activeWindow, preferredOpenMode: .currentTab)
+            openBookmarkURL(
+                url,
+                in: activeWindow,
+                preferredOpenMode: .libraryDefault(
+                    openInNewTab: opensLibraryLinksInNewTab()
+                )
+            )
         } else {
             openHistoryURLsInNewWindow([url])
         }

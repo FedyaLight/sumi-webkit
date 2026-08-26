@@ -122,10 +122,13 @@ final class HistoryPageViewModel: ObservableObject {
         _ item: HistoryListItem,
         modifiers: NSEvent.ModifierFlags = NSEvent.modifierFlags
     ) {
-        let mode: HistoryOpenMode = modifiers.contains(.command)
-            ? .newTab
-            : .currentTab
-        open(item, mode: mode)
+        open(
+            item,
+            mode: .libraryDefault(
+                modifiers: modifiers,
+                openInNewTab: browserContext.sumiSettings()?.openBookmarksAndHistoryInNewTab == true
+            )
+        )
     }
 
     func openInNewTabs(_ items: [HistoryListItem]) {

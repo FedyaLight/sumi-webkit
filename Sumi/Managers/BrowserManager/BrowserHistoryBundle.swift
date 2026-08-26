@@ -67,6 +67,9 @@ final class BrowserHistoryBundle {
             },
             navigateForward: { webView in
                 SumiWebViewNavigator.goForward(on: webView)
+            },
+            opensLibraryLinksInNewTab: { [weak browserManager] in
+                browserManager?.sumiSettings?.openBookmarksAndHistoryInNewTab == true
             }
         )
         self.clearHistory = BrowserHistoryClearCommand(

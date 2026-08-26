@@ -87,6 +87,19 @@ final class SumiBookmarksPageViewModel: ObservableObject {
         rebuildOutline()
     }
 
+    func openFromRow(
+        _ entity: SumiBookmarkEntity,
+        modifiers: NSEvent.ModifierFlags = NSEvent.modifierFlags
+    ) {
+        open(
+            entity,
+            mode: .libraryDefault(
+                modifiers: modifiers,
+                openInNewTab: browserContext.sumiSettings()?.openBookmarksAndHistoryInNewTab == true
+            )
+        )
+    }
+
     func open(_ entity: SumiBookmarkEntity, mode: HistoryOpenMode) {
         guard let windowState else { return }
         if entity.isFolder {

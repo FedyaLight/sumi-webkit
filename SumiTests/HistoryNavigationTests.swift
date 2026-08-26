@@ -55,6 +55,21 @@ final class HistoryNavigationTests: XCTestCase {
         XCTAssertEqual(windowState.currentTabId, firstHistoryTab.id)
     }
 
+    func testLibraryDefaultOpenModeUsesSettingUnlessCommandRequestsNewTab() {
+        XCTAssertEqual(
+            HistoryOpenMode.libraryDefault(openInNewTab: false),
+            .currentTab
+        )
+        XCTAssertEqual(
+            HistoryOpenMode.libraryDefault(openInNewTab: true),
+            .newTab
+        )
+        XCTAssertEqual(
+            HistoryOpenMode.libraryDefault(modifiers: .command, openInNewTab: false),
+            .newTab
+        )
+    }
+
     func testOpenHistoryURLInCurrentTabRoutesThroughWindowScopedLoader() throws {
         let windowState = BrowserWindowState()
         let currentTab = Tab(
@@ -92,6 +107,59 @@ final class HistoryNavigationTests: XCTestCase {
             [.init(tabId: historyTab.id, windowId: windowState.id, url: targetURL)]
         )
         XCTAssertEqual(historyTab.name, "target.example")
+        XCTAssertEqual(historyTab.url, targetURL)
+        XCTAssertFalse(historyTab.representsSumiNativeSurface)
+    }
+
+    func testReplacingBookmarksSurfaceClearsNativeSurfaceIdentity() throws {
+        let windowState = BrowserWindowState()
+        let bookmarksTab = Tab(
+            url: SumiSurface.bookmarksSurfaceURL(),
+            name: "Bookmarks",
+            loadsCachedFaviconOnInit: false
+        )
+        let targetURL = try XCTUnwrap(URL(string: "https://target.example"))
+        let harness = HistoryNavigationOwnerHarness(activePageTab: bookmarksTab)
+        let owner = harness.makeOwner()
+
+        owner.openHistoryURL(targetURL, in: windowState, preferredOpenMode: .currentTab)
+
+        XCTAssertEqual(
+            harness.loadedCurrentPages,
+            [.init(tabId: bookmarksTab.id, windowId: windowState.id, url: targetURL)]
+        )
+        XCTAssertEqual(bookmarksTab.url, targetURL)
+        XCTAssertEqual(bookmarksTab.name, "target.example")
+        XCTAssertFalse(bookmarksTab.representsSumiNativeSurface)
+        XCTAssertEqual(windowState.compositorInvalidation.nativeSurfaceRoutingRevision, 1)
+    }
+
+    func testLibraryMenuItemRespectsOpenInNewTabSetting() throws {
+        let windowState = BrowserWindowState()
+        let currentTab = Tab(
+            url: try XCTUnwrap(URL(string: "https://old.example")),
+            name: "Old",
+            loadsCachedFaviconOnInit: false
+        )
+        let targetURL = try XCTUnwrap(URL(string: "https://target.example"))
+        var openedNewTabURLs: [String] = []
+        let harness = HistoryNavigationOwnerHarness(
+            activeWindow: windowState,
+            activePageTab: currentTab
+        )
+        harness.openNewTabHandler = { url, _ in
+            openedNewTabURLs.append(url)
+            return Tab(
+                url: URL(string: url)!,
+                loadsCachedFaviconOnInit: false
+            )
+        }
+        let owner = harness.makeOwner(opensLibraryLinksInNewTab: true)
+
+        owner.openHistoryURLFromMenuItem(targetURL)
+
+        XCTAssertTrue(harness.loadedCurrentPages.isEmpty)
+        XCTAssertEqual(openedNewTabURLs, [targetURL.absoluteString])
     }
 
     func testGoBackInSpecificWindowUsesThatWindowWebView() {
@@ -189,13 +257,16 @@ private final class HistoryNavigationOwnerHarness {
     var loadedCurrentPages: [LoadedCurrentPage] = []
     var navigatedBackWebViewIDs: [ObjectIdentifier] = []
     var navigatedForwardWebViewIDs: [ObjectIdentifier] = []
+    var openNewTabHandler: ((String, BrowserTabOpenContext) -> Tab?)?
 
     init(activeWindow: BrowserWindowState? = nil, activePageTab: Tab? = nil) {
         self.activeWindow = activeWindow
         self.activePageTab = activePageTab
     }
 
-    func makeOwner() -> BrowserHistoryNavigationOwner {
+    func makeOwner(
+        opensLibraryLinksInNewTab: Bool = false
+    ) -> BrowserHistoryNavigationOwner {
         BrowserHistoryNavigationOwner(
             activeWindow: { [weak self] in self?.activeWindow },
             activePage: { [weak self] windowState in
@@ -211,7 +282,9 @@ private final class HistoryNavigationOwnerHarness {
                 )
             },
             openNativeBrowserSurface: { _, _, _, _ in /* No-op. */ },
-            openNewTab: { _, _ in nil },
+            openNewTab: { [weak self] url, context in
+                self?.openNewTabHandler?(url, context)
+            },
             loadCurrentPageURL: { [weak self] tab, windowState, url in
                 self?.loadedCurrentPages.append(
                     .init(tabId: tab.id, windowId: windowState.id, url: url)
@@ -228,7 +301,8 @@ private final class HistoryNavigationOwnerHarness {
             },
             navigateForward: { [weak self] webView in
                 self?.navigatedForwardWebViewIDs.append(ObjectIdentifier(webView))
-            }
+            },
+            opensLibraryLinksInNewTab: { opensLibraryLinksInNewTab }
         )
     }
 }

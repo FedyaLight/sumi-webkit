@@ -120,6 +120,18 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertEqual(reloaded.resolvedNewTabPageURL.absoluteString, "https://example.com")
     }
 
+    func testOpenBookmarksAndHistoryInNewTabDefaultAndPersistence() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let settings = SumiSettingsService(userDefaults: harness.defaults)
+
+        XCTAssertFalse(settings.openBookmarksAndHistoryInNewTab)
+        settings.openBookmarksAndHistoryInNewTab = true
+
+        let reloaded = SumiSettingsService(userDefaults: harness.defaults)
+        XCTAssertTrue(reloaded.openBookmarksAndHistoryInNewTab)
+    }
+
     func testUnifiedSearchEnginesDefaultOrderAndTabSearchPriority() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }

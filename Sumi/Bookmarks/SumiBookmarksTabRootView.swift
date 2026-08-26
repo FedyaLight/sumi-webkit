@@ -481,11 +481,9 @@ final class SumiBookmarksViewController: NSViewController {
                 ? outlineView.collapseItem(node)
                 : outlineView.expandItem(node)
         } else {
-            viewModel.open(
+            viewModel.openFromRow(
                 node.entity,
-                mode: NSApp.currentEvent?.modifierFlags.contains(.command) == true
-                    ? .newTab
-                    : .currentTab
+                modifiers: NSApp.currentEvent?.modifierFlags ?? []
             )
         }
     }
@@ -494,7 +492,7 @@ final class SumiBookmarksViewController: NSViewController {
         let entities = selectedEntities
         guard !entities.isEmpty else { return }
         if entities.count == 1, let entity = entities.first {
-            viewModel.open(entity, mode: .currentTab)
+            viewModel.openFromRow(entity)
         } else {
             viewModel.open(entities)
         }

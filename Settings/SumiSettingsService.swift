@@ -173,6 +173,11 @@ class SumiSettingsService {
         chrome.resolvedNewTabPageURL
     }
 
+    var openBookmarksAndHistoryInNewTab: Bool {
+        get { chrome.openBookmarksAndHistoryInNewTab }
+        set { chrome.openBookmarksAndHistoryInNewTab = newValue }
+    }
+
     var didFinishOnboarding: Bool {
         get { chrome.didFinishOnboarding }
         set { chrome.didFinishOnboarding = newValue }
@@ -358,6 +363,7 @@ class SumiSettingsService {
             "settings.framelessChrome": false,
             "settings.newTabMode": SumiNewTabMode.commandPalette.rawValue,
             "settings.newTab.pageURL": SumiNewTabPageURL.defaultURLString,
+            "settings.openBookmarksAndHistoryInNewTab": false,
             "settings.didFinishOnboarding": true,
             "settings.memoryMode": SumiMemoryMode.balanced.rawValue,
             "settings.memorySaver.customDeactivationDelay": SumiMemorySaverCustomDelay.defaultDelay,
@@ -398,6 +404,7 @@ class SumiSettingsService {
             framelessChromeKey: "settings.framelessChrome",
             newTabModeKey: "settings.newTabMode",
             newTabPageURLStringKey: "settings.newTab.pageURL",
+            openBookmarksAndHistoryInNewTabKey: "settings.openBookmarksAndHistoryInNewTab",
             didFinishOnboardingKey: "settings.didFinishOnboarding",
             onSidebarMiniPlayerEnabledChanged: { enabled in
                 nowPlayingController.setFeatureEnabled(enabled)

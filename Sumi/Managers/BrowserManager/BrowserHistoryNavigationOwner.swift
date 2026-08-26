@@ -26,7 +26,8 @@ final class BrowserHistoryNavigationOwner {
         schedulePrepareVisibleWebViews: @escaping @MainActor @Sendable (BrowserWindowState) -> Void,
         refreshCompositor: @escaping @MainActor @Sendable (BrowserWindowState) -> Void,
         navigateBack: @escaping @MainActor @Sendable (WKWebView) -> Void,
-        navigateForward: @escaping @MainActor @Sendable (WKWebView) -> Void
+        navigateForward: @escaping @MainActor @Sendable (WKWebView) -> Void,
+        opensLibraryLinksInNewTab: @escaping @MainActor @Sendable () -> Bool = { false }
     ) {
         self.backForwardOwner = BrowserHistoryBackForwardOwner(
             activeWindow: activeWindow,
@@ -45,7 +46,8 @@ final class BrowserHistoryNavigationOwner {
             awaitNextRegisteredWindow: awaitNextRegisteredWindow,
             scheduleRuntimeStatePersistence: scheduleRuntimeStatePersistence,
             schedulePrepareVisibleWebViews: schedulePrepareVisibleWebViews,
-            refreshCompositor: refreshCompositor
+            refreshCompositor: refreshCompositor,
+            opensLibraryLinksInNewTab: opensLibraryLinksInNewTab
         )
     }
 

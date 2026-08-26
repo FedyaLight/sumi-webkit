@@ -4,13 +4,16 @@ import SwiftUI
 struct GeneralNewTabsSettingsSection: View {
     @Binding private var mode: SumiNewTabMode
     @Binding private var pageURLString: String
+    @Binding private var openBookmarksAndHistoryInNewTab: Bool
 
     init(
         mode: Binding<SumiNewTabMode>,
-        pageURLString: Binding<String>
+        pageURLString: Binding<String>,
+        openBookmarksAndHistoryInNewTab: Binding<Bool>
     ) {
         _mode = mode
         _pageURLString = pageURLString
+        _openBookmarksAndHistoryInNewTab = openBookmarksAndHistoryInNewTab
     }
 
     var body: some View {
@@ -43,6 +46,18 @@ struct GeneralNewTabsSettingsSection: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+            }
+
+            SettingsDivider()
+
+            SettingsRow(
+                title: "Open History and Bookmarks in a new tab",
+                subtitle: "Links from History and Bookmarks open in a new tab instead of replacing the current page.",
+                systemImage: "plus.rectangle.on.rectangle"
+            ) {
+                Toggle("", isOn: $openBookmarksAndHistoryInNewTab)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
             }
         }
     }

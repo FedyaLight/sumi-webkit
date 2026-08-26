@@ -80,6 +80,23 @@ final class BrowserBookmarkCommandOwnerTests: XCTestCase {
         XCTAssertEqual(harness.openedHistoryURLGroupsInNewWindow, [[url]])
     }
 
+    func testOpenBookmarkURLFromMenuUsesNewTabWhenSettingEnabled() throws {
+        let harness = makeHarness()
+        let owner = harness.makeOwner(
+            presenter: FakeBookmarkCommandPresenter(),
+            opensLibraryLinksInNewTab: true
+        )
+        let windowState = BrowserWindowState()
+        let url = try XCTUnwrap(URL(string: "https://example.com/page"))
+        harness.activeWindow = windowState
+
+        owner.openBookmarkURLFromMenuItem(url)
+
+        XCTAssertEqual(harness.openedHistoryURLs.count, 1)
+        XCTAssertEqual(harness.openedHistoryURLs[0].url, url)
+        XCTAssertEqual(harness.openedHistoryURLs[0].mode, .newTab)
+    }
+
     func testOpenBookmarkFolderFromMenuOpensEveryURLInNewTabs() throws {
         let harness = makeHarness()
         let owner = harness.makeOwner(presenter: FakeBookmarkCommandPresenter())
@@ -256,7 +273,10 @@ private final class BrowserBookmarkCommandOwnerHarness {
         self.bookmarkManager = bookmarkManager
     }
 
-    func makeOwner(presenter: FakeBookmarkCommandPresenter) -> BrowserBookmarkCommandOwner {
+    func makeOwner(
+        presenter: FakeBookmarkCommandPresenter,
+        opensLibraryLinksInNewTab: Bool = false
+    ) -> BrowserBookmarkCommandOwner {
         BrowserBookmarkCommandOwner(
             activeWindow: { [weak self] in
                 self?.activeWindow
@@ -320,7 +340,8 @@ private final class BrowserBookmarkCommandOwnerHarness {
             date: { [weak self] in
                 self?.dateValue ?? Date(timeIntervalSince1970: 0)
             },
-            presenter: presenter
+            presenter: presenter,
+            opensLibraryLinksInNewTab: { opensLibraryLinksInNewTab }
         )
     }
 }

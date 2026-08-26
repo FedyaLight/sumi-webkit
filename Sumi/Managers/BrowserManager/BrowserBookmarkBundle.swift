@@ -111,7 +111,10 @@ final class BrowserBookmarkBundle {
                         in: browserManager.windowRegistry
                     )
                 }
-            )
+            ),
+            opensLibraryLinksInNewTab: { [weak browserManager] in
+                browserManager?.sumiSettings?.openBookmarksAndHistoryInNewTab == true
+            }
         )
     }
 }

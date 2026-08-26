@@ -230,7 +230,8 @@ final class GeneralSettingsBoundaryTests: XCTestCase {
             ),
             GeneralNewTabsSettingsSection(
                 mode: .constant(.commandPalette),
-                pageURLString: .constant("example.com")
+                pageURLString: .constant("example.com"),
+                openBookmarksAndHistoryInNewTab: .constant(false)
             ),
             GeneralSearchSettingsSection(
                 defaultEngineID: .constant(engine.id),

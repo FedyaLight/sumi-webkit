@@ -22,6 +22,7 @@ final class ChromeLayoutSettingsStore {
     private let framelessChromeKey: String
     private let newTabModeKey: String
     private let newTabPageURLStringKey: String
+    private let openBookmarksAndHistoryInNewTabKey: String
     private let didFinishOnboardingKey: String
 
     private let onSidebarMiniPlayerEnabledChanged: (Bool) -> Void
@@ -117,6 +118,16 @@ final class ChromeLayoutSettingsStore {
         }
     }
 
+    var openBookmarksAndHistoryInNewTab: Bool {
+        didSet {
+            Persisted.bool(
+                openBookmarksAndHistoryInNewTab,
+                key: openBookmarksAndHistoryInNewTabKey,
+                defaults: userDefaults
+            )
+        }
+    }
+
     var resolvedNewTabPageURL: URL {
         SumiNewTabPageURL.runtimeURL(from: newTabPageURLString)
     }
@@ -141,6 +152,7 @@ final class ChromeLayoutSettingsStore {
         framelessChromeKey: String,
         newTabModeKey: String,
         newTabPageURLStringKey: String,
+        openBookmarksAndHistoryInNewTabKey: String,
         didFinishOnboardingKey: String,
         onSidebarMiniPlayerEnabledChanged: @escaping (Bool) -> Void
     ) {
@@ -157,6 +169,7 @@ final class ChromeLayoutSettingsStore {
         self.framelessChromeKey = framelessChromeKey
         self.newTabModeKey = newTabModeKey
         self.newTabPageURLStringKey = newTabPageURLStringKey
+        self.openBookmarksAndHistoryInNewTabKey = openBookmarksAndHistoryInNewTabKey
         self.didFinishOnboardingKey = didFinishOnboardingKey
         self.onSidebarMiniPlayerEnabledChanged = onSidebarMiniPlayerEnabledChanged
 
@@ -198,6 +211,9 @@ final class ChromeLayoutSettingsStore {
         self.newTabPageURLString =
             userDefaults.string(forKey: newTabPageURLStringKey)
             ?? SumiNewTabPageURL.defaultURLString
+        self.openBookmarksAndHistoryInNewTab = userDefaults.bool(
+            forKey: openBookmarksAndHistoryInNewTabKey
+        )
         self.didFinishOnboarding = userDefaults.bool(forKey: didFinishOnboardingKey)
     }
 
