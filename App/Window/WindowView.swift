@@ -256,7 +256,12 @@ struct WindowView: View {
             // column closed for ~0.3s before the collapsed overlay can mount, which
             // reads as a flash/blink. Snap the layout while the session is still
             // resolving so the window settles straight into its restored state.
-            let animatesLayout = !windowState.restorationState.isAwaitingInitialResolution
+            // The archived last-session restore lands after initial resolution has
+            // cleared, so it stages an explicit snap receipt instead.
+            let snapsForRestore = windowState.restorationState
+                .consumeSnappedSidebarCorrection()
+            let animatesLayout = !snapsForRestore
+                && !windowState.restorationState.isAwaitingInitialResolution
             syncDockedSidebarLayout(isVisible: isVisible, animated: animatesLayout)
             Task { @MainActor in
                 await Task.yield()

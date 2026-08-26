@@ -497,6 +497,53 @@ final class WindowSessionServiceTests: XCTestCase {
         XCTAssertTrue(windowState.commandPaletteDraftNavigatesCurrentTab)
     }
 
+    func testApplyWindowSessionSnapshotStagesSnappedSidebarCorrectionOnlyWhenVisibilityDiffers() throws {
+        let tabManager = BrowserManager()
+        let profileId = UUID()
+        let space = try createSpace(
+            named: "SnapCorrection",
+            profileID: profileId,
+            in: tabManager
+        )
+        let tab = tabManager.regularTabLifecycleOwner.createNewTab(url: "https://snap.example", in: space, activate: true)
+        let sessionKey = "SumiTests.windowSession.\(UUID().uuidString)"
+        defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
+
+        func makeSnapshot(isSidebarVisible: Bool) -> WindowSessionSnapshot {
+            WindowSessionSnapshot(
+                currentTabId: tab.id,
+                currentSpaceId: space.id,
+                currentProfileId: profileId,
+                activeShortcutPinId: nil,
+                activeShortcutPinRole: nil,
+                isShowingEmptyState: false,
+                commandPaletteReason: nil,
+                activeTabsBySpace: [
+                    SpaceTabSelectionSnapshot(spaceId: space.id, tabId: tab.id),
+                ],
+                activeShortcutsBySpace: [],
+                sidebarWidth: 312,
+                savedSidebarWidth: 340,
+                sidebarContentWidth: 1,
+                isSidebarVisible: isSidebarVisible,
+                commandPaletteDraft: CommandPaletteDraftState(text: "", navigateCurrentTab: false)
+            )
+        }
+
+        let delegate = TestWindowSessionDelegate(runtime: tabManager)
+        let service = delegate.makeRestoreService(lastWindowSessionKey: sessionKey)
+        let windowState = BrowserWindowState()
+        windowState.restorationState.isAwaitingInitialResolution = false
+
+        service.applyWindowSessionSnapshot(makeSnapshot(isSidebarVisible: true), to: windowState)
+        XCTAssertFalse(windowState.restorationState.consumeSnappedSidebarCorrection())
+
+        service.applyWindowSessionSnapshot(makeSnapshot(isSidebarVisible: false), to: windowState)
+        XCTAssertFalse(windowState.isSidebarVisible)
+        XCTAssertTrue(windowState.restorationState.consumeSnappedSidebarCorrection())
+        XCTAssertFalse(windowState.restorationState.consumeSnappedSidebarCorrection())
+    }
+
     func testPreparedArchivedWindowBypassesConflictingGlobalSnapshot() throws {
         let tabManager = BrowserManager()
         let globalProfileID = UUID()

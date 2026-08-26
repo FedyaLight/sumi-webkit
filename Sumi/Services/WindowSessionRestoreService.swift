@@ -389,7 +389,14 @@ final class WindowSessionRestoreService {
         _ snapshot: WindowSessionSnapshot,
         to windowState: BrowserWindowState
     ) -> Bool {
-        withProfileReferenceMutation(for: snapshot) {
+        // The launch window is already presented when this archive snapshot
+        // lands, after `isAwaitingInitialResolution` has cleared. A differing
+        // sidebar visibility is a restore correction, not a user action, so the
+        // presented layout must snap instead of animating.
+        if snapshot.isSidebarVisible != windowState.isSidebarVisible {
+            windowState.restorationState.stageSnappedSidebarCorrection()
+        }
+        return withProfileReferenceMutation(for: snapshot) {
             snapshotApplier.apply(snapshot, to: windowState)
             finalizeWindowStateRestore(
                 windowState,

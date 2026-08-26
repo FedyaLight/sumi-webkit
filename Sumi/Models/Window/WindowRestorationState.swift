@@ -10,6 +10,7 @@ final class WindowRestorationState {
     var restoredSessionWindowID: UUID?
     var isAwaitingInitialResolution: Bool
     var pendingSplitSelection: PendingWindowSplitSelection?
+    private var pendingSnappedSidebarCorrection = false
     private(set) var pendingShortcutLiveSessions:
         [ShortcutLiveSessionSnapshot] = []
     private(set) var pendingWindowGeometry: BrowserWindowGeometrySnapshot?
@@ -17,6 +18,18 @@ final class WindowRestorationState {
 
     init(isAwaitingInitialResolution: Bool = false) {
         self.isAwaitingInitialResolution = isAwaitingInitialResolution
+    }
+
+    /// Stages that a session restore is correcting the sidebar visibility of an
+    /// already-presented window after initial resolution. The presented layout
+    /// must snap to the restored value instead of animating.
+    func stageSnappedSidebarCorrection() {
+        pendingSnappedSidebarCorrection = true
+    }
+
+    func consumeSnappedSidebarCorrection() -> Bool {
+        defer { pendingSnappedSidebarCorrection = false }
+        return pendingSnappedSidebarCorrection
     }
 
     func stageWindowGeometry(_ geometry: BrowserWindowGeometrySnapshot?) {
