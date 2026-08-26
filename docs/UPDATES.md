@@ -21,7 +21,7 @@ Run this only for a Sumi bundle you intentionally downloaded. Sumi itself never 
 
 ## Update Flow
 
-- Alpha 1 reads [`https://fedyalight.github.io/sumi-webkit/appcast.xml`](https://fedyalight.github.io/sumi-webkit/appcast.xml); Alpha 2 and later Alpha builds read [`https://fedyalight.github.io/sumi-webkit/appcast-alpha.xml`.](https://fedyalight.github.io/sumi-webkit/appcast-alpha.xml.)
+- Alpha 1 reads [`https://fedyalight.github.io/sumi-webkit/appcast.xml`](https://fedyalight.github.io/sumi-webkit/appcast.xml); Alpha 2 and later Alpha builds read [`https://fedyalight.github.io/sumi-webkit/appcast-alpha.xml`](https://fedyalight.github.io/sumi-webkit/appcast-alpha.xml).
 - Version `0.0.8 build 13` is prepared for both feeds, so eligible installed builds move directly to the current Alpha channel without a staged bridge after publication.
 - The current appcast item requires `arm64` hardware. Sparkle therefore offers it to Apple-silicon Macs, including an older Intel build running under Rosetta, but not to native Intel Macs.
 - Native Intel Macs receive no Arm-only offer. Version `0.0.4` is the final Intel-compatible build for installations that already have it; historic Intel and Universal assets remain published.
