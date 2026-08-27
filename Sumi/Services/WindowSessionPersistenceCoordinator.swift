@@ -83,7 +83,7 @@ final class WindowSessionPersistenceCoordinator {
             ),
             delayNanoseconds: delayNanoseconds,
             afterDurableCommit: { [archive] in
-                archive.refresh(excludingWindowID: nil)
+                archive.enqueueRefresh(excludingWindowID: nil)
             }
         )
     }
@@ -91,8 +91,11 @@ final class WindowSessionPersistenceCoordinator {
     @discardableResult
     func flush() -> Int {
         let committedWriteCount = scheduler.flush()
-        guard committedWriteCount > 0 else { return 0 }
-        archive.refresh(excludingWindowID: nil)
+        if committedWriteCount > 0 {
+            archive.enqueueRefresh(excludingWindowID: nil)
+        }
+        snapshotStore.flushPendingPersistence()
+        archive.flushPendingPersistence()
         return committedWriteCount
     }
 
@@ -113,9 +116,9 @@ final class WindowSessionPersistenceCoordinator {
                 $0.windowState === durablePrimary
             }?.archiveSnapshot.session
                 ?? snapshotFactory.make(for: durablePrimary)
-            _ = snapshotStore.persist(durableSnapshot)
+            _ = snapshotStore.enqueuePersist(durableSnapshot)
         }
-        archive.refresh(
+        archive.enqueueRefresh(
             using: archiveProjection.map(\.archiveSnapshot)
         )
     }

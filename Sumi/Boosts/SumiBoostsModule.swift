@@ -50,6 +50,7 @@ final class SumiBoostsModule: ObservableObject {
 
     private var loadedStore: SumiBoostStore?
     private var storeChangesCancellable: AnyCancellable?
+    private var storeInitialLoadCancellable: AnyCancellable?
     private let changesSubject = PassthroughSubject<Void, Never>()
 
     private var editorPresenter: SumiBoostEditorPanelController?
@@ -471,7 +472,24 @@ final class SumiBoostsModule: ObservableObject {
         storeChangesCancellable = store.changesPublisher.sink { [weak self] in
             self?.changesSubject.send(())
         }
+        storeInitialLoadCancellable = store.initialLoadPublisher.sink {
+            [weak self] in
+            self?.applyLoadedBoostsToLivePages()
+        }
         return store
+    }
+
+    private func applyLoadedBoostsToLivePages() {
+        for page in runtime.allLivePages() {
+            Task { @MainActor [weak self, weak tab = page.tab, weak webView = page.webView] in
+                guard let self, let tab, let webView else { return }
+                await tab.replaceNormalTabUserScripts(
+                    on: webView.configuration.userContentController,
+                    for: tab.url
+                )
+                self.applyLiveBoostState(to: webView, tab: tab)
+            }
+        }
     }
 
     private func loadEditorPresenterIfEnabled() -> SumiBoostEditorPanelController? {
@@ -527,6 +545,8 @@ final class SumiBoostsModule: ObservableObject {
         stopZapSelection()
         storeChangesCancellable?.cancel()
         storeChangesCancellable = nil
+        storeInitialLoadCancellable?.cancel()
+        storeInitialLoadCancellable = nil
         loadedStore = nil
         editorPresenter = nil
     }

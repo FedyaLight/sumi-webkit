@@ -89,13 +89,14 @@ final class SumiBoostStoreTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: cssURL, encoding: .utf8), ".hero { color: red; }")
 
         let reloadedStore = SumiBoostStore(rootDirectory: directory)
+        await reloadedStore.waitForInitialLoad()
         XCTAssertEqual(
             reloadedStore.activeBoost(for: url, profileId: profileId)?.data.customCSS,
             ".hero { color: red; }"
         )
     }
 
-    func testCorruptBoostsJSONIsPreservedAndNotOverwrittenByReadOnlyLoad() throws {
+    func testCorruptBoostsJSONIsPreservedAndNotOverwrittenByReadOnlyLoad() async throws {
         let directory = temporaryDirectory()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let jsonURL = directory.appendingPathComponent("boosts.json")
@@ -107,9 +108,89 @@ final class SumiBoostStoreTests: XCTestCase {
         XCTAssertTrue(
             store.boosts(for: URL(string: "https://example.test/")!, profileId: UUID()).isEmpty
         )
+        await store.waitForInitialLoad()
 
         XCTAssertEqual(try Data(contentsOf: jsonURL), corruptPayload)
         XCTAssertEqual(try Data(contentsOf: unreadableURL), corruptPayload)
+    }
+
+    func testReadAccessDoesNotWaitForSlowInitialDiskLoad() async throws {
+        let directory = temporaryDirectory()
+        let diskQueue = DispatchQueue(
+            label: "SumiBoostStoreTests.slow-initial-load"
+        )
+        diskQueue.suspend()
+        DispatchQueue.global(qos: .utility).async {
+            Thread.sleep(forTimeInterval: 0.25)
+            diskQueue.resume()
+        }
+
+        let store = SumiBoostStore(
+            rootDirectory: directory,
+            diskQueue: diskQueue
+        )
+        let startedAt = CFAbsoluteTimeGetCurrent()
+        XCTAssertNil(
+            store.activeBoost(
+                for: URL(string: "https://slow-boost-load.example"),
+                profileId: UUID()
+            )
+        )
+        let elapsed = CFAbsoluteTimeGetCurrent() - startedAt
+
+        XCTAssertLessThan(
+            elapsed,
+            0.1,
+            "A Boost read must not wait for filesystem I/O on the main thread"
+        )
+        await store.waitForInitialLoad()
+    }
+
+    func testDraftCreatedDuringInitialLoadMergesWithStoredBoosts() async throws {
+        let directory = temporaryDirectory()
+        let profileID = UUID()
+        let url = try XCTUnwrap(URL(string: "https://merge.example/page"))
+        let originalStore = SumiBoostStore(rootDirectory: directory)
+        let storedBoost = try originalStore.createDraft(
+            for: url,
+            profileId: profileID,
+            isEphemeral: false
+        )
+        await originalStore.flushPendingWrites()
+
+        let diskQueue = DispatchQueue(
+            label: "SumiBoostStoreTests.merge-initial-load"
+        )
+        diskQueue.suspend()
+        let reloadedStore = SumiBoostStore(
+            rootDirectory: directory,
+            diskQueue: diskQueue
+        )
+        let localBoost = try reloadedStore.createDraft(
+            for: url,
+            profileId: profileID,
+            isEphemeral: false
+        )
+
+        diskQueue.resume()
+        await reloadedStore.waitForInitialLoad()
+
+        XCTAssertEqual(
+            Set(reloadedStore.boosts(for: url, profileId: profileID).map(\.id)),
+            Set([storedBoost.id, localBoost.id])
+        )
+        XCTAssertEqual(
+            reloadedStore.activeBoostId(for: url, profileId: profileID),
+            localBoost.id
+        )
+        await reloadedStore.flushPendingWrites()
+
+        let verifiedStore = SumiBoostStore(rootDirectory: directory)
+        await verifiedStore.waitForInitialLoad()
+        XCTAssertEqual(
+            Set(verifiedStore.boosts(for: url, profileId: profileID).map(\.id)),
+            Set([storedBoost.id, localBoost.id])
+        )
     }
 
     func testFlushPersistsOnlyLatestEditorRevision() async throws {
@@ -131,6 +212,7 @@ final class SumiBoostStoreTests: XCTestCase {
         await store.flushPendingWrites()
 
         let reloaded = SumiBoostStore(rootDirectory: directory)
+        await reloaded.waitForInitialLoad()
         XCTAssertEqual(
             reloaded.activeBoost(for: url, profileId: profileId)?.data.boostName,
             "Final"

@@ -6,12 +6,14 @@ import Foundation
 extension SumiBoostStore {
     convenience init(
         rootDirectory: URL? = nil,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        diskQueue: DispatchQueue? = nil
     ) {
         self.init(
             rootDirectory: rootDirectory,
             fileManager: fileManager,
-            profileReferenceAdmission: .testingAllowingReferences()
+            profileReferenceAdmission: .testingAllowingReferences(),
+            diskQueue: diskQueue
         )
     }
 }

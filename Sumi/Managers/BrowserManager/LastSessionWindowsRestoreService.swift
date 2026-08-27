@@ -64,7 +64,7 @@ final class LastSessionWindowsRestoreService {
             if useStartupArchive {
                 startupRestore.markRestoreOfferConsumed()
             }
-            archive.refresh(excludingWindowID: nil)
+            archive.enqueueRefresh(excludingWindowID: nil)
             return
         }
         guard let restoreAttempt = archive.beginRestoreAttempt() else { return }

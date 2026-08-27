@@ -165,6 +165,89 @@ final class ShortcutLiveTabClosePersistenceTests: XCTestCase {
         )
         XCTAssertTrue(fixture.probe.commits.isEmpty)
     }
+
+    func testClosingSelectedFavoriteMaterializesColdDriftedFavoriteFallback()
+        throws {
+        let windowRegistry = WindowRegistry()
+        let browser = BrowserManager(windowRegistry: windowRegistry)
+        let profile = Profile(name: "Favorite close fallback")
+        let space = Space(name: "Favorite close fallback", profileId: profile.id)
+        let window = BrowserWindowState()
+        browser.profileManager.profiles = [profile]
+        browser.currentProfile = profile
+        browser.spaceStateOwner.replaceSpaces([space])
+        browser.spaceStateOwner.replaceCurrentSpace(space)
+        browser.tabResidenceAuthority.establishResidenceSession(on: window)
+        window.currentSpaceId = space.id
+        window.currentProfileId = profile.id
+        XCTAssertEqual(windowRegistry.register(window), .registered)
+        windowRegistry.setActive(window)
+
+        func makeFavorite(_ title: String, index: Int) throws -> ShortcutPin {
+            try XCTUnwrap(browser.shortcutPinStoreOwner.insert(
+                ShortcutPin(
+                    id: UUID(),
+                    role: .favorite,
+                    profileId: profile.id,
+                    index: index,
+                    launchURL: try XCTUnwrap(
+                        URL(string: "https://\(title.lowercased()).example")
+                    ),
+                    title: title
+                ),
+                at: index
+            ))
+        }
+
+        let fallbackPin = try makeFavorite("Fallback", index: 0)
+        let closingPin = try makeFavorite("Closing", index: 1)
+        let fallback = try XCTUnwrap(
+            browser.shortcutTabMaterializer.materialize(
+                fallbackPin,
+                in: window.id,
+                currentSpaceId: space.id
+            )
+        )
+        let closing = try XCTUnwrap(
+            browser.shortcutTabMaterializer.materialize(
+                closingPin,
+                in: window.id,
+                currentSpaceId: space.id
+            )
+        )
+        _ = closing.ensureUntrackedNormalWebView()
+        let driftedURL = try XCTUnwrap(
+            URL(string: "https://fallback.example/continued")
+        )
+        _ = fallback.beginMainFrameNavigationIntent(to: driftedURL)
+        fallback.url = driftedURL
+        XCTAssertTrue(fallback.isUnloaded)
+
+        window.currentTabId = closing.id
+        window.currentShortcutPinId = closingPin.id
+        window.currentShortcutPinRole = .favorite
+        window.selectionHistory.recentSelectionItemsBySpace[space.id] = [
+            .shortcutPin(closingPin.id),
+            .shortcutPin(fallbackPin.id),
+        ]
+
+        XCTAssertTrue(
+            browser.tabCloseOrchestration.closeTab(closing, in: window)
+        )
+
+        XCTAssertEqual(window.currentTabId, fallback.id)
+        XCTAssertEqual(window.currentShortcutPinId, fallbackPin.id)
+        let webView = try XCTUnwrap(
+            fallback.resolvedCurrentWebView(),
+            "A selected cold fallback must enter the page materialization pipeline"
+        )
+        switch fallback.mainFrameLoads.attemptStatus(on: webView) {
+        case .waiting, .submitted:
+            break
+        case .unsubmitted:
+            XCTFail("The drifted fallback destination was not submitted")
+        }
+    }
 }
 
 private extension ShortcutLiveTabClosePersistenceTests {
@@ -222,6 +305,8 @@ private extension ShortcutLiveTabClosePersistenceTests {
             },
             persistWindowSession: { _ in probe.commits.append(.retirement) }
         ))
+        tabManager.profileManager.profiles = [profile]
+        tabManager.currentProfile = profile
         let space = try XCTUnwrap(tabManager.sidebarSpaceLifecycle.createSpace(
             name: "Space",
             icon: SumiPersistentGlyph.spaceDefaultIconValue,
@@ -238,6 +323,15 @@ private extension ShortcutLiveTabClosePersistenceTests {
                 activate: false
             )
             : nil
+        if let fallback {
+            // Persistence cases model a live fallback without starting WebKit navigation.
+            let fallbackWebView = WKWebView()
+            fallback.replaceUntrackedWebView(fallbackWebView)
+            _ = fallback.mainFrameLoads.deferAttempt(
+                on: fallbackWebView,
+                intent: fallback.mainFrameLoads.currentIntent
+            )
+        }
         if restoredLiveSession, let fallback {
             _ = tabManager.regularTabLifecycleOwner.createNewTab(
                 url: "https://other-fallback.example",
@@ -479,6 +573,7 @@ private extension ShortcutLiveTabClosePersistenceTests {
                 fallbackPlanner: fallbackPlanner,
                 splitMembership: tabManager.splitGroupMembership
             ),
+            selection: tabManager.browserTabSelection,
             visuals: tabManager.shellRuntime.windowVisuals
         )
     }

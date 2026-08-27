@@ -61,6 +61,54 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
         )
     }
 
+    func testCachedPreparedImageDoesNotHydrateColdMetadataFromDatabase() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "SumiFaviconMemoryOnlyLookup-\(UUID().uuidString)",
+                isDirectory: true
+            )
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let database = try SumiDatabase.inMemory()
+        let partition = SumiFaviconPartition.regular()
+        let pageURL = try XCTUnwrap(
+            URL(string: "https://memory-only-favicon.example/page")
+        )
+        let writer = SumiFaviconRuntime(
+            database: database,
+            rootDirectory: directory,
+            fetcher: RoutingFaviconNetworkFetcher(responses: [:])
+        )
+        try writer.payloadIngestion.storeExternalPayload(
+            SumiFaviconTestImages.pngData(width: 32, height: 32),
+            faviconURL: pageURL.appendingPathComponent("favicon.png"),
+            documentURL: pageURL,
+            partition: partition
+        )
+
+        let coldReader = SumiFaviconRuntime(
+            database: database,
+            rootDirectory: directory,
+            fetcher: RoutingFaviconNetworkFetcher(responses: [:])
+        )
+        XCTAssertNil(coldReader.images.cachedPreparedImage(
+            for: request(pageURL: pageURL, partition: partition)
+        ))
+
+        try database.transaction {
+            try $0.documents.delete(
+                key: "favicon.metadata.\(partition.storageComponent)"
+            )
+        }
+        XCTAssertNil(
+            coldReader.images.cachedSelection(
+                for: pageURL,
+                partition: partition
+            ),
+            "A synchronous cache lookup must not populate metadata from disk"
+        )
+    }
+
     func testReferenceKeyAndDocumentURLLookupHitTheSamePreparedImage() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("SumiFaviconV2ReferenceKey-\(UUID().uuidString)", isDirectory: true)

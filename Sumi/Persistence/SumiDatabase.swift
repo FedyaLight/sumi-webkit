@@ -6,6 +6,11 @@ final class SumiDatabase: @unchecked Sendable {
     static let currentSchemaVersion = 5
 
     private let writer: any DatabaseWriter
+    private let deferredTransactionQueue = DispatchQueue(
+        label: "com.sumi.browser.database-deferred-writes",
+        qos: .utility
+    )
+    private let deferredTransactionGroup = DispatchGroup()
 
     static func open(at url: URL) throws -> SumiDatabase {
         var configuration = Configuration()
@@ -93,6 +98,24 @@ final class SumiDatabase: @unchecked Sendable {
         try writer.write { database in
             try operation(SumiDatabaseConnection(database: database))
         }
+    }
+
+    func enqueueTransaction(
+        _ operation: @escaping @Sendable (SumiDatabaseConnection) throws -> Void,
+        completion: @escaping @Sendable (Result<Void, Error>) -> Void
+    ) {
+        deferredTransactionGroup.enter()
+        deferredTransactionQueue.async { [self] in
+            let result = Result {
+                try transaction(operation)
+            }
+            completion(result)
+            deferredTransactionGroup.leave()
+        }
+    }
+
+    func flushEnqueuedTransactions() {
+        deferredTransactionGroup.wait()
     }
 
     private static func createSchema(in database: Database) throws {

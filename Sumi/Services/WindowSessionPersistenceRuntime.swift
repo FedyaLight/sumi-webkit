@@ -14,5 +14,6 @@ final class WindowSessionPersistenceRuntime {
 
     func flushForBrowserRuntimeTeardown() {
         scheduler.flushDurableStateForRuntimeTeardown()
+        snapshotStore.flushPendingPersistence()
     }
 }

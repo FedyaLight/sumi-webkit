@@ -60,6 +60,12 @@ final class SumiFaviconBlobTransaction: @unchecked Sendable {
         }
     }
 
+    func cachedMetadata(
+        for partition: SumiFaviconPartition
+    ) -> SumiFaviconBlobMetadata? {
+        cache.metadata(for: partition)
+    }
+
     func mutateImmediately<Result>(
         partition: SumiFaviconPartition,
         rollbackPhysicalMutation: (

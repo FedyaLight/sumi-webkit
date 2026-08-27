@@ -76,6 +76,8 @@ final class WindowSessionSnapshotStore {
     private let environment: () -> [String: String]
     private let codec: WindowSessionSnapshotCodec
     private var cachedPersistedData: Data?
+    private var cachedSnapshot: WindowSessionSnapshot?
+    private var pendingPersistCount = 0
 
     private(set) var lastLoadFailure: WindowSessionSnapshotLoadFailure?
     private(set) var lastPersistFailure: String?
@@ -105,6 +107,21 @@ final class WindowSessionSnapshotStore {
         let result: WindowSessionSnapshotLoadResult
         if let overrideResult = loadOverrideResult() {
             result = overrideResult
+        } else if let cachedSnapshot {
+            do {
+                result = .loaded(
+                    snapshot: cachedSnapshot,
+                    data: try codec.encode(cachedSnapshot)
+                )
+            } catch {
+                result = .failed(
+                    WindowSessionSnapshotLoadFailure(
+                        source: .databaseKey(key),
+                        reason: .decodeFailed,
+                        message: error.localizedDescription
+                    )
+                )
+            }
         } else {
             result = loadDatabaseResult()
         }
@@ -115,6 +132,9 @@ final class WindowSessionSnapshotStore {
         case .loaded(_, let data):
             lastLoadFailure = nil
             cachedPersistedData = data
+            if case .loaded(let snapshot, _) = result {
+                cachedSnapshot = snapshot
+            }
         case .failed(let failure):
             lastLoadFailure = failure
             Self.log.error(
@@ -126,6 +146,7 @@ final class WindowSessionSnapshotStore {
 
     @discardableResult
     func persist(_ snapshot: WindowSessionSnapshot) -> Bool {
+        database.flushEnqueuedTransactions()
         let data: Data
         do {
             data = try codec.encode(snapshot)
@@ -154,7 +175,55 @@ final class WindowSessionSnapshotStore {
             return false
         }
         cachedPersistedData = data
+        cachedSnapshot = snapshot
         return true
+    }
+
+    @discardableResult
+    func enqueuePersist(_ snapshot: WindowSessionSnapshot) -> Bool {
+        guard cachedSnapshot != snapshot else { return false }
+        cachedSnapshot = snapshot
+        cachedPersistedData = nil
+
+        struct Payload: @unchecked Sendable {
+            let snapshot: WindowSessionSnapshot
+        }
+        let payload = Payload(snapshot: snapshot)
+        let codec = codec
+        let key = key
+        pendingPersistCount += 1
+        database.enqueueTransaction(
+            { connection in
+                let data = try codec.encode(payload.snapshot)
+                try connection.documents.save(data, forKey: key)
+            },
+            completion: { [weak self] result in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.pendingPersistCount -= 1
+                    switch result {
+                    case .success:
+                        if self.cachedSnapshot == payload.snapshot {
+                            self.lastPersistFailure = nil
+                        }
+                    case .failure(let error):
+                        self.lastPersistFailure = error.localizedDescription
+                        Self.log.error(
+                            "Failed to persist window session snapshot: \(error.localizedDescription, privacy: .public)"
+                        )
+                        if self.cachedSnapshot == payload.snapshot {
+                            self.cachedSnapshot = nil
+                            self.cachedPersistedData = nil
+                        }
+                    }
+                }
+            }
+        )
+        return true
+    }
+
+    func flushPendingPersistence() {
+        database.flushEnqueuedTransactions()
     }
 
     /// Migrates the browser-owned database snapshot. An override file is
@@ -163,6 +232,7 @@ final class WindowSessionSnapshotStore {
         from deletedProfileID: UUID,
         to fallbackProfileID: UUID
     ) -> Bool {
+        database.flushEnqueuedTransactions()
         switch loadDatabaseResult() {
         case .missing:
             return true
@@ -178,6 +248,7 @@ final class WindowSessionSnapshotStore {
     }
 
     func containsDurableWindowProfileReference(to profileID: UUID) -> Bool {
+        database.flushEnqueuedTransactions()
         switch loadDatabaseResult() {
         case .missing:
             return false
@@ -191,6 +262,9 @@ final class WindowSessionSnapshotStore {
 
     func resetCycleCache() {
         cachedPersistedData = nil
+        if pendingPersistCount == 0 {
+            cachedSnapshot = nil
+        }
     }
 
     private func loadDatabaseResult() -> WindowSessionSnapshotLoadResult {
@@ -231,6 +305,7 @@ final class WindowSessionSnapshotStore {
             return false
         }
         cachedPersistedData = data
+        cachedSnapshot = snapshot
         lastPersistFailure = nil
         return true
     }

@@ -90,6 +90,46 @@ final class WindowSessionPersistenceSchedulerTests: XCTestCase {
         )
     }
 
+    func testImmediateCoordinatorPersistDoesNotWaitForBusyDatabaseWriter()
+        async {
+        let harness = makeCoordinatorHarness()
+        let writerStarted = DispatchSemaphore(value: 0)
+        let writerFinished = expectation(description: "busy writer finished")
+        DispatchQueue.global(qos: .utility).async {
+            try! harness.database.transaction { _ in
+                writerStarted.signal()
+                Thread.sleep(forTimeInterval: 0.25)
+            }
+            writerFinished.fulfill()
+        }
+        XCTAssertEqual(writerStarted.wait(timeout: .now() + 1), .success)
+
+        let startedAt = CFAbsoluteTimeGetCurrent()
+        harness.coordinator.persist(harness.persistedWindow)
+        let elapsed = CFAbsoluteTimeGetCurrent() - startedAt
+
+        XCTAssertLessThan(
+            elapsed,
+            0.1,
+            "A live session commit must not wait for SQLite on the main thread"
+        )
+        let cycle = WindowSessionRestoreCycle()
+        cycle.reset(store: harness.snapshotStore)
+        XCTAssertEqual(
+            cycle.claimSnapshot(
+                from: harness.snapshotStore,
+                for: BrowserWindowState()
+            )?.currentProfileId,
+            harness.persistedWindow.currentProfileId
+        )
+        await fulfillment(of: [writerFinished], timeout: 1)
+        _ = harness.coordinator.flush()
+        XCTAssertEqual(
+            harness.snapshotStore.loadSnapshot()?.snapshot.currentProfileId,
+            harness.persistedWindow.currentProfileId
+        )
+    }
+
     func testIncognitoOnlyImmediatePersistPreservesRegularArchive() {
         let harness = makeCoordinatorHarness()
         let archivedSnapshot = LastSessionWindowSnapshot(
@@ -404,6 +444,7 @@ final class WindowSessionPersistenceSchedulerTests: XCTestCase {
         let persistedWindow: BrowserWindowState
         let otherOpenWindow: BrowserWindowState
         let windows: WindowRegistry
+        let database: SumiDatabase
     }
 
     private func makeCoordinatorHarness(
@@ -454,7 +495,8 @@ final class WindowSessionPersistenceSchedulerTests: XCTestCase {
             historyStore: historyStore,
             persistedWindow: persistedWindow,
             otherOpenWindow: otherOpenWindow,
-            windows: windows
+            windows: windows,
+            database: database
         )
     }
 

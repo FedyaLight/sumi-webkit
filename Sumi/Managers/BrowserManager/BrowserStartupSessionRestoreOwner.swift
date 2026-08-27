@@ -66,7 +66,7 @@ final class BrowserStartupSessionRestoreOwner: BrowserStartupSessionRestoreProvi
 
         windowSnapshots = archivedWindowSnapshots
         tabSnapshot = resolvedTabSnapshot
-        lastSessionWindowsStore.updateSnapshots(
+        lastSessionWindowsStore.enqueueUpdateSnapshots(
             archivedWindowSnapshots,
             tabSnapshot: resolvedTabSnapshot
         )

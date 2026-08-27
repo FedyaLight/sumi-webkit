@@ -30,6 +30,22 @@ final class SumiFaviconBlobReader: @unchecked Sendable {
         }
     }
 
+    func memoryCachedSelection(
+        for pageURL: URL,
+        partition: SumiFaviconPartition,
+        now: Date = Date()
+    ) -> SumiStoredFaviconSelection? {
+        guard let metadata = transaction.cachedMetadata(for: partition) else {
+            return nil
+        }
+        return index.selection(
+            for: pageURL,
+            partition: partition,
+            metadata: metadata,
+            now: now
+        )
+    }
+
     func payloadData(
         blobID: String,
         partition: SumiFaviconPartition

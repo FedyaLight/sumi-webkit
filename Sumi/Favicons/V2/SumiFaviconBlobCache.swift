@@ -1,24 +1,27 @@
 import Foundation
 
 /// Session cache for decoded partition indexes and ephemeral private payloads.
-/// The transaction executor is its sole caller and provides synchronization.
-final class SumiFaviconBlobCache {
+/// Mutations remain transaction-owned; memory-only UI reads take atomic snapshots.
+final class SumiFaviconBlobCache: @unchecked Sendable {
+    private let lock = NSLock()
     private var metadataByPartition: [SumiFaviconPartition: SumiFaviconBlobMetadata] = [:]
     private var privatePayloadsByPartition: [SumiFaviconPartition: [String: Data]] = [:]
 
     var loadedPartitions: Set<SumiFaviconPartition> {
-        Set(metadataByPartition.keys)
+        lock.withLock { Set(metadataByPartition.keys) }
     }
 
     func metadata(for partition: SumiFaviconPartition) -> SumiFaviconBlobMetadata? {
-        metadataByPartition[partition]
+        lock.withLock { metadataByPartition[partition] }
     }
 
     func storeMetadata(
         _ metadata: SumiFaviconBlobMetadata,
         for partition: SumiFaviconPartition
     ) {
-        metadataByPartition[partition] = metadata
+        lock.withLock {
+            metadataByPartition[partition] = metadata
+        }
     }
 
     func storePrivatePayload(
@@ -27,9 +30,11 @@ final class SumiFaviconBlobCache {
         partition: SumiFaviconPartition
     ) {
         precondition(partition.isPrivate)
-        var payloads = privatePayloadsByPartition[partition] ?? [:]
-        payloads[blobID] = data
-        privatePayloadsByPartition[partition] = payloads
+        lock.withLock {
+            var payloads = privatePayloadsByPartition[partition] ?? [:]
+            payloads[blobID] = data
+            privatePayloadsByPartition[partition] = payloads
+        }
     }
 
     func privatePayload(
@@ -37,21 +42,27 @@ final class SumiFaviconBlobCache {
         partition: SumiFaviconPartition
     ) -> Data? {
         precondition(partition.isPrivate)
-        return privatePayloadsByPartition[partition]?[blobID]
+        return lock.withLock {
+            privatePayloadsByPartition[partition]?[blobID]
+        }
     }
 
     func clear(_ partition: SumiFaviconPartition) {
-        metadataByPartition[partition] = SumiFaviconBlobMetadata()
-        privatePayloadsByPartition[partition] = nil
+        lock.withLock {
+            metadataByPartition[partition] = SumiFaviconBlobMetadata()
+            privatePayloadsByPartition[partition] = nil
+        }
     }
 
     func removePrivatePayload(
         blobID: String,
         partition: SumiFaviconPartition
     ) {
-        privatePayloadsByPartition[partition]?[blobID] = nil
-        if privatePayloadsByPartition[partition]?.isEmpty == true {
-            privatePayloadsByPartition[partition] = nil
+        lock.withLock {
+            privatePayloadsByPartition[partition]?[blobID] = nil
+            if privatePayloadsByPartition[partition]?.isEmpty == true {
+                privatePayloadsByPartition[partition] = nil
+            }
         }
     }
 }

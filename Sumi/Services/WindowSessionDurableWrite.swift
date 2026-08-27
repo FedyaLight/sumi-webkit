@@ -24,6 +24,6 @@ struct WindowSessionDurableWrite {
 
     func commit() {
         guard windowState.isIncognito == false else { return }
-        _ = store.persist(snapshotFactory.make(for: windowState))
+        _ = store.enqueuePersist(snapshotFactory.make(for: windowState))
     }
 }

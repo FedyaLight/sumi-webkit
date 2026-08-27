@@ -432,6 +432,84 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
         }
     }
 
+    func testStartupProtectionCompletionLoadsSelectedDriftedLauncher()
+        throws {
+        let harness = try makeHarness(appliedProtectionLevel: .adblock)
+        let launchURL = try XCTUnwrap(
+            URL(string: "file:///tmp/sumi-launcher-original.html")
+        )
+        let driftedURL = try XCTUnwrap(
+            URL(string: "file:///tmp/sumi-launcher-drifted.html")
+        )
+        let pin = try XCTUnwrap(
+            harness.manager.shortcutPinStoreOwner.insert(
+                ShortcutPin(
+                    id: UUID(),
+                    role: .favorite,
+                    profileId: harness.window.currentProfileId,
+                    spaceId: nil,
+                    index: 0,
+                    launchURL: launchURL,
+                    title: "Drifted Launcher"
+                ),
+                at: 0
+            )
+        )
+        harness.window.currentShortcutPinId = pin.id
+        harness.window.currentShortcutPinRole = .favorite
+        harness.window.restorationState.stageShortcutLiveSessions([
+            ShortcutLiveSessionSnapshot(
+                shortcutPinId: pin.id,
+                presentationSpaceId: harness.space.id,
+                currentURL: driftedURL,
+                title: "Drifted Launcher"
+            ),
+        ])
+        let restorer = WindowSessionShortcutRestorer(
+            pins: harness.manager.shortcutPinCollectionStateOwner,
+            activation: harness.manager.shortcutPresentationActivation
+        )
+        restorer.materializeRestoredLiveSessions(in: harness.window)
+        XCTAssertTrue(restorer.materializeSelectionIfNeeded(in: harness.window))
+        let liveTab = try XCTUnwrap(
+            harness.manager.liveShortcutTabs.tab(
+                for: pin.id,
+                in: harness.window.id
+            )
+        )
+
+        XCTAssertTrue(
+            harness.owner.applyTabSelection(
+                liveTab,
+                in: harness.window,
+                updateSpaceFromTab: true,
+                updateTheme: false,
+                rememberSelection: true,
+                persistSelection: false,
+                loadPolicy: .immediate
+            ).wasCommitted
+        )
+        XCTAssertTrue(liveTab.isUnloaded)
+        XCTAssertNotNil(
+            harness.window.pageMaterializationRequests.currentRequest(
+                for: liveTab.id,
+                in: harness.window.id
+            )
+        )
+
+        harness.manager.startupProtectionRuntime
+            .finishStartupProtectionRestore()
+
+        let webView = try XCTUnwrap(liveTab.resolvedCurrentWebView())
+        XCTAssertEqual(liveTab.mainFrameLoads.currentIntent.targetURL, driftedURL)
+        switch liveTab.mainFrameLoads.attemptStatus(on: webView) {
+        case .waiting, .submitted:
+            break
+        case .unsubmitted:
+            XCTFail("Startup completion must submit the drifted destination")
+        }
+    }
+
     private struct Harness {
         let manager: BrowserManager
         let owner: BrowserTabSelectionOwner

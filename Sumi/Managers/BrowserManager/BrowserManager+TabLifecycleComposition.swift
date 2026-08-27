@@ -24,6 +24,7 @@ extension BrowserManager {
                 fallbackPlanner: tabCloseFallbackPlanner,
                 splitMembership: splitGroupMembership
             ),
+            selection: browserTabSelection,
             visuals: shellRuntime.windowVisuals
         )
         let publication = ShortcutLiveTabClosePublication(

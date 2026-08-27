@@ -167,6 +167,44 @@ final class SumiBoostsModuleTests: XCTestCase {
         XCTAssertEqual(refreshCount, 1)
     }
 
+    func testInitialStoreLoadRefreshesAlreadyLivePages() async {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.boosts)
+        let module = makeModule(
+            registry: registry,
+            probe: BoostRuntimeProbe()
+        )
+        let livePagesRequested = expectation(
+            description: "loaded boosts applied to live pages"
+        )
+        module.attach(
+            runtime: SumiBoostsModule.Runtime(
+                windowOwnedWebView: { _, _ in nil },
+                matchingLivePages: { _, _ in [] },
+                allLivePages: {
+                    livePagesRequested.fulfill()
+                    return []
+                },
+                applyBoostAwareZoom: { _, _ in /* No-op. */ },
+                openWebInspector: { _, _ in /* No-op. */ },
+                sidebarPosition: { .left },
+                settings: { nil },
+                windowRegistry: { nil }
+            )
+        )
+
+        _ = module.activeBoost(
+            for: URL(string: "https://example.test"),
+            profileId: UUID()
+        )
+
+        await fulfillment(of: [livePagesRequested], timeout: 1)
+    }
+
     private func makeModule(
         registry: SumiModuleRegistry,
         probe: BoostRuntimeProbe

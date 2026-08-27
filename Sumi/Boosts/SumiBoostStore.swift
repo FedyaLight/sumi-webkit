@@ -35,10 +35,13 @@ final class SumiBoostStore: ObservableObject {
     private let profileReferenceAdmission: ProfileReferenceAdmissionLedger
     private let diskWorker: SumiBoostDiskWorker
     private var entries: [SumiBoostDomainKey: SumiBoostDomainEntry] = [:]
+    private var didStartLoad = false
     private var didLoad = false
+    private var loadTask: Task<Void, Never>?
     private var loadFailure: SumiBoostStoreError?
     private var retiredProfileIDs: Set<UUID> = []
     private let changesSubject = PassthroughSubject<Void, Never>()
+    private let initialLoadSubject = PassthroughSubject<Void, Never>()
     // Debounced persistence: editor edits (dot drag, sliders) mutate the store
     // many times per second; writing the entire boosts.json on every tick is
     // wasteful. A pending write is scheduled and re-scheduled, coalescing a
@@ -46,26 +49,38 @@ final class SumiBoostStore: ObservableObject {
     // delete, import, discard, flush) bypass the debounce and write now.
     private var pendingWriteTask: Task<Void, Never>?
     private var persistenceRevision: UInt64 = 0
+    private var pendingPersistence: PendingPersistence?
     private static let writeDebounceNanoseconds: UInt64 = 300_000_000
+
+    private enum PendingPersistence {
+        case debounced
+        case immediate
+    }
 
     var changesPublisher: AnyPublisher<Void, Never> {
         changesSubject.eraseToAnyPublisher()
     }
 
+    var initialLoadPublisher: AnyPublisher<Void, Never> {
+        initialLoadSubject.eraseToAnyPublisher()
+    }
+
     func prefetch() {
-        diskWorker.prefetch()
+        startLoadingIfNeeded()
     }
 
     init(
         rootDirectory: URL? = nil,
         fileManager: FileManager = .default,
-        profileReferenceAdmission: ProfileReferenceAdmissionLedger
+        profileReferenceAdmission: ProfileReferenceAdmissionLedger,
+        diskQueue: DispatchQueue? = nil
     ) {
         let rootDirectory = rootDirectory
             ?? SumiBoostDiskWorker.defaultRootDirectory(fileManager: fileManager)
         diskWorker = SumiBoostDiskWorker(
             rootDirectory: rootDirectory,
-            fileManager: fileManager
+            fileManager: fileManager,
+            queue: diskQueue
         )
         self.profileReferenceAdmission = profileReferenceAdmission
     }
@@ -73,7 +88,7 @@ final class SumiBoostStore: ObservableObject {
     func boosts(for url: URL?, profileId: UUID?) -> [SumiBoost] {
         guard let key = SumiBoostURLPolicy.key(for: url, profileId: profileId) else { return [] }
         guard acceptsReference(to: key.profileId) else { return [] }
-        loadIfNeeded()
+        startLoadingIfNeeded()
         return entries[key]?.boosts ?? []
     }
 
@@ -86,7 +101,7 @@ final class SumiBoostStore: ObservableObject {
     func activeBoost(for url: URL?, profileId: UUID?) -> SumiBoost? {
         guard let key = SumiBoostURLPolicy.key(for: url, profileId: profileId) else { return nil }
         guard acceptsReference(to: key.profileId) else { return nil }
-        loadIfNeeded()
+        startLoadingIfNeeded()
         guard let entry = entries[key],
               let activeBoostId = entry.activeBoostId
         else {
@@ -98,7 +113,7 @@ final class SumiBoostStore: ObservableObject {
     func activeBoostId(for url: URL?, profileId: UUID?) -> UUID? {
         guard let key = SumiBoostURLPolicy.key(for: url, profileId: profileId) else { return nil }
         guard acceptsReference(to: key.profileId) else { return nil }
-        loadIfNeeded()
+        startLoadingIfNeeded()
         return entries[key]?.activeBoostId
     }
 
@@ -115,7 +130,7 @@ final class SumiBoostStore: ObservableObject {
             throw SumiBoostStoreError.profileRetired
         }
 
-        loadIfNeeded()
+        startLoadingIfNeeded()
         let boost = SumiBoost(profileId: key.profileId, host: key.host)
         var entry = entries[key] ?? SumiBoostDomainEntry(
             profileId: key.profileId,
@@ -146,7 +161,7 @@ final class SumiBoostStore: ObservableObject {
             throw SumiBoostStoreError.profileRetired
         }
         let key = SumiBoostDomainKey(profileId: profileId, host: normalizedHost(host))
-        loadIfNeeded()
+        startLoadingIfNeeded()
         guard var entry = entries[key],
               let index = entry.boosts.firstIndex(where: { $0.id == id })
         else {
@@ -171,7 +186,7 @@ final class SumiBoostStore: ObservableObject {
     ) {
         guard acceptsReference(to: boost.profileId) else { return }
         let key = SumiBoostDomainKey(profileId: boost.profileId, host: normalizedHost(boost.host))
-        loadIfNeeded()
+        startLoadingIfNeeded()
         guard var entry = entries[key] else { return }
         entry.activeBoostId = entry.activeBoostId == boost.id ? nil : boost.id
         entry.isEphemeral = entry.isEphemeral || isEphemeral
@@ -186,7 +201,7 @@ final class SumiBoostStore: ObservableObject {
     ) {
         guard acceptsReference(to: boost.profileId) else { return }
         let key = SumiBoostDomainKey(profileId: boost.profileId, host: normalizedHost(boost.host))
-        loadIfNeeded()
+        startLoadingIfNeeded()
         guard var entry = entries[key] else { return }
         entry.boosts.removeAll { $0.id == boost.id }
         if entry.activeBoostId == boost.id {
@@ -209,7 +224,7 @@ final class SumiBoostStore: ObservableObject {
 
     func deleteProfileData(profileID: UUID) async throws {
         retiredProfileIDs.insert(profileID)
-        loadIfNeeded()
+        await waitForInitialLoad()
         if let loadFailure { throw loadFailure }
 
         let targetEntries = entries.filter { $0.key.profileId == profileID }
@@ -243,7 +258,7 @@ final class SumiBoostStore: ObservableObject {
 
         let importedData = try await diskWorker.decodeImportedBoostData(from: data)
 
-        loadIfNeeded()
+        await waitForInitialLoad()
         var data = importedData
         data.changeWasMade = true
         let boost = SumiBoost(
@@ -267,14 +282,65 @@ final class SumiBoostStore: ObservableObject {
         return boost
     }
 
-    private func loadIfNeeded() {
-        guard !didLoad else { return }
-        didLoad = true
+    func waitForInitialLoad() async {
+        startLoadingIfNeeded()
+        await loadTask?.value
+    }
+
+    private func startLoadingIfNeeded() {
+        guard didStartLoad == false else { return }
+        didStartLoad = true
         let interval = PerformanceTrace.beginInterval("Boost.load")
-        let result = diskWorker.loadedResult()
-        PerformanceTrace.endInterval("Boost.load", interval)
-        entries = result.entries
+        loadTask = Task { @MainActor [weak self, diskWorker] in
+            let result = await diskWorker.loadedResult()
+            PerformanceTrace.endInterval("Boost.load", interval)
+            guard let self else { return }
+            self.finishInitialLoad(result)
+        }
+    }
+
+    private func finishInitialLoad(_ result: SumiBoostDiskWorker.LoadResult) {
+        guard didLoad == false else { return }
+        let localEntries = entries
+        var mergedEntries = result.entries.filter {
+            retiredProfileIDs.contains($0.key.profileId) == false
+        }
+        for (key, localEntry) in localEntries {
+            var mergedEntry = mergedEntries[key] ?? SumiBoostDomainEntry(
+                profileId: key.profileId,
+                host: key.host,
+                activeBoostId: nil,
+                boosts: [],
+                isEphemeral: localEntry.isEphemeral
+            )
+            let localIDs = Set(localEntry.boosts.map(\.id))
+            mergedEntry.boosts.removeAll { localIDs.contains($0.id) }
+            mergedEntry.boosts.insert(contentsOf: localEntry.boosts, at: 0)
+            if let localActiveBoostID = localEntry.activeBoostId {
+                mergedEntry.activeBoostId = localActiveBoostID
+            }
+            mergedEntry.isEphemeral =
+                mergedEntry.isEphemeral || localEntry.isEphemeral
+            mergedEntries[key] = mergedEntry
+        }
+
+        entries = mergedEntries
         loadFailure = result.failure
+        didLoad = true
+        loadTask = nil
+
+        let pendingPersistence = pendingPersistence
+        self.pendingPersistence = nil
+        switch pendingPersistence {
+        case .immediate:
+            persist()
+        case .debounced:
+            schedulePersist()
+        case nil:
+            break
+        }
+        initialLoadSubject.send(())
+        notifyChanged()
     }
 
     /// Schedules a debounced disk write. Coalesces a burst of editor edits
@@ -282,6 +348,12 @@ final class SumiBoostStore: ObservableObject {
     /// blocked re-encoding and atomically rewriting boosts.json on every tick.
     private func persistIfNeeded(isEphemeral: Bool) {
         guard !isEphemeral else { return }
+        guard didLoad else {
+            if pendingPersistence == nil {
+                pendingPersistence = .debounced
+            }
+            return
+        }
         schedulePersist()
     }
 
@@ -292,12 +364,17 @@ final class SumiBoostStore: ObservableObject {
         guard !isEphemeral else { return }
         pendingWriteTask?.cancel()
         pendingWriteTask = nil
+        guard didLoad else {
+            pendingPersistence = .immediate
+            return
+        }
         persist()
     }
 
     /// Public flush hook for the module: ensures any debounced write lands on
     /// disk now (used when the editor closes).
     func flushPendingWrites() async {
+        await waitForInitialLoad()
         pendingWriteTask?.cancel()
         pendingWriteTask = nil
         persist()

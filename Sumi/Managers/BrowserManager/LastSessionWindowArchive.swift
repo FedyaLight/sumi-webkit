@@ -81,7 +81,8 @@ final class LastSessionWindowArchive {
         if case .completed = outcome {
             refreshNow(
                 excludingWindowID: nil,
-                preservingWindowOrder: attempt.sourceWindowOrder
+                preservingWindowOrder: attempt.sourceWindowOrder,
+                enqueuePersistence: true
             )
         }
         resumeNextRestoreAttemptIfNeeded()
@@ -100,16 +101,45 @@ final class LastSessionWindowArchive {
         )
     }
 
+    func enqueueRefresh(excludingWindowID: UUID?) {
+        guard activeRestoreAttempt == nil else { return }
+        refreshNow(
+            excludingWindowID: excludingWindowID,
+            enqueuePersistence: true
+        )
+    }
+
+    func enqueueRefresh(using snapshots: [LastSessionWindowSnapshot]) {
+        guard activeRestoreAttempt == nil else { return }
+        refreshNow(
+            excludingWindowID: nil,
+            liveSnapshots: snapshots,
+            enqueuePersistence: true
+        )
+    }
+
+    func flushPendingPersistence() {
+        lastSessionWindowsStore.flushPendingPersistence()
+    }
+
     private func refreshNow(
         excludingWindowID: UUID?,
         preservingWindowOrder: [UUID] = [],
-        liveSnapshots: [LastSessionWindowSnapshot]? = nil
+        liveSnapshots: [LastSessionWindowSnapshot]? = nil,
+        enqueuePersistence: Bool = false
     ) {
         if startupRestore.canOfferRestoreShortcut {
-            lastSessionWindowsStore.updateSnapshots(
-                startupRestore.windowSnapshots,
-                tabSnapshot: startupRestore.tabSnapshot
-            )
+            if enqueuePersistence {
+                lastSessionWindowsStore.enqueueUpdateSnapshots(
+                    startupRestore.windowSnapshots,
+                    tabSnapshot: startupRestore.tabSnapshot
+                )
+            } else {
+                lastSessionWindowsStore.updateSnapshots(
+                    startupRestore.windowSnapshots,
+                    tabSnapshot: startupRestore.tabSnapshot
+                )
+            }
             return
         }
 
@@ -147,7 +177,11 @@ final class LastSessionWindowArchive {
                 }
             }
         }
-        lastSessionWindowsStore.updateSnapshots(snapshots)
+        if enqueuePersistence {
+            lastSessionWindowsStore.enqueueUpdateSnapshots(snapshots)
+        } else {
+            lastSessionWindowsStore.updateSnapshots(snapshots)
+        }
     }
 
     private func resumeNextRestoreAttemptIfNeeded() {

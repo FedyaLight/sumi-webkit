@@ -23,9 +23,15 @@ final class LastSessionWindowsStore: ObservableObject {
         var tabSnapshot: TabPersistenceSnapshot?
     }
 
+    private struct DeferredArchive: @unchecked Sendable {
+        let value: Archive
+    }
+
     @Published private(set) var snapshots: [LastSessionWindowSnapshot]
     private(set) var tabSnapshot: TabPersistenceSnapshot?
     private(set) var archiveLoadState: ArchiveLoadState
+    private var needsPersistenceRetry = false
+    private var persistenceRevision: UInt64 = 0
 
     init(database: SumiDatabase) {
         self.database = database
@@ -60,16 +66,78 @@ final class LastSessionWindowsStore: ObservableObject {
             tabSnapshot: tabSnapshot
         )
         if archiveLoadState == .loaded,
+           needsPersistenceRetry == false,
            normalized == self.snapshots,
            tabSnapshot == nil,
            self.tabSnapshot == nil {
             return false
         }
+        database.flushEnqueuedTransactions()
         guard save(archive) else { return false }
+        persistenceRevision &+= 1
         self.snapshots = normalized
         self.tabSnapshot = tabSnapshot
         self.archiveLoadState = .loaded
+        needsPersistenceRetry = false
         return true
+    }
+
+    @discardableResult
+    func enqueueUpdateSnapshots(
+        _ snapshots: [LastSessionWindowSnapshot],
+        tabSnapshot: TabPersistenceSnapshot? = nil
+    ) -> Bool {
+        let normalized = snapshots.uniqued(by: \.id)
+        if archiveLoadState == .loaded,
+           needsPersistenceRetry == false,
+           normalized == self.snapshots,
+           tabSnapshot == nil,
+           self.tabSnapshot == nil {
+            return false
+        }
+
+        let payload = DeferredArchive(
+            value: Archive(
+                snapshots: normalized,
+                tabSnapshot: tabSnapshot
+            )
+        )
+        self.snapshots = normalized
+        self.tabSnapshot = tabSnapshot
+        archiveLoadState = .loaded
+        let documentKey = Self.documentKey
+        let log = Self.log
+        persistenceRevision &+= 1
+        let revision = persistenceRevision
+
+        database.enqueueTransaction(
+            { connection in
+                let data = try JSONEncoder().encode(payload.value)
+                try connection.documents.save(data, forKey: documentKey)
+            },
+            completion: { [weak self] result in
+                Task { @MainActor [weak self] in
+                    guard let self,
+                          self.persistenceRevision == revision else {
+                        return
+                    }
+                    switch result {
+                    case .success:
+                        self.needsPersistenceRetry = false
+                    case .failure(let error):
+                        self.needsPersistenceRetry = true
+                        log.error(
+                            "Failed to persist last-session windows: \(error.localizedDescription, privacy: .public)"
+                        )
+                    }
+                }
+            }
+        )
+        return true
+    }
+
+    func flushPendingPersistence() {
+        database.flushEnqueuedTransactions()
     }
 
     @discardableResult

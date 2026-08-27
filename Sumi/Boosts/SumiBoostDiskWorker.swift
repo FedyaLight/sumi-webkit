@@ -32,9 +32,8 @@ final class SumiBoostDiskWorker: @unchecked Sendable {
 
     private static let log = Logger.sumi(category: "BoostStore")
 
-    private let queue = DispatchQueue(label: "com.sumi.browser.boost-disk", qos: .utility)
+    private let queue: DispatchQueue
     private let lock = NSLock()
-    private let loadGroup = DispatchGroup()
     private let rootDirectory: URL
     private let fileManager: FileManager
     private var didStartLoad = false
@@ -42,9 +41,17 @@ final class SumiBoostDiskWorker: @unchecked Sendable {
     private var latestRequestedPersistRevision: UInt64 = 0
     private var latestPersistedRevision: UInt64 = 0
 
-    init(rootDirectory: URL, fileManager: FileManager) {
+    init(
+        rootDirectory: URL,
+        fileManager: FileManager,
+        queue: DispatchQueue? = nil
+    ) {
         self.rootDirectory = rootDirectory
         self.fileManager = fileManager
+        self.queue = queue ?? DispatchQueue(
+            label: "com.sumi.browser.boost-disk",
+            qos: .utility
+        )
     }
 
     func prefetch() {
@@ -54,7 +61,6 @@ final class SumiBoostDiskWorker: @unchecked Sendable {
             return
         }
         didStartLoad = true
-        loadGroup.enter()
         lock.unlock()
 
         queue.async { [self] in
@@ -62,16 +68,22 @@ final class SumiBoostDiskWorker: @unchecked Sendable {
             lock.lock()
             loadResult = result
             lock.unlock()
-            loadGroup.leave()
         }
     }
 
-    func loadedResult() -> LoadResult {
+    func loadedResult() async -> LoadResult {
         prefetch()
-        loadGroup.wait()
-        lock.lock()
-        defer { lock.unlock() }
-        return loadResult ?? LoadResult(entries: [:], failure: .profileCleanupStoreUnreadable)
+        return await withCheckedContinuation { continuation in
+            queue.async { [self] in
+                lock.lock()
+                let result = loadResult ?? LoadResult(
+                    entries: [:],
+                    failure: .profileCleanupStoreUnreadable
+                )
+                lock.unlock()
+                continuation.resume(returning: result)
+            }
+        }
     }
 
     func enqueuePersist(

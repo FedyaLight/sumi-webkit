@@ -17,7 +17,7 @@ final class SumiFaviconImageRepository: @unchecked Sendable {
     }
 
     func cachedPreparedImage(for request: SumiPreparedFaviconRequest) -> NSImage? {
-        guard let selection = blobReader.cachedSelection(
+        guard let selection = blobReader.memoryCachedSelection(
             for: request.pageURL,
             partition: request.partition
         ) else {
