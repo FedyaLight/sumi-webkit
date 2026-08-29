@@ -2,6 +2,18 @@
 
 Sumi follows semantic product versions. This changelog records public release scope, not every internal refactor.
 
+## 0.0.9 Alpha, 2026-08-29
+
+### Developer Tools
+
+- The Developer Tools command and Command-Option-I now open the docked Web Inspector for the active page, including a Glance preview, instead of showing instructions.
+
+### Tabs and Responsiveness
+
+- A restored Favorite that had navigated away from its saved address now loads its current page after startup and when selected as the fallback after closing another Favorite.
+- Boost data now loads without blocking the browser, applies to pages that are already open when loading finishes, and preserves edits made during the load.
+- Session snapshots are written outside the main thread, and cached favicon reads no longer pull cold metadata from the database, reducing storage-related stalls during browsing.
+
 ## 0.0.8 Alpha, 2026-08-26
 
 ### History and Bookmarks
