@@ -162,7 +162,6 @@ class SumiLaunchSmokeUITestCase: XCTestCase {
     }
 
     func openNewTabCommandPalette(in app: XCUIApplication) {
-        app.menuBars.menuBarItems["File"].click()
-        app.menuItems["New Tab"].click()
+        app.typeKey("t", modifierFlags: .command)
     }
 }

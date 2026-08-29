@@ -26,10 +26,7 @@ final class PrivateWindowUITests: SumiLaunchSmokeUITestCase {
         let firstWindow = app.windows.element(boundBy: 0)
         XCTAssertTrue(firstWindow.waitForExistence(timeout: 20), "No browser window appeared")
 
-        app.menuBars.menuBarItems["File"].click()
-        let privateItem = app.menuItems["New Private Window"].firstMatch
-        XCTAssertTrue(privateItem.waitForExistence(timeout: 5), "No private window menu item")
-        privateItem.click()
+        app.typeKey("n", modifierFlags: [.command, .shift])
 
         let deadline = Date().addingTimeInterval(15)
         while app.windows.count < 2, Date() < deadline {

@@ -79,67 +79,27 @@ final class LastSessionWindowArchive {
         )
         activeRestoreAttempt = nil
         if case .completed = outcome {
-            refreshNow(
-                excludingWindowID: nil,
-                preservingWindowOrder: attempt.sourceWindowOrder,
-                enqueuePersistence: true
+            refresh(
+                persistence: .enqueued,
+                preservingWindowOrder: attempt.sourceWindowOrder
             )
         }
         resumeNextRestoreAttemptIfNeeded()
     }
 
-    func refresh(excludingWindowID: UUID?) {
-        guard activeRestoreAttempt == nil else { return }
-        refreshNow(excludingWindowID: excludingWindowID)
-    }
-
-    func refresh(using snapshots: [LastSessionWindowSnapshot]) {
-        guard activeRestoreAttempt == nil else { return }
-        refreshNow(
-            excludingWindowID: nil,
-            liveSnapshots: snapshots
-        )
-    }
-
-    func enqueueRefresh(excludingWindowID: UUID?) {
-        guard activeRestoreAttempt == nil else { return }
-        refreshNow(
-            excludingWindowID: excludingWindowID,
-            enqueuePersistence: true
-        )
-    }
-
-    func enqueueRefresh(using snapshots: [LastSessionWindowSnapshot]) {
-        guard activeRestoreAttempt == nil else { return }
-        refreshNow(
-            excludingWindowID: nil,
-            liveSnapshots: snapshots,
-            enqueuePersistence: true
-        )
-    }
-
-    func flushPendingPersistence() {
-        lastSessionWindowsStore.flushPendingPersistence()
-    }
-
-    private func refreshNow(
-        excludingWindowID: UUID?,
-        preservingWindowOrder: [UUID] = [],
+    func refresh(
+        excludingWindowID: UUID? = nil,
         liveSnapshots: [LastSessionWindowSnapshot]? = nil,
-        enqueuePersistence: Bool = false
+        persistence: LastSessionWindowsStore.Persistence = .immediate,
+        preservingWindowOrder: [UUID] = []
     ) {
+        guard activeRestoreAttempt == nil else { return }
         if startupRestore.canOfferRestoreShortcut {
-            if enqueuePersistence {
-                lastSessionWindowsStore.enqueueUpdateSnapshots(
-                    startupRestore.windowSnapshots,
-                    tabSnapshot: startupRestore.tabSnapshot
-                )
-            } else {
-                lastSessionWindowsStore.updateSnapshots(
-                    startupRestore.windowSnapshots,
-                    tabSnapshot: startupRestore.tabSnapshot
-                )
-            }
+            lastSessionWindowsStore.updateSnapshots(
+                startupRestore.windowSnapshots,
+                tabSnapshot: startupRestore.tabSnapshot,
+                persistence: persistence
+            )
             return
         }
 
@@ -177,11 +137,14 @@ final class LastSessionWindowArchive {
                 }
             }
         }
-        if enqueuePersistence {
-            lastSessionWindowsStore.enqueueUpdateSnapshots(snapshots)
-        } else {
-            lastSessionWindowsStore.updateSnapshots(snapshots)
-        }
+        lastSessionWindowsStore.updateSnapshots(
+            snapshots,
+            persistence: persistence
+        )
+    }
+
+    func flushPendingPersistence() {
+        lastSessionWindowsStore.flushPendingPersistence()
     }
 
     private func resumeNextRestoreAttemptIfNeeded() {

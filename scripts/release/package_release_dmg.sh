@@ -183,7 +183,7 @@ sync
 
 hdiutil detach "${layout_mount}" >/dev/null
 layout_mounted=0
-hdiutil convert "${rw_dmg}" -format UDZO -o "${output_path}" -ov >/dev/null
+diskutil image create from --format UDZO "${rw_dmg}" "${output_path}" >/dev/null
 
 diskutil image info "${output_path}" >/dev/null
 diskutil image attach \

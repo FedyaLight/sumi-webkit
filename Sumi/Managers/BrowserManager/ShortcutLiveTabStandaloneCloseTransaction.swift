@@ -8,7 +8,6 @@ final class ShortcutLiveTabStandaloneCloseTransaction {
     private let structuralLookup: TabStructuralLookupCoordinator
     private let retirement: ShortcutLiveTabRetirementService
     private let selectionTarget: ShortcutLiveTabCloseSelectionTarget
-    private let selection: BrowserTabSelectionOwner
     private let visuals: BrowserWindowVisualCoordinator
 
     init(
@@ -16,14 +15,12 @@ final class ShortcutLiveTabStandaloneCloseTransaction {
         structuralLookup: TabStructuralLookupCoordinator,
         retirement: ShortcutLiveTabRetirementService,
         selectionTarget: ShortcutLiveTabCloseSelectionTarget,
-        selection: BrowserTabSelectionOwner,
         visuals: BrowserWindowVisualCoordinator
     ) {
         self.tabStore = tabStore
         self.structuralLookup = structuralLookup
         self.retirement = retirement
         self.selectionTarget = selectionTarget
-        self.selection = selection
         self.visuals = visuals
     }
 
@@ -59,15 +56,11 @@ final class ShortcutLiveTabStandaloneCloseTransaction {
 
         publishingHistory()
         if wasCurrent {
-            if let fallbackID = windowState.currentTabId,
-               let fallback = tabStore.tab(for: fallbackID) {
-                _ = selection.publishPreparedSelectionEffects(
-                    fallback,
-                    in: windowState,
-                    previousTabID: tab.id,
-                    previousSpaceID: previousSpaceID
-                )
-            }
+            selectionTarget.publishPreparedEffectsAfterClosing(
+                tab,
+                in: windowState,
+                previousSpaceID: previousSpaceID
+            )
             _ = visuals.performImmediateVisualHandoffIfPossible(
                 in: windowState
             )

@@ -9,13 +9,19 @@ import Foundation
 struct ShortcutLiveTabCloseSelectionTarget {
     private let fallbackPlanner: BrowserTabCloseFallbackPlanner
     private let splitMembership: SplitGroupMembershipQuery
+    private let tabStore: any ShellSelectionTabStore
+    private let selection: BrowserTabSelectionOwner
 
     init(
         fallbackPlanner: BrowserTabCloseFallbackPlanner,
-        splitMembership: SplitGroupMembershipQuery
+        splitMembership: SplitGroupMembershipQuery,
+        tabStore: any ShellSelectionTabStore,
+        selection: BrowserTabSelectionOwner
     ) {
         self.fallbackPlanner = fallbackPlanner
         self.splitMembership = splitMembership
+        self.tabStore = tabStore
+        self.selection = selection
     }
 
     func target(
@@ -44,5 +50,22 @@ struct ShortcutLiveTabCloseSelectionTarget {
             target.isShowingEmptyState = true
         }
         return target
+    }
+
+    func publishPreparedEffectsAfterClosing(
+        _ tab: Tab,
+        in windowState: BrowserWindowState,
+        previousSpaceID: UUID?
+    ) {
+        guard let fallbackID = windowState.currentTabId,
+              let fallback = tabStore.tab(for: fallbackID) else {
+            return
+        }
+        _ = selection.publishPreparedSelectionEffects(
+            fallback,
+            in: windowState,
+            previousTabID: tab.id,
+            previousSpaceID: previousSpaceID
+        )
     }
 }

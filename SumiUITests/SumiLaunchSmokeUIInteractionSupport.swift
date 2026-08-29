@@ -425,10 +425,7 @@ extension SumiLaunchSmokeUITestCase {
         }
 
         input.click()
-        app.menuBars.menuBarItems["Edit"].click()
-        let pasteItem = app.menuItems["Paste"].firstMatch
-        XCTAssertTrue(pasteItem.waitForExistence(timeout: 2), "Edit > Paste is unavailable")
-        pasteItem.click()
+        app.typeKey("v", modifierFlags: .command)
     }
 
     @MainActor

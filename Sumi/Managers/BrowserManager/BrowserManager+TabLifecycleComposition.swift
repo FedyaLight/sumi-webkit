@@ -22,9 +22,10 @@ extension BrowserManager {
             retirement: shortcutLiveTabRetirement,
             selectionTarget: ShortcutLiveTabCloseSelectionTarget(
                 fallbackPlanner: tabCloseFallbackPlanner,
-                splitMembership: splitGroupMembership
+                splitMembership: splitGroupMembership,
+                tabStore: tabStore,
+                selection: browserTabSelection
             ),
-            selection: browserTabSelection,
             visuals: shellRuntime.windowVisuals
         )
         let publication = ShortcutLiveTabClosePublication(

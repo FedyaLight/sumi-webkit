@@ -67,7 +67,7 @@ final class SumiFaviconV2PipelineRegressionTests: XCTestCase {
                 "SumiFaviconMemoryOnlyLookup-\(UUID().uuidString)",
                 isDirectory: true
             )
-        defer { try? FileManager.default.removeItem(at: directory) }
+        defer { XCTAssertNoThrow(try FileManager.default.removeItem(at: directory)) }
 
         let database = try SumiDatabase.inMemory()
         let partition = SumiFaviconPartition.regular()

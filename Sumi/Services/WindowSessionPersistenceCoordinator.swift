@@ -83,7 +83,7 @@ final class WindowSessionPersistenceCoordinator {
             ),
             delayNanoseconds: delayNanoseconds,
             afterDurableCommit: { [archive] in
-                archive.enqueueRefresh(excludingWindowID: nil)
+                archive.refresh(persistence: .enqueued)
             }
         )
     }
@@ -92,7 +92,7 @@ final class WindowSessionPersistenceCoordinator {
     func flush() -> Int {
         let committedWriteCount = scheduler.flush()
         if committedWriteCount > 0 {
-            archive.enqueueRefresh(excludingWindowID: nil)
+            archive.refresh(persistence: .enqueued)
         }
         snapshotStore.flushPendingPersistence()
         archive.flushPendingPersistence()
@@ -118,8 +118,9 @@ final class WindowSessionPersistenceCoordinator {
                 ?? snapshotFactory.make(for: durablePrimary)
             _ = snapshotStore.enqueuePersist(durableSnapshot)
         }
-        archive.enqueueRefresh(
-            using: archiveProjection.map(\.archiveSnapshot)
+        archive.refresh(
+            liveSnapshots: archiveProjection.map(\.archiveSnapshot),
+            persistence: .enqueued
         )
     }
 }

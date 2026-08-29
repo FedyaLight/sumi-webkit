@@ -83,13 +83,14 @@ final class PersistenceFixtureTests: XCTestCase {
 
     @MainActor
     func testBoostFixturesReadShippedStoreAndPreserveMalformedBytes()
-        throws {
+        async throws {
         let loadedDirectory = try makeTemporaryDirectory()
         try copyFixture(
             "boosts/boosts-shipped-unversioned.json",
             to: loadedDirectory.appendingPathComponent("boosts.json")
         )
         let store = SumiBoostStore(rootDirectory: loadedDirectory)
+        await store.waitForInitialLoad()
         let profileID = UUID(
             uuidString: "00000000-0000-0000-0000-000000000501"
         )!
@@ -110,6 +111,7 @@ final class PersistenceFixtureTests: XCTestCase {
         let malformedStore = SumiBoostStore(
             rootDirectory: malformedDirectory
         )
+        await malformedStore.waitForInitialLoad()
         XCTAssertTrue(
             malformedStore.boosts(
                 for: URL(string: "https://fixture.example/")!,

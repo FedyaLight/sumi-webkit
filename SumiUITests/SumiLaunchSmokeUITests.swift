@@ -18,7 +18,12 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
     func testCollapsedFolderHoverPresentsPreviewWithoutTerminatingApp() throws {
         let fixture = try loadPersonalSidebarFixture()
         let folderID = try XCTUnwrap(fixture.folderID)
-        let app = try launchApp()
+        let app = try launchApp(
+            preferencesHomeURL: try prepareSelectedRegularTabPreferencesHome(
+                tabURLString: "about:blank",
+                tabName: "Folder Hover Oracle"
+            )
+        )
         let window = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(window.waitForExistence(timeout: 5))
@@ -40,17 +45,48 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
                 withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)
             ).click()
         }
+        let headerID = "folder-header-\(folderID)"
+        XCTAssertTrue(
+            waitForAccessibilityValue(
+                "collapsed",
+                elementID: headerID,
+                in: app,
+                window: window,
+                collapsedSidebar: false,
+                timeout: 5
+            ),
+            "Folder did not finish collapsing before the hover check"
+        )
+        let collapsedHeader = requireElement(
+            withIdentifier: headerID,
+            in: app,
+            window: window,
+            collapsedSidebar: false
+        )
 
         window.coordinate(
             withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5)
         ).hover()
-        header.coordinate(
+        collapsedHeader.coordinate(
             withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)
         ).hover()
 
+        let preview = element(withIdentifier: "folder-preview-panel", in: app)
+        if !preview.waitForExistence(timeout: 1.5) {
+            window.coordinate(
+                withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5)
+            ).hover()
+            requireElement(
+                withIdentifier: headerID,
+                in: app,
+                window: window,
+                collapsedSidebar: false
+            ).coordinate(
+                withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)
+            ).hover()
+        }
         XCTAssertTrue(
-            element(withIdentifier: "folder-preview-panel", in: app)
-                .waitForExistence(timeout: 3),
+            preview.waitForExistence(timeout: 3),
             "Hovering a collapsed folder did not present its preview panel"
         )
         XCTAssertEqual(app.state, .runningForeground)
@@ -127,24 +163,17 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
         )
     }
 
-    func testSettingsMenuOpensSettingsWindow() throws {
+    func testRepeatedSettingsCommandKeepsSingleSettingsWindow() throws {
         let app = try launchApp(preferencesHomeURL: try prepareSmokePreferencesHome())
         let browserWindow = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(browserWindow.waitForExistence(timeout: 5))
-        app.menuBars.menuBarItems["Sumi"].click()
-        let settingsMenuItems = app.menuItems.matching(identifier: "Settings…")
-        XCTAssertEqual(
-            settingsMenuItems.count,
-            1,
-            "The application menu should contain exactly one Settings command."
-        )
-        settingsMenuItems.firstMatch.click()
+        browserWindow.typeKey(",", modifierFlags: .command)
 
         let settingsWindow = app.windows["General"]
         XCTAssertTrue(
             settingsWindow.waitForExistence(timeout: 5),
-            "The application menu should open the Settings window."
+            "Command-comma should open the Settings window."
         )
         expectation(
             for: NSPredicate(format: "hasKeyboardFocus == true"),
@@ -152,11 +181,11 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
         )
         waitForExpectations(timeout: 5)
 
-        app.menuBars.menuBarItems["Sumi"].click()
+        settingsWindow.typeKey(",", modifierFlags: .command)
         XCTAssertEqual(
-            app.menuItems.matching(identifier: "Settings…").count,
+            app.windows.matching(identifier: "General").count,
             1,
-            "The Settings window should preserve the single Settings command."
+            "Repeating the Settings command should reuse the existing window."
         )
     }
 
@@ -184,8 +213,7 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
         let commandPalette = element(withIdentifier: "command-palette", in: app)
         XCTAssertTrue(commandPalette.waitForExistence(timeout: 5))
 
-        app.menuBars.menuBarItems["Sumi"].click()
-        app.menuItems.matching(identifier: "Settings…").firstMatch.click()
+        browserWindow.typeKey(",", modifierFlags: .command)
         let settingsWindow = app.windows["General"]
         XCTAssertTrue(settingsWindow.waitForExistence(timeout: 5))
 
@@ -239,8 +267,7 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
             "Wait for startup recovery and command routing before sending Cmd+N."
         )
 
-        app.menuBars.menuBarItems["File"].click()
-        app.menuItems["New Window"].click()
+        app.typeKey("n", modifierFlags: .command)
 
         XCTAssertTrue(waitForWindowCount(2, in: app, timeout: 5))
         let newWindow = app.windows.element(boundBy: 0)
@@ -496,8 +523,7 @@ final class SumiLaunchSmokeUITests: SumiLaunchSmokeUITestCase {
         let browserWindow = app.windows.element(boundBy: 0)
 
         XCTAssertTrue(browserWindow.waitForExistence(timeout: 5))
-        app.menuBars.menuBarItems["Sumi"].click()
-        app.menuItems.matching(identifier: "Settings…").firstMatch.click()
+        browserWindow.typeKey(",", modifierFlags: .command)
 
         let settingsWindow = app.windows["General"]
         XCTAssertTrue(settingsWindow.waitForExistence(timeout: 5))

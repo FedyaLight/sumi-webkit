@@ -571,9 +571,10 @@ private extension ShortcutLiveTabClosePersistenceTests {
             retirement: tabManager.shortcutLiveTabRetirement,
             selectionTarget: ShortcutLiveTabCloseSelectionTarget(
                 fallbackPlanner: fallbackPlanner,
-                splitMembership: tabManager.splitGroupMembership
+                splitMembership: tabManager.splitGroupMembership,
+                tabStore: tabManager.runtimeStore,
+                selection: tabManager.browserTabSelection
             ),
-            selection: tabManager.browserTabSelection,
             visuals: tabManager.shellRuntime.windowVisuals
         )
     }

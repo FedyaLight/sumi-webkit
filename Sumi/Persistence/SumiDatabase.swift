@@ -10,7 +10,6 @@ final class SumiDatabase: @unchecked Sendable {
         label: "com.sumi.browser.database-deferred-writes",
         qos: .utility
     )
-    private let deferredTransactionGroup = DispatchGroup()
 
     static func open(at url: URL) throws -> SumiDatabase {
         var configuration = Configuration()
@@ -104,18 +103,16 @@ final class SumiDatabase: @unchecked Sendable {
         _ operation: @escaping @Sendable (SumiDatabaseConnection) throws -> Void,
         completion: @escaping @Sendable (Result<Void, Error>) -> Void
     ) {
-        deferredTransactionGroup.enter()
         deferredTransactionQueue.async { [self] in
             let result = Result {
                 try transaction(operation)
             }
             completion(result)
-            deferredTransactionGroup.leave()
         }
     }
 
     func flushEnqueuedTransactions() {
-        deferredTransactionGroup.wait()
+        deferredTransactionQueue.sync {}
     }
 
     private static func createSchema(in database: Database) throws {
