@@ -696,8 +696,11 @@ final class TabNavigationCommandOwner {
         ) -> Void = { _, _ in },
         performLoad: @escaping @MainActor @Sendable (WKWebView, URL) -> WKNavigation?
     ) {
-        guard waitForContentBlockingAssets,
-              let controller = webView.configuration.userContentController.sumiNormalTabUserContentController
+        let contentBlockingController = waitForContentBlockingAssets
+            ? webView.configuration.userContentController.sumiNormalTabUserContentController
+            : nil
+        guard contentBlockingController != nil
+            || Self.needsExtensionContextWait(on: webView, tab: tab)
         else {
             tab.performMainFrameNavigation(
                 on: webView,
@@ -719,8 +722,19 @@ final class TabNavigationCommandOwner {
         )
         _ = tab.navigationRuntime.navigationTransactionOwner.performAfterPreparation(
             on: webView,
-            prepare: {
-                await controller.waitForContentBlockingAssetsInstalled()
+            prepare: { [weak tab, weak webView] in
+                if let contentBlockingController {
+                    let contentBlockingResult = await contentBlockingController
+                        .waitForContentBlockingAssetsInstalled()
+                    guard contentBlockingResult.maySubmitNavigation else {
+                        return contentBlockingResult
+                    }
+                }
+                guard let tab, let webView else { return .cancelled }
+                return await Self.waitForExtensionContextsIfNeeded(
+                    on: webView,
+                    tab: tab
+                )
             },
             didTerminate: { [weak tab] _ in
                 guard let tab, let preparationTicket else { return }
@@ -743,5 +757,51 @@ final class TabNavigationCommandOwner {
                 }
             }
         )
+    }
+
+    /// Ordinary navigations must not commit an injectable document before the
+    /// profile's content-script contexts are loaded. WebKit injects
+    /// `document_start`/`document_end` scripts from the contexts that are
+    /// loaded when navigation starts; a context that finishes loading
+    /// mid-document still injects its UI late, but misses the early hooks the
+    /// page already ran (player patches, fetch/XHR interception, SPA
+    /// bootstrap observers). For userscript-manager extensions this surfaces
+    /// as a rendered but hung action, e.g. a Translate button stuck in its
+    /// loading state.
+    private static func needsExtensionContextWait(
+        on webView: WKWebView,
+        tab: Tab
+    ) -> Bool {
+        guard webView.configuration.webExtensionController != nil else {
+            return false
+        }
+        guard tab.resolveProfile() != nil else { return false }
+        return ExtensionContentScriptBindingPolicy.isInjectableCommittedURL(
+            tab.mainFrameLoads.currentIntent.targetURL
+        )
+    }
+
+    private static func waitForExtensionContextsIfNeeded(
+        on webView: WKWebView,
+        tab: Tab
+    ) async -> PageNavigationPrerequisiteResult {
+        guard webView.configuration.webExtensionController != nil else {
+            return .ready
+        }
+        let targetURL = tab.mainFrameLoads.currentIntent.targetURL
+        guard ExtensionContentScriptBindingPolicy.isInjectableCommittedURL(
+            targetURL
+        ) else {
+            return .ready
+        }
+        guard let profileID = tab.resolveProfile()?.id else { return .ready }
+        let result = await tab.navigationRuntime.normalWebViewExtensionRuntime
+            .ensureInitialExtensionContextsIfNeeded(profileID)
+        if result != .ready {
+            RuntimeDiagnostics.emit(
+                "[Tab] Main-frame navigation to \(targetURL.absoluteString) proceeds with extension readiness=\(String(describing: result)); document_start injection may have been missed."
+            )
+        }
+        return result
     }
 }

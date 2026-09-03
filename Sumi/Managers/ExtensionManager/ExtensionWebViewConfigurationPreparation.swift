@@ -36,7 +36,12 @@ final class ExtensionWebViewConfigurationPreparation:
     ) {
         guard let provisioning,
               let resolvedProfileID = resolveProfileID(profileId)
-        else { return }
+        else {
+            diagnostics.trace(
+                "prepareExtensionConfiguration skipped reason=\(reason): no provisioning or profile"
+            )
+            return
+        }
 
         requestRuntime(resolvedProfileID)
         guard let controller = provisioning.controllerIfAdmitted(
@@ -45,7 +50,16 @@ final class ExtensionWebViewConfigurationPreparation:
         ), let websiteDataStore = provisioning.websiteDataStoreIfAdmitted(
             for: resolvedProfileID,
             mutationLease: nil
-        ) else { return }
+        ) else {
+            // A WebView created past this point has no webExtensionController,
+            // which WebKit freezes at init: content scripts can never inject
+            // into it until the WebView is rebuilt. Callers must not submit an
+            // injectable navigation on such a WebView without a rebuild.
+            diagnostics.trace(
+                "prepareExtensionConfiguration deferred reason=\(reason) profile=\(resolvedProfileID.uuidString.prefix(8)): controller not admitted yet"
+            )
+            return
+        }
         let existing = configuration.webExtensionController
         if existing !== controller {
             configuration.webExtensionController = controller
