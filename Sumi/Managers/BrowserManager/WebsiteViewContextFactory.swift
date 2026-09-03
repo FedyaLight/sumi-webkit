@@ -138,29 +138,47 @@ enum WebsiteViewContextFactory {
                     let database = browserManager.database
                     let profileIDs = profiles.map(\.id)
                     try await Task.detached(priority: .userInitiated) {
-                        let history = try database.read { connection in
-                            try profileIDs.flatMap { profileID -> [SumiZenHistoryVisit] in
-                                let entries = try connection.history.entries(profileID: profileID)
-                            let entriesById = Dictionary(
-                                uniqueKeysWithValues: entries.map { ($0.id, $0) }
-                            )
-                                return try connection.history.visits(profileID: profileID)
-                                    .compactMap { visit in
-                                        guard let entry = entriesById[visit.entryID] else { return nil }
-                                        return SumiZenHistoryVisit(
-                                            urlString: entry.urlString,
-                                            title: entry.title,
-                                            visitedAt: visit.visitedAt
-                                        )
-                                    }
+                        // History is best-effort: a locked or corrupt history
+                        // store must not fail the whole workspace export.
+                        // Bookmarks, tabs, and cookies are the payload users
+                        // check first; history can be re-exported later.
+                        let history: [SumiZenHistoryVisit]
+                        do {
+                            history = try database.read { connection in
+                                try profileIDs.flatMap { profileID -> [SumiZenHistoryVisit] in
+                                    let entries = try connection.history.entries(profileID: profileID)
+                                let entriesById = Dictionary(
+                                    uniqueKeysWithValues: entries.map { ($0.id, $0) }
+                                )
+                                    return try connection.history.visits(profileID: profileID)
+                                        .compactMap { visit in
+                                            guard let entry = entriesById[visit.entryID] else { return nil }
+                                            return SumiZenHistoryVisit(
+                                                urlString: entry.urlString,
+                                                title: entry.title,
+                                                visitedAt: visit.visitedAt
+                                            )
+                                        }
+                                }
                             }
+                        } catch {
+                            if error is CancellationError { throw error }
+                            history = []
                         }
-                        try SumiZenBackupExportService().write(
-                            data: data,
-                            cookiesByProfileId: cookiesByProfileId,
-                            history: history,
-                            to: url
-                        )
+                        do {
+                            try SumiZenBackupExportService().write(
+                                data: data,
+                                cookiesByProfileId: cookiesByProfileId,
+                                history: history,
+                                to: url
+                            )
+                        } catch let exportError as SumiImportExportError {
+                            throw exportError
+                        } catch {
+                            throw SumiImportExportError.exportFailed(
+                                "Could not write the Zen backup: \(error.localizedDescription)"
+                            )
+                        }
                     }.value
                 },
                 writeBackup: { [weak browserManager] url in

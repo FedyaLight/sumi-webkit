@@ -810,6 +810,28 @@ final class SumiImportExportTests: XCTestCase {
             sessionTabs.first { ($0["zenSyncId"] as? String) == "pin-a" }
         )
         XCTAssertNotNil(pinned["_zenPinnedInitialState"] as? [String: Any])
+        // `index` is the 1-based cursor into `entries`, not the tab order:
+        // every exported tab carries a single entry, so Zen discards any tab
+        // with an out-of-range cursor (every tab after the first when the
+        // order leaked into this field). Workspace order lives separately.
+        for tab in sessionTabs where (tab["zenIsEmpty"] as? Bool) != true {
+            XCTAssertEqual(
+                (tab["entries"] as? [[String: Any]])?.count, 1,
+                "Session tab \(tab["zenSyncId"] as? String ?? "?") must carry a single entry"
+            )
+            XCTAssertEqual(
+                tab["index"] as? Int, 1,
+                "Session tab \(tab["zenSyncId"] as? String ?? "?") history cursor must be 1"
+            )
+        }
+
+        let containersData = try Data(
+            contentsOf: extracted.appendingPathComponent("profile/containers.json")
+        )
+        let containers = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: containersData) as? [String: Any]
+        )
+        XCTAssertEqual(containers["version"] as? Int, 6)
 
         let restored = try SumiZenImportParser().parse(
             profileURL: extracted.appendingPathComponent("profile", isDirectory: true)
@@ -838,6 +860,24 @@ final class SumiImportExportTests: XCTestCase {
         defer { sqlite3_finalize(hashStatement) }
         XCTAssertEqual(sqlite3_step(hashStatement), SQLITE_ROW)
         XCTAssertGreaterThan(sqlite3_column_int(hashStatement, 0), 0)
+
+        // Zen/Firefox rejects a minimal 3-table places file as corrupt and
+        // recreates it empty, losing bookmarks/history. The export must carry
+        // the full compatible schema.
+        var schemaStatement: OpaquePointer?
+        XCTAssertEqual(
+            sqlite3_prepare_v2(
+                placesDatabase,
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name IN ('moz_origins','moz_keywords','moz_annos','moz_meta')",
+                -1,
+                &schemaStatement,
+                nil
+            ),
+            SQLITE_OK
+        )
+        defer { sqlite3_finalize(schemaStatement) }
+        XCTAssertEqual(sqlite3_step(schemaStatement), SQLITE_ROW)
+        XCTAssertEqual(sqlite3_column_int(schemaStatement, 0), 4)
 
         let cookiesURL = extracted.appendingPathComponent("profile/cookies.sqlite")
         var database: OpaquePointer?

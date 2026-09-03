@@ -87,7 +87,7 @@ struct SumiZenBackupExportService {
             ] as [String: Any]
         }
         let document: [String: Any] = [
-            "version": 5,
+            "version": 6,
             "lastUserContextId": contextByProfile.values.max() ?? 0,
             "identities": identities,
         ]
@@ -251,7 +251,12 @@ struct SumiZenBackupExportService {
     ) -> [String: Any] {
         var tab: [String: Any] = [
             "entries": [["url": url, "title": title]],
-            "index": max(index + 1, 1),
+            // `index` is the 1-based cursor into `entries`, not the tab order.
+            // Every exported tab carries a single entry, so it is always 1;
+            // the workspace order lives in `indexInWorkspace`. Writing
+            // `order + 1` here produces an out-of-range cursor that Zen
+            // discards for every tab after the first.
+            "index": 1,
             "lastAccessed": Int(Date().timeIntervalSince1970 * 1_000),
             "pinned": pinned,
             "hidden": false,
@@ -308,21 +313,57 @@ struct SumiZenBackupExportService {
     }
 
     private func archive(root: URL, outputURL: URL) throws {
+        // Tar writes directly to the destination, so a mid-archive failure
+        // would leave a corrupt partial file behind. Stage inside the temp
+        // root first, then move atomically over any previous export.
+        let staged = root.appendingPathComponent("SumiZenBackup-stage.tgz", isDirectory: false)
+        if FileManager.default.fileExists(atPath: staged.path) {
+            try FileManager.default.removeItem(at: staged)
+        }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
         process.currentDirectoryURL = root
-        process.arguments = ["-czf", outputURL.path, "manifest.json", "profile"]
+        process.arguments = ["-czf", staged.path, "manifest.json", "profile"]
+        // Suppress macOS AppleDouble `._` sidecars: they pollute the archive
+        // and serve no purpose for Zen.
+        var environment = ProcessInfo.processInfo.environment
+        environment["COPYFILE_DISABLE"] = "1"
+        process.environment = environment
         let errors = Pipe()
         process.standardError = errors
-        try process.run()
+        do {
+            try process.run()
+        } catch {
+            throw SumiImportExportError.exportFailed(
+                "Could not start the archive tool: \(error.localizedDescription)"
+            )
+        }
         process.waitUntilExit()
         guard process.terminationStatus == 0 else {
             let detail = String(
                 decoding: errors.fileHandleForReading.readDataToEndOfFile(),
                 as: UTF8.self
+            ).trimmingCharacters(in: .whitespacesAndNewlines)
+            try? FileManager.default.removeItem(at: staged)
+            throw SumiImportExportError.exportFailed(
+                detail.isEmpty
+                    ? "Could not create the Zen backup archive."
+                    : "Could not create the Zen backup archive: \(detail)"
             )
-            throw SumiImportExportError.importFailed(
-                "Could not create the Zen backup archive: \(detail)"
+        }
+        do {
+            try FileManager.default.createDirectory(
+                at: outputURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            if FileManager.default.fileExists(atPath: outputURL.path) {
+                try FileManager.default.removeItem(at: outputURL)
+            }
+            try FileManager.default.moveItem(at: staged, to: outputURL)
+        } catch {
+            try? FileManager.default.removeItem(at: staged)
+            throw SumiImportExportError.exportFailed(
+                "Could not save the Zen backup archive: \(error.localizedDescription)"
             )
         }
     }
@@ -343,7 +384,7 @@ struct SumiZenBackupExportService {
             }
         }
         guard size > 0 else {
-            throw SumiImportExportError.importFailed("Could not encode Zen workspace data.")
+            throw SumiImportExportError.exportFailed("Could not encode Zen workspace data.")
         }
         var output = Data("mozLz40\0".utf8)
         var payloadSize = UInt32(payload.count).littleEndian
@@ -353,6 +394,6 @@ struct SumiZenBackupExportService {
     }
 
     private static let containerColors = [
-        "blue", "turquoise", "green", "yellow", "orange", "red", "pink", "purple",
+        "blue", "cyan", "green", "yellow", "orange", "red", "pink", "purple",
     ]
 }
