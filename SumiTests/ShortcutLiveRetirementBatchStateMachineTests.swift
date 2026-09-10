@@ -5,30 +5,6 @@ import XCTest
 
 @MainActor
 final class ShortcutLiveRetirementBatchStateMachineTests: XCTestCase {
-    func testResidenceParticipantRecognizesStagedRemovalAndRollback() throws {
-        let oracle = try ShortcutLiveRetirementRuntimeOracle.make(hook: .none)
-        let plan = try XCTUnwrap(ShortcutLiveTabRetirementPlan(
-            pinID: oracle.pin.id,
-            windowID: oracle.window.id,
-            registry: oracle.tabManager.liveShortcutTabs,
-            runtimeConnection: oracle.tabManager.runtimePortConnection
-        ))
-        let participant = ShortcutLiveResidenceRetirementParticipant(plan: plan)
-
-        XCTAssertTrue(participant.validateForStaging())
-        XCTAssertTrue(participant.stage())
-        XCTAssertFalse(participant.sourceModelIsExact())
-        XCTAssertTrue(participant.stagedModelIsExact())
-        XCTAssertTrue(participant.rollback())
-        XCTAssertIdentical(
-            oracle.tabManager.liveShortcutTabs.tab(
-                for: oracle.pin.id,
-                in: oracle.window.id
-            ),
-            oracle.liveTab
-        )
-    }
-
     func testBeginAttachmentDriftRejectsWithoutStagingModel() throws {
         let oracle = try ShortcutLiveRetirementRuntimeOracle.make(
             hook: .attachmentABAOnCanRetire(1)

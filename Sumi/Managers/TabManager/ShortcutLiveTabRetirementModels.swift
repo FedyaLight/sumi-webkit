@@ -37,55 +37,6 @@ struct ShortcutLiveTabRetirementResult {
     }
 }
 
-@MainActor
-enum ShortcutRetirementWindowCommitPolicy {
-    /// A browser workflow chooses the final visual/selection state and performs
-    /// the one durable window-session write after retirement.
-    case callerOwned
-    /// Structural deletion/generic removal owns validation and persistence.
-    case retirementService
-}
-
-@MainActor
-struct PreparedShortcutLiveTabRetirement {
-    let tabs: [Tab]
-    let runtime: RuntimePortRegistry?
-    let runtimeTeardown: PreparedTabRuntimeTeardown?
-    let committedRuntimeRetirement: CommittedTabRuntimeRetirementCleanupOwnership?
-    let terminallyDrainedTabIDs: Set<UUID>
-    let runtimeAttachment: TabRuntimeAttachmentWitness?
-    let terminalEffect: PreparedShortcutLiveTabRetirementTerminalEffect?
-    let windowCommitPolicy: ShortcutRetirementWindowCommitPolicy
-    var result: ShortcutLiveTabRetirementResult
-
-    init(
-        tabs: [Tab],
-        runtime: RuntimePortRegistry?,
-        runtimeTeardown: PreparedTabRuntimeTeardown? = nil,
-        committedRuntimeRetirement: CommittedTabRuntimeRetirementCleanupOwnership? = nil,
-        terminallyDrainedTabIDs: Set<UUID> = [],
-        runtimeAttachment: TabRuntimeAttachmentWitness? = nil,
-        terminalEffect: PreparedShortcutLiveTabRetirementTerminalEffect? = nil,
-        windowCommitPolicy: ShortcutRetirementWindowCommitPolicy = .callerOwned,
-        result: ShortcutLiveTabRetirementResult
-    ) {
-        precondition(tabs.isEmpty || runtime != nil)
-        precondition(
-            runtimeTeardown == nil || committedRuntimeRetirement == nil,
-            "Shortcut retirement cannot own two terminal runtime effects"
-        )
-        self.tabs = tabs
-        self.runtime = runtime
-        self.runtimeTeardown = runtimeTeardown
-        self.committedRuntimeRetirement = committedRuntimeRetirement
-        self.terminallyDrainedTabIDs = terminallyDrainedTabIDs
-        self.runtimeAttachment = runtimeAttachment
-        self.terminalEffect = terminalEffect
-        self.windowCommitPolicy = windowCommitPolicy
-        self.result = result
-    }
-}
-
 /// A typed participant that installs window-local shortcut state inside the
 /// same observation aggregate as launcher placement. Admission and reversible
 /// repository work happen before this point; settlement is infallible once all

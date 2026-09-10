@@ -1,110 +1,50 @@
 # CI test ownership
 
-`test-manifest.json` is the sole authority for CI toolchain intent, profiles,
-suite roles, package paths, Xcode schemes, and `-only-testing` selections.
-`ci_manifest.py` validates that schema against the synchronized Xcode test
-target sources and emits every local/hosted matrix. `run_tests.sh` executes one
-manifest profile shard or a local sequential aggregate; it owns no selector
-list.
+`test-manifest.json` defines the toolchain, profiles, suite roles, package paths,
+Xcode schemes, and `-only-testing` selections. `ci_manifest.py` validates those
+selections against the synchronized Xcode test targets and emits local and
+hosted matrices. `run_tests.sh` executes them without maintaining another
+selector list.
 
-## Current inventory
+Use `scripts/ci/run_tests.sh inventory` for current source, class, method, and
+profile counts. Validation requires every runnable `SumiTests` class to have
+exactly one exhaustive nightly owner. It also checks method selectors,
+extension-contributed tests, target membership, and helper exclusions. UI
+coverage is defined by the manifest's explicit selectors.
 
-The item 46 migration inventory is:
+## Execution
 
-| Target or profile | Before | After |
-| --- | ---: | ---: |
-| `SumiTests` Swift sources | 557 | 557 |
-| Concrete `SumiTests` XCTest classes | 541 | 541 |
-| `SumiTests` test methods | 4,180 | 4,180 |
-| Reusable `SumiTests` XCTestCase bases | 3 | 3, excluded from selectors |
-| Reusable-base / non-XCTest helper-only sources | 3 / 25 | 3 / 25, reported by validation |
-| `SumiUITests` concrete classes / methods | 3 / 36 | 3 / 36 |
-| SumiDomain / SumiWebRuntime package tests | 40 / 120 | 40 / 120 |
-| PR app selectors / distinct classes | 22 / 20 | 23 / 21 |
-| Nightly owned `SumiTests` classes | implicit full scheme | 541 explicit classes |
-| Nightly UI selectors | 1 | 1 |
+PR and nightly each run two Swift packages and four app shards: pure policy,
+persistence, UI-free services, and WebKit-heavy services. Nightly also runs the
+UI smoke suite. Package and app matrices are independent and use
+`fail-fast: false`; app/UI concurrency is capped at four. Xcode's internal
+parallel testing is disabled.
 
-The four exhaustive nightly app roles own 56 pure-policy, 94
-persistence/migration, 215 UI-free service, and 176 WebKit-heavy classes.
-Those numbers are an inventory snapshot, not guard ceilings: validation always
-compares the live repository declarations with the manifest union and requires
-each runnable class to have exactly one nightly owner. It also validates every
-method selector, extension-contributed test method, synchronized Xcode target
-membership, and helper exclusion.
-
-The UI lane intentionally remains the existing launch smoke. The other 35 UI
-methods remain the explicit item 48 coverage gap. The former item 49 failure,
-`SafariExtensionScriptingRuntimeTests.testWorkerDrivenScriptingInjectionMirrorsProtonBootstrap`,
-now has deterministic late-window-publication coverage; its class remains in
-the WebKit-heavy shard.
-
-## Process topology
-
-Before item 46, PR used two package matrix jobs serialized with
-`max-parallel: 1`, followed by one app job that ran a separate `xcodebuild
-build` and one 22-selector `xcodebuild test`. Nightly used two serialized
-package jobs followed by serialized `full` and `ui-smoke` jobs. Excluding the
-manifest job, that was 3 PR test processes and 4 nightly test processes; app
-tests were also prevented from starting by any package failure.
-
-The old PR app job used shared `build/DerivedData` plus
-`build/BuildResults/Sumi.xcresult` and
-`build/BuildResults/SumiPRSmoke.xcresult`. Nightly used the runner default
-DerivedData name in each isolated job and emitted
-`SumiNightly-full.xcresult` or `SumiNightly-ui-smoke.xcresult`. Package lanes
-invoked `swift test --package-path`; app lanes invoked an app-only build and
-then `xcodebuild test` on PR, or a single `xcodebuild test` on nightly.
-
-After item 46:
-
-| Profile | Package jobs | App/UI jobs | Test processes | Hosted concurrency |
-| --- | ---: | ---: | ---: | --- |
-| PR | 2 | 4 role shards | 6 | 2 package and 4 app jobs may run independently |
-| Nightly | 2 | 4 role shards + 1 UI smoke | 7 | packages uncapped; app/UI capped at 4 |
-
-Package and app matrices are independent siblings after manifest validation.
-Every matrix has `fail-fast: false`; a failed package or app shard therefore
-does not cancel or prevent the others. The app cap of four bounds paid macOS
-runner pressure while still providing real multi-process sharding. Swift/Xcode
-intra-process parallel testing remains `NO`.
-
-Each Xcode job has fresh runner-local DerivedData and performs
-`build-for-testing` followed by selector-scoped `test-without-building`.
-DerivedData is never transferred between runners. Matrix-generated paths are
-unique per profile and shard:
+Each Xcode shard uses its own DerivedData and performs `build-for-testing`
+followed by selector-scoped `test-without-building`. Build products are not
+transferred between runners. Result bundles use these paths:
 
 - `build/BuildResults/<profile>-<suite>-build.xcresult`
 - `build/BuildResults/<profile>-<suite>.xcresult`
 
-The non-CI `performance` profile keeps the optimized regression selection as
-explicit subsets of the same pure-policy and WebKit-heavy owners. The
-performance script aggregates those profile selectors; there is no orphan
-performance suite or second ownership list.
+The performance profile selects subsets of the same suite owners.
+`scripts/run_perf_regression.sh` adds profiling mechanics without duplicating
+those selectors. Signed release validation in
+`scripts/release/run_release_gates.sh` runs full Xcode schemes separately.
 
-## Commands and consumers
+## Commands
 
-- `scripts/ci/preflight.sh fast` is the shared local/hosted manifest and syntax
-  gate. `portable` adds architecture guardrails, while `full` also verifies the
-  Xcode toolchain and runs the complete PR profile.
-- `scripts/install_dev_hooks.sh` enables the tracked `.githooks/pre-push` hook,
-  which invokes the same portable preflight used by GitHub Actions.
-- `scripts/ci/run_tests.sh validate` performs strict schema, selector, target
-  membership, helper, and exhaustive ownership validation.
-- `scripts/ci/run_tests.sh inventory` prints current source/class/method and
-  profile/process counts.
-- `scripts/ci/run_tests.sh matrix <profile> <kind>` and `list` provide hosted
-  and local matrix queries.
-- `scripts/ci/run_tests.sh run <profile> <suite>` runs exactly one process
-  shard. `profile <profile>` is the local sequential aggregate.
-- `scripts/ci/check_test_sharding.sh` is the narrow parser/runner/workflow
-  contract guard wired into both CI manifest jobs.
-- `scripts/run_perf_regression.sh` owns profiling/build mechanics, while its
-  optimized-stack and UI-smoke selectors come from manifest profiles/suites.
-- `scripts/release/run_release_gates.sh` intentionally owns signed
-  release validation against full Xcode schemes and requires Xcode 27+; it is
-  not a CI shard or compatibility lane.
+- `scripts/ci/preflight.sh fast`: text, shell syntax, JSON, and CI contract checks.
+- `scripts/ci/preflight.sh portable`: fast checks plus architecture guardrails.
+- `scripts/ci/preflight.sh full`: portable checks, toolchain verification, and the PR profile.
+- `scripts/ci/run_tests.sh validate`: validate schema, selectors, and ownership.
+- `scripts/ci/run_tests.sh inventory`: report the current inventory.
+- `scripts/ci/run_tests.sh matrix <profile> <kind>` or `list <profile> [kind]`: inspect selections.
+- `scripts/ci/run_tests.sh run <profile> <suite>`: run one shard.
+- `scripts/ci/run_tests.sh profile <profile>`: run the profile sequentially.
+- `scripts/ci/run_tests.sh verify-toolchain <profile>`: report and verify Xcode and Swift.
 
-Both hosted profiles keep SumiDomain and SumiWebRuntime as explicit package
-lanes on GitHub's official `xcode-27` preview runner. `DEVELOPER_DIR` uses the
-stable `Xcode_27.0` symlink while `verify-toolchain` records the concrete beta
-build selected by the moving preview image.
+`scripts/install_dev_hooks.sh` enables the tracked pre-push hook, which runs
+portable preflight. When adding or removing a selected XCTest class or method,
+update the manifest in the same change. The manifest remains the authority for
+toolchain versions; workflow runner selection must agree with it.

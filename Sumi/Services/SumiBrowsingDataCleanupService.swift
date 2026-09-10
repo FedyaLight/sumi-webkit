@@ -512,30 +512,41 @@ final class SumiAutomaticBrowsingDataCleanupService {
 
     func scheduleIfNeeded(_ request: SumiBrowsingDataCleanupScheduleRequest) {
         scheduledTask?.cancel()
+        scheduledTask = nil
         guard request.retentionPeriod.isEnabled else { return }
 
+        let delay = request.delayNanoseconds ?? defaultDelayNanoseconds
+        let interval = UInt64(runInterval * 1_000_000_000)
+        let retentionPeriod = request.retentionPeriod
+        let profileIDs = request.profileIDs
+        let currentProfileId = request.currentProfileId
+        let force = request.force
+        let reason = request.reason
         scheduledTask = Task { @MainActor [weak self, weak historyManager = request.historyManager] in
-            let delay = request.delayNanoseconds ?? self?.defaultDelayNanoseconds ?? 0
-            if delay > 0 {
-                try? await Task.sleep(nanoseconds: delay)
-            }
-            var shouldForceRun = request.force
-            while !Task.isCancelled {
-                guard let self,
-                      let historyManager
-                else {
-                    return
+            do {
+                if delay > 0 {
+                    try await Task.sleep(nanoseconds: delay)
                 }
-                _ = await self.runIfNeeded(
-                    retentionPeriod: request.retentionPeriod,
-                    historyManager: historyManager,
-                    profileIDs: request.profileIDs,
-                    currentProfileId: request.currentProfileId,
-                    force: shouldForceRun,
-                    reason: request.reason
-                )
-                shouldForceRun = false
-                try? await Task.sleep(nanoseconds: UInt64(self.runInterval * 1_000_000_000))
+                var shouldForceRun = force
+                while !Task.isCancelled {
+                    if let self, let historyManager {
+                        _ = await self.runIfNeeded(
+                            retentionPeriod: retentionPeriod,
+                            historyManager: historyManager,
+                            profileIDs: profileIDs,
+                            currentProfileId: currentProfileId,
+                            force: shouldForceRun,
+                            reason: reason
+                        )
+                    } else {
+                        return
+                    }
+                    shouldForceRun = false
+                    try await Task.sleep(nanoseconds: interval)
+                }
+            } catch {
+                // Cancellation ends both the initial delay and the daily wait.
+                return
             }
         }
     }

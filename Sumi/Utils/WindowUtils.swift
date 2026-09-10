@@ -1,30 +1,13 @@
 import AppKit
-import Foundation
-//
-//  WindowUtils.swift
-//  Sumi
-//
-//
 import SwiftUI
 
 extension View {
     func backgroundDraggable(sidebarDragState: SidebarDragState) -> some View {
-        modifier(BackgroundDraggableModifier(gesture: WindowDragGesture(sidebarDragState: sidebarDragState)))
+        gesture(WindowDragGesture(sidebarDragState: sidebarDragState))
     }
 }
 
-private struct BackgroundDraggableModifier<G: Gesture>: ViewModifier {
-    let gesture: G
-
-    func body(content: Content) -> some View {
-        content
-            .gesture(
-                gesture
-            )
-    }
-}
-
-struct WindowDragGesture: Gesture {
+private struct WindowDragGesture: Gesture {
     let sidebarDragState: SidebarDragState
 
     var body: some Gesture {

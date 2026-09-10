@@ -38,11 +38,11 @@ final class SumiFaviconTransportUserScript: NSObject, SumiPageScript, @MainActor
               || tokens.includes("mask-icon")
               || tokens.includes("manifest");
           };
-          let collectLinks = () => {
+          const collectLinks = () => {
             const head = document.head;
             if (!head) { return []; }
             return Array.from(head.querySelectorAll("link[href][rel]"))
-              .filter((element) => element instanceof HTMLLinkElement)
+              .filter((element) => element instanceof HTMLLinkElement && isFaviconRel(element.rel))
               .map((link) => ({
                 href: link.href || "",
                 rel: link.getAttribute("rel") || "",
@@ -50,7 +50,7 @@ final class SumiFaviconTransportUserScript: NSObject, SumiPageScript, @MainActor
                 sizes: link.getAttribute("sizes") || "",
                 media: link.getAttribute("media") || ""
               }))
-              .filter((link) => link.href.length > 0 && isFaviconRel(link.rel));
+              .filter((link) => link.href.length > 0);
           };
 
           const postPayload = () => {
@@ -79,28 +79,33 @@ final class SumiFaviconTransportUserScript: NSObject, SumiPageScript, @MainActor
             }, 120);
           };
 
+          const affectsFavicons = (node) => {
+            if (node instanceof HTMLBaseElement) { return true; }
+            if (node instanceof HTMLLinkElement) { return isFaviconRel(node.rel); }
+            return !!node.querySelectorAll && Array.from(node.querySelectorAll("link[rel], base[href]"))
+              .some(affectsFavicons);
+          };
+
           const observeHead = () => {
             const head = document.head;
             if (!head || !window.MutationObserver) { return; }
             const observer = new MutationObserver((mutations) => {
               for (const mutation of mutations) {
-                if (mutation.type === "attributes" && mutation.target instanceof HTMLLinkElement) {
+                if (mutation.type === "attributes") {
+                  const target = mutation.target;
+                  if (target instanceof HTMLBaseElement
+                      || (target instanceof HTMLLinkElement
+                        && (isFaviconRel(target.rel)
+                          || (mutation.attributeName === "rel" && isFaviconRel(mutation.oldValue))))) {
+                    schedule();
+                    return;
+                  }
+                }
+                if (mutation.type === "childList"
+                    && (Array.prototype.some.call(mutation.addedNodes, affectsFavicons)
+                      || Array.prototype.some.call(mutation.removedNodes, affectsFavicons))) {
                   schedule();
                   return;
-                }
-                if (mutation.type === "childList") {
-                  for (const node of mutation.addedNodes) {
-                    if (node instanceof HTMLLinkElement || (node.querySelector && node.querySelector("link[href][rel]"))) {
-                      schedule();
-                      return;
-                    }
-                  }
-                  for (const node of mutation.removedNodes) {
-                    if (node instanceof HTMLLinkElement || (node.querySelector && node.querySelector("link[href][rel]"))) {
-                      schedule();
-                      return;
-                    }
-                  }
                 }
               }
             });
@@ -108,6 +113,7 @@ final class SumiFaviconTransportUserScript: NSObject, SumiPageScript, @MainActor
               childList: true,
               subtree: true,
               attributes: true,
+              attributeOldValue: true,
               attributeFilter: ["rel", "href", "type", "sizes", "media"]
             });
           };
@@ -186,13 +192,13 @@ protocol SumiFaviconUserScriptDelegate: AnyObject {
 }
 
 final class SumiFaviconUserScript: NSObject {
-    struct FaviconsFoundPayload: Codable, Equatable {
+    struct FaviconsFoundPayload: Codable, Equatable, Sendable {
         let documentUrl: URL
         let baseUrl: URL?
         let favicons: [FaviconLink]
     }
 
-    struct FaviconLink: Codable, Equatable {
+    struct FaviconLink: Codable, Equatable, Sendable {
         let href: URL
         let rel: String
         let type: String?
@@ -238,7 +244,9 @@ private func executeSumiFaviconBrokerAction(
 ) async throws -> String {
     switch action {
     case .notify(let handler, let params):
-        let params = SumiFaviconMessageParams(from: params)
+        guard let params: SumiFaviconUserScript.FaviconsFoundPayload = SumiDecodableHelper.decode(from: params) else {
+            return "{}"
+        }
         do {
             _ = try await handler(params, original)
         } catch {
@@ -247,10 +255,10 @@ private func executeSumiFaviconBrokerAction(
         return "{}"
 
     case .respond(let handler, let request):
-        let params = SumiFaviconMessageParams(from: request.params)
+        let params: SumiFaviconUserScript.FaviconsFoundPayload? = SumiDecodableHelper.decode(from: request.params)
         let request = SumiFaviconRequestEnvelope(request: request)
         do {
-            guard let result = try await handler(params, original) else {
+            guard let params, let result = try await handler(params, original) else {
                 return SumiFaviconMessageErrorResponse(
                     request: request,
                     message: "could not access encodable result"
@@ -298,13 +306,13 @@ private final class SumiFaviconSubfeature: NSObject, @MainActor SumiUserScriptSu
     }
 
     private func faviconFound(params: Any, original: WKScriptMessage) async throws -> Encodable? {
-        guard let faviconsPayload = SumiFaviconMessagePayload.decode(from: params) else { return nil }
+        guard let faviconsPayload = params as? SumiFaviconUserScript.FaviconsFoundPayload else { return nil }
 
         faviconScript.delegate?.faviconUserScript(
             faviconScript,
             didFindFaviconLinks: faviconsPayload.favicons,
             documentUrl: faviconsPayload.documentUrl,
-            baseURL: faviconsPayload.baseURL,
+            baseURL: faviconsPayload.baseUrl,
             in: original.webView
         )
         return nil
@@ -323,77 +331,7 @@ private struct SumiFaviconRequestEnvelope: Sendable {
     }
 }
 
-private struct SumiFaviconMessageParams: Sendable {
-    let documentUrl: URL?
-    let baseURL: URL?
-    let favicons: [FaviconLink]
-
-    init(from params: Any) {
-        if let params = params as? SumiFaviconMessageParams {
-            self = params
-            return
-        }
-
-        guard let faviconsPayload: SumiFaviconUserScript.FaviconsFoundPayload = SumiDecodableHelper.decode(from: params) else {
-            self.documentUrl = nil
-            self.baseURL = nil
-            self.favicons = []
-            return
-        }
-
-        self.documentUrl = faviconsPayload.documentUrl
-        self.baseURL = faviconsPayload.baseUrl
-        self.favicons = faviconsPayload.favicons.map(FaviconLink.init(faviconLink:))
-    }
-
-    struct FaviconLink: Sendable {
-        let href: URL
-        let rel: String
-        let type: String?
-        let sizes: String?
-        let media: String?
-
-        init(faviconLink: SumiFaviconUserScript.FaviconLink) {
-            self.href = faviconLink.href
-            self.rel = faviconLink.rel
-            self.type = faviconLink.type
-            self.sizes = faviconLink.sizes
-            self.media = faviconLink.media
-        }
-    }
-}
-
-private struct SumiFaviconMessagePayload {
-    let documentUrl: URL
-    let baseURL: URL?
-    let favicons: [SumiFaviconUserScript.FaviconLink]
-
-    static func decode(from params: Any) -> SumiFaviconMessagePayload? {
-        guard let params = params as? SumiFaviconMessageParams,
-              let documentUrl = params.documentUrl
-        else {
-            return nil
-        }
-
-        return SumiFaviconMessagePayload(
-            documentUrl: documentUrl,
-            baseURL: params.baseURL,
-            favicons: params.favicons.map {
-                SumiFaviconUserScript.FaviconLink(
-                    href: $0.href,
-                    rel: $0.rel,
-                    type: $0.type,
-                    sizes: $0.sizes,
-                    media: $0.media
-                )
-            }
-        )
-    }
-}
-
 private struct SumiFaviconMessageResponse: Encodable {
-    private static let log = Logger.sumi(category: "FaviconUserScript")
-
     let request: SumiFaviconRequestEnvelope
     let result: Encodable
 
@@ -406,14 +344,7 @@ private struct SumiFaviconMessageResponse: Encodable {
     }
 
     func toJSON() -> String? {
-        let jsonData: Data
-        do {
-            jsonData = try JSONEncoder().encode(self)
-        } catch {
-            Self.log.error("Failed to encode favicon script response: \(error.localizedDescription, privacy: .public)")
-            return nil
-        }
-        return String(data: jsonData, encoding: .utf8)
+        SumiUserScriptMessageJSON.optionalString(self, context: "favicon response")
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -425,8 +356,6 @@ private struct SumiFaviconMessageResponse: Encodable {
 }
 
 private struct SumiFaviconMessageErrorResponse: Encodable {
-    private static let log = Logger.sumi(category: "FaviconUserScript")
-
     let context: String
     let featureName: String
     let id: String
@@ -440,18 +369,11 @@ private struct SumiFaviconMessageErrorResponse: Encodable {
     }
 
     func toJSON() -> String {
-        let jsonData: Data
-        do {
-            jsonData = try JSONEncoder().encode(self)
-        } catch {
-            Self.log.error("Failed to encode favicon script error response: \(error.localizedDescription, privacy: .public)")
-            return #"{"error":{"message":"could not convert result to json"}}"#
-        }
-        guard let jsonString = String(data: jsonData, encoding: .utf8) else {
-            Self.log.error("Failed to convert favicon script error response to UTF-8")
-            return #"{"error":{"message":"could not convert result to json"}}"#
-        }
-        return jsonString
+        SumiUserScriptMessageJSON.string(
+            self,
+            context: "favicon error",
+            fallback: #"{"error":{"message":"could not convert result to json"}}"#
+        )
     }
 
     private struct MessageError: Encodable {

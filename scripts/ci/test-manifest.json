@@ -814,6 +814,7 @@
         "SumiTests/TabManagerStructuralBatchingTests",
         "SumiTests/TabManagerStructuralPersistenceTests",
         "SumiTests/TabNavigationCommandsTests",
+        "SumiTests/TabNavigationExtensionWaitTests",
         "SumiTests/TabNavigationTransactionOwnerTests",
         "SumiTests/TabNormalWebViewSetupServiceTests",
         "SumiTests/TabPermissionGlanceFailClosedTests",

@@ -6,18 +6,6 @@
 import Foundation
 
 enum HistoryStoreRecordAssembly {
-    struct VisitSnapshot {
-        let id: UUID
-        let entryID: UUID
-        let visitedAt: Date
-
-        init(id: UUID, entryID: UUID, visitedAt: Date) {
-            self.id = id
-            self.entryID = entryID
-            self.visitedAt = visitedAt
-        }
-    }
-
     struct EntrySnapshot {
         let id: UUID
         let urlString: String
@@ -26,47 +14,11 @@ enum HistoryStoreRecordAssembly {
         let siteDomain: String?
         let numberOfTotalVisits: Int
         let lastVisit: Date
-
-        init(
-            id: UUID,
-            urlString: String,
-            title: String,
-            domain: String,
-            siteDomain: String?,
-            numberOfTotalVisits: Int,
-            lastVisit: Date
-        ) {
-            self.id = id
-            self.urlString = urlString
-            self.title = title
-            self.domain = domain
-            self.siteDomain = siteDomain
-            self.numberOfTotalVisits = numberOfTotalVisits
-            self.lastVisit = lastVisit
-        }
     }
 
     struct SiteAccumulator {
         var bestEntry: EntrySnapshot
         var visitCount: Int
-    }
-
-    enum SiteEntrySource {
-        case resolvedSiteDomain
-        case missingSiteDomain
-    }
-
-    struct SiteGroup {
-        let domain: String
-        let accumulator: SiteAccumulator
-    }
-
-    struct SiteGroupCursor {
-        let source: SiteEntrySource
-        var rawOffset = 0
-        var bufferedEntries: [EntrySnapshot] = []
-        var bufferedIndex = 0
-        var pendingEntry: EntrySnapshot?
     }
 
     static func dateRange(
@@ -87,29 +39,6 @@ enum HistoryStoreRecordAssembly {
             return start..<end
         case .timeRange(let start, let end):
             return start..<end
-        }
-    }
-
-    static func visitRecords(
-        for visits: [VisitSnapshot],
-        entries: [EntrySnapshot]
-    ) -> [HistoryVisitRecord] {
-        let entriesByID = Dictionary(uniqueKeysWithValues: entries.map { ($0.id, $0) })
-
-        return visits.compactMap { visit in
-            guard let entry = entriesByID[visit.entryID],
-                  let url = URL(string: entry.urlString)
-            else {
-                return nil
-            }
-            return HistoryVisitRecord(
-                id: visit.id,
-                url: url,
-                title: entry.title,
-                visitedAt: visit.visitedAt,
-                domain: entry.domain,
-                siteDomain: entry.siteDomain
-            )
         }
     }
 
@@ -160,39 +89,6 @@ enum HistoryStoreRecordAssembly {
     static func visibleKey(for record: HistoryVisitRecord, calendar: Calendar) -> String {
         let dayKey = calendar.startOfDay(for: record.visitedAt).timeIntervalSince1970
         return "\(dayKey)|\(record.url.absoluteString)"
-    }
-
-    static func nextSiteDomain(
-        resolvedGroup: SiteGroup?,
-        missingGroup: SiteGroup?
-    ) -> String? {
-        switch (resolvedGroup?.domain, missingGroup?.domain) {
-        case (.some(let resolvedDomain), .some(let missingDomain)):
-            return min(resolvedDomain, missingDomain)
-        case (.some(let resolvedDomain), .none):
-            return resolvedDomain
-        case (.none, .some(let missingDomain)):
-            return missingDomain
-        case (.none, .none):
-            return nil
-        }
-    }
-
-    static func merge(
-        _ incoming: SiteAccumulator,
-        into accumulator: inout SiteAccumulator?,
-        domain: String
-    ) {
-        guard var current = accumulator else {
-            accumulator = incoming
-            return
-        }
-
-        current.visitCount += incoming.visitCount
-        if comparePreferredEntries(incoming.bestEntry, current.bestEntry, for: domain) {
-            current.bestEntry = incoming.bestEntry
-        }
-        accumulator = current
     }
 
     static func siteRecord(

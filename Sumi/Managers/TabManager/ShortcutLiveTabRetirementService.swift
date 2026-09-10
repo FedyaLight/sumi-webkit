@@ -97,12 +97,6 @@ final class ShortcutLiveTabRetirementService {
         }
     }
 
-    func prepareTerminalEffect(
-        _ prepared: PreparedShortcutLiveTabRetirement
-    ) -> PreparedShortcutLiveTabRetirementTerminalEffect? {
-        prepared.terminalEffect
-    }
-
     func finish(
         _ prepared: PreparedShortcutLiveRetirementBatch
     ) -> ShortcutLiveTabRetirementResult {

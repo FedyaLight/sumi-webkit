@@ -68,7 +68,7 @@ struct SumiRSSLiveFolderProvider: Sendable {
             let cutoff = source.timeRangeSeconds.flatMap { seconds -> Date? in
                 seconds > 0 ? now.addingTimeInterval(-seconds) : nil
             }
-            let items = parsed.items
+            let items = parsed.items.lazy
                 .filter { item in
                     guard let url = item.url,
                           ["http", "https"].contains(url.scheme?.lowercased()) else {
@@ -135,6 +135,12 @@ final class SumiRSSFeedParser: NSObject, XMLParserDelegate {
     private var elementStack: [String] = []
     private var textBuffer = ""
     private var currentItem: DraftItem?
+    private lazy var dateFormatter = ISO8601DateFormatter()
+    private lazy var fractionalDateFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
 
     init(data: Data, sourceId: UUID) {
         self.data = data
@@ -265,6 +271,8 @@ final class SumiRSSFeedParser: NSObject, XMLParserDelegate {
     }
 
     private func parseFeedDate(_ string: String) -> Date? {
-        ISO8601DateFormatter().date(from: string) ?? HTTPDateParser.parse(string)
+        dateFormatter.date(from: string)
+            ?? fractionalDateFormatter.date(from: string)
+            ?? HTTPDateParser.parse(string)
     }
 }

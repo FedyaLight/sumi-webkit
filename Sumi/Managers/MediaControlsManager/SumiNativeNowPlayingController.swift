@@ -67,6 +67,10 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
         self.activationHandler = activationHandler
     }
 
+    deinit {
+        refreshTask?.cancel()
+    }
+
     func setFeatureEnabled(_ enabled: Bool) {
         guard isFeatureEnabled != enabled else { return }
         isFeatureEnabled = enabled
@@ -88,11 +92,10 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
         guard isFeatureEnabled else { return }
         refreshTask?.cancel()
         refreshTask = Task { @MainActor [weak self] in
-            guard let self else { return }
             if delayNanoseconds > 0 {
                 try? await Task.sleep(nanoseconds: delayNanoseconds)
             }
-            guard !Task.isCancelled else { return }
+            guard let self, !Task.isCancelled else { return }
             await self.refreshImmediately()
         }
     }

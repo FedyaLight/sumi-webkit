@@ -273,6 +273,12 @@ final class FaviconDiscoveryScriptTests: XCTestCase {
 
         try await evaluate(
             """
+            window.faviconScanCount = 0;
+            const querySelectorAll = document.head.querySelectorAll.bind(document.head);
+            document.head.querySelectorAll = function(selector) {
+                window.faviconScanCount += 1;
+                return querySelectorAll(selector);
+            };
             const stylesheet = document.createElement('link');
             stylesheet.setAttribute('rel', 'stylesheet');
             stylesheet.setAttribute('href', '/styles.css');
@@ -282,6 +288,47 @@ final class FaviconDiscoveryScriptTests: XCTestCase {
         )
 
         await fulfillment(of: [duplicatePayload], timeout: 0.5)
+        let scanCount = try await webView.evaluateJavaScript("window.faviconScanCount") as? Int
+        XCTAssertEqual(scanCount, 0, "Stylesheet churn must not rescan favicon links")
+    }
+
+    func testBaseURLChangesRefreshRelativeFaviconsAndRelRemovalClearsThem() async throws {
+        let (controller, normalTabController, scriptsProvider) = try makeFaviconController()
+        let recorder = FaviconUserScriptRecorder()
+        scriptsProvider.faviconScript.delegate = recorder
+        await normalTabController.waitForContentBlockingAssetsInstalled()
+        let webView = makeWebView(userContentController: controller)
+        let initialPayload = expectation(description: "initial relative icon")
+        recorder.onLinks = { links, _, _ in
+            if links.first?.href.absoluteString == "https://example.com/first/icon.png" {
+                initialPayload.fulfill()
+            }
+        }
+        await loadHTML(
+            """
+            <html><head><base href="https://example.com/first/">
+            <link id="fav" rel="icon" href="icon.png"></head><body>ok</body></html>
+            """,
+            baseURL: try XCTUnwrap(URL(string: "https://example.com/article")),
+            into: webView
+        )
+        await fulfillment(of: [initialPayload], timeout: 5)
+
+        let changedBase = expectation(description: "relative icon follows base URL")
+        recorder.onLinks = { links, _, _ in
+            if links.first?.href.absoluteString == "https://example.com/second/icon.png" {
+                changedBase.fulfill()
+            }
+        }
+        try await evaluate("document.querySelector('base').href = 'https://example.com/second/';", in: webView)
+        await fulfillment(of: [changedBase], timeout: 2)
+
+        let removedIcon = expectation(description: "former favicon is removed")
+        recorder.onLinks = { links, _, _ in
+            if links.isEmpty { removedIcon.fulfill() }
+        }
+        try await evaluate("document.getElementById('fav').rel = 'stylesheet';", in: webView)
+        await fulfillment(of: [removedIcon], timeout: 2)
     }
 
     func testSeparateDDGControllersKeepFaviconDeliveryIsolated() async throws {

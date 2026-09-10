@@ -290,6 +290,58 @@ extension SumiWebsiteDataCleanupServiceTests {
         XCTAssertEqual(remaining.map(\.domain), ["old.example"])
     }
 
+    func testAutomaticCleanupReleasesServiceBetweenDailyRuns() async throws {
+        let harness = try makeHistoryHarness()
+        let defaults = TestDefaultsHarness()
+        defer { defaults.reset() }
+        let didRun = expectation(description: "scheduled cleanup checked its deadline")
+        var service: SumiAutomaticBrowsingDataCleanupService? = makeAutomaticBrowsingDataCleanupService(
+            userDefaults: defaults.defaults,
+            referenceDateProvider: {
+                didRun.fulfill()
+                return Date()
+            }
+        )
+        weak var releasedService = service
+        service?.scheduleIfNeeded(SumiBrowsingDataCleanupScheduleRequest(
+            retentionPeriod: .thirtyDays,
+            historyManager: harness.historyManager,
+            profileIDs: [],
+            reason: "lifetime-test",
+            delayNanoseconds: 0
+        ))
+        await fulfillment(of: [didRun], timeout: 1)
+
+        service = nil
+
+        XCTAssertNil(releasedService)
+        releasedService?.scheduleIfNeeded(SumiBrowsingDataCleanupScheduleRequest(
+            retentionPeriod: .off,
+            historyManager: harness.historyManager,
+            profileIDs: [],
+            reason: "test-teardown"
+        ))
+    }
+
+    func testAutomaticCleanupDoesNotRetainHistoryDuringInitialDelay() throws {
+        let defaults = TestDefaultsHarness()
+        defer { defaults.reset() }
+        let service = makeAutomaticBrowsingDataCleanupService(userDefaults: defaults.defaults)
+        var historyManager: HistoryManager? = try makeHistoryHarness().historyManager
+        weak var releasedHistory = historyManager
+        service.scheduleIfNeeded(SumiBrowsingDataCleanupScheduleRequest(
+            retentionPeriod: .thirtyDays,
+            historyManager: try XCTUnwrap(historyManager),
+            profileIDs: [],
+            reason: "lifetime-test",
+            delayNanoseconds: 60_000_000_000
+        ))
+
+        historyManager = nil
+
+        XCTAssertNil(releasedHistory)
+    }
+
     func testAutomaticBrowsingDataCleanupThrottlesUntilRetentionChanges() async throws {
         let harness = try makeHistoryHarness()
         let suiteName = "SumiBrowsingDataCleanupTests-\(UUID().uuidString)"

@@ -127,6 +127,38 @@ final class SumiEnergySaverPolicyTests: XCTestCase {
         XCTAssertFalse(didFire)
     }
 
+    func testProactiveTimerSchedulerReleasesWhileSleepingAndCancelsWait() async {
+        let controlledWait = ControlledSuspensionTimerWait()
+        var scheduler: ProactiveTabSuspensionTimerScheduler? = ProactiveTabSuspensionTimerScheduler(
+            suspensionClock: TabSuspensionTimerSchedulerClock(liveUptime: 100),
+            timerSleep: controlledWait.wait,
+            handleDueTimers: { XCTFail("A released scheduler must not fire") }
+        )
+        weak var releasedScheduler = scheduler
+        scheduler?.armTimer(for: UUID(), requestedDelay: 3600) { _ in 100 }
+        await controlledWait.waitForRequestCount(1)
+
+        scheduler = nil
+
+        XCTAssertNil(releasedScheduler)
+        // Also cancel on failure so the regression test does not leak its sleep.
+        releasedScheduler?.cancelAllTimers()
+        await controlledWait.waitForCancellationCount(1)
+    }
+
+    func testEnergyMonitorRemovesSystemObserversWhenReleased() {
+        let notificationCenter = EnergySaverNotificationCenterProbe()
+        var monitor: SumiEnergySaverSystemMonitor? = SumiEnergySaverSystemMonitor(
+            notificationCenter: notificationCenter
+        )
+        monitor?.addObserver { _ in /* no-op */ }
+        XCTAssertEqual(notificationCenter.observerCount, 2)
+
+        monitor = nil
+
+        XCTAssertEqual(notificationCenter.observerCount, 0)
+    }
+
     func testProactiveTimerSchedulerUsesEarliestDeadlineAndCancelsWhenEmpty() async {
         let firstTabID = UUID()
         let secondTabID = UUID()
@@ -259,6 +291,31 @@ final class SumiEnergySaverPolicyTests: XCTestCase {
 
 private struct TabSuspensionTimerSchedulerClock: SumiSuspensionClock {
     let liveUptime: TimeInterval
+}
+
+private final class EnergySaverNotificationCenterProbe: NotificationCenter, @unchecked Sendable {
+    private let lock = NSLock()
+    private var tokens = Set<ObjectIdentifier>()
+
+    var observerCount: Int {
+        lock.withLock { tokens.count }
+    }
+
+    override func addObserver(
+        forName name: NSNotification.Name?,
+        object obj: Any?,
+        queue: OperationQueue?,
+        using block: @Sendable @escaping (Notification) -> Void
+    ) -> NSObjectProtocol {
+        let token = super.addObserver(forName: name, object: obj, queue: queue, using: block)
+        _ = lock.withLock { tokens.insert(ObjectIdentifier(token)) }
+        return token
+    }
+
+    override func removeObserver(_ observer: Any) {
+        _ = lock.withLock { tokens.remove(ObjectIdentifier(observer as AnyObject)) }
+        super.removeObserver(observer)
+    }
 }
 
 @MainActor

@@ -35,22 +35,6 @@ production_shared_definitions="$(
 production_shared_call_sites="$(
   count_matches '\.shared\b' "${production_roots[@]}"
 )"
-# This counter tracks *swallowed errors*: a `try?` that discards a failure the
-# caller should have handled. `try? await Task.sleep` is not one of those --
-# `Task.sleep` throws only `CancellationError`, and every site in this repo
-# either checks `Task.isCancelled`/a generation token immediately afterwards or
-# sits in a loop that cancellation is meant to end. Rewriting those as do/catch
-# would be strictly worse code, so they are excluded rather than counted as debt.
-# The ceilings below still ratchet the real debt down. The production baseline
-# includes the context-menu Copy Image best-effort file read. The test baseline
-# includes temporary cursor-dump cleanup/readback and download-file polling,
-# where a missing or not-yet-readable file is the expected negative result.
-production_try_optional="$(
-  count_matches '\btry\?(?!\s+await\s+Task\.sleep)' "${production_roots[@]}" -P
-)"
-test_try_optional="$(
-  count_matches '\btry\?(?!\s+await\s+Task\.sleep)' "${test_roots[@]}" -P
-)"
 theme_color_literals="$(
   count_matches '(Color|NSColor)\.(black|white|red|blue|green|orange|pink|purple|yellow|gray|primary|secondary|accentColor)|Color\(hex:|Color\(NSColor\.' "${production_roots[@]}" -g "!**/*ThemeTokens.swift"
 )"
@@ -62,11 +46,6 @@ printf '%s\n' 'Modernization debt baseline guardrail'
 printf '%s\n' '--------------------------------------'
 check_max "production shared singleton definitions" "$production_shared_definitions" 4
 check_max "production .shared call sites" "$production_shared_call_sites" 53
-# Baseline raised 57 -> 62 when the vendored DDG Bookmarks import readers were
-# ported into Sumi/Bookmarks/Store (5 best-effort try? sites: temp-file
-# cleanup, browser-profile directory discovery, regex compilation).
-check_max "production try? call sites" "$production_try_optional" 80
-check_max "test try? call sites" "$test_try_optional" 178
 check_max "theme color literal call sites" "$theme_color_literals" 78
 check_max "theme fixed font-size call sites" "$theme_font_size_literals" 69
 

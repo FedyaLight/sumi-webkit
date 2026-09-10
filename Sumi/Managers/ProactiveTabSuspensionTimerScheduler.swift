@@ -18,14 +18,10 @@ final class ProactiveTabSuspensionTimerScheduler {
         let requestedDelay: TimeInterval
     }
 
-    private struct TimerState {
-        let requestedDelay: TimeInterval
-    }
-
     private let suspensionClock: SumiSuspensionClock
     private let timerSleep: (TimeInterval) async throws -> Void
     private let handleDueTimers: @MainActor () -> Void
-    private var timers: [UUID: TimerState] = [:]
+    private var timers: [UUID: TimeInterval] = [:]
     private var schedulerTask: Task<Void, Never>?
     private var schedulerDeadlineLiveUptime: TimeInterval?
     private var schedulerGeneration = 0
@@ -75,7 +71,7 @@ final class ProactiveTabSuspensionTimerScheduler {
         requestedDelay: TimeInterval,
         hiddenStartedAtLiveUptime: (UUID) -> TimeInterval?
     ) {
-        timers[tabID] = TimerState(requestedDelay: requestedDelay)
+        timers[tabID] = requestedDelay
         schedule(hiddenStartedAtLiveUptime: hiddenStartedAtLiveUptime)
     }
 
@@ -104,14 +100,14 @@ final class ProactiveTabSuspensionTimerScheduler {
         removeOrphanedTimers(hiddenStartedAtLiveUptime: hiddenStartedAtLiveUptime)
 
         let now = suspensionClock.liveUptime
-        return timers.compactMap { tabID, timerState -> DueTimer? in
+        return timers.compactMap { tabID, requestedDelay -> DueTimer? in
             guard let hiddenStartedAt = hiddenStartedAtLiveUptime(tabID) else { return nil }
-            let deadline = hiddenStartedAt + timerState.requestedDelay
+            let deadline = hiddenStartedAt + requestedDelay
             guard now + 0.001 >= deadline else { return nil }
             return DueTimer(
                 tabID: tabID,
                 hiddenStartedAtLiveUptime: hiddenStartedAt,
-                requestedDelay: timerState.requestedDelay
+                requestedDelay: requestedDelay
             )
         }
     }
@@ -135,14 +131,13 @@ final class ProactiveTabSuspensionTimerScheduler {
 
         let generation = schedulerGeneration
         let sleepDelay = max(0, nextDeadline - suspensionClock.liveUptime)
-        schedulerTask = Task { @MainActor [weak self] in
-            guard let self else { return }
+        schedulerTask = Task { @MainActor [weak self, timerSleep] in
             do {
-                try await self.timerSleep(sleepDelay)
+                try await timerSleep(sleepDelay)
             } catch {
                 return
             }
-            guard !Task.isCancelled,
+            guard let self, !Task.isCancelled,
                   self.schedulerGeneration == generation
             else { return }
 
@@ -155,11 +150,13 @@ final class ProactiveTabSuspensionTimerScheduler {
     private func nextDeadline(
         hiddenStartedAtLiveUptime: (UUID) -> TimeInterval?
     ) -> TimeInterval? {
-        timers.compactMap { tabID, timerState in
-            guard let hiddenStartedAt = hiddenStartedAtLiveUptime(tabID) else { return nil }
-            return hiddenStartedAt + timerState.requestedDelay
+        var earliest: TimeInterval?
+        for (tabID, requestedDelay) in timers {
+            guard let hiddenStartedAt = hiddenStartedAtLiveUptime(tabID) else { continue }
+            let deadline = hiddenStartedAt + requestedDelay
+            earliest = min(earliest ?? deadline, deadline)
         }
-        .min()
+        return earliest
     }
 
     private func removeOrphanedTimers(

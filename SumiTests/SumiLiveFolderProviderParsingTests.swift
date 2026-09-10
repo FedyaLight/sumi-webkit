@@ -35,7 +35,7 @@ final class SumiLiveFolderProviderParsingTests: XCTestCase {
         XCTAssertNotNil(item.publishedAt)
     }
 
-    func testAtomParserUsesAlternateLinkHref() {
+    func testAtomParserUsesAlternateLinkHref() throws {
         let sourceId = UUID()
         let xml = """
         <feed xmlns="http://www.w3.org/2005/Atom">
@@ -43,7 +43,8 @@ final class SumiLiveFolderProviderParsingTests: XCTestCase {
           <entry>
             <title>Atom Entry</title>
             <id>tag:example.com,2026:entry</id>
-            <updated>2026-06-17T08:00:00Z</updated>
+            <published>2026-06-17T08:00:00Z</published>
+            <updated>2026-06-17T08:00:00.125Z</updated>
             <link rel="alternate" href="https://example.com/atom-entry" />
           </entry>
         </feed>
@@ -59,7 +60,9 @@ final class SumiLiveFolderProviderParsingTests: XCTestCase {
         XCTAssertEqual(feed.title, "Atom Feed")
         XCTAssertEqual(item.id, "tag:example.com,2026:entry")
         XCTAssertEqual(item.urlString, "https://example.com/atom-entry")
-        XCTAssertNotNil(item.updatedAt)
+        let publishedAt = try XCTUnwrap(item.publishedAt)
+        let updatedAt = try XCTUnwrap(item.updatedAt)
+        XCTAssertEqual(updatedAt.timeIntervalSince(publishedAt), 0.125, accuracy: 0.001)
     }
 
     func testGitHubIssuesHTMLParserMatchesZenIssueRows() throws {

@@ -205,6 +205,10 @@ final class SumiEnergySaverSystemMonitor: SumiEnergySaverSystemMonitoring {
         self.snapshot = .current(processInfo: processInfo)
     }
 
+    isolated deinit {
+        stop()
+    }
+
     @discardableResult
     func addObserver(
         _ observer: @escaping @MainActor (SumiEnergySaverSystemSnapshot) -> Void
@@ -218,11 +222,12 @@ final class SumiEnergySaverSystemMonitor: SumiEnergySaverSystemMonitoring {
 
     func removeObserver(_ token: UUID) {
         observers[token] = nil
-        stopIfUnused()
+        if observers.isEmpty { stop() }
     }
 
     private func startIfNeeded() {
         guard notificationTokens.isEmpty, powerSourcesRunLoopSource == nil else { return }
+        snapshot = .current(processInfo: processInfo)
 
         notificationTokens = [
             notificationCenter.addObserver(
@@ -264,9 +269,7 @@ final class SumiEnergySaverSystemMonitor: SumiEnergySaverSystemMonitoring {
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
     }
 
-    private func stopIfUnused() {
-        guard observers.isEmpty else { return }
-
+    private func stop() {
         for token in notificationTokens {
             notificationCenter.removeObserver(token)
         }

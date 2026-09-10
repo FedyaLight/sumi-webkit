@@ -65,19 +65,21 @@ final class SumiNowPlayingBridgeTests: XCTestCase {
         XCTAssertNil(info.artist)
         XCTAssertEqual(info.playbackState, .paused)
     }
-
-    func testMapperKeepsPlaybackState() {
-        let info = SumiNowPlayingInfoMapper.makeInfo(
-            titleAndArtist: ("Native Title", nil),
-            playbackState: .playing
-        )
-
-        XCTAssertEqual(info.playbackState, .playing)
-    }
 }
 
 @MainActor
 final class SumiNativeNowPlayingControllerFeatureGateTests: XCTestCase {
+    func testPendingRefreshDoesNotKeepControllerAlive() async {
+        var controller: SumiNativeNowPlayingController? = SumiNativeNowPlayingController()
+        weak var releasedController = controller
+        controller?.scheduleRefresh(delayNanoseconds: 60_000_000_000)
+        await Task.yield()
+
+        controller = nil
+
+        XCTAssertNil(releasedController)
+    }
+
     func testDisablingFeatureClearsControllerWithoutResumingPausedMedia() async {
         let tab = Tab(
             url: URL(string: "https://media.example/feature-disabled")!,

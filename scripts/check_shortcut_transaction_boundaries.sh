@@ -37,7 +37,6 @@ sources=(
   Sumi/Managers/TabManager/PreparedDisplayedTabShortcutBinding.swift
   Sumi/Managers/TabManager/DisplayedTabShortcutSourceModelTransaction.swift
   Sumi/Managers/TabManager/DisplayedTabShortcutRuntimeTransaction.swift
-  Sumi/Managers/TabManager/ShortcutLiveRuntimeRetirementPublication.swift
   Sumi/Managers/TabManager/DetachedTabShortcutSourcePreparer.swift
   Sumi/Managers/TabManager/PreparedDetachedTabShortcutTransition.swift
   Sumi/Managers/TabManager/DetachedTabShortcutConverter.swift
@@ -161,7 +160,6 @@ declare -a type_limits=(
   'DisplayedTabShortcutBindingPreflight|4'
   'DisplayedTabShortcutSourceModelTransaction|5'
   'DisplayedTabShortcutRuntimeTransaction|3'
-  'ShortcutLiveRuntimeRetirementPublication|4'
   'DetachedTabShortcutSourcePreparer|5'
   'DetachedTabShortcutConverter|3'
   'ShortcutPinPlacementResolver|3'
